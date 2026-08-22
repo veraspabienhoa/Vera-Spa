@@ -19,9 +19,9 @@ steps:
       - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:latest"
 
   # ============================================================
-  # WEB APP VERA SPA
-  # Session affinity được bật ngay trong cùng lệnh deploy để tránh
-  # xung đột resource version khi chạy services update ngay sau deploy.
+  # WEB APP VERA SPA - Supabase Session Pooler Singapore
+  # Keep Cloud SQL detached so automated builds cannot overwrite the
+  # Supabase configuration applied in Cloud Run.
   # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     args:
@@ -35,20 +35,19 @@ steps:
       - "--allow-unauthenticated"
       - "--cpu=2"
       - "--memory=4Gi"
-      - "--min=1"
-      - "--max=5"
+      - "--min=0"
+      - "--max=2"
       - "--concurrency=8"
       - "--timeout=3600"
       - "--cpu-boost"
       - "--session-affinity"
-      - "--set-cloudsql-instances=${_INSTANCE_CONNECTION_NAME}"
-      - "--set-env-vars=VERA_DB_ENABLED=1,DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},INSTANCE_CONNECTION_NAME=${_INSTANCE_CONNECTION_NAME},DB_POOL_SIZE=8,DB_MAX_OVERFLOW=12,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=1200,DB_CONNECT_TIMEOUT=10,SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com,TIMESOFT_BASE_URL=https://vera.timesoft.vn"
-      - "--set-secrets=DB_PASS=vera-db-password:latest,SMTP_APP_PASSWORD=vera-smtp-app-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
+      - "--clear-cloudsql-instances"
+      - "--set-env-vars=VERA_DB_ENABLED=1,VERA_DATA_BACKEND=postgres,DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=600,DB_CONNECT_TIMEOUT=10,VERA_SHEETS_MIRROR_MODE=optional,VERA_PHASE17_FINAL_BACKEND=postgres,SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com,TIMESOFT_BASE_URL=https://vera.timesoft.vn"
+      - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,SMTP_APP_PASSWORD=vera-smtp-app-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
 
   # ============================================================
   # CLOUD RUN JOB - TIMESOFT SNAPSHOT ONLY
-  # Scheduler định kỳ gọi Job này để đồng bộ TimeSoft -> PostgreSQL.
-  # V84.4: Job này KHÔNG còn ghi Auto Update phạt.
+  # Use the same Supabase Session Pooler as the web app.
   # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     args:
@@ -67,14 +66,13 @@ steps:
       - "--parallelism=1"
       - "--command=python"
       - "--args=timesoft_snapshot_job.py"
-      - "--set-cloudsql-instances=${_INSTANCE_CONNECTION_NAME}"
-      - "--set-env-vars=VERA_DB_ENABLED=1,DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},INSTANCE_CONNECTION_NAME=${_INSTANCE_CONNECTION_NAME},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=2,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=1200,DB_CONNECT_TIMEOUT=10,TIMESOFT_BASE_URL=https://vera.timesoft.vn,TIMESOFT_SYNC_DAYS=2,TIMESOFT_CHECKIN_PAGE_SIZE=100"
-      - "--set-secrets=DB_PASS=vera-db-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
+      - "--clear-cloudsql-instances"
+      - "--set-env-vars=VERA_DB_ENABLED=1,VERA_DATA_BACKEND=postgres,DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=600,DB_CONNECT_TIMEOUT=10,TIMESOFT_BASE_URL=https://vera.timesoft.vn,TIMESOFT_SYNC_DAYS=2,TIMESOFT_CHECKIN_PAGE_SIZE=100"
+      - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
 
   # ============================================================
   # CLOUD RUN JOB - AUTO UPDATE PHẠT 20:00 + EMAIL
-  # Cloud Scheduler riêng sẽ gọi Job này lúc 20:00 Asia/Saigon mỗi ngày.
-  # Wrapper chỉ tăng độ bền đăng nhập TimeSoft; không đổi Google Sheet ID.
+  # This legacy job still uses its existing Google Sheets business path.
   # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     args:
@@ -106,9 +104,11 @@ substitutions:
   _TIMESOFT_JOB: "vera-spa-timesoft-sync"
   _AUTO_PENALTY_JOB: "vera-spa-auto-penalty-2000"
   _RUN_SERVICE_ACCOUNT: "vera-spa-run@vera-hr-app.iam.gserviceaccount.com"
-  _INSTANCE_CONNECTION_NAME: "vera-hr-app:asia-southeast1:vera-spa-postgres"
-  _DB_NAME: "vera_spa"
-  _DB_USER: "vera_app"
+  _DB_HOST: "aws-0-ap-southeast-1.pooler.supabase.com"
+  _DB_PORT: "5432"
+  _DB_NAME: "postgres"
+  _DB_USER: "postgres.nunxfjhrszmlyyrvphuq"
+  _DB_SECRET: "vera-supabase-db-password"
 
 # ============================================================
 # CLOUD BUILD OPTIONS
