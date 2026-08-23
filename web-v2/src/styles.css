@@ -115,17 +115,30 @@ tr:last-child td { border-bottom: 0; }
 .right { text-align: right; }
 .center { text-align: center; }
 .detail-cell { min-width: 150px; color: #526159; }
-.daily-summary-wrap { border: 1px solid #dce3e6; border-radius: 14px; }
-.daily-summary-table { min-width: 920px; }
-.daily-summary-table th { background: #eef1f3; color: #3f4944; font-size: 12px; letter-spacing: 0; padding: 14px 10px; border-right: 1px solid #d5dde1; }
-.daily-summary-table th:last-child { border-right: 0; }
-.daily-summary-table td { padding: 14px 10px; border-right: 1px solid #d5dde1; }
-.daily-summary-table td:last-child { border-right: 0; }
+.daily-summary-wrap { width: 100%; max-width: 100%; overflow-x: clip; }
+.daily-summary-table { width: 100%; min-width: 0; table-layout: fixed; }
+.daily-summary-table.with-penalty .daily-col-date { width: 17%; }
+.daily-summary-table.with-penalty .daily-col-weekday { width: 11%; }
+.daily-summary-table.with-penalty .daily-col-total { width: 12%; }
+.daily-summary-table.with-penalty .daily-col-paid { width: 13%; }
+.daily-summary-table.with-penalty .daily-col-generated { width: 13%; }
+.daily-summary-table.with-penalty .daily-col-unpaid { width: 14%; }
+.daily-summary-table.with-penalty .daily-col-penalty { width: 20%; }
+.daily-summary-table.without-penalty .daily-col-date { width: 22%; }
+.daily-summary-table.without-penalty .daily-col-weekday { width: 16%; }
+.daily-summary-table.without-penalty .daily-col-total { width: 15%; }
+.daily-summary-table.without-penalty .daily-col-paid { width: 16%; }
+.daily-summary-table.without-penalty .daily-col-generated { width: 15%; }
+.daily-summary-table.without-penalty .daily-col-unpaid { width: 16%; }
+.daily-summary-table th { padding: 8px 6px; }
+.daily-summary-table td { padding: 8px 6px; line-height: 1.2; overflow-wrap: anywhere; }
 .daily-summary-table tr.selected-day-row td { background: #fbfdfb; }
+.daily-summary-table .money-cell { min-width: 0; white-space: normal; }
+.compact-column-label { display: none; }
 .date-link { border: 0; padding: 0; color: #203c31; background: transparent; font-weight: 800; text-decoration: underline; text-decoration-color: #b9cabf; text-underline-offset: 3px; }
 .date-link:hover { color: #0c6b43; }
-.quota-value { min-width: 74px; min-height: 50px; border: 1px solid #d6d9d7; border-radius: 16px; display: inline-grid; place-items: center; font-weight: 800; background: white; }
-.quota-value.limit-full { color: #9f2020; background: #ffcdd2; border-color: #ff8e98; }
+.daily-stat-value { font-weight: 500; }
+.paid-stat.paid-limit-full { color: #c51f1f; font-size: 1.3em; font-weight: 900; }
 .money-cell { min-width: 130px; white-space: nowrap; }
 .empty-cell { text-align: center; color: var(--muted); padding: 30px; }
 .error-box, .success-box, .warning-box, .setup-note { border-radius: 11px; padding: 10px 12px; font-size: 12px; }
@@ -191,6 +204,18 @@ tr:last-child td { border-bottom: 0; }
   .custom-range, .date-input-group, .date-picker-control { width: 100%; }
   .date-input-group { min-width: 0; }
   .panel { padding: 16px; }
+  .daily-summary-panel { padding: 12px 6px; }
+  .daily-summary-panel .panel-title-row { margin: 0 4px 9px; }
+  .daily-summary-panel .panel-title-row h2 { font-size: 15px; }
+  .daily-summary-panel .panel-title-row p { font-size: 9px; line-height: 1.3; }
+  .daily-summary-table { font-size: clamp(7px, 2.25vw, 9px); line-height: 1.1; }
+  .daily-summary-table th { padding: 5px 1px; font-size: clamp(6.5px, 2vw, 8px); letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
+  .daily-summary-table td { padding: 5px 1px; }
+  .daily-summary-table .date-link { font-size: .88em; font-weight: 700; letter-spacing: -.04em; white-space: nowrap; }
+  .daily-summary-table .money-cell { font-size: .82em; letter-spacing: -.04em; }
+  .daily-summary-table .paid-stat.paid-limit-full { font-size: 1.28em; }
+  .full-column-label { display: none; }
+  .compact-column-label { display: inline; }
   .login-contact { margin-top: 20px; }
   .map-button { width: 100%; }
 }

@@ -340,16 +340,25 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
         </div>
         <div className="table-wrap daily-summary-wrap">
-          <table className="daily-summary-table">
+          <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
+            <colgroup>
+              <col className="daily-col-date" />
+              <col className="daily-col-weekday" />
+              <col className="daily-col-total" />
+              <col className="daily-col-paid" />
+              <col className="daily-col-generated" />
+              <col className="daily-col-unpaid" />
+              {canViewPenalty && <col className="daily-col-penalty" />}
+            </colgroup>
             <thead>
               <tr>
                 <th>Ngày</th>
-                <th>Thứ ngày</th>
-                <th className="center">Tổng nghỉ</th>
-                <th>✅ Có phép</th>
-                <th>⚠️ Phát sinh</th>
-                <th>❌ Không phép</th>
-                {canViewPenalty && <th>💰 Tổng tiền phạt</th>}
+                <th><span className="full-column-label">Thứ ngày</span><span className="compact-column-label">Thứ</span></th>
+                <th className="center"><span className="full-column-label">Tổng nghỉ</span><span className="compact-column-label">Nghỉ</span></th>
+                <th className="center"><span className="full-column-label">✅ Có phép</span><span className="compact-column-label">Phép</span></th>
+                <th className="center"><span className="full-column-label">⚠️ Phát sinh</span><span className="compact-column-label">PS</span></th>
+                <th className="center"><span className="full-column-label">❌ Không phép</span><span className="compact-column-label">K.phép</span></th>
+                {canViewPenalty && <th className="right"><span className="full-column-label">💰 Tổng tiền phạt</span><span className="compact-column-label">Phạt</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -363,11 +372,11 @@ export default function LeaveRegistrationPage({ user }) {
                     </button>
                   </td>
                   <td>{day.weekday_label}</td>
-                  <td className="center"><strong>{day.total_leave}</strong></td>
-                  <td><span className={`quota-value ${day.paid_full ? 'limit-full' : ''}`}>{day.paid}</span></td>
-                  <td><span className={`quota-value ${day.generated_full ? 'limit-full' : ''}`}>{day.generated}</span></td>
-                  <td><span className="quota-value">{day.unpaid}</span></td>
-                  {canViewPenalty && <td className="money-cell">{Number(day.total_penalty || 0).toLocaleString('vi-VN')} đ</td>}
+                  <td className="center"><span className="daily-stat-value">{day.total_leave}</span></td>
+                  <td className="center"><span className={`daily-stat-value paid-stat ${day.paid_full ? 'paid-limit-full' : ''}`}>{day.paid}</span></td>
+                  <td className="center"><span className="daily-stat-value">{day.generated}</span></td>
+                  <td className="center"><span className="daily-stat-value">{day.unpaid}</span></td>
+                  {canViewPenalty && <td className="money-cell right">{Number(day.total_penalty || 0).toLocaleString('vi-VN')}đ</td>}
                 </tr>
               ))}
             </tbody>

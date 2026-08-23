@@ -192,6 +192,7 @@ jobs:
           shared_api = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
           login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
           leave_page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
+          web_styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
           hardening = Path('web-v2/supabase_web_v2_pilot_hardening.sql').read_text(encoding='utf-8')
           daily_stats_sql = Path('web-v2/supabase_web_v2_daily_stats.sql').read_text(encoding='utf-8')
@@ -214,6 +215,9 @@ jobs:
               'Web V2 daily summary precedes detail grid': leave_page.index('daily-summary-panel') < leave_page.index('<div className="content-grid">'),
               'Web V2 daily list contains detail column': '<th>Chi tiết</th>' in leave_page and "item.detail || '—'" in leave_page,
               'Web V2 daily quota comes from PostgreSQL': "setting_key='daily_quota'" in api and 'paid_full' in api,
+              'Web V2 daily summary only highlights full paid quota': 'paid-limit-full' in leave_page and 'day.generated_full' not in leave_page,
+              'Web V2 daily summary fits all role columns': 'colSpan={canViewPenalty ? 7 : 6}' in leave_page and 'with-penalty' in leave_page and 'without-penalty' in leave_page,
+              'Web V2 daily summary has no fixed mobile overflow': 'min-width: 920px' not in web_styles and '.daily-summary-wrap { width: 100%; max-width: 100%; overflow-x: clip; }' in web_styles and 'table-layout: fixed' in web_styles,
               'Web V2 deployed API uses live validation quota': '_api._daily_quota_config = _api_daily_quota_config' in shared_api,
               'Web V2 daily stats RPC is authenticated': 'vera_v2_leave_daily_stats' in daily_stats_sql and 'from public, anon' in daily_stats_sql.lower(),
               'Web V2 login uses split wellbeing message': 'Suối nguồn thư giãn' in login_page and 'Trọn vẹn an yên' in login_page,
