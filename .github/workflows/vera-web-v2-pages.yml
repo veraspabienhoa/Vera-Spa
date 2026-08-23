@@ -38,9 +38,11 @@ jobs:
 
       - name: Validate Web V2 public configuration
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
-          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL }}
+          # These are browser-visible public values, not database/service-role secrets.
+          # Repository variables can still override the known VERA production defaults.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://nunxfjhrszmlyyrvphuq.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_idnn4HeEozpAonmSqM4Tgw_bB8HW4FX' }}
+          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL || 'https://vera-spa-api-589916994342.asia-southeast1.run.app' }}
         shell: bash
         run: |
           test -n "$VITE_SUPABASE_URL" || { echo "Missing repository variable: VITE_SUPABASE_URL"; exit 1; }
@@ -58,9 +60,9 @@ jobs:
       - name: Build Web V2
         working-directory: web-v2
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
-          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://nunxfjhrszmlyyrvphuq.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_idnn4HeEozpAonmSqM4Tgw_bB8HW4FX' }}
+          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL || 'https://vera-spa-api-589916994342.asia-southeast1.run.app' }}
           VITE_VERA_DEMO_MODE: "0"
         run: npm run build
 
