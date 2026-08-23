@@ -26,7 +26,7 @@ def _patch_latest_get_loai_nghi(source: str) -> tuple[str, bool]:
         return source, False
     lines[def_idx] = original.replace("def get_loai_nghi", "def _vera_legacy_get_loai_nghi", 1)
     insert_at = int(node.end_lineno)
-    wrapper = '''\n\n@st.cache_data(ttl=15, show_spinner=False)\ndef get_loai_nghi():\n    """Canonical official rules from PostgreSQL, seeded once from legacy LoaiNghi."""\n    try:\n        _seed_rules = _vera_legacy_get_loai_nghi()\n        import vera_official_rules as _vera_rules\n        return _vera_rules.load_dataframe(vpg, seed_df=_seed_rules, bootstrap=True)\n    except Exception:\n        return _vera_legacy_get_loai_nghi()\n'''
+    wrapper = '''\n\n@st.cache_data(ttl=15, show_spinner=False)\ndef get_loai_nghi():\n    """Canonical official rules from PostgreSQL, seeded once from legacy LoaiNghi."""\n    try:\n        _seed_rules = _vera_legacy_get_loai_nghi()\n        import vera_official_rules as _vera_rules\n        import vera_postgres as _vpg_rules\n        return _vera_rules.load_dataframe(_vpg_rules, seed_df=_seed_rules, bootstrap=True)\n    except Exception:\n        return _vera_legacy_get_loai_nghi()\n'''
     lines.insert(insert_at, wrapper)
     return "".join(lines), True
 
