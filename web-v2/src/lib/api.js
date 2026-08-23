@@ -26,6 +26,20 @@ async function rpc(name, args = {}) {
   return data
 }
 
+function datesBetween(start, end) {
+  const dates = []
+  const cursor = new Date(`${start}T00:00:00`)
+  const finish = new Date(`${end}T00:00:00`)
+  while (cursor <= finish && dates.length < 366) {
+    const year = cursor.getFullYear()
+    const month = `${cursor.getMonth() + 1}`.padStart(2, '0')
+    const day = `${cursor.getDate()}`.padStart(2, '0')
+    dates.push(`${year}-${month}-${day}`)
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return dates
+}
+
 export const veraApi = {
   health: () => request('/v2/health'),
   me: async () => {
@@ -48,10 +62,13 @@ export const veraApi = {
       days: Array.isArray(rows) ? rows.map((row) => ({ ...row, date: row.date || row.day })) : [],
     }
   },
-  leaveRecords: async (date) => {
-    if (isApiConfigured) return request(`/v2/leave/records?date=${encodeURIComponent(date)}`)
-    const rows = await rpc('vera_v2_leave_records', { p_date: date })
-    return { records: Array.isArray(rows) ? rows : [] }
+  leaveRecords: async (start, end = start) => {
+    if (isApiConfigured) return request(`/v2/leave/records?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+    const batches = await Promise.all(datesBetween(start, end).map(async (date) => {
+      const rows = await rpc('vera_v2_leave_records', { p_date: date })
+      return (Array.isArray(rows) ? rows : []).map((row) => ({ ...row, leave_date: row.leave_date || date }))
+    }))
+    return { records: batches.flat() }
   },
   leaveReasons: async (date) => {
     if (isApiConfigured) return request(`/v2/leave/reasons?date=${encodeURIComponent(date)}`)

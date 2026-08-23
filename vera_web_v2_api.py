@@ -46,7 +46,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.6")
+app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.7")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -996,7 +996,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.6"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.7"}
 
 
 @app.get("/v2/me")
@@ -1068,14 +1068,31 @@ def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(cu
 
 
 @app.get("/v2/leave/records")
-def leave_records(date_value: date = Query(alias="date"), ident: Identity = Depends(current_identity)):
+def leave_records(
+    date_value: date | None = Query(default=None, alias="date"),
+    start_date: date | None = Query(default=None, alias="start"),
+    end_date: date | None = Query(default=None, alias="end"),
+    ident: Identity = Depends(current_identity),
+):
+    if date_value is not None:
+        start_date = end_date = date_value
+    if start_date is None or end_date is None:
+        raise HTTPException(400, "Phải chọn ngày hoặc khoảng thời gian cần xem.")
+    if end_date < start_date:
+        raise HTTPException(400, "Khoảng thời gian không hợp lệ.")
+    if (end_date - start_date).days > 365:
+        raise HTTPException(400, "Khoảng danh sách tối đa là 366 ngày.")
+
     with _engine_instance().connect() as conn:
         _require_feature(conn, ident, "leave")
         can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
         rows = conn.execute(text("""
-            SELECT record_uid, employee_name, leave_reason, detail, penalty, updated_by, updated_at
-            FROM leave_records WHERE leave_date=:d ORDER BY employee_name, record_uid
-        """), {"d": date_value}).mappings().all()
+            SELECT record_uid, leave_date, weekday_label, employee_name, leave_reason,
+                   detail, penalty, updated_by, updated_at
+            FROM leave_records
+            WHERE leave_date BETWEEN :start_date AND :end_date
+            ORDER BY leave_date, employee_name, record_uid
+        """), {"start_date": start_date, "end_date": end_date}).mappings().all()
     records = []
     for row in rows:
         item = dict(row)

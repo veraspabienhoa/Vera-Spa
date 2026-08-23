@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, Clock3, RefreshCw, Save, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Clock3, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import {
@@ -60,6 +60,13 @@ const shortEmployeeName = (value) => String(value || '')
   .trim()
   .toLocaleLowerCase('vi-VN')
   .replace(/(^|\s)\S/g, (letter) => letter.toLocaleUpperCase('vi-VN'))
+const normalizeSearch = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd')
+  .replace(/Đ/g, 'D')
+  .toLocaleLowerCase('vi-VN')
+  .trim()
 
 export default function LeaveRegistrationPage({ user }) {
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
@@ -67,6 +74,10 @@ export default function LeaveRegistrationPage({ user }) {
   const [rangeFilter, setRangeFilter] = useState('Hôm nay')
   const [rangeStart, setRangeStart] = useState(initialRange[0])
   const [rangeEnd, setRangeEnd] = useState(initialRange[1])
+  const [listRangeFilter, setListRangeFilter] = useState('Hôm nay')
+  const [listRangeStart, setListRangeStart] = useState(initialRange[0])
+  const [listRangeEnd, setListRangeEnd] = useState(initialRange[1])
+  const [employeeSearch, setEmployeeSearch] = useState('')
   const [summary, setSummary] = useState({ working: 0, leave: 0, paid: 0, unpaid: 0 })
   const [dailyStats, setDailyStats] = useState([])
   const [records, setRecords] = useState([])
@@ -111,7 +122,7 @@ export default function LeaveRegistrationPage({ user }) {
         const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
           veraApi.leaveSummary(date),
           veraApi.leaveDailyStats(rangeStart, rangeEnd),
-          veraApi.leaveRecords(date),
+          veraApi.leaveRecords(listRangeStart, listRangeEnd),
           veraApi.leaveReasons(date),
           veraApi.employees(),
         ])
@@ -127,7 +138,7 @@ export default function LeaveRegistrationPage({ user }) {
         const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
           loadLeaveSummary(date),
           loadLeaveDailyStats(rangeStart, rangeEnd),
-          loadLeaveRecords(date),
+          loadLeaveRecords(listRangeStart, listRangeEnd),
           loadLeaveReasons(date),
           loadEmployees(),
         ])
@@ -144,7 +155,7 @@ export default function LeaveRegistrationPage({ user }) {
     } finally {
       setBusy(false)
     }
-  }, [date, rangeEnd, rangeStart])
+  }, [date, listRangeEnd, listRangeStart, rangeEnd, rangeStart])
 
   useEffect(() => { load() }, [load])
 
@@ -159,9 +170,14 @@ export default function LeaveRegistrationPage({ user }) {
       : current)
   }, [reasons])
 
+  const filteredRecords = useMemo(() => {
+    const needle = normalizeSearch(employeeSearch)
+    if (!needle) return records
+    return records.filter((item) => normalizeSearch(`${item.employee_name} ${shortEmployeeName(item.employee_name)}`).includes(needle))
+  }, [employeeSearch, records])
   const totalPenalty = useMemo(
-    () => records.reduce((sum, item) => sum + Number(item.penalty || 0), 0),
-    [records],
+    () => filteredRecords.reduce((sum, item) => sum + Number(item.penalty || 0), 0),
+    [filteredRecords],
   )
   const selectedReason = useMemo(() => reasons.find((item) => item.name === form.leave_reason), [reasons, form.leave_reason])
   const changedRecords = useMemo(
@@ -239,6 +255,27 @@ export default function LeaveRegistrationPage({ user }) {
     if (value < rangeStart) setRangeStart(value)
   }
 
+  const chooseListRangeFilter = (filter) => {
+    setListRangeFilter(filter)
+    setSelectedUids([])
+    if (filter === 'Tùy chỉnh') return
+    const [start, end] = rangeForFilter(filter)
+    setListRangeStart(start)
+    setListRangeEnd(end)
+  }
+
+  const changeListCustomStart = (value) => {
+    setSelectedUids([])
+    setListRangeStart(value)
+    if (value > listRangeEnd) setListRangeEnd(value)
+  }
+
+  const changeListCustomEnd = (value) => {
+    setSelectedUids([])
+    setListRangeEnd(value)
+    if (value < listRangeStart) setListRangeStart(value)
+  }
+
   const submit = async (event) => {
     event.preventDefault()
     setMessage('')
@@ -300,7 +337,7 @@ export default function LeaveRegistrationPage({ user }) {
 
       <section className="metric-grid">
         <Metric icon={UserRoundCheck} label="Đang làm việc" value={summary.working ?? 0} />
-        <Metric icon={UsersRound} label="Tổng nghỉ" value={summary.leave ?? records.length} />
+        <Metric icon={UsersRound} label="Tổng nghỉ" value={summary.leave ?? 0} />
         <Metric icon={CheckCircle2} label="Có phép" value={summary.paid ?? 0} />
         <Metric icon={Clock3} label="Không phép" value={summary.unpaid ?? 0} />
       </section>
@@ -448,37 +485,72 @@ export default function LeaveRegistrationPage({ user }) {
 
         <section className="panel leave-list-panel">
           <div className="panel-title-row">
-            <div><h2>DANH SÁCH</h2><p>{formatDateDisplay(date)}</p></div>
+            <div><h2>DANH SÁCH</h2><p>{formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {filteredRecords.length} lịch</p></div>
             <div className="list-actions">
               {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
             </div>
           </div>
+          <div className="list-filter-toolbar">
+            <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian danh sách">
+              {DATE_FILTERS.map((filter) => (
+                <button
+                  type="button"
+                  key={filter}
+                  className={listRangeFilter === filter ? 'active' : ''}
+                  onClick={() => chooseListRangeFilter(filter)}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+            {listRangeFilter === 'Tùy chỉnh' && (
+              <div className="custom-range list-custom-range">
+                <DatePickerControl label="Từ ngày" value={listRangeStart} onChange={changeListCustomStart} />
+                <DatePickerControl label="Đến ngày" value={listRangeEnd} onChange={changeListCustomEnd} />
+              </div>
+            )}
+            <label className="employee-search-field">
+              <span><Search size={15} aria-hidden="true" /> Tên nhân viên</span>
+              <input
+                type="search"
+                value={employeeSearch}
+                onChange={(event) => {
+                  setEmployeeSearch(event.target.value)
+                  setSelectedUids([])
+                }}
+                placeholder="Nhập tên nhân viên"
+                aria-label="Tìm kiếm tên nhân viên"
+              />
+            </label>
+          </div>
           <div className="table-wrap leave-list-wrap">
             <table className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
               <colgroup>
                 <col className="leave-col-select" />
+                <col className="leave-col-date" />
                 <col className="leave-col-employee" />
                 <col className="leave-col-reason" />
                 <col className="leave-col-detail" />
                 {canViewPenalty && <col className="leave-col-penalty" />}
               </colgroup>
-              <thead><tr><th className="select-column">Chọn</th><th>Nhân viên</th><th>Lý do</th><th>Chi tiết</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
+              <thead><tr><th className="select-column">Chọn</th><th>Ngày</th><th>Nhân viên</th><th>Lý do</th><th>Chi tiết</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
               <tbody>
-                {records.length === 0 ? (
-                  <tr><td colSpan={canViewPenalty ? 5 : 4} className="empty-cell">Chưa có dữ liệu cho ngày này.</td></tr>
-                ) : records.map((item) => (
+                {filteredRecords.length === 0 ? (
+                  <tr><td colSpan={canViewPenalty ? 6 : 5} className="empty-cell">Không có lịch nghỉ phù hợp bộ lọc.</td></tr>
+                ) : filteredRecords.map((item) => (
                   <tr key={item.record_uid || `${item.employee_name}-${item.leave_reason}`}>
                     <td className="select-column"><input type="checkbox" aria-label={`Chọn lịch của ${shortEmployeeName(item.employee_name)}`} checked={selectedUids.includes(item.record_uid)} onChange={() => toggleSelected(item.record_uid)} disabled={!canDelete || managing} /></td>
+                    <td><button type="button" className="date-link list-date-link" onClick={() => setDate(item.leave_date)}>{formatDateDisplay(item.leave_date)}</button></td>
                     <td><strong>{shortEmployeeName(item.employee_name)}</strong></td>
                     <td className="reason-edit-cell">
-                      {canEdit ? (
+                      {canEdit && item.leave_date === date ? (
                         <select value={reasonDrafts[item.record_uid] || item.leave_reason} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing}>
                           {!reasons.some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
                           {reasons.map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
                         </select>
-                      ) : item.leave_reason}
+                      ) : <span title={canEdit ? 'Chọn ngày ở cột Ngày để sửa lý do.' : undefined}>{item.leave_reason}</span>}
                     </td>
                     <td className="detail-cell">{item.detail || '—'}</td>
                     {canViewPenalty && <td className="right">{Number(item.penalty || 0).toLocaleString('vi-VN')}đ</td>}
