@@ -332,60 +332,8 @@ export default function LeaveRegistrationPage({ user }) {
         />
       </div>
 
-      <section className="panel daily-summary-panel">
-        <div className="panel-title-row">
-          <div>
-            <h2>Thống kê chi tiết theo từng ngày</h2>
-            <p>{formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)} · Chọn ngày trong bảng để xem danh sách chi tiết.</p>
-          </div>
-        </div>
-        <div className="table-wrap daily-summary-wrap">
-          <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
-            <colgroup>
-              <col className="daily-col-date" />
-              <col className="daily-col-weekday" />
-              <col className="daily-col-total" />
-              <col className="daily-col-paid" />
-              <col className="daily-col-generated" />
-              <col className="daily-col-unpaid" />
-              {canViewPenalty && <col className="daily-col-penalty" />}
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Ngày</th>
-                <th><span className="full-column-label">Thứ ngày</span><span className="compact-column-label">Thứ</span></th>
-                <th className="center"><span className="full-column-label">Tổng nghỉ</span><span className="compact-column-label">Nghỉ</span></th>
-                <th className="center"><span className="full-column-label">✅ Có phép</span><span className="compact-column-label">Phép</span></th>
-                <th className="center"><span className="full-column-label">⚠️ Phát sinh</span><span className="compact-column-label">PS</span></th>
-                <th className="center"><span className="full-column-label">❌ Không phép</span><span className="compact-column-label">K.phép</span></th>
-                {canViewPenalty && <th className="right"><span className="full-column-label">💰 Tổng tiền phạt</span><span className="compact-column-label">Phạt</span></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {dailyStats.length === 0 ? (
-                <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">Không có dữ liệu trong khoảng thời gian này.</td></tr>
-              ) : dailyStats.map((day) => (
-                <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
-                  <td>
-                    <button type="button" className="date-link" onClick={() => setDate(day.date)}>
-                      {formatDateDisplay(day.date)}
-                    </button>
-                  </td>
-                  <td>{day.weekday_label}</td>
-                  <td className="center"><span className="daily-stat-value">{day.total_leave}</span></td>
-                  <td className="center"><span className={`daily-stat-value paid-stat ${day.paid_full ? 'paid-limit-full' : ''}`}>{day.paid}</span></td>
-                  <td className="center"><span className="daily-stat-value">{day.generated}</span></td>
-                  <td className="center"><span className="daily-stat-value">{day.unpaid}</span></td>
-                  {canViewPenalty && <td className="money-cell right">{Number(day.total_penalty || 0).toLocaleString('vi-VN')}đ</td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       <div className="content-grid">
-        <section className="panel">
+        <section className="panel registration-panel">
           <div className="panel-title-row">
             <div><h2>Đăng ký mới</h2><p>Ngày tính và mức phạt mặc định do server lấy từ Nội quy; trình duyệt không được tự quyết định.</p></div>
           </div>
@@ -446,7 +394,59 @@ export default function LeaveRegistrationPage({ user }) {
           </form>
         </section>
 
-        <section className="panel">
+        <section className="panel daily-summary-panel">
+          <div className="panel-title-row">
+            <div>
+              <h2>Thống kê chi tiết theo từng ngày</h2>
+              <p>{formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)} · Chọn ngày trong bảng để xem danh sách chi tiết.</p>
+            </div>
+          </div>
+          <div className="table-wrap daily-summary-wrap">
+            <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
+              <colgroup>
+                <col className="daily-col-date" />
+                <col className="daily-col-weekday" />
+                <col className="daily-col-total" />
+                <col className="daily-col-paid" />
+                <col className="daily-col-generated" />
+                <col className="daily-col-unpaid" />
+                {canViewPenalty && <col className="daily-col-penalty" />}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Ngày</th>
+                  <th><span className="full-column-label">Thứ ngày</span><span className="compact-column-label">Thứ</span></th>
+                  <th className="center"><span className="full-column-label">Tổng nghỉ</span><span className="compact-column-label">Nghỉ</span></th>
+                  <th className="center"><span className="full-column-label">✅ Có phép</span><span className="compact-column-label">Phép</span></th>
+                  <th className="center"><span className="full-column-label">⚠️ Phát sinh</span><span className="compact-column-label">PS</span></th>
+                  <th className="center"><span className="full-column-label">❌ Không phép</span><span className="compact-column-label">K.phép</span></th>
+                  {canViewPenalty && <th className="right"><span className="full-column-label">💰 Tổng tiền phạt</span><span className="compact-column-label">Phạt</span></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {dailyStats.length === 0 ? (
+                  <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">Không có dữ liệu trong khoảng thời gian này.</td></tr>
+                ) : dailyStats.map((day) => (
+                  <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
+                    <td>
+                      <button type="button" className="date-link" onClick={() => setDate(day.date)}>
+                        {formatDateDisplay(day.date)}
+                      </button>
+                    </td>
+                    <td>{day.weekday_label}</td>
+                    <td className="center"><span className="daily-stat-value">{day.total_leave}</span></td>
+                    <td className="center"><span className={`daily-stat-value paid-stat ${day.paid_full ? 'paid-limit-full' : ''}`}>{day.paid}</span></td>
+                    <td className="center"><span className="daily-stat-value">{day.generated}</span></td>
+                    <td className="center"><span className="daily-stat-value">{day.unpaid}</span></td>
+                    {canViewPenalty && <td className="money-cell right">{Number(day.total_penalty || 0).toLocaleString('vi-VN')}đ</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel leave-list-panel">
           <div className="panel-title-row">
             <div><h2>Danh sách</h2><p>{formatDateDisplay(date)}</p></div>
             <div className="list-actions">
@@ -455,8 +455,15 @@ export default function LeaveRegistrationPage({ user }) {
               {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
             </div>
           </div>
-          <div className="table-wrap">
-            <table>
+          <div className="table-wrap leave-list-wrap">
+            <table className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
+              <colgroup>
+                <col className="leave-col-select" />
+                <col className="leave-col-employee" />
+                <col className="leave-col-reason" />
+                <col className="leave-col-detail" />
+                {canViewPenalty && <col className="leave-col-penalty" />}
+              </colgroup>
               <thead><tr><th className="select-column">Chọn</th><th>Nhân viên</th><th>Lý do</th><th>Chi tiết</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
               <tbody>
                 {records.length === 0 ? (
