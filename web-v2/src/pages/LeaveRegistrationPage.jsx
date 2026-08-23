@@ -1,4 +1,4 @@
-import { CalendarDays, CheckCircle2, Clock3, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
+import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import {
@@ -92,6 +92,9 @@ export default function LeaveRegistrationPage({ user }) {
   const [message, setMessage] = useState('')
   const [warnings, setWarnings] = useState([])
   const [error, setError] = useState('')
+  const [watchDates, setWatchDates] = useState([])
+  const [watchBusyDate, setWatchBusyDate] = useState('')
+  const [watchError, setWatchError] = useState('')
   const role = String(user?.role || '').toLowerCase()
   const canChooseEmployee = role === 'admin'
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
@@ -112,6 +115,17 @@ export default function LeaveRegistrationPage({ user }) {
   const maxEmployeeDate = useMemo(() => {
     const now = new Date()
     return formatDateInput(new Date(now.getFullYear(), now.getMonth() + 2, 0))
+  }, [])
+
+  const refreshWatchDates = useCallback(async () => {
+    if (!isApiConfigured) return
+    try {
+      const result = await veraApi.watchDates()
+      setWatchDates(result.watch_dates || [])
+      setWatchError('')
+    } catch (err) {
+      setWatchError(err.message || 'Không tải được các ngày đang quan tâm.')
+    }
   }, [])
 
   const load = useCallback(async () => {
@@ -160,6 +174,12 @@ export default function LeaveRegistrationPage({ user }) {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
+    refreshWatchDates()
+    const interval = window.setInterval(refreshWatchDates, 60000)
+    return () => window.clearInterval(interval)
+  }, [refreshWatchDates])
+
+  useEffect(() => {
     if (canChooseEmployee || !user?.employee_username) return
     setForm((current) => ({ ...current, employee_name: user.employee_username }))
   }, [canChooseEmployee, user?.employee_username])
@@ -175,6 +195,8 @@ export default function LeaveRegistrationPage({ user }) {
     if (!needle) return records
     return records.filter((item) => normalizeSearch(`${item.employee_name} ${shortEmployeeName(item.employee_name)}`).includes(needle))
   }, [employeeSearch, records])
+  const watchedDateSet = useMemo(() => new Set(watchDates.map((item) => item.date)), [watchDates])
+  const unreadWatchDates = useMemo(() => watchDates.filter((item) => item.has_unread), [watchDates])
   const totalPenalty = useMemo(
     () => filteredRecords.reduce((sum, item) => sum + Number(item.penalty || 0), 0),
     [filteredRecords],
@@ -189,6 +211,33 @@ export default function LeaveRegistrationPage({ user }) {
     setSelectedUids((current) => current.includes(recordUid)
       ? current.filter((uid) => uid !== recordUid)
       : [...current, recordUid])
+  }
+
+  const toggleWatchDate = async (targetDate) => {
+    if (!isApiConfigured || watchBusyDate) return
+    setWatchBusyDate(targetDate)
+    setWatchError('')
+    try {
+      await veraApi.setWatchDate(targetDate, !watchedDateSet.has(targetDate))
+      await refreshWatchDates()
+    } catch (err) {
+      setWatchError(err.message || 'Không cập nhật được ngày quan tâm.')
+    } finally {
+      setWatchBusyDate('')
+    }
+  }
+
+  const acknowledgeWatchDate = async (targetDate) => {
+    setWatchBusyDate(targetDate)
+    setWatchError('')
+    try {
+      await veraApi.acknowledgeWatchDates([targetDate])
+      await refreshWatchDates()
+    } catch (err) {
+      setWatchError(err.message || 'Không xác nhận được thông báo.')
+    } finally {
+      setWatchBusyDate('')
+    }
   }
 
   const saveEdits = async () => {
@@ -211,6 +260,7 @@ export default function LeaveRegistrationPage({ user }) {
       }
       setMessage(`Đã cập nhật ${changedRecords.length} lịch nghỉ.`)
       await load()
+      await refreshWatchDates()
     } catch (err) {
       setError(err.message || 'Không sửa được lịch nghỉ.')
     } finally {
@@ -228,6 +278,7 @@ export default function LeaveRegistrationPage({ user }) {
       const result = await veraApi.deleteLeaves(selectedUids)
       setMessage(result.message || `Đã xóa ${selectedUids.length} lịch nghỉ.`)
       await load()
+      await refreshWatchDates()
     } catch (err) {
       setError(err.message || 'Không xóa được lịch nghỉ.')
     } finally {
@@ -307,10 +358,11 @@ export default function LeaveRegistrationPage({ user }) {
         employee_name: canChooseEmployee ? '' : (user?.employee_username || ''),
       })
       setWarnings(result.warnings || [])
-      setMessage(result.message || 'Đã ghi đăng ký nghỉ.')
+      setMessage('Đã ghi lịch nghỉ THÀNH CÔNG')
       await load()
+      await refreshWatchDates()
     } catch (err) {
-      setError(err.message || 'Không ghi được đăng ký nghỉ.')
+      setError(`KHÔNG THÀNH CÔNG (${err.message || 'Không ghi được lịch nghỉ.'})`)
     } finally {
       setSaving(false)
     }
@@ -367,7 +419,46 @@ export default function LeaveRegistrationPage({ user }) {
           onChange={setDate}
           max={role === 'admin' ? undefined : maxEmployeeDate}
         />
+        <button
+          type="button"
+          className={`watch-current-date-button ${watchedDateSet.has(date) ? 'active' : ''}`}
+          onClick={() => toggleWatchDate(date)}
+          disabled={!isApiConfigured || Boolean(watchBusyDate)}
+          aria-pressed={watchedDateSet.has(date)}
+        >
+          {watchedDateSet.has(date) ? <BellRing size={17} /> : <Bell size={17} />}
+          {watchedDateSet.has(date) ? 'Đang quan tâm ngày này' : 'Quan tâm ngày này'}
+        </button>
       </div>
+
+      {unreadWatchDates.length > 0 && (
+        <section className="watch-notification-panel" aria-live="polite">
+          <div className="watch-notification-heading">
+            <BellRing size={19} />
+            <div>
+              <strong>Ngày bạn quan tâm vừa có thay đổi</strong>
+              <span>Chỉ thông báo thay đổi từ 6 lý do nghỉ CÓ phép đã quy định.</span>
+            </div>
+          </div>
+          <div className="watch-notification-list">
+            {unreadWatchDates.map((item) => (
+              <div className="watch-notification-item" key={item.date}>
+                <span>
+                  <strong>{formatDateDisplay(item.date)}</strong>: số nhân viên đăng ký nghỉ CÓ phép đã thay đổi
+                  {item.last_seen_paid_count !== item.current_paid_count
+                    ? ` từ ${item.last_seen_paid_count} thành ${item.current_paid_count}.`
+                    : `; hiện có ${item.current_paid_count}.`}
+                </span>
+                <button type="button" onClick={() => acknowledgeWatchDate(item.date)} disabled={watchBusyDate === item.date}>
+                  Đã xem
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {watchError && <div className="error-box watch-error-box">{watchError}</div>}
 
       <div className="content-grid">
         <section className="panel registration-panel">
@@ -466,9 +557,21 @@ export default function LeaveRegistrationPage({ user }) {
                 ) : dailyStats.map((day) => (
                   <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
                     <td>
-                      <button type="button" className="date-link" onClick={() => setDate(day.date)}>
-                        {formatDateDisplay(day.date)}
-                      </button>
+                      <div className="daily-date-actions">
+                        <button type="button" className="date-link" onClick={() => setDate(day.date)}>
+                          {formatDateDisplay(day.date)}
+                        </button>
+                        <button
+                          type="button"
+                          className={`watch-date-icon ${watchedDateSet.has(day.date) ? 'active' : ''}`}
+                          onClick={() => toggleWatchDate(day.date)}
+                          disabled={Boolean(watchBusyDate)}
+                          aria-label={watchedDateSet.has(day.date) ? `Bỏ quan tâm ngày ${formatDateDisplay(day.date)}` : `Quan tâm ngày ${formatDateDisplay(day.date)}`}
+                          aria-pressed={watchedDateSet.has(day.date)}
+                        >
+                          {watchedDateSet.has(day.date) ? <BellRing size={14} /> : <Bell size={14} />}
+                        </button>
+                      </div>
                     </td>
                     <td>{day.weekday_label}</td>
                     <td className="center"><span className="daily-stat-value">{day.total_leave}</span></td>

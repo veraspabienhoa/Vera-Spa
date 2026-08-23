@@ -197,6 +197,7 @@ jobs:
           hardening = Path('web-v2/supabase_web_v2_pilot_hardening.sql').read_text(encoding='utf-8')
           daily_stats_sql = Path('web-v2/supabase_web_v2_daily_stats.sql').read_text(encoding='utf-8')
           penalty_default = Path('web-v2/supabase_web_v2_penalty_permission_default.sql').read_text(encoding='utf-8')
+          leave_watch_sql = Path('vera_postgres_phase18_leave_watch.sql').read_text(encoding='utf-8')
           checks = {
               'summary queries canonical leave type': 'employee_name, leave_reason, leave_type, calculated_days' in api,
               'summary uses shared unique-employee helper': 'summarize_leave_day(rows, int(active))' in api,
@@ -239,6 +240,12 @@ jobs:
               'Web V2 list has time and employee filters': 'aria-label="Lọc thời gian danh sách"' in leave_page and 'employeeSearch' in leave_page and 'aria-label="Tìm kiếm tên nhân viên"' in leave_page,
               'Web V2 list checkbox stays first and date is second': '<th className="select-column">Chọn</th><th>Ngày</th><th>Nhân viên</th>' in leave_page,
               'Web V2 range edit keeps selected-date reasons': 'canEdit && item.leave_date === date' in leave_page,
+              'Web V2 registration uses requested result messages': 'Đã ghi lịch nghỉ THÀNH CÔNG' in leave_page and 'KHÔNG THÀNH CÔNG (' in leave_page and 'PostgreSQL và MainData mirror' not in api,
+              'Web V2 watches only the six requested paid reasons': '_WATCHED_PAID_REASON_KEYS' in api and all(reason in api for reason in ('Nghỉ CÓ phép', 'Nghỉ CUỐI TUẦN CÓ phép', 'Đi trễ CÓ phép', 'Đi trễ CUỐI TUẦN CÓ phép', 'Về sớm CÓ phép', 'Về sớm CUỐI TUẦN CÓ phép')),
+              'Web V2 watch endpoints are identity scoped': '@app.get("/v2/leave/watch-dates")' in api and '@app.post("/v2/leave/watch-dates/acknowledge")' in api and 'auth_user_id=CAST(:auth_user_id AS uuid)' in api,
+              'Web V2 watch table is private with RLS': 'ENABLE ROW LEVEL SECURITY' in leave_watch_sql and 'FROM PUBLIC, anon, authenticated' in leave_watch_sql and 'PRIMARY KEY (auth_user_id, watched_date)' in leave_watch_sql,
+              'Web V2 displays watched-day notifications': 'watch-notification-panel' in leave_page and 'Đang quan tâm ngày này' in leave_page and 'acknowledgeWatchDates' in Path('web-v2/src/lib/api.js').read_text(encoding='utf-8'),
+              'Web V2 statistics dates have no underline': '.daily-summary-table .date-link { text-decoration: none; }' in web_styles,
               'Web V2 uses Thanks label': 'Thanks' in shell and 'V2 Pilot' not in shell,
           }
           failed = [name for name, ok in checks.items() if not ok]

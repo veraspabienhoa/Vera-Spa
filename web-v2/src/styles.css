@@ -73,6 +73,8 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .range-toolbar { justify-content: space-between; }
 .range-filter-buttons { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
 .date-toolbar .range-filter-buttons button.active { background: var(--green-800); color: white; box-shadow: 0 6px 14px rgba(33,70,57,.16); }
+.date-toolbar .watch-current-date-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; border: 1px solid #d9e4dd; background: #f5f8f6; }
+.date-toolbar .watch-current-date-button.active { color: #704d13; border-color: #e2c786; background: #fff6dd; }
 .custom-range { display: flex; gap: 8px; flex-wrap: wrap; }
 .date-input-group { display: grid; gap: 5px; min-width: 178px; }
 .date-input-label { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
@@ -150,6 +152,19 @@ tr:last-child td { border-bottom: 0; }
 .compact-column-label { display: none; }
 .date-link { border: 0; padding: 0; color: #203c31; background: transparent; font-weight: 800; text-decoration: underline; text-decoration-color: #b9cabf; text-underline-offset: 3px; }
 .date-link:hover { color: #0c6b43; }
+.daily-summary-table .date-link { text-decoration: none; }
+.daily-date-actions { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.watch-date-icon { width: 25px; height: 25px; flex: 0 0 25px; border: 0; border-radius: 999px; display: inline-grid; place-items: center; color: #6d7d74; background: #f0f4f1; }
+.watch-date-icon.active { color: #8b6015; background: #fff1c7; }
+.watch-date-icon:disabled, .watch-current-date-button:disabled { opacity: .55; cursor: wait; }
+.watch-notification-panel { display: grid; gap: 10px; margin: -3px 0 18px; padding: 14px; border: 1px solid #ead49b; border-radius: 15px; color: #604715; background: #fff9e8; box-shadow: 0 8px 22px rgba(99,70,15,.06); }
+.watch-notification-heading { display: flex; align-items: flex-start; gap: 9px; }
+.watch-notification-heading strong, .watch-notification-heading span { display: block; }
+.watch-notification-heading span { margin-top: 2px; color: #846d3c; font-size: 11px; }
+.watch-notification-list { display: grid; gap: 7px; }
+.watch-notification-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border-radius: 10px; background: rgba(255,255,255,.75); font-size: 12px; }
+.watch-notification-item button { flex: 0 0 auto; border: 1px solid #ddc47e; border-radius: 9px; padding: 7px 10px; color: #624714; background: white; font-weight: 800; }
+.watch-error-box { margin: -4px 0 18px; }
 .daily-stat-value { font-weight: 500; }
 .paid-stat.paid-limit-full { color: #c51f1f; font-size: 1.3em; font-weight: 900; }
 .money-cell { min-width: 130px; white-space: nowrap; }
@@ -231,6 +246,12 @@ tr:last-child td { border-bottom: 0; }
   .date-input-group { min-width: 0; }
   .date-input-group { gap: 4px; }
   .date-picker-control { min-width: 0; min-height: 38px; padding: 7px 9px; font-size: 13px; }
+  .date-toolbar .watch-current-date-button { width: 100%; min-height: 38px; }
+  .watch-notification-panel { margin-bottom: 12px; padding: 10px; border-radius: 13px; }
+  .watch-notification-heading strong { font-size: 12px; }
+  .watch-notification-heading span { font-size: 9px; line-height: 1.35; }
+  .watch-notification-item { align-items: flex-start; padding: 8px; font-size: 10px; line-height: 1.35; }
+  .watch-notification-item button { padding: 6px 8px; font-size: 9px; }
   .content-grid { gap: 12px; }
   .panel { min-width: 0; padding: 14px 11px; border-radius: 15px; }
   .panel-title-row { margin-bottom: 11px; }
@@ -249,6 +270,9 @@ tr:last-child td { border-bottom: 0; }
   .daily-summary-table th { padding: 5px 1px; font-size: clamp(6.5px, 2vw, 8px); letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
   .daily-summary-table td { padding: 5px 1px; }
   .daily-summary-table .date-link { font-size: .88em; font-weight: 700; letter-spacing: -.04em; white-space: nowrap; }
+  .daily-date-actions { justify-content: center; gap: 1px; }
+  .watch-date-icon { width: 16px; height: 16px; flex-basis: 16px; padding: 0; }
+  .watch-date-icon svg { width: 9px; height: 9px; }
   .daily-summary-table .money-cell { font-size: .82em; letter-spacing: -.04em; }
   .daily-summary-table .paid-stat.paid-limit-full { font-size: 1.28em; }
   .full-column-label { display: none; }

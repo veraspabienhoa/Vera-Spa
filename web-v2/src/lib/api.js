@@ -90,4 +90,13 @@ export const veraApi = {
   createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }),
   updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }),
+  watchDates: () => request('/v2/leave/watch-dates'),
+  setWatchDate: (watchedDate, watching) => request('/v2/leave/watch-dates', {
+    method: 'POST',
+    body: JSON.stringify({ watched_date: watchedDate, watching }),
+  }),
+  acknowledgeWatchDates: (watchedDates) => request('/v2/leave/watch-dates/acknowledge', {
+    method: 'POST',
+    body: JSON.stringify({ watched_dates: watchedDates }),
+  }),
 }

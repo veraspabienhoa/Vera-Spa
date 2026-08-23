@@ -46,7 +46,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.7")
+app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.8")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -101,6 +101,16 @@ def _norm(value: Any) -> str:
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
     s = s.replace("đ", "d")
     return re.sub(r"\s+", " ", s).strip()
+
+
+_WATCHED_PAID_REASON_KEYS = {
+    _norm("Nghỉ CÓ phép"),
+    _norm("Nghỉ CUỐI TUẦN CÓ phép"),
+    _norm("Đi trễ CÓ phép"),
+    _norm("Đi trễ CUỐI TUẦN CÓ phép"),
+    _norm("Về sớm CÓ phép"),
+    _norm("Về sớm CUỐI TUẦN CÓ phép"),
+}
 
 
 def _num(value: Any, default=0.0, money=False) -> float:
@@ -472,6 +482,15 @@ class LeaveDelete(BaseModel):
     record_uids: list[str] = Field(min_length=1, max_length=100)
 
 
+class LeaveWatchUpdate(BaseModel):
+    watched_date: date
+    watching: bool = True
+
+
+class LeaveWatchAcknowledge(BaseModel):
+    watched_dates: list[date] = Field(min_length=1, max_length=100)
+
+
 _LEAVE_EDIT_FEATURES = ("leave_manage_edit", "leave_detail_edit")
 _LEAVE_DELETE_FEATURES = ("leave_manage_delete", "leave_detail_delete")
 _EMPLOYEE_LIKE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
@@ -479,6 +498,67 @@ _EMPLOYEE_LIKE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
 
 def _has_any_feature(conn, ident: Identity, features: tuple[str, ...]) -> bool:
     return any(_feature_allowed(conn, ident, feature) for feature in features)
+
+
+def _paid_interest_counts(conn, watched_dates: list[date]) -> dict[date, int]:
+    dates = sorted(set(watched_dates))
+    counts = {value: 0 for value in dates}
+    if not dates:
+        return counts
+    rows = conn.execute(text("""
+        SELECT leave_date, leave_reason
+        FROM leave_records
+        WHERE leave_date BETWEEN :start_date AND :end_date
+        ORDER BY leave_date
+    """), {"start_date": dates[0], "end_date": dates[-1]}).mappings().all()
+    date_set = set(dates)
+    for row in rows:
+        target = row.get("leave_date")
+        if target in date_set and _norm(row.get("leave_reason")) in _WATCHED_PAID_REASON_KEYS:
+            counts[target] += 1
+    return counts
+
+
+def _refresh_leave_watches(conn, ident: Identity) -> list[dict[str, Any]]:
+    rows = conn.execute(text("""
+        SELECT watched_date, last_seen_paid_count, current_paid_count, has_unread,
+               created_at, updated_at
+        FROM vera_v2_leave_watch
+        WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+        ORDER BY watched_date
+        FOR UPDATE
+    """), {"auth_user_id": ident.auth_user_id}).mappings().all()
+    counts = _paid_interest_counts(conn, [row["watched_date"] for row in rows])
+    output = []
+    for raw in rows:
+        row = dict(raw)
+        target = row["watched_date"]
+        current = int(counts.get(target, 0))
+        stored = int(row.get("current_paid_count") or 0)
+        unread = bool(row.get("has_unread"))
+        if current != stored:
+            unread = True
+            conn.execute(text("""
+                UPDATE vera_v2_leave_watch
+                SET employee_username=:employee_username,
+                    current_paid_count=:current_paid_count,
+                    has_unread=true,
+                    updated_at=NOW()
+                WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+                  AND watched_date=:watched_date
+            """), {
+                "auth_user_id": ident.auth_user_id,
+                "employee_username": ident.employee_username,
+                "watched_date": target,
+                "current_paid_count": current,
+            })
+        output.append({
+            "date": target.isoformat(),
+            "last_seen_paid_count": int(row.get("last_seen_paid_count") or 0),
+            "current_paid_count": current,
+            "has_unread": unread,
+        })
+    return output
 
 
 def _is_employee_co_phep(reason: str) -> bool:
@@ -996,7 +1076,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.7"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.8"}
 
 
 @app.get("/v2/me")
@@ -1065,6 +1145,97 @@ def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(cu
                 "requires_manual_penalty": item["requires_manual_penalty"],
             })
     return {"reasons": output}
+
+
+@app.get("/v2/leave/watch-dates")
+def leave_watch_dates(ident: Identity = Depends(current_identity)):
+    with _engine_instance().begin() as conn:
+        _require_feature(conn, ident, "leave")
+        rows = _refresh_leave_watches(conn, ident)
+    return {
+        "watch_dates": rows,
+        "unread_count": sum(1 for row in rows if row["has_unread"]),
+    }
+
+
+@app.post("/v2/leave/watch-dates")
+def set_leave_watch(body: LeaveWatchUpdate, ident: Identity = Depends(current_identity)):
+    with _engine_instance().begin() as conn:
+        _require_feature(conn, ident, "leave")
+        if not body.watching:
+            conn.execute(text("""
+                DELETE FROM vera_v2_leave_watch
+                WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+                  AND watched_date=:watched_date
+            """), {
+                "auth_user_id": ident.auth_user_id,
+                "watched_date": body.watched_date,
+            })
+            return {"ok": True, "watching": False, "date": body.watched_date.isoformat()}
+
+        existing = conn.execute(text("""
+            SELECT 1 FROM vera_v2_leave_watch
+            WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+              AND watched_date=:watched_date
+        """), {
+            "auth_user_id": ident.auth_user_id,
+            "watched_date": body.watched_date,
+        }).scalar_one_or_none()
+        if not existing:
+            total = conn.execute(text("""
+                SELECT COUNT(*) FROM vera_v2_leave_watch
+                WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+            """), {"auth_user_id": ident.auth_user_id}).scalar() or 0
+            if int(total) >= 100:
+                raise HTTPException(400, "Mỗi tài khoản chỉ được quan tâm tối đa 100 ngày.")
+
+        current = _paid_interest_counts(conn, [body.watched_date])[body.watched_date]
+        conn.execute(text("""
+            INSERT INTO vera_v2_leave_watch(
+                auth_user_id, employee_username, watched_date,
+                last_seen_paid_count, current_paid_count, has_unread,
+                created_at, updated_at
+            ) VALUES (
+                CAST(:auth_user_id AS uuid), :employee_username, :watched_date,
+                :paid_count, :paid_count, false, NOW(), NOW()
+            )
+            ON CONFLICT (auth_user_id, watched_date) DO UPDATE
+            SET employee_username=EXCLUDED.employee_username,
+                updated_at=NOW()
+        """), {
+            "auth_user_id": ident.auth_user_id,
+            "employee_username": ident.employee_username,
+            "watched_date": body.watched_date,
+            "paid_count": current,
+        })
+    return {
+        "ok": True,
+        "watching": True,
+        "date": body.watched_date.isoformat(),
+        "current_paid_count": current,
+    }
+
+
+@app.post("/v2/leave/watch-dates/acknowledge")
+def acknowledge_leave_watches(body: LeaveWatchAcknowledge, ident: Identity = Depends(current_identity)):
+    unique_dates = list(dict.fromkeys(body.watched_dates))
+    with _engine_instance().begin() as conn:
+        _require_feature(conn, ident, "leave")
+        updated = 0
+        for target in unique_dates:
+            result = conn.execute(text("""
+                UPDATE vera_v2_leave_watch
+                SET last_seen_paid_count=current_paid_count,
+                    has_unread=false,
+                    updated_at=NOW()
+                WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+                  AND watched_date=:watched_date
+            """), {
+                "auth_user_id": ident.auth_user_id,
+                "watched_date": target,
+            })
+            updated += int(result.rowcount or 0)
+    return {"ok": True, "acknowledged": updated}
 
 
 @app.get("/v2/leave/records")
@@ -1232,7 +1403,7 @@ def create_leave(body: LeaveCreate, ident: Identity = Depends(current_identity))
         return {
             "ok": True, "record_uid": record["record_uid"], "record": record,
             "warnings": warnings,
-            "message": "Đã ghi lịch nghỉ qua Python API, PostgreSQL và MainData mirror.",
+            "message": "Đã ghi lịch nghỉ THÀNH CÔNG",
         }
     except HTTPException:
         if tx.is_active:
