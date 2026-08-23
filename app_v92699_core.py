@@ -11995,18 +11995,41 @@ def _find_schedule_row_index(sheet, original_row):
     return None
 
 def _parse_leave_number(value, default=0.0, money=False):
-    """Chuẩn hóa số lấy từ sheet LoaiNghi, hỗ trợ dấu chấm/phẩy và ký hiệu tiền."""
+    """Chuẩn hóa số mà không nhân sai giá trị PostgreSQL lên 10 lần."""
     try:
         if value is None or pd.isna(value):
             return float(default)
-        s = str(value).strip()
+
+        # PostgreSQL trả NUMERIC dưới dạng Decimal/float.
+        # Phải trả trực tiếp, không chuyển 500000.0 thành chuỗi rồi xóa dấu chấm.
+        if not isinstance(value, str):
+            return float(value)
+
+        s = value.strip()
         if s.lower() in ["", "-", "nan", "none", "nat"]:
             return float(default)
+
         if money:
-            s = (s.replace('.', '').replace(',', '').replace(' ', '')
-                   .replace('đ', '').replace('Đ', '').replace('VNĐ', '').replace('VND', ''))
+            s = (
+                s.replace("VNĐ", "")
+                .replace("VND", "")
+                .replace("vnđ", "")
+                .replace("vnd", "")
+                .replace("đ", "")
+                .replace("Đ", "")
+                .replace("\u00a0", "")
+                .replace(" ", "")
+            )
+
+            # Chuỗi 500000.0 phải giữ là 500000.
+            # Chuỗi 500.000 vẫn được hiểu là 500 nghìn.
+            if re.fullmatch(r"[-+]?\d+[.,]\d{1,2}", s):
+                return float(s.replace(",", "."))
+
+            s = s.replace(".", "").replace(",", "")
         else:
-            s = s.replace(',', '.')
+            s = s.replace(",", ".")
+
         return float(s)
     except Exception:
         return float(default)
