@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Python + Phase 17 canonical checks
+    name: Python + canonical business checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -75,6 +75,7 @@ jobs:
               'vera_postgres_phase16_patch',
               'vera_postgres_phase17_patch_fix',
               'vera_official_rules_patch',
+              'vera_leave_registration_live_patch',
           ]
 
           all_warnings = []
@@ -90,7 +91,56 @@ jobs:
               sys.exit(1)
 
           compile(source, 'app_v92699_core.patched.py', 'exec')
+          if 'vera_leave_registration_live_shared' not in source:
+              raise SystemExit('Shared live validator was not installed into patched core.')
           print('Runtime patch chain applied with zero warnings and compiled successfully.')
+          PY
+
+      - name: Verify shared leave validation convergence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          shared = Path('vera_leave_registration_live_shared.py').read_text(encoding='utf-8')
+          patch = Path('vera_leave_registration_live_patch.py').read_text(encoding='utf-8')
+          api = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
+          app = Path('app.py').read_text(encoding='utf-8')
+          build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
+
+          for name, source in {
+              'shared live validator': shared,
+              'Streamlit shared patch': patch,
+              'Web V2 shared API wrapper': api,
+          }.items():
+              ast.parse(source)
+              print(f'PASS: {name} parses')
+
+          checks = {
+              'canonical validator function exists': 'def validate_leave_registration_request_live' in shared,
+              'canonical contract includes accumulated month': '"accumulated_month"' in shared,
+              'annual leave 7-day rule centralized': 'Phép năm chỉ được đăng ký tối đa 7 ngày liên tiếp' in shared,
+              'past/next-month window centralized': 'employee_registration_window' in shared,
+              'weekend monthly limit centralized': 'validate_monthly_weekend_registration_limit' in shared,
+              'employee daily 0/0.5/1 rule centralized': 'validate_daily_employee_registration_rule' in shared,
+              'daily group quota centralized': 'validate_daily_group_quota' in shared,
+              'progressive warning centralized': 'Người Thứ' in shared and 'progressive_ordinal_and_bonus' in shared,
+              'Streamlit delegates to canonical validator': 'validate_leave_registration_request_live as _vera_shared_validate_leave_live' in patch,
+              'Streamlit keeps legacy helper callbacks': '_validate_daily_employee_registration_rule' in patch and '_validate_daily_group_quota' in patch,
+              'app installs shared patch': 'vera_leave_registration_live_patch' in app,
+              'wrapper build is V92.23.2': 'v92.23.2-shared-leave-validation-1' in app,
+              'Web V2 delegates to canonical validator': 'validate_leave_registration_request_live(payload, live_df, credentials_df, runtime)' in api,
+              'Web V2 no browser-supplied calculated days': '"days": float(item["days"] or 0)' in api,
+              'Web V2 derives policy group from LoaiNghi type': 'def _policy_group' in api and 'leave_type' in api,
+              'Web V2 reads current Config quota with safe defaults': 'weekday_limit' in api and 'weekend_limit' in api and 'phat_sinh_limit' in api,
+              'Cloud Run API uses shared wrapper': 'vera_web_v2_api_shared:app' in build,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed shared-validation invariants: ' + ', '.join(failed))
           PY
 
       - name: Verify Phase 17 record_uid and penalty invariants
@@ -124,7 +174,7 @@ jobs:
               'penalty repair updates strictly by record_uid': 'WHERE record_uid=:record_uid' in repair,
               'penalty repair rechecks before leave reads': 'phase17_leave_dataframe' in repair and 'guarded_leave_dataframe' in repair,
               'penalty repair has last-mile UI guard': '_correct_frame' in repair,
-              'current wrapper build is V92.23.1': 'v92.23.1-penalty-landing-safe-deploy-1' in app,
+              'current wrapper build is V92.23.2': 'v92.23.2-shared-leave-validation-1' in app,
               'official rules patch is installed': 'vera_official_rules_patch' in app,
               'menu display is renamed to Nội quy': '"🧾 Quản lý lý do nghỉ": "📜 Nội quy"' in app,
           }
@@ -170,31 +220,20 @@ jobs:
               def isna(value):
                   return False
 
-          ns = {
-              'Decimal': Decimal,
-              'InvalidOperation': InvalidOperation,
-              'Any': Any,
-              're': re,
-              'pd': _PDStub(),
-          }
+          ns = {'Decimal': Decimal, 'InvalidOperation': InvalidOperation, 'Any': Any, 're': re, 'pd': _PDStub()}
           module = ast.Module(body=nodes, type_ignores=[])
           exec(compile(module, 'vera_postgres_phase3.py', 'exec'), ns, ns)
           parse = ns['_safe_decimal']
 
           cases = {
-              1000000: Decimal('1000000'),
-              '1000000': Decimal('1000000'),
-              '1,000,000.00': Decimal('1000000.00'),
-              '500,000': Decimal('500000'),
-              '500000': Decimal('500000'),
-              '300,000.00': Decimal('300000.00'),
-              '500.000 mỗi ngày': Decimal('500000'),
-              '1.000.000 mỗi ngày': Decimal('1000000'),
+              1000000: Decimal('1000000'), '1000000': Decimal('1000000'),
+              '1,000,000.00': Decimal('1000000.00'), '500,000': Decimal('500000'),
+              '500000': Decimal('500000'), '300,000.00': Decimal('300000.00'),
+              '500.000 mỗi ngày': Decimal('500000'), '1.000.000 mỗi ngày': Decimal('1000000'),
               '100.000 mỗi ngày': Decimal('100000'),
           }
           for raw, expected in cases.items():
               actual = parse(raw)
-              print(f'{raw!r} -> {actual}')
               if actual != expected:
                   raise SystemExit(f'Penalty parse mismatch: {raw!r}: {actual} != {expected}')
           print('All leave penalty parser cases preserved exactly.')
@@ -228,11 +267,8 @@ jobs:
               'reason page route replacement': '_patch_reason_branch' in patch and '_vera_rules_page.render(globals())' in patch,
           }
           failed = [k for k,v in checks.items() if not v]
-          for name, ok in checks.items():
-              print(('PASS' if ok else 'FAIL') + ': ' + name)
-          if failed:
-              raise SystemExit('Failed Nội quy invariants: ' + ', '.join(failed))
-          print('All official Nội quy invariants passed.')
+          for name, ok in checks.items(): print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed: raise SystemExit('Failed Nội quy invariants: ' + ', '.join(failed))
           PY
 
       - name: Verify post-login landing and safe Cloud Run rollout
@@ -244,7 +280,6 @@ jobs:
           landing = Path('vera_postlogin_default_page.py').read_text(encoding='utf-8')
           app = Path('app.py').read_text(encoding='utf-8')
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
-
           checks = {
               'leave page is landing target': '📅 Đăng ký nghỉ' in landing,
               'landing applies once per session': '_vera_postlogin_leave_landing_applied' in landing,
@@ -262,9 +297,6 @@ jobs:
               'production promotion happens after health check': build.index('id: "promote-web-candidate"') > build.index('id: "health-check-web-candidate"'),
           }
           failed = [k for k,v in checks.items() if not v]
-          for name, ok in checks.items():
-              print(('PASS' if ok else 'FAIL') + ': ' + name)
-          if failed:
-              raise SystemExit('Failed operational invariants: ' + ', '.join(failed))
-          print('Post-login landing and safe rollout invariants passed.')
+          for name, ok in checks.items(): print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed: raise SystemExit('Failed operational invariants: ' + ', '.join(failed))
           PY
