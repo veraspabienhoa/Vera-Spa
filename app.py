@@ -1,11 +1,18 @@
-# V92.22.4 - Phase 17 strict record_uid canonical leave CRUD (2026-08-23)
-"""VERA SPA V92.22.4.
+# V92.22.5 - Phase 17 penalty migration repair (2026-08-23)
+"""VERA SPA V92.22.5.
 
 PostgreSQL migration Phase 4-17 remains enabled while preserving the V92.6.99 core,
 MENU routes, authorization, UI, and business rules.
 
-V92.22.4 strict leave CRUD hardening:
-- keeps the V92.22.3 record_uid canonical CRUD layer;
+V92.22.5 leave penalty migration repair:
+- keeps the V92.22.4 strict record_uid canonical CRUD layer;
+- detects historical normalized leave penalties that became exactly 10x the original
+  source value preserved in the PostgreSQL JSONB payload;
+- repairs only those exact 10x mismatches and updates PostgreSQL strictly by record_uid;
+- does not read/write Google Sheets during the repair and does not hard-code penalty rules;
+- leaves all other penalties untouched.
+
+V92.22.4 strict leave CRUD hardening remains active:
 - UPDATE/DELETE are executed strictly by stable record_uid;
 - legacy source_sheet_id/source_row may only resolve an ingress record to record_uid;
 - existing canonical source_row cannot be overwritten by stale UI input;
@@ -87,6 +94,13 @@ try:
             _uid_install_v92224(_vpg_runtime)
     except Exception as _uid_install_error_v92224:
         _phase_install_warnings_v92224.append(f"phase17_uid:{type(_uid_install_error_v92224).__name__}")
+    try:
+        _penalty_mod_v92225 = _importlib.import_module("vera_postgres_phase17_penalty_repair")
+        _penalty_install_v92225 = getattr(_penalty_mod_v92225, "install", None)
+        if callable(_penalty_install_v92225):
+            _penalty_install_v92225(_vpg_runtime)
+    except Exception as _penalty_install_error_v92225:
+        _phase_install_warnings_v92224.append(f"phase17_penalty:{type(_penalty_install_error_v92225).__name__}")
 except Exception:
     _vpg_runtime = None
 
@@ -118,7 +132,7 @@ def _vera_phase4_leave_delete(records, mirror_fn, operation="delete"):
 
 
 _core_path_v92224 = _Path(__file__).with_name("app_v92699_core.py")
-_core_build_id_v92224 = "v92.22.4-phase17-strict-record-uid-crud-1"
+_core_build_id_v92224 = "v92.22.5-phase17-penalty-repair-1"
 
 
 @_st.cache_resource(show_spinner=False)
@@ -160,7 +174,7 @@ def _build_core_v92224(build_id):
         _patch_warnings_v92224.setdefault(4, []).append("menu_display_labels:0")
     _source_v92224 = _source_v92224.replace("MENU CHỨC NĂNG", "MENU")
     _first_line_v92224, _sep_v92224, _rest_v92224 = _source_v92224.partition("\n")
-    _source_v92224 = "# V92.22.4 - Phase 17 strict record_uid canonical leave CRUD (2026-08-23)\n" + _rest_v92224
+    _source_v92224 = "# V92.22.5 - Phase 17 penalty migration repair (2026-08-23)\n" + _rest_v92224
     _compiled_v92224 = compile(_source_v92224, str(_core_path_v92224), "exec")
     return _compiled_v92224, _patch_warnings_v92224
 
