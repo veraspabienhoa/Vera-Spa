@@ -78,13 +78,14 @@ def _policy_group(conn, reason: str) -> str:
     return group(reason)
 
 
-def _live_leave_df(conn) -> pd.DataFrame:
+def _live_leave_df(conn, exclude_record_uid: str = "") -> pd.DataFrame:
     rows = conn.execute(text("""
         SELECT leave_date, employee_name, leave_reason, calculated_days,
                accumulated_leave, penalty, detail, leave_type
         FROM leave_records
+        WHERE (:uid = '' OR record_uid <> :uid)
         ORDER BY leave_date, id
-    """)).mappings().all()
+    """), {"uid": str(exclude_record_uid or "")}).mappings().all()
     if not rows:
         return pd.DataFrame(columns=["Ngày", "Tên nhân viên", "Lý do nghỉ", "Số ngày tính"])
     return pd.DataFrame([
@@ -224,7 +225,16 @@ def _special_exempt(role, reason):
     return is_special_day_rule_exempt(role, reason)
 
 
-def _validate_and_prepare(conn, body, ident):
+def _validate_and_prepare(
+    conn,
+    body,
+    ident,
+    *,
+    exclude_record_uid="",
+    skip_registration_timing=False,
+    record_uid="",
+    existing_ordinal=None,
+):
     employee = body.employee_name.strip()
     role = str(ident.role or "").strip().lower()
     employee_like = {"nhanvien", "leader", "locker", "tapvu"}
@@ -244,7 +254,7 @@ def _validate_and_prepare(conn, body, ident):
 
     item = _reason_item(conn, body.leave_reason)
     base_penalty = float(body.manual_penalty) if item["requires_manual_penalty"] and body.manual_penalty is not None else float(item["penalty"])
-    live_df = _live_leave_df(conn)
+    live_df = _live_leave_df(conn, exclude_record_uid=exclude_record_uid)
     credentials_df = pd.DataFrame([{
         "Tên nhân viên": employee,
         "Phát sinh tháng": float(emp["monthly_generated"] or 0),
@@ -253,6 +263,8 @@ def _validate_and_prepare(conn, body, ident):
     }])
 
     def validate_notice(reason, target_date, role=None, now_vn=None):
+        if skip_registration_timing:
+            return True, ""
         try:
             validate_registration_rule(_reason_item(conn, reason), str(role or ""), target_date, now=now_vn)
             return True, ""
@@ -309,7 +321,11 @@ def _validate_and_prepare(conn, body, ident):
     extra = 0.0
     progressive_reason = progressive_penalty_reason(item["name"])
     if progressive_reason:
-        ordinal, extra = progressive_ordinal_and_bonus(live_df, body.leave_date, item["name"])
+        if existing_ordinal is not None:
+            ordinal = int(existing_ordinal)
+            extra = max(0, ordinal - 2) * 100000.0
+        else:
+            ordinal, extra = progressive_ordinal_and_bonus(live_df, body.leave_date, item["name"])
 
     accumulated = float(validation.get("accumulated_month", 0) or 0)
     if not (is_video_reason(item["name"]) or is_long_sick_reason(item["name"])):
@@ -322,7 +338,7 @@ def _validate_and_prepare(conn, body, ident):
 
     now = datetime.now(_api.VN_TZ)
     record = {
-        "record_uid": str(uuid.uuid4()),
+        "record_uid": str(record_uid or uuid.uuid4()),
         "leave_date": body.leave_date,
         "employee_name": employee,
         "leave_reason": item["name"],

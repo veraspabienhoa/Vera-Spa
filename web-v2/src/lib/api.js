@@ -53,8 +53,8 @@ export const veraApi = {
     const rows = await rpc('vera_v2_leave_records', { p_date: date })
     return { records: Array.isArray(rows) ? rows : [] }
   },
-  leaveReasons: async () => {
-    if (isApiConfigured) return request('/v2/leave/reasons')
+  leaveReasons: async (date) => {
+    if (isApiConfigured) return request(`/v2/leave/reasons?date=${encodeURIComponent(date)}`)
     const rows = await rpc('vera_v2_leave_reasons')
     return {
       reasons: (rows || []).map((row) => ({
@@ -71,4 +71,6 @@ export const veraApi = {
     return { employees: Array.isArray(rows) ? rows : [] }
   },
   createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }),
+  updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }),
 }

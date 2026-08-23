@@ -60,7 +60,10 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
           </div>
         </div>
         <div className="login-pitch">
-          <h1>Suối nguồn thư giãn, trọn vẹn an yên</h1>
+          <h1>
+            <span>Suối nguồn thư giãn</span>
+            <span>Trọn vẹn an yên</span>
+          </h1>
           <div className="login-contact">
             <p><span aria-hidden="true">🏠</span> 193 Trương Định, Tam Hiệp, Đồng Nai</p>
             <p><span aria-hidden="true">☎️</span> Hotline: 0833.22.99.39</p>

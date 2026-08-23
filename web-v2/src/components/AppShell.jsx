@@ -1,9 +1,8 @@
-import { CalendarDays, ClipboardList, FileText, LogOut, Menu, ShieldCheck, Users, X } from 'lucide-react'
+import { CalendarDays, FileText, LogOut, Menu, ShieldCheck, Users, X } from 'lucide-react'
 import { useState } from 'react'
 
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
-  { id: 'leave-manage', label: 'Quản lý lịch nghỉ', icon: ClipboardList },
   { id: 'employees', label: 'Nhân viên', icon: Users },
   { id: 'rules', label: 'Nội quy', icon: FileText },
   { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck },
@@ -24,7 +23,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
         <div className="brand-block">
           <div className="brand-mark">V</div>
           <div>
-            <div className="brand-name">VERA SPA</div>
+            <div className="brand-name">VERA SPA ĐỒNG NAI</div>
           </div>
           <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Đóng menu">
             <X size={20} />
@@ -67,9 +66,10 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
             <Menu size={22} />
           </button>
           <div>
-            <div className="topbar-kicker">VERA SPA</div>
+            <div className="topbar-kicker">VERA SPA ĐỒNG NAI</div>
             <div className="topbar-title">Suối nguồn thư giãn, trọn vẹn an yên.</div>
           </div>
+          <div className="environment-badge">Thanks</div>
         </header>
         <div className="page-wrap">{children}</div>
       </main>

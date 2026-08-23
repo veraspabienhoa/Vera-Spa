@@ -23,7 +23,7 @@ export async function loadLeaveRecords(date) {
   return Array.isArray(rows) ? rows : []
 }
 
-export async function loadLeaveReasons() {
+export async function loadLeaveReasons(_date) {
   const rows = await rpc('vera_v2_leave_reasons')
   return (rows || []).map((row) => row.reason).filter(Boolean)
 }

@@ -74,6 +74,9 @@ def reason_item(rows: list[dict], reason: str) -> dict:
             "register_type": str(field(row, "Kiểu đăng ký", "Kiều đăng ký", default="") or "").strip(),
             "register_value": str(field(row, "Giá trị", "Giá trị đăng ký", default="") or "").strip(),
             "register_exceptions": str(field(row, "Ngoại trừ đăng ký", default="") or "").strip(),
+            "cancel_type": str(field(row, "Kiểu hủy", default="") or "").strip(),
+            "cancel_value": str(field(row, "Số ngày hủy trước", "Giá trị hủy", default="") or "").strip(),
+            "cancel_exceptions": str(field(row, "Ngoại trừ hủy", default="") or "").strip(),
             "requires_manual_penalty": "can nhap so tien" in norm(detail),
         }
     raise LeaveRuleError(400, f"Không tìm thấy Lý do nghỉ '{reason}' trong Nội quy/LoaiNghi.")

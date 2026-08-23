@@ -46,12 +46,12 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA Web V2 API", version="2.5")
+app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.6")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -183,6 +183,9 @@ def _reason_item(conn, reason: str) -> dict:
                 "register_type": str(_field(row, "Kiểu đăng ký", "Kiều đăng ký", default="") or "").strip(),
                 "register_value": str(_field(row, "Giá trị", "Giá trị đăng ký", default="") or "").strip(),
                 "register_exceptions": str(_field(row, "Ngoại trừ đăng ký", default="") or "").strip(),
+                "cancel_type": str(_field(row, "Kiểu hủy", default="") or "").strip(),
+                "cancel_value": str(_field(row, "Số ngày hủy trước", "Giá trị hủy", default="") or "").strip(),
+                "cancel_exceptions": str(_field(row, "Ngoại trừ hủy", default="") or "").strip(),
                 "requires_manual_penalty": "can nhap so tien" in _norm(detail),
             }
     raise HTTPException(400, f"Không tìm thấy Lý do nghỉ '{reason}' trong Nội quy/LoaiNghi.")
@@ -347,11 +350,11 @@ class Identity(BaseModel):
 
 
 WEB_V2_DEFAULT_FEATURES = {
-    "admin": {"leave", "leave_create", "employee_penalty_view"},
-    "quanly": {"leave", "leave_create"},
-    "letan": {"leave", "leave_create"},
-    "leader": {"leave", "leave_create"},
-    "nhanvien": {"leave", "leave_create"},
+    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete"},
+    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete"},
+    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete"},
+    "leader": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete"},
+    "nhanvien": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete"},
     "locker": set(),
     "tapvu": set(),
 }
@@ -458,6 +461,165 @@ class LeaveCreate(BaseModel):
     leave_reason: str = Field(min_length=1, max_length=300)
     detail: str = Field(default="", max_length=3000)
     manual_penalty: float | None = Field(default=None, ge=0)
+
+
+class LeaveUpdate(BaseModel):
+    leave_reason: str = Field(min_length=1, max_length=300)
+    manual_penalty: float | None = Field(default=None, ge=0)
+
+
+class LeaveDelete(BaseModel):
+    record_uids: list[str] = Field(min_length=1, max_length=100)
+
+
+_LEAVE_EDIT_FEATURES = ("leave_manage_edit", "leave_detail_edit")
+_LEAVE_DELETE_FEATURES = ("leave_manage_delete", "leave_detail_delete")
+_EMPLOYEE_LIKE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
+
+
+def _has_any_feature(conn, ident: Identity, features: tuple[str, ...]) -> bool:
+    return any(_feature_allowed(conn, ident, feature) for feature in features)
+
+
+def _is_employee_co_phep(reason: str) -> bool:
+    key = _norm(reason)
+    if not key or "khong phep" in key or "nghi phat sinh" in key:
+        return False
+    excluded = (
+        "di tre", "khong don ve sinh", "loi vi pham", "qua tour", "xuong phong",
+        "ra som", "vao muon", "di tua", "ngung nhan", "ho tro ca",
+    )
+    return not any(token in key for token in excluded)
+
+
+def _cancel_notice(conn, reason: str, target: date, role: str) -> None:
+    if role == "admin":
+        return
+    today = datetime.now(VN_TZ).date()
+    if target < today:
+        raise HTTPException(403, "Không được hủy/thay đổi lịch trong quá khứ.")
+    item = _reason_item(conn, reason)
+    if role in _role_tokens(item.get("cancel_exceptions", "")):
+        return
+    typ = _norm(item.get("cancel_type", ""))
+    value = item.get("cancel_value", "")
+    if not typ:
+        if role in {"letan", "quanly"}:
+            return
+        raise HTTPException(403, f"'{item['name']}' chưa cấu hình Kiểu hủy; tài khoản hiện tại không được tự hủy/thay đổi.")
+    if "khong gioi han" in typ:
+        return
+    if "truoc n ngay" in typ or typ in {"truoc ngay", "before days"}:
+        days = _parse_first_number(value)
+        if days is None:
+            raise HTTPException(400, f"Giá trị hủy của '{item['name']}' không hợp lệ.")
+        earliest = today + timedelta(days=max(0, int(days)))
+        if target < earliest:
+            raise HTTPException(403, f"'{item['name']}' phải hủy/thay đổi trước ít nhất {int(days)} ngày; chỉ xử lý từ {earliest.strftime('%d/%m/%Y')}.")
+        return
+    if "khong duoc huy ngay hien tai" in typ:
+        if target == today:
+            raise HTTPException(403, f"'{item['name']}' không được hủy/thay đổi trong ngày hiện tại.")
+        return
+    if "khong cho phep" in typ or "khong duoc huy" in typ:
+        raise HTTPException(403, f"'{item['name']}' đang được cấu hình không cho phép hủy.")
+    raise HTTPException(400, f"Không nhận diện được Kiểu hủy '{item.get('cancel_type', '')}' của '{item['name']}'.")
+
+
+def _catalog_rule_for_edit(conn, reason: str, target: date, role: str) -> dict:
+    item = _reason_item(conn, reason)
+    allowed = _role_tokens(item.get("allowed_roles", ""))
+    if allowed and role not in allowed:
+        raise HTTPException(403, f"Tài khoản {role} không được dùng lý do '{item['name']}' theo cột H của LoaiNghi.")
+    if not _day_allowed(item.get("allowed_days", ""), target):
+        raise HTTPException(400, f"'{item['name']}' không được áp dụng cho {_weekday_label(target)} {target.strftime('%d/%m/%Y')} theo cột G của LoaiNghi.")
+    return item
+
+
+def _validate_delete_permission(conn, row: dict, ident: Identity) -> None:
+    role = ident.role
+    if role == "admin":
+        return
+    target = row["leave_date"]
+    reason = row["leave_reason"]
+    today = datetime.now(VN_TZ).date()
+    if target < today:
+        raise HTTPException(403, "Không được xóa lịch nghỉ của ngày trong quá khứ.")
+    if role in _EMPLOYEE_LIKE_ROLES:
+        if not _has_any_feature(conn, ident, _LEAVE_DELETE_FEATURES):
+            raise HTTPException(403, "Tài khoản chưa được cấp quyền xóa lịch nghỉ.")
+        if _norm(row["employee_name"]) != _norm(ident.employee_username):
+            raise HTTPException(403, "Nhân viên chỉ được xóa lịch nghỉ của chính mình.")
+        if not (_is_video(reason) or "khong phep" in _norm(reason) or _is_employee_co_phep(reason) or (role == "leader" and "leader" in _norm(reason))):
+            raise HTTPException(403, "Lý do hiện tại không thuộc nhóm Nhân viên/Leader được phép hủy.")
+        _cancel_notice(conn, reason, target, role)
+        return
+    if role in {"letan", "quanly"}:
+        special = (
+            _feature_allowed(conn, ident, "leave_today_khong_phep_edit_delete")
+            and target == today and _group(reason) == "khong_phep"
+        )
+        if not special and not _has_any_feature(conn, ident, _LEAVE_DELETE_FEATURES):
+            raise HTTPException(403, "Tài khoản chưa được cấp quyền xóa lịch nghỉ.")
+        _cancel_notice(conn, reason, target, role)
+        return
+    raise HTTPException(403, "Vai trò hiện tại không được phép xóa lịch nghỉ.")
+
+
+def _validate_edit_permission(conn, row: dict, new_reason: str, ident: Identity) -> tuple[dict, bool]:
+    role = ident.role
+    target = row["leave_date"]
+    old_reason = row["leave_reason"]
+    item = _catalog_rule_for_edit(conn, new_reason, target, role)
+    if role == "admin":
+        return item, False
+
+    today = datetime.now(VN_TZ).date()
+    next_month_end = (date(today.year + (1 if today.month == 12 else 0), 1 if today.month == 12 else today.month + 1, 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    if target < today:
+        raise HTTPException(403, "Không được sửa lịch nghỉ của ngày trong quá khứ.")
+    if target > next_month_end:
+        raise HTTPException(403, f"Chỉ được sửa lịch nghỉ đến hết {next_month_end.strftime('%d/%m/%Y')}.")
+
+    future_conversion = bool(
+        target >= today + timedelta(days=1)
+        and _is_employee_co_phep(old_reason)
+        and abs(float(row.get("calculated_days") or 0) - 1.0) < 1e-9
+        and ("khong phep" in _norm(new_reason) or (_is_employee_co_phep(new_reason) and abs(float(item.get("days") or 0) - 0.5) < 1e-9))
+    )
+    if role in _EMPLOYEE_LIKE_ROLES:
+        if not _has_any_feature(conn, ident, _LEAVE_EDIT_FEATURES):
+            raise HTTPException(403, "Tài khoản chưa được cấp quyền sửa lịch nghỉ.")
+        if _norm(row["employee_name"]) != _norm(ident.employee_username):
+            raise HTTPException(403, "Nhân viên chỉ được sửa lịch nghỉ của chính mình.")
+        if not future_conversion:
+            _cancel_notice(conn, old_reason, target, role)
+        old_video, new_video = _is_video(old_reason), _is_video(new_reason)
+        old_unpaid, new_unpaid = "khong phep" in _norm(old_reason), "khong phep" in _norm(new_reason)
+        old_paid, new_paid = _is_employee_co_phep(old_reason), _is_employee_co_phep(new_reason)
+        leader_policy = role == "leader" and "leader" in _norm(old_reason)
+        valid = (
+            (leader_policy and ("leader" in _norm(new_reason) or new_video))
+            or (old_unpaid and (new_unpaid or new_video or new_paid))
+            or (old_paid and (new_paid or new_video or new_unpaid))
+            or old_video
+        )
+        if not valid:
+            raise HTTPException(403, "Lý do hiện tại không thuộc nhóm Nhân viên/Leader được phép sửa sang lý do đã chọn.")
+        if not future_conversion:
+            _registration_rule(item, role, target)
+        return item, future_conversion
+    if role in {"letan", "quanly"}:
+        special = (
+            _feature_allowed(conn, ident, "leave_today_khong_phep_edit_delete")
+            and target == today and _group(old_reason) == "khong_phep" and _group(new_reason) == "khong_phep"
+        )
+        if not special and not _has_any_feature(conn, ident, _LEAVE_EDIT_FEATURES):
+            raise HTTPException(403, "Tài khoản chưa được cấp quyền sửa lịch nghỉ.")
+        _cancel_notice(conn, old_reason, target, role)
+        _registration_rule(item, role, target)
+        return item, False
+    raise HTTPException(403, "Vai trò hiện tại không được phép sửa lịch nghỉ.")
 
 
 def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dict, list[str]]:
@@ -675,11 +837,166 @@ def _insert_record(conn, record: dict, source_row: int):
         pass
 
 
+def _record_payload(record: dict, source_row: int) -> dict:
+    return {
+        "Ngày": record["leave_date"].strftime("%d/%m/%Y"),
+        "Thứ ngày": record["weekday_label"],
+        "Tên nhân viên": record["employee_name"],
+        "Lý do nghỉ": record["leave_reason"],
+        "Loại nghỉ": record["leave_type"],
+        "Chi tiết": record["detail"],
+        "Số ngày tính": record["calculated_days"],
+        "Số ngày phép cộng dồn": record["accumulated_leave"],
+        "Phạt vi phạm": record["penalty"],
+        "Ngày cập nhật": record["update_date"],
+        "Giờ cập nhật": record["update_time"],
+        "Người cập nhật": record["updated_by"],
+        "record_uid": record["record_uid"],
+        "__record_uid": record["record_uid"],
+        "__source_sheet_id": LEAVE_SHEET_ID,
+        "__source_row": int(source_row),
+    }
+
+
+def _sheet_values_for_record(headers: list[str], record: dict, source_row: int) -> list[Any]:
+    mapping = {
+        "stt": int(source_row) - 1,
+        "ngay": record["leave_date"].strftime("%d/%m/%Y"),
+        "thu ngay": record["weekday_label"],
+        "ten nhan vien": record["employee_name"],
+        "ly do nghi": record["leave_reason"],
+        "loai nghi": record["leave_type"],
+        "chi tiet": record["detail"],
+        "so ngay tinh": record["calculated_days"],
+        "so ngay tinh phep": record["calculated_days"],
+        "so ngay phep cong don": record["accumulated_leave"],
+        "phat vi pham": record["penalty"],
+        "ngay cap nhat": record["update_date"],
+        "gio cap nhat": record["update_time"],
+        "nguoi cap nhat": record["updated_by"],
+    }
+    return [mapping.get(_norm(header), "") for header in headers[:13]]
+
+
+def _update_record(conn, record: dict, source_row: int) -> None:
+    payload = _record_payload(record, source_row)
+    result = conn.execute(text("""
+        UPDATE leave_records SET
+            leave_date=:leave_date, employee_name=:employee_name, leave_reason=:leave_reason,
+            leave_type=:leave_type, detail=:detail, calculated_days=:calculated_days,
+            accumulated_leave=:accumulated_leave, penalty=:penalty,
+            update_date=:update_date, update_time=:update_time, updated_by=:updated_by,
+            weekday_label=:weekday_label, payload=CAST(:payload AS jsonb), updated_at=NOW()
+        WHERE record_uid=:record_uid
+    """), {**record, "payload": json.dumps(payload, ensure_ascii=False)})
+    if int(result.rowcount or 0) != 1:
+        raise RuntimeError(f"record_uid update affected {result.rowcount} rows")
+
+
+def _strip_progressive_prefix(detail: str) -> str:
+    value = str(detail or "").strip()
+    if not _norm(value).startswith("nguoi thu"):
+        return value
+    return value.split("|", 1)[1].strip() if "|" in value else ""
+
+
+def _existing_progressive_ordinal(detail: str) -> int | None:
+    match = re.match(r"^\s*Người\s+Thứ\s+(\d+)", str(detail or ""), flags=re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def _row_record(row: dict) -> dict:
+    return {
+        key: row.get(key)
+        for key in (
+            "record_uid", "leave_date", "employee_name", "leave_reason", "leave_type",
+            "detail", "calculated_days", "accumulated_leave", "penalty", "update_date",
+            "update_time", "updated_by", "weekday_label",
+        )
+    }
+
+
+def _rebalance_progressive_rows(conn, target: date, keys: set[str]) -> list[tuple[int, dict]]:
+    keys = {key for key in keys if key}
+    if not keys:
+        return []
+    rows = conn.execute(text("""
+        SELECT record_uid, source_row, leave_date, employee_name, leave_reason, leave_type,
+               detail, calculated_days, accumulated_leave, penalty, update_date,
+               update_time, updated_by, weekday_label
+        FROM leave_records
+        WHERE leave_date=:d AND source_sheet_id=:sid
+        ORDER BY source_row, id
+        FOR UPDATE
+    """), {"d": target, "sid": LEAVE_SHEET_ID}).mappings().all()
+    changed = []
+    counters: dict[str, int] = {key: 0 for key in keys}
+    for raw in rows:
+        key = _progressive_key(raw["leave_reason"])
+        if key not in keys:
+            continue
+        counters[key] += 1
+        ordinal = counters[key]
+        item = _reason_item(conn, raw["leave_reason"])
+        base = float(item.get("penalty") or 0)
+        detail = _strip_progressive_prefix(raw.get("detail", ""))
+        prefix = f"Người Thứ {ordinal} {item['name'].lower()}"
+        new_detail = f"{prefix} | {detail}" if detail else prefix
+        new_penalty = base + max(0, ordinal - 2) * 100000.0
+        if new_detail == str(raw.get("detail") or "") and abs(new_penalty - float(raw.get("penalty") or 0)) < 1e-9:
+            continue
+        record = _row_record(dict(raw))
+        record["detail"] = new_detail
+        record["penalty"] = new_penalty
+        _update_record(conn, record, int(raw["source_row"]))
+        changed.append((int(raw["source_row"]), record))
+    return changed
+
+
+def _reindex_after_delete(conn, deleted_rows: list[int]) -> None:
+    deleted = sorted({int(value) for value in deleted_rows})
+    if not deleted:
+        return
+    rows = conn.execute(text("""
+        SELECT record_uid, source_row
+        FROM leave_records
+        WHERE source_sheet_id=:sid AND source_row>:minimum
+        ORDER BY source_row, id
+        FOR UPDATE
+    """), {"sid": LEAVE_SHEET_ID, "minimum": min(deleted)}).mappings().all()
+    moves = []
+    for row in rows:
+        old = int(row["source_row"])
+        shift = sum(1 for removed in deleted if removed < old)
+        if shift:
+            moves.append((str(row["record_uid"]), old - shift))
+    for index, (uid, _final) in enumerate(moves, start=1):
+        conn.execute(text("UPDATE leave_records SET source_row=:row WHERE record_uid=:uid"), {"row": -(1_000_000_000 + index), "uid": uid})
+    for uid, final in moves:
+        conn.execute(text("""
+            UPDATE leave_records
+            SET source_row=:row,
+                payload=jsonb_set(
+                    jsonb_set(COALESCE(payload,'{}'::jsonb), '{__source_row}', to_jsonb(CAST(:row AS INTEGER)), true),
+                    '{__record_uid}', to_jsonb(CAST(:uid AS TEXT)), true
+                ), updated_at=NOW()
+            WHERE record_uid=:uid
+        """), {"row": final, "uid": uid})
+
+
+def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
+    for row_number, values in sorted(backups.items()):
+        try:
+            ws.update(range_name=f"A{row_number}:M{row_number}", values=[values], value_input_option="USER_ENTERED")
+        except Exception:
+            pass
+
+
 @app.get("/v2/health")
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.5"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.6"}
 
 
 @app.get("/v2/me")
@@ -687,7 +1004,12 @@ def me(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         permissions = {
             feature: _feature_allowed(conn, ident, feature)
-            for feature in ("leave", "leave_create", "employee_penalty_view")
+            for feature in (
+                "leave", "leave_create", "employee_penalty_view",
+                "leave_detail_edit", "leave_detail_delete",
+                "leave_manage_edit", "leave_manage_delete",
+                "leave_today_khong_phep_edit_delete",
+            )
         }
         registration_locked = _registration_role_locked(conn, ident.role)
     return {
@@ -722,7 +1044,7 @@ def employees(ident: Identity = Depends(current_identity)):
 
 
 @app.get("/v2/leave/reasons")
-def reasons(ident: Identity = Depends(current_identity)):
+def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         _require_feature(conn, ident, "leave")
         can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
@@ -733,7 +1055,9 @@ def reasons(ident: Identity = Depends(current_identity)):
                 continue
             item = _reason_item(conn, name)
             allowed = _role_tokens(item["allowed_roles"])
-            if ident.role != "admin" and allowed and ident.role not in allowed:
+            if allowed and ident.role not in allowed:
+                continue
+            if not _day_allowed(item["allowed_days"], date_value):
                 continue
             output.append({
                 "name": item["name"], "days": item["days"],
@@ -901,5 +1225,184 @@ def create_leave(body: LeaveCreate, ident: Identity = Depends(current_identity))
         if tx.is_active:
             tx.rollback()
         raise HTTPException(500, f"Không ghi được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
+    finally:
+        conn.close()
+
+
+@app.patch("/v2/leave/records/{record_uid}")
+def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(current_identity)):
+    engine = _engine_instance()
+    conn = engine.connect()
+    tx = conn.begin()
+    ws = None
+    backups: dict[int, list[Any]] = {}
+    wrote_sheet = False
+    try:
+        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+        old = conn.execute(text("""
+            SELECT record_uid, source_sheet_id, source_row, leave_date, employee_name,
+                   leave_reason, leave_type, detail, calculated_days, accumulated_leave,
+                   penalty, update_date, update_time, updated_by, weekday_label
+            FROM leave_records WHERE record_uid=:uid FOR UPDATE
+        """), {"uid": str(record_uid or "").strip()}).mappings().first()
+        if not old:
+            raise HTTPException(404, "Không tìm thấy lịch nghỉ cần sửa.")
+        old = dict(old)
+        if str(old.get("source_sheet_id") or "") != LEAVE_SHEET_ID or int(old.get("source_row") or 0) < 2:
+            raise HTTPException(409, "Bản ghi không có vị trí MainData hợp lệ; từ chối sửa để tránh lệch dữ liệu.")
+
+        item, future_conversion = _validate_edit_permission(conn, old, body.leave_reason, ident)
+        manual_penalty = body.manual_penalty
+        if item.get("requires_manual_penalty") and manual_penalty is None:
+            raise HTTPException(400, "Lý do này bắt buộc nhập Mức phạt vi phạm khi sửa.")
+        old_key = _progressive_key(old["leave_reason"])
+        new_key = _progressive_key(item["name"])
+        existing_ordinal = _existing_progressive_ordinal(old.get("detail", "")) if old_key and old_key == new_key else None
+        request_body = LeaveCreate(
+            leave_date=old["leave_date"],
+            employee_name=old["employee_name"],
+            leave_reason=item["name"],
+            detail=_strip_progressive_prefix(old.get("detail", "")),
+            manual_penalty=manual_penalty,
+        )
+        record, warnings = _validate_and_prepare(
+            conn,
+            request_body,
+            ident,
+            exclude_record_uid=old["record_uid"],
+            skip_registration_timing=future_conversion,
+            record_uid=old["record_uid"],
+            existing_ordinal=existing_ordinal,
+        )
+        source_row = int(old["source_row"])
+        _update_record(conn, record, source_row)
+        rebalanced = _rebalance_progressive_rows(conn, old["leave_date"], {old_key, new_key})
+
+        ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
+        all_values = ws.get_all_values()
+        headers = all_values[0][:13] if all_values else []
+        if not headers:
+            raise RuntimeError("MainData chưa có header A:M")
+        sheet_updates: dict[int, dict] = {source_row: record}
+        sheet_updates.update({row_number: changed for row_number, changed in rebalanced})
+        for row_number in sheet_updates:
+            backups[row_number] = list(all_values[row_number - 1][:13]) if row_number <= len(all_values) else []
+        for row_number, changed in sorted(sheet_updates.items()):
+            values = _sheet_values_for_record(headers, changed, row_number)
+            ws.update(range_name=f"A{row_number}:M{row_number}", values=[values], value_input_option="USER_ENTERED")
+            wrote_sheet = True
+        tx.commit()
+        return {
+            "ok": True,
+            "record_uid": old["record_uid"],
+            "warnings": warnings,
+            "message": "Đã sửa lịch nghỉ và đồng bộ PostgreSQL/MainData.",
+        }
+    except HTTPException:
+        if tx.is_active:
+            tx.rollback()
+        if wrote_sheet and ws is not None:
+            _restore_sheet_updates(ws, backups)
+        raise
+    except Exception as exc:
+        if tx.is_active:
+            tx.rollback()
+        if wrote_sheet and ws is not None:
+            _restore_sheet_updates(ws, backups)
+        raise HTTPException(500, f"Không sửa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
+    finally:
+        conn.close()
+
+
+@app.delete("/v2/leave/records")
+def delete_leave(body: LeaveDelete, ident: Identity = Depends(current_identity)):
+    uids = list(dict.fromkeys(str(uid or "").strip() for uid in body.record_uids if str(uid or "").strip()))
+    if not uids:
+        raise HTTPException(400, "Chưa chọn lịch nghỉ cần xóa.")
+    engine = _engine_instance()
+    conn = engine.connect()
+    tx = conn.begin()
+    ws = None
+    deleted_sheet_rows: list[int] = []
+    deleted_values: dict[int, list[Any]] = {}
+    changed_backups: dict[int, list[Any]] = {}
+    try:
+        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+        rows = []
+        for uid in uids:
+            row = conn.execute(text("""
+                SELECT record_uid, source_sheet_id, source_row, leave_date, employee_name,
+                       leave_reason, leave_type, detail, calculated_days, accumulated_leave,
+                       penalty, update_date, update_time, updated_by, weekday_label
+                FROM leave_records WHERE record_uid=:uid FOR UPDATE
+            """), {"uid": uid}).mappings().first()
+            if not row:
+                raise HTTPException(404, "Một lịch nghỉ đã chọn không còn tồn tại; vui lòng làm mới dữ liệu.")
+            item = dict(row)
+            if str(item.get("source_sheet_id") or "") != LEAVE_SHEET_ID or int(item.get("source_row") or 0) < 2:
+                raise HTTPException(409, "Có bản ghi không có vị trí MainData hợp lệ; từ chối xóa để tránh lệch dữ liệu.")
+            _validate_delete_permission(conn, item, ident)
+            rows.append(item)
+
+        ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
+        all_values = ws.get_all_values()
+        headers = all_values[0][:13] if all_values else []
+        if not headers:
+            raise RuntimeError("MainData chưa có header A:M")
+        source_rows = sorted({int(row["source_row"]) for row in rows})
+        for source_row in source_rows:
+            if source_row > len(all_values):
+                raise RuntimeError(f"MainData thiếu dòng nguồn {source_row}")
+            deleted_values[source_row] = list(all_values[source_row - 1][:13])
+
+        affected: dict[date, set[str]] = {}
+        for row in rows:
+            key = _progressive_key(row["leave_reason"])
+            if key:
+                affected.setdefault(row["leave_date"], set()).add(key)
+            result = conn.execute(text("DELETE FROM leave_records WHERE record_uid=:uid"), {"uid": row["record_uid"]})
+            if int(result.rowcount or 0) != 1:
+                raise RuntimeError("Xóa PostgreSQL không đúng một bản ghi.")
+        _reindex_after_delete(conn, source_rows)
+        rebalanced: list[tuple[int, dict]] = []
+        for target, keys in affected.items():
+            rebalanced.extend(_rebalance_progressive_rows(conn, target, keys))
+
+        for source_row in sorted(source_rows, reverse=True):
+            ws.delete_rows(source_row)
+            deleted_sheet_rows.append(source_row)
+
+        after_delete_values = ws.get_all_values() if rebalanced else []
+        for row_number, changed in rebalanced:
+            changed_backups[row_number] = list(after_delete_values[row_number - 1][:13]) if row_number <= len(after_delete_values) else []
+            ws.update(
+                range_name=f"A{row_number}:M{row_number}",
+                values=[_sheet_values_for_record(headers, changed, row_number)],
+                value_input_option="USER_ENTERED",
+            )
+        tx.commit()
+        return {"ok": True, "deleted": len(rows), "message": f"Đã xóa {len(rows)} lịch nghỉ và đồng bộ PostgreSQL/MainData."}
+    except HTTPException:
+        if tx.is_active:
+            tx.rollback()
+        if ws is not None and deleted_sheet_rows:
+            _restore_sheet_updates(ws, changed_backups)
+            for source_row in sorted(deleted_sheet_rows):
+                try:
+                    ws.insert_row(deleted_values[source_row], index=source_row, value_input_option="USER_ENTERED")
+                except Exception:
+                    pass
+        raise
+    except Exception as exc:
+        if tx.is_active:
+            tx.rollback()
+        if ws is not None and deleted_sheet_rows:
+            _restore_sheet_updates(ws, changed_backups)
+            for source_row in sorted(deleted_sheet_rows):
+                try:
+                    ws.insert_row(deleted_values[source_row], index=source_row, value_input_option="USER_ENTERED")
+                except Exception:
+                    pass
+        raise HTTPException(500, f"Không xóa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
     finally:
         conn.close()

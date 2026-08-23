@@ -204,7 +204,7 @@ jobs:
               'Web V2 enforces leave-create permission': '_require_feature(conn, ident, "leave_create")' in api,
               'Web V2 enforces registration role lock': '_registration_role_locked(conn, ident.role)' in api,
               'Web V2 penalty visibility follows feature permission': 'can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")' in api,
-              'Web V2 defaults penalty visibility to admin only': '"quanly": {"leave", "leave_create"}' in api,
+              'Web V2 defaults penalty visibility to admin only': '"quanly": {"leave", "leave_create"' in api and '"employee_penalty_view"' not in api.split('"quanly":', 1)[1].split('},', 1)[0],
               'Web V2 limits non-admin registration to self': 'if role != "admin" and _norm(employee) != _norm(ident.employee_username)' in api,
               'Web V2 employee selector is admin-only': "const canChooseEmployee = role === 'admin'" in leave_page,
               'Web V2 penalty column follows returned permission': 'user?.permissions?.employee_penalty_view === true' in leave_page,
@@ -216,7 +216,7 @@ jobs:
               'Web V2 daily quota comes from PostgreSQL': "setting_key='daily_quota'" in api and 'paid_full' in api,
               'Web V2 deployed API uses live validation quota': '_api._daily_quota_config = _api_daily_quota_config' in shared_api,
               'Web V2 daily stats RPC is authenticated': 'vera_v2_leave_daily_stats' in daily_stats_sql and 'from public, anon' in daily_stats_sql.lower(),
-              'Web V2 login uses wellbeing message': 'Suối nguồn thư giãn, trọn vẹn an yên' in login_page,
+              'Web V2 login uses split wellbeing message': 'Suối nguồn thư giãn' in login_page and 'Trọn vẹn an yên' in login_page,
               'Web V2 login contains contact and map': '193 Trương Định, Tam Hiệp, Đồng Nai' in login_page and 'maps.app.goo.gl/kkQjkTT7vm9oDWjbA' in login_page,
               'Web V2 legacy login copy removed': 'Trải nghiệm mới' not in login_page and 'Web V2 · React + Supabase' not in login_page,
               'Web V2 topbar uses VERA wellbeing message': 'Suối nguồn thư giãn, trọn vẹn an yên.' in shell,
@@ -224,6 +224,10 @@ jobs:
               'Web V2 RPC penalty follows feature permission': "employee_penalty_view" in hardening and 'case when can_view_penalty' in hardening,
               'Web V2 resets current non-admin penalty grants': "employee_penalty_view" in penalty_default and "'false'::jsonb" in penalty_default,
               'Web V2 RPCs revoke anonymous execution': 'from public, anon' in hardening.lower(),
+              'Web V2 reason catalog follows selected date': 'date_value: date = Query(alias="date")' in api and '_day_allowed(item["allowed_days"], date_value)' in api,
+              'Web V2 exposes permission-gated edit and delete': '@app.patch("/v2/leave/records/{record_uid}")' in api and '@app.delete("/v2/leave/records")' in api and '_validate_edit_permission' in api and '_validate_delete_permission' in api,
+              'Web V2 list checkbox stays first': '<th className="select-column">Chọn</th><th>Nhân viên</th>' in leave_page,
+              'Web V2 uses Thanks label': 'Thanks' in shell and 'V2 Pilot' not in shell,
           }
           failed = [name for name, ok in checks.items() if not ok]
           for name, ok in checks.items():

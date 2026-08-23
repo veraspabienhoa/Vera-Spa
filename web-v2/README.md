@@ -1,4 +1,4 @@
-# VERA SPA Web V2
+# VERA SPA ĐỒNG NAI
 
 Frontend mới chạy **song song** với Streamlit hiện tại. Mục tiêu là chuyển từng module, bắt đầu với `📅 Đăng ký nghỉ`, mà không làm gián đoạn người dùng production.
 
