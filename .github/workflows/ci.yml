@@ -1,0 +1,139 @@
+name: VERA SPA CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vera-spa-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Python + Phase 17 canonical checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Python sources
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import py_compile
+          import sys
+
+          files = sorted(Path('.').glob('*.py'))
+          failures = []
+          for path in files:
+              try:
+                  py_compile.compile(str(path), doraise=True)
+              except Exception as exc:
+                  failures.append(f"{path}: {exc}")
+
+          if failures:
+              print("Python compile failures:")
+              print("\n".join(failures))
+              sys.exit(1)
+
+          print(f"Compiled {len(files)} Python files successfully.")
+          PY
+
+      - name: Verify runtime patch chain compiles
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import importlib
+          import sys
+
+          source = Path('app_v92699_core.py').read_text(encoding='utf-8')
+          patch_modules = [
+              'vera_postgres_phase4_patch',
+              'vera_postgres_phase7_patch',
+              'vera_postgres_phase8_patch',
+              'vera_postgres_phase10_patch',
+              'vera_postgres_phase11_patch',
+              'vera_postgres_phase12_patch',
+              'vera_postgres_phase13_patch',
+              'vera_postgres_phase14_patch',
+              'vera_postgres_phase15_patch_fix',
+              'vera_postgres_phase16_patch',
+              'vera_postgres_phase17_patch_fix',
+          ]
+
+          all_warnings = []
+          for module_name in patch_modules:
+              module = importlib.import_module(module_name)
+              source, warnings = module.apply(source)
+              if warnings:
+                  all_warnings.extend(f"{module_name}: {w}" for w in warnings)
+
+          if all_warnings:
+              print('Patch warnings detected:')
+              print('\n'.join(all_warnings))
+              sys.exit(1)
+
+          compile(source, 'app_v92699_core.patched.py', 'exec')
+          print('Runtime patch chain applied with zero warnings and compiled successfully.')
+          PY
+
+      - name: Verify Phase 17 record_uid invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          uid = Path('vera_postgres_phase17_uid.py').read_text(encoding='utf-8')
+          app = Path('app.py').read_text(encoding='utf-8')
+          p4 = Path('vera_postgres_phase4_patch.py').read_text(encoding='utf-8')
+
+          checks = {
+              'schema v172+': bool(re.search(r'PHASE17_UID_SCHEMA_VERSION\s*=\s*(17[2-9]|1[89]\d|[2-9]\d{2,})', uid)),
+              'record_uid UNIQUE index': 'CREATE UNIQUE INDEX IF NOT EXISTS ux_leave_records_record_uid' in uid,
+              'record_uid NOT NULL': 'ALTER TABLE leave_records ALTER COLUMN record_uid SET NOT NULL' in uid,
+              'UPDATE is keyed by record_uid': 'WHERE record_uid=:record_uid' in uid,
+              'DELETE is keyed by record_uid': 'DELETE FROM leave_records WHERE record_uid=:u' in uid,
+              'ambiguous legacy locator fails closed': 'Ambiguous legacy locator' in uid and 'refusing mutation' in uid,
+              'source_row role is metadata only': 'legacy_ingress_and_mirror_metadata_only' in uid,
+              'reason update goes through Phase 4 leave upsert': 'operation="reason_update"' in p4,
+              'single delete goes through Phase 4 leave delete': 'operation="delete_single"' in p4,
+              'batch delete goes through Phase 4 leave delete': 'operation="delete_batch"' in p4,
+              'strict UID runtime is installed after Phase 17': 'vera_postgres_phase17_uid' in app,
+              'current wrapper build is V92.22.4+ strict UID': 'phase17-strict-record-uid-crud' in app,
+          }
+
+          # Guard against reintroducing source_row as a normal UPDATE assignment.
+          update_match = re.search(r'_UPDATE_BY_UID_SQL\s*=\s*text\("""(.*?)"""\)', uid, re.S)
+          if update_match:
+              update_sql = update_match.group(1)
+              checks['normal UPDATE does not assign source_row'] = 'source_row=' not in update_sql.replace(' ', '')
+          else:
+              checks['normal UPDATE SQL block exists'] = False
+
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+
+          if failed:
+              print('\nFailed invariants: ' + ', '.join(failed))
+              sys.exit(1)
+
+          print('\nAll Phase 17 canonical CRUD invariants passed.')
+          PY
