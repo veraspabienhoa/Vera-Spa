@@ -129,7 +129,7 @@ jobs:
               'Streamlit delegates to canonical validator': 'validate_leave_registration_request_live as _vera_shared_validate_leave_live' in patch,
               'Streamlit keeps legacy helper callbacks': '_validate_daily_employee_registration_rule' in patch and '_validate_daily_group_quota' in patch,
               'app installs shared patch': 'vera_leave_registration_live_patch' in app,
-              'wrapper build is V92.23.2': 'v92.23.2-shared-leave-validation-1' in app,
+              'wrapper build is V92.23.3': 'v92.23.3-postgres-money-parser-1' in app,
               'Web V2 delegates to canonical validator': 'validate_leave_registration_request_live(payload, live_df, credentials_df, runtime)' in api,
               'Web V2 no browser-supplied calculated days': '"days": float(item["days"] or 0)' in api,
               'Web V2 derives policy group from LoaiNghi type': 'def _policy_group' in api and 'leave_type' in api,
@@ -234,7 +234,7 @@ jobs:
               'penalty repair updates strictly by record_uid': 'WHERE record_uid=:record_uid' in repair,
               'penalty repair rechecks before leave reads': 'phase17_leave_dataframe' in repair and 'guarded_leave_dataframe' in repair,
               'penalty repair has last-mile UI guard': '_correct_frame' in repair,
-              'current wrapper build is V92.23.2': 'v92.23.2-shared-leave-validation-1' in app,
+              'current wrapper build is V92.23.3': 'v92.23.3-postgres-money-parser-1' in app,
               'official rules patch is installed': 'vera_official_rules_patch' in app,
               'menu display is renamed to Nội quy': '"🧾 Quản lý lý do nghỉ": "📜 Nội quy"' in app,
           }
