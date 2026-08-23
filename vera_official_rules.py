@@ -63,12 +63,7 @@ def normalize_dataframe(df: pd.DataFrame | None) -> pd.DataFrame:
         raise OfficialRulesError("Tên cột bị trùng: " + ", ".join(dupes))
     out.columns = columns
     out = out.map(_clean_scalar)
-    if len(out.columns):
-        keep = out.apply(lambda r: any(str(v or "").strip() for v in r.tolist()), axis=1)
-        out = out.loc[keep].reset_index(drop=True)
-    else:
-        out = out.reset_index(drop=True)
-    return out
+    return out.reset_index(drop=True)
 
 
 def validate_for_apply(df: pd.DataFrame) -> None:
