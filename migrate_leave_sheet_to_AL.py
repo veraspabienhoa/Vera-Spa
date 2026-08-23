@@ -18,7 +18,7 @@ Supported source schemas:
 - V93.1 A:M with blank physical column E.
 - V86.x A:K with Loại nghỉ but without Thứ ngày.
 - Legacy A:J without Thứ ngày/Loại nghỉ; Loại nghỉ is derived from worksheet LoaiNghi.
-"""
+
 Safety:
 - Does nothing unless --apply is passed.
 - Creates a backup worksheet before changing Sheet1.
