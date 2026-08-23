@@ -1,19 +1,20 @@
-# V92.22.2 - Phase 17 wrapper-order hotfix + cached core compilation (2026-08-23)
-"""VERA SPA V92.22.2.
+# V92.22.3 - Phase 17 record_uid canonical leave CRUD (2026-08-23)
+"""VERA SPA V92.22.3.
 
 PostgreSQL migration Phase 4-17 remains enabled while preserving the V92.6.99 core,
 MENU routes, authorization, UI, and business rules.
 
-V92.22.2 runtime hotfix:
-- keeps the V92.22.1 Excel-safe dataframe compatibility helper;
-- keeps cached Phase 4-17 source patch + compile per Cloud Run process;
-- moves the Phase 17 wrapper block before Streamlit UI execution so renamed runtime
-  functions (including load_live_leave_registration_cached) exist before first use;
-- keeps Phase 17 PostgreSQL canonical reads and optional Google Sheets mirror behavior.
+V92.22.3 final leave CRUD hardening:
+- keeps the V92.22.2 wrapper-order/runtime hotfix;
+- installs record_uid-canonical PostgreSQL CRUD for leave records after Phase 17;
+- UPDATE/DELETE mutate PostgreSQL by stable record_uid, never by physical Sheet row;
+- source_row remains compatibility/mirror metadata and is reindexed after deletes;
+- Google Sheets remains an optional/sync/off mirror and cannot roll back canonical
+  PostgreSQL mutations in the record_uid layer.
 
 Rollback / compatibility:
-- VERA_PHASE17_FINAL_BACKEND=sheets -> disable Phase 17 wrappers.
-- VERA_SHEETS_MIRROR_MODE=sync      -> restore synchronous required mirror behavior.
+- VERA_PHASE17_FINAL_BACKEND=sheets -> disable Phase 17 wrappers and UID hardening.
+- VERA_SHEETS_MIRROR_MODE=sync      -> require the mirror result synchronously.
 - VERA_SHEETS_MIRROR_MODE=optional  -> default best-effort mirror.
 - VERA_SHEETS_MIRROR_MODE=off       -> do not execute Phase17-controlled Sheet mirrors.
 - VERA_PHASE17_ALLOW_LEGACY_REFRESH=1 -> allow explicit force-refresh from legacy Sheets.
@@ -97,6 +98,17 @@ try:
             _phase_install_warnings_v92222.append(
                 f"phase{_phase_no_v92222}:{type(_phase_install_error_v92222).__name__}"
             )
+
+    # V92.22.3: install after Phase 17 has established final backend/mirror policy.
+    try:
+        _uid_mod_v92223 = _importlib.import_module("vera_postgres_phase17_uid")
+        _uid_install_v92223 = getattr(_uid_mod_v92223, "install", None)
+        if callable(_uid_install_v92223):
+            _uid_install_v92223(_vpg_runtime)
+    except Exception as _uid_install_error_v92223:
+        _phase_install_warnings_v92222.append(
+            f"phase17_uid:{type(_uid_install_error_v92223).__name__}"
+        )
 except Exception:
     _vpg_runtime = None
 
@@ -133,7 +145,7 @@ def _vera_phase4_leave_delete(records, mirror_fn, operation="delete"):
 
 
 _core_path_v92222 = _Path(__file__).with_name("app_v92699_core.py")
-_core_build_id_v92222 = "v92.22.2-phase17-order-hotfix-2"
+_core_build_id_v92222 = "v92.22.3-phase17-record-uid-crud-1"
 
 
 @_st.cache_resource(show_spinner=False)
@@ -188,7 +200,7 @@ def _build_core_v92222(build_id):
     _source_v92222 = _source_v92222.replace("MENU CHỨC NĂNG", "MENU")
     _first_line_v92222, _sep_v92222, _rest_v92222 = _source_v92222.partition("\n")
     _source_v92222 = (
-        "# V92.22.2 - Phase 17 wrapper-order hotfix + cached core compilation (2026-08-23)\n"
+        "# V92.22.3 - Phase 17 record_uid canonical leave CRUD (2026-08-23)\n"
         + _rest_v92222
     )
     _compiled_v92222 = compile(
