@@ -1,13 +1,15 @@
 import { LockKeyhole, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
-export default function LoginPage({ onDemoLogin }) {
+export default function LoginPage({ onDemoLogin, externalError = '' }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(externalError)
   const demoAllowed = import.meta.env.VITE_VERA_DEMO_MODE === '1'
+
+  useEffect(() => { if (externalError) setError(externalError) }, [externalError])
 
   const submit = async (event) => {
     event.preventDefault()
@@ -22,7 +24,11 @@ export default function LoginPage({ onDemoLogin }) {
         body: { username: username.trim(), password },
       })
       if (bridgeError) {
-        const detail = bridgeError?.context?.body?.message || bridgeError.message
+        let detail = bridgeError.message
+        try {
+          const responseBody = await bridgeError.context?.json?.()
+          detail = responseBody?.message || detail
+        } catch (_) {}
         throw new Error(detail || 'Không xác thực được tài khoản VERA.')
       }
       if (!bridge?.email || !bridge?.password) throw new Error(bridge?.message || 'Không xác thực được tài khoản VERA.')
@@ -32,6 +38,7 @@ export default function LoginPage({ onDemoLogin }) {
         password: bridge.password,
       })
       if (signInError) throw signInError
+      setPassword('')
     } catch (err) {
       setError(err.message || 'Đăng nhập thất bại.')
     } finally {
