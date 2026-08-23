@@ -146,8 +146,35 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          from decimal import Decimal
-          import vera_postgres_phase3 as phase3
+          from pathlib import Path
+          from decimal import Decimal, InvalidOperation
+          from typing import Any
+          import ast
+          import re
+
+          source = Path('vera_postgres_phase3.py').read_text(encoding='utf-8')
+          tree = ast.parse(source)
+          wanted = {'_safe_text', '_safe_decimal'}
+          nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]
+          found = {n.name for n in nodes}
+          if found != wanted:
+              raise SystemExit(f'Missing parser functions: {sorted(wanted - found)}')
+
+          class _PDStub:
+              @staticmethod
+              def isna(value):
+                  return False
+
+          ns = {
+              'Decimal': Decimal,
+              'InvalidOperation': InvalidOperation,
+              'Any': Any,
+              're': re,
+              'pd': _PDStub(),
+          }
+          module = ast.Module(body=nodes, type_ignores=[])
+          exec(compile(module, 'vera_postgres_phase3.py', 'exec'), ns, ns)
+          parse = ns['_safe_decimal']
 
           cases = {
               1000000: Decimal('1000000'),
@@ -158,7 +185,7 @@ jobs:
               '300,000.00': Decimal('300000.00'),
           }
           for raw, expected in cases.items():
-              actual = phase3._safe_decimal(raw)
+              actual = parse(raw)
               print(f'{raw!r} -> {actual}')
               if actual != expected:
                   raise SystemExit(f'Penalty parse mismatch: {raw!r}: {actual} != {expected}')
