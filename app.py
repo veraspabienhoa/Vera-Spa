@@ -160,7 +160,7 @@ def _vera_phase4_leave_delete(records, mirror_fn, operation="delete"):
 
 
 _core_path_v92231 = _Path(__file__).with_name("app_v92699_core.py")
-_core_build_id_v92231 = "v92.23.2-shared-leave-validation-1"
+_core_build_id_v92231 = "v92.23.3-postgres-money-parser-1"
 
 
 @_st.cache_resource(show_spinner=False)
