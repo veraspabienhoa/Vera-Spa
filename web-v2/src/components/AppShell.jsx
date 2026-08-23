@@ -53,7 +53,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
             <div className="avatar">{(user?.email || 'V')[0].toUpperCase()}</div>
             <div className="user-copy">
               <strong>{user?.user_metadata?.full_name || user?.email || 'Nhân viên VERA'}</strong>
-              <span>Đang đăng nhập</span>
+              <span>{user?.role ? `Vai trò: ${user.role}` : 'Đang đăng nhập'}</span>
             </div>
           </div>
           <button className="signout-button" onClick={onSignOut}><LogOut size={18} /> Đăng xuất</button>

@@ -28,7 +28,9 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
         try {
           const responseBody = await bridgeError.context?.json?.()
           detail = responseBody?.message || detail
-        } catch (_) {}
+        } catch {
+          // Keep the SDK error message when the Edge Function response has no JSON body.
+        }
         throw new Error(detail || 'Không xác thực được tài khoản VERA.')
       }
       if (!bridge?.email || !bridge?.password) throw new Error(bridge?.message || 'Không xác thực được tài khoản VERA.')

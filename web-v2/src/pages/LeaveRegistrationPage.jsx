@@ -13,7 +13,7 @@ const formatDateInput = (date) => {
 const today = () => formatDateInput(new Date())
 const emptyForm = { employee_name: '', leave_reason: '', detail: '', manual_penalty: '' }
 
-export default function LeaveRegistrationPage() {
+export default function LeaveRegistrationPage({ user }) {
   const [date, setDate] = useState(today())
   const [summary, setSummary] = useState({ working: 0, leave: 0, paid: 0, unpaid: 0 })
   const [records, setRecords] = useState([])
@@ -25,6 +25,17 @@ export default function LeaveRegistrationPage() {
   const [message, setMessage] = useState('')
   const [warnings, setWarnings] = useState([])
   const [error, setError] = useState('')
+  const role = String(user?.role || '').toLowerCase()
+  const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
+  const canViewPenalty = role === 'admin'
+  const canCreate = isApiConfigured
+    && user?.permissions?.leave_create !== false
+    && !user?.registration_locked
+
+  const maxEmployeeDate = useMemo(() => {
+    const now = new Date()
+    return formatDateInput(new Date(now.getFullYear(), now.getMonth() + 2, 0))
+  }, [])
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -62,7 +73,15 @@ export default function LeaveRegistrationPage() {
 
   useEffect(() => { load() }, [load])
 
-  const totalPenalty = useMemo(() => records.reduce((sum, item) => sum + Number(item.penalty || 0), 0), [records])
+  useEffect(() => {
+    if (canChooseEmployee || !user?.employee_username) return
+    setForm((current) => ({ ...current, employee_name: user.employee_username }))
+  }, [canChooseEmployee, user?.employee_username])
+
+  const totalPenalty = useMemo(
+    () => records.reduce((sum, item) => sum + Number(item.penalty || 0), 0),
+    [records],
+  )
   const selectedReason = useMemo(() => reasons.find((item) => item.name === form.leave_reason), [reasons, form.leave_reason])
 
   const shiftDate = (offset) => {
@@ -76,8 +95,10 @@ export default function LeaveRegistrationPage() {
     setMessage('')
     setWarnings([])
     setError('')
-    if (!isApiConfigured) {
-      setError('Python API V2 chưa được cấu hình nên hệ thống không cho phép ghi trực tiếp vào PostgreSQL.')
+    if (!canCreate) {
+      setError(user?.registration_locked
+        ? 'Quyền đăng ký nghỉ của vai trò này đang bị Admin tạm khóa.'
+        : 'Tài khoản hiện tại chưa được cấp quyền ghi lịch nghỉ trên Web V2.')
       return
     }
     setSaving(true)
@@ -119,11 +140,25 @@ export default function LeaveRegistrationPage() {
         <div className="warning-box"><strong>Chế độ chỉ đọc.</strong> Python API V2 chưa có URL trong GitHub Pages nên nút Ghi vẫn khóa an toàn.</div>
       )}
 
+      {isApiConfigured && user?.registration_locked && (
+        <div className="warning-box"><strong>Đang khóa đăng ký.</strong> Admin đang tạm khóa quyền đăng ký nghỉ của vai trò {role}.</div>
+      )}
+
+      {isApiConfigured && user?.permissions?.leave_create === false && (
+        <div className="warning-box"><strong>Chế độ chỉ xem.</strong> Tài khoản này chưa được cấp quyền ghi lịch nghỉ.</div>
+      )}
+
       <div className="date-toolbar">
         <button onClick={() => shiftDate(-1)}>Hôm qua</button>
         <button onClick={() => setDate(today())}>Hôm nay</button>
         <button onClick={() => shiftDate(1)}>Ngày mai</button>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input
+          type="date"
+          value={date}
+          min={role === 'admin' ? undefined : today()}
+          max={role === 'admin' ? undefined : maxEmployeeDate}
+          onChange={(e) => setDate(e.target.value)}
+        />
       </div>
 
       <section className="metric-grid">
@@ -140,7 +175,12 @@ export default function LeaveRegistrationPage() {
           </div>
           <form className="leave-form" onSubmit={submit}>
             <label>Tên nhân viên</label>
-            <select value={form.employee_name} onChange={(e) => setForm({ ...form, employee_name: e.target.value })} required>
+            <select
+              value={form.employee_name}
+              onChange={(e) => setForm({ ...form, employee_name: e.target.value })}
+              disabled={!canChooseEmployee}
+              required
+            >
               <option value="">-- Chọn nhân viên --</option>
               {employees.map((employee) => (
                 <option key={employee.username} value={employee.username}>
@@ -180,26 +220,26 @@ export default function LeaveRegistrationPage() {
             {message && <div className="success-box">{message}</div>}
             {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
             {error && <div className="error-box">{error}</div>}
-            <button className="primary-button" type="submit" disabled={saving || !isApiConfigured}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
+            <button className="primary-button" type="submit" disabled={saving || !canCreate}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
           </form>
         </section>
 
         <section className="panel">
           <div className="panel-title-row">
             <div><h2>Danh sách trong ngày</h2><p>{date}</p></div>
-            <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>
+            {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Nhân viên</th><th>Lý do</th><th className="right">Phạt</th></tr></thead>
+              <thead><tr><th>Nhân viên</th><th>Lý do</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
               <tbody>
                 {records.length === 0 ? (
-                  <tr><td colSpan="3" className="empty-cell">Chưa có dữ liệu cho ngày này.</td></tr>
+                  <tr><td colSpan={canViewPenalty ? 3 : 2} className="empty-cell">Chưa có dữ liệu cho ngày này.</td></tr>
                 ) : records.map((item) => (
                   <tr key={item.record_uid || `${item.employee_name}-${item.leave_reason}`}>
                     <td><strong>{item.employee_name}</strong></td>
                     <td>{item.leave_reason}</td>
-                    <td className="right">{Number(item.penalty || 0).toLocaleString('vi-VN')}đ</td>
+                    {canViewPenalty && <td className="right">{Number(item.penalty || 0).toLocaleString('vi-VN')}đ</td>}
                   </tr>
                 ))}
               </tbody>

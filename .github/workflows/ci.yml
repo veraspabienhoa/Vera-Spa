@@ -189,11 +189,17 @@ jobs:
               raise SystemExit(f'Coverage summary mismatch: {actual} != {expected}')
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          hardening = Path('web-v2/supabase_web_v2_pilot_hardening.sql').read_text(encoding='utf-8')
           checks = {
               'summary queries canonical leave type': 'employee_name, leave_reason, leave_type, calculated_days' in api,
               'summary uses shared unique-employee helper': 'summarize_leave_day(rows, int(active))' in api,
               'optional audit uses a savepoint': 'with conn.begin_nested()' in api,
               'optional audit remains non-blocking': 'Do not make leave registration depend on an optional telemetry table shape.' in api,
+              'Web V2 enforces leave-create permission': '_require_feature(conn, ident, "leave_create")' in api,
+              'Web V2 enforces registration role lock': '_registration_role_locked(conn, ident.role)' in api,
+              'Web V2 hides non-admin penalties server-side': 'item.pop("penalty", None)' in api,
+              'Web V2 excludes system roles from coverage': "NOT IN ('admin','letan','locker','tapvu')" in api,
+              'Web V2 RPCs revoke anonymous execution': 'from public, anon' in hardening.lower(),
           }
           failed = [name for name, ok in checks.items() if not ok]
           for name, ok in checks.items():
@@ -360,3 +366,32 @@ jobs:
           for name, ok in checks.items(): print(('PASS' if ok else 'FAIL') + ': ' + name)
           if failed: raise SystemExit('Failed operational invariants: ' + ', '.join(failed))
           PY
+
+  web-v2:
+    name: React Web V2 build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: web-v2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

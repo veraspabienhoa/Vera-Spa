@@ -1,11 +1,11 @@
-name: VERA Web V2 Pages
+name: Deploy VERA SPA Web V2
 
 on:
   push:
     branches: [main]
     paths:
-      - 'web-v2/**'
-      - '.github/workflows/vera-web-v2-pages.yml'
+      - "web-v2/**"
+      - ".github/workflows/vera-web-v2-pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,37 +14,57 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: vera-web-v2-pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
+    name: Build and deploy GitHub Pages
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
 
-      - name: Install
+      - name: Validate Web V2 public configuration
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL }}
+        shell: bash
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "Missing repository variable: VITE_SUPABASE_URL"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing repository variable: VITE_SUPABASE_ANON_KEY"; exit 1; }
+          test -n "$VITE_VERA_API_BASE_URL" || { echo "Missing repository variable: VITE_VERA_API_BASE_URL"; exit 1; }
+
+      - name: Install Web V2 dependencies
         working-directory: web-v2
-        run: npm install --no-audit --no-fund
+        run: npm ci
 
-      - name: Build
+      - name: Lint Web V2
+        working-directory: web-v2
+        run: npm run lint
+
+      - name: Build Web V2
         working-directory: web-v2
         env:
-          # Client-side/public values only. Database password and service credentials
-          # remain server-side in Cloud Run Secret Manager.
-          VITE_SUPABASE_URL: https://nunxfjhrszmlyyrvphuq.supabase.co
-          VITE_SUPABASE_ANON_KEY: sb_publishable_idnn4HeEozpAonmSqM4Tgw_bB8HW4FX
-          VITE_VERA_API_BASE_URL: https://vera-spa-api-589916994342.asia-southeast1.run.app
-          VITE_VERA_DEMO_MODE: '0'
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL }}
+          VITE_VERA_DEMO_MODE: "0"
         run: npm run build
 
-      - name: Setup Pages
+      - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
@@ -52,13 +72,6 @@ jobs:
         with:
           path: web-v2/dist
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

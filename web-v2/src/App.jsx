@@ -78,6 +78,8 @@ export default function App() {
         ...user,
         employee_username: profile.employee_username,
         role: profile.role,
+        permissions: profile.permissions || {},
+        registration_locked: Boolean(profile.registration_locked),
         user_metadata: {
           ...(user.user_metadata || {}),
           full_name: profile.full_name || profile.employee_username,
@@ -87,7 +89,7 @@ export default function App() {
 
   return (
     <AppShell user={shellUser} currentPage={page} onPageChange={setPage} onSignOut={signOut}>
-      {page === 'leave' && <LeaveRegistrationPage />}
+      {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
     </AppShell>
   )
 }

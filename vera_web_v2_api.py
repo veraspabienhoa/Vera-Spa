@@ -46,7 +46,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA Web V2 API", version="2.2")
+app = FastAPI(title="VERA SPA Web V2 API", version="2.3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -297,6 +297,72 @@ class Identity(BaseModel):
     role: str
     full_name: str = ""
     email: str = ""
+
+
+WEB_V2_DEFAULT_FEATURES = {
+    "admin": {"leave", "leave_create", "employee_penalty_view"},
+    "quanly": {"leave", "leave_create", "employee_penalty_view"},
+    "letan": {"leave", "leave_create"},
+    "leader": {"leave", "leave_create"},
+    "nhanvien": {"leave", "leave_create"},
+    "locker": set(),
+    "tapvu": set(),
+}
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return _norm(value) in {"1", "true", "yes", "y", "co", "có", "x"}
+
+
+def _feature_allowed(conn, ident: Identity, feature: str) -> bool:
+    """Mirror Streamlit precedence: admin -> account -> role -> defaults."""
+    feature = str(feature or "").strip()
+    role = str(ident.role or "").strip().lower()
+    if role == "admin":
+        return True
+
+    payload = conn.execute(text("""
+        SELECT value_json
+        FROM vera_app_setting
+        WHERE category='authorization' AND setting_key='feature_permissions'
+        LIMIT 1
+    """)).scalar_one_or_none()
+    payload = payload if isinstance(payload, dict) else {}
+
+    username_key = _norm(ident.employee_username)
+    for item in payload.get("accounts", []) or []:
+        if not isinstance(item, dict):
+            continue
+        if _norm(item.get("target")) == username_key and str(item.get("feature") or "").strip() == feature:
+            return _as_bool(item.get("allowed"))
+
+    for item in payload.get("roles", []) or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("target") or "").strip().lower() == role and str(item.get("feature") or "").strip() == feature:
+            return _as_bool(item.get("allowed"))
+
+    return feature in WEB_V2_DEFAULT_FEATURES.get(role, set())
+
+
+def _registration_role_locked(conn, role: str) -> bool:
+    if str(role or "").strip().lower() == "admin":
+        return False
+    payload = conn.execute(text("""
+        SELECT value_json
+        FROM vera_app_setting
+        WHERE category='control' AND setting_key='registration_role_locks'
+        LIMIT 1
+    """)).scalar_one_or_none()
+    payload = payload if isinstance(payload, dict) else {}
+    return _as_bool(payload.get(str(role or "").strip().lower(), False))
+
+
+def _require_feature(conn, ident: Identity, feature: str):
+    if not _feature_allowed(conn, ident, feature):
+        raise HTTPException(403, "Tài khoản hiện tại chưa được cấp quyền dùng chức năng này.")
 
 
 async def current_identity(authorization: str | None = Header(default=None)) -> Identity:
@@ -567,27 +633,52 @@ def _insert_record(conn, record: dict, source_row: int):
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.2"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.3"}
 
 
 @app.get("/v2/me")
 def me(ident: Identity = Depends(current_identity)):
-    return ident.model_dump()
+    with _engine_instance().connect() as conn:
+        permissions = {
+            feature: _feature_allowed(conn, ident, feature)
+            for feature in ("leave", "leave_create", "employee_penalty_view")
+        }
+        registration_locked = _registration_role_locked(conn, ident.role)
+    return {
+        **ident.model_dump(),
+        "permissions": permissions,
+        "registration_locked": registration_locked,
+    }
 
 
 @app.get("/v2/employees")
 def employees(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
-        rows = conn.execute(text("""
-            SELECT username, COALESCE(full_name,'') full_name, COALESCE(role,'') role
-            FROM employees WHERE COALESCE(login_locked,false)=false ORDER BY username
-        """)).mappings().all()
+        _require_feature(conn, ident, "leave")
+        if ident.role in {"admin", "quanly", "letan"}:
+            rows = conn.execute(text("""
+                SELECT username, COALESCE(full_name,'') full_name, COALESCE(role,'') role
+                FROM employees
+                WHERE COALESCE(login_locked,false)=false
+                  AND COALESCE(source_sheet_id,'credentials')='credentials'
+                  AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
+                ORDER BY username
+            """)).mappings().all()
+        else:
+            rows = conn.execute(text("""
+                SELECT username, COALESCE(full_name,'') full_name, COALESCE(role,'') role
+                FROM employees
+                WHERE COALESCE(login_locked,false)=false
+                  AND lower(btrim(username))=lower(btrim(:username))
+                LIMIT 1
+            """), {"username": ident.employee_username}).mappings().all()
     return {"employees": [dict(r) for r in rows]}
 
 
 @app.get("/v2/leave/reasons")
 def reasons(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
+        _require_feature(conn, ident, "leave")
         output = []
         for row in _policy_rows(conn):
             name = str(_field(row, "Lý do nghỉ", default="") or "").strip()
@@ -607,17 +698,32 @@ def reasons(ident: Identity = Depends(current_identity)):
 @app.get("/v2/leave/records")
 def leave_records(date_value: date = Query(alias="date"), ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
+        _require_feature(conn, ident, "leave")
+        can_view_penalty = ident.role == "admin"
         rows = conn.execute(text("""
             SELECT record_uid, employee_name, leave_reason, detail, penalty, updated_by, updated_at
             FROM leave_records WHERE leave_date=:d ORDER BY employee_name, record_uid
         """), {"d": date_value}).mappings().all()
-    return {"records": [dict(r) for r in rows]}
+    records = []
+    for row in rows:
+        item = dict(row)
+        if not can_view_penalty:
+            item.pop("penalty", None)
+        records.append(item)
+    return {"records": records}
 
 
 @app.get("/v2/leave/summary")
 def leave_summary(date_value: date = Query(alias="date"), ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
-        active = conn.execute(text("SELECT count(*) FROM employees WHERE COALESCE(login_locked,false)=false")).scalar() or 0
+        _require_feature(conn, ident, "leave")
+        active = conn.execute(text("""
+            SELECT count(*)
+            FROM employees
+            WHERE COALESCE(login_locked,false)=false
+              AND COALESCE(source_sheet_id,'credentials')='credentials'
+              AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
+        """)).scalar() or 0
         rows = conn.execute(text("""
             SELECT employee_name, leave_reason, leave_type, calculated_days
             FROM leave_records WHERE leave_date=:d
@@ -635,6 +741,12 @@ def create_leave(body: LeaveCreate, ident: Identity = Depends(current_identity))
     try:
         # Same advisory lock key used by Phase 4, so Web V2 and Streamlit serialize writes.
         conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+        _require_feature(conn, ident, "leave_create")
+        if _registration_role_locked(conn, ident.role):
+            raise HTTPException(
+                403,
+                "Quyền đăng ký nghỉ của vai trò này đang bị Admin tạm khóa.",
+            )
         record, warnings = _validate_and_prepare(conn, body, ident)
 
         ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
