@@ -47,7 +47,14 @@ export const veraApi = {
   leaveReasons: async () => {
     if (isApiConfigured) return request('/v2/leave/reasons')
     const rows = await rpc('vera_v2_leave_reasons')
-    return { reasons: (rows || []).map((row) => row.reason).filter(Boolean) }
+    return {
+      reasons: (rows || []).map((row) => ({
+        name: row.reason,
+        days: null,
+        penalty: null,
+        requires_manual_penalty: false,
+      })).filter((row) => row.name),
+    }
   },
   employees: async () => {
     if (isApiConfigured) return request('/v2/employees')
