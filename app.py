@@ -1,10 +1,17 @@
-# V92.23.1 - Penalty repair, safe landing and zero-downtime deploy (2026-08-23)
-"""VERA SPA V92.23.1.
+# V92.23.2 - Shared leave validation for Streamlit/Web V2 (2026-08-23)
+"""VERA SPA V92.23.2.
 
 PostgreSQL migration Phase 4-17 remains enabled while preserving the V92.6.99 core,
 MENU routes, authorization, UI, and business rules.
 
-V92.23.1 operational hardening:
+V92.23.2 validation convergence:
+- keeps the immutable V92.6.99 helper functions and business policy semantics;
+- routes `_validate_leave_registration_request_live` through one framework-neutral
+  validation sequence shared with the Web V2 Python API;
+- keeps Google Sheets IDs, record_uid CRUD, PostgreSQL canonical storage and mirror
+  behavior unchanged.
+
+V92.23.1 operational hardening remains active:
 - repairs historical leave penalties only when the stored PostgreSQL amount is
   exactly 10x the canonical official Nội quy amount, strictly by record_uid;
 - rechecks the penalty guard before Phase-17 leave reads so corrected totals appear
@@ -153,7 +160,7 @@ def _vera_phase4_leave_delete(records, mirror_fn, operation="delete"):
 
 
 _core_path_v92231 = _Path(__file__).with_name("app_v92699_core.py")
-_core_build_id_v92231 = "v92.23.1-penalty-landing-safe-deploy-1"
+_core_build_id_v92231 = "v92.23.2-shared-leave-validation-1"
 
 
 @_st.cache_resource(show_spinner=False)
@@ -167,6 +174,7 @@ def _build_core_v92231(build_id):
         (13, "vera_postgres_phase13_patch"), (14, "vera_postgres_phase14_patch"),
         (15, "vera_postgres_phase15_patch_fix"), (16, "vera_postgres_phase16_patch"),
         (17, "vera_postgres_phase17_patch_fix"), (18, "vera_official_rules_patch"),
+        (19, "vera_leave_registration_live_patch"),
     ]
     _patch_warnings_v92231 = {}
     for _phase_no_v92231, _module_name_v92231 in _patch_specs_v92231:
@@ -196,7 +204,7 @@ def _build_core_v92231(build_id):
         _patch_warnings_v92231.setdefault(4, []).append("menu_display_labels:0")
     _source_v92231 = _source_v92231.replace("MENU CHỨC NĂNG", "MENU")
     _first_line_v92231, _sep_v92231, _rest_v92231 = _source_v92231.partition("\n")
-    _source_v92231 = "# V92.23.1 - Penalty repair + post-login leave landing (2026-08-23)\n" + _rest_v92231
+    _source_v92231 = "# V92.23.2 - Shared leave validation for Streamlit/Web V2 (2026-08-23)\n" + _rest_v92231
     _compiled_v92231 = compile(_source_v92231, str(_core_path_v92231), "exec")
     return _compiled_v92231, _patch_warnings_v92231
 
