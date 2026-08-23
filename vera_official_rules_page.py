@@ -47,7 +47,14 @@ def _legacy_seed(ctx: dict) -> pd.DataFrame:
 
 
 def _get_vpg(ctx: dict):
-    return ctx.get("vpg") or ctx.get("_vpg_runtime")
+    vpg = ctx.get("vpg") or ctx.get("_vpg_runtime")
+    if vpg is not None:
+        return vpg
+    try:
+        import vera_postgres as vpg
+        return vpg
+    except Exception:
+        return None
 
 
 def _get_sheet(ctx: dict):
@@ -125,12 +132,12 @@ def _excel_bytes(df: pd.DataFrame) -> bytes:
 
 def _read_import(uploaded) -> pd.DataFrame:
     raw = uploaded.getvalue()
-    book = pd.ExcelFile(BytesIO(raw))
+    book = pd.ExcelFile(BytesIO(raw), engine="openpyxl")
     sheet = "LoaiNghi" if "LoaiNghi" in book.sheet_names else (
         "NoiQuy" if "NoiQuy" in book.sheet_names else book.sheet_names[0]
     )
     return rules.normalize_dataframe(
-        pd.read_excel(BytesIO(raw), sheet_name=sheet, dtype=object)
+        pd.read_excel(BytesIO(raw), sheet_name=sheet, dtype=object, engine="openpyxl")
     )
 
 
@@ -237,7 +244,7 @@ def render(ctx: dict[str, Any]) -> None:
         use_container_width=True,
     )
     upload = x2.file_uploader(
-        "⬆️ Import Excel", type=["xlsx", "xls", "xlsb"],
+        "⬆️ Import Excel (.xlsx)", type=["xlsx"],
         disabled=not can_edit, key="_noi_quy_import_excel",
     )
     if upload is not None and can_edit:
