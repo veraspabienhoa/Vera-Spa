@@ -46,7 +46,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA Web V2 API", version="2.4")
+app = FastAPI(title="VERA SPA Web V2 API", version="2.5")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -196,6 +196,53 @@ def _role_tokens(value: str) -> set[str]:
 
 def _weekday_label(d: date) -> str:
     return ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"][d.weekday()]
+
+
+def _weekday_short_label(d: date) -> str:
+    return ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"][d.weekday()]
+
+
+def _stats_group(leave_type: str, reason: str) -> str:
+    """Match the canonical daily-stat grouping used by the current app."""
+    type_key = _norm(leave_type)
+    reason_key = _norm(reason)
+    if "khong phep" in type_key:
+        return "khong_phep"
+    if "phat sinh" in type_key:
+        return "phat_sinh"
+    if "co phep" in type_key:
+        return "co_phep"
+    if "khong phep" in reason_key:
+        return "khong_phep"
+    if "phat sinh" in reason_key:
+        return "phat_sinh"
+    if (
+        "co phep" in reason_key
+        or "nghi phep" in reason_key
+        or "nghi dam hieu" in reason_key
+        or re.search(r"(^|\s)cp($|\s)", reason_key)
+    ):
+        return "co_phep"
+    return ""
+
+
+def _daily_quota_config(conn) -> dict[str, int]:
+    defaults = {"weekday_limit": 5, "weekend_limit": 3, "phat_sinh_limit": 2}
+    payload = conn.execute(text("""
+        SELECT value_json
+        FROM vera_app_setting
+        WHERE category='leave_rules' AND setting_key='daily_quota'
+        LIMIT 1
+    """)).scalar_one_or_none()
+    if not isinstance(payload, dict):
+        return defaults
+    output = defaults.copy()
+    for key in output:
+        try:
+            output[key] = max(0, int(float(payload.get(key, output[key]))))
+        except (TypeError, ValueError):
+            pass
+    return output
 
 
 def _day_allowed(rule: str, d: date) -> bool:
@@ -632,7 +679,7 @@ def _insert_record(conn, record: dict, source_row: int):
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.4"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.5"}
 
 
 @app.get("/v2/me")
@@ -712,6 +759,81 @@ def leave_records(date_value: date = Query(alias="date"), ident: Identity = Depe
             item.pop("penalty", None)
         records.append(item)
     return {"records": records}
+
+
+@app.get("/v2/leave/daily-stats")
+def leave_daily_stats(
+    start_date: date = Query(alias="start"),
+    end_date: date = Query(alias="end"),
+    ident: Identity = Depends(current_identity),
+):
+    if end_date < start_date:
+        raise HTTPException(400, "Khoảng thời gian không hợp lệ.")
+    if (end_date - start_date).days > 365:
+        raise HTTPException(400, "Khoảng thống kê tối đa là 366 ngày.")
+
+    with _engine_instance().connect() as conn:
+        _require_feature(conn, ident, "leave")
+        can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
+        quota = _daily_quota_config(conn)
+        rows = conn.execute(text("""
+            SELECT l.leave_date, l.leave_reason, l.leave_type,
+                   COALESCE(l.penalty, 0) AS penalty
+            FROM leave_records l
+            WHERE l.leave_date BETWEEN :start_date AND :end_date
+              AND EXISTS (
+                SELECT 1
+                FROM employees e
+                WHERE lower(btrim(e.username)) = lower(btrim(l.employee_name))
+                  AND COALESCE(e.login_locked, false) = false
+                  AND COALESCE(e.source_sheet_id, 'credentials') = 'credentials'
+                  AND lower(COALESCE(e.role, '')) NOT IN ('admin','letan','locker','tapvu')
+              )
+            ORDER BY l.leave_date, l.employee_name, l.record_uid
+        """), {"start_date": start_date, "end_date": end_date}).mappings().all()
+
+    buckets: dict[date, dict[str, Any]] = {}
+    for row in rows:
+        day = row["leave_date"]
+        bucket = buckets.setdefault(day, {
+            "paid": 0,
+            "generated": 0,
+            "unpaid": 0,
+            "total_penalty": 0.0,
+        })
+        group = _stats_group(row.get("leave_type", ""), row.get("leave_reason", ""))
+        if group == "co_phep":
+            bucket["paid"] += 1
+        elif group == "phat_sinh":
+            bucket["generated"] += 1
+        elif group == "khong_phep":
+            bucket["unpaid"] += 1
+        bucket["total_penalty"] += float(row.get("penalty") or 0)
+
+    output = []
+    for day in sorted(buckets):
+        bucket = buckets[day]
+        paid_limit = quota["weekend_limit"] if day.weekday() >= 5 else quota["weekday_limit"]
+        generated_limit = 0 if day.weekday() >= 5 else quota["phat_sinh_limit"]
+        item = {
+            "date": day.isoformat(),
+            "weekday_label": _weekday_short_label(day),
+            "total_leave": bucket["paid"] + bucket["generated"] + bucket["unpaid"],
+            "paid": bucket["paid"],
+            "generated": bucket["generated"],
+            "unpaid": bucket["unpaid"],
+            "paid_limit": paid_limit,
+            "generated_limit": generated_limit,
+            "paid_full": bucket["paid"] >= paid_limit,
+            "generated_full": (
+                bucket["generated"] > 0 if generated_limit == 0
+                else bucket["generated"] >= generated_limit
+            ),
+        }
+        if can_view_penalty:
+            item["total_penalty"] = bucket["total_penalty"]
+        output.append(item)
+    return {"days": output}
 
 
 @app.get("/v2/leave/summary")

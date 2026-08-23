@@ -131,6 +131,14 @@ def _daily_quota_config():
     return cfg
 
 
+def _api_daily_quota_config(_conn):
+    """Keep the read-only daily table on the same live quota as validation."""
+    return _daily_quota_config()
+
+
+_api._daily_quota_config = _api_daily_quota_config
+
+
 def _daily_employee_rule(conn, df_sources, target_date, employee, reason, new_days):
     try:
         new_days = float(new_days or 0)

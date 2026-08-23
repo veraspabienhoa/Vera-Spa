@@ -1,7 +1,15 @@
 import { CalendarDays, CheckCircle2, Clock3, RefreshCw, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
-import { loadEmployees, loadLeaveReasons, loadLeaveRecords, loadLeaveSummary } from '../lib/data'
+import {
+  loadEmployees,
+  loadLeaveDailyStats,
+  loadLeaveReasons,
+  loadLeaveRecords,
+  loadLeaveSummary,
+} from '../lib/data'
+
+const DATE_FILTERS = ['Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau', 'Tùy chỉnh']
 
 const formatDateInput = (date) => {
   const year = date.getFullYear()
@@ -11,15 +19,51 @@ const formatDateInput = (date) => {
 }
 
 const today = () => formatDateInput(new Date())
+const addDays = (date, days) => {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
 const formatDateDisplay = (value) => {
   const [year, month, day] = String(value || '').split('-')
   return year && month && day ? `${day}/${month}/${year}` : ''
 }
+const rangeForFilter = (filter) => {
+  const now = new Date()
+  const monday = addDays(now, -((now.getDay() + 6) % 7))
+  if (filter === 'Hôm qua') {
+    const yesterday = addDays(now, -1)
+    return [formatDateInput(yesterday), formatDateInput(yesterday)]
+  }
+  if (filter === 'Tuần này') return [formatDateInput(monday), formatDateInput(addDays(monday, 6))]
+  if (filter === 'Tuần sau') {
+    const nextMonday = addDays(monday, 7)
+    return [formatDateInput(nextMonday), formatDateInput(addDays(nextMonday, 6))]
+  }
+  if (filter === 'Tháng này') {
+    return [
+      formatDateInput(new Date(now.getFullYear(), now.getMonth(), 1)),
+      formatDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+    ]
+  }
+  if (filter === 'Tháng sau') {
+    return [
+      formatDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 1)),
+      formatDateInput(new Date(now.getFullYear(), now.getMonth() + 2, 0)),
+    ]
+  }
+  return [today(), today()]
+}
 const emptyForm = { employee_name: '', leave_reason: '', detail: '', manual_penalty: '' }
 
 export default function LeaveRegistrationPage({ user }) {
+  const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
   const [date, setDate] = useState(today())
+  const [rangeFilter, setRangeFilter] = useState('Hôm nay')
+  const [rangeStart, setRangeStart] = useState(initialRange[0])
+  const [rangeEnd, setRangeEnd] = useState(initialRange[1])
   const [summary, setSummary] = useState({ working: 0, leave: 0, paid: 0, unpaid: 0 })
+  const [dailyStats, setDailyStats] = useState([])
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
   const [employees, setEmployees] = useState([])
@@ -32,9 +76,11 @@ export default function LeaveRegistrationPage({ user }) {
   const role = String(user?.role || '').toLowerCase()
   const canChooseEmployee = role === 'admin'
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
+  const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
     && user?.permissions?.leave_create !== false
     && !user?.registration_locked
+    && !dateIsPast
 
   const maxEmployeeDate = useMemo(() => {
     const now = new Date()
@@ -46,34 +92,38 @@ export default function LeaveRegistrationPage({ user }) {
     setError('')
     try {
       if (isApiConfigured) {
-        const [summaryData, recordData, reasonData, employeeData] = await Promise.all([
+        const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
           veraApi.leaveSummary(date),
+          veraApi.leaveDailyStats(rangeStart, rangeEnd),
           veraApi.leaveRecords(date),
           veraApi.leaveReasons(),
           veraApi.employees(),
         ])
         setSummary(summaryData)
+        setDailyStats(dailyData.days || [])
         setRecords(recordData.records || [])
         setReasons(reasonData.reasons || [])
         setEmployees(employeeData.employees || [])
       } else {
-        const [summaryData, recordData, reasonData, employeeData] = await Promise.all([
+        const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
           loadLeaveSummary(date),
+          loadLeaveDailyStats(rangeStart, rangeEnd),
           loadLeaveRecords(date),
           loadLeaveReasons(),
           loadEmployees(),
         ])
         setSummary(summaryData)
+        setDailyStats(dailyData)
         setRecords(recordData)
         setReasons(reasonData.map((name) => ({ name, requires_manual_penalty: false })))
         setEmployees(employeeData)
       }
     } catch (err) {
-      setError(err.message || 'Không tải được dữ liệu thật từ PostgreSQL/Supabase.')
+      setError(err.message || 'Không tải được dữ liệu từ PostgreSQL/Supabase.')
     } finally {
       setBusy(false)
     }
-  }, [date])
+  }, [date, rangeEnd, rangeStart])
 
   useEffect(() => { load() }, [load])
 
@@ -88,10 +138,24 @@ export default function LeaveRegistrationPage({ user }) {
   )
   const selectedReason = useMemo(() => reasons.find((item) => item.name === form.leave_reason), [reasons, form.leave_reason])
 
-  const shiftDate = (offset) => {
-    const current = new Date(`${date}T00:00:00`)
-    current.setDate(current.getDate() + offset)
-    setDate(formatDateInput(current))
+  const chooseRangeFilter = (filter) => {
+    setRangeFilter(filter)
+    if (filter === 'Tùy chỉnh') return
+    const [start, end] = rangeForFilter(filter)
+    setRangeStart(start)
+    setRangeEnd(end)
+    setDate(filter === 'Hôm nay' || filter === 'Tháng này' || filter === 'Tuần này' ? today() : start)
+  }
+
+  const changeCustomStart = (value) => {
+    setRangeStart(value)
+    if (value > rangeEnd) setRangeEnd(value)
+    setDate(value)
+  }
+
+  const changeCustomEnd = (value) => {
+    setRangeEnd(value)
+    if (value < rangeStart) setRangeStart(value)
   }
 
   const submit = async (event) => {
@@ -100,9 +164,11 @@ export default function LeaveRegistrationPage({ user }) {
     setWarnings([])
     setError('')
     if (!canCreate) {
-      setError(user?.registration_locked
-        ? 'Quyền đăng ký nghỉ của vai trò này đang bị Admin tạm khóa.'
-        : 'Tài khoản hiện tại chưa được cấp quyền ghi lịch nghỉ trên Web V2.')
+      setError(dateIsPast
+        ? 'Không được đăng ký lịch nghỉ cho ngày trong quá khứ.'
+        : user?.registration_locked
+          ? 'Quyền đăng ký nghỉ của vai trò này đang bị Admin tạm khóa.'
+          : 'Tài khoản hiện tại chưa được cấp quyền ghi lịch nghỉ.')
       return
     }
     setSaving(true)
@@ -135,14 +201,12 @@ export default function LeaveRegistrationPage({ user }) {
   return (
     <div>
       <div className="page-heading-row">
-        <div>
-          <h1 className="page-title">Đăng ký nghỉ</h1>
-        </div>
+        <div><h1 className="page-title">Đăng ký nghỉ</h1></div>
         <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /> Làm mới</button>
       </div>
 
       {!isApiConfigured && (
-        <div className="warning-box"><strong>Chế độ chỉ đọc.</strong> Python API V2 chưa có URL trong GitHub Pages nên nút Ghi vẫn khóa an toàn.</div>
+        <div className="warning-box"><strong>Chế độ chỉ đọc.</strong> API chưa được cấu hình nên nút Ghi đang khóa an toàn.</div>
       )}
 
       {isApiConfigured && user?.registration_locked && (
@@ -160,24 +224,75 @@ export default function LeaveRegistrationPage({ user }) {
         <Metric icon={Clock3} label="Không phép" value={summary.unpaid ?? 0} />
       </section>
 
-      <div className="date-toolbar">
-        <button onClick={() => shiftDate(-1)}>Hôm qua</button>
-        <button onClick={() => setDate(today())}>Hôm nay</button>
-        <button onClick={() => shiftDate(1)}>Ngày mai</button>
-        <label className="date-picker-control">
-          <span>{formatDateDisplay(date)}</span>
-          <CalendarDays size={18} aria-hidden="true" />
-          <input
-            className="date-picker-native"
-            type="date"
-            aria-label="Chọn ngày"
-            value={date}
-            min={role === 'admin' ? undefined : today()}
-            max={role === 'admin' ? undefined : maxEmployeeDate}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </label>
+      <div className="date-toolbar range-toolbar">
+        <div className="range-filter-buttons" role="group" aria-label="Lọc thời gian">
+          {DATE_FILTERS.map((filter) => (
+            <button
+              type="button"
+              key={filter}
+              className={rangeFilter === filter ? 'active' : ''}
+              onClick={() => chooseRangeFilter(filter)}
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
+        {rangeFilter === 'Tùy chỉnh' && (
+          <div className="custom-range">
+            <DatePickerControl label="Từ ngày" value={rangeStart} onChange={changeCustomStart} />
+            <DatePickerControl label="Đến ngày" value={rangeEnd} onChange={changeCustomEnd} />
+          </div>
+        )}
+        <DatePickerControl
+          label="Ngày đang xem"
+          value={date}
+          onChange={setDate}
+          max={role === 'admin' ? undefined : maxEmployeeDate}
+        />
       </div>
+
+      <section className="panel daily-summary-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>Thống kê chi tiết theo từng ngày</h2>
+            <p>{formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)} · Chọn ngày trong bảng để xem danh sách chi tiết.</p>
+          </div>
+        </div>
+        <div className="table-wrap daily-summary-wrap">
+          <table className="daily-summary-table">
+            <thead>
+              <tr>
+                <th>Ngày</th>
+                <th>Thứ ngày</th>
+                <th className="center">Tổng nghỉ</th>
+                <th>✅ Có phép</th>
+                <th>⚠️ Phát sinh</th>
+                <th>❌ Không phép</th>
+                {canViewPenalty && <th>💰 Tổng tiền phạt</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {dailyStats.length === 0 ? (
+                <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">Không có dữ liệu trong khoảng thời gian này.</td></tr>
+              ) : dailyStats.map((day) => (
+                <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
+                  <td>
+                    <button type="button" className="date-link" onClick={() => setDate(day.date)}>
+                      {formatDateDisplay(day.date)}
+                    </button>
+                  </td>
+                  <td>{day.weekday_label}</td>
+                  <td className="center"><strong>{day.total_leave}</strong></td>
+                  <td><span className={`quota-value ${day.paid_full ? 'limit-full' : ''}`}>{day.paid}</span></td>
+                  <td><span className={`quota-value ${day.generated_full ? 'limit-full' : ''}`}>{day.generated}</span></td>
+                  <td><span className="quota-value">{day.unpaid}</span></td>
+                  {canViewPenalty && <td className="money-cell">{Number(day.total_penalty || 0).toLocaleString('vi-VN')} đ</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div className="content-grid">
         <section className="panel">
@@ -233,6 +348,7 @@ export default function LeaveRegistrationPage({ user }) {
             <label>Chi tiết</label>
             <textarea value={form.detail} onChange={(e) => setForm({ ...form, detail: e.target.value })} rows="3" placeholder="Ghi chú nếu cần" />
 
+            {dateIsPast && <div className="warning-box"><strong>Ngày chỉ xem.</strong> Nhân viên không thể đăng ký cho ngày trong quá khứ.</div>}
             {message && <div className="success-box">{message}</div>}
             {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
             {error && <div className="error-box">{error}</div>}
@@ -247,14 +363,15 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Nhân viên</th><th>Lý do</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
+              <thead><tr><th>Nhân viên</th><th>Lý do</th><th>Chi tiết</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
               <tbody>
                 {records.length === 0 ? (
-                  <tr><td colSpan={canViewPenalty ? 3 : 2} className="empty-cell">Chưa có dữ liệu cho ngày này.</td></tr>
+                  <tr><td colSpan={canViewPenalty ? 4 : 3} className="empty-cell">Chưa có dữ liệu cho ngày này.</td></tr>
                 ) : records.map((item) => (
                   <tr key={item.record_uid || `${item.employee_name}-${item.leave_reason}`}>
                     <td><strong>{item.employee_name}</strong></td>
                     <td>{item.leave_reason}</td>
+                    <td className="detail-cell">{item.detail || '—'}</td>
                     {canViewPenalty && <td className="right">{Number(item.penalty || 0).toLocaleString('vi-VN')}đ</td>}
                   </tr>
                 ))}
@@ -263,6 +380,27 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
         </section>
       </div>
+    </div>
+  )
+}
+
+function DatePickerControl({ label, value, onChange, min, max }) {
+  return (
+    <div className="date-input-group">
+      <span className="date-input-label">{label}</span>
+      <label className="date-picker-control">
+        <span>{formatDateDisplay(value)}</span>
+        <CalendarDays size={18} aria-hidden="true" />
+        <input
+          className="date-picker-native"
+          type="date"
+          aria-label={label}
+          value={value}
+          min={min}
+          max={max}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
     </div>
   )
 }

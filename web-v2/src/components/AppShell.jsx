@@ -25,7 +25,6 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
           <div className="brand-mark">V</div>
           <div>
             <div className="brand-name">VERA SPA</div>
-            <div className="brand-subtitle">Web V2</div>
           </div>
           <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Đóng menu">
             <X size={20} />
@@ -39,7 +38,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
               key={id}
               className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               onClick={() => choose(id, ready)}
-              title={ready ? label : 'Sẽ chuyển sang Web V2 ở giai đoạn tiếp theo'}
+              title={ready ? label : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}
             >
               <Icon size={19} />
               <span>{label}</span>
@@ -71,7 +70,6 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
             <div className="topbar-kicker">VERA SPA</div>
             <div className="topbar-title">Suối nguồn thư giãn, trọn vẹn an yên.</div>
           </div>
-          <div className="environment-badge">V2 Pilot</div>
         </header>
         <div className="page-wrap">{children}</div>
       </main>

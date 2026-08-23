@@ -55,7 +55,7 @@ export default function App() {
     }
   }, [])
 
-  if (loading) return <div className="boot-screen">Đang mở VERA SPA Web V2…</div>
+  if (loading) return <div className="boot-screen">Đang mở VERA SPA…</div>
 
   const user = session?.user || demoUser
   if (!user) {

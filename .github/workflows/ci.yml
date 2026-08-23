@@ -189,9 +189,12 @@ jobs:
               raise SystemExit(f'Coverage summary mismatch: {actual} != {expected}')
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          shared_api = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
+          login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
           leave_page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
           shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
           hardening = Path('web-v2/supabase_web_v2_pilot_hardening.sql').read_text(encoding='utf-8')
+          daily_stats_sql = Path('web-v2/supabase_web_v2_daily_stats.sql').read_text(encoding='utf-8')
           penalty_default = Path('web-v2/supabase_web_v2_penalty_permission_default.sql').read_text(encoding='utf-8')
           checks = {
               'summary queries canonical leave type': 'employee_name, leave_reason, leave_type, calculated_days' in api,
@@ -206,7 +209,16 @@ jobs:
               'Web V2 employee selector is admin-only': "const canChooseEmployee = role === 'admin'" in leave_page,
               'Web V2 penalty column follows returned permission': 'user?.permissions?.employee_penalty_view === true' in leave_page,
               'Web V2 uses dd/mm/yyyy date display': '`${day}/${month}/${year}`' in leave_page,
-              'Web V2 date filter follows metrics': leave_page.index('<section className="metric-grid">') < leave_page.index('<div className="date-toolbar">') < leave_page.index('<div className="content-grid">'),
+              'Web V2 date filter follows metrics': leave_page.index('<section className="metric-grid">') < leave_page.index('<div className="date-toolbar range-toolbar">') < leave_page.index('<div className="content-grid">'),
+              'Web V2 supports requested date ranges': all(label in leave_page for label in ('Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau', 'Tùy chỉnh')),
+              'Web V2 daily summary precedes detail grid': leave_page.index('daily-summary-panel') < leave_page.index('<div className="content-grid">'),
+              'Web V2 daily list contains detail column': '<th>Chi tiết</th>' in leave_page and "item.detail || '—'" in leave_page,
+              'Web V2 daily quota comes from PostgreSQL': "setting_key='daily_quota'" in api and 'paid_full' in api,
+              'Web V2 deployed API uses live validation quota': '_api._daily_quota_config = _api_daily_quota_config' in shared_api,
+              'Web V2 daily stats RPC is authenticated': 'vera_v2_leave_daily_stats' in daily_stats_sql and 'from public, anon' in daily_stats_sql.lower(),
+              'Web V2 login uses wellbeing message': 'Suối nguồn thư giãn, trọn vẹn an yên' in login_page,
+              'Web V2 login contains contact and map': '193 Trương Định, Tam Hiệp, Đồng Nai' in login_page and 'maps.app.goo.gl/kkQjkTT7vm9oDWjbA' in login_page,
+              'Web V2 legacy login copy removed': 'Trải nghiệm mới' not in login_page and 'Web V2 · React + Supabase' not in login_page,
               'Web V2 topbar uses VERA wellbeing message': 'Suối nguồn thư giãn, trọn vẹn an yên.' in shell,
               'Web V2 excludes system roles from coverage': "NOT IN ('admin','letan','locker','tapvu')" in api,
               'Web V2 RPC penalty follows feature permission': "employee_penalty_view" in hardening and 'case when can_view_penalty' in hardening,

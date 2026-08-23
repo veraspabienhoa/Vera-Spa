@@ -1,4 +1,4 @@
-import { LockKeyhole, Sparkles } from 'lucide-react'
+import { LockKeyhole } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
@@ -15,7 +15,7 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
     event.preventDefault()
     setError('')
     if (!isSupabaseConfigured || !supabase) {
-      setError('Chưa cấu hình Supabase cho Web V2.')
+      setError('Chưa cấu hình Supabase cho hệ thống.')
       return
     }
     setBusy(true)
@@ -57,13 +57,23 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
           <div className="brand-mark large">V</div>
           <div>
             <div className="brand-name large-text">VERA SPA</div>
-            <div className="brand-subtitle">Web V2 · React + Supabase</div>
           </div>
         </div>
         <div className="login-pitch">
-          <span className="eyebrow"><Sparkles size={15} /> Trải nghiệm mới</span>
-          <h1>Nhanh hơn, mượt hơn, không làm gián đoạn hệ thống hiện tại.</h1>
-          <p>Web V2 dùng cùng tài khoản và mật khẩu VERA hiện tại. PostgreSQL/Supabase vẫn là dữ liệu trung tâm; nghiệp vụ ghi quan trọng tiếp tục được bảo vệ qua backend.</p>
+          <h1>Suối nguồn thư giãn, trọn vẹn an yên</h1>
+          <div className="login-contact">
+            <p><span aria-hidden="true">🏠</span> 193 Trương Định, Tam Hiệp, Đồng Nai</p>
+            <p><span aria-hidden="true">☎️</span> Hotline: 0833.22.99.39</p>
+            <a
+              href="https://maps.app.goo.gl/kkQjkTT7vm9oDWjbA?g_st=ic"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="map-button"
+            >
+              <span aria-hidden="true">📍</span>
+              Xem vị trí trên Google Maps
+            </a>
+          </div>
         </div>
       </section>
 

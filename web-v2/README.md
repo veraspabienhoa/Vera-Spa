@@ -56,7 +56,7 @@ Không dùng GitHub Pages để chứa secret server-side.
 
 ## Kích hoạt bản pilot trên `main`
 
-1. Chạy `supabase_web_v2_pilot_hardening.sql` một lần trong Supabase SQL Editor.
+1. Chạy `supabase_web_v2_pilot_hardening.sql`, `supabase_web_v2_penalty_permission_default.sql` và `supabase_web_v2_daily_stats.sql` một lần trong Supabase SQL Editor.
 2. Đảm bảo Cloud Run đã triển khai service `vera-spa-api` từ `cloudbuild.yaml`.
 3. Có thể mở **Settings → Secrets and variables → Actions → Variables** để ghi đè các giá trị public mặc định:
    - `VITE_SUPABASE_URL`: URL project Supabase.
@@ -74,5 +74,6 @@ Workflow có sẵn các giá trị public production của VERA; repository Vari
 - Quyền `employee_penalty_view` (`💰 Lịch nghỉ · Xem tiền phạt vi phạm`) được quản lý tại **Phân quyền chức năng**. Admin luôn có quyền; các vai trò/tài khoản khác mặc định không có và chỉ thấy khi Admin chủ động cấp.
 - `supabase_web_v2_penalty_permission_default.sql` là baseline một lần để thu hồi các cấp quyền xem tiền phạt cũ trước khi áp dụng mặc định Admin-only.
 - Ngày hiển thị trong Web V2 dùng định dạng `dd/mm/yyyy`.
+- Bộ lọc thống kê hỗ trợ Hôm qua/Hôm nay/Tuần này/Tuần sau/Tháng này/Tháng sau/Tùy chỉnh. Bảng theo ngày lấy trực tiếp từ PostgreSQL và dùng cấu hình `leave_rules/daily_quota` để cảnh báo khi Có phép hoặc Phát sinh đã đủ hạn mức.
 - Các RPC dự phòng chỉ cấp `EXECUTE` cho `authenticated` và `service_role`; `anon` bị thu hồi quyền.
 - Tài khoản hệ thống `admin` không được cộng vào thống kê nhân viên đang làm việc.
