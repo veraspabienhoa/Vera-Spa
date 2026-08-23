@@ -74,6 +74,7 @@ jobs:
               'vera_postgres_phase15_patch_fix',
               'vera_postgres_phase16_patch',
               'vera_postgres_phase17_patch_fix',
+              'vera_official_rules_patch',
           ]
 
           all_warnings = []
@@ -121,7 +122,9 @@ jobs:
               'penalty repair reads PostgreSQL payload': "payload ? 'Phạt vi phạm'" in repair,
               'penalty repair exact x10 guard': 'current_penalty != source_penalty * 10' in repair,
               'penalty repair updates strictly by record_uid': 'WHERE record_uid=:record_uid' in repair,
-              'current wrapper build is V92.22.5 penalty repair': 'v92.22.5-phase17-penalty-repair-1' in app,
+              'current wrapper build is V92.23.0 official rules': 'v92.23.0-official-rules-page-1' in app,
+              'official rules patch is installed': 'vera_official_rules_patch' in app,
+              'menu display is renamed to Nội quy': '"🧾 Quản lý lý do nghỉ": "📜 Nội quy"' in app,
           }
 
           update_match = re.search(r'_UPDATE_BY_UID_SQL\s*=\s*text\("""(.*?)"""\)', uid, re.S)
@@ -140,6 +143,40 @@ jobs:
               sys.exit(1)
 
           print('\nAll Phase 17 canonical CRUD invariants passed.')
+          PY
+
+      - name: Verify official Nội quy invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          rules = Path('vera_official_rules.py').read_text(encoding='utf-8')
+          page = Path('vera_official_rules_page.py').read_text(encoding='utf-8')
+          patch = Path('vera_official_rules_patch.py').read_text(encoding='utf-8')
+          checks = {
+              'PostgreSQL setting category': 'CATEGORY = "official_policy"' in rules,
+              'versioned setting key': 'SETTING_KEY = "leave_rules"' in rules,
+              'required policy columns protected': 'REQUIRED_COLUMNS' in rules and 'Phạt vi phạm' in rules,
+              'arbitrary columns preserved': '"columns": list(out.columns)' in rules,
+              'Excel export': 'download_button' in page and 'NoiQuy_VeraSpa.xlsx' in page,
+              'Excel import': 'file_uploader' in page and 'pd.read_excel' in page,
+              'direct editable grid': 'st.data_editor' in page and 'num_rows="dynamic"' in page,
+              'add column': '➕ Thêm cột' in page,
+              'delete column': '🗑️ Xóa cột' in page,
+              'add row': '➕ Thêm dòng' in page,
+              'delete row': '🗑️ Xóa dòng' in page,
+              'legacy LoaiNghi mirror': 'worksheet("LoaiNghi")' in page and '_mirror_to_legacy_sheet' in page,
+              'canonical get_loai_nghi wrapper': '_vera_legacy_get_loai_nghi' in patch and 'load_dataframe(vpg' in patch,
+              'reason page route replacement': '_patch_reason_branch' in patch and '_vera_rules_page.render(globals())' in patch,
+          }
+          failed = [k for k,v in checks.items() if not v]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed Nội quy invariants: ' + ', '.join(failed))
+          print('All official Nội quy invariants passed.')
           PY
 
       - name: Verify leave penalty money parser
