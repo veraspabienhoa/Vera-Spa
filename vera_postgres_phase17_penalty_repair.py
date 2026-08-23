@@ -14,7 +14,7 @@ Safety properties
 * Every database UPDATE is keyed strictly by stable ``record_uid``.
 * Reason matching is accent/case/order tolerant, but token-signature matching is
   accepted only when one signature maps to one unique official amount.
-* The database repair is a one-time versioned migration. Once version 4 has been
+* The database repair is a one-time versioned migration. Once version 5 has been
   recorded, later intentional Nội quy changes cannot retroactively trigger this
   historical x10 repair.
 * A conservative bootstrap snapshot of the current LoaiNghi penalties can repair
@@ -28,14 +28,14 @@ from decimal import Decimal
 import os
 import re
 import unicodedata
-from typing import Any
+from typing import Any, Mapping
 
 from sqlalchemy import text
 
 import vera_postgres_phase3 as _phase3
 
 
-PHASE17_PENALTY_REPAIR_VERSION = 4
+PHASE17_PENALTY_REPAIR_VERSION = 5
 PHASE17_PENALTY_COMPONENT = "phase17_leave_penalty_migration_repair"
 LEAVE_DATASET = "leave_primary"
 _RULES_CATEGORY = "official_policy"
@@ -209,6 +209,87 @@ def _official_penalty(reason: Any, exact, signatures):
     return signatures.get(_reason_signature(reason))
 
 
+def _payload_dict(value: Any) -> dict:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            import json
+            parsed = json.loads(value)
+            return dict(parsed) if isinstance(parsed, Mapping) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _payload_penalty(value: Any):
+    payload = _payload_dict(value)
+    for key in ("Phạt vi phạm", "Phat vi pham", "penalty"):
+        if key not in payload:
+            continue
+        raw = payload.get(key)
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            continue
+        return _money(raw)
+    return None
+
+
+_PROGRESSIVE_REASON_KEYS = {
+    _reason_key("Nghỉ không phép"),
+    _reason_key("Đi trễ không phép"),
+    _reason_key("Về sớm không phép"),
+    _reason_key("Ra sớm không phép"),
+}
+
+
+def _progressive_penalty(reason: Any, detail: Any, base_penalty: Decimal):
+    if _reason_key(reason) not in _PROGRESSIVE_REASON_KEYS:
+        return None
+    match = re.search(r"nguoi\s+thu\s+(\d+)", _reason_key(detail))
+    if not match:
+        return None
+    ordinal = max(1, int(match.group(1)))
+    return base_penalty + Decimal(max(0, ordinal - 2) * 100000)
+
+
+def _repair_target(row: Mapping[str, Any], exact, signatures):
+    """Return the verified non-x10 amount, or None when evidence is insufficient."""
+    current = _money(row.get("penalty", row.get("Phạt vi phạm", 0)))
+    reason = row.get("leave_reason", row.get("Lý do nghỉ", ""))
+    detail = row.get("detail", row.get("Chi tiết", ""))
+    official = _official_penalty(reason, exact, signatures)
+    payload_value = _payload_penalty(row.get("payload"))
+
+    candidates = []
+    if payload_value is not None and payload_value > 0:
+        candidates.append(payload_value)
+    progressive = None
+    if official is not None and official > 0:
+        progressive = _progressive_penalty(reason, detail, official)
+        if progressive is not None and progressive > 0:
+            candidates.append(progressive)
+        candidates.append(official)
+
+    seen = set()
+    for expected in candidates:
+        if expected in seen:
+            continue
+        seen.add(expected)
+        # Keep this explicit exact-x10 gate: no approximate or range-based repair.
+        if current != expected * 10:
+            continue
+        return expected
+
+    # Some historical rows multiplied only the policy base by ten, then added the
+    # correct progressive bonus. Detect that exact construction as a second safe
+    # signature and restore base + bonus.
+    if progressive is not None and official is not None:
+        bonus = progressive - official
+        if bonus >= 0 and current == official * 10 + bonus:
+            return progressive
+    return None
+
+
 def _correct_frame(frame, vpg):
     """Temporary UI guard used only while the one-time migration is incomplete."""
     try:
@@ -223,10 +304,12 @@ def _correct_frame(frame, vpg):
         exact, signatures, _, _ = _policy_maps(vpg)
         out = frame.copy()
         for idx in out.index:
-            expected = _official_penalty(out.at[idx, reason_col], exact, signatures)
-            current = _money(out.at[idx, penalty_col])
-            if expected is not None and expected > 0 and current == expected * 10:
-                out.at[idx, penalty_col] = float(expected) if expected % 1 else int(expected)
+            row = out.loc[idx].to_dict()
+            row["leave_reason"] = out.at[idx, reason_col]
+            row["penalty"] = out.at[idx, penalty_col]
+            target = _repair_target(row, exact, signatures)
+            if target is not None:
+                out.at[idx, penalty_col] = float(target) if target % 1 else int(target)
         return out
     except Exception:
         return frame
@@ -275,7 +358,7 @@ def repair(vpg) -> dict:
                 return dict(status)
 
         rows = conn.execute(text("""
-            SELECT record_uid, leave_reason, penalty
+            SELECT record_uid, leave_reason, detail, penalty, payload
             FROM leave_records
             WHERE record_uid IS NOT NULL
               AND BTRIM(record_uid) <> ''
@@ -285,24 +368,30 @@ def repair(vpg) -> dict:
         status["scanned"] = len(rows)
         for row in rows:
             uid = str(row.get("record_uid") or "").strip()
-            expected = _official_penalty(row.get("leave_reason"), exact, signatures)
-            current = _money(row.get("penalty"))
+            target = _repair_target(row, exact, signatures)
 
-            if not uid or expected is None or expected <= 0:
+            if not uid:
                 status["skipped"] += 1
                 continue
 
             status["eligible"] += 1
-            if current != expected * 10:
+            if target is None:
                 continue
 
             result = conn.execute(
                 text("""
                     UPDATE leave_records
-                    SET penalty=:penalty, updated_at=NOW()
+                    SET penalty=:penalty,
+                        payload=jsonb_set(
+                            COALESCE(payload, '{}'::jsonb),
+                            ARRAY['Phạt vi phạm'],
+                            to_jsonb(CAST(:penalty AS numeric)),
+                            true
+                        ),
+                        updated_at=NOW()
                     WHERE record_uid=:record_uid
                 """),
-                {"penalty": expected, "record_uid": uid},
+                {"penalty": target, "record_uid": uid},
             )
             if int(result.rowcount or 0) != 1:
                 raise RuntimeError(
@@ -354,7 +443,7 @@ def get_status(vpg=None) -> dict:
     out = dict(_LAST_STATUS)
     out.update({
         "version": PHASE17_PENALTY_REPAIR_VERSION,
-        "repair_condition": "current_penalty == official_policy_penalty * 10",
+        "repair_condition": "exact x10 via payload/policy/progressive evidence",
         "mutation_key": "record_uid_only",
         "one_time_migration": True,
         "canonical_required_to_complete": True,
@@ -381,7 +470,7 @@ def install(vpg) -> bool:
     if _enabled(vpg) and not _migration_complete(vpg):
         _safe_repair(vpg)
 
-    # Retry only while the one-time migration is incomplete. Once version 4 is
+    # Retry only while the one-time migration is incomplete. Once version 5 is
     # committed from a canonical-policy run, the wrapper becomes a transparent
     # pass-through and later policy edits cannot be mistaken for old x10 corruption.
     original_leave_dataframe = getattr(vpg, "phase17_leave_dataframe", None)
