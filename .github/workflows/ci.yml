@@ -93,7 +93,7 @@ jobs:
           print('Runtime patch chain applied with zero warnings and compiled successfully.')
           PY
 
-      - name: Verify Phase 17 record_uid invariants
+      - name: Verify Phase 17 record_uid and penalty invariants
         shell: bash
         run: |
           python - <<'PY'
@@ -119,10 +119,12 @@ jobs:
               'batch delete goes through Phase 4 leave delete': 'operation="delete_batch"' in p4,
               'strict UID runtime is installed after Phase 17': 'vera_postgres_phase17_uid' in app,
               'penalty repair runtime is installed after UID': 'vera_postgres_phase17_penalty_repair' in app,
-              'penalty repair reads PostgreSQL payload': "payload ? 'Phạt vi phạm'" in repair,
-              'penalty repair exact x10 guard': 'current_penalty != source_penalty * 10' in repair,
+              'penalty repair reads official PostgreSQL policy': '_RULES_CATEGORY = "official_policy"' in repair and '_RULES_KEY = "leave_rules"' in repair,
+              'penalty repair exact x10 guard': 'current != expected * 10' in repair,
               'penalty repair updates strictly by record_uid': 'WHERE record_uid=:record_uid' in repair,
-              'current wrapper build is V92.23.0 official rules': 'v92.23.0-official-rules-page-1' in app,
+              'penalty repair rechecks before leave reads': 'phase17_leave_dataframe' in repair and 'guarded_leave_dataframe' in repair,
+              'penalty repair has last-mile UI guard': '_correct_frame' in repair,
+              'current wrapper build is V92.23.1': 'v92.23.1-penalty-landing-safe-deploy-1' in app,
               'official rules patch is installed': 'vera_official_rules_patch' in app,
               'menu display is renamed to Nội quy': '"🧾 Quản lý lý do nghỉ": "📜 Nội quy"' in app,
           }
@@ -142,42 +144,7 @@ jobs:
               print('\nFailed invariants: ' + ', '.join(failed))
               sys.exit(1)
 
-          print('\nAll Phase 17 canonical CRUD invariants passed.')
-          PY
-
-      - name: Verify official Nội quy invariants
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          rules = Path('vera_official_rules.py').read_text(encoding='utf-8')
-          page = Path('vera_official_rules_page.py').read_text(encoding='utf-8')
-          patch = Path('vera_official_rules_patch.py').read_text(encoding='utf-8')
-          checks = {
-              'PostgreSQL setting category': 'CATEGORY = "official_policy"' in rules,
-              'versioned setting key': 'SETTING_KEY = "leave_rules"' in rules,
-              'required policy columns protected': 'REQUIRED_COLUMNS' in rules and 'Phạt vi phạm' in rules,
-              'arbitrary columns preserved': '"columns": list(out.columns)' in rules,
-              'Excel export': 'download_button' in page and 'NoiQuy_VeraSpa.xlsx' in page,
-              'Excel import': 'file_uploader' in page and 'pd.read_excel' in page,
-              'Excel import is xlsx/openpyxl': 'type=["xlsx"]' in page and 'engine="openpyxl"' in page,
-              'direct editable grid': 'st.data_editor' in page and 'num_rows="dynamic"' in page,
-              'add column': '➕ Thêm cột' in page,
-              'delete column': '🗑️ Xóa cột' in page,
-              'add row': '➕ Thêm dòng' in page,
-              'delete row': '🗑️ Xóa dòng' in page,
-              'legacy LoaiNghi mirror': 'worksheet("LoaiNghi")' in page and '_mirror_to_legacy_sheet' in page,
-              'canonical reader imports PostgreSQL directly': 'import vera_postgres as _vpg_rules' in patch and 'load_dataframe(_vpg_rules' in patch,
-              'page PostgreSQL fallback is direct': 'import vera_postgres as vpg' in page,
-              'reason page route replacement': '_patch_reason_branch' in patch and '_vera_rules_page.render(globals())' in patch,
-          }
-          failed = [k for k,v in checks.items() if not v]
-          for name, ok in checks.items():
-              print(('PASS' if ok else 'FAIL') + ': ' + name)
-          if failed:
-              raise SystemExit('Failed Nội quy invariants: ' + ', '.join(failed))
-          print('All official Nội quy invariants passed.')
+          print('\nAll Phase 17 canonical CRUD/penalty invariants passed.')
           PY
 
       - name: Verify leave penalty money parser
@@ -221,6 +188,9 @@ jobs:
               '500,000': Decimal('500000'),
               '500000': Decimal('500000'),
               '300,000.00': Decimal('300000.00'),
+              '500.000 mỗi ngày': Decimal('500000'),
+              '1.000.000 mỗi ngày': Decimal('1000000'),
+              '100.000 mỗi ngày': Decimal('100000'),
           }
           for raw, expected in cases.items():
               actual = parse(raw)
@@ -228,4 +198,73 @@ jobs:
               if actual != expected:
                   raise SystemExit(f'Penalty parse mismatch: {raw!r}: {actual} != {expected}')
           print('All leave penalty parser cases preserved exactly.')
+          PY
+
+      - name: Verify official Nội quy invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          rules = Path('vera_official_rules.py').read_text(encoding='utf-8')
+          page = Path('vera_official_rules_page.py').read_text(encoding='utf-8')
+          patch = Path('vera_official_rules_patch.py').read_text(encoding='utf-8')
+          checks = {
+              'PostgreSQL setting category': 'CATEGORY = "official_policy"' in rules,
+              'versioned setting key': 'SETTING_KEY = "leave_rules"' in rules,
+              'required policy columns protected': 'REQUIRED_COLUMNS' in rules and 'Phạt vi phạm' in rules,
+              'arbitrary columns preserved': '"columns": list(out.columns)' in rules,
+              'Excel export': 'download_button' in page and 'NoiQuy_VeraSpa.xlsx' in page,
+              'Excel import': 'file_uploader' in page and 'pd.read_excel' in page,
+              'Excel import is xlsx/openpyxl': 'type=["xlsx"]' in page and 'engine="openpyxl"' in page,
+              'direct editable grid': 'st.data_editor' in page and 'num_rows="dynamic"' in page,
+              'add column': '➕ Thêm cột' in page,
+              'delete column': '🗑️ Xóa cột' in page,
+              'add row': '➕ Thêm dòng' in page,
+              'delete row': '🗑️ Xóa dòng' in page,
+              'legacy LoaiNghi mirror': 'worksheet("LoaiNghi")' in page and '_mirror_to_legacy_sheet' in page,
+              'canonical reader imports PostgreSQL directly': 'import vera_postgres as _vpg_rules' in patch and 'load_dataframe(_vpg_rules' in patch,
+              'page PostgreSQL fallback is direct': 'import vera_postgres as vpg' in page,
+              'reason page route replacement': '_patch_reason_branch' in patch and '_vera_rules_page.render(globals())' in patch,
+          }
+          failed = [k for k,v in checks.items() if not v]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed Nội quy invariants: ' + ', '.join(failed))
+          print('All official Nội quy invariants passed.')
+          PY
+
+      - name: Verify post-login landing and safe Cloud Run rollout
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          landing = Path('vera_postlogin_default_page.py').read_text(encoding='utf-8')
+          app = Path('app.py').read_text(encoding='utf-8')
+          build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
+
+          checks = {
+              'leave page is landing target': '📅 Đăng ký nghỉ' in landing,
+              'landing applies once per session': '_vera_postlogin_leave_landing_applied' in landing,
+              'normal navigation remains after first landing': 'session_state.get(_FLAG, False)' in landing,
+              'sidebar/main selector coverage': 'DeltaGenerator' in landing and 'radio' in landing and 'selectbox' in landing,
+              'landing shim installed before core exec': 'vera_postlogin_default_page' in app and app.index('vera_postlogin_default_page') < app.index('exec(_compiled_core'),
+              'candidate receives no production traffic': '--no-traffic' in build,
+              'candidate has unique commit tag': '--tag=candidate-$SHORT_SHA' in build,
+              'Streamlit candidate health endpoint checked': '/_stcore/health' in build,
+              'exact checked revision is captured': 'revisionName' in build and 'cloud-run-candidate.txt' in build,
+              'promotion uses captured exact revision': '--to-revisions=' in build and 'CANDIDATE_REVISION' in build,
+              'one warm web instance retained': '--min=1' in build,
+              'session affinity retained': '--session-affinity' in build,
+              'long-lived Streamlit request timeout retained': '--timeout=3600' in build,
+              'production promotion happens after health check': build.index('id: "promote-web-candidate"') > build.index('id: "health-check-web-candidate"'),
+          }
+          failed = [k for k,v in checks.items() if not v]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed operational invariants: ' + ', '.join(failed))
+          print('Post-login landing and safe rollout invariants passed.')
           PY
