@@ -101,6 +101,7 @@ jobs:
           import sys
 
           uid = Path('vera_postgres_phase17_uid.py').read_text(encoding='utf-8')
+          repair = Path('vera_postgres_phase17_penalty_repair.py').read_text(encoding='utf-8')
           app = Path('app.py').read_text(encoding='utf-8')
           p4 = Path('vera_postgres_phase4_patch.py').read_text(encoding='utf-8')
 
@@ -116,10 +117,13 @@ jobs:
               'single delete goes through Phase 4 leave delete': 'operation="delete_single"' in p4,
               'batch delete goes through Phase 4 leave delete': 'operation="delete_batch"' in p4,
               'strict UID runtime is installed after Phase 17': 'vera_postgres_phase17_uid' in app,
-              'current wrapper build is V92.22.4+ strict UID': 'phase17-strict-record-uid-crud' in app,
+              'penalty repair runtime is installed after UID': 'vera_postgres_phase17_penalty_repair' in app,
+              'penalty repair reads PostgreSQL payload': "payload ? 'Phạt vi phạm'" in repair,
+              'penalty repair exact x10 guard': 'current_penalty != source_penalty * 10' in repair,
+              'penalty repair updates strictly by record_uid': 'WHERE record_uid=:record_uid' in repair,
+              'current wrapper build is V92.22.5 penalty repair': 'v92.22.5-phase17-penalty-repair-1' in app,
           }
 
-          # Guard against reintroducing source_row as a normal UPDATE assignment.
           update_match = re.search(r'_UPDATE_BY_UID_SQL\s*=\s*text\("""(.*?)"""\)', uid, re.S)
           if update_match:
               update_sql = update_match.group(1)
@@ -136,4 +140,27 @@ jobs:
               sys.exit(1)
 
           print('\nAll Phase 17 canonical CRUD invariants passed.')
+          PY
+
+      - name: Verify leave penalty money parser
+        shell: bash
+        run: |
+          python - <<'PY'
+          from decimal import Decimal
+          import vera_postgres_phase3 as phase3
+
+          cases = {
+              1000000: Decimal('1000000'),
+              '1000000': Decimal('1000000'),
+              '1,000,000.00': Decimal('1000000.00'),
+              '500,000': Decimal('500000'),
+              '500000': Decimal('500000'),
+              '300,000.00': Decimal('300000.00'),
+          }
+          for raw, expected in cases.items():
+              actual = phase3._safe_decimal(raw)
+              print(f'{raw!r} -> {actual}')
+              if actual != expected:
+                  raise SystemExit(f'Penalty parse mismatch: {raw!r}: {actual} != {expected}')
+          print('All leave penalty parser cases preserved exactly.')
           PY
