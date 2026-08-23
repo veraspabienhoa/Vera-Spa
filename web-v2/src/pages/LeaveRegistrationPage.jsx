@@ -335,7 +335,7 @@ export default function LeaveRegistrationPage({ user }) {
       <div className="content-grid">
         <section className="panel registration-panel">
           <div className="panel-title-row">
-            <div><h2>Đăng ký mới</h2><p>Ngày tính và mức phạt mặc định do server lấy từ Nội quy; trình duyệt không được tự quyết định.</p></div>
+            <div><h2>ĐĂNG KÝ MỚI</h2></div>
           </div>
           <form className="leave-form" onSubmit={submit}>
             <label>Tên nhân viên</label>
@@ -397,7 +397,7 @@ export default function LeaveRegistrationPage({ user }) {
         <section className="panel daily-summary-panel">
           <div className="panel-title-row">
             <div>
-              <h2>Thống kê chi tiết theo từng ngày</h2>
+              <h2>THỐNG KÊ</h2>
               <p>{formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)} · Chọn ngày trong bảng để xem danh sách chi tiết.</p>
             </div>
           </div>
@@ -448,7 +448,7 @@ export default function LeaveRegistrationPage({ user }) {
 
         <section className="panel leave-list-panel">
           <div className="panel-title-row">
-            <div><h2>Danh sách</h2><p>{formatDateDisplay(date)}</p></div>
+            <div><h2>DANH SÁCH</h2><p>{formatDateDisplay(date)}</p></div>
             <div className="list-actions">
               {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
