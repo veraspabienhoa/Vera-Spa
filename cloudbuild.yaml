@@ -22,6 +22,63 @@ steps:
       - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:latest"
 
   # ============================================================
+  # WEB V2 PYTHON BUSINESS API
+  # Public Cloud Run ingress is required by GitHub Pages, but every business
+  # endpoint validates the Supabase Bearer session before reading/writing data.
+  # The same runtime service account keeps the existing Google Sheet mirror.
+  # ============================================================
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "deploy-web-v2-api"
+    args:
+      - "run"
+      - "deploy"
+      - "${_WEB_V2_API_SERVICE}"
+      - "--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
+      - "--region=${_REGION}"
+      - "--platform=managed"
+      - "--service-account=${_RUN_SERVICE_ACCOUNT}"
+      - "--allow-unauthenticated"
+      - "--cpu=1"
+      - "--memory=1Gi"
+      - "--min=0"
+      - "--max=2"
+      - "--concurrency=20"
+      - "--timeout=60"
+      - "--clear-cloudsql-instances"
+      - "--command=uvicorn"
+      - "--args=vera_web_v2_api:app,--host,0.0.0.0,--port,8080"
+      - "--set-env-vars=DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_RECYCLE=600,SUPABASE_URL=https://nunxfjhrszmlyyrvphuq.supabase.co,SUPABASE_ANON_KEY=${_SUPABASE_ANON_KEY},VERA_LEAVE_SHEET_ID=1Kz0aw-JatptAN9G7YSwZ6rJO09urOPaD-rS-18eZSY0,VERA_V2_CORS_ORIGINS=https://veraspabienhoa.github.io"
+      - "--set-secrets=DB_PASS=${_DB_SECRET}:latest"
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "health-check-web-v2-api"
+    entrypoint: "bash"
+    args:
+      - "-ceu"
+      - |
+        API_URL="$$(gcloud run services describe "${_WEB_V2_API_SERVICE}" --region="${_REGION}" --platform=managed --format='value(status.url)')"
+        test -n "$${API_URL}"
+        echo "Health checking Web V2 API: $${API_URL}/v2/health"
+        python3 - "$${API_URL}/v2/health" <<'PY'
+        import sys, time, urllib.request
+        url=sys.argv[1]
+        last=None
+        for attempt in range(1,13):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as r:
+                    body=r.read(1024).decode('utf-8','replace')
+                    if 200 <= r.status < 300:
+                        print(body)
+                        raise SystemExit(0)
+                    last=RuntimeError(f'HTTP {r.status}: {body}')
+            except Exception as exc:
+                last=exc
+                print(f'API health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
+            time.sleep(5)
+        raise SystemExit(f'Web V2 API health check failed: {last}')
+        PY
+
+  # ============================================================
   # WEB APP VERA SPA - SAFE CANDIDATE REVISION
   # Supabase Session Pooler Singapore is preserved exactly as before.
   # The new revision receives NO production traffic until all deployment
@@ -43,9 +100,6 @@ steps:
       - "--min=1"
       - "--max=2"
       - "--concurrency=8"
-      # Streamlit uses a long-lived WebSocket. Keep the maximum request timeout
-      # and session affinity so already connected users are allowed to drain on
-      # the previous revision instead of being deliberately interrupted.
       - "--timeout=3600"
       - "--cpu-boost"
       - "--session-affinity"
@@ -55,9 +109,6 @@ steps:
       - "--set-env-vars=VERA_DB_ENABLED=1,VERA_DATA_BACKEND=postgres,DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=600,DB_CONNECT_TIMEOUT=10,VERA_SHEETS_MIRROR_MODE=optional,VERA_PHASE17_FINAL_BACKEND=postgres,SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com,TIMESOFT_BASE_URL=https://vera.timesoft.vn"
       - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,SMTP_APP_PASSWORD=vera-smtp-app-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
 
-  # Resolve the unique candidate tag to its exact revision + URL, then verify
-  # Streamlit is healthy. If this step fails, Cloud Build stops and the previous
-  # production revision keeps serving 100% traffic.
   - name: "gcr.io/cloud-builders/gcloud"
     id: "health-check-web-candidate"
     entrypoint: "bash"
@@ -76,7 +127,6 @@ steps:
         python3 - "$${SERVICE_JSON}" "$${TAG}" > "$${CANDIDATE_META}" <<'PY'
         import json
         import sys
-
         path, wanted_tag = sys.argv[1], sys.argv[2]
         with open(path, "r", encoding="utf-8") as fh:
             service = json.load(fh)
@@ -101,7 +151,6 @@ steps:
         import sys
         import time
         import urllib.request
-
         url = sys.argv[1]
         last_error = None
         for attempt in range(1, 19):
@@ -119,10 +168,6 @@ steps:
         raise SystemExit(f"Candidate health check failed: {last_error}")
         PY
 
-  # ============================================================
-  # CLOUD RUN JOB - TIMESOFT SNAPSHOT ONLY
-  # Use the same Supabase Session Pooler as the web app.
-  # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     id: "deploy-timesoft-job"
     args:
@@ -144,8 +189,6 @@ steps:
       - "--set-env-vars=VERA_DB_ENABLED=1,VERA_DATA_BACKEND=postgres,DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=600,DB_CONNECT_TIMEOUT=10,TIMESOFT_BASE_URL=https://vera.timesoft.vn,TIMESOFT_SYNC_DAYS=2,TIMESOFT_CHECKIN_PAGE_SIZE=100"
       - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
 
-  # gcloud run jobs deploy does not expose --clear-cloudsql-instances.
-  # Clear the legacy Cloud SQL attachment explicitly after deployment.
   - name: "gcr.io/cloud-builders/gcloud"
     id: "clear-timesoft-cloudsql"
     args:
@@ -156,10 +199,6 @@ steps:
       - "--region=${_REGION}"
       - "--clear-cloudsql-instances"
 
-  # ============================================================
-  # CLOUD RUN JOB - AUTO UPDATE PHẠT 20:00 + EMAIL
-  # This legacy job still uses its existing Google Sheets business path.
-  # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     id: "deploy-auto-penalty-job"
     args:
@@ -181,9 +220,6 @@ steps:
       - "--set-env-vars=SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com,TIMESOFT_BASE_URL=https://vera.timesoft.vn,TIMESOFT_CHECKIN_PAGE_SIZE=100"
       - "--set-secrets=SMTP_APP_PASSWORD=vera-smtp-app-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
 
-  # Promote only after the candidate health check and all release-time job updates
-  # succeeded. The exact revision captured from the unique candidate tag is used,
-  # so overlapping builds cannot accidentally promote a different revision.
   - name: "gcr.io/cloud-builders/gcloud"
     id: "promote-web-candidate"
     entrypoint: "bash"
@@ -199,13 +235,11 @@ steps:
           --platform=managed \
           --to-revisions="$${CANDIDATE_REVISION}=100"
 
-# ============================================================
-# BIẾN CẤU HÌNH
-# ============================================================
 substitutions:
   _REGION: "asia-southeast1"
   _AR_REPO: "vera-spa"
   _SERVICE: "vera-spa"
+  _WEB_V2_API_SERVICE: "vera-spa-api"
   _TIMESOFT_JOB: "vera-spa-timesoft-sync"
   _AUTO_PENALTY_JOB: "vera-spa-auto-penalty-2000"
   _RUN_SERVICE_ACCOUNT: "vera-spa-run@vera-hr-app.iam.gserviceaccount.com"
@@ -214,16 +248,11 @@ substitutions:
   _DB_NAME: "postgres"
   _DB_USER: "postgres.nunxfjhrszmlyyrvphuq"
   _DB_SECRET: "vera-supabase-db-password"
+  _SUPABASE_ANON_KEY: "sb_publishable_idnn4HeEozpAonmSqM4Tgw_bB8HW4FX"
 
-# ============================================================
-# CLOUD BUILD OPTIONS
-# ============================================================
 options:
   logging: CLOUD_LOGGING_ONLY
 
-# ============================================================
-# IMAGES ĐƯỢC BUILD
-# ============================================================
 images:
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$SHORT_SHA"
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:latest"
