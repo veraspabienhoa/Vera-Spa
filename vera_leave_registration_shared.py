@@ -186,3 +186,51 @@ def progressive_key(reason: str) -> str:
     if ("ve som" in n or "ra som" in n) and "khong phep" in n:
         return "ve_som_khong_phep"
     return ""
+
+
+def summarize_leave_day(rows, active_employee_count: int) -> dict[str, int]:
+    """Return staff coverage metrics without double-counting leave records.
+
+    A day can contain several operational rows for one employee (for example a
+    leave row plus a late-arrival violation).  Coverage is about people, so the
+    metrics count normalized employee identities once and ignore non-leave or
+    zero-day rows.  ``leave_type`` is authoritative when present; the reason
+    text remains a compatibility fallback for older PostgreSQL rows.
+    """
+    leave_employees: set[str] = set()
+    paid_employees: set[str] = set()
+    unpaid_employees: set[str] = set()
+
+    for row in rows or []:
+        try:
+            employee_key = norm(row.get("employee_name", ""))
+            reason = str(row.get("leave_reason", "") or "")
+            calculated_days = number(row.get("calculated_days", 0), default=0)
+        except (AttributeError, TypeError):
+            continue
+
+        if not employee_key or calculated_days <= 0 or not norm(reason).startswith("nghi"):
+            continue
+
+        leave_employees.add(employee_key)
+        type_key = norm(row.get("leave_type", ""))
+        policy_group = ""
+        if "khong phep" in type_key:
+            policy_group = "khong_phep"
+        elif "co phep" in type_key:
+            policy_group = "co_phep"
+        else:
+            policy_group = group(reason)
+
+        if policy_group == "co_phep":
+            paid_employees.add(employee_key)
+        elif policy_group == "khong_phep":
+            unpaid_employees.add(employee_key)
+
+    active = max(0, int(active_employee_count or 0))
+    return {
+        "working": max(active - len(leave_employees), 0),
+        "leave": len(leave_employees),
+        "paid": len(paid_employees),
+        "unpaid": len(unpaid_employees),
+    }

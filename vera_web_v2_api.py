@@ -29,6 +29,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 
+from vera_leave_registration_shared import summarize_leave_day
+
 VN_TZ = timezone(timedelta(hours=7))
 LEAVE_SHEET_ID = os.getenv(
     "VERA_LEAVE_SHEET_ID", "1Kz0aw-JatptAN9G7YSwZ6rJO09urOPaD-rS-18eZSY0"
@@ -44,7 +46,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA Web V2 API", version="2.1")
+app = FastAPI(title="VERA SPA Web V2 API", version="2.2")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -547,12 +549,15 @@ def _insert_record(conn, record: dict, source_row: int):
             NOW(), NOW()
         )
     """), {**record, "sid": LEAVE_SHEET_ID, "srow": source_row, "payload": json.dumps(payload, ensure_ascii=False)})
-    # Operational trace; this is additive and does not replace the legacy activity log.
+    # Operational trace; this is additive and does not replace the legacy
+    # activity log.  A database error must roll back only this optional write,
+    # not poison the surrounding leave-registration transaction.
     try:
-        conn.execute(text("""
-            INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at)
-            VALUES ('leave_primary','web_v2_leave_create',:detail,NOW())
-        """), {"detail": f"record_uid={record['record_uid']}; employee={record['employee_name']}; actor={record['updated_by']}"})
+        with conn.begin_nested():
+            conn.execute(text("""
+                INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at)
+                VALUES ('leave_primary','web_v2_leave_create',:detail,NOW())
+            """), {"detail": f"record_uid={record['record_uid']}; employee={record['employee_name']}; actor={record['updated_by']}"})
     except Exception:
         # Do not make leave registration depend on an optional telemetry table shape.
         pass
@@ -562,7 +567,7 @@ def _insert_record(conn, record: dict, source_row: int):
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.1"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.2"}
 
 
 @app.get("/v2/me")
@@ -613,13 +618,11 @@ def leave_records(date_value: date = Query(alias="date"), ident: Identity = Depe
 def leave_summary(date_value: date = Query(alias="date"), ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         active = conn.execute(text("SELECT count(*) FROM employees WHERE COALESCE(login_locked,false)=false")).scalar() or 0
-        rows = conn.execute(text("SELECT employee_name, leave_reason, calculated_days FROM leave_records WHERE leave_date=:d"), {"d": date_value}).mappings().all()
-    full = len({r["employee_name"] for r in rows if _norm(r["leave_reason"]).startswith("nghi") and float(r["calculated_days"] or 0) > 0})
-    return {
-        "working": max(int(active) - full, 0), "leave": len(rows),
-        "paid": sum(1 for r in rows if _group(r["leave_reason"]) == "co_phep"),
-        "unpaid": sum(1 for r in rows if _group(r["leave_reason"]) == "khong_phep"),
-    }
+        rows = conn.execute(text("""
+            SELECT employee_name, leave_reason, leave_type, calculated_days
+            FROM leave_records WHERE leave_date=:d
+        """), {"d": date_value}).mappings().all()
+    return summarize_leave_day(rows, int(active))
 
 
 @app.post("/v2/leave/records")

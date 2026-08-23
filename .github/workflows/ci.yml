@@ -143,6 +143,66 @@ jobs:
               raise SystemExit('Failed shared-validation invariants: ' + ', '.join(failed))
           PY
 
+      - name: Verify Web V2 leave coverage and optional audit isolation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          from vera_leave_registration_shared import summarize_leave_day
+
+          rows = []
+          for index in range(1, 5):
+              rows.append({
+                  'employee_name': f'Có phép {index}',
+                  'leave_reason': 'Nghỉ theo chính sách',
+                  'leave_type': 'CÓ phép',
+                  'calculated_days': 1,
+              })
+          for index in range(1, 5):
+              rows.append({
+                  'employee_name': f'Không phép {index}',
+                  'leave_reason': 'Nghỉ theo chính sách',
+                  'leave_type': 'KHÔNG phép',
+                  'calculated_days': 1,
+              })
+
+          # Extra rows must not inflate staff coverage metrics.
+          rows.extend([
+              {
+                  'employee_name': 'Có phép 1',
+                  'leave_reason': 'Đi trễ KHÔNG phép',
+                  'leave_type': 'KHÔNG phép',
+                  'calculated_days': 0,
+              },
+              {
+                  'employee_name': 'Có phép 1',
+                  'leave_reason': 'Nghỉ theo chính sách',
+                  'leave_type': 'CÓ phép',
+                  'calculated_days': 1,
+              },
+          ])
+
+          actual = summarize_leave_day(rows, 36)
+          expected = {'working': 28, 'leave': 8, 'paid': 4, 'unpaid': 4}
+          if actual != expected:
+              raise SystemExit(f'Coverage summary mismatch: {actual} != {expected}')
+
+          api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          checks = {
+              'summary queries canonical leave type': 'employee_name, leave_reason, leave_type, calculated_days' in api,
+              'summary uses shared unique-employee helper': 'summarize_leave_day(rows, int(active))' in api,
+              'optional audit uses a savepoint': 'with conn.begin_nested()' in api,
+              'optional audit remains non-blocking': 'Do not make leave registration depend on an optional telemetry table shape.' in api,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed Web V2 leave invariants: ' + ', '.join(failed))
+          print('PASS: 8 employees = 4 paid + 4 unpaid, with duplicate/late rows ignored.')
+          PY
+
       - name: Verify Phase 17 record_uid and penalty invariants
         shell: bash
         run: |
