@@ -11,6 +11,7 @@ const formatDateInput = (date) => {
 }
 
 const today = () => formatDateInput(new Date())
+const emptyForm = { employee_name: '', leave_reason: '', detail: '', manual_penalty: '' }
 
 export default function LeaveRegistrationPage() {
   const [date, setDate] = useState(today())
@@ -18,10 +19,11 @@ export default function LeaveRegistrationPage() {
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
   const [employees, setEmployees] = useState([])
-  const [form, setForm] = useState({ employee_name: '', leave_reason: '', detail: '' })
+  const [form, setForm] = useState(emptyForm)
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [warnings, setWarnings] = useState([])
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -48,7 +50,7 @@ export default function LeaveRegistrationPage() {
         ])
         setSummary(summaryData)
         setRecords(recordData)
-        setReasons(reasonData)
+        setReasons(reasonData.map((name) => ({ name, requires_manual_penalty: false })))
         setEmployees(employeeData)
       }
     } catch (err) {
@@ -61,6 +63,7 @@ export default function LeaveRegistrationPage() {
   useEffect(() => { load() }, [load])
 
   const totalPenalty = useMemo(() => records.reduce((sum, item) => sum + Number(item.penalty || 0), 0), [records])
+  const selectedReason = useMemo(() => reasons.find((item) => item.name === form.leave_reason), [reasons, form.leave_reason])
 
   const shiftDate = (offset) => {
     const current = new Date(`${date}T00:00:00`)
@@ -71,16 +74,28 @@ export default function LeaveRegistrationPage() {
   const submit = async (event) => {
     event.preventDefault()
     setMessage('')
+    setWarnings([])
     setError('')
     if (!isApiConfigured) {
-      setError('Web V2 đang đọc dữ liệu thật. Chức năng Ghi sẽ được mở sau khi Python API dùng chung business rules hiện tại được triển khai; hiện chưa ghi trực tiếp vào PostgreSQL để tránh sai phép/phạt.')
+      setError('Python API V2 chưa được cấu hình nên hệ thống không cho phép ghi trực tiếp vào PostgreSQL.')
       return
     }
     setSaving(true)
     try {
-      await veraApi.createLeave({ ...form, leave_date: date })
-      setForm({ employee_name: '', leave_reason: '', detail: '' })
-      setMessage('Đã ghi đăng ký nghỉ.')
+      const payload = {
+        employee_name: form.employee_name,
+        leave_reason: form.leave_reason,
+        detail: form.detail,
+        leave_date: date,
+      }
+      if (selectedReason?.requires_manual_penalty) {
+        if (form.manual_penalty === '') throw new Error('Lý do này bắt buộc nhập Mức phạt vi phạm.')
+        payload.manual_penalty = Number(form.manual_penalty)
+      }
+      const result = await veraApi.createLeave(payload)
+      setForm(emptyForm)
+      setWarnings(result.warnings || [])
+      setMessage(result.message || 'Đã ghi đăng ký nghỉ.')
       await load()
     } catch (err) {
       setError(err.message || 'Không ghi được đăng ký nghỉ.')
@@ -93,15 +108,15 @@ export default function LeaveRegistrationPage() {
     <div>
       <div className="page-heading-row">
         <div>
-          <span className="eyebrow"><CalendarDays size={15} /> Web V2 · dữ liệu thật</span>
+          <span className="eyebrow"><CalendarDays size={15} /> Web V2 · Python business API</span>
           <h1 className="page-title">Đăng ký nghỉ</h1>
-          <p className="page-subtitle">Đọc trực tiếp dữ liệu PostgreSQL/Supabase đã được bảo vệ bằng Supabase Auth + RLS/RPC.</p>
+          <p className="page-subtitle">Dữ liệu thật PostgreSQL; khi ghi, Python API xác thực tài khoản, đọc Nội quy/LoaiNghi và mirror MainData.</p>
         </div>
         <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /> Làm mới</button>
       </div>
 
       {!isApiConfigured && (
-        <div className="warning-box"><strong>Đã kết nối dữ liệu thật.</strong> Danh sách, số liệu, nhân viên và lý do nghỉ lấy từ PostgreSQL/Supabase. Nút Ghi tạm khóa cho tới khi Python API nghiệp vụ dùng chung với hệ thống hiện tại hoàn tất.</div>
+        <div className="warning-box"><strong>Chế độ chỉ đọc.</strong> Python API V2 chưa có URL trong GitHub Pages nên nút Ghi vẫn khóa an toàn.</div>
       )}
 
       <div className="date-toolbar">
@@ -121,7 +136,7 @@ export default function LeaveRegistrationPage() {
       <div className="content-grid">
         <section className="panel">
           <div className="panel-title-row">
-            <div><h2>Đăng ký mới</h2><p>Ghi qua Python API để giữ nguyên toàn bộ business rules hiện tại.</p></div>
+            <div><h2>Đăng ký mới</h2><p>Ngày tính và mức phạt mặc định do server lấy từ Nội quy; trình duyệt không được tự quyết định.</p></div>
           </div>
           <form className="leave-form" onSubmit={submit}>
             <label>Tên nhân viên</label>
@@ -135,17 +150,37 @@ export default function LeaveRegistrationPage() {
             </select>
 
             <label>Lý do nghỉ</label>
-            <select value={form.leave_reason} onChange={(e) => setForm({ ...form, leave_reason: e.target.value })} required>
+            <select value={form.leave_reason} onChange={(e) => setForm({ ...form, leave_reason: e.target.value, manual_penalty: '' })} required>
               <option value="">-- Chọn lý do nghỉ --</option>
-              {reasons.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+              {reasons.map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
             </select>
+
+            {selectedReason && !selectedReason.requires_manual_penalty && selectedReason.penalty !== null && selectedReason.penalty !== undefined && (
+              <div className="info-box">Số ngày tính: <strong>{selectedReason.days ?? 0}</strong> · Phạt nền: <strong>{Number(selectedReason.penalty || 0).toLocaleString('vi-VN')}đ</strong>. Giá trị cuối cùng vẫn do server kiểm tra lại khi Ghi.</div>
+            )}
+
+            {selectedReason?.requires_manual_penalty && (
+              <>
+                <label>Mức phạt vi phạm</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={form.manual_penalty}
+                  onChange={(e) => setForm({ ...form, manual_penalty: e.target.value })}
+                  placeholder="Nhập số tiền"
+                  required
+                />
+              </>
+            )}
 
             <label>Chi tiết</label>
             <textarea value={form.detail} onChange={(e) => setForm({ ...form, detail: e.target.value })} rows="3" placeholder="Ghi chú nếu cần" />
 
             {message && <div className="success-box">{message}</div>}
+            {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
             {error && <div className="error-box">{error}</div>}
-            <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Đang ghi…' : 'Ghi'}</button>
+            <button className="primary-button" type="submit" disabled={saving || !isApiConfigured}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
           </form>
         </section>
 
