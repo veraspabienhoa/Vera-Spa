@@ -465,11 +465,23 @@ def _sync_employees(vpg, df: pd.DataFrame) -> dict:
         for record in records:
             conn.execute(_EMPLOYEE_UPSERT_SQL, record)
         if current:
-            existing = {str(r[0]) for r in conn.execute(text("SELECT username FROM employees")).all()}
+            # The credentials snapshot owns only rows imported from the credentials
+            # sheet. Keep system/bootstrap accounts (for example Web V2 admin)
+            # managed by another source instead of deleting them on every sync.
+            existing = {
+                str(r[0])
+                for r in conn.execute(
+                    text("SELECT username FROM employees WHERE source_sheet_id=:source"),
+                    {"source": "credentials"},
+                ).all()
+            }
             for username in existing - current:
                 conn.execute(text("DELETE FROM employees WHERE username=:u"), {"u": username})
         elif _allow_empty_sync():
-            conn.execute(text("DELETE FROM employees"))
+            conn.execute(
+                text("DELETE FROM employees WHERE source_sheet_id=:source"),
+                {"source": "credentials"},
+            )
         _update_state_conn(conn, EMPLOYEE_DATASET, "employees", len(records), checksum)
     return {"dataset_key": EMPLOYEE_DATASET, "table": "employees", "rows": len(records), "checksum": checksum}
 
