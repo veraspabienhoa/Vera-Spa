@@ -36,11 +36,11 @@ jobs:
       - name: Build
         working-directory: web-v2
         env:
-          # These are client-side/public Supabase values by design. Access is
-          # controlled by Auth + RLS; no service-role or database password is exposed.
+          # Client-side/public values only. Database password and service credentials
+          # remain server-side in Cloud Run Secret Manager.
           VITE_SUPABASE_URL: https://nunxfjhrszmlyyrvphuq.supabase.co
           VITE_SUPABASE_ANON_KEY: sb_publishable_idnn4HeEozpAonmSqM4Tgw_bB8HW4FX
-          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL }}
+          VITE_VERA_API_BASE_URL: https://vera-spa-api-589916994342.asia-southeast1.run.app
           VITE_VERA_DEMO_MODE: '0'
         run: npm run build
 
