@@ -7,7 +7,7 @@ itself already carried the x10 value.
 
 Safety properties
 -----------------
-* PostgreSQL stays canonical. No Google Sheet is read or written here.
+* PostgreSQL stays canonical. No Google Sheet is written here.
 * Expected money comes from ``official_policy/leave_rules`` (Nội quy canonical).
 * A row changes only when ``current_penalty == official_penalty * 10`` and the
   official amount is positive.
@@ -17,8 +17,10 @@ Safety properties
 * The database repair is a one-time versioned migration. Once version 3 has been
   recorded, later intentional Nội quy changes cannot retroactively trigger this
   historical x10 repair.
-* Until that migration succeeds, Phase-17 reads retry it and use a last-mile UI
-  guard. After success, normal policy/history behavior is left untouched.
+* A conservative bootstrap snapshot of the current LoaiNghi penalties can repair
+  exact x10 values before official_policy exists, but it NEVER marks the migration
+  complete. The version marker is written only after canonical PostgreSQL policy
+  is available.
 """
 from __future__ import annotations
 
@@ -46,20 +48,44 @@ _LAST_STATUS = {
     "repaired": 0,
     "skipped": 0,
     "policy_rows": 0,
+    "policy_canonical": False,
     "already_applied": False,
     "source": "official_policy_postgres",
 }
 
-# Conservative bootstrap fallback. It is used only when the canonical policy
-# setting has not been bootstrapped yet, and still only repairs an exact x10 row.
+# Bootstrap snapshot aligned with LoaiNghi on 2026-08-23.  This is deliberately
+# used only while the versioned PostgreSQL official policy has not been created.
+# It cannot complete the migration, so a later canonical read always revalidates.
 _FALLBACK_RULES = {
-    "Nghỉ KHÔNG phép": "100.000 mỗi ngày",
-    "Nghỉ không phép CUỐI TUẦN": "1.000.000 mỗi ngày",
-    "Về sớm CUỐI TUẦN KHÔNG phép": "500.000 mỗi ngày",
-    "Đi trễ CUỐI TUẦN KHÔNG phép": "200.000 mỗi ngày",
-    "OFFLINE CUỐI TUẦN": "500.000 mỗi ngày",
-    "Vừa đi trễ + Vừa về sớm (Phạt kép)": "200.000 mỗi ngày",
+    "Nghỉ CÓ phép": "0",
+    "Nghỉ KHÔNG phép": "500000",
+    "Nghỉ CUỐI TUẦN CÓ phép": "0",
+    "Nghỉ CUỐI TUẦN KHÔNG phép": "1000000",
+    "Nghỉ phát sinh": "0",
+    "Đi trễ CÓ phép": "0",
+    "Đi trễ KHÔNG phép": "300000",
+    "Đi trễ CUỐI TUẦN CÓ phép": "0",
+    "Đi trễ CUỐI TUẦN KHÔNG phép": "500000",
+    "Đi trễ phát sinh": "0",
+    "Về sớm CÓ phép": "0",
+    "Về sớm KHÔNG phép": "300000",
+    "Về sớm CUỐI TUẦN CÓ phép": "0",
+    "Về sớm CUỐI TUẦN KHÔNG phép": "500000",
+    "Về sớm phát sinh": "0",
+    "Đi trễ nhỏ hơn hoặc bằng 30 phút": "50000",
+    "Đi trễ nhỏ hơn hoặc bằng 60 phút": "100000",
+    "Đi trễ nhỏ hơn hoặc bằng 120 phút": "200000",
+    "Đi trễ lớn hơn 120 phút": "300000",
+    "KHÔNG dọn vệ sinh ca 1": "100000",
+    "Hỗ trợ Ca 1 sau 23H đi trễ 2 tiếng": "0",
+    "Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng": "0",
+    "Hỗ trợ Ca 2 sau 0:0H đi trễ 1 tiếng": "0",
+    "Xin đi tua cuối": "0",
     "Lỗi vi phạm khác": "0",
+    "Qua tour KHÔNG phép": "300000",
+    "Qua tour CUỐI TUẦN KHÔNG phép": "500000",
+    "Xuống phòng trễ": "100000",
+    "Cho khách ra sớm nhiều hơn 5 phút": "100000",
 }
 
 
@@ -132,7 +158,7 @@ def _migration_complete(vpg) -> bool:
     return _migration_version(vpg) >= PHASE17_PENALTY_REPAIR_VERSION
 
 
-def _policy_rows(vpg) -> list[dict]:
+def _policy_rows(vpg):
     value = None
     try:
         if callable(getattr(vpg, "read_setting", None)):
@@ -142,15 +168,18 @@ def _policy_rows(vpg) -> list[dict]:
 
     rows = value.get("rows", []) if isinstance(value, dict) else []
     if isinstance(rows, list) and rows:
-        return [dict(row) for row in rows if isinstance(row, dict)]
-    return [
-        {"Lý do nghỉ": reason, "Phạt vi phạm": amount}
-        for reason, amount in _FALLBACK_RULES.items()
-    ]
+        return [dict(row) for row in rows if isinstance(row, dict)], True
+    return (
+        [
+            {"Lý do nghỉ": reason, "Phạt vi phạm": amount}
+            for reason, amount in _FALLBACK_RULES.items()
+        ],
+        False,
+    )
 
 
 def _policy_maps(vpg):
-    rows = _policy_rows(vpg)
+    rows, canonical = _policy_rows(vpg)
     exact: dict[str, Decimal] = {}
     sig_values: dict[str, set[Decimal]] = {}
     for row in rows:
@@ -168,7 +197,7 @@ def _policy_maps(vpg):
         for sig, values in sig_values.items()
         if sig and len(values) == 1
     }
-    return exact, signatures, len(rows)
+    return exact, signatures, len(rows), bool(canonical)
 
 
 def _official_penalty(reason: Any, exact, signatures):
@@ -191,7 +220,7 @@ def _correct_frame(frame, vpg):
         penalty_col = next((c for c in ("Phạt vi phạm", "penalty") if c in frame.columns), None)
         if not reason_col or not penalty_col:
             return frame
-        exact, signatures, _ = _policy_maps(vpg)
+        exact, signatures, _, _ = _policy_maps(vpg)
         out = frame.copy()
         for idx in out.index:
             expected = _official_penalty(out.at[idx, reason_col], exact, signatures)
@@ -212,6 +241,7 @@ def repair(vpg) -> dict:
         "repaired": 0,
         "skipped": 0,
         "policy_rows": 0,
+        "policy_canonical": False,
         "already_applied": False,
         "source": "official_policy_postgres",
     }
@@ -221,25 +251,28 @@ def repair(vpg) -> dict:
 
     if _migration_complete(vpg):
         status["already_applied"] = True
+        status["policy_canonical"] = True
         _LAST_STATUS = status
         return dict(status)
 
-    exact, signatures, policy_count = _policy_maps(vpg)
+    exact, signatures, policy_count, policy_canonical = _policy_maps(vpg)
     status["policy_rows"] = policy_count
+    status["policy_canonical"] = policy_canonical
+    status["source"] = "official_policy_postgres" if policy_canonical else "bootstrap_snapshot"
     version_table = _version_table(vpg)
     repaired_uids = []
 
     with vpg.get_engine().begin() as conn:
-        # Recheck inside the write transaction in case another app instance won
-        # the migration race while this process was preparing the policy map.
-        existing = conn.execute(
-            text(f"SELECT version FROM {version_table} WHERE component=:component"),
-            {"component": PHASE17_PENALTY_COMPONENT},
-        ).scalar()
-        if int(existing or 0) >= PHASE17_PENALTY_REPAIR_VERSION:
-            status["already_applied"] = True
-            _LAST_STATUS = status
-            return dict(status)
+        # Only a canonical-policy run may be considered already complete.
+        if policy_canonical:
+            existing = conn.execute(
+                text(f"SELECT version FROM {version_table} WHERE component=:component"),
+                {"component": PHASE17_PENALTY_COMPONENT},
+            ).scalar()
+            if int(existing or 0) >= PHASE17_PENALTY_REPAIR_VERSION:
+                status["already_applied"] = True
+                _LAST_STATUS = status
+                return dict(status)
 
         rows = conn.execute(text("""
             SELECT record_uid, leave_reason, penalty
@@ -279,26 +312,29 @@ def repair(vpg) -> dict:
             if len(repaired_uids) < 20:
                 repaired_uids.append(uid)
 
-        conn.execute(text(f"""
-            INSERT INTO {version_table}(component, version, updated_at)
-            VALUES (:component, :version, NOW())
-            ON CONFLICT (component) DO UPDATE
-            SET version=GREATEST({version_table}.version, EXCLUDED.version),
-                updated_at=NOW()
-        """), {
-            "component": PHASE17_PENALTY_COMPONENT,
-            "version": PHASE17_PENALTY_REPAIR_VERSION,
-        })
+        # Never freeze a bootstrap snapshot as official. A migration version is
+        # recorded only after the canonical PostgreSQL Nội quy exists.
+        if policy_canonical:
+            conn.execute(text(f"""
+                INSERT INTO {version_table}(component, version, updated_at)
+                VALUES (:component, :version, NOW())
+                ON CONFLICT (component) DO UPDATE
+                SET version=GREATEST({version_table}.version, EXCLUDED.version),
+                    updated_at=NOW()
+            """), {
+                "component": PHASE17_PENALTY_COMPONENT,
+                "version": PHASE17_PENALTY_REPAIR_VERSION,
+            })
 
     _LAST_STATUS = dict(status)
     _event(
         vpg,
         "phase17_penalty_official_rules_repair",
         "scanned={scanned}; eligible={eligible}; repaired={repaired}; policy_rows={policy}; "
-        "uids={uids}".format(
+        "canonical={canonical}; uids={uids}".format(
             scanned=status["scanned"], eligible=status["eligible"],
             repaired=status["repaired"], policy=status["policy_rows"],
-            uids=",".join(repaired_uids),
+            canonical=int(status["policy_canonical"]), uids=",".join(repaired_uids),
         ),
     )
     return dict(status)
@@ -320,8 +356,8 @@ def get_status(vpg=None) -> dict:
         "version": PHASE17_PENALTY_REPAIR_VERSION,
         "repair_condition": "current_penalty == official_policy_penalty * 10",
         "mutation_key": "record_uid_only",
-        "source": "official_policy_postgres",
         "one_time_migration": True,
+        "canonical_required_to_complete": True,
         "ui_guard_until_migrated": True,
     })
     if vpg is not None:
@@ -346,8 +382,8 @@ def install(vpg) -> bool:
         _safe_repair(vpg)
 
     # Retry only while the one-time migration is incomplete. Once version 3 is
-    # committed, the wrapper becomes a transparent pass-through and later policy
-    # edits cannot be mistaken for historical x10 corruption.
+    # committed from a canonical-policy run, the wrapper becomes a transparent
+    # pass-through and later policy edits cannot be mistaken for old x10 corruption.
     original_leave_dataframe = getattr(vpg, "phase17_leave_dataframe", None)
     if callable(original_leave_dataframe) and not getattr(original_leave_dataframe, "_vera_penalty_guard", False):
         def guarded_leave_dataframe(*args, **kwargs):
