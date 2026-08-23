@@ -96,7 +96,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [watchBusyDate, setWatchBusyDate] = useState('')
   const [watchError, setWatchError] = useState('')
   const role = String(user?.role || '').toLowerCase()
-  const canChooseEmployee = role === 'admin'
+  const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
   const canEdit = role === 'admin'
     || user?.permissions?.leave_manage_edit === true

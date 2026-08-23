@@ -83,7 +83,7 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
       <section className="login-panel">
         <form className="login-card" onSubmit={submit}>
           <div className="login-icon"><LockKeyhole size={24} /></div>
-          <h2>Đăng nhập VERA</h2>
+          <h2>Đăng nhập VERA SPA</h2>
           <p className="muted">Dùng đúng tên đăng nhập và mật khẩu đang sử dụng trên hệ thống hiện tại.</p>
 
           <label>Tên đăng nhập</label>

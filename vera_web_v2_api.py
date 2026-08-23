@@ -46,7 +46,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.8")
+app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.9")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -705,7 +705,7 @@ def _validate_edit_permission(conn, row: dict, new_reason: str, ident: Identity)
 def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dict, list[str]]:
     employee = body.employee_name.strip()
     role = ident.role
-    if role != "admin" and _norm(employee) != _norm(ident.employee_username):
+    if role not in {"admin", "quanly", "letan"} and _norm(employee) != _norm(ident.employee_username):
         raise HTTPException(403, "Tài khoản hiện tại chỉ được đăng ký lịch nghỉ của chính mình.")
 
     emp = conn.execute(text("""
@@ -1076,7 +1076,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.8"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.9"}
 
 
 @app.get("/v2/me")
@@ -1103,7 +1103,7 @@ def me(ident: Identity = Depends(current_identity)):
 def employees(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         _require_feature(conn, ident, "leave")
-        if ident.role == "admin":
+        if ident.role in {"admin", "quanly", "letan"}:
             rows = conn.execute(text("""
                 SELECT username, COALESCE(full_name,'') full_name, COALESCE(role,'') role
                 FROM employees
