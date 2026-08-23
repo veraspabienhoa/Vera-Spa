@@ -1,21 +1,24 @@
 """Phase 17 leave-penalty integrity repair for VERA SPA.
 
 Repairs the historical x10 penalty corruption by comparing each PostgreSQL leave
-record with the *official Nội quy* stored in PostgreSQL.  The old v1 guard used the
+record with the *official Nội quy* stored in PostgreSQL. The old v1 guard used the
 row JSON payload as its expected value; that could miss a bad row when the payload
 itself already carried the x10 value.
 
 Safety properties
 -----------------
-* PostgreSQL stays canonical.  No Google Sheet is read or written here.
+* PostgreSQL stays canonical. No Google Sheet is read or written here.
 * Expected money comes from ``official_policy/leave_rules`` (Nội quy canonical).
 * A row changes only when ``current_penalty == official_penalty * 10`` and the
-  official amount is positive.  Legitimate/manual values are not overwritten.
+  official amount is positive.
 * Every database UPDATE is keyed strictly by stable ``record_uid``.
 * Reason matching is accent/case/order tolerant, but token-signature matching is
   accepted only when one signature maps to one unique official amount.
-* The repair is idempotent and is also run before Phase-17 leave reads so an
-  already-running revision corrects the UI on the next rerun/read.
+* The database repair is a one-time versioned migration. Once version 3 has been
+  recorded, later intentional Nội quy changes cannot retroactively trigger this
+  historical x10 repair.
+* Until that migration succeeds, Phase-17 reads retry it and use a last-mile UI
+  guard. After success, normal policy/history behavior is left untouched.
 """
 from __future__ import annotations
 
@@ -43,10 +46,11 @@ _LAST_STATUS = {
     "repaired": 0,
     "skipped": 0,
     "policy_rows": 0,
+    "already_applied": False,
     "source": "official_policy_postgres",
 }
 
-# Conservative bootstrap fallback.  It is used only when the canonical policy
+# Conservative bootstrap fallback. It is used only when the canonical policy
 # setting has not been bootstrapped yet, and still only repairs an exact x10 row.
 _FALLBACK_RULES = {
     "Nghỉ KHÔNG phép": "100.000 mỗi ngày",
@@ -105,6 +109,29 @@ def _money(value: Any) -> Decimal:
     return _phase3._safe_decimal(value)
 
 
+def _version_table(vpg) -> str:
+    return str(getattr(vpg, "SCHEMA_VERSION_TABLE", "vera_schema_version"))
+
+
+def _migration_version(vpg) -> int:
+    if not _enabled(vpg):
+        return 0
+    try:
+        table = _version_table(vpg)
+        with vpg.get_engine().connect() as conn:
+            value = conn.execute(
+                text(f"SELECT version FROM {table} WHERE component=:component"),
+                {"component": PHASE17_PENALTY_COMPONENT},
+            ).scalar()
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def _migration_complete(vpg) -> bool:
+    return _migration_version(vpg) >= PHASE17_PENALTY_REPAIR_VERSION
+
+
 def _policy_rows(vpg) -> list[dict]:
     value = None
     try:
@@ -154,8 +181,10 @@ def _official_penalty(reason: Any, exact, signatures):
 
 
 def _correct_frame(frame, vpg):
-    """Last-mile UI guard; only correct exact x10 outliers in a returned frame."""
+    """Temporary UI guard used only while the one-time migration is incomplete."""
     try:
+        if _migration_complete(vpg):
+            return frame
         if frame is None or not hasattr(frame, "columns") or frame.empty:
             return frame
         reason_col = next((c for c in ("Lý do nghỉ", "Lý do", "leave_reason") if c in frame.columns), None)
@@ -183,18 +212,35 @@ def repair(vpg) -> dict:
         "repaired": 0,
         "skipped": 0,
         "policy_rows": 0,
+        "already_applied": False,
         "source": "official_policy_postgres",
     }
     if not status["enabled"]:
         _LAST_STATUS = status
         return dict(status)
 
+    if _migration_complete(vpg):
+        status["already_applied"] = True
+        _LAST_STATUS = status
+        return dict(status)
+
     exact, signatures, policy_count = _policy_maps(vpg)
     status["policy_rows"] = policy_count
-    version_table = getattr(vpg, "SCHEMA_VERSION_TABLE", "vera_schema_version")
+    version_table = _version_table(vpg)
     repaired_uids = []
 
     with vpg.get_engine().begin() as conn:
+        # Recheck inside the write transaction in case another app instance won
+        # the migration race while this process was preparing the policy map.
+        existing = conn.execute(
+            text(f"SELECT version FROM {version_table} WHERE component=:component"),
+            {"component": PHASE17_PENALTY_COMPONENT},
+        ).scalar()
+        if int(existing or 0) >= PHASE17_PENALTY_REPAIR_VERSION:
+            status["already_applied"] = True
+            _LAST_STATUS = status
+            return dict(status)
+
         rows = conn.execute(text("""
             SELECT record_uid, leave_reason, penalty
             FROM leave_records
@@ -275,10 +321,15 @@ def get_status(vpg=None) -> dict:
         "repair_condition": "current_penalty == official_policy_penalty * 10",
         "mutation_key": "record_uid_only",
         "source": "official_policy_postgres",
-        "ui_guard": True,
+        "one_time_migration": True,
+        "ui_guard_until_migrated": True,
     })
     if vpg is not None:
         out["enabled"] = bool(_enabled(vpg))
+        try:
+            out["migration_complete"] = bool(_migration_complete(vpg))
+        except Exception:
+            out["migration_complete"] = False
     return out
 
 
@@ -291,23 +342,25 @@ def install(vpg) -> bool:
         return False
 
     # Repair now, but never make a transient repair failure prevent app startup.
-    if _enabled(vpg):
+    if _enabled(vpg) and not _migration_complete(vpg):
         _safe_repair(vpg)
 
-    # Recheck before canonical leave reads.  This makes the correction visible on
-    # the user's next Streamlit rerun even while the process remains alive.
+    # Retry only while the one-time migration is incomplete. Once version 3 is
+    # committed, the wrapper becomes a transparent pass-through and later policy
+    # edits cannot be mistaken for historical x10 corruption.
     original_leave_dataframe = getattr(vpg, "phase17_leave_dataframe", None)
     if callable(original_leave_dataframe) and not getattr(original_leave_dataframe, "_vera_penalty_guard", False):
         def guarded_leave_dataframe(*args, **kwargs):
-            if _enabled(vpg):
+            pending = bool(_enabled(vpg) and not _migration_complete(vpg))
+            if pending:
                 _safe_repair(vpg)
             frame = original_leave_dataframe(*args, **kwargs)
-            return _correct_frame(frame, vpg)
+            return _correct_frame(frame, vpg) if pending else frame
         guarded_leave_dataframe._vera_penalty_guard = True
         vpg.phase17_leave_dataframe = guarded_leave_dataframe
 
     vpg.phase17_repair_leave_penalties = lambda: _safe_repair(vpg)
     vpg.phase17_penalty_repair_status = lambda: get_status(vpg)
     vpg._vera_phase17_penalty_repair_installed = True
-    _event(vpg, "phase17_penalty_repair_installed", "official-policy x10 guard enabled")
+    _event(vpg, "phase17_penalty_repair_installed", "versioned official-policy x10 migration enabled")
     return True
