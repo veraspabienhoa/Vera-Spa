@@ -1,37 +1,40 @@
-# V92.22.5 - Phase 17 penalty migration repair (2026-08-23)
-"""VERA SPA V92.22.5.
+# V92.23.0 - Official PostgreSQL Nội quy page (2026-08-23)
+"""VERA SPA V92.23.0.
 
 PostgreSQL migration Phase 4-17 remains enabled while preserving the V92.6.99 core,
 MENU routes, authorization, UI, and business rules.
 
-V92.22.5 leave penalty migration repair:
-- keeps the V92.22.4 strict record_uid canonical CRUD layer;
+V92.23.0 official rules:
+- upgrades the existing Quản lý lý do nghỉ menu slot to 📜 Nội quy, preserving the
+  existing menu count/order on Desktop and Mobile;
+- stores the full official LoaiNghi-style grid as a versioned PostgreSQL document;
+- supports direct cell editing, copy/paste, add/delete rows and optional columns,
+  Excel import/export, and explicit "Ghi thay đổi & áp dụng";
+- PostgreSQL is canonical; the legacy LoaiNghi worksheet is synchronized as a
+  compatibility mirror for residual jobs/readers;
+- get_loai_nghi reads canonical PostgreSQL rules after one-time bootstrap from the
+  existing LoaiNghi worksheet;
+- required business columns are protected at apply-time so policy edits cannot
+  silently disable leave/penalty calculations.
+
+V92.22.5 leave penalty migration repair remains active:
 - detects historical normalized leave penalties that became exactly 10x the original
   source value preserved in the PostgreSQL JSONB payload;
-- repairs only those exact 10x mismatches and updates PostgreSQL strictly by record_uid;
-- does not read/write Google Sheets during the repair and does not hard-code penalty rules;
-- leaves all other penalties untouched.
+- repairs only those exact 10x mismatches and updates PostgreSQL strictly by record_uid.
 
 V92.22.4 strict leave CRUD hardening remains active:
 - UPDATE/DELETE are executed strictly by stable record_uid;
 - legacy source_sheet_id/source_row may only resolve an ingress record to record_uid;
-- existing canonical source_row cannot be overwritten by stale UI input;
 - record_uid is enforced UNIQUE + NOT NULL when Phase 17 is active;
-- ambiguous/missing legacy locators fail closed instead of mutating the wrong row;
-- source_row remains mirror-position metadata and is reindexed only as mirror metadata;
-- Google Sheets remains an optional/sync/off mirror and cannot roll back committed
-  PostgreSQL mutations.
+- Google Sheets remains a compatibility mirror and cannot replace PostgreSQL canonical data.
 
 Rollback / compatibility:
 - VERA_PHASE17_FINAL_BACKEND=sheets -> disable Phase 17 wrappers and UID hardening.
-- VERA_SHEETS_MIRROR_MODE=sync      -> require the mirror result synchronously.
-- VERA_SHEETS_MIRROR_MODE=optional  -> default best-effort mirror.
-- VERA_SHEETS_MIRROR_MODE=off       -> do not execute Phase17-controlled Sheet mirrors.
-- VERA_PHASE17_ALLOW_LEGACY_REFRESH=1 -> allow explicit force-refresh from legacy Sheets.
+- VERA_SHEETS_MIRROR_MODE=sync|optional|off remains supported.
+- VERA_PHASE17_ALLOW_LEGACY_REFRESH=1 remains supported.
 Existing Phase 4-16 rollback environment variables remain supported.
 
-Explicit Admin import/export/backup/refresh actions may still use the two legacy Google
-Sheets. Their IDs are unchanged. Normal PostgreSQL data remains canonical.
+The two legacy Google Sheet IDs are unchanged.
 """
 from datetime import datetime as _datetime
 from pathlib import Path as _Path
@@ -132,7 +135,7 @@ def _vera_phase4_leave_delete(records, mirror_fn, operation="delete"):
 
 
 _core_path_v92224 = _Path(__file__).with_name("app_v92699_core.py")
-_core_build_id_v92224 = "v92.22.5-phase17-penalty-repair-1"
+_core_build_id_v92224 = "v92.23.0-official-rules-page-1"
 
 
 @_st.cache_resource(show_spinner=False)
@@ -145,7 +148,7 @@ def _build_core_v92224(build_id):
         (11, "vera_postgres_phase11_patch"), (12, "vera_postgres_phase12_patch"),
         (13, "vera_postgres_phase13_patch"), (14, "vera_postgres_phase14_patch"),
         (15, "vera_postgres_phase15_patch_fix"), (16, "vera_postgres_phase16_patch"),
-        (17, "vera_postgres_phase17_patch_fix"),
+        (17, "vera_postgres_phase17_patch_fix"), (18, "vera_official_rules_patch"),
     ]
     _patch_warnings_v92224 = {}
     for _phase_no_v92224, _module_name_v92224 in _patch_specs_v92224:
@@ -166,6 +169,7 @@ def _build_core_v92224(build_id):
         "⏰ Quản lý ca làm việc": "⏰ Quản lý ca",
         "🏷️ Trạng thái nhân viên": "🏷️ Trạng thái NV",
         "🔐 Khóa đăng ký LNP": "🔐 Khóa đăng ký",
+        "🧾 Quản lý lý do nghỉ": "📜 Nội quy",
         "🧾 Log Book": "Log Book",
     }"""
     if _old_menu_map_v92224 in _source_v92224:
@@ -174,7 +178,7 @@ def _build_core_v92224(build_id):
         _patch_warnings_v92224.setdefault(4, []).append("menu_display_labels:0")
     _source_v92224 = _source_v92224.replace("MENU CHỨC NĂNG", "MENU")
     _first_line_v92224, _sep_v92224, _rest_v92224 = _source_v92224.partition("\n")
-    _source_v92224 = "# V92.22.5 - Phase 17 penalty migration repair (2026-08-23)\n" + _rest_v92224
+    _source_v92224 = "# V92.23.0 - Official PostgreSQL Nội quy page (2026-08-23)\n" + _rest_v92224
     _compiled_v92224 = compile(_source_v92224, str(_core_path_v92224), "exec")
     return _compiled_v92224, _patch_warnings_v92224
 
