@@ -14,7 +14,7 @@ Safety properties
 * Every database UPDATE is keyed strictly by stable ``record_uid``.
 * Reason matching is accent/case/order tolerant, but token-signature matching is
   accepted only when one signature maps to one unique official amount.
-* The database repair is a one-time versioned migration. Once version 3 has been
+* The database repair is a one-time versioned migration. Once version 4 has been
   recorded, later intentional Nội quy changes cannot retroactively trigger this
   historical x10 repair.
 * A conservative bootstrap snapshot of the current LoaiNghi penalties can repair
@@ -35,7 +35,7 @@ from sqlalchemy import text
 import vera_postgres_phase3 as _phase3
 
 
-PHASE17_PENALTY_REPAIR_VERSION = 3
+PHASE17_PENALTY_REPAIR_VERSION = 4
 PHASE17_PENALTY_COMPONENT = "phase17_leave_penalty_migration_repair"
 LEAVE_DATASET = "leave_primary"
 _RULES_CATEGORY = "official_policy"
@@ -53,7 +53,7 @@ _LAST_STATUS = {
     "source": "official_policy_postgres",
 }
 
-# Bootstrap snapshot aligned with LoaiNghi on 2026-08-23.  This is deliberately
+# Bootstrap snapshot aligned with LoaiNghi on 2026-08-23. This is deliberately
 # used only while the versioned PostgreSQL official policy has not been created.
 # It cannot complete the migration, so a later canonical read always revalidates.
 _FALLBACK_RULES = {
@@ -381,7 +381,7 @@ def install(vpg) -> bool:
     if _enabled(vpg) and not _migration_complete(vpg):
         _safe_repair(vpg)
 
-    # Retry only while the one-time migration is incomplete. Once version 3 is
+    # Retry only while the one-time migration is incomplete. Once version 4 is
     # committed from a canonical-policy run, the wrapper becomes a transparent
     # pass-through and later policy edits cannot be mistaken for old x10 corruption.
     original_leave_dataframe = getattr(vpg, "phase17_leave_dataframe", None)
