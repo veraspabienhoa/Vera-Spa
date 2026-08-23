@@ -46,7 +46,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA Web V2 API", version="2.3")
+app = FastAPI(title="VERA SPA Web V2 API", version="2.4")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -301,7 +301,7 @@ class Identity(BaseModel):
 
 WEB_V2_DEFAULT_FEATURES = {
     "admin": {"leave", "leave_create", "employee_penalty_view"},
-    "quanly": {"leave", "leave_create", "employee_penalty_view"},
+    "quanly": {"leave", "leave_create"},
     "letan": {"leave", "leave_create"},
     "leader": {"leave", "leave_create"},
     "nhanvien": {"leave", "leave_create"},
@@ -416,8 +416,7 @@ class LeaveCreate(BaseModel):
 def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dict, list[str]]:
     employee = body.employee_name.strip()
     role = ident.role
-    employee_like = {"nhanvien", "leader", "locker", "tapvu"}
-    if role in employee_like and _norm(employee) != _norm(ident.employee_username):
+    if role != "admin" and _norm(employee) != _norm(ident.employee_username):
         raise HTTPException(403, "Tài khoản hiện tại chỉ được đăng ký lịch nghỉ của chính mình.")
 
     emp = conn.execute(text("""
@@ -633,7 +632,7 @@ def _insert_record(conn, record: dict, source_row: int):
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.3"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "2.4"}
 
 
 @app.get("/v2/me")
@@ -655,7 +654,7 @@ def me(ident: Identity = Depends(current_identity)):
 def employees(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         _require_feature(conn, ident, "leave")
-        if ident.role in {"admin", "quanly", "letan"}:
+        if ident.role == "admin":
             rows = conn.execute(text("""
                 SELECT username, COALESCE(full_name,'') full_name, COALESCE(role,'') role
                 FROM employees
@@ -679,6 +678,7 @@ def employees(ident: Identity = Depends(current_identity)):
 def reasons(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         _require_feature(conn, ident, "leave")
+        can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
         output = []
         for row in _policy_rows(conn):
             name = str(_field(row, "Lý do nghỉ", default="") or "").strip()
@@ -689,7 +689,8 @@ def reasons(ident: Identity = Depends(current_identity)):
             if ident.role != "admin" and allowed and ident.role not in allowed:
                 continue
             output.append({
-                "name": item["name"], "days": item["days"], "penalty": item["penalty"],
+                "name": item["name"], "days": item["days"],
+                "penalty": item["penalty"] if can_view_penalty else None,
                 "requires_manual_penalty": item["requires_manual_penalty"],
             })
     return {"reasons": output}
@@ -699,7 +700,7 @@ def reasons(ident: Identity = Depends(current_identity)):
 def leave_records(date_value: date = Query(alias="date"), ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         _require_feature(conn, ident, "leave")
-        can_view_penalty = ident.role == "admin"
+        can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
         rows = conn.execute(text("""
             SELECT record_uid, employee_name, leave_reason, detail, penalty, updated_by, updated_at
             FROM leave_records WHERE leave_date=:d ORDER BY employee_name, record_uid

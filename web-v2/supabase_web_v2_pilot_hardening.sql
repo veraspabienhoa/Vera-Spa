@@ -1,6 +1,25 @@
 -- VERA SPA Web V2 pilot hardening.
 -- Safe to run repeatedly in the Supabase SQL Editor.
 
+create or replace function public.vera_v2_normalize_login(input_value text)
+returns text
+language sql
+immutable
+security invoker
+set search_path = pg_catalog
+as $function$
+  select trim(regexp_replace(
+    translate(
+      lower(coalesce(input_value, '')),
+      'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ',
+      'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd'
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ));
+$function$;
+
 create or replace function public.vera_v2_employees()
 returns table(username text, full_name text, role text)
 language plpgsql
@@ -23,7 +42,7 @@ begin
     raise exception 'UNAUTHORIZED';
   end if;
 
-  if caller_role in ('admin', 'quanly', 'letan') then
+  if caller_role = 'admin' then
     return query
       select e.username, coalesce(e.full_name, ''), coalesce(e.role, '')
       from public.employees e
@@ -58,17 +77,59 @@ security definer
 set search_path = public
 as $function$
 declare
+  caller_username text;
   caller_role text;
+  permission_payload jsonb := '{}'::jsonb;
+  permission_item jsonb;
+  permission_matched boolean := false;
+  can_view_penalty boolean := false;
 begin
-  select lower(coalesce(p.role, ''))
-    into caller_role
+  select public.vera_v2_normalize_login(p.employee_username), lower(coalesce(p.role, ''))
+    into caller_username, caller_role
   from public.vera_v2_user_profile p
   where p.auth_user_id = (select auth.uid())
     and p.is_active = true
   limit 1;
 
-  if caller_role is null then
+  if caller_username is null then
     raise exception 'UNAUTHORIZED';
+  end if;
+
+  can_view_penalty := caller_role = 'admin';
+  if not can_view_penalty then
+    select coalesce(s.value_json, '{}'::jsonb)
+      into permission_payload
+    from public.vera_app_setting s
+    where s.category = 'authorization'
+      and s.setting_key = 'feature_permissions'
+    limit 1;
+
+    for permission_item in
+      select entry
+      from jsonb_array_elements(coalesce(permission_payload -> 'accounts', '[]'::jsonb)) as entries(entry)
+    loop
+      if public.vera_v2_normalize_login(permission_item ->> 'target') = caller_username
+        and coalesce(permission_item ->> 'feature', '') = 'employee_penalty_view' then
+        can_view_penalty := lower(coalesce(permission_item ->> 'allowed', 'false'))
+          in ('1', 'true', 'yes', 'y', 'co', 'có', 'x');
+        permission_matched := true;
+        exit;
+      end if;
+    end loop;
+
+    if not permission_matched then
+      for permission_item in
+        select entry
+        from jsonb_array_elements(coalesce(permission_payload -> 'roles', '[]'::jsonb)) as entries(entry)
+      loop
+        if lower(btrim(coalesce(permission_item ->> 'target', ''))) = caller_role
+          and coalesce(permission_item ->> 'feature', '') = 'employee_penalty_view' then
+          can_view_penalty := lower(coalesce(permission_item ->> 'allowed', 'false'))
+            in ('1', 'true', 'yes', 'y', 'co', 'có', 'x');
+          exit;
+        end if;
+      end loop;
+    end if;
   end if;
 
   return query
@@ -77,7 +138,7 @@ begin
       l.employee_name,
       l.leave_reason,
       l.detail,
-      case when caller_role = 'admin' then l.penalty else null::numeric end,
+      case when can_view_penalty then l.penalty else null::numeric end,
       l.updated_by,
       l.updated_at
     from public.leave_records l
@@ -144,6 +205,7 @@ $function$;
 -- PostgreSQL grants EXECUTE to PUBLIC by default.  Web V2 RPCs are available
 -- only after Supabase Auth has issued an authenticated session.
 revoke execute on function public.vera_v2_is_authenticated_employee() from public, anon;
+revoke execute on function public.vera_v2_normalize_login(text) from public, anon;
 revoke execute on function public.vera_v2_me() from public, anon;
 revoke execute on function public.vera_v2_employees() from public, anon;
 revoke execute on function public.vera_v2_leave_reasons() from public, anon;
@@ -151,6 +213,7 @@ revoke execute on function public.vera_v2_leave_records(date) from public, anon;
 revoke execute on function public.vera_v2_leave_summary(date) from public, anon;
 
 grant execute on function public.vera_v2_is_authenticated_employee() to authenticated, service_role;
+grant execute on function public.vera_v2_normalize_login(text) to authenticated, service_role;
 grant execute on function public.vera_v2_me() to authenticated, service_role;
 grant execute on function public.vera_v2_employees() to authenticated, service_role;
 grant execute on function public.vera_v2_leave_reasons() to authenticated, service_role;

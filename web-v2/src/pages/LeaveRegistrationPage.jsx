@@ -11,6 +11,10 @@ const formatDateInput = (date) => {
 }
 
 const today = () => formatDateInput(new Date())
+const formatDateDisplay = (value) => {
+  const [year, month, day] = String(value || '').split('-')
+  return year && month && day ? `${day}/${month}/${year}` : ''
+}
 const emptyForm = { employee_name: '', leave_reason: '', detail: '', manual_penalty: '' }
 
 export default function LeaveRegistrationPage({ user }) {
@@ -26,8 +30,8 @@ export default function LeaveRegistrationPage({ user }) {
   const [warnings, setWarnings] = useState([])
   const [error, setError] = useState('')
   const role = String(user?.role || '').toLowerCase()
-  const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
-  const canViewPenalty = role === 'admin'
+  const canChooseEmployee = role === 'admin'
+  const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
   const canCreate = isApiConfigured
     && user?.permissions?.leave_create !== false
     && !user?.registration_locked
@@ -114,7 +118,10 @@ export default function LeaveRegistrationPage({ user }) {
         payload.manual_penalty = Number(form.manual_penalty)
       }
       const result = await veraApi.createLeave(payload)
-      setForm(emptyForm)
+      setForm({
+        ...emptyForm,
+        employee_name: canChooseEmployee ? '' : (user?.employee_username || ''),
+      })
       setWarnings(result.warnings || [])
       setMessage(result.message || 'Đã ghi đăng ký nghỉ.')
       await load()
@@ -129,9 +136,7 @@ export default function LeaveRegistrationPage({ user }) {
     <div>
       <div className="page-heading-row">
         <div>
-          <span className="eyebrow"><CalendarDays size={15} /> Web V2 · Python business API</span>
           <h1 className="page-title">Đăng ký nghỉ</h1>
-          <p className="page-subtitle">Dữ liệu thật PostgreSQL; khi ghi, Python API xác thực tài khoản, đọc Nội quy/LoaiNghi và mirror MainData.</p>
         </div>
         <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /> Làm mới</button>
       </div>
@@ -148,25 +153,31 @@ export default function LeaveRegistrationPage({ user }) {
         <div className="warning-box"><strong>Chế độ chỉ xem.</strong> Tài khoản này chưa được cấp quyền ghi lịch nghỉ.</div>
       )}
 
-      <div className="date-toolbar">
-        <button onClick={() => shiftDate(-1)}>Hôm qua</button>
-        <button onClick={() => setDate(today())}>Hôm nay</button>
-        <button onClick={() => shiftDate(1)}>Ngày mai</button>
-        <input
-          type="date"
-          value={date}
-          min={role === 'admin' ? undefined : today()}
-          max={role === 'admin' ? undefined : maxEmployeeDate}
-          onChange={(e) => setDate(e.target.value)}
-        />
-      </div>
-
       <section className="metric-grid">
         <Metric icon={UserRoundCheck} label="Đang làm việc" value={summary.working ?? 0} />
         <Metric icon={UsersRound} label="Tổng nghỉ" value={summary.leave ?? records.length} />
         <Metric icon={CheckCircle2} label="Có phép" value={summary.paid ?? 0} />
         <Metric icon={Clock3} label="Không phép" value={summary.unpaid ?? 0} />
       </section>
+
+      <div className="date-toolbar">
+        <button onClick={() => shiftDate(-1)}>Hôm qua</button>
+        <button onClick={() => setDate(today())}>Hôm nay</button>
+        <button onClick={() => shiftDate(1)}>Ngày mai</button>
+        <label className="date-picker-control">
+          <span>{formatDateDisplay(date)}</span>
+          <CalendarDays size={18} aria-hidden="true" />
+          <input
+            className="date-picker-native"
+            type="date"
+            aria-label="Chọn ngày"
+            value={date}
+            min={role === 'admin' ? undefined : today()}
+            max={role === 'admin' ? undefined : maxEmployeeDate}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+      </div>
 
       <div className="content-grid">
         <section className="panel">
@@ -195,8 +206,13 @@ export default function LeaveRegistrationPage({ user }) {
               {reasons.map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
             </select>
 
-            {selectedReason && !selectedReason.requires_manual_penalty && selectedReason.penalty !== null && selectedReason.penalty !== undefined && (
-              <div className="info-box">Số ngày tính: <strong>{selectedReason.days ?? 0}</strong> · Phạt nền: <strong>{Number(selectedReason.penalty || 0).toLocaleString('vi-VN')}đ</strong>. Giá trị cuối cùng vẫn do server kiểm tra lại khi Ghi.</div>
+            {selectedReason && !selectedReason.requires_manual_penalty && (
+              <div className="info-box">
+                Số ngày tính: <strong>{selectedReason.days ?? 0}</strong>
+                {canViewPenalty && selectedReason.penalty !== null && selectedReason.penalty !== undefined && (
+                  <> · Phạt nền: <strong>{Number(selectedReason.penalty || 0).toLocaleString('vi-VN')}đ</strong></>
+                )}
+              </div>
             )}
 
             {selectedReason?.requires_manual_penalty && (
@@ -226,7 +242,7 @@ export default function LeaveRegistrationPage({ user }) {
 
         <section className="panel">
           <div className="panel-title-row">
-            <div><h2>Danh sách trong ngày</h2><p>{date}</p></div>
+            <div><h2>Danh sách trong ngày</h2><p>{formatDateDisplay(date)}</p></div>
             {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
           </div>
           <div className="table-wrap">

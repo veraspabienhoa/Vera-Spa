@@ -189,7 +189,10 @@ jobs:
               raise SystemExit(f'Coverage summary mismatch: {actual} != {expected}')
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          leave_page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
+          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
           hardening = Path('web-v2/supabase_web_v2_pilot_hardening.sql').read_text(encoding='utf-8')
+          penalty_default = Path('web-v2/supabase_web_v2_penalty_permission_default.sql').read_text(encoding='utf-8')
           checks = {
               'summary queries canonical leave type': 'employee_name, leave_reason, leave_type, calculated_days' in api,
               'summary uses shared unique-employee helper': 'summarize_leave_day(rows, int(active))' in api,
@@ -197,8 +200,17 @@ jobs:
               'optional audit remains non-blocking': 'Do not make leave registration depend on an optional telemetry table shape.' in api,
               'Web V2 enforces leave-create permission': '_require_feature(conn, ident, "leave_create")' in api,
               'Web V2 enforces registration role lock': '_registration_role_locked(conn, ident.role)' in api,
-              'Web V2 hides non-admin penalties server-side': 'item.pop("penalty", None)' in api,
+              'Web V2 penalty visibility follows feature permission': 'can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")' in api,
+              'Web V2 defaults penalty visibility to admin only': '"quanly": {"leave", "leave_create"}' in api,
+              'Web V2 limits non-admin registration to self': 'if role != "admin" and _norm(employee) != _norm(ident.employee_username)' in api,
+              'Web V2 employee selector is admin-only': "const canChooseEmployee = role === 'admin'" in leave_page,
+              'Web V2 penalty column follows returned permission': 'user?.permissions?.employee_penalty_view === true' in leave_page,
+              'Web V2 uses dd/mm/yyyy date display': '`${day}/${month}/${year}`' in leave_page,
+              'Web V2 date filter follows metrics': leave_page.index('<section className="metric-grid">') < leave_page.index('<div className="date-toolbar">') < leave_page.index('<div className="content-grid">'),
+              'Web V2 topbar uses VERA wellbeing message': 'Suối nguồn thư giãn, trọn vẹn an yên.' in shell,
               'Web V2 excludes system roles from coverage': "NOT IN ('admin','letan','locker','tapvu')" in api,
+              'Web V2 RPC penalty follows feature permission': "employee_penalty_view" in hardening and 'case when can_view_penalty' in hardening,
+              'Web V2 resets current non-admin penalty grants': "employee_penalty_view" in penalty_default and "'false'::jsonb" in penalty_default,
               'Web V2 RPCs revoke anonymous execution': 'from public, anon' in hardening.lower(),
           }
           failed = [name for name, ok in checks.items() if not ok]

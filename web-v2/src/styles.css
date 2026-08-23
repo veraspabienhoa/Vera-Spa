@@ -67,7 +67,9 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .date-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: white; padding: 10px; border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 8px 24px rgba(30,55,44,.04); margin-bottom: 18px; }
 .date-toolbar button { border: 0; padding: 9px 13px; border-radius: 10px; background: #f2f5f3; color: #32433a; font-weight: 700; }
 .date-toolbar button:hover { background: #e7efe9; }
-.date-toolbar input { margin-left: auto; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: white; }
+.date-picker-control { margin-left: auto; min-width: 180px; min-height: 40px; position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px; background: white; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink); cursor: pointer; }
+.date-picker-control:focus-within { border-color: #8bad9a; box-shadow: 0 0 0 3px rgba(79,120,98,.1); }
+.date-picker-native { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .metric-card { background: white; border: 1px solid var(--line); border-radius: 17px; padding: 18px; display: flex; gap: 13px; align-items: center; box-shadow: 0 9px 28px rgba(25,50,40,.045); }
 .metric-icon { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; background: var(--green-100); color: var(--green-800); }
@@ -148,6 +150,6 @@ tr:last-child td { border-bottom: 0; }
   .metric-card strong { font-size: 23px; }
   .page-heading-row { display: grid; }
   .secondary-button { width: 100%; }
-  .date-toolbar input { margin-left: 0; width: 100%; }
+  .date-picker-control { margin-left: 0; width: 100%; }
   .panel { padding: 16px; }
 }

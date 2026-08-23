@@ -69,7 +69,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
           </button>
           <div>
             <div className="topbar-kicker">VERA SPA</div>
-            <div className="topbar-title">Quản lý vận hành</div>
+            <div className="topbar-title">Suối nguồn thư giãn, trọn vẹn an yên.</div>
           </div>
           <div className="environment-badge">V2 Pilot</div>
         </header>
