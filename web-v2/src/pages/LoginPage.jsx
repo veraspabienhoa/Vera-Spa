@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
 export default function LoginPage({ onDemoLogin }) {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -12,13 +12,25 @@ export default function LoginPage({ onDemoLogin }) {
   const submit = async (event) => {
     event.preventDefault()
     setError('')
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !supabase) {
       setError('Chưa cấu hình Supabase cho Web V2.')
       return
     }
     setBusy(true)
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      const { data: bridge, error: bridgeError } = await supabase.functions.invoke('vera-v2-login', {
+        body: { username: username.trim(), password },
+      })
+      if (bridgeError) {
+        const detail = bridgeError?.context?.body?.message || bridgeError.message
+        throw new Error(detail || 'Không xác thực được tài khoản VERA.')
+      }
+      if (!bridge?.email || !bridge?.password) throw new Error(bridge?.message || 'Không xác thực được tài khoản VERA.')
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: bridge.email,
+        password: bridge.password,
+      })
       if (signInError) throw signInError
     } catch (err) {
       setError(err.message || 'Đăng nhập thất bại.')
@@ -42,7 +54,7 @@ export default function LoginPage({ onDemoLogin }) {
         <div className="login-pitch">
           <span className="eyebrow"><Sparkles size={15} /> Trải nghiệm mới</span>
           <h1>Nhanh hơn, mượt hơn, không làm gián đoạn hệ thống hiện tại.</h1>
-          <p>Web V2 được xây song song với Streamlit. PostgreSQL/Supabase vẫn là dữ liệu trung tâm và nghiệp vụ quan trọng tiếp tục đi qua Python API.</p>
+          <p>Web V2 dùng cùng tài khoản và mật khẩu VERA hiện tại. PostgreSQL/Supabase vẫn là dữ liệu trung tâm; nghiệp vụ ghi quan trọng tiếp tục được bảo vệ qua backend.</p>
         </div>
       </section>
 
@@ -50,18 +62,18 @@ export default function LoginPage({ onDemoLogin }) {
         <form className="login-card" onSubmit={submit}>
           <div className="login-icon"><LockKeyhole size={24} /></div>
           <h2>Đăng nhập VERA</h2>
-          <p className="muted">Tài khoản Supabase Auth dành cho Web V2.</p>
+          <p className="muted">Dùng đúng tên đăng nhập và mật khẩu đang sử dụng trên hệ thống hiện tại.</p>
 
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@veraspa.vn" autoComplete="username" />
+          <label>Tên đăng nhập</label>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Tên nhân viên" autoComplete="username" required />
 
           <label>Mật khẩu</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required />
 
           {error && <div className="error-box">{error}</div>}
-          <button className="primary-button full" type="submit" disabled={busy}>{busy ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>
+          <button className="primary-button full" type="submit" disabled={busy}>{busy ? 'Đang xác thực…' : 'Đăng nhập'}</button>
 
-          {!isSupabaseConfigured && <div className="setup-note">Cần đặt VITE_SUPABASE_URL và VITE_SUPABASE_ANON_KEY trong môi trường deploy.</div>}
+          {!isSupabaseConfigured && <div className="setup-note">Supabase chưa được cấu hình cho bản deploy này.</div>}
           {demoAllowed && <button className="text-button" type="button" onClick={onDemoLogin}>Vào giao diện Demo</button>}
         </form>
       </section>

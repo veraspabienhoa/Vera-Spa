@@ -1,6 +1,7 @@
 import { CalendarDays, CheckCircle2, Clock3, RefreshCw, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { demoMode, isApiConfigured, veraApi } from '../lib/api'
+import { isApiConfigured, veraApi } from '../lib/api'
+import { loadEmployees, loadLeaveReasons, loadLeaveRecords, loadLeaveSummary } from '../lib/data'
 
 const formatDateInput = (date) => {
   const year = date.getFullYear()
@@ -11,16 +12,12 @@ const formatDateInput = (date) => {
 
 const today = () => formatDateInput(new Date())
 
-const demoRecords = [
-  { record_uid: 'demo-1', employee_name: 'Nhân viên A', leave_reason: 'Nghỉ CÓ phép', penalty: 0 },
-  { record_uid: 'demo-2', employee_name: 'Nhân viên B', leave_reason: 'Nghỉ KHÔNG phép', penalty: 500000 },
-]
-
 export default function LeaveRegistrationPage() {
   const [date, setDate] = useState(today())
   const [summary, setSummary] = useState({ working: 0, leave: 0, paid: 0, unpaid: 0 })
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
+  const [employees, setEmployees] = useState([])
   const [form, setForm] = useState({ employee_name: '', leave_reason: '', detail: '' })
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -31,23 +28,31 @@ export default function LeaveRegistrationPage() {
     setBusy(true)
     setError('')
     try {
-      if (!isApiConfigured) {
-        if (!demoMode) return
-        setSummary({ working: 34, leave: 2, paid: 1, unpaid: 1 })
-        setRecords(demoRecords)
-        setReasons(['Nghỉ CÓ phép', 'Nghỉ KHÔNG phép', 'Đi trễ CÓ phép', 'Đi trễ KHÔNG phép'])
-        return
+      if (isApiConfigured) {
+        const [summaryData, recordData, reasonData, employeeData] = await Promise.all([
+          veraApi.leaveSummary(date),
+          veraApi.leaveRecords(date),
+          veraApi.leaveReasons(),
+          veraApi.employees(),
+        ])
+        setSummary(summaryData)
+        setRecords(recordData.records || [])
+        setReasons(reasonData.reasons || [])
+        setEmployees(employeeData.employees || [])
+      } else {
+        const [summaryData, recordData, reasonData, employeeData] = await Promise.all([
+          loadLeaveSummary(date),
+          loadLeaveRecords(date),
+          loadLeaveReasons(),
+          loadEmployees(),
+        ])
+        setSummary(summaryData)
+        setRecords(recordData)
+        setReasons(reasonData)
+        setEmployees(employeeData)
       }
-      const [summaryData, recordData, reasonData] = await Promise.all([
-        veraApi.leaveSummary(date),
-        veraApi.leaveRecords(date),
-        veraApi.leaveReasons(),
-      ])
-      setSummary(summaryData)
-      setRecords(recordData.records || [])
-      setReasons(reasonData.reasons || [])
     } catch (err) {
-      setError(err.message || 'Không tải được dữ liệu.')
+      setError(err.message || 'Không tải được dữ liệu thật từ PostgreSQL/Supabase.')
     } finally {
       setBusy(false)
     }
@@ -68,7 +73,7 @@ export default function LeaveRegistrationPage() {
     setMessage('')
     setError('')
     if (!isApiConfigured) {
-      setError('Chưa cấu hình Python API. Web V2 không ghi trực tiếp vào leave_records để tránh bỏ qua nghiệp vụ tính phép/phạt.')
+      setError('Web V2 đang đọc dữ liệu thật. Chức năng Ghi sẽ được mở sau khi Python API dùng chung business rules hiện tại được triển khai; hiện chưa ghi trực tiếp vào PostgreSQL để tránh sai phép/phạt.')
       return
     }
     setSaving(true)
@@ -88,15 +93,15 @@ export default function LeaveRegistrationPage() {
     <div>
       <div className="page-heading-row">
         <div>
-          <span className="eyebrow"><CalendarDays size={15} /> Web V2 Pilot</span>
+          <span className="eyebrow"><CalendarDays size={15} /> Web V2 · dữ liệu thật</span>
           <h1 className="page-title">Đăng ký nghỉ</h1>
-          <p className="page-subtitle">Giao diện React mới. Dữ liệu nghiệp vụ vẫn giữ PostgreSQL/Supabase làm trung tâm.</p>
+          <p className="page-subtitle">Đọc trực tiếp dữ liệu PostgreSQL/Supabase đã được bảo vệ bằng Supabase Auth + RLS/RPC.</p>
         </div>
         <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /> Làm mới</button>
       </div>
 
-      {!isApiConfigured && !demoMode && (
-        <div className="warning-box"><strong>Frontend đã sẵn sàng.</strong> Cần cấu hình VITE_VERA_API_BASE_URL để đọc/ghi dữ liệu thật. Hệ thống Streamlit hiện tại không bị thay đổi.</div>
+      {!isApiConfigured && (
+        <div className="warning-box"><strong>Đã kết nối dữ liệu thật.</strong> Danh sách, số liệu, nhân viên và lý do nghỉ lấy từ PostgreSQL/Supabase. Nút Ghi tạm khóa cho tới khi Python API nghiệp vụ dùng chung với hệ thống hiện tại hoàn tất.</div>
       )}
 
       <div className="date-toolbar">
@@ -120,7 +125,14 @@ export default function LeaveRegistrationPage() {
           </div>
           <form className="leave-form" onSubmit={submit}>
             <label>Tên nhân viên</label>
-            <input value={form.employee_name} onChange={(e) => setForm({ ...form, employee_name: e.target.value })} placeholder="Nhập tên nhân viên" required />
+            <select value={form.employee_name} onChange={(e) => setForm({ ...form, employee_name: e.target.value })} required>
+              <option value="">-- Chọn nhân viên --</option>
+              {employees.map((employee) => (
+                <option key={employee.username} value={employee.username}>
+                  {employee.username}{employee.full_name && employee.full_name !== employee.username ? ` · ${employee.full_name}` : ''}
+                </option>
+              ))}
+            </select>
 
             <label>Lý do nghỉ</label>
             <select value={form.leave_reason} onChange={(e) => setForm({ ...form, leave_reason: e.target.value })} required>
