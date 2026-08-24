@@ -1,12 +1,14 @@
-"""Birthday notifications and read-only TourVera board for Web V2."""
+"""Birthday notifications and the read-only TourVera board for Web V2."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
+import math
 import re
 import threading
 import time
 from typing import Any, Callable
+import unicodedata
 
 import requests
 from fastapi import Depends, HTTPException, Query
@@ -56,7 +58,7 @@ def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
                 raise RuntimeError("Google Drive trả về trang HTML thay vì file XLSM")
             workbook = load_workbook(BytesIO(response.content), read_only=True, data_only=True)
             if "Input" not in workbook.sheetnames:
-                raise RuntimeError("File TourVera không có sheet Input")
+                raise RuntimeError("File Bản tua không có sheet Input")
             sheet = workbook["Input"]
             raw_headers = [cell.value for cell in next(sheet.iter_rows(min_row=20, max_row=20, max_col=24))]
             columns: list[str] = []
@@ -76,7 +78,215 @@ def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
             return columns, records, str(response.headers.get("Last-Modified") or "")
         except Exception as exc:
             errors.append(str(exc))
-    raise RuntimeError("Không tải được Bảng tour: " + " | ".join(errors[-2:]))
+    raise RuntimeError("Không tải được Bản tua: " + " | ".join(errors[-2:]))
+
+
+def _token(value: Any) -> str:
+    raw = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn").replace("đ", "d")
+    return " ".join(raw.replace("_", " ").replace("-", " ").split())
+
+
+def _find_column(columns: list[str], wanted: str) -> str:
+    wanted_key = _token(wanted)
+    exact = [column for column in columns if _token(column) == wanted_key]
+    if exact:
+        return exact[0]
+    contains = [column for column in columns if wanted_key in _token(column)]
+    return contains[0] if contains else ""
+
+
+def _find_column_any(columns: list[str], candidates: tuple[str, ...]) -> str:
+    normalized = {column: _token(column) for column in columns}
+    for candidate in candidates:
+        candidate_key = _token(candidate)
+        exact = next((column for column, key in normalized.items() if key == candidate_key), "")
+        if exact:
+            return exact
+    for candidate in candidates:
+        candidate_key = _token(candidate)
+        contains = next((column for column, key in normalized.items() if candidate_key in key), "")
+        if contains:
+            return contains
+    return ""
+
+
+def _tour_number(value: Any) -> float | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return float(raw.replace(",", ".") if "," in raw and "." not in raw else raw.replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _duration_minutes(value: Any) -> float | None:
+    number = _tour_number(value)
+    if number is not None:
+        return abs(number) * 1440 if 0 < abs(number) < 1 else abs(number)
+    raw = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?", raw)
+    if match:
+        return int(match.group(1)) * 60 + int(match.group(2)) + int(match.group(3) or 0) / 60
+    match = re.search(r"[-+]?\d+(?:[.,]\d+)?", raw)
+    return abs(float(match.group(0).replace(",", "."))) if match else None
+
+
+def _start_datetime(value: Any, now: datetime, duration_minutes: float | None) -> datetime | None:
+    if value in (None, ""):
+        return None
+    parsed: datetime | None = None
+    time_only = False
+    number = _tour_number(value)
+    if isinstance(value, (int, float)) and number is not None:
+        if 0 <= number < 1:
+            seconds = int(round(number * 86400)) % 86400
+            parsed = now.replace(hour=seconds // 3600, minute=(seconds % 3600) // 60, second=seconds % 60, microsecond=0)
+            time_only = True
+        elif number >= 1:
+            parsed = datetime(1899, 12, 30, tzinfo=now.tzinfo) + timedelta(days=number)
+    else:
+        raw = str(value).strip()
+        for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                parsed = datetime.strptime(raw, fmt).replace(tzinfo=now.tzinfo)
+                break
+            except ValueError:
+                pass
+        if parsed is None:
+            for fmt in ("%H:%M:%S", "%H:%M"):
+                try:
+                    clock = datetime.strptime(raw, fmt)
+                    parsed = now.replace(hour=clock.hour, minute=clock.minute, second=clock.second, microsecond=0)
+                    time_only = True
+                    break
+                except ValueError:
+                    pass
+    if parsed is None:
+        return None
+    if time_only and parsed > now:
+        previous = parsed - timedelta(days=1)
+        elapsed = (now - previous).total_seconds() / 60
+        if 0 <= elapsed <= max(float(duration_minutes or 0) + 240, 480):
+            return previous
+    return parsed
+
+
+def _display_value(value: Any) -> Any:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return int(round(float(value)))
+    raw = str(value).strip()
+    if raw.lower() in {"none", "nan", "nat", "<na>"}:
+        return ""
+    if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", raw):
+        return str(int(round(float(raw))))
+    return raw
+
+
+def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
+    output_columns = list(columns)
+    request_column = _find_column_any(columns, ("Yêu cầu", "Yeu cau"))
+    duration_column = _find_column_any(columns, ("Thời lượng", "Thoi luong", "Thời lượng (phút)", "Thời lượng phút"))
+    start_column = _find_column_any(columns, ("TG bắt đầu thực hiện", "TG bat dau thuc hien", "BĐ thực hiện", "BD thuc hien", "Bắt đầu thực hiện"))
+    start_yc_column = _find_column_any(columns, ("TG bắt đầu thực hiện YC", "TG bat dau thuc hien YC", "BĐ thực hiện YC", "BD thuc hien YC", "BĐ YC", "BD YC", "Bắt đầu thực hiện YC"))
+    remaining_column = _find_column(columns, "Thời gian còn lại")
+    if not remaining_column:
+        remaining_column = "Thời gian còn lại"
+        output_columns.append(remaining_column)
+    name_column = _find_column(columns, "Tên nhân viên")
+    status_column = _find_column(columns, "Trạng thái")
+    work_column = _find_column(columns, "Đi làm")
+    shift_column = _find_column(columns, "Vào ca") or next((column for column in columns if _token(column) == "ca"), "")
+    break_column = _find_column(columns, "Break") or _find_column(columns, "Breaktime")
+
+    moved = [column for column in (status_column, remaining_column) if column]
+    ordered_columns = [column for column in output_columns if column not in moved]
+    if name_column and name_column in ordered_columns:
+        position = ordered_columns.index(name_column) + 1
+        for column in reversed(moved):
+            ordered_columns.insert(position, column)
+    else:
+        ordered_columns = moved + ordered_columns
+
+    prepared: list[dict[str, Any]] = []
+    counters = {"doing": 0, "waiting": 0, "finishing": 0, "idle": 0, "break": 0, "working": 0, "leave": 0}
+    countdown_error = "" if duration_column else "Không tìm thấy cột Thời lượng."
+    for source in source_records:
+        request_mode = _token(source.get(request_column, "")) if request_column else ""
+        duration = _duration_minutes(source.get(duration_column)) if duration_column else None
+        active_start_column = start_yc_column if request_mode == "yc" else (start_column if request_mode == "" else "")
+        started = _start_datetime(source.get(active_start_column), now, duration) if active_start_column else None
+        remaining: int | None = None
+        if duration is not None and started is not None:
+            elapsed = (now - started).total_seconds() / 60
+            if elapsed >= 0:
+                remaining = int(math.ceil(duration - elapsed))
+
+        status_token = _token(source.get(status_column, "")) if status_column else ""
+        work_token = _token(source.get(work_column, "")) if work_column else ""
+        shift_token = _token(source.get(shift_column, "")) if shift_column else ""
+        break_token = _token(source.get(break_column, "")) if break_column else ""
+        expired = remaining is not None and remaining <= -15
+        status_number = _tour_number(source.get(status_column)) if status_column else None
+        finishing = bool(
+            (status_number is not None and status_number <= 30)
+            or (status_token == "dang thuc hien" and remaining is not None and -15 < remaining <= 30)
+        )
+        idle = not expired and work_token == "di lam" and shift_token in {"ca 1", "ca 2"} and remaining in (None, 0)
+
+        counters["doing"] += int(status_token == "dang thuc hien")
+        counters["waiting"] += int(status_token == "dang cho")
+        counters["finishing"] += int(finishing)
+        counters["idle"] += int(idle)
+        counters["break"] += int(break_token == "break")
+        counters["working"] += int(work_token == "di lam")
+        counters["leave"] += int(work_token == "nghi phep")
+
+        row_style = "work" if work_token == "di lam" else ("leave" if work_token == "nghi phep" else "default")
+        if remaining is not None and work_token != "nghi phep":
+            if remaining >= 15:
+                row_style = "green"
+            elif 0 <= remaining < 15:
+                row_style = "yellow"
+            elif -15 < remaining < 0:
+                row_style = "red"
+        if idle:
+            row_style = "idle"
+        if break_token == "break":
+            row_style = "break"
+
+        values = {column: _display_value(source.get(column, "")) for column in ordered_columns}
+        values[remaining_column] = "" if expired or remaining is None else remaining
+        if status_column:
+            values[status_column] = {"dang cho": "Đang chờ", "dang thuc hien": "Đang thực hiện"}.get(status_token, values[status_column])
+        time_column = _find_column(columns, "Thời gian")
+        if time_column and time_column != remaining_column:
+            time_number = _tour_number(source.get(time_column))
+            if time_number is not None and time_number < -180:
+                values[time_column] = ""
+        prepared.append({**values, "_row_style": row_style})
+
+    available = counters["finishing"] + counters["idle"]
+    return {
+        "columns": ordered_columns,
+        "records": prepared,
+        "available": available,
+        "stats": [{"label": "Có thể lên tour", "value": available, "detail": "Sắp xong + Đang rảnh"}],
+        "break_count": counters["break"],
+        "working_count": counters["working"],
+        "leave_count": counters["leave"],
+        "countdown_error": countdown_error,
+        "countdown_at": now.isoformat(),
+    }
 
 
 def install_people_routes(
@@ -128,11 +338,10 @@ def install_people_routes(
             records = list(_tour_cache["records"])
             columns = list(_tour_cache["columns"])
             source_updated_at = str(_tour_cache["source_updated_at"])
-        status_column = next((column for column in columns if re.sub(r"\s+", " ", column.lower()).strip() in {"trạng thái", "trang thai"}), "")
-        available = 0
-        if status_column:
-            for item in records:
-                status = str(item.get(status_column) or "").lower()
-                if not status or "rảnh" in status or "ranh" in status or "sắp xong" in status or "sap xong" in status:
-                    available += 1
-        return {"columns": columns, "records": records, "count": len(records), "available": available, "source_updated_at": source_updated_at}
+        prepared = _prepare_tour(columns, records, datetime.now(vn_tz))
+        return {
+            **prepared,
+            "count": len(records),
+            "source_updated_at": source_updated_at,
+            "viewer_can_see_stats": str(ident.role or "").lower() in {"admin", "quanly", "letan"},
+        }

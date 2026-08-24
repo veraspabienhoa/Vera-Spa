@@ -221,8 +221,10 @@ jobs:
               'Web V2 login uses full VERA SPA title': '<h2>Đăng nhập VERA SPA</h2>' in login_page,
               'Web V2 penalty column follows returned permission': 'user?.permissions?.employee_penalty_view === true' in leave_page,
               'Web V2 uses dd/mm/yyyy date display': '`${day}/${month}/${year}`' in leave_page,
-              'Web V2 date filter follows metrics': leave_page.index('<section className="metric-grid">') < leave_page.index('<div className="date-toolbar range-toolbar">') < leave_page.index('<div className="content-grid">'),
+              'Web V2 viewed date follows metrics': leave_page.index('<section className="metric-grid">') < leave_page.index('<div className="date-toolbar viewed-date-toolbar">') < leave_page.index('<div className="content-grid">'),
               'Web V2 supports requested date ranges': all(label in leave_page for label in ('Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau', 'Tùy chỉnh')),
+              'Web V2 statistics has the exact six requested filters': "const STAT_DATE_FILTERS = ['Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau']" in leave_page and 'aria-label="Lọc thời gian thống kê"' in leave_page and 'statistics-filter-toolbar' in leave_page,
+              'Web V2 viewed date synchronizes statistics and list': all(token in leave_page for token in ('setRangeStart(value)', 'setRangeEnd(value)', 'setListRangeStart(value)', 'setListRangeEnd(value)')),
               'Web V2 mobile order is registration then stats then list': leave_page.index('registration-panel') < leave_page.index('daily-summary-panel') < leave_page.index('leave-list-panel'),
               'Web V2 registration follows viewed-date toolbar': leave_page.index('Ngày đang xem') < leave_page.index('registration-panel'),
               'Web V2 uses requested uppercase section titles': all(title in leave_page for title in ('<h2>ĐĂNG KÝ MỚI</h2>', '<h2>THỐNG KÊ</h2>', '<h2>DANH SÁCH</h2>')),
@@ -259,7 +261,7 @@ jobs:
               'Web V2 rings unread watch alerts until acknowledged': 'playWatchBellSound' in leave_page and 'window.setInterval(ringWatchBell, 5000)' in leave_page and 'watch-bell-shake' in web_styles,
               'Web V2 refreshes watch alerts when reopened': "window.addEventListener('focus', refreshWatchDates)" in leave_page and "document.addEventListener('visibilitychange', refreshWhenVisible)" in leave_page,
               'Web V2 statistics dates have no underline': '.daily-summary-table .date-link { text-decoration: none; }' in web_styles,
-              'Web V2 uses Thanks label': 'Thanks' in shell and 'V2 Pilot' not in shell,
+              'Web V2 topbar has global refresh': 'topbar-refresh-button' in shell and 'window.location.reload()' in shell and 'Thanks' not in shell,
               'Web V2 uses Cinzel Decorative VERA wordmark': 'Cinzel+Decorative' in web_styles and '<div className="brand-mark large">VERA</div>' in login_page and '<div className="brand-mark">VERA</div>' in shell,
               'Web V2 list actions have dedicated notices': 'listActionNotice' in leave_page and all(label in leave_page for label in ('LƯU SỬA THÀNH CÔNG', 'LƯU SỬA KHÔNG THÀNH CÔNG', 'XÓA ĐÃ CHỌN THÀNH CÔNG', 'XÓA ĐÃ CHỌN KHÔNG THÀNH CÔNG')) and leave_page.index('list-action-notice') > leave_page.index('leave-list-panel'),
               'Web V2 list summary includes weekday and leave wording': 'weekdayForDate(listRangeStart)' in leave_page and 'lịch nghỉ.' in leave_page,
@@ -509,6 +511,8 @@ jobs:
           module = Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8')
           page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
           section = Path('web-v2/src/components/LongLeaveSection.jsx').read_text(encoding='utf-8')
+          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
+          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
           client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
 
@@ -526,7 +530,7 @@ jobs:
               'annual request keeps seven-day limit': 'Đơn Phép năm chỉ được chọn tối đa 7 ngày liên tiếp' in module,
               'pause switch retained': 'long_leave_request_pause_v905' in module,
               'approved list is permission gated': 'can_stats' in module and '_approved_rows(conn) if can_stats else []' in module,
-              'React section is at the page bottom': '<LongLeaveSection user={user} />' in page and page.index('<LongLeaveSection user={user} />') > page.index('leave-list-panel'),
+              'React section is a permission-gated menu page': "id: 'long-leave'" in shell and 'anyPermission' in shell and "page === 'long-leave'" in app and '<LongLeaveSection user={shellUser} />' in app and 'LongLeaveSection' not in page,
               'both request forms are present': all(label in section for label in ('ĐƠN XIN NGHỈ PHÉP NĂM', 'ĐƠN XIN NGHỈ LÀM ĐẸP')),
               'approved employee list is present': 'DANH SÁCH NHÂN VIÊN ĐÃ ĐƯỢC DUYỆT' in section,
               'mobile approved cards avoid table overflow': 'approved-leave-mobile-list' in section and '.approved-leave-desktop { display: none; }' in styles,
@@ -625,8 +629,9 @@ jobs:
               'Admin daily push uses Vault and cron': 'vera-v2-admin-daily-changes' in sql and 'vault.decrypted_secrets' in sql,
               'audit excludes sensitive values': 'No password, push key, bank data, payroll amount or revenue value' in sql,
               'shared audit trigger is safe for heterogeneous row types': all(token in sql for token in ("row_data jsonb := CASE", "row_data ->> 'username'", "row_data ->> 'employee_username'")) and 'OLD.username' not in sql and 'RETURN CASE' not in sql,
-              'new pages are routed and permission gated': all(name in app for name in ('ProfilePage','PermissionsPage','PayrollPage','SnapshotPage','BirthdayPage','TourPage','AdminChangesPage','StorageAdminPage')) and all(key in shell for key in ('permission_admin','payroll_history','snapshot_today','birthday','tour','audit_admin_view','storage_admin_view')),
-              'birthday and Tour APIs are present': '/v2/birthdays' in people and '/v2/tour' in people,
+              'new pages are routed and permission gated': all(name in app for name in ('ProfilePage','PermissionsPage','PayrollPage','SnapshotPage','BirthdayPage','TourPage','LongLeaveSection','AdminChangesPage','StorageAdminPage')) and all(key in shell for key in ('permission_admin','payroll_history','snapshot_today','birthday','tour','long_leave','audit_admin_view','storage_admin_view')),
+              'birthday and Bản tua APIs are present': '/v2/birthdays' in people and '/v2/tour' in people and '_prepare_tour' in people and 'Có thể lên tour' in people,
+              'Bản tua countdown colors and indices are preserved': all(token in people for token in ('remaining >= 15', '0 <= remaining < 15', '-15 < remaining < 0', 'remaining <= -15', 'row_style = "break"', 'counters["finishing"] + counters["idle"]')) and all(token in Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8') for token in ('CHỈ SỐ', 'MÀU DÒNG', 'tour-row-', 'Làm mới Bản tua')),
               'system changes only list leave CRUD': "dataset_key='leave_records'" in api and "event_type IN ('insert','update','delete')" in api,
               'Admin storage export and guarded deletion exist': all(route in storage for route in ('/v2/storage/preview','/v2/storage/export.xlsx','/v2/storage')) and 'XÓA DỮ LIỆU' in storage and 'expected_count' in storage and 'exportStorageExcel' in Path('web-v2/src/lib/api.js').read_text(encoding='utf-8') and 'XÓA DỮ LIỆU' in storage_page,
           }
