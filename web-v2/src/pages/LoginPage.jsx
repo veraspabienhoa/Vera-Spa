@@ -1,6 +1,7 @@
 import { LockKeyhole } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { unlockWatchBellAudio } from '../lib/watchBell'
 
 export default function LoginPage({ onDemoLogin, externalError = '' }) {
   const [username, setUsername] = useState('')
@@ -13,6 +14,7 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
 
   const submit = async (event) => {
     event.preventDefault()
+    void unlockWatchBellAudio()
     setError('')
     if (!isSupabaseConfigured || !supabase) {
       setError('Chưa cấu hình Supabase cho hệ thống.')

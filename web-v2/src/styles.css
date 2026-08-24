@@ -156,11 +156,15 @@ tr:last-child td { border-bottom: 0; }
 .daily-date-actions { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .watch-date-icon { width: 25px; height: 25px; flex: 0 0 25px; border: 0; border-radius: 999px; display: inline-grid; place-items: center; color: #6d7d74; background: #f0f4f1; }
 .watch-date-icon.active { color: #8b6015; background: #fff1c7; }
+.watch-date-icon.ringing svg, .watch-current-date-button.ringing svg, .watch-ringing-icon { animation: watch-bell-shake .72s ease-in-out infinite; transform-origin: 50% 12%; }
 .watch-date-icon:disabled, .watch-current-date-button:disabled { opacity: .55; cursor: wait; }
 .watch-notification-panel { display: grid; gap: 10px; margin: -3px 0 18px; padding: 14px; border: 1px solid #ead49b; border-radius: 15px; color: #604715; background: #fff9e8; box-shadow: 0 8px 22px rgba(99,70,15,.06); }
+.watch-notification-panel.ringing { animation: watch-alert-pulse 1.8s ease-in-out infinite; }
 .watch-notification-heading { display: flex; align-items: flex-start; gap: 9px; }
 .watch-notification-heading strong, .watch-notification-heading span { display: block; }
 .watch-notification-heading span { margin-top: 2px; color: #846d3c; font-size: 11px; }
+.watch-ringing-button { width: 34px; height: 34px; flex: 0 0 34px; display: inline-grid; place-items: center; border: 1px solid #ddc47e; border-radius: 999px; padding: 0; color: #8b6015; background: #fff; }
+.watch-sound-hint { color: #a23025 !important; font-weight: 800; }
 .watch-notification-list { display: grid; gap: 7px; }
 .watch-notification-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border-radius: 10px; background: rgba(255,255,255,.75); font-size: 12px; }
 .watch-notification-item button { flex: 0 0 auto; border: 1px solid #ddc47e; border-radius: 9px; padding: 7px 10px; color: #624714; background: white; font-weight: 800; }
@@ -176,6 +180,18 @@ tr:last-child td { border-bottom: 0; }
 .setup-note { background: #f4f6f5; color: var(--muted); }
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes watch-bell-shake {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  15% { transform: rotate(18deg) scale(1.08); }
+  30% { transform: rotate(-16deg) scale(1.08); }
+  45% { transform: rotate(12deg) scale(1.05); }
+  60% { transform: rotate(-9deg) scale(1.03); }
+  75% { transform: rotate(5deg) scale(1.01); }
+}
+@keyframes watch-alert-pulse {
+  0%, 100% { box-shadow: 0 8px 22px rgba(99,70,15,.06); }
+  50% { box-shadow: 0 8px 26px rgba(190,128,20,.24); }
+}
 
 .login-screen { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(420px, .9fr); background: white; }
 .login-visual { min-height: 100vh; position: relative; overflow: hidden; color: white; background: radial-gradient(circle at 20% 15%, rgba(207,179,120,.22), transparent 28%), linear-gradient(145deg, #0d211a 0%, #173d2f 62%, #244c3b 100%); padding: clamp(35px, 6vw, 80px); display: flex; flex-direction: column; }

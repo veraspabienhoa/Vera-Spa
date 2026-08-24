@@ -247,6 +247,8 @@ jobs:
               'Web V2 watch endpoints are identity scoped': '@app.get("/v2/leave/watch-dates")' in api and '@app.post("/v2/leave/watch-dates/acknowledge")' in api and 'auth_user_id=CAST(:auth_user_id AS uuid)' in api,
               'Web V2 watch table is private with RLS': 'ENABLE ROW LEVEL SECURITY' in leave_watch_sql and 'FROM PUBLIC, anon, authenticated' in leave_watch_sql and 'PRIMARY KEY (auth_user_id, watched_date)' in leave_watch_sql,
               'Web V2 displays watched-day notifications': 'watch-notification-panel' in leave_page and 'Đang quan tâm ngày này' in leave_page and 'acknowledgeWatchDates' in Path('web-v2/src/lib/api.js').read_text(encoding='utf-8'),
+              'Web V2 rings unread watch alerts until acknowledged': 'playWatchBellSound' in leave_page and 'window.setInterval(ringWatchBell, 5000)' in leave_page and 'watch-bell-shake' in web_styles,
+              'Web V2 refreshes watch alerts when reopened': "window.addEventListener('focus', refreshWatchDates)" in leave_page and "document.addEventListener('visibilitychange', refreshWhenVisible)" in leave_page,
               'Web V2 statistics dates have no underline': '.daily-summary-table .date-link { text-decoration: none; }' in web_styles,
               'Web V2 uses Thanks label': 'Thanks' in shell and 'V2 Pilot' not in shell,
           }

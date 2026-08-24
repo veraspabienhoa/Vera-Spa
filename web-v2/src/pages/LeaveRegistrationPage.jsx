@@ -1,6 +1,7 @@
 import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
+import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
 import {
   loadEmployees,
   loadLeaveDailyStats,
@@ -95,6 +96,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [watchDates, setWatchDates] = useState([])
   const [watchBusyDate, setWatchBusyDate] = useState('')
   const [watchError, setWatchError] = useState('')
+  const [watchSoundReady, setWatchSoundReady] = useState(true)
   const role = String(user?.role || '').toLowerCase()
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
@@ -176,7 +178,16 @@ export default function LeaveRegistrationPage({ user }) {
   useEffect(() => {
     refreshWatchDates()
     const interval = window.setInterval(refreshWatchDates, 60000)
-    return () => window.clearInterval(interval)
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshWatchDates()
+    }
+    window.addEventListener('focus', refreshWatchDates)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshWatchDates)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
   }, [refreshWatchDates])
 
   useEffect(() => {
@@ -197,6 +208,8 @@ export default function LeaveRegistrationPage({ user }) {
   }, [employeeSearch, records])
   const watchedDateSet = useMemo(() => new Set(watchDates.map((item) => item.date)), [watchDates])
   const unreadWatchDates = useMemo(() => watchDates.filter((item) => item.has_unread), [watchDates])
+  const unreadWatchDateSet = useMemo(() => new Set(unreadWatchDates.map((item) => item.date)), [unreadWatchDates])
+  const unreadWatchKey = useMemo(() => unreadWatchDates.map((item) => item.date).sort().join('|'), [unreadWatchDates])
   const totalPenalty = useMemo(
     () => filteredRecords.reduce((sum, item) => sum + Number(item.penalty || 0), 0),
     [filteredRecords],
@@ -206,6 +219,32 @@ export default function LeaveRegistrationPage({ user }) {
     () => records.filter((item) => reasonDrafts[item.record_uid] && reasonDrafts[item.record_uid] !== item.leave_reason),
     [reasonDrafts, records],
   )
+
+  const ringWatchBell = useCallback(async () => {
+    const played = await playWatchBellSound()
+    setWatchSoundReady(played)
+    return played
+  }, [])
+
+  useEffect(() => {
+    if (!unreadWatchKey) {
+      setWatchSoundReady(true)
+      return undefined
+    }
+
+    void ringWatchBell()
+    const bellInterval = window.setInterval(ringWatchBell, 5000)
+    const unlockAndRing = () => {
+      void unlockWatchBellAudio().then(() => ringWatchBell())
+    }
+    window.addEventListener('pointerdown', unlockAndRing, { once: true })
+    window.addEventListener('keydown', unlockAndRing, { once: true })
+    return () => {
+      window.clearInterval(bellInterval)
+      window.removeEventListener('pointerdown', unlockAndRing)
+      window.removeEventListener('keydown', unlockAndRing)
+    }
+  }, [ringWatchBell, unreadWatchKey])
 
   const toggleSelected = (recordUid) => {
     setSelectedUids((current) => current.includes(recordUid)
@@ -421,7 +460,7 @@ export default function LeaveRegistrationPage({ user }) {
         />
         <button
           type="button"
-          className={`watch-current-date-button ${watchedDateSet.has(date) ? 'active' : ''}`}
+          className={`watch-current-date-button ${watchedDateSet.has(date) ? 'active' : ''} ${unreadWatchDateSet.has(date) ? 'ringing' : ''}`}
           onClick={() => toggleWatchDate(date)}
           disabled={!isApiConfigured || Boolean(watchBusyDate)}
           aria-pressed={watchedDateSet.has(date)}
@@ -432,12 +471,15 @@ export default function LeaveRegistrationPage({ user }) {
       </div>
 
       {unreadWatchDates.length > 0 && (
-        <section className="watch-notification-panel" aria-live="polite">
+        <section className="watch-notification-panel ringing" role="alert" aria-live="assertive">
           <div className="watch-notification-heading">
-            <BellRing size={19} />
+            <button type="button" className="watch-ringing-button" onClick={ringWatchBell} aria-label="Phát lại chuông thông báo">
+              <BellRing className="watch-ringing-icon" size={19} />
+            </button>
             <div>
               <strong>Ngày bạn quan tâm vừa có thay đổi</strong>
               <span>Chỉ thông báo thay đổi từ 6 lý do nghỉ CÓ phép đã quy định.</span>
+              {!watchSoundReady && <span className="watch-sound-hint">Chạm biểu tượng chuông để bật âm thanh.</span>}
             </div>
           </div>
           <div className="watch-notification-list">
@@ -563,7 +605,7 @@ export default function LeaveRegistrationPage({ user }) {
                         </button>
                         <button
                           type="button"
-                          className={`watch-date-icon ${watchedDateSet.has(day.date) ? 'active' : ''}`}
+                          className={`watch-date-icon ${watchedDateSet.has(day.date) ? 'active' : ''} ${unreadWatchDateSet.has(day.date) ? 'ringing' : ''}`}
                           onClick={() => toggleWatchDate(day.date)}
                           disabled={Boolean(watchBusyDate)}
                           aria-label={watchedDateSet.has(day.date) ? `Bỏ quan tâm ngày ${formatDateDisplay(day.date)}` : `Quan tâm ngày ${formatDateDisplay(day.date)}`}
