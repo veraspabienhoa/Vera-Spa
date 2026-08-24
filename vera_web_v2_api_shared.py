@@ -7,7 +7,6 @@ mirror code.  This wrapper replaces policy/validation helpers only, then routes
 from __future__ import annotations
 
 from datetime import datetime
-import time
 import uuid
 
 import pandas as pd
@@ -103,13 +102,15 @@ def _live_leave_df(conn, exclude_record_uid: str = "") -> pd.DataFrame:
     ])
 
 
-_QUOTA_CACHE = {"at": 0.0, "value": {"weekday_limit": 5, "weekend_limit": 3, "phat_sinh_limit": 2}}
-
-
 def _daily_quota_config():
-    now = time.monotonic()
-    if now - float(_QUOTA_CACHE.get("at", 0.0)) < 60:
-        return dict(_QUOTA_CACHE["value"])
+    # PostgreSQL is canonical so an Admin save on the Nội quy page takes
+    # effect on the very next registration request. The old three-key Google
+    # Config remains the fallback during the Web V2 migration.
+    try:
+        with _api._engine_instance().connect() as conn:
+            return _api.__dict__["_daily_quota_config_base"](conn)
+    except Exception:
+        pass
     cfg = {"weekday_limit": 5, "weekend_limit": 3, "phat_sinh_limit": 2}
     try:
         ws = _api._google_client().open_by_key(_api.LEAVE_SHEET_ID).worksheet("Config")
@@ -128,7 +129,14 @@ def _daily_quota_config():
     except Exception:
         # Same safe defaults used by the immutable Streamlit core.
         pass
-    _QUOTA_CACHE.update({"at": now, "value": dict(cfg)})
+    cfg["days"] = [
+        {
+            "weekday": weekday,
+            "paid_limit": cfg["weekend_limit"] if weekday >= 6 else cfg["weekday_limit"],
+            "generated_limit": 0 if weekday >= 6 else cfg["phat_sinh_limit"],
+        }
+        for weekday in range(1, 8)
+    ]
     return cfg
 
 
@@ -137,6 +145,7 @@ def _api_daily_quota_config(_conn):
     return _daily_quota_config()
 
 
+_api._daily_quota_config_base = _api._daily_quota_config
 _api._daily_quota_config = _api_daily_quota_config
 
 
@@ -187,7 +196,7 @@ def _daily_employee_rule(conn, df_sources, target_date, employee, reason, new_da
 def _daily_group_quota(conn, all_leave_df, target_date, reason, is_zero_day_co_phep=False):
     cfg = _daily_quota_config()
     group_now = _policy_group(conn, reason)
-    is_weekend = target_date.weekday() >= 5
+    day_quota = cfg["days"][target_date.weekday()]
     d = rows_counting_toward_quota(all_leave_df)
     co_count = ps_count = 0
     if isinstance(d, pd.DataFrame) and not d.empty and {"Ngày", "Lý do nghỉ"}.issubset(d.columns):
@@ -205,14 +214,14 @@ def _daily_group_quota(conn, all_leave_df, target_date, reason, is_zero_day_co_p
     if group_now == "co_phep":
         if is_zero_day_co_phep:
             return True, ""
-        limit = int(cfg["weekend_limit"] if is_weekend else cfg["weekday_limit"])
+        limit = int(day_quota["paid_limit"])
         if co_count >= limit:
             return False, f"Ngày {target_date.strftime('%d/%m/%Y')} đã đủ {limit} người CÓ phép."
         return True, ""
     if group_now == "phat_sinh":
-        if is_weekend:
-            return False, f"Ngày {target_date.strftime('%d/%m/%Y')} là cuối tuần (Thứ 7/Chủ nhật), không được đăng ký PHÁT SINH."
-        limit = int(cfg["phat_sinh_limit"])
+        limit = int(day_quota["generated_limit"])
+        if limit <= 0:
+            return False, f"Ngày {target_date.strftime('%d/%m/%Y')} không được đăng ký PHÁT SINH theo Nội quy."
         if ps_count >= limit:
             return False, f"Ngày {target_date.strftime('%d/%m/%Y')} đã đủ {limit} người PHÁT SINH."
     return True, ""
@@ -246,6 +255,7 @@ def _validate_and_prepare(
         FROM employees
         WHERE lower(btrim(username))=lower(btrim(:u))
           AND COALESCE(login_locked,false)=false
+          AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
         LIMIT 1
     """), {"u": employee}).mappings().first()
     if not emp:

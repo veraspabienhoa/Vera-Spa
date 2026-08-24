@@ -48,12 +48,169 @@ RULES_FEATURES = (
     "official_rules_view", "official_rules_edit",
     "official_rules_export", "official_rules_import",
 )
+DAILY_QUOTA_CATEGORY = "leave_rules"
+DAILY_QUOTA_KEY = "daily_quota"
+DAILY_QUOTA_WEEKDAYS = (
+    (1, "Thứ 2", 5, 2),
+    (2, "Thứ 3", 5, 2),
+    (3, "Thứ 4", 5, 2),
+    (4, "Thứ 5", 5, 2),
+    (5, "Thứ 6", 5, 2),
+    (6, "Thứ 7", 3, 0),
+    (7, "Chủ nhật", 3, 0),
+)
 
 
 class RulesUpdate(BaseModel):
     columns: list[str] = Field(min_length=1, max_length=MAX_COLUMNS)
     rows: list[dict[str, Any]] = Field(min_length=1, max_length=MAX_ROWS)
     expected_revision: int = Field(ge=0)
+
+
+class DailyQuotaDay(BaseModel):
+    weekday: int = Field(ge=1, le=7)
+    paid_limit: int = Field(ge=0, le=100)
+    generated_limit: int = Field(ge=0, le=100)
+
+
+class DailyQuotaUpdate(BaseModel):
+    days: list[DailyQuotaDay] = Field(min_length=7, max_length=7)
+    expected_revision: int = Field(ge=0)
+
+
+def _default_daily_quota_days() -> list[dict[str, Any]]:
+    return [
+        {
+            "weekday": weekday,
+            "weekday_label": label,
+            "paid_limit": paid,
+            "generated_limit": generated,
+        }
+        for weekday, label, paid, generated in DAILY_QUOTA_WEEKDAYS
+    ]
+
+
+def _normalize_daily_quota(value: Any) -> list[dict[str, Any]]:
+    defaults = _default_daily_quota_days()
+    default_by_day = {item["weekday"]: item for item in defaults}
+    raw = value if isinstance(value, dict) else {}
+    raw_days = raw.get("days") if isinstance(raw.get("days"), list) else []
+    parsed: dict[int, dict[str, Any]] = {}
+    for item in raw_days:
+        if not isinstance(item, dict):
+            continue
+        try:
+            weekday = int(item.get("weekday") or 0)
+            if weekday not in default_by_day or weekday in parsed:
+                continue
+            parsed[weekday] = {
+                **default_by_day[weekday],
+                "paid_limit": max(0, min(100, int(float(item.get("paid_limit", default_by_day[weekday]["paid_limit"]))))),
+                "generated_limit": max(0, min(100, int(float(item.get("generated_limit", default_by_day[weekday]["generated_limit"]))))),
+            }
+        except (TypeError, ValueError):
+            continue
+
+    if len(parsed) == 7:
+        return [parsed[index] for index in range(1, 8)]
+
+    # Read the three-key configuration used by the current Streamlit app and
+    # earlier Web V2 builds. This makes the first UI load non-destructive.
+    try:
+        weekday_limit = max(0, min(100, int(float(raw.get("weekday_limit", 5)))))
+    except (TypeError, ValueError):
+        weekday_limit = 5
+    try:
+        weekend_limit = max(0, min(100, int(float(raw.get("weekend_limit", 3)))))
+    except (TypeError, ValueError):
+        weekend_limit = 3
+    try:
+        generated_limit = max(0, min(100, int(float(raw.get("phat_sinh_limit", 2)))))
+    except (TypeError, ValueError):
+        generated_limit = 2
+    return [
+        {
+            **item,
+            "paid_limit": weekend_limit if item["weekday"] >= 6 else weekday_limit,
+            "generated_limit": 0 if item["weekday"] >= 6 else generated_limit,
+        }
+        for item in defaults
+    ]
+
+
+def _load_daily_quota(conn) -> dict[str, Any]:
+    row = conn.execute(text("""
+        SELECT value_json, revision, updated_at, updated_by
+        FROM vera_app_setting
+        WHERE category=:category AND setting_key=:setting_key
+        LIMIT 1
+    """), {"category": DAILY_QUOTA_CATEGORY, "setting_key": DAILY_QUOTA_KEY}).mappings().first()
+    value = row["value_json"] if row else {}
+    return {
+        "days": _normalize_daily_quota(value),
+        "revision": int(row["revision"] or 0) if row else 0,
+        "updated_at": row["updated_at"].isoformat() if row and row["updated_at"] else "",
+        "updated_by": str(row["updated_by"] or "") if row else "",
+    }
+
+
+def _daily_quota_payload(days: list[DailyQuotaDay]) -> dict[str, Any]:
+    items = [item.model_dump() for item in days]
+    if {item["weekday"] for item in items} != set(range(1, 8)):
+        raise HTTPException(400, "Bảng hạn mức phải có đủ và đúng một dòng từ Thứ 2 đến Chủ nhật.")
+    ordered = sorted(items, key=lambda item: item["weekday"])
+    labels = {weekday: label for weekday, label, _paid, _generated in DAILY_QUOTA_WEEKDAYS}
+    normalized = [{**item, "weekday_label": labels[item["weekday"]]} for item in ordered]
+    weekday_paid = [item["paid_limit"] for item in normalized if item["weekday"] <= 5]
+    weekend_paid = [item["paid_limit"] for item in normalized if item["weekday"] >= 6]
+    weekday_generated = [item["generated_limit"] for item in normalized if item["weekday"] <= 5]
+    return {
+        "days": normalized,
+        # Keep the old keys so the current Streamlit version remains safe.
+        # When individual days differ, the legacy screen uses the strictest
+        # value while Web V2 uses the exact value for each weekday.
+        "weekday_limit": min(weekday_paid),
+        "weekend_limit": min(weekend_paid),
+        "phat_sinh_limit": min(weekday_generated),
+    }
+
+
+def _write_daily_quota_sheet(ws, payload: dict[str, Any]) -> None:
+    old_values = ws.get_all_values()
+    rows = [list(row) for row in old_values]
+    if not rows:
+        rows = [["Key", "Value"]]
+    if len(rows[0]) < 2:
+        rows[0] += [""] * (2 - len(rows[0]))
+    rows[0][0:2] = ["Key", "Value"]
+    updates = {
+        "weekday_limit": payload["weekday_limit"],
+        "weekend_limit": payload["weekend_limit"],
+        "phat_sinh_limit": payload["phat_sinh_limit"],
+    }
+    for item in payload["days"]:
+        updates[f"weekday_{item['weekday']}_paid_limit"] = item["paid_limit"]
+        updates[f"weekday_{item['weekday']}_generated_limit"] = item["generated_limit"]
+    index_by_key = {
+        str(row[0] if row else "").strip(): index
+        for index, row in enumerate(rows[1:], start=1)
+        if row and str(row[0]).strip()
+    }
+    for key, value in updates.items():
+        if key in index_by_key:
+            index = index_by_key[key]
+            rows[index] += [""] * max(0, 2 - len(rows[index]))
+            rows[index][0:2] = [key, value]
+        else:
+            rows.append([key, value])
+    width = max(2, max(len(row) for row in rows))
+    padded = [row + [""] * (width - len(row)) for row in rows]
+    ws.clear()
+    ws.update(
+        range_name=f"A1:{get_column_letter(width)}{len(padded)}",
+        values=padded,
+        value_input_option="USER_ENTERED",
+    )
 
 
 def _clean_scalar(value: Any) -> str | int | float | bool:
@@ -319,10 +476,13 @@ def install_rules_routes(
 ) -> None:
     def response_payload(conn, ident) -> dict:
         document = _load_document(conn)
+        daily_quota = _load_daily_quota(conn)
         return {
             **document,
             "required_columns": list(REQUIRED_COLUMNS),
             "permissions": _permissions(conn, ident, feature_allowed),
+            "daily_quota": daily_quota,
+            "can_edit_daily_quota": str(getattr(ident, "role", "") or "").strip().lower() == "admin",
         }
 
     @app.get("/v2/rules")
@@ -413,6 +573,95 @@ def install_rules_routes(
             if sheet_changed and worksheet is not None:
                 _restore_legacy_sheet(worksheet, old_sheet_values)
             raise HTTPException(500, f"Không thể áp dụng Bảng nội quy an toàn: {type(exc).__name__}: {exc}") from exc
+        finally:
+            conn.close()
+
+    @app.put("/v2/rules/daily-quota")
+    def save_daily_quota(body: DailyQuotaUpdate, ident: identity_type = Depends(current_identity)):
+        payload = _daily_quota_payload(body.days)
+        conn = engine_instance().connect()
+        tx = conn.begin()
+        config_ws = None
+        old_sheet_values: list[list[Any]] = []
+        sheet_changed = False
+        try:
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:web-v2:daily-quota'))"))
+            require_feature(conn, ident, "official_rules_edit")
+            if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+                raise HTTPException(403, "Chỉ tài khoản admin được thay đổi hạn mức nghỉ theo ngày.")
+            current = conn.execute(text("""
+                SELECT revision
+                FROM vera_app_setting
+                WHERE category=:category AND setting_key=:setting_key
+                FOR UPDATE
+            """), {"category": DAILY_QUOTA_CATEGORY, "setting_key": DAILY_QUOTA_KEY}).scalar_one_or_none()
+            current_revision = int(current or 0)
+            if current_revision != body.expected_revision:
+                raise HTTPException(
+                    409,
+                    "Hạn mức nghỉ đã được người khác cập nhật. Hãy bấm Làm mới trước khi áp dụng lại.",
+                )
+
+            if current is None:
+                saved = conn.execute(text("""
+                    INSERT INTO vera_app_setting(
+                        category, setting_key, value_json, source, updated_by,
+                        revision, created_at, updated_at
+                    ) VALUES (
+                        :category, :setting_key, CAST(:value_json AS jsonb),
+                        'web_v2_daily_quota', :updated_by, 1, now(), now()
+                    )
+                    RETURNING revision, updated_at
+                """), {
+                    "category": DAILY_QUOTA_CATEGORY,
+                    "setting_key": DAILY_QUOTA_KEY,
+                    "value_json": json.dumps(payload, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+            else:
+                saved = conn.execute(text("""
+                    UPDATE vera_app_setting
+                    SET value_json=CAST(:value_json AS jsonb),
+                        source='web_v2_daily_quota', updated_by=:updated_by,
+                        revision=revision + 1, updated_at=now()
+                    WHERE category=:category AND setting_key=:setting_key
+                    RETURNING revision, updated_at
+                """), {
+                    "category": DAILY_QUOTA_CATEGORY,
+                    "setting_key": DAILY_QUOTA_KEY,
+                    "value_json": json.dumps(payload, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+
+            spreadsheet = google_client().open_by_key(leave_sheet_id)
+            try:
+                config_ws = spreadsheet.worksheet("Config")
+            except Exception:
+                config_ws = spreadsheet.add_worksheet(title="Config", rows=100, cols=10)
+            old_sheet_values = config_ws.get_all_values()
+            sheet_changed = True
+            _write_daily_quota_sheet(config_ws, payload)
+            tx.commit()
+            return {
+                "ok": True,
+                "message": "Đã áp dụng hạn mức nghỉ theo ngày THÀNH CÔNG.",
+                "days": payload["days"],
+                "revision": int(saved["revision"]),
+                "updated_at": saved["updated_at"].isoformat(),
+                "updated_by": ident.employee_username,
+            }
+        except HTTPException:
+            if tx.is_active:
+                tx.rollback()
+            if sheet_changed and config_ws is not None:
+                _restore_legacy_sheet(config_ws, old_sheet_values)
+            raise
+        except Exception as exc:
+            if tx.is_active:
+                tx.rollback()
+            if sheet_changed and config_ws is not None:
+                _restore_legacy_sheet(config_ws, old_sheet_values)
+            raise HTTPException(500, f"Không thể áp dụng hạn mức nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
 

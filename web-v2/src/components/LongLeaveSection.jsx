@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 
 const ANNUAL = 'Nghỉ Phép năm'
-const LONG = 'Nghỉ dài hạn'
+const LONG = 'Nghỉ làm đẹp'
 
 const formatDateInput = (date) => {
   const year = date.getFullYear()
@@ -61,7 +61,7 @@ export default function LongLeaveSection({ user }) {
       setOverview(result)
       setNotice((current) => current?.status === 'success' ? current : null)
     } catch (error) {
-      setNotice({ status: 'error', message: error.message || 'Không tải được dữ liệu Phép năm / Nghỉ dài hạn.' })
+      setNotice({ status: 'error', message: error.message || 'Không tải được dữ liệu Phép năm / Nghỉ làm đẹp.' })
     } finally {
       setLoading(false)
     }
@@ -121,7 +121,7 @@ export default function LongLeaveSection({ user }) {
       <div className="long-leave-heading-row">
         <div>
           <span className="eyebrow"><CalendarDays size={14} /> Quy trình xin duyệt</span>
-          <h2 id="long-leave-heading">PHÉP NĂM / NGHỈ DÀI HẠN</h2>
+          <h2 id="long-leave-heading">PHÉP NĂM / NGHỈ LÀM ĐẸP</h2>
           <p>Đơn mới được chuyển vào quy trình duyệt hiện tại. Chỉ đơn Phép năm đã duyệt mới ghi vào lịch nghỉ hằng ngày.</p>
         </div>
         <button type="button" className="secondary-button compact" onClick={load} disabled={loading}>
@@ -154,7 +154,7 @@ export default function LongLeaveSection({ user }) {
                 className={form.request_type === requestType ? 'active' : ''}
                 onClick={() => changeRequestType(requestType)}
               >
-                {requestType === ANNUAL ? 'ĐƠN XIN NGHỈ PHÉP NĂM' : 'ĐƠN XIN NGHỈ DÀI HẠN'}
+                {requestType === ANNUAL ? 'ĐƠN XIN NGHỈ PHÉP NĂM' : 'ĐƠN XIN NGHỈ LÀM ĐẸP'}
               </button>
             ))}
           </div>
@@ -183,18 +183,18 @@ export default function LongLeaveSection({ user }) {
 
             {!isAnnual && (
               <label className="long-leave-wide-field">
-                <span>Lý do nghỉ dài hạn</span>
+                <span>Lý do nghỉ làm đẹp</span>
                 <input
                   value={form.reason}
                   onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
-                  placeholder="Nhập lý do nghỉ dài hạn"
+                  placeholder="Nhập lý do nghỉ làm đẹp"
                   required
                 />
               </label>
             )}
 
             <label className="long-leave-wide-field">
-              <span>{isAnnual ? 'Nội dung / ghi chú xin Phép năm' : 'Chi tiết lý do nghỉ dài hạn'}</span>
+              <span>{isAnnual ? 'Nội dung / ghi chú xin Phép năm' : 'Chi tiết lý do nghỉ làm đẹp'}</span>
               <textarea
                 value={form.detail}
                 onChange={(event) => setForm((current) => ({ ...current, detail: event.target.value }))}
@@ -218,7 +218,7 @@ export default function LongLeaveSection({ user }) {
           <div className="panel-title-row">
             <div>
               <h2>DANH SÁCH NHÂN VIÊN ĐÃ ĐƯỢC DUYỆT</h2>
-              <p>{approvedRequests.length} đơn Phép năm / Nghỉ dài hạn ở trạng thái Đã duyệt.</p>
+              <p>{approvedRequests.length} đơn Phép năm / Nghỉ làm đẹp ở trạng thái Đã duyệt.</p>
             </div>
             <div className="approved-count-chip"><UserRoundCheck size={15} /> {approvedRequests.length}</div>
           </div>

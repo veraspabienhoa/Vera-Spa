@@ -515,12 +515,12 @@ jobs:
               'legacy NghiDaiHan mirror retained': 'LONG_LEAVE_WORKSHEET = "NghiDaiHan"' in module and 'worksheet.append_row' in module,
               'PostgreSQL and sheet mutation is compensated': 'pg_advisory_xact_lock' in module and 'worksheet.delete_rows' in module and 'tx.rollback()' in module,
               'three-month employee gate retained': '_add_months(start_work, 3)' in module,
-              'one active request gate retained': 'Mỗi lần chỉ được có 1 đơn Phép năm hoặc Nghỉ dài hạn đang hoạt động' in module,
+              'one active request gate retained': 'Mỗi lần chỉ được có 1 đơn Phép năm hoặc Nghỉ làm đẹp đang hoạt động' in module,
               'annual request keeps seven-day limit': 'Đơn Phép năm chỉ được chọn tối đa 7 ngày liên tiếp' in module,
               'pause switch retained': 'long_leave_request_pause_v905' in module,
               'approved list is permission gated': 'can_stats' in module and '_approved_rows(conn) if can_stats else []' in module,
               'React section is at the page bottom': '<LongLeaveSection user={user} />' in page and page.index('<LongLeaveSection user={user} />') > page.index('leave-list-panel'),
-              'both request forms are present': all(label in section for label in ('ĐƠN XIN NGHỈ PHÉP NĂM', 'ĐƠN XIN NGHỈ DÀI HẠN')),
+              'both request forms are present': all(label in section for label in ('ĐƠN XIN NGHỈ PHÉP NĂM', 'ĐƠN XIN NGHỈ LÀM ĐẸP')),
               'approved employee list is present': 'DANH SÁCH NHÂN VIÊN ĐÃ ĐƯỢC DUYỆT' in section,
               'mobile approved cards avoid table overflow': 'approved-leave-mobile-list' in section and '.approved-leave-desktop { display: none; }' in styles,
               'API client uses authenticated backend': 'longLeaveOverview' in client and 'createLongLeaveRequest' in client,
@@ -530,6 +530,47 @@ jobs:
               print(('PASS' if ok else 'FAIL') + ': ' + name)
           if failed:
               raise SystemExit('Failed annual/long leave invariants: ' + ', '.join(failed))
+          PY
+
+      - name: Verify daily quota and employment-status retention rules
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          shared = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
+          rules = Path('vera_web_v2_rules.py').read_text(encoding='utf-8')
+          staff = Path('vera_web_v2_staff.py').read_text(encoding='utf-8')
+          page = Path('web-v2/src/pages/RulesPage.jsx').read_text(encoding='utf-8')
+          client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
+          styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
+
+          for source in (api, shared, rules, staff):
+              ast.parse(source)
+          checks = {
+              'seven daily quota defaults are explicit': all(label in rules for label in ('Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật')),
+              'daily quota endpoint is admin-only': '@app.put("/v2/rules/daily-quota")' in rules and 'Chỉ tài khoản admin được thay đổi hạn mức nghỉ theo ngày' in rules,
+              'quota save uses revision and PostgreSQL lock': 'expected_revision' in rules and 'vera:web-v2:daily-quota' in rules and 'FOR UPDATE' in rules,
+              'legacy Config mirror is retained': '_write_daily_quota_sheet' in rules and 'weekday_limit' in rules and 'phat_sinh_limit' in rules,
+              'live registration reads PostgreSQL canonical quota': '_daily_quota_config_base' in shared and '_engine_instance().connect()' in shared,
+              'daily stats uses exact weekday rule': 'day_quota = quota["days"][day.weekday()]' in api,
+              'rules page shows editable daily table': all(label in page for label in ('HẠN MỨC NGHỈ THEO NGÀY', 'Nghỉ CÓ phép', 'Nghỉ phát sinh', 'Áp dụng nội quy mới')),
+              'quota client endpoint exists': 'saveDailyQuota' in client and '/v2/rules/daily-quota' in client,
+              'mobile quota table cannot overflow': '.daily-quota-table { width: 100%; table-layout: fixed; }' in styles,
+              'status change prunes from effective day only': 'leave_date >= :effective_date' in staff and 'prune_registered_leave' in staff,
+              'historical leave rows remain untouched': 'Rows before ``effective_date`` are deliberately untouched' in staff,
+              'PostgreSQL and MainData deletion is compensated': 'restore_pruned_leave' in staff and 'ws.insert_row' in staff and 'tx.rollback()' in staff,
+              'single and Excel status updates both prune': staff.count('prune_registered_leave(') >= 3,
+              'inactive employees cannot create new leave': "payload->>'Trạng thái làm việc'" in shared,
+              'historical daily statistics do not require unlocked account': "COALESCE(e.login_locked, false) = false" not in api.split('@app.get("/v2/leave/daily-stats")', 1)[1].split('@app.get("/v2/leave/summary")', 1)[0],
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed daily quota/status-retention invariants: ' + ', '.join(failed))
           PY
 
       - name: Verify post-login landing and safe Cloud Run rollout

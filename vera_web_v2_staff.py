@@ -284,6 +284,12 @@ def install_staff_routes(
     feature_allowed: Callable[[Any, Any, str], bool],
     norm: Callable[[Any], str],
     google_client: Callable[[], Any],
+    leave_sheet_id: str,
+    progressive_key: Callable[[Any], str],
+    reindex_after_delete: Callable[[Any, list[int]], None],
+    rebalance_progressive_rows: Callable[[Any, date, set[str]], list[tuple[int, dict]]],
+    sheet_values_for_record: Callable[[list[Any], dict, int], list[Any]],
+    restore_sheet_updates: Callable[[Any, dict[int, list[Any]]], None],
     identity_type: type,
     vn_tz,
 ) -> None:
@@ -333,6 +339,107 @@ def install_staff_routes(
             ws.update(range_name=f"B{row_number}:F{row_number}", values=[data], value_input_option="USER_ENTERED")
         else:
             ws.append_row([max(1, len(values))] + data, value_input_option="USER_ENTERED")
+
+    def restore_pruned_leave(change: dict[str, Any] | None) -> None:
+        if not change or change.get("restored"):
+            return
+        ws = change.get("worksheet")
+        if ws is None:
+            return
+        restore_sheet_updates(ws, change.get("changed_backups") or {})
+        for source_row in sorted(change.get("deleted_rows") or []):
+            try:
+                ws.insert_row(
+                    change["deleted_values"][source_row],
+                    index=source_row,
+                    value_input_option="USER_ENTERED",
+                )
+            except Exception:
+                pass
+        change["restored"] = True
+
+    def prune_registered_leave(conn, username: str, effective_date: date) -> dict[str, Any]:
+        """Remove mirrored leave rows from the employment-status date onward.
+
+        Rows before ``effective_date`` are deliberately untouched so every
+        historical list, statistic and Excel export keeps the employee's full
+        record before temporary/permanent departure.
+        """
+        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+        rows = [dict(row) for row in conn.execute(text("""
+            SELECT record_uid, source_sheet_id, source_row, leave_date, employee_name,
+                   leave_reason, leave_type, detail, calculated_days, accumulated_leave,
+                   penalty, update_date, update_time, updated_by, weekday_label
+            FROM leave_records
+            WHERE lower(btrim(employee_name))=lower(btrim(:employee))
+              AND leave_date >= :effective_date
+            ORDER BY source_row, record_uid
+            FOR UPDATE
+        """), {"employee": username, "effective_date": effective_date}).mappings().all()]
+        if not rows:
+            return {"count": 0, "effective_date": effective_date, "employee": username}
+
+        for row in rows:
+            if str(row.get("source_sheet_id") or "") != leave_sheet_id or int(row.get("source_row") or 0) < 2:
+                raise HTTPException(
+                    409,
+                    "Có lịch nghỉ tương lai không có vị trí MainData hợp lệ; từ chối đổi trạng thái để tránh lệch dữ liệu.",
+                )
+
+        ws = google_client().open_by_key(leave_sheet_id).get_worksheet(0)
+        values = ws.get_all_values()
+        headers = values[0][:13] if values else []
+        if not headers:
+            raise RuntimeError("MainData chưa có header A:M")
+        source_rows = sorted({int(row["source_row"]) for row in rows})
+        deleted_values: dict[int, list[Any]] = {}
+        for source_row in source_rows:
+            if source_row > len(values):
+                raise RuntimeError(f"MainData thiếu dòng nguồn {source_row}")
+            deleted_values[source_row] = list(values[source_row - 1][:13])
+
+        change: dict[str, Any] = {
+            "count": len(rows),
+            "effective_date": effective_date,
+            "employee": username,
+            "worksheet": ws,
+            "deleted_rows": [],
+            "deleted_values": deleted_values,
+            "changed_backups": {},
+            "restored": False,
+        }
+        try:
+            affected: dict[date, set[str]] = {}
+            for row in rows:
+                key = progressive_key(row.get("leave_reason"))
+                if key:
+                    affected.setdefault(row["leave_date"], set()).add(key)
+                result = conn.execute(text("DELETE FROM leave_records WHERE record_uid=:uid"), {"uid": row["record_uid"]})
+                if int(result.rowcount or 0) != 1:
+                    raise RuntimeError("Xóa PostgreSQL không đúng một lịch nghỉ.")
+            reindex_after_delete(conn, source_rows)
+            rebalanced: list[tuple[int, dict]] = []
+            for target_date, keys in affected.items():
+                rebalanced.extend(rebalance_progressive_rows(conn, target_date, keys))
+
+            for source_row in sorted(source_rows, reverse=True):
+                ws.delete_rows(source_row)
+                change["deleted_rows"].append(source_row)
+
+            after_values = ws.get_all_values() if rebalanced else []
+            for row_number, record in rebalanced:
+                change["changed_backups"][row_number] = (
+                    list(after_values[row_number - 1][:13]) if row_number <= len(after_values) else []
+                )
+                ws.update(
+                    range_name=f"A{row_number}:M{row_number}",
+                    values=[sheet_values_for_record(headers, record, row_number)],
+                    value_input_option="USER_ENTERED",
+                )
+            return change
+        except Exception:
+            restore_pruned_leave(change)
+            raise
 
     def delete_rows_by_name(ws, names: set[str], name_col: int) -> list[tuple[int, list[Any]]]:
         values = ws.get_all_values()
@@ -552,7 +659,12 @@ def install_staff_routes(
                 UPDATE vera_v2_user_profile SET role=:role, updated_at=NOW()
                 WHERE lower(btrim(employee_username))=lower(btrim(:username))
             """), {"role": merged["role"], "username": row["username"]})
-        return {**dict(updated), "_status": status, "_status_changed": "employment_status" in values}
+        return {
+            **dict(updated),
+            "_status": status,
+            "_old_status": old_status,
+            "_status_changed": "employment_status" in values and status != old_status,
+        }
 
     def mirror_database_row(row: dict[str, Any], status: str) -> tuple[Any, int, list[Any]]:
         ws = credential_ws()
@@ -697,6 +809,7 @@ def install_staff_routes(
         sheet_backup = None
         sheet_ref = None
         status_before = None
+        leave_prune = None
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             require_feature(conn, ident, "staff_list")
@@ -708,16 +821,30 @@ def install_staff_routes(
             sheet_backup = (sheet_row, sheet_values)
             if updated["_status_changed"]:
                 write_status(updated["username"], updated["_status"], ident.employee_username)
+                if updated["_status"] in {STATUS_OPTIONS[1], STATUS_OPTIONS[2]}:
+                    leave_prune = prune_registered_leave(
+                        conn,
+                        updated["username"],
+                        datetime.now(vn_tz).date(),
+                    )
             tx.commit()
             sync_tichluy_members(conn)
+            deleted_leave = int((leave_prune or {}).get("count") or 0)
+            suffix = (
+                f" Đã xóa {deleted_leave} lịch nghỉ từ ngày "
+                f"{leave_prune['effective_date'].strftime('%d/%m/%Y')} trở về sau; lịch sử trước ngày này được giữ nguyên."
+                if deleted_leave else ""
+            )
             return {
                 "ok": True,
-                "message": f"Đã cập nhật {updated['username']} THÀNH CÔNG.",
+                "message": f"Đã cập nhật {updated['username']} THÀNH CÔNG.{suffix}",
                 "employee": _public_employee(updated, updated["_status"]),
+                "deleted_leave_records": deleted_leave,
             }
         except HTTPException:
             if tx.is_active:
                 tx.rollback()
+            restore_pruned_leave(leave_prune)
             if sheet_backup and sheet_ref is not None:
                 try:
                     row_number, old_values = sheet_backup
@@ -733,6 +860,7 @@ def install_staff_routes(
         except Exception as exc:
             if tx.is_active:
                 tx.rollback()
+            restore_pruned_leave(leave_prune)
             if sheet_backup and sheet_ref is not None:
                 try:
                     row_number, old_values = sheet_backup
@@ -1069,6 +1197,7 @@ def install_staff_routes(
         old_sheet_values = None
         old_status_values = None
         status_ws = None
+        leave_prunes: list[dict[str, Any]] = []
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             require_feature(conn, ident, "staff_import")
@@ -1113,12 +1242,27 @@ def install_staff_routes(
                 status_ws.batch_clear([f"A2:F{max(len(old_status_values), len(status_rows) + 1)}"])
             if status_rows:
                 status_ws.update(range_name=f"A2:F{len(status_rows) + 1}", values=status_rows, value_input_option="USER_ENTERED")
+            effective_date = datetime.now(vn_tz).date()
+            for updated in updates:
+                if updated["_status_changed"] and updated["_status"] in {STATUS_OPTIONS[1], STATUS_OPTIONS[2]}:
+                    change = prune_registered_leave(conn, updated["username"], effective_date)
+                    if int(change.get("count") or 0):
+                        leave_prunes.append(change)
             tx.commit()
             sync_tichluy_members(conn)
-            return {"ok": True, "updated": len(updates), "message": f"Đã Import và cập nhật {len(updates)} nhân viên THÀNH CÔNG."}
+            deleted_leave = sum(int(change.get("count") or 0) for change in leave_prunes)
+            suffix = f" Đã xóa {deleted_leave} lịch nghỉ từ ngày hiệu lực trở về sau." if deleted_leave else ""
+            return {
+                "ok": True,
+                "updated": len(updates),
+                "deleted_leave_records": deleted_leave,
+                "message": f"Đã Import và cập nhật {len(updates)} nhân viên THÀNH CÔNG.{suffix}",
+            }
         except HTTPException:
             if tx.is_active:
                 tx.rollback()
+            for change in reversed(leave_prunes):
+                restore_pruned_leave(change)
             if staff_ws is not None and old_sheet_values:
                 try:
                     staff_ws.batch_clear([f"A1:U{max(len(old_sheet_values), 2)}"])
@@ -1135,6 +1279,8 @@ def install_staff_routes(
         except Exception as exc:
             if tx.is_active:
                 tx.rollback()
+            for change in reversed(leave_prunes):
+                restore_pruned_leave(change)
             if staff_ws is not None and old_sheet_values:
                 try:
                     staff_ws.batch_clear([f"A1:U{max(len(old_sheet_values), 2)}"])

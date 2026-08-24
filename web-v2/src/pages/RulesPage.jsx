@@ -37,6 +37,8 @@ export default function RulesPage() {
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
   const [originalSignature, setOriginalSignature] = useState('')
+  const [quotaRows, setQuotaRows] = useState([])
+  const [quotaOriginalSignature, setQuotaOriginalSignature] = useState('')
   const [selected, setSelected] = useState([])
   const [expanded, setExpanded] = useState([])
   const [search, setSearch] = useState('')
@@ -54,6 +56,9 @@ export default function RulesPage() {
     setColumns(nextColumns)
     setRows(nextRows)
     setOriginalSignature(documentSignature(nextColumns, nextRows))
+    const nextQuotaRows = (result.daily_quota?.days || []).map((item) => ({ ...item }))
+    setQuotaRows(nextQuotaRows)
+    setQuotaOriginalSignature(JSON.stringify(nextQuotaRows))
     setSelected([])
     setExpanded([])
     setDeleteColumn('')
@@ -78,7 +83,9 @@ export default function RulesPage() {
 
   const permissions = data?.permissions || {}
   const canEdit = permissions.official_rules_edit === true
+  const canEditDailyQuota = data?.can_edit_daily_quota === true
   const dirty = documentSignature(columns, rows) !== originalSignature
+  const quotaDirty = JSON.stringify(quotaRows) !== quotaOriginalSignature
   const requiredColumns = new Set(data?.required_columns || [])
   const deletableColumns = columns.filter((column) => !requiredColumns.has(column))
 
@@ -91,6 +98,13 @@ export default function RulesPage() {
   const updateCell = (id, column, value) => {
     setRows((current) => current.map((row) => (
       row.id === id ? { ...row, values: { ...row.values, [column]: value } } : row
+    )))
+  }
+
+  const updateQuota = (weekday, field, value) => {
+    const number = Math.max(0, Math.min(100, Number.parseInt(value || '0', 10) || 0))
+    setQuotaRows((current) => current.map((item) => (
+      item.weekday === weekday ? { ...item, [field]: number } : item
     )))
   }
 
@@ -177,6 +191,16 @@ export default function RulesPage() {
     setNotice({ type: 'success', message: result.message })
   })
 
+  const saveDailyQuota = () => run('quota', async () => {
+    if (!quotaDirty) throw new Error('Hạn mức nghỉ chưa có thay đổi cần áp dụng.')
+    const result = await veraApi.saveDailyQuota({
+      days: quotaRows.map(({ weekday, paid_limit, generated_limit }) => ({ weekday, paid_limit, generated_limit })),
+      expected_revision: Number(data?.daily_quota?.revision || 0),
+    })
+    await load(true)
+    setNotice({ type: 'success', message: result.message })
+  })
+
   const importExcel = (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -193,7 +217,7 @@ export default function RulesPage() {
   }
 
   const discard = () => {
-    if (dirty && !window.confirm('Bỏ toàn bộ thay đổi chưa ghi?')) return
+    if ((dirty || quotaDirty) && !window.confirm('Bỏ toàn bộ thay đổi chưa ghi?')) return
     load()
   }
 
@@ -222,6 +246,40 @@ export default function RulesPage() {
           <div className="metric-card" key={label}><div className="metric-icon"><Icon size={21} /></div><div><span>{label}</span><strong className={label === 'Cập nhật gần nhất' ? 'metric-small-value' : ''}>{value}</strong></div></div>
         ))}
       </div>
+
+      <section className="panel daily-quota-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>HẠN MỨC NGHỈ THEO NGÀY</h2>
+            <p>Số nhân viên tối đa được nghỉ CÓ phép và nghỉ phát sinh trong từng ngày.</p>
+          </div>
+          {quotaDirty && <span className="rules-unsaved-chip">Chưa áp dụng</span>}
+        </div>
+        <div className="daily-quota-table-wrap">
+          <table className="daily-quota-table">
+            <thead><tr><th>Thứ</th><th>Nghỉ CÓ phép</th><th>Nghỉ phát sinh</th></tr></thead>
+            <tbody>{quotaRows.map((item) => (
+              <tr key={item.weekday}>
+                <td><strong>{item.weekday_label}</strong></td>
+                <td>{canEditDailyQuota
+                  ? <input type="number" min="0" max="100" inputMode="numeric" value={item.paid_limit} onChange={(event) => updateQuota(item.weekday, 'paid_limit', event.target.value)} aria-label={`Nghỉ CÓ phép ${item.weekday_label}`} />
+                  : <strong>{item.paid_limit}</strong>}
+                </td>
+                <td>{canEditDailyQuota
+                  ? <input type="number" min="0" max="100" inputMode="numeric" value={item.generated_limit} onChange={(event) => updateQuota(item.weekday, 'generated_limit', event.target.value)} aria-label={`Nghỉ phát sinh ${item.weekday_label}`} />
+                  : <strong>{item.generated_limit}</strong>}
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <div className="daily-quota-footer">
+          <span><ShieldCheck size={15} /> Chỉ Admin được thay đổi và áp dụng hạn mức này.</span>
+          {canEditDailyQuota && <button className="primary-button" disabled={!quotaDirty || busy === 'quota'} onClick={saveDailyQuota}>
+            {busy === 'quota' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Áp dụng nội quy mới
+          </button>}
+        </div>
+      </section>
 
       <section className="panel rules-control-panel">
         <div className="rules-toolbar">

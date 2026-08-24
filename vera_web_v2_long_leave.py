@@ -36,12 +36,13 @@ LONG_LEAVE_HEADERS = [
     "Nhắc tải tài liệu", "Ngày nhắc", "Người nhắc", "Email CC", "Loại đơn",
 ]
 REQUEST_TYPE_LONG = "Nghỉ dài hạn"
+REQUEST_TYPE_LONG_DISPLAY = "Nghỉ làm đẹp"
 REQUEST_TYPE_ANNUAL = "Nghỉ Phép năm"
 STATUS_PENDING = "Chờ duyệt"
 STATUS_APPROVED = "Đã duyệt"
 PAUSE_KEY = "long_leave_request_pause_v905"
 PAUSE_WORKSHEET = "CauHinhGiaoDien"
-DEFAULT_PAUSE_MESSAGE = "Admin đang tạm dừng nhận đơn Nghỉ dài hạn và Nghỉ Phép năm."
+DEFAULT_PAUSE_MESSAGE = "Admin đang tạm dừng nhận đơn Nghỉ làm đẹp và Nghỉ Phép năm."
 ADMIN_EMAIL = "veraspabienhoa@gmail.com"
 
 
@@ -81,9 +82,14 @@ def _request_type(value: Any, norm: Callable[[Any], str]) -> str:
     key = norm(value)
     if key == norm(REQUEST_TYPE_ANNUAL):
         return REQUEST_TYPE_ANNUAL
-    if key == norm(REQUEST_TYPE_LONG):
+    if key in {norm(REQUEST_TYPE_LONG), norm(REQUEST_TYPE_LONG_DISPLAY)}:
         return REQUEST_TYPE_LONG
-    raise HTTPException(400, "Loại đơn chỉ được chọn Nghỉ Phép năm hoặc Nghỉ dài hạn.")
+    raise HTTPException(400, "Loại đơn chỉ được chọn Nghỉ Phép năm hoặc Nghỉ làm đẹp.")
+
+
+def _display_request_type(value: Any) -> str:
+    raw = str(value or "").strip()
+    return REQUEST_TYPE_LONG_DISPLAY if raw.casefold() == REQUEST_TYPE_LONG.casefold() else (raw or REQUEST_TYPE_LONG_DISPLAY)
 
 
 def _request_id(employee: str, request_type: str, now: datetime) -> str:
@@ -119,7 +125,7 @@ def _active_request(rows: list[dict[str, Any]], today: date) -> dict[str, Any] |
     _, row, payload = sorted(active, key=lambda item: item[0], reverse=True)[0]
     return {
         "id": str(payload.get("ID") or str(row.get("logical_id") or "").split(":", 1)[-1]),
-        "request_type": str(row.get("record_type") or payload.get("Loại đơn") or REQUEST_TYPE_LONG),
+        "request_type": _display_request_type(row.get("record_type") or payload.get("Loại đơn") or REQUEST_TYPE_LONG),
         "start_date": _parse_vn_date(row.get("date_from") or payload.get("Từ ngày")),
         "end_date": _parse_vn_date(row.get("date_to") or payload.get("Đến ngày")),
         "status": str(row.get("record_status") or payload.get("Trạng thái") or ""),
@@ -132,6 +138,7 @@ def _eligibility(conn, employee: str, today: date, norm: Callable[[Any], str]) -
         FROM employees
         WHERE lower(btrim(username))=lower(btrim(:username))
           AND COALESCE(login_locked, false)=false
+          AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
         LIMIT 1
     """), {"username": employee}).mappings().first()
     if not employee_row:
@@ -171,7 +178,7 @@ def _eligibility(conn, employee: str, today: date, norm: Callable[[Any], str]) -
             "message": (
                 f"Bạn đang có {active['request_type']} {active['id']} "
                 f"({start_text} → {end_text}) ở trạng thái {active['status']}. "
-                "Mỗi lần chỉ được có 1 đơn Phép năm hoặc Nghỉ dài hạn đang hoạt động."
+                "Mỗi lần chỉ được có 1 đơn Phép năm hoặc Nghỉ làm đẹp đang hoạt động."
             ),
             "employment_start_date": start_work.isoformat(),
             "active_request": {
@@ -229,11 +236,11 @@ def _approved_rows(conn) -> list[dict[str, Any]]:
         start_date = _parse_vn_date(row.get("date_from") or payload.get("Từ ngày"))
         end_date = _parse_vn_date(row.get("date_to") or payload.get("Đến ngày"))
         days = (end_date - start_date).days + 1 if start_date and end_date and end_date >= start_date else 0
-        request_type = str(row.get("record_type") or payload.get("Loại đơn") or REQUEST_TYPE_LONG).strip()
+        request_type = _display_request_type(row.get("record_type") or payload.get("Loại đơn") or REQUEST_TYPE_LONG)
         output.append({
             "id": str(payload.get("ID") or str(row.get("logical_id") or "").split(":", 1)[-1]),
             "employee_name": str(payload.get("Tên nhân viên") or "").strip(),
-            "request_type": request_type or REQUEST_TYPE_LONG,
+            "request_type": request_type or REQUEST_TYPE_LONG_DISPLAY,
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
             "days": days,
@@ -295,7 +302,7 @@ def _send_email(payload: dict[str, Any], cc_emails: list[str]) -> tuple[bool, st
     password = str(os.getenv("SMTP_APP_PASSWORD", "") or "").strip()
     if not password:
         return False, "Máy chủ chưa cấu hình SMTP; đơn vẫn đã được lưu để Admin duyệt."
-    request_type = str(payload.get("Loại đơn") or REQUEST_TYPE_LONG)
+    request_type = _display_request_type(payload.get("Loại đơn") or REQUEST_TYPE_LONG)
     subject = (
         f"[VERA SPA] Đơn xin {request_type} - {payload.get('Tên nhân viên','')} - "
         f"{payload.get('Từ ngày','')} đến {payload.get('Đến ngày','')}"
@@ -358,7 +365,7 @@ def install_long_leave_routes(
         with engine_instance().connect() as conn:
             can_open, can_form, can_stats = permissions(conn, ident)
             if not can_open:
-                raise HTTPException(403, "Tài khoản hiện tại chưa được cấp quyền Phép năm / Nghỉ dài hạn.")
+                raise HTTPException(403, "Tài khoản hiện tại chưa được cấp quyền Phép năm / Nghỉ làm đẹp.")
             eligibility = _eligibility(conn, ident.employee_username, today, norm) if can_form else {
                 "allowed": False,
                 "message": "Tài khoản chưa được cấp quyền gửi đơn.",
@@ -393,9 +400,9 @@ def install_long_leave_routes(
         reason = str(body.reason or "").strip()
         detail = str(body.detail or "").strip()
         if request_type == REQUEST_TYPE_LONG and not reason:
-            raise HTTPException(400, "Vui lòng nhập Lý do nghỉ dài hạn.")
+            raise HTTPException(400, "Vui lòng nhập Lý do nghỉ làm đẹp.")
         if request_type == REQUEST_TYPE_LONG and not detail:
-            raise HTTPException(400, "Vui lòng nhập Chi tiết lý do nghỉ dài hạn.")
+            raise HTTPException(400, "Vui lòng nhập Chi tiết lý do nghỉ làm đẹp.")
         if request_type == REQUEST_TYPE_ANNUAL:
             reason = REQUEST_TYPE_ANNUAL
 
@@ -515,7 +522,7 @@ def install_long_leave_routes(
         email_ok, email_message = _send_email(payload, cc_emails)
         return {
             "ok": True,
-            "message": f"Đã gửi đơn {request_type} THÀNH CÔNG.",
+            "message": f"Đã gửi đơn {_display_request_type(request_type)} THÀNH CÔNG.",
             "request_id": str(payload.get("ID") or ""),
             "email_sent": email_ok,
             "warnings": [] if email_ok else [email_message],

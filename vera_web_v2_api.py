@@ -247,8 +247,17 @@ def _stats_group(leave_type: str, reason: str) -> str:
     return ""
 
 
-def _daily_quota_config(conn) -> dict[str, int]:
-    defaults = {"weekday_limit": 5, "weekend_limit": 3, "phat_sinh_limit": 2}
+def _daily_quota_config(conn) -> dict[str, Any]:
+    default_days = [
+        {"weekday": weekday, "paid_limit": 3 if weekday >= 6 else 5, "generated_limit": 0 if weekday >= 6 else 2}
+        for weekday in range(1, 8)
+    ]
+    defaults: dict[str, Any] = {
+        "weekday_limit": 5,
+        "weekend_limit": 3,
+        "phat_sinh_limit": 2,
+        "days": default_days,
+    }
     payload = conn.execute(text("""
         SELECT value_json
         FROM vera_app_setting
@@ -257,12 +266,39 @@ def _daily_quota_config(conn) -> dict[str, int]:
     """)).scalar_one_or_none()
     if not isinstance(payload, dict):
         return defaults
-    output = defaults.copy()
-    for key in output:
+    output = dict(defaults)
+    for key in ("weekday_limit", "weekend_limit", "phat_sinh_limit"):
         try:
             output[key] = max(0, int(float(payload.get(key, output[key]))))
         except (TypeError, ValueError):
             pass
+    raw_days = payload.get("days") if isinstance(payload.get("days"), list) else []
+    parsed_days: dict[int, dict[str, int]] = {}
+    for item in raw_days:
+        if not isinstance(item, dict):
+            continue
+        try:
+            weekday = int(item.get("weekday") or 0)
+            if weekday not in range(1, 8) or weekday in parsed_days:
+                continue
+            parsed_days[weekday] = {
+                "weekday": weekday,
+                "paid_limit": max(0, int(float(item.get("paid_limit", 0)))),
+                "generated_limit": max(0, int(float(item.get("generated_limit", 0)))),
+            }
+        except (TypeError, ValueError):
+            continue
+    if len(parsed_days) == 7:
+        output["days"] = [parsed_days[index] for index in range(1, 8)]
+    else:
+        output["days"] = [
+            {
+                "weekday": weekday,
+                "paid_limit": output["weekend_limit"] if weekday >= 6 else output["weekday_limit"],
+                "generated_limit": 0 if weekday >= 6 else output["phat_sinh_limit"],
+            }
+            for weekday in range(1, 8)
+        ]
     return output
 
 
@@ -871,7 +907,9 @@ def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dic
     emp = conn.execute(text("""
         SELECT username, monthly_generated, monthly_leave, annual_leave
         FROM employees WHERE lower(btrim(username))=lower(btrim(:u))
-          AND COALESCE(login_locked,false)=false LIMIT 1
+          AND COALESCE(login_locked,false)=false
+          AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
+        LIMIT 1
     """), {"u": employee}).mappings().first()
     if not emp:
         raise HTTPException(400, "Không tìm thấy nhân viên đang hoạt động.")
@@ -1357,6 +1395,7 @@ def employees(ident: Identity = Depends(current_identity)):
                 FROM employees
                 WHERE COALESCE(login_locked,false)=false
                   AND COALESCE(source_sheet_id,'credentials')='credentials'
+                  AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
                   AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
                 ORDER BY username
             """)).mappings().all()
@@ -1366,6 +1405,7 @@ def employees(ident: Identity = Depends(current_identity)):
                 FROM employees
                 WHERE COALESCE(login_locked,false)=false
                   AND lower(btrim(username))=lower(btrim(:username))
+                  AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
                 LIMIT 1
             """), {"username": ident.employee_username}).mappings().all()
     return {"employees": [dict(r) for r in rows]}
@@ -1634,7 +1674,6 @@ def leave_daily_stats(
                 SELECT 1
                 FROM employees e
                 WHERE lower(btrim(e.username)) = lower(btrim(l.employee_name))
-                  AND COALESCE(e.login_locked, false) = false
                   AND COALESCE(e.source_sheet_id, 'credentials') = 'credentials'
                   AND lower(COALESCE(e.role, '')) NOT IN ('admin','letan','locker','tapvu')
               )
@@ -1662,8 +1701,9 @@ def leave_daily_stats(
     output = []
     for day in sorted(buckets):
         bucket = buckets[day]
-        paid_limit = quota["weekend_limit"] if day.weekday() >= 5 else quota["weekday_limit"]
-        generated_limit = 0 if day.weekday() >= 5 else quota["phat_sinh_limit"]
+        day_quota = quota["days"][day.weekday()]
+        paid_limit = int(day_quota["paid_limit"])
+        generated_limit = int(day_quota["generated_limit"])
         item = {
             "date": day.isoformat(),
             "weekday_label": _weekday_short_label(day),
@@ -1694,6 +1734,7 @@ def leave_summary(date_value: date = Query(alias="date"), ident: Identity = Depe
             FROM employees
             WHERE COALESCE(login_locked,false)=false
               AND COALESCE(source_sheet_id,'credentials')='credentials'
+              AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
               AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
         """)).scalar() or 0
         rows = conn.execute(text("""
@@ -1945,6 +1986,12 @@ install_staff_routes(
     feature_allowed=_feature_allowed,
     norm=_norm,
     google_client=_google_client,
+    leave_sheet_id=LEAVE_SHEET_ID,
+    progressive_key=_progressive_key,
+    reindex_after_delete=_reindex_after_delete,
+    rebalance_progressive_rows=_rebalance_progressive_rows,
+    sheet_values_for_record=_sheet_values_for_record,
+    restore_sheet_updates=_restore_sheet_updates,
     identity_type=Identity,
     vn_tz=VN_TZ,
 )
