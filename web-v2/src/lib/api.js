@@ -151,6 +151,27 @@ export const veraApi = {
     method: 'POST',
     body: JSON.stringify(body),
   }),
+  profile: () => request('/v2/profile'),
+  updateProfile: (body) => request('/v2/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  permissions: () => request('/v2/permissions'),
+  savePermissions: (scope, target, body) => request(`/v2/permissions/${encodeURIComponent(scope)}/${encodeURIComponent(target)}`, {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
+  payrollHistory: (batch = '', search = '') => {
+    const params = new URLSearchParams()
+    if (batch) params.set('batch', batch)
+    if (search.trim()) params.set('search', search.trim())
+    return request(`/v2/payroll/history?${params}`)
+  },
+  exportPayrollExcel: (batch = '', search = '') => {
+    const params = new URLSearchParams()
+    if (batch) params.set('batch', batch)
+    if (search.trim()) params.set('search', search.trim())
+    return download(`/v2/payroll/history/export.xlsx?${params}`, 'VERA_BangLuong.xlsx')
+  },
+  snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  exportSnapshotExcel: (start, end) => download(`/v2/snapshot/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, 'VERA_Snapshot_ChamCong.xlsx'),
+  adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }),
   updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }),

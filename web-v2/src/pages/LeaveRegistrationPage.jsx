@@ -674,6 +674,9 @@ export default function LeaveRegistrationPage({ user }) {
               <h2>THỐNG KÊ</h2>
               <p>{formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)} · Chọn ngày trong bảng để xem danh sách chi tiết.</p>
             </div>
+            <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
+              <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
+            </button>
           </div>
           <div className="table-wrap daily-summary-wrap">
             <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
@@ -744,6 +747,9 @@ export default function LeaveRegistrationPage({ user }) {
               </p>
             </div>
             <div className="list-actions">
+              <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
+                <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
+              </button>
               {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}

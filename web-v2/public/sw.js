@@ -20,6 +20,7 @@ self.addEventListener('push', (event) => {
     badge: payload.badge || BADGE_URL,
     tag: payload.tag || 'vera-spa-leave-watch',
     renotify: true,
+    requireInteraction: true,
     silent: false,
     vibrate: [220, 100, 220, 100, 360],
     data: {

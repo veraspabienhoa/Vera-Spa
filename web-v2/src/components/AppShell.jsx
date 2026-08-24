@@ -1,11 +1,15 @@
-import { CalendarDays, FileText, LogOut, Menu, ShieldCheck, Users, X } from 'lucide-react'
+import { Activity, CalendarDays, FileText, LogOut, Menu, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useState } from 'react'
 
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'rules', label: 'Nội quy', icon: FileText, ready: true, permission: 'official_rules_view' },
-  { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck },
+  { id: 'payroll', label: 'Bảng lương', icon: WalletCards, ready: true, permission: 'payroll_history' },
+  { id: 'snapshot', label: 'Snapshot', icon: ScanLine, ready: true, permission: 'snapshot_today' },
+  { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
+  { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck, ready: true, permission: 'permission_admin' },
+  { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
 ]
 
 export default function AppShell({ user, currentPage, onPageChange, onSignOut, children }) {

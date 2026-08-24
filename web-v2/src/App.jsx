@@ -4,6 +4,11 @@ import LoginPage from './pages/LoginPage'
 import LeaveRegistrationPage from './pages/LeaveRegistrationPage'
 import EmployeePage from './pages/EmployeePage'
 import RulesPage from './pages/RulesPage'
+import ProfilePage from './pages/ProfilePage'
+import PermissionsPage from './pages/PermissionsPage'
+import PayrollPage from './pages/PayrollPage'
+import SnapshotPage from './pages/SnapshotPage'
+import AdminChangesPage from './pages/AdminChangesPage'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
@@ -89,6 +94,11 @@ export default function App() {
       {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
       {page === 'employees' && <EmployeePage user={shellUser} />}
       {page === 'rules' && <RulesPage user={shellUser} />}
+      {page === 'profile' && <ProfilePage user={shellUser} onPasswordChanged={signOut} />}
+      {page === 'permissions' && <PermissionsPage user={shellUser} />}
+      {page === 'payroll' && <PayrollPage user={shellUser} />}
+      {page === 'snapshot' && <SnapshotPage user={shellUser} />}
+      {page === 'changes' && <AdminChangesPage user={shellUser} />}
     </AppShell>
   )
 }

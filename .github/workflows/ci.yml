@@ -190,6 +190,7 @@ jobs:
               raise SystemExit(f'Coverage summary mismatch: {actual} != {expected}')
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           shared_api = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
           login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
           leave_page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
@@ -213,7 +214,7 @@ jobs:
               'Web V2 enforces leave-create permission': '_require_feature(conn, ident, "leave_create")' in api,
               'Web V2 enforces registration role lock': '_registration_role_locked(conn, ident.role)' in api,
               'Web V2 penalty visibility follows feature permission': 'can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")' in api,
-              'Web V2 defaults penalty visibility to admin only': '"quanly": {"leave", "leave_create"' in api and '"employee_penalty_view"' not in api.split('"quanly":', 1)[1].split('},', 1)[0],
+              'Web V2 defaults penalty visibility to admin only': '"employee_penalty_view"' not in permissions.split('FRONTDESK = {', 1)[1].split('}', 1)[0],
               'Web V2 limits employee-like registration to self': 'if role not in {"admin", "quanly", "letan"} and _norm(employee) != _norm(ident.employee_username)' in api,
               'Web V2 manager and front desk can choose employees': "const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)" in leave_page,
               'Web V2 manager and front desk receive employee catalog': 'if ident.role in {"admin", "quanly", "letan"}:' in api,
@@ -287,6 +288,7 @@ jobs:
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           staff_api = Path('vera_web_v2_staff.py').read_text(encoding='utf-8')
           app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
           shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
@@ -306,7 +308,7 @@ jobs:
               'import updates existing accounts only': 'Không tìm thấy trong hệ thống' in staff_api and 'update_database_row(conn, ident, row, values' in staff_api,
               'employee deletion preserves leave history': 'Lịch sử lịch nghỉ được giữ nguyên' in delete_staff_route and 'DELETE FROM leave_records' not in delete_staff_route,
               'front desk role scope is enforced': 'FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu"}' in staff_api and 'ensure_manageable' in staff_api,
-              'employee feature permissions are exposed': all(key in api for key in ('staff_list', 'staff_export', 'staff_import', 'shift_assignment_edit', 'account_lock_edit')),
+              'employee feature permissions are exposed': all(key in permissions for key in ('staff_list', 'staff_export', 'staff_import', 'shift_assignment_edit', 'account_lock_edit')),
               'React employees page is routed': "page === 'employees'" in app and 'EmployeePage' in app,
               'Web V2 has no demo authentication bypass': 'demoUser' not in app and 'onDemoLogin' not in app and 'VITE_VERA_DEMO_MODE' not in client,
               'employees menu is permission gated': "permission: 'staff_list'" in shell and 'user?.permissions?.[permission]' in shell,
@@ -330,6 +332,7 @@ jobs:
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           rules_api = Path('vera_web_v2_rules.py').read_text(encoding='utf-8')
           permission_patch = Path('vera_web_v2_rules_permission_patch.py').read_text(encoding='utf-8')
           app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
@@ -348,9 +351,9 @@ jobs:
               'required columns and duplicate reasons are validated': 'REQUIRED_COLUMNS' in rules_api and 'Lý do nghỉ bị trùng' in rules_api,
               'optimistic revision prevents silent overwrites': 'expected_revision' in rules_api and 'FOR UPDATE' in rules_api and 'Bảng Nội quy đã được người khác cập nhật' in rules_api,
               'legacy LoaiNghi mirror is transactional': 'worksheet("LoaiNghi")' in rules_api and '_restore_legacy_sheet' in rules_api and 'tx.rollback()' in rules_api,
-              'rules permissions are exposed': all(key in api for key in ('official_rules_view', 'official_rules_edit', 'official_rules_export', 'official_rules_import')),
+              'rules permissions are exposed': all(key in permissions for key in ('official_rules_view', 'official_rules_edit', 'official_rules_export', 'official_rules_import')),
               'rules permissions appear in the legacy permission catalog': '"📜 Nội quy": [' in permission_patch and all(key in permission_patch for key in ('official_rules_view', 'official_rules_edit', 'official_rules_export', 'official_rules_import')),
-              'legacy edit role behavior is preserved': '"quanly"' in api and 'official_rules_edit' in api and '"letan"' in api,
+              'legacy edit role behavior is preserved': '"official_rules_edit"' in permissions.split('FRONTDESK = {', 1)[1].split('}', 1)[0] and '"quanly": set(FRONTDESK)' in permissions and '"letan": set(FRONTDESK)' in permissions,
               'React rules page is routed': "page === 'rules'" in app and 'RulesPage' in app,
               'rules menu is permission gated': "permission: 'official_rules_view'" in shell and 'ready: true' in shell,
               'rules page covers dynamic grid operations': all(label in page for label in ('BẢNG NỘI QUY', 'Thêm cột', 'Xóa cột', 'Thêm dòng', 'Xóa dòng đã chọn', 'Ghi thay đổi & áp dụng')),
@@ -500,6 +503,7 @@ jobs:
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           module = Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8')
           page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
           section = Path('web-v2/src/components/LongLeaveSection.jsx').read_text(encoding='utf-8')
@@ -509,9 +513,9 @@ jobs:
           ast.parse(module)
           checks = {
               'authenticated module installed': 'from vera_web_v2_long_leave import install_long_leave_routes' in api and 'install_long_leave_routes(' in api,
-              'legacy long-leave permissions exposed': all(key in api for key in ('long_leave', 'long_leave_form', 'long_leave_stats', 'long_leave_document')),
-              'manager/front desk retain statistics rights': '"quanly"' in api and '"long_leave_stats"' in api.split('"quanly":', 1)[1].split('},', 1)[0] and '"long_leave_stats"' in api.split('"letan":', 1)[1].split('},', 1)[0],
-              'employee/leader retain form rights': '"long_leave_form"' in api.split('"leader":', 1)[1].split('},', 1)[0] and '"long_leave_form"' in api.split('"nhanvien":', 1)[1].split('},', 1)[0],
+              'legacy long-leave permissions exposed': all(key in permissions for key in ('long_leave', 'long_leave_form', 'long_leave_stats', 'long_leave_document')),
+              'manager/front desk retain statistics rights': '"long_leave_stats"' in permissions.split('FRONTDESK = {', 1)[1].split('}', 1)[0],
+              'employee/leader retain form rights': '"long_leave_form"' in permissions.split('EMPLOYEE = {', 1)[1].split('}', 1)[0],
               'existing Phase-14 dataset remains canonical': 'vera_phase14_record' in module and 'LONG_LEAVE_DATASET = "long_leave"' in module,
               'legacy NghiDaiHan mirror retained': 'LONG_LEAVE_WORKSHEET = "NghiDaiHan"' in module and 'worksheet.append_row' in module,
               'PostgreSQL and sheet mutation is compensated': 'pg_advisory_xact_lock' in module and 'worksheet.delete_rows' in module and 'tx.rollback()' in module,
@@ -572,6 +576,44 @@ jobs:
               print(('PASS' if ok else 'FAIL') + ': ' + name)
           if failed:
               raise SystemExit('Failed daily quota/status-retention invariants: ' + ', '.join(failed))
+          PY
+
+      - name: Verify Web V2 profile permissions payroll snapshot and Admin notifications
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
+          profile = Path('vera_web_v2_profile.py').read_text(encoding='utf-8')
+          payroll = Path('vera_web_v2_payroll.py').read_text(encoding='utf-8')
+          snapshot = Path('vera_web_v2_snapshot.py').read_text(encoding='utf-8')
+          sql = Path('vera_postgres_phase20_admin_daily_push.sql').read_text(encoding='utf-8')
+          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
+          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
+          leave = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
+          forms = Path('web-v2/src/components/LongLeaveSection.jsx').read_text(encoding='utf-8')
+          sw = Path('web-v2/public/sw.js').read_text(encoding='utf-8')
+          for source in (api, permissions, profile, payroll, snapshot): ast.parse(source)
+          checks = {
+              'statistics and list have local refresh controls': leave.count('onClick={load}') >= 3 and leave.count('Làm mới') >= 3,
+              'profile requires current password and mirrors credentials': 'hmac.compare_digest' in profile and 'A{source_row}:U{source_row}' in profile,
+              'password update clears remember token': 'remember_token_hash' in profile and 'remember_token_expiry' in profile,
+              'Android lock-screen notification remains interactive': 'requireInteraction: true' in sw and 'vibrate:' in sw,
+              'role and account permission scopes exist': '/v2/permissions/{scope}/{target}' in permissions and 'expected_revision' in permissions,
+              'Admin role is immutable': 'vai trò Admin không được sửa' in permissions,
+              'saved payroll is not recalculated': "dataset_key='payroll_history'" in payroll and 'recalculate' not in payroll.lower(),
+              'snapshot is attendance only': 'timesoft_employee_checkin_' in snapshot and 'timesoft_summary_invoice' not in snapshot and 'timesoft_summary_totals' not in snapshot,
+              'resignation request form is present': 'ĐƠN XIN NGHỈ VIỆC' in forms and 'REQUEST_TYPE_RESIGNATION' in Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8'),
+              'Admin daily push uses Vault and cron': 'vera-v2-admin-daily-changes' in sql and 'vault.decrypted_secrets' in sql,
+              'audit excludes sensitive values': 'No password, push key, bank data, payroll amount or revenue value' in sql,
+              'new pages are routed and permission gated': all(name in app for name in ('ProfilePage','PermissionsPage','PayrollPage','SnapshotPage','AdminChangesPage')) and all(key in shell for key in ('permission_admin','payroll_history','snapshot_today','audit_admin_view')),
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items(): print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed: raise SystemExit('Failed Web V2 phase-20 invariants: ' + ', '.join(failed))
           PY
 
       - name: Verify post-login landing and safe Cloud Run rollout

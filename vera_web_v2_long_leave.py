@@ -38,6 +38,7 @@ LONG_LEAVE_HEADERS = [
 REQUEST_TYPE_LONG = "Nghỉ dài hạn"
 REQUEST_TYPE_LONG_DISPLAY = "Nghỉ làm đẹp"
 REQUEST_TYPE_ANNUAL = "Nghỉ Phép năm"
+REQUEST_TYPE_RESIGNATION = "Nghỉ việc"
 STATUS_PENDING = "Chờ duyệt"
 STATUS_APPROVED = "Đã duyệt"
 PAUSE_KEY = "long_leave_request_pause_v905"
@@ -84,7 +85,9 @@ def _request_type(value: Any, norm: Callable[[Any], str]) -> str:
         return REQUEST_TYPE_ANNUAL
     if key in {norm(REQUEST_TYPE_LONG), norm(REQUEST_TYPE_LONG_DISPLAY)}:
         return REQUEST_TYPE_LONG
-    raise HTTPException(400, "Loại đơn chỉ được chọn Nghỉ Phép năm hoặc Nghỉ làm đẹp.")
+    if key in {norm(REQUEST_TYPE_RESIGNATION), norm("Đơn xin nghỉ việc")}:
+        return REQUEST_TYPE_RESIGNATION
+    raise HTTPException(400, "Loại đơn chỉ được chọn Nghỉ Phép năm, Nghỉ làm đẹp hoặc Đơn xin nghỉ việc.")
 
 
 def _display_request_type(value: Any) -> str:
@@ -94,8 +97,37 @@ def _display_request_type(value: Any) -> str:
 
 def _request_id(employee: str, request_type: str, now: datetime) -> str:
     raw = f"{employee}|{request_type}|{now.isoformat()}|{secrets.token_hex(4)}"
-    prefix = "AL-" if request_type == REQUEST_TYPE_ANNUAL else "LL-"
+    prefix = "AL-" if request_type == REQUEST_TYPE_ANNUAL else ("RS-" if request_type == REQUEST_TYPE_RESIGNATION else "LL-")
     return prefix + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12].upper()
+
+
+def _resignation_eligibility(conn, employee: str, today: date) -> dict[str, Any]:
+    active = conn.execute(text("""
+        SELECT 1 FROM employees
+        WHERE lower(btrim(username))=lower(btrim(:username))
+          AND COALESCE(login_locked, false)=false
+          AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
+        LIMIT 1
+    """), {"username": employee}).scalar_one_or_none()
+    if not active:
+        return {"allowed": False, "message": "Chỉ nhân viên đang làm việc mới có thể gửi Đơn xin nghỉ việc."}
+    pending = conn.execute(text("""
+        SELECT payload->>'ID'
+        FROM vera_phase14_record
+        WHERE dataset=:dataset
+          AND lower(btrim(COALESCE(payload->>'Tên nhân viên','')))=lower(btrim(:employee))
+          AND record_type=:request_type
+          AND record_status IN (:pending, :approved)
+        ORDER BY updated_at DESC
+        LIMIT 1
+    """), {
+        "dataset": LONG_LEAVE_DATASET, "employee": employee,
+        "request_type": REQUEST_TYPE_RESIGNATION,
+        "pending": STATUS_PENDING, "approved": STATUS_APPROVED,
+    }).scalar_one_or_none()
+    if pending:
+        return {"allowed": False, "message": f"Bạn đã có Đơn xin nghỉ việc {pending} đang được xử lý."}
+    return {"allowed": True, "message": "Có thể gửi Đơn xin nghỉ việc cho Admin duyệt."}
 
 
 def _payload_value(payload: Any) -> dict[str, Any]:
@@ -224,12 +256,13 @@ def _approved_rows(conn) -> list[dict[str, Any]]:
                payload, updated_at
         FROM vera_phase14_record
         WHERE dataset=:dataset AND record_status=:approved
+          AND COALESCE(record_type,'') <> :resignation
         ORDER BY
           CASE WHEN to_date(NULLIF(date_from,''), 'DD/MM/YYYY') >= CURRENT_DATE THEN 0 ELSE 1 END,
           to_date(NULLIF(date_from,''), 'DD/MM/YYYY') DESC NULLS LAST,
           source_row DESC NULLS LAST
         LIMIT 300
-    """), {"dataset": LONG_LEAVE_DATASET, "approved": STATUS_APPROVED}).mappings().all()
+    """), {"dataset": LONG_LEAVE_DATASET, "approved": STATUS_APPROVED, "resignation": REQUEST_TYPE_RESIGNATION}).mappings().all()
     output = []
     for row in rows:
         payload = _payload_value(row.get("payload"))
@@ -353,17 +386,18 @@ def install_long_leave_routes(
 ):
     """Install leave-request routes into the authenticated Web V2 API."""
 
-    def permissions(conn, ident) -> tuple[bool, bool, bool]:
+    def permissions(conn, ident) -> tuple[bool, bool, bool, bool]:
         can_form = bool(feature_allowed(conn, ident, "long_leave_form"))
         can_stats = bool(feature_allowed(conn, ident, "long_leave_stats"))
-        can_open = bool(feature_allowed(conn, ident, "long_leave")) or can_form or can_stats
-        return can_open, can_form, can_stats
+        can_resignation = bool(feature_allowed(conn, ident, "resignation_form"))
+        can_open = bool(feature_allowed(conn, ident, "long_leave")) or can_form or can_stats or can_resignation
+        return can_open, can_form, can_stats, can_resignation
 
     @app.get("/v2/long-leave/overview")
     def long_leave_overview(ident: identity_type = Depends(current_identity)):
         today = datetime.now(vn_tz).date()
         with engine_instance().connect() as conn:
-            can_open, can_form, can_stats = permissions(conn, ident)
+            can_open, can_form, can_stats, can_resignation = permissions(conn, ident)
             if not can_open:
                 raise HTTPException(403, "Tài khoản hiện tại chưa được cấp quyền Phép năm / Nghỉ làm đẹp.")
             eligibility = _eligibility(conn, ident.employee_username, today, norm) if can_form else {
@@ -372,10 +406,15 @@ def install_long_leave_routes(
                 "employment_start_date": None,
             }
             approved = _approved_rows(conn) if can_stats else []
+            resignation_eligibility = _resignation_eligibility(conn, ident.employee_username, today) if can_resignation else {
+                "allowed": False, "message": "Tài khoản chưa được cấp quyền gửi Đơn xin nghỉ việc."
+            }
         pause = _pause_state(google_client, leave_sheet_id)
         can_submit = can_form and bool(eligibility.get("allowed")) and not bool(pause.get("enabled"))
         return {
             "can_submit": can_submit,
+            "can_submit_resignation": can_resignation and bool(resignation_eligibility.get("allowed")),
+            "resignation_eligibility": resignation_eligibility,
             "can_view_approved": can_stats,
             "eligibility": eligibility,
             "paused": bool(pause.get("enabled")),
@@ -399,15 +438,21 @@ def install_long_leave_routes(
             raise HTTPException(400, "Đơn Phép năm chỉ được chọn tối đa 7 ngày liên tiếp.")
         reason = str(body.reason or "").strip()
         detail = str(body.detail or "").strip()
+        if request_type == REQUEST_TYPE_RESIGNATION and body.end_date != body.start_date:
+            raise HTTPException(400, "Đơn xin nghỉ việc chỉ dùng một ngày nghỉ việc dự kiến.")
         if request_type == REQUEST_TYPE_LONG and not reason:
             raise HTTPException(400, "Vui lòng nhập Lý do nghỉ làm đẹp.")
         if request_type == REQUEST_TYPE_LONG and not detail:
             raise HTTPException(400, "Vui lòng nhập Chi tiết lý do nghỉ làm đẹp.")
+        if request_type == REQUEST_TYPE_RESIGNATION and not detail:
+            raise HTTPException(400, "Vui lòng nhập lý do xin nghỉ việc.")
         if request_type == REQUEST_TYPE_ANNUAL:
             reason = REQUEST_TYPE_ANNUAL
+        elif request_type == REQUEST_TYPE_RESIGNATION:
+            reason = REQUEST_TYPE_RESIGNATION
 
         pause = _pause_state(google_client, leave_sheet_id)
-        if pause.get("enabled"):
+        if request_type != REQUEST_TYPE_RESIGNATION and pause.get("enabled"):
             raise HTTPException(409, str(pause.get("message") or DEFAULT_PAUSE_MESSAGE))
 
         conn = engine_instance().connect()
@@ -418,10 +463,13 @@ def install_long_leave_routes(
         cc_emails: list[str] = []
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase14:long_leave'))"))
-            can_open, can_form, _can_stats = permissions(conn, ident)
-            if not can_open or not can_form:
+            can_open, can_form, _can_stats, can_resignation = permissions(conn, ident)
+            can_submit_type = can_resignation if request_type == REQUEST_TYPE_RESIGNATION else can_form
+            if not can_open or not can_submit_type:
                 raise HTTPException(403, "Tài khoản hiện tại chưa được cấp quyền gửi đơn.")
-            eligibility = _eligibility(conn, ident.employee_username, today, norm)
+            eligibility = (_resignation_eligibility(conn, ident.employee_username, today)
+                           if request_type == REQUEST_TYPE_RESIGNATION
+                           else _eligibility(conn, ident.employee_username, today, norm))
             if not eligibility.get("allowed"):
                 raise HTTPException(409, str(eligibility.get("message") or "Chưa đủ điều kiện tạo đơn."))
 
@@ -443,7 +491,10 @@ def install_long_leave_routes(
                 "Người duyệt": "",
                 "Ngày duyệt": "",
                 "Giờ duyệt": "",
-                "Nguồn": "Web V2 gửi yêu cầu" if request_type == REQUEST_TYPE_LONG else "Web V2 gửi yêu cầu Phép năm",
+                "Nguồn": (
+                    "Web V2 gửi Đơn xin nghỉ việc" if request_type == REQUEST_TYPE_RESIGNATION
+                    else ("Web V2 gửi yêu cầu" if request_type == REQUEST_TYPE_LONG else "Web V2 gửi yêu cầu Phép năm")
+                ),
                 "Người cập nhật": ident.employee_username.strip(),
                 "Cập nhật lúc": now.strftime("%d/%m/%Y %H:%M:%S"),
                 "Tài liệu JSON": "",

@@ -4,6 +4,7 @@ import { isApiConfigured, veraApi } from '../lib/api'
 
 const ANNUAL = 'Nghỉ Phép năm'
 const LONG = 'Nghỉ làm đẹp'
+const RESIGNATION = 'Nghỉ việc'
 
 const formatDateInput = (date) => {
   const year = date.getFullYear()
@@ -45,7 +46,9 @@ export default function LongLeaveSection({ user }) {
     || user?.permissions?.long_leave === true
     || user?.permissions?.long_leave_form === true
     || user?.permissions?.long_leave_stats === true
+    || user?.permissions?.resignation_form === true
   const canUseForm = role === 'admin' || user?.permissions?.long_leave_form === true
+  const canUseResignation = role === 'admin' || user?.permissions?.resignation_form === true
   const canViewApproved = role === 'admin' || user?.permissions?.long_leave_stats === true
   const [overview, setOverview] = useState(null)
   const [form, setForm] = useState(emptyForm)
@@ -68,11 +71,19 @@ export default function LongLeaveSection({ user }) {
   }, [canOpen])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    if (!canUseForm && canUseResignation) {
+      setForm((current) => ({ ...current, request_type: RESIGNATION, end_date: current.start_date }))
+    }
+  }, [canUseForm, canUseResignation])
 
   const isAnnual = form.request_type === ANNUAL
+  const isResignation = form.request_type === RESIGNATION
   const annualMaxEnd = useMemo(() => addDays(form.start_date, 6), [form.start_date])
   const approvedRequests = overview?.approved_requests || []
-  const canSubmit = canUseForm && overview?.can_submit === true && !saving
+  const canSubmit = !saving && (isResignation
+    ? canUseResignation && overview?.can_submit_resignation === true
+    : canUseForm && overview?.can_submit === true)
 
   if (!canOpen) return null
 
@@ -81,10 +92,12 @@ export default function LongLeaveSection({ user }) {
     setForm((current) => ({
       ...current,
       request_type: requestType,
-      reason: requestType === ANNUAL ? '' : current.reason,
-      end_date: requestType === ANNUAL && current.end_date > addDays(current.start_date, 6)
+      reason: requestType === ANNUAL || requestType === RESIGNATION ? '' : current.reason,
+      end_date: requestType === RESIGNATION
         ? current.start_date
-        : current.end_date,
+        : (requestType === ANNUAL && current.end_date > addDays(current.start_date, 6)
+            ? current.start_date
+            : current.end_date),
     }))
   }
 
@@ -92,7 +105,7 @@ export default function LongLeaveSection({ user }) {
     setForm((current) => {
       const maxEnd = addDays(value, 6)
       const invalidEnd = current.end_date < value || (current.request_type === ANNUAL && current.end_date > maxEnd)
-      return { ...current, start_date: value, end_date: invalidEnd ? value : current.end_date }
+      return { ...current, start_date: value, end_date: current.request_type === RESIGNATION || invalidEnd ? value : current.end_date }
     })
   }
 
@@ -121,7 +134,7 @@ export default function LongLeaveSection({ user }) {
       <div className="long-leave-heading-row">
         <div>
           <span className="eyebrow"><CalendarDays size={14} /> Quy trình xin duyệt</span>
-          <h2 id="long-leave-heading">PHÉP NĂM / NGHỈ LÀM ĐẸP</h2>
+          <h2 id="long-leave-heading">PHÉP NĂM / NGHỈ LÀM ĐẸP / NGHỈ VIỆC</h2>
           <p>Đơn mới được chuyển vào quy trình duyệt hiện tại. Chỉ đơn Phép năm đã duyệt mới ghi vào lịch nghỉ hằng ngày.</p>
         </div>
         <button type="button" className="secondary-button compact" onClick={load} disabled={loading}>
@@ -137,7 +150,7 @@ export default function LongLeaveSection({ user }) {
         </div>
       )}
 
-      {canUseForm && (
+      {(canUseForm || canUseResignation) && (
         <section className="panel long-leave-form-panel">
           <div className="panel-title-row">
             <div>
@@ -147,22 +160,32 @@ export default function LongLeaveSection({ user }) {
           </div>
 
           <div className="long-leave-type-tabs" role="group" aria-label="Chọn loại đơn">
-            {[ANNUAL, LONG].map((requestType) => (
+            {[
+              ...(canUseForm ? [ANNUAL, LONG] : []),
+              ...(canUseResignation ? [RESIGNATION] : []),
+            ].map((requestType) => (
               <button
                 type="button"
                 key={requestType}
                 className={form.request_type === requestType ? 'active' : ''}
                 onClick={() => changeRequestType(requestType)}
               >
-                {requestType === ANNUAL ? 'ĐƠN XIN NGHỈ PHÉP NĂM' : 'ĐƠN XIN NGHỈ LÀM ĐẸP'}
+                {requestType === ANNUAL
+                  ? 'ĐƠN XIN NGHỈ PHÉP NĂM'
+                  : (requestType === RESIGNATION ? 'ĐƠN XIN NGHỈ VIỆC' : 'ĐƠN XIN NGHỈ LÀM ĐẸP')}
               </button>
             ))}
           </div>
 
-          {overview?.paused && <div className="warning-box long-leave-gate"><strong>Đang tạm dừng nhận đơn.</strong> {overview.pause_message}</div>}
-          {overview?.eligibility && (
+          {!isResignation && overview?.paused && <div className="warning-box long-leave-gate"><strong>Đang tạm dừng nhận đơn.</strong> {overview.pause_message}</div>}
+          {!isResignation && overview?.eligibility && (
             <div className={`${overview.eligibility.allowed ? 'success-box' : 'warning-box'} long-leave-gate`}>
               {overview.eligibility.message}
+            </div>
+          )}
+          {isResignation && overview?.resignation_eligibility && (
+            <div className={`${overview.resignation_eligibility.allowed ? 'success-box' : 'warning-box'} long-leave-gate`}>
+              {overview.resignation_eligibility.message}
             </div>
           )}
 
@@ -172,16 +195,18 @@ export default function LongLeaveSection({ user }) {
               <input value={shortEmployeeName(user?.employee_username)} readOnly />
             </label>
 
-            <DateField label={isAnnual ? 'Từ ngày Phép năm' : 'Từ ngày'} value={form.start_date} min={today()} onChange={changeStartDate} />
-            <DateField
-              label={isAnnual ? 'Đến ngày Phép năm' : 'Đến ngày'}
-              value={form.end_date}
-              min={form.start_date}
-              max={isAnnual ? annualMaxEnd : undefined}
-              onChange={(value) => setForm((current) => ({ ...current, end_date: value }))}
-            />
+            <DateField label={isResignation ? 'Ngày nghỉ việc dự kiến' : (isAnnual ? 'Từ ngày Phép năm' : 'Từ ngày')} value={form.start_date} min={today()} onChange={changeStartDate} />
+            {!isResignation && (
+              <DateField
+                label={isAnnual ? 'Đến ngày Phép năm' : 'Đến ngày'}
+                value={form.end_date}
+                min={form.start_date}
+                max={isAnnual ? annualMaxEnd : undefined}
+                onChange={(value) => setForm((current) => ({ ...current, end_date: value }))}
+              />
+            )}
 
-            {!isAnnual && (
+            {!isAnnual && !isResignation && (
               <label className="long-leave-wide-field">
                 <span>Lý do nghỉ làm đẹp</span>
                 <input
@@ -194,11 +219,11 @@ export default function LongLeaveSection({ user }) {
             )}
 
             <label className="long-leave-wide-field">
-              <span>{isAnnual ? 'Nội dung / ghi chú xin Phép năm' : 'Chi tiết lý do nghỉ làm đẹp'}</span>
+              <span>{isResignation ? 'Lý do xin nghỉ việc' : (isAnnual ? 'Nội dung / ghi chú xin Phép năm' : 'Chi tiết lý do nghỉ làm đẹp')}</span>
               <textarea
                 value={form.detail}
                 onChange={(event) => setForm((current) => ({ ...current, detail: event.target.value }))}
-                placeholder={isAnnual ? 'Ghi chú cho Admin khi duyệt (không bắt buộc).' : 'Ghi rõ nội dung, thời gian và thông tin cần thiết.'}
+                placeholder={isResignation ? 'Ghi rõ lý do và nội dung bàn giao dự kiến.' : (isAnnual ? 'Ghi chú cho Admin khi duyệt (không bắt buộc).' : 'Ghi rõ nội dung, thời gian và thông tin cần thiết.')}
                 rows="4"
                 required={!isAnnual}
               />

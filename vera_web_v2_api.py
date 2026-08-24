@@ -403,15 +403,7 @@ class Identity(BaseModel):
     email: str = ""
 
 
-WEB_V2_DEFAULT_FEATURES = {
-    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "long_leave", "long_leave_form", "long_leave_stats", "long_leave_document", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
-    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
-    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_export"},
-    "leader": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "long_leave", "long_leave_form", "long_leave_document", "official_rules_view", "official_rules_export"},
-    "nhanvien": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "long_leave", "long_leave_form", "long_leave_document", "official_rules_view", "official_rules_export"},
-    "locker": {"official_rules_view", "official_rules_export"},
-    "tapvu": {"official_rules_view", "official_rules_export"},
-}
+from vera_web_v2_permissions import DEFAULT_ROLE_FEATURES as WEB_V2_DEFAULT_FEATURES, FEATURES as WEB_V2_FEATURES
 
 
 def _as_bool(value: Any) -> bool:
@@ -643,7 +635,7 @@ def _push_subscription_values(body: PushSubscriptionCreate) -> tuple[str, str, s
 def _send_web_push(delivery: dict[str, Any], private_key: str, subject: str) -> tuple[bool, int | None, str]:
     from pywebpush import WebPushException, webpush
 
-    payload = {
+    payload = delivery.get("payload") if isinstance(delivery.get("payload"), dict) else {
         "title": "VERA SPA · Lịch nghỉ thay đổi",
         "body": (
             f"Ngày {delivery['watched_date'].strftime('%d/%m/%Y')}: số lịch nghỉ CÓ phép "
@@ -755,6 +747,53 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
         "failed": failures,
         "deactivated": deactivated,
     }
+
+
+def _dispatch_admin_daily_pushes() -> dict[str, int]:
+    with _engine_instance().connect() as conn:
+        private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
+        subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://veraspabienhoa.github.io/Vera-Spa/"
+        if not private_key:
+            raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
+        changes = int(conn.execute(text("""
+            SELECT COUNT(*) FROM vera_sync_event
+            WHERE created_at >= NOW() - INTERVAL '24 hours' AND event_type <> 'admin_daily_push'
+        """)).scalar() or 0)
+        groups = conn.execute(text("""
+            SELECT dataset_key, COUNT(*) count FROM vera_sync_event
+            WHERE created_at >= NOW() - INTERVAL '24 hours' AND event_type <> 'admin_daily_push'
+            GROUP BY dataset_key ORDER BY count DESC, dataset_key LIMIT 4
+        """)).mappings().all()
+        subscriptions = conn.execute(text("""
+            SELECT s.subscription_id::text subscription_id, s.endpoint, s.p256dh, s.auth_secret
+            FROM vera_v2_push_subscription s JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id
+            WHERE s.is_active=true AND p.is_active=true AND lower(COALESCE(p.role,''))='admin'
+        """)).mappings().all()
+    summary = ", ".join(f"{row['dataset_key']}: {row['count']}" for row in groups) or "Không có thay đổi mới"
+    payload = {
+        "title": "VERA SPA · Báo cáo thay đổi hằng ngày",
+        "body": f"24 giờ qua có {changes} thay đổi. {summary}.",
+        "url": "https://veraspabienhoa.github.io/Vera-Spa/",
+        "tag": f"vera-admin-daily-{datetime.now(VN_TZ).date().isoformat()}",
+    }
+    successes = failures = deactivated = 0
+    for row in subscriptions:
+        delivery = {**dict(row), "payload": payload}
+        ok, status, error_text = _send_web_push(delivery, private_key, subject)
+        successes += int(ok); failures += int(not ok)
+        inactive = not ok and status in {404, 410}; deactivated += int(inactive)
+        with _engine_instance().begin() as conn:
+            conn.execute(text("""
+                UPDATE vera_v2_push_subscription SET
+                  is_active=CASE WHEN :inactive THEN false ELSE is_active END,
+                  last_success_at=CASE WHEN :ok THEN NOW() ELSE last_success_at END,
+                  failure_count=CASE WHEN :ok THEN 0 ELSE failure_count+1 END,
+                  last_error=CASE WHEN :ok THEN NULL ELSE :error END, updated_at=NOW()
+                WHERE subscription_id=CAST(:subscription_id AS uuid)
+            """), {"inactive": inactive, "ok": ok, "error": error_text, "subscription_id": row["subscription_id"]})
+    with _engine_instance().begin() as conn:
+        conn.execute(text("INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at) VALUES ('system_audit','admin_daily_push',:detail,NOW())"), {"detail": f"sent={successes}; failed={failures}; deactivated={deactivated}"})
+    return {"changes": changes, "deliveries": len(subscriptions), "sent": successes, "failed": failures, "deactivated": deactivated}
 
 
 def _is_employee_co_phep(reason: str) -> bool:
@@ -1282,19 +1321,7 @@ def me(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
         permissions = {
             feature: _feature_allowed(conn, ident, feature)
-            for feature in (
-                "leave", "leave_create", "employee_penalty_view",
-                "leave_detail_edit", "leave_detail_delete",
-                "leave_manage_edit", "leave_manage_delete",
-                "leave_today_khong_phep_edit_delete",
-                "long_leave", "long_leave_form", "long_leave_stats", "long_leave_document",
-                "staff_list", "staff_export", "staff_import",
-                "employee_add", "employee_add_save", "employee_edit", "employee_edit_save",
-                "employment_status", "employment_status_edit", "employee_delete",
-                "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
-                "official_rules_view", "official_rules_edit",
-                "official_rules_export", "official_rules_import",
-            )
+            for feature in WEB_V2_FEATURES
         }
         registration_locked = _registration_role_locked(conn, ident.role)
     return {
@@ -1307,7 +1334,6 @@ def me(ident: Identity = Depends(current_identity)):
 @app.get("/v2/push/config")
 def push_config(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
-        _require_feature(conn, ident, "leave")
         public_key = _vault_secret(conn, "vera_v2_vapid_public_key")
     return {"enabled": bool(public_key), "public_key": public_key}
 
@@ -1320,7 +1346,6 @@ def register_push_subscription(
 ):
     endpoint, p256dh, auth_secret = _push_subscription_values(body)
     with _engine_instance().begin() as conn:
-        _require_feature(conn, ident, "leave")
         exists = conn.execute(text("""
             SELECT 1 FROM vera_v2_push_subscription WHERE endpoint=:endpoint
         """), {"endpoint": endpoint}).scalar_one_or_none()
@@ -1363,7 +1388,6 @@ def register_push_subscription(
 @app.delete("/v2/push/subscriptions")
 def unregister_push_subscription(body: PushSubscriptionDelete, ident: Identity = Depends(current_identity)):
     with _engine_instance().begin() as conn:
-        _require_feature(conn, ident, "leave")
         result = conn.execute(text("""
             DELETE FROM vera_v2_push_subscription
             WHERE auth_user_id=CAST(:auth_user_id AS uuid)
@@ -1383,6 +1407,30 @@ def dispatch_push(
     if not expected or not supplied or not hmac.compare_digest(expected, supplied):
         raise HTTPException(403, "Webhook Web Push không hợp lệ.")
     return {"ok": True, **_dispatch_paid_watch_pushes(body.dates)}
+
+
+@app.post("/v2/push/admin-daily-dispatch")
+def dispatch_admin_daily_push(x_vera_push_webhook: str | None = Header(default=None)):
+    with _engine_instance().connect() as conn:
+        expected = _vault_secret(conn, "vera_v2_push_webhook_secret")
+    supplied = str(x_vera_push_webhook or "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(403, "Webhook Web Push không hợp lệ.")
+    return {"ok": True, **_dispatch_admin_daily_pushes()}
+
+
+@app.get("/v2/admin/changes")
+def admin_changes(days: int = Query(default=7, ge=1, le=31), ident: Identity = Depends(current_identity)):
+    if ident.role != "admin":
+        raise HTTPException(403, "Chỉ Admin được xem nhật ký thay đổi hệ thống.")
+    with _engine_instance().connect() as conn:
+        _require_feature(conn, ident, "audit_admin_view")
+        rows = conn.execute(text("""
+            SELECT id, dataset_key, event_type, detail, created_at
+            FROM vera_sync_event WHERE created_at >= NOW() - (:days * INTERVAL '1 day')
+            ORDER BY created_at DESC, id DESC LIMIT 1000
+        """), {"days": days}).mappings().all()
+    return {"changes": [{**dict(row), "created_at": row["created_at"].isoformat()} for row in rows], "count": len(rows), "days": days}
 
 
 @app.get("/v2/employees")
@@ -2026,4 +2074,47 @@ install_long_leave_routes(
     leave_sheet_id=LEAVE_SHEET_ID,
     identity_type=Identity,
     vn_tz=VN_TZ,
+)
+
+from vera_web_v2_permissions import install_permission_routes
+
+install_permission_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    google_client=_google_client,
+    identity_type=Identity,
+    vn_tz=VN_TZ,
+)
+
+from vera_web_v2_profile import install_profile_routes
+
+install_profile_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    google_client=_google_client,
+    identity_type=Identity,
+)
+
+from vera_web_v2_snapshot import install_snapshot_routes
+
+install_snapshot_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    identity_type=Identity,
+)
+
+from vera_web_v2_payroll import install_payroll_routes
+
+install_payroll_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    norm=_norm,
+    identity_type=Identity,
 )
