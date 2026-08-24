@@ -1,6 +1,7 @@
 import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, Download, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
+import LongLeaveSection from '../components/LongLeaveSection'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
 import {
   disablePushNotifications,
@@ -840,6 +841,8 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
         </section>
       </div>
+
+      <LongLeaveSection user={user} />
     </div>
   )
 }

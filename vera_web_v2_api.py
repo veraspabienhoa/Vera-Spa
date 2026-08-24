@@ -368,11 +368,11 @@ class Identity(BaseModel):
 
 
 WEB_V2_DEFAULT_FEATURES = {
-    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
-    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
-    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_export"},
-    "leader": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "official_rules_view", "official_rules_export"},
-    "nhanvien": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "official_rules_view", "official_rules_export"},
+    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "long_leave", "long_leave_form", "long_leave_stats", "long_leave_document", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
+    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
+    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_export"},
+    "leader": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "long_leave", "long_leave_form", "long_leave_document", "official_rules_view", "official_rules_export"},
+    "nhanvien": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "long_leave", "long_leave_form", "long_leave_document", "official_rules_view", "official_rules_export"},
     "locker": {"official_rules_view", "official_rules_export"},
     "tapvu": {"official_rules_view", "official_rules_export"},
 }
@@ -1249,6 +1249,7 @@ def me(ident: Identity = Depends(current_identity)):
                 "leave_detail_edit", "leave_detail_delete",
                 "leave_manage_edit", "leave_manage_delete",
                 "leave_today_khong_phep_edit_delete",
+                "long_leave", "long_leave_form", "long_leave_stats", "long_leave_document",
                 "staff_list", "staff_export", "staff_import",
                 "employee_add", "employee_add_save", "employee_edit", "employee_edit_save",
                 "employment_status", "employment_status_edit", "employee_delete",
@@ -1958,6 +1959,22 @@ install_rules_routes(
     current_identity=current_identity,
     require_feature=_require_feature,
     feature_allowed=_feature_allowed,
+    google_client=_google_client,
+    leave_sheet_id=LEAVE_SHEET_ID,
+    identity_type=Identity,
+    vn_tz=VN_TZ,
+)
+
+# Annual-leave / long-leave requests reuse the existing Phase-14 PostgreSQL
+# dataset and the current NghiDaiHan approval workflow.
+from vera_web_v2_long_leave import install_long_leave_routes
+
+install_long_leave_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    feature_allowed=_feature_allowed,
+    norm=_norm,
     google_client=_google_client,
     leave_sheet_id=LEAVE_SHEET_ID,
     identity_type=Identity,

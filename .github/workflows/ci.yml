@@ -491,6 +491,47 @@ jobs:
           if failed: raise SystemExit('Failed Nội quy invariants: ' + ', '.join(failed))
           PY
 
+      - name: Verify Web V2 annual and long leave migration
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          module = Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8')
+          page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
+          section = Path('web-v2/src/components/LongLeaveSection.jsx').read_text(encoding='utf-8')
+          client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
+          styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
+
+          ast.parse(module)
+          checks = {
+              'authenticated module installed': 'from vera_web_v2_long_leave import install_long_leave_routes' in api and 'install_long_leave_routes(' in api,
+              'legacy long-leave permissions exposed': all(key in api for key in ('long_leave', 'long_leave_form', 'long_leave_stats', 'long_leave_document')),
+              'manager/front desk retain statistics rights': '"quanly"' in api and '"long_leave_stats"' in api.split('"quanly":', 1)[1].split('},', 1)[0] and '"long_leave_stats"' in api.split('"letan":', 1)[1].split('},', 1)[0],
+              'employee/leader retain form rights': '"long_leave_form"' in api.split('"leader":', 1)[1].split('},', 1)[0] and '"long_leave_form"' in api.split('"nhanvien":', 1)[1].split('},', 1)[0],
+              'existing Phase-14 dataset remains canonical': 'vera_phase14_record' in module and 'LONG_LEAVE_DATASET = "long_leave"' in module,
+              'legacy NghiDaiHan mirror retained': 'LONG_LEAVE_WORKSHEET = "NghiDaiHan"' in module and 'worksheet.append_row' in module,
+              'PostgreSQL and sheet mutation is compensated': 'pg_advisory_xact_lock' in module and 'worksheet.delete_rows' in module and 'tx.rollback()' in module,
+              'three-month employee gate retained': '_add_months(start_work, 3)' in module,
+              'one active request gate retained': 'Mỗi lần chỉ được có 1 đơn Phép năm hoặc Nghỉ dài hạn đang hoạt động' in module,
+              'annual request keeps seven-day limit': 'Đơn Phép năm chỉ được chọn tối đa 7 ngày liên tiếp' in module,
+              'pause switch retained': 'long_leave_request_pause_v905' in module,
+              'approved list is permission gated': 'can_stats' in module and '_approved_rows(conn) if can_stats else []' in module,
+              'React section is at the page bottom': '<LongLeaveSection user={user} />' in page and page.index('<LongLeaveSection user={user} />') > page.index('leave-list-panel'),
+              'both request forms are present': all(label in section for label in ('ĐƠN XIN NGHỈ PHÉP NĂM', 'ĐƠN XIN NGHỈ DÀI HẠN')),
+              'approved employee list is present': 'DANH SÁCH NHÂN VIÊN ĐÃ ĐƯỢC DUYỆT' in section,
+              'mobile approved cards avoid table overflow': 'approved-leave-mobile-list' in section and '.approved-leave-desktop { display: none; }' in styles,
+              'API client uses authenticated backend': 'longLeaveOverview' in client and 'createLongLeaveRequest' in client,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed annual/long leave invariants: ' + ', '.join(failed))
+          PY
+
       - name: Verify post-login landing and safe Cloud Run rollout
         shell: bash
         run: |
