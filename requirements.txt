@@ -11,6 +11,7 @@ xlrd>=2.0,<3
 xlsxwriter>=3.2,<4
 SQLAlchemy>=2.0,<3
 psycopg[binary]>=3.2,<4
+pywebpush==2.4.0
 playwright==1.62.0
 reportlab>=4.0
 matplotlib>=3.8

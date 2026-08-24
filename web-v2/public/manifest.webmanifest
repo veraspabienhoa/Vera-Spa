@@ -1,0 +1,26 @@
+{
+  "id": "/Vera-Spa/",
+  "name": "VERA SPA ĐỒNG NAI",
+  "short_name": "VERA SPA",
+  "description": "Đăng ký và theo dõi lịch nghỉ VERA SPA Đồng Nai",
+  "lang": "vi",
+  "start_url": "/Vera-Spa/",
+  "scope": "/Vera-Spa/",
+  "display": "standalone",
+  "background_color": "#f4f6f3",
+  "theme_color": "#10251e",
+  "icons": [
+    {
+      "src": "icons/vera-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/vera-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

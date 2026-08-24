@@ -13,18 +13,25 @@ be interpreted.  That is safer than allowing Web V2 to bypass a legacy rule.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+import hmac
+from io import BytesIO
 import json
 import os
 import re
 import unicodedata
 import uuid
 from typing import Any
+from urllib.parse import quote
 
 import google.auth
 import gspread
 import requests
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
@@ -46,13 +53,14 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="2.9")
+app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
+    expose_headers=["Content-Disposition"],
 )
 
 _engine = None
@@ -491,6 +499,18 @@ class LeaveWatchAcknowledge(BaseModel):
     watched_dates: list[date] = Field(min_length=1, max_length=100)
 
 
+class PushSubscriptionCreate(BaseModel):
+    subscription: dict[str, Any]
+
+
+class PushSubscriptionDelete(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=4000)
+
+
+class PushDispatch(BaseModel):
+    dates: list[date] = Field(default_factory=list, max_length=31)
+
+
 _LEAVE_EDIT_FEATURES = ("leave_manage_edit", "leave_detail_edit")
 _LEAVE_DELETE_FEATURES = ("leave_manage_delete", "leave_detail_delete")
 _EMPLOYEE_LIKE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
@@ -559,6 +579,146 @@ def _refresh_leave_watches(conn, ident: Identity) -> list[dict[str, Any]]:
             "has_unread": unread,
         })
     return output
+
+
+def _vault_secret(conn, name: str) -> str:
+    value = conn.execute(text("""
+        SELECT decrypted_secret
+        FROM vault.decrypted_secrets
+        WHERE name=:name
+        LIMIT 1
+    """), {"name": name}).scalar_one_or_none()
+    return str(value or "").strip()
+
+
+def _push_subscription_values(body: PushSubscriptionCreate) -> tuple[str, str, str]:
+    subscription = body.subscription if isinstance(body.subscription, dict) else {}
+    endpoint = str(subscription.get("endpoint") or "").strip()
+    keys = subscription.get("keys") if isinstance(subscription.get("keys"), dict) else {}
+    p256dh = str(keys.get("p256dh") or "").strip()
+    auth_secret = str(keys.get("auth") or "").strip()
+    if not endpoint.startswith("https://") or len(endpoint) > 4000:
+        raise HTTPException(400, "Đăng ký Web Push không có endpoint HTTPS hợp lệ.")
+    if not p256dh or len(p256dh) > 512 or not auth_secret or len(auth_secret) > 256:
+        raise HTTPException(400, "Đăng ký Web Push thiếu khóa thiết bị hợp lệ.")
+    return endpoint, p256dh, auth_secret
+
+
+def _send_web_push(delivery: dict[str, Any], private_key: str, subject: str) -> tuple[bool, int | None, str]:
+    from pywebpush import WebPushException, webpush
+
+    payload = {
+        "title": "VERA SPA · Lịch nghỉ thay đổi",
+        "body": (
+            f"Ngày {delivery['watched_date'].strftime('%d/%m/%Y')}: số lịch nghỉ CÓ phép "
+            f"thay đổi từ {delivery['previous_count']} thành {delivery['current_count']}."
+        ),
+        "url": "https://veraspabienhoa.github.io/Vera-Spa/",
+        "tag": f"vera-leave-{delivery['watched_date'].isoformat()}",
+        "watched_date": delivery["watched_date"].isoformat(),
+    }
+    try:
+        response = webpush(
+            subscription_info={
+                "endpoint": delivery["endpoint"],
+                "keys": {"p256dh": delivery["p256dh"], "auth": delivery["auth_secret"]},
+            },
+            data=json.dumps(payload, ensure_ascii=False),
+            vapid_private_key=private_key,
+            vapid_claims={"sub": subject},
+            timeout=15,
+        )
+        return True, getattr(response, "status_code", None), ""
+    except WebPushException as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        return False, status, str(exc)[:1000]
+    except Exception as exc:
+        return False, None, f"{type(exc).__name__}: {exc}"[:1000]
+
+
+def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
+    dates = sorted(set(target_dates))
+    deliveries: list[dict[str, Any]] = []
+    with _engine_instance().begin() as conn:
+        private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
+        subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://veraspabienhoa.github.io/Vera-Spa/"
+        if not private_key:
+            raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
+        counts = _paid_interest_counts(conn, dates)
+        for target in dates:
+            watch_rows = conn.execute(text("""
+                SELECT auth_user_id::text AS auth_user_id, current_paid_count
+                FROM vera_v2_leave_watch
+                WHERE watched_date=:watched_date
+                FOR UPDATE
+            """), {"watched_date": target}).mappings().all()
+            current = int(counts.get(target, 0))
+            for watch_row in watch_rows:
+                previous = int(watch_row.get("current_paid_count") or 0)
+                if previous == current:
+                    continue
+                auth_user_id = str(watch_row["auth_user_id"])
+                conn.execute(text("""
+                    UPDATE vera_v2_leave_watch
+                    SET current_paid_count=:current_paid_count,
+                        has_unread=true,
+                        updated_at=NOW()
+                    WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+                      AND watched_date=:watched_date
+                """), {
+                    "auth_user_id": auth_user_id,
+                    "watched_date": target,
+                    "current_paid_count": current,
+                })
+                subscriptions = conn.execute(text("""
+                    SELECT subscription_id::text AS subscription_id, endpoint, p256dh, auth_secret
+                    FROM vera_v2_push_subscription
+                    WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+                      AND is_active=true
+                    ORDER BY updated_at DESC
+                """), {"auth_user_id": auth_user_id}).mappings().all()
+                for subscription in subscriptions:
+                    deliveries.append({
+                        **dict(subscription),
+                        "watched_date": target,
+                        "previous_count": previous,
+                        "current_count": current,
+                    })
+
+    successes = failures = deactivated = 0
+    results = []
+    for delivery in deliveries:
+        ok, status, error_text = _send_web_push(delivery, private_key, subject)
+        successes += int(ok)
+        failures += int(not ok)
+        inactive = not ok and status in {404, 410}
+        deactivated += int(inactive)
+        results.append({
+            "subscription_id": delivery["subscription_id"],
+            "ok": ok,
+            "inactive": inactive,
+            "error_text": error_text,
+        })
+
+    if results:
+        with _engine_instance().begin() as conn:
+            for result in results:
+                conn.execute(text("""
+                    UPDATE vera_v2_push_subscription
+                    SET is_active=CASE WHEN :inactive THEN false ELSE is_active END,
+                        last_success_at=CASE WHEN :ok THEN NOW() ELSE last_success_at END,
+                        failure_count=CASE WHEN :ok THEN 0 ELSE failure_count + 1 END,
+                        last_error=CASE WHEN :ok THEN NULL ELSE :last_error END,
+                        updated_at=NOW()
+                    WHERE subscription_id=CAST(:subscription_id AS uuid)
+                """), result)
+    return {
+        "dates": len(dates),
+        "deliveries": len(deliveries),
+        "sent": successes,
+        "failed": failures,
+        "deactivated": deactivated,
+    }
 
 
 def _is_employee_co_phep(reason: str) -> bool:
@@ -1076,7 +1236,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "2.9"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "3.0"}
 
 
 @app.get("/v2/me")
@@ -1097,6 +1257,87 @@ def me(ident: Identity = Depends(current_identity)):
         "permissions": permissions,
         "registration_locked": registration_locked,
     }
+
+
+@app.get("/v2/push/config")
+def push_config(ident: Identity = Depends(current_identity)):
+    with _engine_instance().connect() as conn:
+        _require_feature(conn, ident, "leave")
+        public_key = _vault_secret(conn, "vera_v2_vapid_public_key")
+    return {"enabled": bool(public_key), "public_key": public_key}
+
+
+@app.post("/v2/push/subscriptions")
+def register_push_subscription(
+    body: PushSubscriptionCreate,
+    ident: Identity = Depends(current_identity),
+    user_agent: str | None = Header(default=None),
+):
+    endpoint, p256dh, auth_secret = _push_subscription_values(body)
+    with _engine_instance().begin() as conn:
+        _require_feature(conn, ident, "leave")
+        exists = conn.execute(text("""
+            SELECT 1 FROM vera_v2_push_subscription WHERE endpoint=:endpoint
+        """), {"endpoint": endpoint}).scalar_one_or_none()
+        if not exists:
+            active_count = conn.execute(text("""
+                SELECT COUNT(*) FROM vera_v2_push_subscription
+                WHERE auth_user_id=CAST(:auth_user_id AS uuid) AND is_active=true
+            """), {"auth_user_id": ident.auth_user_id}).scalar() or 0
+            if int(active_count) >= 10:
+                raise HTTPException(400, "Mỗi tài khoản chỉ được đăng ký tối đa 10 thiết bị nhận thông báo.")
+        conn.execute(text("""
+            INSERT INTO vera_v2_push_subscription(
+                auth_user_id, employee_username, endpoint, p256dh, auth_secret,
+                user_agent, is_active, failure_count, created_at, updated_at
+            ) VALUES (
+                CAST(:auth_user_id AS uuid), :employee_username, :endpoint, :p256dh, :auth_secret,
+                :user_agent, true, 0, NOW(), NOW()
+            )
+            ON CONFLICT (endpoint) DO UPDATE
+            SET auth_user_id=EXCLUDED.auth_user_id,
+                employee_username=EXCLUDED.employee_username,
+                p256dh=EXCLUDED.p256dh,
+                auth_secret=EXCLUDED.auth_secret,
+                user_agent=EXCLUDED.user_agent,
+                is_active=true,
+                failure_count=0,
+                last_error=NULL,
+                updated_at=NOW()
+        """), {
+            "auth_user_id": ident.auth_user_id,
+            "employee_username": ident.employee_username,
+            "endpoint": endpoint,
+            "p256dh": p256dh,
+            "auth_secret": auth_secret,
+            "user_agent": str(user_agent or "")[:1000],
+        })
+    return {"ok": True, "subscribed": True}
+
+
+@app.delete("/v2/push/subscriptions")
+def unregister_push_subscription(body: PushSubscriptionDelete, ident: Identity = Depends(current_identity)):
+    with _engine_instance().begin() as conn:
+        _require_feature(conn, ident, "leave")
+        result = conn.execute(text("""
+            DELETE FROM vera_v2_push_subscription
+            WHERE auth_user_id=CAST(:auth_user_id AS uuid)
+              AND endpoint=:endpoint
+        """), {"auth_user_id": ident.auth_user_id, "endpoint": body.endpoint.strip()})
+    return {"ok": True, "subscribed": False, "removed": int(result.rowcount or 0)}
+
+
+@app.post("/v2/push/dispatch")
+def dispatch_push(
+    body: PushDispatch,
+    x_vera_push_webhook: str | None = Header(default=None),
+):
+    with _engine_instance().connect() as conn:
+        expected = _vault_secret(conn, "vera_v2_push_webhook_secret")
+    supplied = str(x_vera_push_webhook or "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(403, "Webhook Web Push không hợp lệ.")
+    return {"ok": True, **_dispatch_paid_watch_pushes(body.dates)}
 
 
 @app.get("/v2/employees")
@@ -1271,6 +1512,95 @@ def leave_records(
             item.pop("penalty", None)
         records.append(item)
     return {"records": records}
+
+
+@app.get("/v2/leave/export.xlsx")
+def export_leave_excel(
+    start_date: date = Query(alias="start"),
+    end_date: date = Query(alias="end"),
+    employee: str = Query(default="", max_length=200),
+    ident: Identity = Depends(current_identity),
+):
+    if ident.role != "admin":
+        raise HTTPException(403, "Chỉ tài khoản admin được xuất danh sách Excel.")
+    if end_date < start_date:
+        raise HTTPException(400, "Khoảng thời gian không hợp lệ.")
+    if (end_date - start_date).days > 365:
+        raise HTTPException(400, "Khoảng xuất Excel tối đa là 366 ngày.")
+
+    needle = employee.strip()
+    with _engine_instance().connect() as conn:
+        _require_feature(conn, ident, "leave")
+        rows = conn.execute(text("""
+            SELECT leave_date, employee_name, leave_reason, leave_type, detail,
+                   calculated_days, accumulated_leave, penalty,
+                   update_date, update_time, updated_by, record_uid
+            FROM leave_records
+            WHERE leave_date BETWEEN :start_date AND :end_date
+              AND (:employee = '' OR employee_name ILIKE :employee_like)
+            ORDER BY leave_date, employee_name, record_uid
+        """), {
+            "start_date": start_date,
+            "end_date": end_date,
+            "employee": needle,
+            "employee_like": f"%{needle}%",
+        }).mappings().all()
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Lịch nghỉ"
+    headers = [
+        "Ngày", "Thứ ngày", "Tên nhân viên", "Lý do nghỉ", "Loại nghỉ", "Chi tiết",
+        "Số ngày tính", "Số ngày phép cộng dồn", "Phạt", "Ngày ghi", "Giờ ghi",
+        "Người ghi", "Mã bản ghi",
+    ]
+    sheet.append(headers)
+    for row in rows:
+        leave_date_value = row["leave_date"]
+        sheet.append([
+            leave_date_value,
+            _weekday_short_label(leave_date_value),
+            row.get("employee_name") or "",
+            row.get("leave_reason") or "",
+            row.get("leave_type") or "",
+            row.get("detail") or "",
+            float(row.get("calculated_days") or 0),
+            float(row.get("accumulated_leave") or 0),
+            float(row.get("penalty") or 0),
+            row.get("update_date") or "",
+            row.get("update_time") or "",
+            row.get("updated_by") or "",
+            row.get("record_uid") or "",
+        ])
+
+    header_fill = PatternFill("solid", fgColor="214639")
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    widths = [13, 12, 24, 34, 16, 42, 14, 23, 16, 14, 12, 20, 38]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    for row_number in range(2, sheet.max_row + 1):
+        sheet.cell(row_number, 1).number_format = "dd/mm/yyyy"
+        sheet.cell(row_number, 9).number_format = '#,##0" đ"'
+        for column in range(1, len(headers) + 1):
+            sheet.cell(row_number, column).alignment = Alignment(vertical="top", wrap_text=True)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    sheet.row_dimensions[1].height = 24
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    filename = quote(
+        f"vera-lich-nghi-{start_date.strftime('%d%m%Y')}-den-{end_date.strftime('%d%m%Y')}.xlsx"
+    )
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 @app.get("/v2/leave/daily-stats")

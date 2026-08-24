@@ -19,6 +19,30 @@ async function request(path, options = {}) {
   return payload
 }
 
+async function download(path, fallbackName) {
+  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
+  const session = await getCurrentSession()
+  const headers = new Headers()
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  const response = await fetch(`${apiBase}${path}`, { headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  }
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const filename = encoded ? decodeURIComponent(encoded) : fallbackName
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 async function rpc(name, args = {}) {
   if (!supabase) throw new Error('Supabase chưa được cấu hình.')
   const { data, error } = await supabase.rpc(name, args)
@@ -99,4 +123,18 @@ export const veraApi = {
     method: 'POST',
     body: JSON.stringify({ watched_dates: watchedDates }),
   }),
+  pushConfig: () => request('/v2/push/config'),
+  registerPushSubscription: (subscription) => request('/v2/push/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify({ subscription }),
+  }),
+  unregisterPushSubscription: (endpoint) => request('/v2/push/subscriptions', {
+    method: 'DELETE',
+    body: JSON.stringify({ endpoint }),
+  }),
+  exportLeaveExcel: (start, end, employee = '') => {
+    const params = new URLSearchParams({ start, end })
+    if (employee.trim()) params.set('employee', employee.trim())
+    return download(`/v2/leave/export.xlsx?${params}`, `vera-lich-nghi-${start}-${end}.xlsx`)
+  },
 }

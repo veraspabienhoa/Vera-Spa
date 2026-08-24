@@ -1,7 +1,13 @@
-import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
+import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, Download, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  readPushState,
+  syncExistingPushSubscription,
+} from '../lib/pushNotifications'
 import {
   loadEmployees,
   loadLeaveDailyStats,
@@ -28,6 +34,10 @@ const addDays = (date, days) => {
 const formatDateDisplay = (value) => {
   const [year, month, day] = String(value || '').split('-')
   return year && month && day ? `${day}/${month}/${year}` : ''
+}
+const weekdayForDate = (value) => {
+  const index = new Date(`${value}T00:00:00`).getDay()
+  return ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][index] || ''
 }
 const rangeForFilter = (filter) => {
   const now = new Date()
@@ -97,6 +107,10 @@ export default function LeaveRegistrationPage({ user }) {
   const [watchBusyDate, setWatchBusyDate] = useState('')
   const [watchError, setWatchError] = useState('')
   const [watchSoundReady, setWatchSoundReady] = useState(true)
+  const [pushState, setPushState] = useState({ loading: true, supported: false, subscribed: false })
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushMessage, setPushMessage] = useState('')
+  const [exporting, setExporting] = useState(false)
   const role = String(user?.role || '').toLowerCase()
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
@@ -189,6 +203,25 @@ export default function LeaveRegistrationPage({ user }) {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [refreshWatchDates])
+
+  useEffect(() => {
+    let active = true
+    const refreshPushState = async () => {
+      try {
+        const state = await syncExistingPushSubscription()
+        if (active) setPushState({ ...state, loading: false })
+      } catch {
+        try {
+          const state = await readPushState()
+          if (active) setPushState({ ...state, loading: false })
+        } catch (err) {
+          if (active) setPushState({ loading: false, supported: false, subscribed: false, reason: err.message })
+        }
+      }
+    }
+    void refreshPushState()
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (canChooseEmployee || !user?.employee_username) return
@@ -322,6 +355,41 @@ export default function LeaveRegistrationPage({ user }) {
       setError(err.message || 'Không xóa được lịch nghỉ.')
     } finally {
       setManaging(false)
+    }
+  }
+
+  const togglePushNotifications = async () => {
+    if (pushBusy) return
+    setPushBusy(true)
+    setPushMessage('')
+    setWatchError('')
+    try {
+      const nextState = pushState.subscribed
+        ? await disablePushNotifications()
+        : await enablePushNotifications()
+      setPushState({ ...nextState, loading: false })
+      setPushMessage(nextState.subscribed
+        ? 'Đã bật thông báo màn hình khóa cho thiết bị này.'
+        : 'Đã tắt thông báo màn hình khóa trên thiết bị này.')
+    } catch (err) {
+      setWatchError(err.message || 'Không cập nhật được thông báo màn hình khóa.')
+      const state = await readPushState().catch(() => pushState)
+      setPushState({ ...state, loading: false })
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const exportExcel = async () => {
+    if (role !== 'admin' || exporting) return
+    setExporting(true)
+    setError('')
+    try {
+      await veraApi.exportLeaveExcel(listRangeStart, listRangeEnd, employeeSearch)
+    } catch (err) {
+      setError(err.message || 'Không xuất được danh sách Excel.')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -468,7 +536,25 @@ export default function LeaveRegistrationPage({ user }) {
           {watchedDateSet.has(date) ? <BellRing size={17} /> : <Bell size={17} />}
           {watchedDateSet.has(date) ? 'Đang quan tâm ngày này' : 'Quan tâm ngày này'}
         </button>
+        <button
+          type="button"
+          className={`push-toggle-button ${pushState.subscribed ? 'active' : ''}`}
+          onClick={togglePushNotifications}
+          disabled={pushBusy || pushState.loading || !pushState.supported}
+        >
+          {pushState.subscribed ? <BellRing size={17} /> : <Bell size={17} />}
+          {pushState.loading
+            ? 'Đang kiểm tra thông báo…'
+            : pushState.subscribed
+              ? 'Thông báo màn hình khóa: Đã bật'
+              : 'Bật thông báo màn hình khóa'}
+        </button>
+        {!pushState.loading && !pushState.supported && pushState.reason && (
+          <span className="push-support-note">{pushState.reason}</span>
+        )}
       </div>
+
+      {pushMessage && <div className="success-box push-status-box">{pushMessage}</div>}
 
       {unreadWatchDates.length > 0 && (
         <section className="watch-notification-panel ringing" role="alert" aria-live="assertive">
@@ -630,8 +716,17 @@ export default function LeaveRegistrationPage({ user }) {
 
         <section className="panel leave-list-panel">
           <div className="panel-title-row">
-            <div><h2>DANH SÁCH</h2><p>{formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {filteredRecords.length} lịch</p></div>
+            <div>
+              <h2>DANH SÁCH</h2>
+              <p>
+                {formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {' '}
+                {listRangeStart === listRangeEnd
+                  ? `${weekdayForDate(listRangeStart)} có ${filteredRecords.length} lịch nghỉ.`
+                  : `Có ${filteredRecords.length} lịch nghỉ.`}
+              </p>
+            </div>
             <div className="list-actions">
+              {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}

@@ -198,6 +198,12 @@ jobs:
           daily_stats_sql = Path('web-v2/supabase_web_v2_daily_stats.sql').read_text(encoding='utf-8')
           penalty_default = Path('web-v2/supabase_web_v2_penalty_permission_default.sql').read_text(encoding='utf-8')
           leave_watch_sql = Path('vera_postgres_phase18_leave_watch.sql').read_text(encoding='utf-8')
+          push_sql = Path('vera_postgres_phase19_web_push.sql').read_text(encoding='utf-8')
+          api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
+          push_client = Path('web-v2/src/lib/pushNotifications.js').read_text(encoding='utf-8')
+          service_worker = Path('web-v2/public/sw.js').read_text(encoding='utf-8')
+          manifest = Path('web-v2/public/manifest.webmanifest').read_text(encoding='utf-8')
+          requirements = Path('requirements.txt').read_text(encoding='utf-8')
           checks = {
               'summary queries canonical leave type': 'employee_name, leave_reason, leave_type, calculated_days' in api,
               'summary uses shared unique-employee helper': 'summarize_leave_day(rows, int(active))' in api,
@@ -251,6 +257,15 @@ jobs:
               'Web V2 refreshes watch alerts when reopened': "window.addEventListener('focus', refreshWatchDates)" in leave_page and "document.addEventListener('visibilitychange', refreshWhenVisible)" in leave_page,
               'Web V2 statistics dates have no underline': '.daily-summary-table .date-link { text-decoration: none; }' in web_styles,
               'Web V2 uses Thanks label': 'Thanks' in shell and 'V2 Pilot' not in shell,
+              'Web V2 list summary includes weekday and leave wording': 'weekdayForDate(listRangeStart)' in leave_page and 'lịch nghỉ.' in leave_page,
+              'Web V2 Excel export is admin-only end to end': '@app.get("/v2/leave/export.xlsx")' in api and 'if ident.role != "admin"' in api and "role === 'admin'" in leave_page and 'Export to Excel' in leave_page and 'exportLeaveExcel' in api_client,
+              'Web V2 Push dependency is reproducible': 'pywebpush==2.4.0' in requirements,
+              'Web V2 Push subscriptions are private with RLS': 'CREATE TABLE IF NOT EXISTS public.vera_v2_push_subscription' in push_sql and 'ENABLE ROW LEVEL SECURITY' in push_sql and 'FROM PUBLIC, anon, authenticated' in push_sql,
+              'Web V2 database webhook uses pg_net and Vault': 'CREATE EXTENSION IF NOT EXISTS pg_net' in push_sql and 'vault.decrypted_secrets' in push_sql and 'net.http_post' in push_sql,
+              'Web V2 push dispatch authenticates its webhook': '@app.post("/v2/push/dispatch")' in api and 'hmac.compare_digest' in api and 'vera_v2_push_webhook_secret' in api,
+              'Web V2 Push registration is identity scoped': '@app.post("/v2/push/subscriptions")' in api and 'auth_user_id=CAST(:auth_user_id AS uuid)' in api and 'registerPushSubscription' in api_client,
+              'Web V2 PWA supports standalone push': '"display": "standalone"' in manifest and 'pushManager.subscribe' in push_client and 'Notification.requestPermission()' in push_client,
+              'Web V2 service worker displays and opens notifications': "self.addEventListener('push'" in service_worker and "self.addEventListener('notificationclick'" in service_worker and 'showNotification' in service_worker,
           }
           failed = [name for name, ok in checks.items() if not ok]
           for name, ok in checks.items():

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="VERA SPA">
+  <rect width="512" height="512" rx="112" fill="#15382c"/>
+  <rect x="54" y="54" width="404" height="404" rx="92" fill="#c5a15c"/>
+  <path d="M126 137h72l60 210 59-210h70L291 382h-69z" fill="#10251e"/>
+  <path d="M185 137h143l-16 41H201z" fill="#fff7e6" opacity=".92"/>
+</svg>
