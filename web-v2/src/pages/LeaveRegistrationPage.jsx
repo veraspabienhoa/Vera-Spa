@@ -1,7 +1,6 @@
 import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, Download, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
-import LongLeaveSection from '../components/LongLeaveSection'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
 import {
   disablePushNotifications,
@@ -17,7 +16,9 @@ import {
   loadLeaveSummary,
 } from '../lib/data'
 
-const DATE_FILTERS = ['Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau', 'Tùy chỉnh']
+const VIEWED_DATE_FILTER = 'Ngày đang xem'
+const STAT_DATE_FILTERS = ['Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau']
+const LIST_DATE_FILTERS = [...STAT_DATE_FILTERS, 'Tùy chỉnh']
 
 const formatDateInput = (date) => {
   const year = date.getFullYear()
@@ -413,27 +414,20 @@ export default function LeaveRegistrationPage({ user }) {
 
   const chooseRangeFilter = (filter) => {
     setRangeFilter(filter)
-    if (filter === 'Tùy chỉnh') return
     const [start, end] = rangeForFilter(filter)
     setRangeStart(start)
     setRangeEnd(end)
     setDate(filter === 'Hôm nay' || filter === 'Tháng này' || filter === 'Tuần này' ? today() : start)
   }
 
-  const changeCustomStart = (value) => {
-    setRangeStart(value)
-    if (value > rangeEnd) setRangeEnd(value)
-    setDate(value)
-  }
-
-  const changeCustomEnd = (value) => {
-    setRangeEnd(value)
-    if (value < rangeStart) setRangeStart(value)
-  }
-
   const chooseListRangeFilter = (filter) => {
     setListRangeFilter(filter)
     setSelectedUids([])
+    if (filter === VIEWED_DATE_FILTER) {
+      setListRangeStart(date)
+      setListRangeEnd(date)
+      return
+    }
     if (filter === 'Tùy chỉnh') return
     const [start, end] = rangeForFilter(filter)
     setListRangeStart(start)
@@ -450,6 +444,17 @@ export default function LeaveRegistrationPage({ user }) {
     setSelectedUids([])
     setListRangeEnd(value)
     if (value < listRangeStart) setListRangeStart(value)
+  }
+
+  const selectViewedDate = (value) => {
+    setDate(value)
+    setRangeFilter(VIEWED_DATE_FILTER)
+    setRangeStart(value)
+    setRangeEnd(value)
+    setListRangeFilter(VIEWED_DATE_FILTER)
+    setListRangeStart(value)
+    setListRangeEnd(value)
+    setSelectedUids([])
   }
 
   const submit = async (event) => {
@@ -519,29 +524,11 @@ export default function LeaveRegistrationPage({ user }) {
         <Metric icon={Clock3} label="Không phép" value={summary.unpaid ?? 0} />
       </section>
 
-      <div className="date-toolbar range-toolbar">
-        <div className="range-filter-buttons" role="group" aria-label="Lọc thời gian">
-          {DATE_FILTERS.map((filter) => (
-            <button
-              type="button"
-              key={filter}
-              className={rangeFilter === filter ? 'active' : ''}
-              onClick={() => chooseRangeFilter(filter)}
-            >
-              {filter}
-            </button>
-          ))}
-        </div>
-        {rangeFilter === 'Tùy chỉnh' && (
-          <div className="custom-range">
-            <DatePickerControl label="Từ ngày" value={rangeStart} onChange={changeCustomStart} />
-            <DatePickerControl label="Đến ngày" value={rangeEnd} onChange={changeCustomEnd} />
-          </div>
-        )}
+      <div className="date-toolbar viewed-date-toolbar">
         <DatePickerControl
           label="Ngày đang xem"
           value={date}
-          onChange={setDate}
+          onChange={selectViewedDate}
           max={role === 'admin' ? undefined : maxEmployeeDate}
         />
         <button
@@ -672,11 +659,25 @@ export default function LeaveRegistrationPage({ user }) {
           <div className="panel-title-row">
             <div>
               <h2>THỐNG KÊ</h2>
-              <p>{formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)} · Chọn ngày trong bảng để xem danh sách chi tiết.</p>
+              <p>Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)}.</p>
             </div>
             <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
               <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
             </button>
+          </div>
+          <div className="list-filter-toolbar statistics-filter-toolbar">
+            <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian thống kê">
+              {STAT_DATE_FILTERS.map((filter) => (
+                <button
+                  type="button"
+                  key={filter}
+                  className={rangeFilter === filter ? 'active' : ''}
+                  onClick={() => chooseRangeFilter(filter)}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="table-wrap daily-summary-wrap">
             <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
@@ -707,7 +708,7 @@ export default function LeaveRegistrationPage({ user }) {
                   <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
                     <td>
                       <div className="daily-date-actions">
-                        <button type="button" className="date-link" onClick={() => setDate(day.date)}>
+                        <button type="button" className="date-link" onClick={() => selectViewedDate(day.date)}>
                           {formatDateDisplay(day.date)}
                         </button>
                         <button
@@ -740,7 +741,7 @@ export default function LeaveRegistrationPage({ user }) {
             <div>
               <h2>DANH SÁCH</h2>
               <p>
-                {formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {' '}
+                Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {' '}
                 {listRangeStart === listRangeEnd
                   ? `${weekdayForDate(listRangeStart)} có ${filteredRecords.length} lịch nghỉ.`
                   : `Có ${filteredRecords.length} lịch nghỉ.`}
@@ -780,7 +781,7 @@ export default function LeaveRegistrationPage({ user }) {
           )}
           <div className="list-filter-toolbar">
             <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian danh sách">
-              {DATE_FILTERS.map((filter) => (
+              {LIST_DATE_FILTERS.map((filter) => (
                 <button
                   type="button"
                   key={filter}
@@ -828,7 +829,7 @@ export default function LeaveRegistrationPage({ user }) {
                 ) : filteredRecords.map((item) => (
                   <tr key={item.record_uid || `${item.employee_name}-${item.leave_reason}`}>
                     <td className="select-column"><input type="checkbox" aria-label={`Chọn lịch của ${shortEmployeeName(item.employee_name)}`} checked={selectedUids.includes(item.record_uid)} onChange={() => toggleSelected(item.record_uid)} disabled={!canDelete || managing} /></td>
-                    <td><button type="button" className="date-link list-date-link" onClick={() => setDate(item.leave_date)}>{formatDateDisplay(item.leave_date)}</button></td>
+                    <td><button type="button" className="date-link list-date-link" onClick={() => selectViewedDate(item.leave_date)}>{formatDateDisplay(item.leave_date)}</button></td>
                     <td><strong>{shortEmployeeName(item.employee_name)}</strong></td>
                     <td className="reason-edit-cell">
                       {canEdit && item.leave_date === date ? (
@@ -848,7 +849,6 @@ export default function LeaveRegistrationPage({ user }) {
         </section>
       </div>
 
-      <LongLeaveSection user={user} />
     </div>
   )
 }

@@ -1,10 +1,11 @@
-import { Activity, Cake, CalendarDays, Compass, FileText, HardDrive, LogOut, Menu, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, Cake, CalendarDays, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
 
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
-  { id: 'tour', label: 'Bảng tour', icon: Compass, ready: true, permission: 'tour' },
+  { id: 'long-leave', label: 'Phép năm / Làm đẹp / Nghỉ việc', icon: ClipboardList, ready: true, anyPermission: ['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'] },
+  { id: 'tour', label: 'Bản tua', icon: Compass, ready: true, permission: 'tour' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'rules', label: 'Nội quy', icon: FileText, ready: true, permission: 'official_rules_view' },
   { id: 'payroll', label: 'Bảng lương', icon: WalletCards, ready: true, permission: 'payroll_history' },
@@ -57,7 +58,13 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
 
         <div className="menu-caption">MENU</div>
         <nav className="nav-list">
-          {items.filter(({ id, permission }) => (!user?.must_change_password || id === 'profile') && (!permission || user?.role === 'admin' || user?.permissions?.[permission] === true)).map(({ id, label, icon: Icon, ready }) => (
+          {items.filter(({ id, permission, anyPermission }) => {
+            if (user?.must_change_password && id !== 'profile') return false
+            if (user?.role === 'admin') return true
+            if (permission && user?.permissions?.[permission] !== true) return false
+            if (anyPermission && !anyPermission.some((key) => user?.permissions?.[key] === true)) return false
+            return true
+          }).map(({ id, label, icon: Icon, ready }) => (
             <button
               key={id}
               className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`}
@@ -94,7 +101,9 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
             <div className="topbar-kicker">VERA SPA</div>
             <div className="topbar-title">Suối nguồn thư giãn, trọn vẹn an yên.</div>
           </div>
-          <div className="environment-badge">Thanks</div>
+          <button type="button" className="topbar-refresh-button" onClick={() => window.location.reload()} aria-label="Làm mới toàn bộ Web V2">
+            <RefreshCw size={15} /> Làm mới
+          </button>
         </header>
         <div className="page-wrap">
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}

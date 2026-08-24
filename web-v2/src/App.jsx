@@ -12,6 +12,7 @@ import AdminChangesPage from './pages/AdminChangesPage'
 import StorageAdminPage from './pages/StorageAdminPage'
 import BirthdayPage from './pages/BirthdayPage'
 import TourPage from './pages/TourPage'
+import LongLeaveSection from './components/LongLeaveSection'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
@@ -99,6 +100,7 @@ export default function App() {
   return (
     <AppShell user={shellUser} currentPage={page} onPageChange={setPage} onSignOut={signOut}>
       {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
+      {page === 'long-leave' && <LongLeaveSection user={shellUser} />}
       {page === 'employees' && <EmployeePage user={shellUser} />}
       {page === 'rules' && <RulesPage user={shellUser} />}
       {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
