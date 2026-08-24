@@ -56,9 +56,9 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
         <div className="visual-glow one" />
         <div className="visual-glow two" />
         <div className="login-brand-row">
-          <div className="brand-mark large">V</div>
+          <div className="brand-mark large">VERA</div>
           <div>
-            <div className="brand-name large-text">VERA SPA</div>
+            <div className="brand-name large-text">SPA</div>
           </div>
         </div>
         <div className="login-pitch">

@@ -1,4 +1,4 @@
-import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, Download, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound } from 'lucide-react'
+import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, Download, RefreshCw, Save, Search, Trash2, UserRoundCheck, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
@@ -103,6 +103,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [message, setMessage] = useState('')
   const [warnings, setWarnings] = useState([])
   const [error, setError] = useState('')
+  const [listActionNotice, setListActionNotice] = useState(null)
   const [watchDates, setWatchDates] = useState([])
   const [watchBusyDate, setWatchBusyDate] = useState('')
   const [watchError, setWatchError] = useState('')
@@ -314,9 +315,9 @@ export default function LeaveRegistrationPage({ user }) {
 
   const saveEdits = async () => {
     if (!canEdit || changedRecords.length === 0) return
+    const updatedCount = changedRecords.length
     setManaging(true)
-    setMessage('')
-    setError('')
+    setListActionNotice(null)
     try {
       for (const item of changedRecords) {
         const nextReason = reasons.find((reason) => reason.name === reasonDrafts[item.record_uid])
@@ -330,11 +331,19 @@ export default function LeaveRegistrationPage({ user }) {
         }
         await veraApi.updateLeave(item.record_uid, payload)
       }
-      setMessage(`Đã cập nhật ${changedRecords.length} lịch nghỉ.`)
       await load()
       await refreshWatchDates()
+      setListActionNotice({
+        action: 'edit',
+        status: 'success',
+        message: `Đã cập nhật ${updatedCount} lịch nghỉ.`,
+      })
     } catch (err) {
-      setError(err.message || 'Không sửa được lịch nghỉ.')
+      setListActionNotice({
+        action: 'edit',
+        status: 'error',
+        message: err.message || 'Không sửa được lịch nghỉ.',
+      })
     } finally {
       setManaging(false)
     }
@@ -343,16 +352,24 @@ export default function LeaveRegistrationPage({ user }) {
   const deleteSelected = async () => {
     if (!canDelete || selectedUids.length === 0) return
     if (!window.confirm(`Xóa ${selectedUids.length} lịch nghỉ đã chọn?`)) return
+    const deletedCount = selectedUids.length
     setManaging(true)
-    setMessage('')
-    setError('')
+    setListActionNotice(null)
     try {
-      const result = await veraApi.deleteLeaves(selectedUids)
-      setMessage(result.message || `Đã xóa ${selectedUids.length} lịch nghỉ.`)
+      await veraApi.deleteLeaves(selectedUids)
       await load()
       await refreshWatchDates()
+      setListActionNotice({
+        action: 'delete',
+        status: 'success',
+        message: `Đã xóa ${deletedCount} lịch nghỉ đã chọn.`,
+      })
     } catch (err) {
-      setError(err.message || 'Không xóa được lịch nghỉ.')
+      setListActionNotice({
+        action: 'delete',
+        status: 'error',
+        message: err.message || 'Không xóa được lịch nghỉ.',
+      })
     } finally {
       setManaging(false)
     }
@@ -732,6 +749,28 @@ export default function LeaveRegistrationPage({ user }) {
               {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
             </div>
           </div>
+          {listActionNotice && (
+            <div
+              className={`list-action-notice ${listActionNotice.status} ${listActionNotice.action}`}
+              role={listActionNotice.status === 'error' ? 'alert' : 'status'}
+              aria-live="polite"
+            >
+              <div className="list-action-notice-icon" aria-hidden="true">
+                {listActionNotice.action === 'edit' ? <Save size={17} /> : <Trash2 size={17} />}
+              </div>
+              <div className="list-action-notice-copy">
+                <strong>
+                  {listActionNotice.action === 'edit'
+                    ? (listActionNotice.status === 'success' ? 'LƯU SỬA THÀNH CÔNG' : 'LƯU SỬA KHÔNG THÀNH CÔNG')
+                    : (listActionNotice.status === 'success' ? 'XÓA ĐÃ CHỌN THÀNH CÔNG' : 'XÓA ĐÃ CHỌN KHÔNG THÀNH CÔNG')}
+                </strong>
+                <span>{listActionNotice.message}</span>
+              </div>
+              <button type="button" className="list-action-notice-close" onClick={() => setListActionNotice(null)} aria-label="Đóng thông báo">
+                <X size={15} />
+              </button>
+            </div>
+          )}
           <div className="list-filter-toolbar">
             <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian danh sách">
               {DATE_FILTERS.map((filter) => (

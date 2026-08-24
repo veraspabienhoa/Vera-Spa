@@ -257,6 +257,8 @@ jobs:
               'Web V2 refreshes watch alerts when reopened': "window.addEventListener('focus', refreshWatchDates)" in leave_page and "document.addEventListener('visibilitychange', refreshWhenVisible)" in leave_page,
               'Web V2 statistics dates have no underline': '.daily-summary-table .date-link { text-decoration: none; }' in web_styles,
               'Web V2 uses Thanks label': 'Thanks' in shell and 'V2 Pilot' not in shell,
+              'Web V2 uses Cinzel Decorative VERA wordmark': 'Cinzel+Decorative' in web_styles and '<div className="brand-mark large">VERA</div>' in login_page and '<div className="brand-mark">VERA</div>' in shell,
+              'Web V2 list actions have dedicated notices': 'listActionNotice' in leave_page and all(label in leave_page for label in ('LƯU SỬA THÀNH CÔNG', 'LƯU SỬA KHÔNG THÀNH CÔNG', 'XÓA ĐÃ CHỌN THÀNH CÔNG', 'XÓA ĐÃ CHỌN KHÔNG THÀNH CÔNG')) and leave_page.index('list-action-notice') > leave_page.index('leave-list-panel'),
               'Web V2 list summary includes weekday and leave wording': 'weekdayForDate(listRangeStart)' in leave_page and 'lịch nghỉ.' in leave_page,
               'Web V2 Excel export is admin-only end to end': '@app.get("/v2/leave/export.xlsx")' in api and 'if ident.role != "admin"' in api and "role === 'admin'" in leave_page and 'Export to Excel' in leave_page and 'exportLeaveExcel' in api_client,
               'Web V2 Push dependency is reproducible': 'pywebpush==2.4.0' in requirements,

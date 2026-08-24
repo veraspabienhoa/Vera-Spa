@@ -21,9 +21,9 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
     <div className="app-shell">
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
         <div className="brand-block">
-          <div className="brand-mark">V</div>
+          <div className="brand-mark">VERA</div>
           <div>
-            <div className="brand-name">VERA SPA ĐỒNG NAI</div>
+            <div className="brand-name">SPA ĐỒNG NAI</div>
           </div>
           <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Đóng menu">
             <X size={20} />
