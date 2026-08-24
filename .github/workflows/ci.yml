@@ -294,6 +294,7 @@ jobs:
           client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           requirements = Path('requirements.txt').read_text(encoding='utf-8')
+          delete_staff_route = staff_api.split('@app.delete("/v2/staff")', 1)[1].split('@app.get("/v2/staff/export.xlsx")', 1)[0]
 
           ast.parse(staff_api)
           checks = {
@@ -303,7 +304,7 @@ jobs:
               'password and token columns are not exported': 'STAFF_EXPORT_COLUMNS' in staff_api and 'Mật khẩu' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0] and 'Remember Token' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0],
               'new employees have no weak default password': 'default="123456"' not in staff_api and 'password: str = Field(min_length=8' in staff_api,
               'import updates existing accounts only': 'Không tìm thấy trong hệ thống' in staff_api and 'update_database_row(conn, ident, row, values' in staff_api,
-              'employee deletion preserves leave history': 'Lịch sử lịch nghỉ được giữ nguyên' in staff_api and 'DELETE FROM leave_records' not in staff_api,
+              'employee deletion preserves leave history': 'Lịch sử lịch nghỉ được giữ nguyên' in delete_staff_route and 'DELETE FROM leave_records' not in delete_staff_route,
               'front desk role scope is enforced': 'FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu"}' in staff_api and 'ensure_manageable' in staff_api,
               'employee feature permissions are exposed': all(key in api for key in ('staff_list', 'staff_export', 'staff_import', 'shift_assignment_edit', 'account_lock_edit')),
               'React employees page is routed': "page === 'employees'" in app and 'EmployeePage' in app,
