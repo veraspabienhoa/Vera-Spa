@@ -1,6 +1,6 @@
 # VERA SPA
 
-Frontend mới chạy **song song** với Streamlit hiện tại. Các module đã chuyển gồm `📅 Đăng ký nghỉ` và `👥 Nhân viên`, không làm gián đoạn người dùng production.
+Frontend mới chạy **song song** với Streamlit hiện tại. Các module đã chuyển gồm `📅 Đăng ký nghỉ`, `👥 Nhân viên` và `📜 Nội quy`, không làm gián đoạn người dùng production.
 
 ## Kiến trúc
 
@@ -38,6 +38,8 @@ npm run build
 Frontend không UPDATE/DELETE trực tiếp `leave_records`. Các write phải đi qua Python API để giữ nguyên business rules hiện tại, đặc biệt `record_uid`, phép năm, Nội quy/phạt, audit log và Google Sheet mirror.
 
 Mục **Nhân viên** cũng chỉ ghi qua Python API. Màn hình này tập trung danh sách hồ sơ, thêm/xóa nhân viên, trạng thái làm việc, khóa đăng nhập và phân ca. Export `.xlsx` không chứa mật khẩu/token; Import `.xlsx` chỉ cập nhật tài khoản đã tồn tại và kiểm tra toàn bộ file trước khi ghi.
+
+Mục **Nội quy** giữ toàn bộ cột/dòng động của bảng `LoaiNghi`. PostgreSQL `official_policy/leave_rules` là dữ liệu chính thức; một lần ghi chỉ thành công khi kiểm tra hợp lệ, đúng phiên bản và đồng bộ được worksheet `LoaiNghi`. Chỉ Admin/Quản lý mặc định được sửa hoặc Import; các vai trò còn lại chỉ xem và Export, trừ khi được cấu hình khác tại Phân quyền.
 
 ## GitHub Pages
 

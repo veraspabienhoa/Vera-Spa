@@ -175,6 +175,7 @@ def _build_core_v92231(build_id):
         (15, "vera_postgres_phase15_patch_fix"), (16, "vera_postgres_phase16_patch"),
         (17, "vera_postgres_phase17_patch_fix"), (18, "vera_official_rules_patch"),
         (19, "vera_leave_registration_live_patch"),
+        (20, "vera_web_v2_rules_permission_patch"),
     ]
     _patch_warnings_v92231 = {}
     for _phase_no_v92231, _module_name_v92231 in _patch_specs_v92231:

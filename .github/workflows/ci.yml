@@ -76,6 +76,7 @@ jobs:
               'vera_postgres_phase17_patch_fix',
               'vera_official_rules_patch',
               'vera_leave_registration_live_patch',
+              'vera_web_v2_rules_permission_patch',
           ]
 
           all_warnings = []
@@ -318,6 +319,48 @@ jobs:
               print(('PASS' if ok else 'FAIL') + ': ' + name)
           if failed:
               raise SystemExit('Failed employee-management invariants: ' + ', '.join(failed))
+          PY
+
+      - name: Verify Web V2 official-rules invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          rules_api = Path('vera_web_v2_rules.py').read_text(encoding='utf-8')
+          permission_patch = Path('vera_web_v2_rules_permission_patch.py').read_text(encoding='utf-8')
+          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
+          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
+          page = Path('web-v2/src/pages/RulesPage.jsx').read_text(encoding='utf-8')
+          client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
+          styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
+
+          ast.parse(rules_api)
+          checks = {
+              'rules module is installed into authenticated API': 'install_rules_routes(' in api and 'from vera_web_v2_rules import install_rules_routes' in api,
+              'rules view/save endpoints exist': '@app.get("/v2/rules")' in rules_api and '@app.put("/v2/rules")' in rules_api,
+              'rules Excel endpoints exist': '@app.get("/v2/rules/export.xlsx")' in rules_api and '@app.post("/v2/rules/import.xlsx")' in rules_api,
+              'PostgreSQL official policy is canonical': 'CATEGORY = "official_policy"' in rules_api and 'SETTING_KEY = "leave_rules"' in rules_api,
+              'first load safely falls back to snapshot': 'SNAPSHOT_KEY = "loai_nghi_snapshot_v2"' in rules_api and '"canonical": False' in rules_api,
+              'required columns and duplicate reasons are validated': 'REQUIRED_COLUMNS' in rules_api and 'Lý do nghỉ bị trùng' in rules_api,
+              'optimistic revision prevents silent overwrites': 'expected_revision' in rules_api and 'FOR UPDATE' in rules_api and 'Bảng Nội quy đã được người khác cập nhật' in rules_api,
+              'legacy LoaiNghi mirror is transactional': 'worksheet("LoaiNghi")' in rules_api and '_restore_legacy_sheet' in rules_api and 'tx.rollback()' in rules_api,
+              'rules permissions are exposed': all(key in api for key in ('official_rules_view', 'official_rules_edit', 'official_rules_export', 'official_rules_import')),
+              'rules permissions appear in the legacy permission catalog': '"📜 Nội quy": [' in permission_patch and all(key in permission_patch for key in ('official_rules_view', 'official_rules_edit', 'official_rules_export', 'official_rules_import')),
+              'legacy edit role behavior is preserved': '"quanly"' in api and 'official_rules_edit' in api and '"letan"' in api,
+              'React rules page is routed': "page === 'rules'" in app and 'RulesPage' in app,
+              'rules menu is permission gated': "permission: 'official_rules_view'" in shell and 'ready: true' in shell,
+              'rules page covers dynamic grid operations': all(label in page for label in ('BẢNG NỘI QUY', 'Thêm cột', 'Xóa cột', 'Thêm dòng', 'Xóa dòng đã chọn', 'Ghi thay đổi & áp dụng')),
+              'rules page supports Excel round trip': 'Export Excel' in page and 'Import Excel' in page and 'importRulesExcel' in client,
+              'mobile rules use cards instead of overflowing table': 'rules-mobile-list' in page and '.rules-desktop-table { display: none; }' in styles and '.rules-mobile-fields' in styles,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed Web V2 official-rules invariants: ' + ', '.join(failed))
           PY
 
       - name: Verify Phase 17 record_uid and penalty invariants

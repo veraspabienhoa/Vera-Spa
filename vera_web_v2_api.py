@@ -58,7 +58,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
     expose_headers=["Content-Disposition"],
 )
@@ -368,13 +368,13 @@ class Identity(BaseModel):
 
 
 WEB_V2_DEFAULT_FEATURES = {
-    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit"},
-    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit"},
-    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit"},
-    "leader": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete"},
-    "nhanvien": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete"},
-    "locker": set(),
-    "tapvu": set(),
+    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
+    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import"},
+    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit", "official_rules_view", "official_rules_export"},
+    "leader": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "official_rules_view", "official_rules_export"},
+    "nhanvien": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "official_rules_view", "official_rules_export"},
+    "locker": {"official_rules_view", "official_rules_export"},
+    "tapvu": {"official_rules_view", "official_rules_export"},
 }
 
 
@@ -1253,6 +1253,8 @@ def me(ident: Identity = Depends(current_identity)):
                 "employee_add", "employee_add_save", "employee_edit", "employee_edit_save",
                 "employment_status", "employment_status_edit", "employee_delete",
                 "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
+                "official_rules_view", "official_rules_edit",
+                "official_rules_export", "official_rules_import",
             )
         }
         registration_locked = _registration_role_locked(conn, ident.role)
@@ -1942,6 +1944,22 @@ install_staff_routes(
     feature_allowed=_feature_allowed,
     norm=_norm,
     google_client=_google_client,
+    identity_type=Identity,
+    vn_tz=VN_TZ,
+)
+
+# Official policy routes use the same auth/permission boundary. PostgreSQL is
+# canonical and every successful write mirrors the legacy LoaiNghi worksheet.
+from vera_web_v2_rules import install_rules_routes
+
+install_rules_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    feature_allowed=_feature_allowed,
+    google_client=_google_client,
+    leave_sheet_id=LEAVE_SHEET_ID,
     identity_type=Identity,
     vn_tz=VN_TZ,
 )

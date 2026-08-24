@@ -141,6 +141,10 @@ export const veraApi = {
     return download(`/v2/staff/export.xlsx${query ? `?${query}` : ''}`, 'VeraSpa_DanhSachNhanSu.xlsx')
   },
   importStaffExcel: (file) => upload('/v2/staff/import.xlsx', file),
+  rules: () => request('/v2/rules'),
+  saveRules: (body) => request('/v2/rules', { method: 'PUT', body: JSON.stringify(body) }),
+  exportRulesExcel: () => download('/v2/rules/export.xlsx', 'NoiQuy_VeraSpa.xlsx'),
+  importRulesExcel: (file) => upload('/v2/rules/import.xlsx', file),
   createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }),
   updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }),

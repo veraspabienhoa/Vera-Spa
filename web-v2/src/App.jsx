@@ -3,6 +3,7 @@ import AppShell from './components/AppShell'
 import LoginPage from './pages/LoginPage'
 import LeaveRegistrationPage from './pages/LeaveRegistrationPage'
 import EmployeePage from './pages/EmployeePage'
+import RulesPage from './pages/RulesPage'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
@@ -87,6 +88,7 @@ export default function App() {
     <AppShell user={shellUser} currentPage={page} onPageChange={setPage} onSignOut={signOut}>
       {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
       {page === 'employees' && <EmployeePage user={shellUser} />}
+      {page === 'rules' && <RulesPage user={shellUser} />}
     </AppShell>
   )
 }

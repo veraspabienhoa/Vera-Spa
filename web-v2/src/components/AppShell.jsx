@@ -4,7 +4,7 @@ import { useState } from 'react'
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
-  { id: 'rules', label: 'Nội quy', icon: FileText },
+  { id: 'rules', label: 'Nội quy', icon: FileText, ready: true, permission: 'official_rules_view' },
   { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck },
 ]
 
