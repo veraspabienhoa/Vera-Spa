@@ -145,6 +145,15 @@ Deno.serve(async (req: Request) => {
 
     const { data: profile } = await admin.from("vera_v2_user_profile")
       .select("auth_user_id").eq("employee_username", canonicalUsername).maybeSingle();
+    const isFirstWebLogin = !profile?.auth_user_id;
+    if (isFirstWebLogin) {
+      const existingPayload = employee.payload && typeof employee.payload === "object"
+        ? employee.payload as Record<string, unknown> : {};
+      const { error: passwordGateError } = await admin.from("employees")
+        .update({ payload: { ...existingPayload, must_change_password: true } })
+        .eq("username", canonicalUsername);
+      if (passwordGateError) throw passwordGateError;
+    }
     let authUserId = profile?.auth_user_id ? String(profile.auth_user_id) : "";
     if (authUserId) {
       const { error } = await admin.auth.admin.updateUserById(authUserId, {

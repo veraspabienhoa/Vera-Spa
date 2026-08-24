@@ -13,6 +13,8 @@ from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from vera_web_v2_security import password_policy_error
+
 
 CREDENTIAL_SHEET_ID = os.getenv(
     "VERA_CREDENTIAL_SHEET_ID", "1DGXy3kPyMPwtz-3CnG8i6BiQbXFDApasoXVFzSmUe24"
@@ -176,8 +178,6 @@ def install_profile_routes(
     @app.patch("/v2/profile")
     def update_profile(body: ProfileUpdate, ident: identity_type = Depends(current_identity)):
         new_password = str(body.new_password or "")
-        if new_password and len(new_password) < 6:
-            raise HTTPException(400, "Mật khẩu mới phải có ít nhất 6 ký tự.")
         birth_date = _date_text(body.birth_date)
         conn = engine_instance().connect()
         tx = conn.begin()
@@ -196,6 +196,19 @@ def install_profile_routes(
                 raise HTTPException(404, "Không tìm thấy hồ sơ nhân viên.")
             if not hmac.compare_digest(str(current.get("password_value") or ""), str(body.current_password)):
                 raise HTTPException(400, "Mật khẩu hiện tại không đúng.")
+            must_change_password = bool((current.get("payload") or {}).get("must_change_password"))
+            if must_change_password and not new_password:
+                raise HTTPException(400, "Bạn phải đặt mật khẩu mới trước khi tiếp tục sử dụng Web V2.")
+            if new_password:
+                policy_error = password_policy_error(
+                    new_password,
+                    username=ident.employee_username,
+                    full_name=body.full_name or str(current.get("full_name") or ""),
+                )
+                if policy_error:
+                    raise HTTPException(400, policy_error)
+                if hmac.compare_digest(str(current.get("password_value") or ""), new_password):
+                    raise HTTPException(400, "Mật khẩu mới phải khác mật khẩu hiện tại.")
 
             updated = dict(current)
             province = body.province.strip()
@@ -216,6 +229,8 @@ def install_profile_routes(
                 "Số tài khoản ngân hàng": updated["bank_account"], "Tên ngân hàng": updated["bank_name"],
                 "Tỉnh/Thành phố": province, "Xã/Phường": ward, "Địa chỉ chi tiết": address_detail,
             })
+            if new_password:
+                payload["must_change_password"] = False
             updated["payload"] = payload
 
             ws = google_client().open_by_key(CREDENTIAL_SHEET_ID).get_worksheet(0)

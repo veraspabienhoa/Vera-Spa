@@ -42,13 +42,14 @@ async function download(path, fallbackName) {
   URL.revokeObjectURL(url)
 }
 
-async function upload(path, file) {
+async function upload(path, file, params = null) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const session = await getCurrentSession()
   const headers = new Headers()
   headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
-  const response = await fetch(`${apiBase}${path}`, { method: 'POST', headers, body: file })
+  const query = params ? `?${new URLSearchParams(params)}` : ''
+  const response = await fetch(`${apiBase}${path}${query}`, { method: 'POST', headers, body: file })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -171,8 +172,16 @@ export const veraApi = {
     if (search.trim()) params.set('search', search.trim())
     return download(`/v2/payroll/history/export.xlsx?${params}`, 'VERA_BangLuong.xlsx')
   },
+  payrollConfig: () => request('/v2/payroll/config'),
+  savePayrollConfig: (body) => request('/v2/payroll/config', { method: 'PUT', body: JSON.stringify(body) }),
+  calculatePayroll: (file, month, periodNo) => upload('/v2/payroll/calculate', file, { month, period_no: periodNo }),
+  savePayroll: (body) => request('/v2/payroll/save', { method: 'POST', body: JSON.stringify(body) }),
+  emailPayroll: (body) => request('/v2/payroll/email', { method: 'POST', body: JSON.stringify(body) }),
+  payrollObligations: () => request('/v2/payroll/obligations'),
+  createPayrollObligation: (body) => request('/v2/payroll/obligations', { method: 'POST', body: JSON.stringify(body) }),
+  deletePayrollObligation: (id) => request(`/v2/payroll/obligations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
-  exportSnapshotExcel: (start, end) => download(`/v2/snapshot/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, 'VERA_Snapshot_ChamCong.xlsx'),
+  exportSnapshotExcel: (start, end) => download(`/v2/snapshot/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, 'VERA_ChamCong.xlsx'),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),
@@ -198,6 +207,8 @@ export const veraApi = {
     method: 'DELETE',
     body: JSON.stringify({ endpoint }),
   }),
+  birthdays: (month = new Date().getMonth() + 1) => request(`/v2/birthdays?month=${encodeURIComponent(month)}`),
+  tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
   exportLeaveExcel: (start, end, employee = '') => {
     const params = new URLSearchParams({ start, end })
     if (employee.trim()) params.set('employee', employee.trim())

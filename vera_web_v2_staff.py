@@ -24,6 +24,8 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from vera_web_v2_security import password_policy_error
+
 
 CREDENTIAL_SHEET_ID = os.getenv(
     "VERA_CREDENTIAL_SHEET_ID", "1DGXy3kPyMPwtz-3CnG8i6BiQbXFDApasoXVFzSmUe24"
@@ -66,9 +68,9 @@ TICHLUY_HEADERS = [
 
 class StaffCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
-    password: str = Field(min_length=6, max_length=300)
+    password: str = Field(min_length=8, max_length=300)
     role: str = Field(default="nhanvien", min_length=1, max_length=50)
-    full_name: str = Field(default="", max_length=300)
+    full_name: str = Field(min_length=1, max_length=300)
     birth_date: str = Field(default="", max_length=30)
     phone: str = Field(default="", max_length=80)
     email: str = Field(default="", max_length=300)
@@ -197,7 +199,8 @@ def _shift_catalog(conn, employee_rows: list[dict[str, Any]]) -> dict[str, list[
 
 
 def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
-    return {
+    payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
+    payload.update({
         "STT": int(row.get("stt") or 0),
         "Tên nhân viên": str(row.get("username") or ""),
         "Mật khẩu": str(row.get("password_value") or ""),
@@ -220,7 +223,8 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
         "Remember Token Expiry": str(row.get("remember_token_expiry") or ""),
         "Ngày bắt đầu làm": str(row.get("employment_start_date") or ""),
         "Trạng thái làm việc": status,
-    }
+    })
+    return payload
 
 
 def _credential_values(row: dict[str, Any], status: str) -> list[Any]:
@@ -561,7 +565,12 @@ def install_staff_routes(
             "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
             "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
         )
-        return {key: feature_allowed(conn, ident, key) for key in keys}
+        output = {key: feature_allowed(conn, ident, key) for key in keys}
+        # Xóa nhân viên là thao tác quản trị tài khoản, chỉ Admin được thực hiện.
+        if str(ident.role).lower() != "admin":
+            output["employee_delete"] = False
+            output["employee_delete_confirm"] = False
+        return output
 
     def allowed_roles(ident) -> list[str]:
         return ALL_ROLES if str(ident.role).lower() == "admin" else ["nhanvien", "locker", "tapvu"]
@@ -784,6 +793,12 @@ def install_staff_routes(
             require_feature(conn, ident, "employee_add")
             require_feature(conn, ident, "employee_add_save")
             username = body.username.strip()
+            full_name = body.full_name.strip()
+            if not full_name:
+                raise HTTPException(400, "Họ và tên không được để trống.")
+            password_error = password_policy_error(body.password, username=username, full_name=full_name)
+            if password_error:
+                raise HTTPException(400, password_error)
             if norm(username) in {"quan tri vien", "admin"}:
                 raise HTTPException(400, "Tên nhân viên này được dành cho tài khoản hệ thống.")
             rows = _select_staff_rows(conn, for_update=True)
@@ -805,7 +820,7 @@ def install_staff_routes(
             source_row = len(sheet_values) + 1
             record = {
                 "username": username, "stt": stt, "password_value": body.password,
-                "role": role, "full_name": body.full_name.strip(),
+                "role": role, "full_name": full_name,
                 "birth_date": _date_text(body.birth_date, field_name="Ngày sinh"),
                 "phone": body.phone.strip(), "email": body.email.strip(),
                 "address": body.address.strip(), "bank_account": body.bank_account.strip(),
@@ -814,7 +829,7 @@ def install_staff_routes(
                 "shift_start_date": "", "rotation_cycle": "", "login_locked": False,
                 "remember_token_hash": "", "remember_token_expiry": "",
                 "employment_start_date": start_work, "source_sheet_id": "credentials",
-                "source_row": source_row,
+                "source_row": source_row, "payload": {"must_change_password": True},
             }
             status = STATUS_OPTIONS[0]
             payload = _employee_payload(record, status)
@@ -969,6 +984,8 @@ def install_staff_routes(
         status_ws = None
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
+            if str(ident.role).lower() != "admin":
+                raise HTTPException(403, "Chỉ Admin được xóa nhân viên.")
             require_feature(conn, ident, "employee_delete")
             require_feature(conn, ident, "employee_delete_confirm")
             rows = _select_staff_rows(conn, for_update=True)
@@ -1044,7 +1061,8 @@ def install_staff_routes(
         data = staff_result(conn, ident)["employees"]
         if search.strip():
             needle = norm(search)
-            data = [row for row in data if needle in norm(f"{row['username']} {row['full_name']}")]
+            exact = [row for row in data if needle in {norm(row["username"]), norm(row["full_name"])}]
+            data = exact or [row for row in data if needle in norm(f"{row['username']} {row['full_name']}")]
         if role.strip():
             data = [row for row in data if row["role"] == role.strip().lower()]
         if status.strip():

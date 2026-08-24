@@ -12,7 +12,7 @@ const toVnDate = (value) => {
   return year && month && day ? `${day}/${month}/${year}` : ''
 }
 
-export default function ProfilePage({ onPasswordChanged }) {
+export default function ProfilePage({ onPasswordChanged, forcePasswordChange = false }) {
   const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', phone: '', email: '', address: '', province: '', ward: '', address_detail: '', bank_account: '', bank_name: '' })
   const [references, setReferences] = useState({ provinces: [], wards: [], banks: [] })
   const [loading, setLoading] = useState(true)
@@ -73,7 +73,7 @@ export default function ProfilePage({ onPasswordChanged }) {
   }
 
   return <div className="feature-page">
-    <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>Nhân viên tự cập nhật thông tin của chính tài khoản đang đăng nhập.</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button></div>
+    <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật thông tin của chính tài khoản đang đăng nhập.'}</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button></div>
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}
     <section className="panel profile-panel">
       <form className="profile-form" onSubmit={submit}>
@@ -87,10 +87,10 @@ export default function ProfilePage({ onPasswordChanged }) {
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value })} /></label>
         <label>Tên ngân hàng<select value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{form.bank_name && !references.banks.includes(form.bank_name) && <option>{form.bank_name}</option>}{references.banks.map((bank) => <option key={bank}>{bank}</option>)}</select></label>
         <div className="profile-password-box wide-field">
-          <h3>THAY ĐỔI MẬT KHẨU</h3><p>Luôn nhập mật khẩu hiện tại để xác nhận. Để trống mật khẩu mới nếu chỉ sửa hồ sơ.</p>
+          <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU'}</h3><p>Mật khẩu mới tối thiểu 8 ký tự, kết hợp ít nhất 3 nhóm chữ thường, chữ hoa, số, ký tự đặc biệt và không chứa tên của bạn.</p>
           <div className="profile-password-grid">
             <label>Mật khẩu hiện tại<input type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required /></label>
-            <label>Mật khẩu mới<input type="password" minLength="6" value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Tối thiểu 6 ký tự" /></label>
+            <label>Mật khẩu mới<input type="password" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Tối thiểu 8 ký tự" /></label>
           </div>
         </div>
         <button className="primary-button wide-field" disabled={saving}><Save size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>

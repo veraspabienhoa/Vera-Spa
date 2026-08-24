@@ -304,7 +304,7 @@ jobs:
               'staff list/create/update/delete endpoints exist': all(route in staff_api for route in ('@app.get("/v2/staff")', '@app.post("/v2/staff")', '@app.patch("/v2/staff/{username}")', '@app.delete("/v2/staff")')),
               'staff Excel endpoints exist': '@app.get("/v2/staff/export.xlsx")' in staff_api and '@app.post("/v2/staff/import.xlsx")' in staff_api,
               'password and token columns are not exported': 'STAFF_EXPORT_COLUMNS' in staff_api and 'Mật khẩu' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0] and 'Remember Token' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0],
-              'new employees require the configured six-character minimum': 'default="123456"' not in staff_api and 'password: str = Field(min_length=6' in staff_api and 'minLength={6}' in page,
+              'new employees require the configured eight-character minimum': 'default="123456"' not in staff_api and 'password: str = Field(min_length=8' in staff_api and 'minLength={8}' in page,
               'import updates existing accounts only': 'Không tìm thấy trong hệ thống' in staff_api and 'update_database_row(conn, ident, row, values' in staff_api,
               'employee deletion preserves leave history': 'Lịch sử lịch nghỉ được giữ nguyên' in delete_staff_route and 'DELETE FROM leave_records' not in delete_staff_route,
               'front desk role scope is enforced': 'FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu"}' in staff_api and 'ensure_manageable' in staff_api,
@@ -591,6 +591,8 @@ jobs:
           permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           profile = Path('vera_web_v2_profile.py').read_text(encoding='utf-8')
           payroll = Path('vera_web_v2_payroll.py').read_text(encoding='utf-8')
+          people = Path('vera_web_v2_people.py').read_text(encoding='utf-8')
+          security = Path('vera_web_v2_security.py').read_text(encoding='utf-8')
           snapshot = Path('vera_web_v2_snapshot.py').read_text(encoding='utf-8')
           storage = Path('vera_web_v2_storage.py').read_text(encoding='utf-8')
           sql = Path('vera_postgres_phase20_admin_daily_push.sql').read_text(encoding='utf-8')
@@ -603,25 +605,29 @@ jobs:
           employee_page = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
           profile_page = Path('web-v2/src/pages/ProfilePage.jsx').read_text(encoding='utf-8')
           storage_page = Path('web-v2/src/pages/StorageAdminPage.jsx').read_text(encoding='utf-8')
-          for source in (api, permissions, profile, payroll, snapshot, storage): ast.parse(source)
+          for source in (api, permissions, profile, payroll, people, security, snapshot, storage): ast.parse(source)
           checks = {
               'statistics and list have local refresh controls': leave.count('onClick={load}') >= 3 and leave.count('Làm mới') >= 3,
               'profile requires current password and mirrors credentials': 'hmac.compare_digest' in profile and 'A{source_row}:U{source_row}' in profile,
               'password update clears remember token': 'remember_token_hash' in profile and 'remember_token_expiry' in profile,
-              'password minimum is six characters end to end': 'ít nhất 6 ký tự' in profile and 'minLength="6"' in profile_page and 'minLength={6}' in employee_page,
+              'password minimum and strength are enforced end to end': 'password_policy_error' in profile and 'len(value) < 8' in security and 'minLength="8"' in profile_page and 'minLength={8}' in employee_page,
+              'first Web V2 login forces password change': 'must_change_password' in api and 'isFirstWebLogin' in edge_login and "setPage('profile')" in app,
               'inactive employment status blocks both login layers': "payload->>'Trạng thái làm việc'" in api and 'employmentStatus(employee.payload) !== "dang lam viec"' in edge_login and 'is_active=:is_active' in Path('vera_web_v2_staff.py').read_text(encoding='utf-8'),
               'resignation expected date is at least thirty days': 'timedelta(days=30)' in Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8') and 'resignationMinDate' in forms,
               'profile uses current province ward and bank catalogs': '/v2/profile/reference-data' in profile and 'provinces.open-api.vn/api/v2/' in profile and 'api.vietqr.io/v2/banks' in profile and 'Tỉnh/Thành phố' in profile_page and 'Xã/Phường' in profile_page,
               'Android lock-screen notification remains interactive': 'requireInteraction: true' in sw and 'vibrate:' in sw,
               'role and account permission scopes exist': '/v2/permissions/{scope}/{target}' in permissions and 'expected_revision' in permissions,
               'Admin role is immutable': 'vai trò Admin không được sửa' in permissions,
-              'saved payroll is not recalculated': "dataset_key='payroll_history'" in payroll and 'recalculate' not in payroll.lower(),
+              'payroll upload calculate save refund and email exist': all(token in payroll for token in ('/v2/payroll/calculate','/v2/payroll/save','Hoàn trả tiền tích lũy','/v2/payroll/email','leader_responsibility_allowance')),
+              'payroll employee filtering is exact': 'needle in {norm(item.get("Tên Hệ thống")), norm(item.get("Họ và tên"))}' in payroll,
               'snapshot is attendance only': 'timesoft_employee_checkin_' in snapshot and 'timesoft_summary_invoice' not in snapshot and 'timesoft_summary_totals' not in snapshot,
               'resignation request form is present': 'ĐƠN XIN NGHỈ VIỆC' in forms and 'REQUEST_TYPE_RESIGNATION' in Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8'),
               'Admin daily push uses Vault and cron': 'vera-v2-admin-daily-changes' in sql and 'vault.decrypted_secrets' in sql,
               'audit excludes sensitive values': 'No password, push key, bank data, payroll amount or revenue value' in sql,
               'shared audit trigger is safe for heterogeneous row types': all(token in sql for token in ("row_data jsonb := CASE", "row_data ->> 'username'", "row_data ->> 'employee_username'")) and 'OLD.username' not in sql and 'RETURN CASE' not in sql,
-              'new pages are routed and permission gated': all(name in app for name in ('ProfilePage','PermissionsPage','PayrollPage','SnapshotPage','AdminChangesPage','StorageAdminPage')) and all(key in shell for key in ('permission_admin','payroll_history','snapshot_today','audit_admin_view','storage_admin_view')),
+              'new pages are routed and permission gated': all(name in app for name in ('ProfilePage','PermissionsPage','PayrollPage','SnapshotPage','BirthdayPage','TourPage','AdminChangesPage','StorageAdminPage')) and all(key in shell for key in ('permission_admin','payroll_history','snapshot_today','birthday','tour','audit_admin_view','storage_admin_view')),
+              'birthday and Tour APIs are present': '/v2/birthdays' in people and '/v2/tour' in people,
+              'system changes only list leave CRUD': "dataset_key='leave_records'" in api and "event_type IN ('insert','update','delete')" in api,
               'Admin storage export and guarded deletion exist': all(route in storage for route in ('/v2/storage/preview','/v2/storage/export.xlsx','/v2/storage')) and 'XÓA DỮ LIỆU' in storage and 'expected_count' in storage and 'exportStorageExcel' in Path('web-v2/src/lib/api.js').read_text(encoding='utf-8') and 'XÓA DỮ LIỆU' in storage_page,
           }
           failed = [name for name, ok in checks.items() if not ok]

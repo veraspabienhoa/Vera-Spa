@@ -401,6 +401,7 @@ class Identity(BaseModel):
     role: str
     full_name: str = ""
     email: str = ""
+    must_change_password: bool = False
 
 
 from vera_web_v2_permissions import DEFAULT_ROLE_FEATURES as WEB_V2_DEFAULT_FEATURES, FEATURES as WEB_V2_FEATURES
@@ -456,7 +457,14 @@ def _registration_role_locked(conn, role: str) -> bool:
     return _as_bool(payload.get(str(role or "").strip().lower(), False))
 
 
+def _require_password_changed(ident: Identity):
+    if ident.must_change_password:
+        raise HTTPException(428, "Bạn phải đổi mật khẩu lần đầu trước khi sử dụng chức năng này.")
+
+
 def _require_feature(conn, ident: Identity, feature: str):
+    if feature not in {"profile", "profile_edit"}:
+        _require_password_changed(ident)
     if not _feature_allowed(conn, ident, feature):
         raise HTTPException(403, "Tài khoản hiện tại chưa được cấp quyền dùng chức năng này.")
 
@@ -485,7 +493,8 @@ async def current_identity(authorization: str | None = Header(default=None)) -> 
     with _engine_instance().connect() as conn:
         row = conn.execute(text("""
             SELECT p.auth_user_id::text, p.employee_username, p.role,
-                   COALESCE(e.full_name,''), COALESCE(e.email,'')
+                   COALESCE(e.full_name,''), COALESCE(e.email,''),
+                   lower(COALESCE(e.payload->>'must_change_password','')) IN ('1','true','yes','y')
             FROM vera_v2_user_profile p
             JOIN employees e ON e.username=p.employee_username
             WHERE p.auth_user_id=CAST(:uid AS uuid)
@@ -502,7 +511,7 @@ async def current_identity(authorization: str | None = Header(default=None)) -> 
         raise HTTPException(403, "Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.")
     return Identity(
         auth_user_id=row[0], employee_username=row[1], role=str(row[2] or "").lower(),
-        full_name=row[3], email=row[4],
+        full_name=row[3], email=row[4], must_change_password=bool(row[5]),
     )
 
 
@@ -762,11 +771,15 @@ def _dispatch_admin_daily_pushes() -> dict[str, int]:
             raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
         changes = int(conn.execute(text("""
             SELECT COUNT(*) FROM vera_sync_event
-            WHERE created_at >= NOW() - INTERVAL '24 hours' AND event_type <> 'admin_daily_push'
+            WHERE created_at >= NOW() - INTERVAL '24 hours'
+              AND dataset_key='leave_records'
+              AND event_type IN ('insert','update','delete')
         """)).scalar() or 0)
         groups = conn.execute(text("""
             SELECT dataset_key, COUNT(*) count FROM vera_sync_event
-            WHERE created_at >= NOW() - INTERVAL '24 hours' AND event_type <> 'admin_daily_push'
+            WHERE created_at >= NOW() - INTERVAL '24 hours'
+              AND dataset_key='leave_records'
+              AND event_type IN ('insert','update','delete')
             GROUP BY dataset_key ORDER BY count DESC, dataset_key LIMIT 4
         """)).mappings().all()
         subscriptions = conn.execute(text("""
@@ -1349,6 +1362,7 @@ def register_push_subscription(
     ident: Identity = Depends(current_identity),
     user_agent: str | None = Header(default=None),
 ):
+    _require_password_changed(ident)
     endpoint, p256dh, auth_secret = _push_subscription_values(body)
     with _engine_instance().begin() as conn:
         exists = conn.execute(text("""
@@ -1392,6 +1406,7 @@ def register_push_subscription(
 
 @app.delete("/v2/push/subscriptions")
 def unregister_push_subscription(body: PushSubscriptionDelete, ident: Identity = Depends(current_identity)):
+    _require_password_changed(ident)
     with _engine_instance().begin() as conn:
         result = conn.execute(text("""
             DELETE FROM vera_v2_push_subscription
@@ -1433,6 +1448,8 @@ def admin_changes(days: int = Query(default=7, ge=1, le=31), ident: Identity = D
         rows = conn.execute(text("""
             SELECT id, dataset_key, event_type, detail, created_at
             FROM vera_sync_event WHERE created_at >= NOW() - (:days * INTERVAL '1 day')
+              AND dataset_key='leave_records'
+              AND event_type IN ('insert','update','delete')
             ORDER BY created_at DESC, id DESC LIMIT 1000
         """), {"days": days}).mappings().all()
     return {"changes": [{**dict(row), "created_at": row["created_at"].isoformat()} for row in rows], "count": len(rows), "days": days}
@@ -2126,6 +2143,17 @@ install_payroll_routes(
     require_feature=_require_feature,
     norm=_norm,
     identity_type=Identity,
+)
+
+from vera_web_v2_people import install_people_routes
+
+install_people_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    identity_type=Identity,
+    vn_tz=VN_TZ,
 )
 
 from vera_web_v2_storage import install_storage_routes
