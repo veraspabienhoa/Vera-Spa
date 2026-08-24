@@ -10,20 +10,28 @@ SECURITY DEFINER
 SET search_path = ''
 AS $fn$
 DECLARE
+  -- OLD/NEW have a different composite type for every trigger table.  Accessing
+  -- a table-specific field on OLD inside one shared CASE makes PostgreSQL resolve it for
+  -- e.g. vera_v2_user_profile as well, which aborts every profile upsert and in
+  -- turn breaks the shared Web V2 login bridge.  JSONB keeps the lookup generic.
+  row_data jsonb := CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
   identity_text text := '';
 BEGIN
   identity_text := CASE TG_TABLE_NAME
-    WHEN 'employees' THEN COALESCE((CASE WHEN TG_OP='DELETE' THEN OLD.username ELSE NEW.username END), '')
-    WHEN 'leave_records' THEN COALESCE((CASE WHEN TG_OP='DELETE' THEN OLD.record_uid ELSE NEW.record_uid END)::text, '')
-    WHEN 'vera_app_setting' THEN COALESCE((CASE WHEN TG_OP='DELETE' THEN OLD.category || '/' || OLD.setting_key ELSE NEW.category || '/' || NEW.setting_key END), '')
-    WHEN 'vera_dataset_cache' THEN COALESCE((CASE WHEN TG_OP='DELETE' THEN OLD.dataset_key ELSE NEW.dataset_key END), '')
-    WHEN 'vera_phase14_record' THEN COALESCE((CASE WHEN TG_OP='DELETE' THEN OLD.dataset || '/' || OLD.logical_id ELSE NEW.dataset || '/' || NEW.logical_id END), '')
-    WHEN 'vera_v2_user_profile' THEN COALESCE((CASE WHEN TG_OP='DELETE' THEN OLD.employee_username ELSE NEW.employee_username END), '')
+    WHEN 'employees' THEN COALESCE(row_data ->> 'username', '')
+    WHEN 'leave_records' THEN COALESCE(row_data ->> 'record_uid', '')
+    WHEN 'vera_app_setting' THEN concat_ws('/', row_data ->> 'category', row_data ->> 'setting_key')
+    WHEN 'vera_dataset_cache' THEN COALESCE(row_data ->> 'dataset_key', '')
+    WHEN 'vera_phase14_record' THEN concat_ws('/', row_data ->> 'dataset', row_data ->> 'logical_id')
+    WHEN 'vera_v2_user_profile' THEN COALESCE(row_data ->> 'employee_username', '')
     ELSE ''
   END;
   INSERT INTO public.vera_sync_event(dataset_key, event_type, detail, created_at)
   VALUES (TG_TABLE_NAME, lower(TG_OP), left(identity_text, 500), now());
-  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
 END;
 $fn$;
 

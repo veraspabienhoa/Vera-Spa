@@ -609,6 +609,7 @@ jobs:
               'resignation request form is present': 'ĐƠN XIN NGHỈ VIỆC' in forms and 'REQUEST_TYPE_RESIGNATION' in Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8'),
               'Admin daily push uses Vault and cron': 'vera-v2-admin-daily-changes' in sql and 'vault.decrypted_secrets' in sql,
               'audit excludes sensitive values': 'No password, push key, bank data, payroll amount or revenue value' in sql,
+              'shared audit trigger is safe for heterogeneous row types': all(token in sql for token in ("row_data jsonb := CASE", "row_data ->> 'username'", "row_data ->> 'employee_username'")) and 'OLD.username' not in sql and 'RETURN CASE' not in sql,
               'new pages are routed and permission gated': all(name in app for name in ('ProfilePage','PermissionsPage','PayrollPage','SnapshotPage','AdminChangesPage')) and all(key in shell for key in ('permission_admin','payroll_history','snapshot_today','audit_admin_view')),
           }
           failed = [name for name, ok in checks.items() if not ok]
