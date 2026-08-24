@@ -3,13 +3,11 @@ import { useEffect, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { unlockWatchBellAudio } from '../lib/watchBell'
 
-export default function LoginPage({ onDemoLogin, externalError = '' }) {
+export default function LoginPage({ externalError = '' }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(externalError)
-  const demoAllowed = import.meta.env.VITE_VERA_DEMO_MODE === '1'
-
   useEffect(() => { if (externalError) setError(externalError) }, [externalError])
 
   const submit = async (event) => {
@@ -98,7 +96,6 @@ export default function LoginPage({ onDemoLogin, externalError = '' }) {
           <button className="primary-button full" type="submit" disabled={busy}>{busy ? 'Đang xác thực…' : 'Đăng nhập'}</button>
 
           {!isSupabaseConfigured && <div className="setup-note">Supabase chưa được cấu hình cho bản deploy này.</div>}
-          {demoAllowed && <button className="text-button" type="button" onClick={onDemoLogin}>Vào giao diện Demo</button>}
         </form>
       </section>
     </div>

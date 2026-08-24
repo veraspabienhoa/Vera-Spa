@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import AppShell from './components/AppShell'
 import LoginPage from './pages/LoginPage'
 import LeaveRegistrationPage from './pages/LeaveRegistrationPage'
+import EmployeePage from './pages/EmployeePage'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
@@ -10,7 +11,6 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [authError, setAuthError] = useState('')
-  const [demoUser, setDemoUser] = useState(null)
   const [page, setPage] = useState('leave')
 
   useEffect(() => {
@@ -57,18 +57,12 @@ export default function App() {
 
   if (loading) return <div className="boot-screen">Đang mở VERA SPA…</div>
 
-  const user = session?.user || demoUser
+  const user = session?.user
   if (!user) {
-    return (
-      <LoginPage
-        externalError={authError}
-        onDemoLogin={() => setDemoUser({ email: 'demo@veraspa.local', user_metadata: { full_name: 'Demo VERA' } })}
-      />
-    )
+    return <LoginPage externalError={authError} />
   }
 
   const signOut = async () => {
-    setDemoUser(null)
     setProfile(null)
     if (supabase && session) await supabase.auth.signOut()
   }
@@ -85,11 +79,14 @@ export default function App() {
           full_name: profile.full_name || profile.employee_username,
         },
       }
-    : user
+    : null
+
+  if (!shellUser) return <div className="boot-screen">Đang xác minh hồ sơ VERA SPA…</div>
 
   return (
     <AppShell user={shellUser} currentPage={page} onPageChange={setPage} onSignOut={signOut}>
       {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
+      {page === 'employees' && <EmployeePage user={shellUser} />}
     </AppShell>
   )
 }

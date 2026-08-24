@@ -278,6 +278,48 @@ jobs:
           print('PASS: 8 employees = 4 paid + 4 unpaid, with duplicate/late rows ignored.')
           PY
 
+      - name: Verify Web V2 employee-management invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          staff_api = Path('vera_web_v2_staff.py').read_text(encoding='utf-8')
+          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
+          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
+          page = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
+          client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
+          styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
+          requirements = Path('requirements.txt').read_text(encoding='utf-8')
+
+          ast.parse(staff_api)
+          checks = {
+              'staff module is installed into authenticated API': 'install_staff_routes(' in api and 'from vera_web_v2_staff import install_staff_routes' in api,
+              'staff list/create/update/delete endpoints exist': all(route in staff_api for route in ('@app.get("/v2/staff")', '@app.post("/v2/staff")', '@app.patch("/v2/staff/{username}")', '@app.delete("/v2/staff")')),
+              'staff Excel endpoints exist': '@app.get("/v2/staff/export.xlsx")' in staff_api and '@app.post("/v2/staff/import.xlsx")' in staff_api,
+              'password and token columns are not exported': 'STAFF_EXPORT_COLUMNS' in staff_api and 'Mật khẩu' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0] and 'Remember Token' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0],
+              'new employees have no weak default password': 'default="123456"' not in staff_api and 'password: str = Field(min_length=8' in staff_api,
+              'import updates existing accounts only': 'Không tìm thấy trong hệ thống' in staff_api and 'update_database_row(conn, ident, row, values' in staff_api,
+              'employee deletion preserves leave history': 'Lịch sử lịch nghỉ được giữ nguyên' in staff_api and 'DELETE FROM leave_records' not in staff_api,
+              'front desk role scope is enforced': 'FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu"}' in staff_api and 'ensure_manageable' in staff_api,
+              'employee feature permissions are exposed': all(key in api for key in ('staff_list', 'staff_export', 'staff_import', 'shift_assignment_edit', 'account_lock_edit')),
+              'React employees page is routed': "page === 'employees'" in app and 'EmployeePage' in app,
+              'Web V2 has no demo authentication bypass': 'demoUser' not in app and 'onDemoLogin' not in app and 'VITE_VERA_DEMO_MODE' not in client,
+              'employees menu is permission gated': "permission: 'staff_list'" in shell and 'user?.permissions?.[permission]' in shell,
+              'employee page covers all requested operations': all(label in page for label in ('THÊM NHÂN VIÊN', 'DANH SÁCH NHÂN VIÊN', 'Export Excel', 'Import Excel', 'Xóa đã chọn', 'Lưu thay đổi')),
+              'mobile employee cards avoid table overflow': 'staff-mobile-list' in page and '.staff-desktop-table { display: none; }' in styles and '.staff-mobile-fields' in styles,
+              'Excel upload uses authenticated raw xlsx body': 'importStaffExcel' in client and 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in client,
+              'openpyxl runtime dependency is pinned': 'openpyxl' in requirements,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed employee-management invariants: ' + ', '.join(failed))
+          PY
+
       - name: Verify Phase 17 record_uid and penalty invariants
         shell: bash
         run: |

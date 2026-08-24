@@ -1,6 +1,6 @@
 # VERA SPA
 
-Frontend mới chạy **song song** với Streamlit hiện tại. Mục tiêu là chuyển từng module, bắt đầu với `📅 Đăng ký nghỉ`, mà không làm gián đoạn người dùng production.
+Frontend mới chạy **song song** với Streamlit hiện tại. Các module đã chuyển gồm `📅 Đăng ký nghỉ` và `👥 Nhân viên`, không làm gián đoạn người dùng production.
 
 ## Kiến trúc
 
@@ -32,11 +32,12 @@ npm run build
 - `VITE_SUPABASE_URL`: Project URL của Supabase.
 - `VITE_SUPABASE_ANON_KEY`: public anon key, chỉ dùng với RLS/Auth đúng cấu hình.
 - `VITE_VERA_API_BASE_URL`: URL Python API của VERA SPA.
-- `VITE_VERA_DEMO_MODE=1`: chỉ dùng phát triển giao diện local.
 
 ## Nguyên tắc dữ liệu
 
 Frontend không UPDATE/DELETE trực tiếp `leave_records`. Các write phải đi qua Python API để giữ nguyên business rules hiện tại, đặc biệt `record_uid`, phép năm, Nội quy/phạt, audit log và Google Sheet mirror.
+
+Mục **Nhân viên** cũng chỉ ghi qua Python API. Màn hình này tập trung danh sách hồ sơ, thêm/xóa nhân viên, trạng thái làm việc, khóa đăng nhập và phân ca. Export `.xlsx` không chứa mật khẩu/token; Import `.xlsx` chỉ cập nhật tài khoản đã tồn tại và kiểm tra toàn bộ file trước khi ghi.
 
 ## GitHub Pages
 
@@ -53,6 +54,8 @@ Các config public của frontend có thể đặt bằng GitHub repository Vari
 - `VITE_VERA_API_BASE_URL`
 
 Không dùng GitHub Pages để chứa secret server-side.
+
+Web V2 không có đường đăng nhập Demo hoặc chế độ bỏ qua xác thực. Mọi trang nghiệp vụ chỉ hiển thị sau khi Supabase xác thực và Python API xác minh hồ sơ VERA đang hoạt động.
 
 ## Kích hoạt bản pilot trên `main`
 

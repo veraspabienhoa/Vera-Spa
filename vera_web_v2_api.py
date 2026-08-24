@@ -368,9 +368,9 @@ class Identity(BaseModel):
 
 
 WEB_V2_DEFAULT_FEATURES = {
-    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete"},
-    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete"},
-    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete"},
+    "admin": {"leave", "leave_create", "employee_penalty_view", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit"},
+    "quanly": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit"},
+    "letan": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete", "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit", "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit"},
     "leader": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete"},
     "nhanvien": {"leave", "leave_create", "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete"},
     "locker": set(),
@@ -1249,6 +1249,10 @@ def me(ident: Identity = Depends(current_identity)):
                 "leave_detail_edit", "leave_detail_delete",
                 "leave_manage_edit", "leave_manage_delete",
                 "leave_today_khong_phep_edit_delete",
+                "staff_list", "staff_export", "staff_import",
+                "employee_add", "employee_add_save", "employee_edit", "employee_edit_save",
+                "employment_status", "employment_status_edit", "employee_delete",
+                "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
             )
         }
         registration_locked = _registration_role_locked(conn, ident.role)
@@ -1924,3 +1928,20 @@ def delete_leave(body: LeaveDelete, ident: Identity = Depends(current_identity))
         raise HTTPException(500, f"Không xóa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
     finally:
         conn.close()
+
+
+# Employee routes are kept in a separate module so this migration remains
+# reviewable while sharing the same authenticated FastAPI application.
+from vera_web_v2_staff import install_staff_routes
+
+install_staff_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    feature_allowed=_feature_allowed,
+    norm=_norm,
+    google_client=_google_client,
+    identity_type=Identity,
+    vn_tz=VN_TZ,
+)

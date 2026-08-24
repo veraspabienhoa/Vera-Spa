@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
-  { id: 'employees', label: 'Nhân viên', icon: Users },
+  { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'rules', label: 'Nội quy', icon: FileText },
   { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck },
 ]
@@ -23,7 +23,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
         <div className="brand-block">
           <div className="brand-mark">VERA</div>
           <div>
-            <div className="brand-name">SPA ĐỒNG NAI</div>
+            <div className="brand-name">SPA</div>
           </div>
           <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Đóng menu">
             <X size={20} />
@@ -32,7 +32,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
 
         <div className="menu-caption">MENU</div>
         <nav className="nav-list">
-          {items.map(({ id, label, icon: Icon, ready }) => (
+          {items.filter(({ permission }) => !permission || user?.role === 'admin' || user?.permissions?.[permission] === true).map(({ id, label, icon: Icon, ready }) => (
             <button
               key={id}
               className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`}

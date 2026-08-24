@@ -3,7 +3,6 @@ import { getCurrentSession, isSupabaseConfigured, supabase } from './supabase'
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 export const isApiConfigured = Boolean(apiBase)
 export const isReadConfigured = Boolean(apiBase || isSupabaseConfigured)
-export const demoMode = import.meta.env.VITE_VERA_DEMO_MODE === '1'
 
 async function request(path, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
@@ -41,6 +40,18 @@ async function download(path, fallbackName) {
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
+}
+
+async function upload(path, file) {
+  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
+  const session = await getCurrentSession()
+  const headers = new Headers()
+  headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  const response = await fetch(`${apiBase}${path}`, { method: 'POST', headers, body: file })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
 }
 
 async function rpc(name, args = {}) {
@@ -111,6 +122,25 @@ export const veraApi = {
     const rows = await rpc('vera_v2_employees')
     return { employees: Array.isArray(rows) ? rows : [] }
   },
+  staff: () => request('/v2/staff'),
+  createStaff: (body) => request('/v2/staff', { method: 'POST', body: JSON.stringify(body) }),
+  updateStaff: (username, body) => request(`/v2/staff/${encodeURIComponent(username)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }),
+  deleteStaff: (usernames) => request('/v2/staff', {
+    method: 'DELETE',
+    body: JSON.stringify({ usernames }),
+  }),
+  exportStaffExcel: (search = '', role = '', status = '') => {
+    const params = new URLSearchParams()
+    if (search.trim()) params.set('search', search.trim())
+    if (role) params.set('role', role)
+    if (status) params.set('status', status)
+    const query = params.toString()
+    return download(`/v2/staff/export.xlsx${query ? `?${query}` : ''}`, 'VeraSpa_DanhSachNhanSu.xlsx')
+  },
+  importStaffExcel: (file) => upload('/v2/staff/import.xlsx', file),
   createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }),
   updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }),
