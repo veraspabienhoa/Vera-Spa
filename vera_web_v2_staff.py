@@ -10,6 +10,7 @@ from io import BytesIO
 import json
 import os
 import re
+import threading
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -325,7 +326,6 @@ def install_staff_routes(
             pass
         return result
 
-    @app.on_event("startup")
     def reconcile_employment_status_login_gates() -> None:
         """Seed PostgreSQL login gates from the legacy status worksheet at rollout."""
         statuses = google_status_map()
@@ -374,6 +374,16 @@ def install_staff_routes(
             # The API must remain available when Google is temporarily unreachable;
             # every later Web V2 status change still writes PostgreSQL synchronously.
             return
+
+    @app.on_event("startup")
+    def schedule_employment_status_reconciliation() -> None:
+        # Google availability must never delay Cloud Run readiness. The worker
+        # only seeds legacy rows; every Web V2 status write remains synchronous.
+        threading.Thread(
+            target=reconcile_employment_status_login_gates,
+            name="vera-employment-status-reconcile",
+            daemon=True,
+        ).start()
 
     def write_status(username: str, status: str, actor: str) -> None:
         ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
