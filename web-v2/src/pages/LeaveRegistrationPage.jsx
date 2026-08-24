@@ -17,8 +17,8 @@ import {
 } from '../lib/data'
 
 const VIEWED_DATE_FILTER = 'Ngày đang xem'
-const STAT_DATE_FILTERS = ['Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau']
-const LIST_DATE_FILTERS = [...STAT_DATE_FILTERS, 'Tùy chỉnh']
+const STAT_DATE_FILTERS = ['Hôm qua', 'Hôm nay', 'Tuần này', 'Tuần sau', 'Tháng này', 'Tháng sau', 'Tùy chỉnh']
+const LIST_DATE_FILTERS = STAT_DATE_FILTERS
 
 const formatDateInput = (date) => {
   const year = date.getFullYear()
@@ -414,10 +414,25 @@ export default function LeaveRegistrationPage({ user }) {
 
   const chooseRangeFilter = (filter) => {
     setRangeFilter(filter)
+    if (filter === 'Tùy chỉnh') return
     const [start, end] = rangeForFilter(filter)
     setRangeStart(start)
     setRangeEnd(end)
     setDate(filter === 'Hôm nay' || filter === 'Tháng này' || filter === 'Tuần này' ? today() : start)
+  }
+
+  const changeCustomStart = (value) => {
+    setRangeStart(value)
+    if (value > rangeEnd) setRangeEnd(value)
+    setDate(value)
+  }
+
+  const changeCustomEnd = (value) => {
+    setRangeEnd(value)
+    if (value < rangeStart) {
+      setRangeStart(value)
+      setDate(value)
+    }
   }
 
   const chooseListRangeFilter = (filter) => {
@@ -678,6 +693,12 @@ export default function LeaveRegistrationPage({ user }) {
                 </button>
               ))}
             </div>
+            {rangeFilter === 'Tùy chỉnh' && (
+              <div className="custom-range list-custom-range statistics-custom-range">
+                <DatePickerControl label="Từ ngày" value={rangeStart} onChange={changeCustomStart} />
+                <DatePickerControl label="Đến ngày" value={rangeEnd} onChange={changeCustomEnd} />
+              </div>
+            )}
           </div>
           <div className="table-wrap daily-summary-wrap">
             <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
