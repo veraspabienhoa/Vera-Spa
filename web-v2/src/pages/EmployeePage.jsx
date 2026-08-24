@@ -34,6 +34,10 @@ function datePayload(value) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value
 }
 
+function searchKey(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ')
+}
+
 function departmentForRole(role) {
   if (role === 'nhanvien' || role === 'leader') return 'Nhân viên + Leader'
   return { letan: 'Lễ tân', quanly: 'Quản lý', locker: 'Locker', tapvu: 'Tạp vụ' }[role] || 'Khác'
@@ -107,9 +111,12 @@ export default function EmployeePage({ user }) {
   useEffect(() => { load() }, [])
 
   const visible = useMemo(() => {
-    const needle = search.trim().toLocaleLowerCase('vi')
-    return (data?.employees || []).filter((employee) => {
-      const matchesName = !needle || `${employee.username} ${employee.full_name}`.toLocaleLowerCase('vi').includes(needle)
+    const employees = data?.employees || []
+    const needle = searchKey(search)
+    const exact = needle ? employees.filter((employee) => [employee.username, employee.full_name].some((value) => searchKey(value) === needle)) : []
+    const namePool = exact.length ? new Set(exact.map((employee) => employee.username)) : null
+    return employees.filter((employee) => {
+      const matchesName = !needle || (namePool ? namePool.has(employee.username) : searchKey(`${employee.username} ${employee.full_name}`).includes(needle))
       return matchesName && (!roleFilter || employee.role === roleFilter)
         && (!statusFilter || employee.employment_status === statusFilter)
         && (!shiftFilter || employee.work_shift === shiftFilter)
@@ -172,6 +179,13 @@ export default function EmployeePage({ user }) {
     if (!selected.length) throw new Error('Chưa chọn nhân viên cần xóa.')
     if (!window.confirm(`Xóa ${selected.length} nhân viên đã chọn? Lịch sử nghỉ vẫn được giữ nguyên.`)) return
     const result = await veraApi.deleteStaff(selected)
+    await load(true)
+    setNotice({ type: 'success', message: result.message })
+  })
+
+  const deleteOne = (employee) => run(`delete-${employee.username}`, async () => {
+    if (!window.confirm(`Xóa nhân viên ${employee.full_name || employee.username}? Lịch sử nghỉ vẫn được giữ nguyên.`)) return
+    const result = await veraApi.deleteStaff([employee.username])
     await load(true)
     setNotice({ type: 'success', message: result.message })
   })
@@ -285,7 +299,7 @@ export default function EmployeePage({ user }) {
             <button className="secondary-button" disabled={busy === 'import'} onClick={() => importRef.current?.click()}><Upload size={17} /> Import Excel</button>
           </>}
           {canSaveRows && <button className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
-          {permissions.employee_delete && <button className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
+          {isAdmin && permissions.employee_delete && <button className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
         </div>
       </section>
 
@@ -293,9 +307,9 @@ export default function EmployeePage({ user }) {
         <div className="panel-title-row"><div><h2>THÊM NHÂN VIÊN</h2><p>Mật khẩu chỉ được nhập khi tạo mới và không xuất ra Excel.</p></div></div>
         <form className="staff-form-grid" onSubmit={createStaff}>
           <label>Tên nhân viên<input required value={createForm.username} onChange={(event) => setCreateForm({ ...createForm, username: event.target.value })} /></label>
-          <label>Mật khẩu ban đầu (tối thiểu 6 ký tự)<input required minLength={6} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /></label>
+          <label>Mật khẩu ban đầu (tối thiểu 8 ký tự)<input required minLength={8} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /></label>
           <label>Phân quyền<select value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value })}>{(data?.role_options || []).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
-          <label>Họ và tên đầy đủ<input value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
+          <label>Họ và tên đầy đủ<input required value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
           <label>Ngày bắt đầu làm<input type="date" value={createForm.employment_start_date} onChange={(event) => setCreateForm({ ...createForm, employment_start_date: event.target.value })} /></label>
           <label>Ngày sinh<input type="date" value={createForm.birth_date} onChange={(event) => setCreateForm({ ...createForm, birth_date: event.target.value })} /></label>
           <label>Điện thoại<input value={createForm.phone} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} /></label>
@@ -324,7 +338,7 @@ export default function EmployeePage({ user }) {
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">
             <table className="staff-table">
-              <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Khóa</th><th>Hồ sơ</th></tr></thead>
+              <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Khóa</th><th>Hồ sơ</th><th>Admin</th></tr></thead>
               <tbody>{visible.map((employee) => {
                 const draft = drafts[employee.username] || rowDraft(employee)
                 const editable = canManage(employee)
@@ -338,6 +352,7 @@ export default function EmployeePage({ user }) {
                   <td><select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></td>
                   <td className="center"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} aria-label={`Khóa ${employee.username}`} /></td>
                   <td><button className="text-button staff-edit-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Sửa</button></td>
+                  <td>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</td>
                 </tr>
               })}</tbody>
             </table>
@@ -347,7 +362,7 @@ export default function EmployeePage({ user }) {
             const draft = drafts[employee.username] || rowDraft(employee)
             const editable = canManage(employee)
             return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''}`} key={employee.username}>
-              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small></span></label><button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button></div>
+              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!isAdmin || !editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small></span></label><div className="list-actions"><button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
               <div className="staff-mobile-fields">
                 <label>Phân quyền<select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
                 <label>Trạng thái<select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></label>

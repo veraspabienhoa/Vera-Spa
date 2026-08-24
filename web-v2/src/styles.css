@@ -212,6 +212,31 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .audit-list time { color: var(--muted); font-size: 10px; }
 .audit-operation { border-radius: 999px; padding: 5px 7px; color: #315d47; background: #edf5f0; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .audit-operation.delete { color: var(--danger); background: var(--danger-bg); }
+.first-login-warning { margin-bottom: 18px; font-weight: 800; }
+.birthday-notice { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; margin-bottom: 18px; padding: 13px 14px; border: 1px solid #e4ca8f; border-radius: 14px; color: #6e501b; background: #fff8df; box-shadow: 0 8px 24px rgba(104,74,17,.08); }
+.birthday-notice div { min-width: 0; }
+.birthday-notice strong, .birthday-notice span { display: block; }
+.birthday-notice span { margin-top: 3px; font-size: 11px; line-height: 1.45; }
+.birthday-notice button { border: 1px solid #ddc47e; border-radius: 9px; padding: 7px 10px; color: #624714; background: white; font-weight: 800; }
+.birthday-notice .birthday-dismiss { width: 31px; height: 31px; padding: 0; font-size: 18px; }
+.birthday-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.birthday-card { display: flex; align-items: center; gap: 13px; padding: 16px; }
+.birthday-card.today { border-color: #d2b262; background: #fff9e7; }
+.birthday-day { width: 48px; height: 48px; flex: 0 0 48px; display: grid; place-items: center; border-radius: 15px; color: white; background: var(--green-800); font-family: Georgia, serif; font-size: 22px; font-weight: 800; }
+.birthday-card strong, .birthday-card span, .birthday-card em { display: block; }
+.birthday-card span { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.birthday-card em { margin-top: 5px; color: #8c651f; font-size: 10px; font-style: normal; font-weight: 900; text-transform: uppercase; }
+.tour-table table { min-width: 1100px; }
+.tour-table td { white-space: nowrap; }
+.payroll-config-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.payroll-config-grid label, .payroll-obligation-form label { display: grid; gap: 6px; color: #4b5b53; font-size: 11px; font-weight: 800; }
+.payroll-editor table { min-width: 1800px; }
+.payroll-editor td { vertical-align: top; }
+.payroll-editor td small { display: block; }
+.payroll-money-input { min-width: 125px; padding: 8px; text-align: right; }
+.payroll-obligation-form { display: grid; grid-template-columns: 1fr .8fr .8fr 1.5fr auto; align-items: end; gap: 10px; margin-bottom: 14px; }
+.payroll-history-metrics { margin-top: 16px; }
+.panel-title-row h2:has(svg) { display: inline-flex; align-items: center; gap: 7px; }
 
 .date-toolbar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; background: white; padding: 12px; border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 8px 24px rgba(30,55,44,.04); margin-bottom: 18px; }
 .date-toolbar button { border: 0; padding: 9px 13px; border-radius: 10px; background: #f2f5f3; color: #32433a; font-weight: 700; }
@@ -706,4 +731,11 @@ tr:last-child td { border-bottom: 0; }
   .audit-list { padding: 0 10px; }
   .audit-list article { grid-template-columns: auto minmax(0, 1fr); gap: 7px; }
   .audit-list time { grid-column: 2; }
+  .birthday-notice { grid-template-columns: auto minmax(0, 1fr) auto; padding: 10px; }
+  .birthday-notice > button:first-of-type { display: none; }
+  .birthday-grid, .payroll-config-grid { grid-template-columns: minmax(0, 1fr); }
+  .payroll-obligation-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .payroll-obligation-form label:nth-of-type(4), .payroll-obligation-form button { grid-column: 1 / -1; }
+  .payroll-draft-panel .panel-title-row { display: grid; }
+  .payroll-draft-panel .list-actions button { width: 100%; }
 }

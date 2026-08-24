@@ -1,12 +1,15 @@
-import { Activity, CalendarDays, FileText, HardDrive, LogOut, Menu, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
-import { useState } from 'react'
+import { Activity, Cake, CalendarDays, Compass, FileText, HardDrive, LogOut, Menu, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { veraApi } from '../lib/api'
 
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
+  { id: 'tour', label: 'Bảng tour', icon: Compass, ready: true, permission: 'tour' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'rules', label: 'Nội quy', icon: FileText, ready: true, permission: 'official_rules_view' },
   { id: 'payroll', label: 'Bảng lương', icon: WalletCards, ready: true, permission: 'payroll_history' },
-  { id: 'snapshot', label: 'Snapshot', icon: ScanLine, ready: true, permission: 'snapshot_today' },
+  { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
+  { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
   { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
   { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck, ready: true, permission: 'permission_admin' },
   { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
@@ -15,9 +18,26 @@ const items = [
 
 export default function AppShell({ user, currentPage, onPageChange, onSignOut, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [birthdayNotice, setBirthdayNotice] = useState(null)
+
+  useEffect(() => {
+    const viewerRole = String(user?.role || '').toLowerCase()
+    const currentDay = new Date().getDate()
+    if (user?.must_change_password || !user?.permissions?.birthday || !['admin', 'quanly', 'letan'].includes(viewerRole) || currentDay > 5) return
+    const today = new Date().toISOString().slice(0, 10)
+    if (window.localStorage.getItem('vera-birthday-dismissed') === today) return
+    veraApi.birthdays().then((result) => {
+      if ((result.birthdays || []).length) setBirthdayNotice(result)
+    }).catch(() => {})
+  }, [user?.must_change_password, user?.permissions?.birthday, user?.role])
+
+  const dismissBirthday = () => {
+    window.localStorage.setItem('vera-birthday-dismissed', new Date().toISOString().slice(0, 10))
+    setBirthdayNotice(null)
+  }
 
   const choose = (id, ready) => {
-    if (!ready) return
+    if (!ready || (user?.must_change_password && id !== 'profile')) return
     onPageChange(id)
     setMobileOpen(false)
   }
@@ -37,7 +57,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
 
         <div className="menu-caption">MENU</div>
         <nav className="nav-list">
-          {items.filter(({ permission }) => !permission || user?.role === 'admin' || user?.permissions?.[permission] === true).map(({ id, label, icon: Icon, ready }) => (
+          {items.filter(({ id, permission }) => (!user?.must_change_password || id === 'profile') && (!permission || user?.role === 'admin' || user?.permissions?.[permission] === true)).map(({ id, label, icon: Icon, ready }) => (
             <button
               key={id}
               className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`}
@@ -76,7 +96,11 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
           </div>
           <div className="environment-badge">Thanks</div>
         </header>
-        <div className="page-wrap">{children}</div>
+        <div className="page-wrap">
+          {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
+          {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button type="button" onClick={() => choose('birthday', true)}>Xem</button><button type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng">×</button></div>}
+          {children}
+        </div>
       </main>
     </div>
   )

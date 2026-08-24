@@ -65,8 +65,8 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "payroll_export": "Export Excel", "payroll_email": "Gửi email",
         "payroll_history_edit": "Cập nhật / ghi đè lịch sử", "payroll_history_delete": "Xóa bản lưu",
     },
-    "Snapshot / hệ thống": {
-        "snapshot_today": "Xem Snapshot chấm công", "snapshot_export": "Export Snapshot chấm công",
+    "Chấm công / hệ thống": {
+        "snapshot_today": "Xem Chấm công", "snapshot_export": "Export Chấm công",
         "auto_penalty": "Xem Auto Check", "auto_penalty_control": "Tạm dừng / mở Auto Check",
         "auto_penalty_run": "Chạy Auto Check thủ công", "sync": "Xem Đồng bộ dữ liệu",
         "sync_timesoft_fetch": "Lấy dữ liệu TimeSoft", "sync_timesoft_api": "Cấu hình API TimeSoft",

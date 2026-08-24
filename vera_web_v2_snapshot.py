@@ -1,4 +1,4 @@
-"""Attendance-only Snapshot routes. Revenue data is intentionally excluded."""
+"""Attendance-only routes. Revenue data is intentionally excluded."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -73,7 +73,7 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         if end < start:
             raise HTTPException(400, "Đến ngày phải bằng hoặc sau Từ ngày.")
         if end - start > timedelta(days=62):
-            raise HTTPException(400, "Snapshot chỉ cho xem tối đa 63 ngày mỗi lần.")
+            raise HTTPException(400, "Chấm công chỉ cho xem tối đa 63 ngày mỗi lần.")
         return start, end
 
     @app.get("/v2/snapshot")
@@ -97,11 +97,11 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
             ("departure_status", "Trạng thái ra"), ("late_minutes", "Phút trễ"),
             ("early_minutes", "Phút về sớm"), ("total_minutes", "Tổng phút"), ("punch_count", "Số lần chấm"),
         ]
-        wb = Workbook(); ws = wb.active; ws.title = "Snapshot chấm công"
+        wb = Workbook(); ws = wb.active; ws.title = "Chấm công"
         ws.append([label for _, label in columns])
         for cell in ws[1]:
             cell.font = Font(bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor="1F513F")
         for item in records: ws.append([item.get(key, "") for key, _ in columns])
         stream = BytesIO(); wb.save(stream); stream.seek(0)
-        filename = f"VERA_Snapshot_ChamCong_{start.isoformat()}_{end.isoformat()}.xlsx"
+        filename = f"VERA_ChamCong_{start.isoformat()}_{end.isoformat()}.xlsx"
         return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})

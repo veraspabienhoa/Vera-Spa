@@ -10,6 +10,8 @@ import PayrollPage from './pages/PayrollPage'
 import SnapshotPage from './pages/SnapshotPage'
 import AdminChangesPage from './pages/AdminChangesPage'
 import StorageAdminPage from './pages/StorageAdminPage'
+import BirthdayPage from './pages/BirthdayPage'
+import TourPage from './pages/TourPage'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
@@ -38,7 +40,10 @@ export default function App() {
         if (!me?.employee_username || me?.is_active === false) {
           throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
         }
-        if (mounted) setProfile(me)
+        if (mounted) {
+          setProfile(me)
+          if (me.must_change_password) setPage('profile')
+        }
       } catch (err) {
         if (mounted) {
           setProfile(null)
@@ -81,6 +86,7 @@ export default function App() {
         role: profile.role,
         permissions: profile.permissions || {},
         registration_locked: Boolean(profile.registration_locked),
+        must_change_password: Boolean(profile.must_change_password),
         user_metadata: {
           ...(user.user_metadata || {}),
           full_name: profile.full_name || profile.employee_username,
@@ -95,10 +101,12 @@ export default function App() {
       {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
       {page === 'employees' && <EmployeePage user={shellUser} />}
       {page === 'rules' && <RulesPage user={shellUser} />}
-      {page === 'profile' && <ProfilePage user={shellUser} onPasswordChanged={signOut} />}
+      {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
       {page === 'permissions' && <PermissionsPage user={shellUser} />}
       {page === 'payroll' && <PayrollPage user={shellUser} />}
       {page === 'snapshot' && <SnapshotPage user={shellUser} />}
+      {page === 'birthday' && <BirthdayPage />}
+      {page === 'tour' && <TourPage user={shellUser} />}
       {page === 'changes' && <AdminChangesPage user={shellUser} />}
       {page === 'storage' && <StorageAdminPage />}
     </AppShell>
