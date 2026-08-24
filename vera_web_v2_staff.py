@@ -65,7 +65,7 @@ TICHLUY_HEADERS = [
 
 class StaffCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
-    password: str = Field(min_length=8, max_length=300)
+    password: str = Field(min_length=6, max_length=300)
     role: str = Field(default="nhanvien", min_length=1, max_length=50)
     full_name: str = Field(default="", max_length=300)
     birth_date: str = Field(default="", max_length=30)
@@ -325,6 +325,56 @@ def install_staff_routes(
             pass
         return result
 
+    @app.on_event("startup")
+    def reconcile_employment_status_login_gates() -> None:
+        """Seed PostgreSQL login gates from the legacy status worksheet at rollout."""
+        statuses = google_status_map()
+        if not statuses:
+            return
+        try:
+            with engine_instance().begin() as conn:
+                rows = conn.execute(text("SELECT username FROM employees")).mappings().all()
+                for row in rows:
+                    status = statuses.get(norm(row["username"]))
+                    if not status:
+                        continue
+                    conn.execute(text("""
+                        UPDATE employees
+                        SET payload=jsonb_set(
+                              COALESCE(payload, '{}'::jsonb),
+                              '{Trạng thái làm việc}',
+                              to_jsonb(CAST(:status AS text)),
+                              true
+                            ),
+                            remember_token_hash=CASE WHEN :is_active THEN remember_token_hash ELSE '' END,
+                            remember_token_expiry=CASE WHEN :is_active THEN remember_token_expiry ELSE '' END,
+                            updated_at=NOW()
+                        WHERE username=:username
+                          AND (
+                            COALESCE(payload->>'Trạng thái làm việc','') IS DISTINCT FROM :status
+                            OR (NOT :is_active AND (
+                              COALESCE(remember_token_hash,'') <> ''
+                              OR COALESCE(remember_token_expiry,'') <> ''
+                            ))
+                          )
+                    """), {
+                        "username": row["username"], "status": status,
+                        "is_active": status == STATUS_OPTIONS[0],
+                    })
+                    conn.execute(text("""
+                        UPDATE vera_v2_user_profile
+                        SET is_active=:is_active, updated_at=NOW()
+                        WHERE lower(btrim(employee_username))=lower(btrim(:username))
+                          AND is_active IS DISTINCT FROM :is_active
+                    """), {
+                        "username": row["username"],
+                        "is_active": status == STATUS_OPTIONS[0],
+                    })
+        except Exception:
+            # The API must remain available when Google is temporarily unreachable;
+            # every later Web V2 status change still writes PostgreSQL synchronously.
+            return
+
     def write_status(username: str, status: str, actor: str) -> None:
         ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
         values = ws.get_all_values()
@@ -541,7 +591,12 @@ def install_staff_routes(
         if str(ident.role).lower() != "admin":
             public_rows = [row for row in public_rows if row["role"] != "quanly"]
         role_rank = {role: index for index, role in enumerate(ROLE_ORDER)}
-        public_rows.sort(key=lambda row: (role_rank.get(row["role"], 99), norm(row["username"])))
+        status_rank = {status: index for index, status in enumerate(STATUS_OPTIONS)}
+        public_rows.sort(key=lambda row: (
+            role_rank.get(row["role"], 99),
+            status_rank.get(row["employment_status"], 99),
+            norm(row["username"]),
+        ))
         summary = {
             "total": len(all_public),
             "active": sum(row["employment_status"] == STATUS_OPTIONS[0] for row in all_public),
@@ -628,6 +683,11 @@ def install_staff_routes(
         status = _status_value(values.get("employment_status", old_status), norm)
         if str(merged.get("role") or "").lower() == "admin" and status != STATUS_OPTIONS[0]:
             raise HTTPException(400, "Không áp dụng trạng thái nghỉ việc cho tài khoản admin.")
+        if status != STATUS_OPTIONS[0]:
+            # Employment status is an independent login gate.  Clear legacy
+            # remembered-login material immediately when employment pauses or ends.
+            merged["remember_token_hash"] = ""
+            merged["remember_token_expiry"] = ""
 
         payload = _employee_payload(merged, status)
         updated = conn.execute(text("""
@@ -654,11 +714,18 @@ def install_staff_routes(
         }).mappings().first()
         if not updated:
             raise HTTPException(404, "Nhân viên không còn tồn tại.")
-        if str(merged.get("role") or "").lower() != str(row.get("role") or "").lower():
+        if (
+            str(merged.get("role") or "").lower() != str(row.get("role") or "").lower()
+            or status != old_status
+        ):
             conn.execute(text("""
-                UPDATE vera_v2_user_profile SET role=:role, updated_at=NOW()
+                UPDATE vera_v2_user_profile
+                SET role=:role, is_active=:is_active, updated_at=NOW()
                 WHERE lower(btrim(employee_username))=lower(btrim(:username))
-            """), {"role": merged["role"], "username": row["username"]})
+            """), {
+                "role": merged["role"], "is_active": status == STATUS_OPTIONS[0],
+                "username": row["username"],
+            })
         return {
             **dict(updated),
             "_status": status,
@@ -963,7 +1030,7 @@ def install_staff_routes(
         finally:
             conn.close()
 
-    def filtered_staff(conn, ident, search: str, role: str, status: str) -> list[dict[str, Any]]:
+    def filtered_staff(conn, ident, search: str, role: str, status: str, shift: str) -> list[dict[str, Any]]:
         data = staff_result(conn, ident)["employees"]
         if search.strip():
             needle = norm(search)
@@ -973,6 +1040,8 @@ def install_staff_routes(
         if status.strip():
             wanted = _status_value(status, norm)
             data = [row for row in data if row["employment_status"] == wanted]
+        if shift.strip():
+            data = [row for row in data if row["work_shift"] == shift.strip()]
         return data
 
     def build_staff_workbook(rows: list[dict[str, Any]], shifts: dict[str, list[str]]) -> bytes:
@@ -1100,11 +1169,12 @@ def install_staff_routes(
         search: str = Query(default="", max_length=200),
         role: str = Query(default="", max_length=50),
         status: str = Query(default="", max_length=100),
+        shift: str = Query(default="", max_length=300),
         ident: identity_type = Depends(current_identity),
     ):
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "staff_export")
-            rows = filtered_staff(conn, ident, search, role, status)
+            rows = filtered_staff(conn, ident, search, role, status, shift)
             shifts = staff_result(conn, ident)["shifts_by_department"]
         content = build_staff_workbook(rows, shifts)
         filename = f"VeraSpa_DanhSachNhanSu_{datetime.now(vn_tz).strftime('%d%m%Y')}.xlsx"

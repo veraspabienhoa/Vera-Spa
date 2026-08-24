@@ -132,11 +132,12 @@ export const veraApi = {
     method: 'DELETE',
     body: JSON.stringify({ usernames }),
   }),
-  exportStaffExcel: (search = '', role = '', status = '') => {
+  exportStaffExcel: (search = '', role = '', status = '', shift = '') => {
     const params = new URLSearchParams()
     if (search.trim()) params.set('search', search.trim())
     if (role) params.set('role', role)
     if (status) params.set('status', status)
+    if (shift) params.set('shift', shift)
     const query = params.toString()
     return download(`/v2/staff/export.xlsx${query ? `?${query}` : ''}`, 'VeraSpa_DanhSachNhanSu.xlsx')
   },
@@ -152,6 +153,7 @@ export const veraApi = {
     body: JSON.stringify(body),
   }),
   profile: () => request('/v2/profile'),
+  profileReferenceData: (provinceCode = '') => request(`/v2/profile/reference-data${provinceCode === '' ? '' : `?province_code=${encodeURIComponent(provinceCode)}`}`),
   updateProfile: (body) => request('/v2/profile', { method: 'PATCH', body: JSON.stringify(body) }),
   permissions: () => request('/v2/permissions'),
   savePermissions: (scope, target, body) => request(`/v2/permissions/${encodeURIComponent(scope)}/${encodeURIComponent(target)}`, {
@@ -172,6 +174,9 @@ export const veraApi = {
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportSnapshotExcel: (start, end) => download(`/v2/snapshot/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, 'VERA_Snapshot_ChamCong.xlsx'),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
+  storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),
+  deleteStorageData: (body) => request('/v2/storage', { method: 'DELETE', body: JSON.stringify(body) }),
   createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }),
   updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }),

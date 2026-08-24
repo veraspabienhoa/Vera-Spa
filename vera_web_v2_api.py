@@ -491,6 +491,11 @@ async def current_identity(authorization: str | None = Header(default=None)) -> 
             WHERE p.auth_user_id=CAST(:uid AS uuid)
               AND p.is_active=true
               AND COALESCE(e.login_locked,false)=false
+              AND COALESCE(
+                    e.payload->>'Trạng thái làm việc',
+                    e.payload->>'employment_status',
+                    'Đang làm việc'
+                  ) = 'Đang làm việc'
             LIMIT 1
         """), {"uid": auth_uid}).first()
     if not row:
@@ -1928,9 +1933,8 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
         conn.close()
 
 
-@app.delete("/v2/leave/records")
-def delete_leave(body: LeaveDelete, ident: Identity = Depends(current_identity)):
-    uids = list(dict.fromkeys(str(uid or "").strip() for uid in body.record_uids if str(uid or "").strip()))
+def _delete_leave_uids(record_uids: list[str], ident: Identity):
+    uids = list(dict.fromkeys(str(uid or "").strip() for uid in record_uids if str(uid or "").strip()))
     if not uids:
         raise HTTPException(400, "Chưa chọn lịch nghỉ cần xóa.")
     engine = _engine_instance()
@@ -2020,6 +2024,11 @@ def delete_leave(body: LeaveDelete, ident: Identity = Depends(current_identity))
         raise HTTPException(500, f"Không xóa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
     finally:
         conn.close()
+
+
+@app.delete("/v2/leave/records")
+def delete_leave(body: LeaveDelete, ident: Identity = Depends(current_identity)):
+    return _delete_leave_uids(body.record_uids, ident)
 
 
 # Employee routes are kept in a separate module so this migration remains
@@ -2116,5 +2125,16 @@ install_payroll_routes(
     current_identity=current_identity,
     require_feature=_require_feature,
     norm=_norm,
+    identity_type=Identity,
+)
+
+from vera_web_v2_storage import install_storage_routes
+
+install_storage_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    delete_leave_uids=_delete_leave_uids,
     identity_type=Identity,
 )

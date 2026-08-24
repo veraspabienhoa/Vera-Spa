@@ -1,4 +1,4 @@
-import { Activity, CalendarDays, FileText, LogOut, Menu, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, CalendarDays, FileText, HardDrive, LogOut, Menu, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useState } from 'react'
 
 const items = [
@@ -10,6 +10,7 @@ const items = [
   { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
   { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck, ready: true, permission: 'permission_admin' },
   { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
+  { id: 'storage', label: 'Bộ nhớ hệ thống', icon: HardDrive, ready: true, permission: 'storage_admin_view' },
 ]
 
 export default function AppShell({ user, currentPage, onPageChange, onSignOut, children }) {

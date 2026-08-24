@@ -76,6 +76,8 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "birthday": "Xem sinh nhật", "birthday_check": "Chạy kiểm tra sinh nhật",
         "guide_manage": "Quản lý tài liệu hướng dẫn",
         "audit_admin_view": "Xem nhật ký thay đổi hệ thống", "permission_admin": "Quản trị phân quyền",
+        "storage_admin_view": "Xem quản lý bộ nhớ", "storage_export": "Export dữ liệu lưu trữ",
+        "storage_delete": "Xóa dữ liệu lưu trữ theo thời gian",
     },
 }
 FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in group.items()}
@@ -86,19 +88,19 @@ FRONTDESK = {
     "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add",
     "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
     "employee_delete", "employee_delete_confirm", "shift", "shift_assignment_edit", "shift_import", "shift_export_pdf",
-    "account_lock", "account_lock_edit", "registration_lock", "registration_lock_edit", "official_rules_view",
-    "official_rules_edit", "official_rules_export", "official_rules_import", "profile", "profile_edit", "birthday", "birthday_check",
+    "account_lock", "account_lock_edit", "registration_lock", "registration_lock_edit",
+    "profile", "profile_edit", "birthday", "birthday_check",
 }
 EMPLOYEE = {
     "tour", "tour_refresh", "leave", "leave_manage", "leave_create", "leave_export", "leave_detail_edit", "leave_detail_delete",
     "leave_manage_edit", "leave_manage_delete", "long_leave", "long_leave_form", "resignation_form",
-    "long_leave_document", "official_rules_view", "official_rules_export", "profile", "profile_edit", "birthday", "birthday_check",
+    "long_leave_document", "profile", "profile_edit", "birthday", "birthday_check",
 }
 DEFAULT_ROLE_FEATURES = {
     "admin": set(FEATURES), "quanly": set(FRONTDESK), "letan": set(FRONTDESK),
     "leader": set(EMPLOYEE), "nhanvien": set(EMPLOYEE),
-    "locker": {"tour", "tour_refresh", "official_rules_view", "official_rules_export", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form"},
-    "tapvu": {"official_rules_view", "official_rules_export", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form"},
+    "locker": {"tour", "tour_refresh", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form"},
+    "tapvu": {"profile", "profile_edit", "birthday", "birthday_check", "resignation_form"},
 }
 
 

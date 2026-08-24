@@ -7,7 +7,7 @@ worksheet so the current Streamlit approval workflow keeps seeing the same data.
 from __future__ import annotations
 
 import calendar
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import html
@@ -127,7 +127,12 @@ def _resignation_eligibility(conn, employee: str, today: date) -> dict[str, Any]
     }).scalar_one_or_none()
     if pending:
         return {"allowed": False, "message": f"Bạn đã có Đơn xin nghỉ việc {pending} đang được xử lý."}
-    return {"allowed": True, "message": "Có thể gửi Đơn xin nghỉ việc cho Admin duyệt."}
+    earliest = today + timedelta(days=30)
+    return {
+        "allowed": True,
+        "message": f"Có thể gửi Đơn xin nghỉ việc; ngày nghỉ dự kiến sớm nhất là {earliest.strftime('%d/%m/%Y')}.",
+        "earliest_resignation_date": earliest.isoformat(),
+    }
 
 
 def _payload_value(payload: Any) -> dict[str, Any]:
@@ -440,6 +445,12 @@ def install_long_leave_routes(
         detail = str(body.detail or "").strip()
         if request_type == REQUEST_TYPE_RESIGNATION and body.end_date != body.start_date:
             raise HTTPException(400, "Đơn xin nghỉ việc chỉ dùng một ngày nghỉ việc dự kiến.")
+        if request_type == REQUEST_TYPE_RESIGNATION and body.start_date < today + timedelta(days=30):
+            earliest = today + timedelta(days=30)
+            raise HTTPException(
+                400,
+                f"Ngày nghỉ việc dự kiến phải cách ngày làm đơn ít nhất 30 ngày, từ {earliest.strftime('%d/%m/%Y')} trở đi.",
+            )
         if request_type == REQUEST_TYPE_LONG and not reason:
             raise HTTPException(400, "Vui lòng nhập Lý do nghỉ làm đẹp.")
         if request_type == REQUEST_TYPE_LONG and not detail:

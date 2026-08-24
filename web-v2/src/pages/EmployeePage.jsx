@@ -79,6 +79,7 @@ export default function EmployeePage({ user }) {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [shiftFilter, setShiftFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
@@ -111,8 +112,14 @@ export default function EmployeePage({ user }) {
       const matchesName = !needle || `${employee.username} ${employee.full_name}`.toLocaleLowerCase('vi').includes(needle)
       return matchesName && (!roleFilter || employee.role === roleFilter)
         && (!statusFilter || employee.employment_status === statusFilter)
+        && (!shiftFilter || employee.work_shift === shiftFilter)
     })
-  }, [data, roleFilter, search, statusFilter])
+  }, [data, roleFilter, search, shiftFilter, statusFilter])
+
+  const shiftOptions = useMemo(() => Array.from(new Set([
+    ...(data?.employees || []).map((employee) => employee.work_shift),
+    ...Object.values(data?.shifts_by_department || {}).flat(),
+  ].filter(Boolean))).sort((left, right) => left.localeCompare(right, 'vi')), [data])
 
   const permissions = data?.permissions || {}
   const isAdmin = user?.role === 'admin'
@@ -265,10 +272,14 @@ export default function EmployeePage({ user }) {
             <option value="">Tất cả trạng thái</option>
             {(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}
           </select>
+          <select value={shiftFilter} onChange={(event) => setShiftFilter(event.target.value)} aria-label="Lọc ca làm việc">
+            <option value="">Tất cả ca làm việc</option>
+            {shiftOptions.map((shift) => <option key={shift}>{shift}</option>)}
+          </select>
         </div>
         <div className="staff-actionbar">
           {permissions.employee_add && <button className="primary-button" onClick={() => setAddOpen((value) => !value)}><Plus size={17} /> Thêm nhân viên</button>}
-          {permissions.staff_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter))}><Download size={17} /> Export Excel</button>}
+          {permissions.staff_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /> Export Excel</button>}
           {permissions.staff_import && <>
             <input ref={importRef} className="staff-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importExcel} />
             <button className="secondary-button" disabled={busy === 'import'} onClick={() => importRef.current?.click()}><Upload size={17} /> Import Excel</button>
@@ -282,7 +293,7 @@ export default function EmployeePage({ user }) {
         <div className="panel-title-row"><div><h2>THÊM NHÂN VIÊN</h2><p>Mật khẩu chỉ được nhập khi tạo mới và không xuất ra Excel.</p></div></div>
         <form className="staff-form-grid" onSubmit={createStaff}>
           <label>Tên nhân viên<input required value={createForm.username} onChange={(event) => setCreateForm({ ...createForm, username: event.target.value })} /></label>
-          <label>Mật khẩu ban đầu (tối thiểu 8 ký tự)<input required minLength={8} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /></label>
+          <label>Mật khẩu ban đầu (tối thiểu 6 ký tự)<input required minLength={6} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /></label>
           <label>Phân quyền<select value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value })}>{(data?.role_options || []).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
           <label>Họ và tên đầy đủ<input value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
           <label>Ngày bắt đầu làm<input type="date" value={createForm.employment_start_date} onChange={(event) => setCreateForm({ ...createForm, employment_start_date: event.target.value })} /></label>

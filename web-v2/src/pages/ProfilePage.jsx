@@ -13,7 +13,8 @@ const toVnDate = (value) => {
 }
 
 export default function ProfilePage({ onPasswordChanged }) {
-  const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', phone: '', email: '', address: '', bank_account: '', bank_name: '' })
+  const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', phone: '', email: '', address: '', province: '', ward: '', address_detail: '', bank_account: '', bank_name: '' })
+  const [references, setReferences] = useState({ provinces: [], wards: [], banks: [] })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -23,8 +24,12 @@ export default function ProfilePage({ onPasswordChanged }) {
   const load = async () => {
     setLoading(true)
     try {
-      const result = await veraApi.profile()
+      const [result, catalogs] = await Promise.all([veraApi.profile(), veraApi.profileReferenceData()])
       setForm((current) => ({ ...current, ...result.profile, birth_date: toInputDate(result.profile.birth_date), current_password: '', new_password: '' }))
+      let wards = []
+      const province = (catalogs.provinces || []).find((item) => item.name === result.profile.province)
+      if (province) wards = (await veraApi.profileReferenceData(province.code)).wards || []
+      setReferences({ provinces: catalogs.provinces || [], banks: catalogs.banks || [], wards })
     } catch (error) { setNotice({ status: 'error', message: error.message }) }
     finally { setLoading(false) }
   }
@@ -54,6 +59,19 @@ export default function ProfilePage({ onPasswordChanged }) {
     finally { setPushBusy(false) }
   }
 
+  const changeProvince = async (provinceName) => {
+    setForm((current) => ({ ...current, province: provinceName, ward: '' }))
+    const province = references.provinces.find((item) => item.name === provinceName)
+    if (!province) { setReferences((current) => ({ ...current, wards: [] })); return }
+    try {
+      const result = await veraApi.profileReferenceData(province.code)
+      setReferences((current) => ({ ...current, wards: result.wards || [] }))
+    } catch (error) {
+      setReferences((current) => ({ ...current, wards: [] }))
+      setNotice({ status: 'error', message: `Không tải được danh sách Xã/Phường (${error.message}).` })
+    }
+  }
+
   return <div className="feature-page">
     <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>Nhân viên tự cập nhật thông tin của chính tài khoản đang đăng nhập.</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button></div>
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}
@@ -63,14 +81,16 @@ export default function ProfilePage({ onPasswordChanged }) {
         <label>Ngày sinh<input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} /></label>
         <label>Điện thoại<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
         <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
-        <label className="wide-field">Địa chỉ<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
+        <label>Tỉnh/Thành phố<select value={form.province} onChange={(e) => void changeProvince(e.target.value)}><option value="">-- Chọn Tỉnh/Thành phố --</option>{form.province && !references.provinces.some((item) => item.name === form.province) && <option>{form.province}</option>}{references.provinces.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}</select></label>
+        <label>Xã/Phường<select value={form.ward} onChange={(e) => setForm({ ...form, ward: e.target.value })} disabled={!form.province}><option value="">-- Chọn Xã/Phường --</option>{form.ward && !references.wards.includes(form.ward) && <option>{form.ward}</option>}{references.wards.map((ward) => <option key={ward}>{ward}</option>)}</select></label>
+        <label className="wide-field">Địa chỉ<input value={form.address_detail} onChange={(e) => setForm({ ...form, address_detail: e.target.value })} placeholder="Số nhà, đường, ấp/khu phố" /></label>
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value })} /></label>
-        <label>Tên ngân hàng<input value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} /></label>
+        <label>Tên ngân hàng<select value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{form.bank_name && !references.banks.includes(form.bank_name) && <option>{form.bank_name}</option>}{references.banks.map((bank) => <option key={bank}>{bank}</option>)}</select></label>
         <div className="profile-password-box wide-field">
           <h3>THAY ĐỔI MẬT KHẨU</h3><p>Luôn nhập mật khẩu hiện tại để xác nhận. Để trống mật khẩu mới nếu chỉ sửa hồ sơ.</p>
           <div className="profile-password-grid">
             <label>Mật khẩu hiện tại<input type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required /></label>
-            <label>Mật khẩu mới<input type="password" minLength="8" value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Tối thiểu 8 ký tự" /></label>
+            <label>Mật khẩu mới<input type="password" minLength="6" value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Tối thiểu 6 ký tự" /></label>
           </div>
         </div>
         <button className="primary-button wide-field" disabled={saving}><Save size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>

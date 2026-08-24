@@ -79,6 +79,7 @@ export default function LongLeaveSection({ user }) {
 
   const isAnnual = form.request_type === ANNUAL
   const isResignation = form.request_type === RESIGNATION
+  const resignationMinDate = overview?.resignation_eligibility?.earliest_resignation_date || addDays(today(), 30)
   const annualMaxEnd = useMemo(() => addDays(form.start_date, 6), [form.start_date])
   const approvedRequests = overview?.approved_requests || []
   const canSubmit = !saving && (isResignation
@@ -89,16 +90,22 @@ export default function LongLeaveSection({ user }) {
 
   const changeRequestType = (requestType) => {
     setNotice(null)
-    setForm((current) => ({
-      ...current,
-      request_type: requestType,
-      reason: requestType === ANNUAL || requestType === RESIGNATION ? '' : current.reason,
-      end_date: requestType === RESIGNATION
-        ? current.start_date
-        : (requestType === ANNUAL && current.end_date > addDays(current.start_date, 6)
-            ? current.start_date
-            : current.end_date),
-    }))
+    setForm((current) => {
+      const startDate = requestType === RESIGNATION && current.start_date < resignationMinDate
+        ? resignationMinDate
+        : current.start_date
+      return {
+        ...current,
+        request_type: requestType,
+        start_date: startDate,
+        reason: requestType === ANNUAL || requestType === RESIGNATION ? '' : current.reason,
+        end_date: requestType === RESIGNATION
+          ? startDate
+          : (requestType === ANNUAL && current.end_date > addDays(current.start_date, 6)
+              ? current.start_date
+              : current.end_date),
+      }
+    })
   }
 
   const changeStartDate = (value) => {
@@ -195,7 +202,7 @@ export default function LongLeaveSection({ user }) {
               <input value={shortEmployeeName(user?.employee_username)} readOnly />
             </label>
 
-            <DateField label={isResignation ? 'Ngày nghỉ việc dự kiến' : (isAnnual ? 'Từ ngày Phép năm' : 'Từ ngày')} value={form.start_date} min={today()} onChange={changeStartDate} />
+            <DateField label={isResignation ? 'Ngày nghỉ việc dự kiến' : (isAnnual ? 'Từ ngày Phép năm' : 'Từ ngày')} value={form.start_date} min={isResignation ? resignationMinDate : today()} onChange={changeStartDate} />
             {!isResignation && (
               <DateField
                 label={isAnnual ? 'Đến ngày Phép năm' : 'Đến ngày'}
@@ -230,6 +237,7 @@ export default function LongLeaveSection({ user }) {
             </label>
 
             {isAnnual && <div className="long-leave-form-note">Đơn Phép năm được chọn tối đa 7 ngày liên tiếp và chỉ trừ quỹ sau khi Admin duyệt.</div>}
+            {isResignation && <div className="long-leave-form-note">Ngày nghỉ việc dự kiến phải đủ ít nhất 30 ngày kể từ ngày làm đơn.</div>}
 
             <button type="submit" className="primary-button long-leave-submit" disabled={!canSubmit}>
               <Send size={16} /> {saving ? 'Đang gửi đơn…' : `Gửi đơn ${form.request_type}`}

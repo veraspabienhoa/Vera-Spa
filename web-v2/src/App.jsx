@@ -9,6 +9,7 @@ import PermissionsPage from './pages/PermissionsPage'
 import PayrollPage from './pages/PayrollPage'
 import SnapshotPage from './pages/SnapshotPage'
 import AdminChangesPage from './pages/AdminChangesPage'
+import StorageAdminPage from './pages/StorageAdminPage'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
@@ -99,6 +100,7 @@ export default function App() {
       {page === 'payroll' && <PayrollPage user={shellUser} />}
       {page === 'snapshot' && <SnapshotPage user={shellUser} />}
       {page === 'changes' && <AdminChangesPage user={shellUser} />}
+      {page === 'storage' && <StorageAdminPage />}
     </AppShell>
   )
 }
