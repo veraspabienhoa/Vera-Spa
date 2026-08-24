@@ -238,6 +238,7 @@ jobs:
               'Web V2 login contains contact and map': '193 Trương Định, Tam Hiệp, Đồng Nai' in login_page and 'maps.app.goo.gl/kkQjkTT7vm9oDWjbA' in login_page,
               'Web V2 legacy login copy removed': 'Trải nghiệm mới' not in login_page and 'Web V2 · React + Supabase' not in login_page,
               'Web V2 topbar uses VERA wellbeing message': 'Suối nguồn thư giãn, trọn vẹn an yên.' in shell,
+              'Web V2 uses concise VERA SPA brand name': '<div className="topbar-kicker">VERA SPA</div>' in shell and '<title>VERA SPA</title>' in Path('web-v2/index.html').read_text(encoding='utf-8') and 'VERA SPA ĐỒNG NAI' not in shell,
               'Web V2 excludes system roles from coverage': "NOT IN ('admin','letan','locker','tapvu')" in api,
               'Web V2 RPC penalty follows feature permission': "employee_penalty_view" in hardening and 'case when can_view_penalty' in hardening,
               'Web V2 resets current non-admin penalty grants': "employee_penalty_view" in penalty_default and "'false'::jsonb" in penalty_default,

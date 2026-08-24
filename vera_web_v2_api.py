@@ -53,7 +53,7 @@ CORS_ORIGINS = [
     if x.strip()
 ]
 
-app = FastAPI(title="VERA SPA ĐỒNG NAI API", version="3.0")
+app = FastAPI(title="VERA SPA API", version="3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

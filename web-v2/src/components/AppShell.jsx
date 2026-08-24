@@ -66,7 +66,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
             <Menu size={22} />
           </button>
           <div>
-            <div className="topbar-kicker">VERA SPA ĐỒNG NAI</div>
+            <div className="topbar-kicker">VERA SPA</div>
             <div className="topbar-title">Suối nguồn thư giãn, trọn vẹn an yên.</div>
           </div>
           <div className="environment-badge">Thanks</div>

@@ -1,8 +1,8 @@
 {
   "id": "/Vera-Spa/",
-  "name": "VERA SPA ĐỒNG NAI",
+  "name": "VERA SPA",
   "short_name": "VERA SPA",
-  "description": "Đăng ký và theo dõi lịch nghỉ VERA SPA Đồng Nai",
+  "description": "Đăng ký và theo dõi lịch nghỉ VERA SPA",
   "lang": "vi",
   "start_url": "/Vera-Spa/",
   "scope": "/Vera-Spa/",
