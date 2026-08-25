@@ -228,10 +228,13 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .birthday-card span { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .birthday-card em { margin-top: 5px; color: #8c651f; font-size: 10px; font-style: normal; font-weight: 900; text-transform: uppercase; }
 .tour-table-panel { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
-.tour-table { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.tour-table { width: 100%; max-width: 100%; max-height: calc(100vh - 110px); min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.tour-table:focus-visible { outline: 3px solid rgba(33,70,57,.22); outline-offset: -3px; }
 .tour-table table { width: max-content; min-width: 100%; }
 .tour-table td { white-space: nowrap; }
-.tour-table th { color: #000; background: #a1948c; font-weight: 800; text-align: center; white-space: normal; }
+.tour-table th { position: sticky; top: 0; z-index: 4; color: #000; background: #a1948c; box-shadow: 0 2px 0 rgba(35,31,29,.18); font-weight: 800; text-align: center; white-space: normal; }
+.tour-table .tour-col-remaining { min-width: 94px; text-align: center; }
+.tour-table .tour-col-appointment { width: 88px; min-width: 88px; max-width: 88px; white-space: normal; overflow-wrap: anywhere; }
 .tour-table tr.tour-row-green td { color: #000; background: #92d050; font-weight: 700; }
 .tour-table tr.tour-row-yellow td { color: #000; background: #ffd966; font-weight: 700; }
 .tour-table tr.tour-row-red td { color: #000; background: #ff6666; font-weight: 700; }
@@ -242,8 +245,6 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .tour-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .tour-metrics .tour-available-metric { border-color: #75b63e; background: #eaf7df; }
 .tour-metrics .tour-break-metric { border-color: #e2a36c; background: #fff1e5; }
-.tour-stats-panel { margin-bottom: 18px; }
-.tour-stat-available td { color: #000; background: #92d050; }
 .tour-legend { margin: 0; }
 .tour-legend-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .tour-legend-grid span { border: 1px solid rgba(0,0,0,.09); border-radius: 999px; padding: 7px 10px; color: #1e2c25; font-size: 10px; font-weight: 800; }

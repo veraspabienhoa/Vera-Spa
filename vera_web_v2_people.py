@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 
 BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
+TOUR_CACHE_SECONDS = 60
 _tour_cache: dict[str, Any] = {"loaded_at": 0.0, "columns": [], "records": [], "source_updated_at": ""}
 _tour_lock = threading.Lock()
 
@@ -58,7 +59,7 @@ def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
                 raise RuntimeError("Google Drive trả về trang HTML thay vì file XLSM")
             workbook = load_workbook(BytesIO(response.content), read_only=True, data_only=True)
             if "Input" not in workbook.sheetnames:
-                raise RuntimeError("File Bản tua không có sheet Input")
+                raise RuntimeError("File Bảng tua không có sheet Input")
             sheet = workbook["Input"]
             raw_headers = [cell.value for cell in next(sheet.iter_rows(min_row=20, max_row=20, max_col=24))]
             columns: list[str] = []
@@ -78,7 +79,7 @@ def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
             return columns, records, str(response.headers.get("Last-Modified") or "")
         except Exception as exc:
             errors.append(str(exc))
-    raise RuntimeError("Không tải được Bản tua: " + " | ".join(errors[-2:]))
+    raise RuntimeError("Không tải được Bảng tua: " + " | ".join(errors[-2:]))
 
 
 def _token(value: Any) -> str:
@@ -193,22 +194,22 @@ def _display_value(value: Any) -> Any:
 
 
 def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
-    output_columns = list(columns)
     request_column = _find_column_any(columns, ("Yêu cầu", "Yeu cau"))
     duration_column = _find_column_any(columns, ("Thời lượng", "Thoi luong", "Thời lượng (phút)", "Thời lượng phút"))
     start_column = _find_column_any(columns, ("TG bắt đầu thực hiện", "TG bat dau thuc hien", "BĐ thực hiện", "BD thuc hien", "Bắt đầu thực hiện"))
     start_yc_column = _find_column_any(columns, ("TG bắt đầu thực hiện YC", "TG bat dau thuc hien YC", "BĐ thực hiện YC", "BD thuc hien YC", "BĐ YC", "BD YC", "Bắt đầu thực hiện YC"))
-    remaining_column = _find_column(columns, "Thời gian còn lại")
-    if not remaining_column:
-        remaining_column = "Thời gian còn lại"
-        output_columns.append(remaining_column)
+    source_remaining_column = _find_column_any(columns, ("Thời gian còn lại", "TG còn lại"))
+    remaining_column = "TG CÒN LẠI"
+    output_columns = [column for column in columns if column not in {source_remaining_column, remaining_column}]
+    output_columns.append(remaining_column)
     name_column = _find_column(columns, "Tên nhân viên")
     status_column = _find_column(columns, "Trạng thái")
+    room_column = _find_column_any(columns, ("Phòng", "Phong"))
     work_column = _find_column(columns, "Đi làm")
     shift_column = _find_column(columns, "Vào ca") or next((column for column in columns if _token(column) == "ca"), "")
     break_column = _find_column(columns, "Break") or _find_column(columns, "Breaktime")
 
-    moved = [column for column in (status_column, remaining_column) if column]
+    moved = [column for column in (status_column, room_column, remaining_column, request_column) if column]
     ordered_columns = [column for column in output_columns if column not in moved]
     if name_column and name_column in ordered_columns:
         position = ordered_columns.index(name_column) + 1
@@ -279,11 +280,15 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
     return {
         "columns": ordered_columns,
         "records": prepared,
+        "employee_count": len(prepared),
         "available": available,
-        "stats": [{"label": "Có thể lên tour", "value": available, "detail": "Sắp xong + Đang rảnh"}],
+        "stats": [{"label": "Có thể lên tua", "value": available, "detail": "Sắp xong + Đang rảnh"}],
         "break_count": counters["break"],
         "working_count": counters["working"],
         "leave_count": counters["leave"],
+        "doing_count": counters["doing"],
+        "waiting_count": counters["waiting"],
+        "finishing_count": counters["finishing"],
         "countdown_error": countdown_error,
         "countdown_at": now.isoformat(),
     }
@@ -327,7 +332,7 @@ def install_people_routes(
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "tour_refresh" if refresh else "tour")
         with _tour_lock:
-            if refresh or not _tour_cache["records"] or time.monotonic() - float(_tour_cache["loaded_at"]) > 300:
+            if refresh or not _tour_cache["records"] or time.monotonic() - float(_tour_cache["loaded_at"]) > TOUR_CACHE_SECONDS:
                 try:
                     columns, records, source_updated_at = _download_tour()
                 except Exception as exc:
