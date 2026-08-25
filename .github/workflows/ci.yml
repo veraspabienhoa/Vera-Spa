@@ -609,6 +609,8 @@ jobs:
           employee_page = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
           profile_page = Path('web-v2/src/pages/ProfilePage.jsx').read_text(encoding='utf-8')
           storage_page = Path('web-v2/src/pages/StorageAdminPage.jsx').read_text(encoding='utf-8')
+          tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
+          styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           for source in (api, permissions, profile, payroll, people, security, snapshot, storage): ast.parse(source)
           checks = {
               'statistics and list have local refresh controls': leave.count('onClick={load}') >= 3 and leave.count('Làm mới') >= 3,
@@ -630,8 +632,9 @@ jobs:
               'audit excludes sensitive values': 'No password, push key, bank data, payroll amount or revenue value' in sql,
               'shared audit trigger is safe for heterogeneous row types': all(token in sql for token in ("row_data jsonb := CASE", "row_data ->> 'username'", "row_data ->> 'employee_username'")) and 'OLD.username' not in sql and 'RETURN CASE' not in sql,
               'new pages are routed and permission gated': all(name in app for name in ('ProfilePage','PermissionsPage','PayrollPage','SnapshotPage','BirthdayPage','TourPage','LongLeaveSection','AdminChangesPage','StorageAdminPage')) and all(key in shell for key in ('permission_admin','payroll_history','snapshot_today','birthday','tour','long_leave','audit_admin_view','storage_admin_view')),
-              'birthday and Bản tua APIs are present': '/v2/birthdays' in people and '/v2/tour' in people and '_prepare_tour' in people and 'Có thể lên tour' in people,
-              'Bản tua countdown colors and indices are preserved': all(token in people for token in ('remaining >= 15', '0 <= remaining < 15', '-15 < remaining < 0', 'remaining <= -15', 'row_style = "break"', 'counters["finishing"] + counters["idle"]')) and all(token in Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8') for token in ('CHỈ SỐ', 'MÀU DÒNG', 'tour-row-', 'Làm mới Bản tua')),
+              'birthday and Bảng tua APIs are present': '/v2/birthdays' in people and '/v2/tour' in people and '_prepare_tour' in people and 'Có thể lên tour' in people,
+              'Bảng tua countdown colors and indices are preserved': all(token in people for token in ('remaining >= 15', '0 <= remaining < 15', '-15 < remaining < 0', 'remaining <= -15', 'row_style = "break"', 'counters["finishing"] + counters["idle"]')) and all(token in tour_page for token in ('CHỈ SỐ', 'MÀU DÒNG', 'tour-row-', 'Làm mới Bảng tua')),
+              'Bảng tua legend follows the table and horizontal overflow stays contained': tour_page.index('className="responsive-data-table tour-table"') < tour_page.index('<h2>MÀU DÒNG</h2>') and all(token in styles for token in ('.tour-table-panel', 'overflow: hidden', 'overscroll-behavior-x: contain')),
               'system changes only list leave CRUD': "dataset_key='leave_records'" in api and "event_type IN ('insert','update','delete')" in api,
               'Admin storage export and guarded deletion exist': all(route in storage for route in ('/v2/storage/preview','/v2/storage/export.xlsx','/v2/storage')) and 'XÓA DỮ LIỆU' in storage and 'expected_count' in storage and 'exportStorageExcel' in Path('web-v2/src/lib/api.js').read_text(encoding='utf-8') and 'XÓA DỮ LIỆU' in storage_page,
           }

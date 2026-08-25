@@ -227,7 +227,9 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .birthday-card strong, .birthday-card span, .birthday-card em { display: block; }
 .birthday-card span { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .birthday-card em { margin-top: 5px; color: #8c651f; font-size: 10px; font-style: normal; font-weight: 900; text-transform: uppercase; }
-.tour-table table { min-width: 1100px; }
+.tour-table-panel { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
+.tour-table { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.tour-table table { width: max-content; min-width: 100%; }
 .tour-table td { white-space: nowrap; }
 .tour-table th { color: #000; background: #a1948c; font-weight: 800; text-align: center; white-space: normal; }
 .tour-table tr.tour-row-green td { color: #000; background: #92d050; font-weight: 700; }
@@ -242,7 +244,7 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .tour-metrics .tour-break-metric { border-color: #e2a36c; background: #fff1e5; }
 .tour-stats-panel { margin-bottom: 18px; }
 .tour-stat-available td { color: #000; background: #92d050; }
-.tour-legend { margin-bottom: 18px; }
+.tour-legend { margin: 0; }
 .tour-legend-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .tour-legend-grid span { border: 1px solid rgba(0,0,0,.09); border-radius: 999px; padding: 7px 10px; color: #1e2c25; font-size: 10px; font-weight: 800; }
 .tour-legend-grid .green { background: #92d050; }

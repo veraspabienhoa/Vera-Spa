@@ -20,8 +20,8 @@ HEADERS = ["Phạm vi", "Đối tượng", "Chức năng", "Cho phép", "Ngày c
 ROLES = ["quanly", "letan", "leader", "nhanvien", "locker", "tapvu"]
 
 FEATURE_GROUPS: dict[str, dict[str, str]] = {
-    "Bản tua": {
-        "tour": "Xem Bản tua", "tour_refresh": "Làm mới Bản tua",
+    "Bảng tua": {
+        "tour": "Xem Bảng tua", "tour_refresh": "Làm mới Bảng tua",
     },
     "Lịch nghỉ": {
         "leave": "Xem Đăng ký nghỉ", "leave_manage": "Xem Quản lý lịch nghỉ",
