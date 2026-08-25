@@ -242,7 +242,13 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .tour-table tr.tour-row-idle td { color: #000; background: #d9ead3; font-weight: 800; }
 .tour-table tr.tour-row-leave td { color: #a6a6a6; background: #fff; }
 .tour-table tr.tour-row-work td, .tour-table tr.tour-row-default td { color: #000; background: #fff; }
-.tour-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tour-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 0; }
+.metric-grid.small .metric-card.tour-metric-card { width: 100%; min-height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; border-radius: 11px; padding: 6px 10px; text-align: left; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+.metric-grid.small .metric-card.tour-metric-card:hover { border-color: #a9c7b6; box-shadow: 0 5px 16px rgba(25,50,40,.08); }
+.metric-grid.small .metric-card.tour-metric-card:focus-visible { outline: 3px solid rgba(33,70,57,.22); outline-offset: 2px; }
+.metric-grid.small .metric-card.tour-metric-card.active { border-color: #3e845f; box-shadow: inset 3px 0 0 #3e845f, 0 5px 16px rgba(25,50,40,.08); background: #edf7f1; }
+.metric-grid.small .metric-card.tour-metric-card span { min-width: 0; font-size: 11px; font-weight: 800; line-height: 1.1; }
+.metric-grid.small .metric-card.tour-metric-card strong { margin: 0; font-size: 23px; line-height: 1; }
 .tour-metrics .tour-available-metric { border-color: #75b63e; background: #eaf7df; }
 .tour-metrics .tour-break-metric { border-color: #e2a36c; background: #fff1e5; }
 .tour-legend { margin: 0; }

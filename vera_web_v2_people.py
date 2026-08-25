@@ -274,7 +274,22 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
             time_number = _tour_number(source.get(time_column))
             if time_number is not None and time_number < -180:
                 values[time_column] = ""
-        prepared.append({**values, "_row_style": row_style})
+        tour_groups = []
+        if finishing or idle:
+            tour_groups.append("available")
+        if finishing:
+            tour_groups.append("finishing")
+        if work_token == "di lam":
+            tour_groups.append("working")
+        if work_token == "nghi phep":
+            tour_groups.append("leave")
+        if status_token == "dang thuc hien":
+            tour_groups.append("doing")
+        if status_token == "dang cho":
+            tour_groups.append("waiting")
+        if break_token == "break":
+            tour_groups.append("break")
+        prepared.append({**values, "_row_style": row_style, "_tour_groups": tour_groups})
 
     available = counters["finishing"] + counters["idle"]
     return {
