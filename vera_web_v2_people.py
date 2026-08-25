@@ -242,7 +242,14 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
             (status_number is not None and status_number <= 30)
             or (status_token == "dang thuc hien" and remaining is not None and -15 < remaining <= 30)
         )
-        idle = not expired and work_token == "di lam" and shift_token in {"ca 1", "ca 2"} and remaining in (None, 0)
+        idle = bool(
+            not expired
+            and not finishing
+            and status_token not in {"dang thuc hien", "dang cho"}
+            and work_token == "di lam"
+            and shift_token in {"ca 1", "ca 2"}
+            and remaining is None
+        )
 
         counters["doing"] += int(status_token == "dang thuc hien")
         counters["waiting"] += int(status_token == "dang cho")

@@ -36,6 +36,8 @@ function normalizedColumn(column) {
 function columnClass(column) {
   const key = normalizedColumn(column)
   if (key === 'TG CON LAI' || key === 'THOI GIAN CON LAI') return 'tour-col-remaining center'
+  if (key === 'PHONG' || key.startsWith('PHONG (')) return 'tour-col-room center'
+  if (key === 'YEU CAU' || key.startsWith('YEU CAU (')) return 'tour-col-request center'
   if (key.includes('LICH HEN')) return 'tour-col-appointment'
   return ''
 }
@@ -46,20 +48,21 @@ function prioritizeRecords(records, columns, activeFilter) {
     const key = normalizedColumn(column)
     return key === 'TG CON LAI' || key === 'THOI GIAN CON LAI'
   })
-  const remainingValue = (record) => {
+  const remainingOrder = (record) => {
     const raw = remainingColumn ? record[remainingColumn] : ''
-    if (raw === '' || raw === null || raw === undefined) return Number.POSITIVE_INFINITY
+    if (raw === '' || raw === null || raw === undefined) return [0, 0]
     const value = Number(String(raw).replace(',', '.'))
-    return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY
+    return Number.isFinite(value) ? [1, value] : [2, 0]
   }
   return records.map((record, index) => ({ record, index })).sort((left, right) => {
     const leftMatches = Array.isArray(left.record._tour_groups) && left.record._tour_groups.includes(activeFilter)
     const rightMatches = Array.isArray(right.record._tour_groups) && right.record._tour_groups.includes(activeFilter)
     if (leftMatches !== rightMatches) return leftMatches ? -1 : 1
     if (leftMatches && rightMatches) {
-      const leftTime = remainingValue(left.record)
-      const rightTime = remainingValue(right.record)
-      if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1
+      const [leftRank, leftTime] = remainingOrder(left.record)
+      const [rightRank, rightTime] = remainingOrder(right.record)
+      if (leftRank !== rightRank) return leftRank - rightRank
+      if (leftTime !== rightTime) return leftTime - rightTime
     }
     return left.index - right.index
   }).map(({ record }) => record)
