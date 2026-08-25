@@ -37,6 +37,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 
 from vera_leave_registration_shared import summarize_leave_day
+from vera_json import json_safe, json_text
 
 VN_TZ = timezone(timedelta(hours=7))
 LEAVE_SHEET_ID = os.getenv(
@@ -1157,7 +1158,7 @@ def _insert_record(conn, record: dict, source_row: int):
             :update_date, :update_time, :updated_by, :weekday_label, CAST(:payload AS jsonb), :record_uid,
             NOW(), NOW()
         )
-    """), {**record, "sid": LEAVE_SHEET_ID, "srow": source_row, "payload": json.dumps(payload, ensure_ascii=False)})
+    """), {**record, "sid": LEAVE_SHEET_ID, "srow": source_row, "payload": json_text(payload)})
     # Operational trace; this is additive and does not replace the legacy
     # activity log.  A database error must roll back only this optional write,
     # not poison the surrounding leave-registration transaction.
@@ -1202,10 +1203,10 @@ def _sheet_values_for_record(headers: list[str], record: dict, source_row: int) 
         "ly do nghi": record["leave_reason"],
         "loai nghi": record["leave_type"],
         "chi tiet": record["detail"],
-        "so ngay tinh": record["calculated_days"],
-        "so ngay tinh phep": record["calculated_days"],
-        "so ngay phep cong don": record["accumulated_leave"],
-        "phat vi pham": record["penalty"],
+        "so ngay tinh": json_safe(record["calculated_days"]),
+        "so ngay tinh phep": json_safe(record["calculated_days"]),
+        "so ngay phep cong don": json_safe(record["accumulated_leave"]),
+        "phat vi pham": json_safe(record["penalty"]),
         "ngay cap nhat": record["update_date"],
         "gio cap nhat": record["update_time"],
         "nguoi cap nhat": record["updated_by"],
@@ -1223,7 +1224,7 @@ def _update_record(conn, record: dict, source_row: int) -> None:
             update_date=:update_date, update_time=:update_time, updated_by=:updated_by,
             weekday_label=:weekday_label, payload=CAST(:payload AS jsonb), updated_at=NOW()
         WHERE record_uid=:record_uid
-    """), {**record, "payload": json.dumps(payload, ensure_ascii=False)})
+    """), {**record, "payload": json_text(payload)})
     if int(result.rowcount or 0) != 1:
         raise RuntimeError(f"record_uid update affected {result.rowcount} rows")
 
