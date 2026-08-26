@@ -609,6 +609,8 @@ jobs:
           employee_page = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
           profile_page = Path('web-v2/src/pages/ProfilePage.jsx').read_text(encoding='utf-8')
           storage_page = Path('web-v2/src/pages/StorageAdminPage.jsx').read_text(encoding='utf-8')
+          payroll_page = Path('web-v2/src/pages/PayrollPage.jsx').read_text(encoding='utf-8')
+          api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           for source in (api, permissions, profile, payroll, people, security, snapshot, storage): ast.parse(source)
@@ -626,6 +628,9 @@ jobs:
               'Admin role is immutable': 'vai trò Admin không được sửa' in permissions,
               'payroll upload calculate save refund and email exist': all(token in payroll for token in ('/v2/payroll/calculate','/v2/payroll/save','Hoàn trả tiền tích lũy','/v2/payroll/email','leader_responsibility_allowance')),
               'payroll employee filtering is exact': 'needle in {norm(item.get("Tên Hệ thống")), norm(item.get("Họ và tên"))}' in payroll,
+              'payroll legacy history and obligation sync are wired': all(token in payroll for token in ('/v2/payroll/history/sync-legacy', 'LEGACY_PAYROLL_WORKSHEET', 'LEGACY_OBLIGATION_WORKSHEET', '_obligation_group')) and 'syncLegacyPayroll' in api_client and 'Tải dữ liệu hệ thống cũ' in payroll_page,
+              'payroll legacy obligation groups are visible to Admin': all(token in payroll_page for token in ('Nợ do Thực nhận âm', 'Nghĩa vụ Vi phạm Admin chủ động tạm hoãn', 'canManageObligations', 'isAdmin')),
+              'payroll upload validates xlsx and reports network failures': all(token in payroll for token in ('content.startswith(b"PK")', 'File Excel đang trống', '15 * 1024 * 1024')) and all(token in api_client for token in ('Không gửi được file Excel tới máy chủ VERA', 'Không kết nối được máy chủ VERA')),
               'snapshot is attendance only': 'timesoft_employee_checkin_' in snapshot and 'timesoft_summary_invoice' not in snapshot and 'timesoft_summary_totals' not in snapshot,
               'resignation request form is present': 'ĐƠN XIN NGHỈ VIỆC' in forms and 'REQUEST_TYPE_RESIGNATION' in Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8'),
               'Admin daily push uses Vault and cron': 'vera-v2-admin-daily-changes' in sql and 'vault.decrypted_secrets' in sql,
