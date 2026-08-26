@@ -1332,7 +1332,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "3.0"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "3.1-payroll-stream"}
 
 
 @app.get("/v2/me")

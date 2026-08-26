@@ -18,7 +18,7 @@ import uuid
 import pandas as pd
 from fastapi import Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -267,20 +267,50 @@ def _read_source(content: bytes) -> pd.DataFrame:
         raise HTTPException(413, "File Excel vượt quá 15 MB.")
     if not content.startswith(b"PK"):
         raise HTTPException(400, "File không đúng định dạng Excel .xlsx. Vui lòng xuất lại từ TimeSoft.")
+    workbook = None
     try:
-        raw = pd.read_excel(BytesIO(content), sheet_name="Báo cáo doanh thu hóa đơn", header=None, engine="openpyxl")
+        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+        sheet_name = "Báo cáo doanh thu hóa đơn"
+        if sheet_name not in workbook.sheetnames:
+            raise HTTPException(400, f"File TimeSoft không có sheet '{sheet_name}'.")
+        worksheet = workbook[sheet_name]
+        pending: list[tuple[Any, ...]] = []
+        selected_rows: list[tuple[Any, Any, Any, Any]] = []
+        data_started = False
+
+        def append_selected(row: tuple[Any, ...]) -> None:
+            padded = row + (None,) * max(0, 9 - len(row))
+            time_value, item_value, amount_value, employee_value = padded[1], padded[5], padded[6], padded[8]
+            if any(value not in (None, "") for value in (time_value, item_value, amount_value, employee_value)):
+                selected_rows.append((time_value, item_value, amount_value, employee_value))
+
+        for index, row in enumerate(worksheet.iter_rows(min_col=1, max_col=9, values_only=True)):
+            values = tuple(row)
+            if not data_started and index < 20:
+                pending.append(values)
+                joined = " | ".join(str(value or "").strip().casefold() for value in values)
+                if "thời gian" in joined and ("sản phẩm" in joined or "dịch vụ" in joined) and "tổng tiền" in joined:
+                    data_started = True
+                    pending.clear()
+                elif index == 19:
+                    data_started = True
+                    for pending_row in pending:
+                        append_selected(pending_row)
+                    pending.clear()
+                continue
+            append_selected(values)
+        if not data_started:
+            for pending_row in pending:
+                append_selected(pending_row)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(400, f"Không đọc được sheet 'Báo cáo doanh thu hóa đơn': {exc}") from exc
-    header_index = None
-    for index in range(min(20, len(raw))):
-        joined = " | ".join(str(value).strip().casefold() for value in raw.iloc[index].tolist())
-        if "thời gian" in joined and ("sản phẩm" in joined or "dịch vụ" in joined) and "tổng tiền" in joined:
-            header_index = index
-            break
-    data = raw.iloc[(header_index + 1 if header_index is not None else 0):].copy()
-    while data.shape[1] < 9:
-        data[data.shape[1]] = ""
-    output = pd.DataFrame({"time": data.iloc[:, 1], "item": data.iloc[:, 5], "amount": data.iloc[:, 6], "employee": data.iloc[:, 8]})
+    finally:
+        if workbook is not None:
+            workbook.close()
+
+    output = pd.DataFrame(selected_rows, columns=["time", "item", "amount", "employee"])
     output["time"] = pd.to_datetime(output["time"], dayfirst=True, errors="coerce")
     output["amount"] = output["amount"].apply(_number)
     output["item"] = output["item"].astype(str).str.strip()
