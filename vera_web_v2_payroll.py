@@ -177,8 +177,7 @@ def _payload(conn) -> tuple[list[dict[str, Any]], str, str]:
     return list(by_key.values()), str(cached[1] or "") if cached else "", str(cached[2] or "") if cached else ""
 
 
-def _sheet_records(worksheet, fallback_headers: list[str]) -> list[dict[str, Any]]:
-    values = worksheet.get_all_values()
+def _sheet_records_from_values(values: list[list[Any]], fallback_headers: list[str]) -> list[dict[str, Any]]:
     if len(values) < 2:
         return []
     headers = [str(value or "").strip() for value in values[0]]
@@ -196,6 +195,23 @@ def _sheet_records(worksheet, fallback_headers: list[str]) -> list[dict[str, Any
             item["__legacy_sheet_row"] = source_row
             records.append(item)
     return records
+
+
+def _legacy_sheet_datasets(spreadsheet) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Read both legacy payroll datasets in one Google Sheets values request."""
+    response = spreadsheet.values_batch_get([
+        f"'{LEGACY_PAYROLL_WORKSHEET}'!A:AZ",
+        f"'{LEGACY_OBLIGATION_WORKSHEET}'!A:N",
+    ], params={"majorDimension": "ROWS", "valueRenderOption": "FORMATTED_VALUE"})
+    ranges = response.get("valueRanges", []) if isinstance(response, dict) else []
+    if len(ranges) != 2:
+        raise RuntimeError("Google Sheets không trả đủ BangLuong và NoViPham.")
+    payroll_values = ranges[0].get("values", []) if isinstance(ranges[0], dict) else []
+    obligation_values = ranges[1].get("values", []) if isinstance(ranges[1], dict) else []
+    return (
+        _sheet_records_from_values(payroll_values, PUBLIC_FIELDS),
+        _sheet_records_from_values(obligation_values, LEGACY_OBLIGATION_HEADERS),
+    )
 
 
 def _write_dataset_cache(conn, dataset_key: str, records: list[dict[str, Any]], source_version: str) -> str:
@@ -413,8 +429,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             require_feature(conn, ident, "payroll_history_edit")
         try:
             spreadsheet = google_client().open_by_key(LEGACY_SPREADSHEET_ID)
-            payroll_records = _sheet_records(spreadsheet.worksheet(LEGACY_PAYROLL_WORKSHEET), PUBLIC_FIELDS)
-            obligation_records = _sheet_records(spreadsheet.worksheet(LEGACY_OBLIGATION_WORKSHEET), LEGACY_OBLIGATION_HEADERS)
+            payroll_records, obligation_records = _legacy_sheet_datasets(spreadsheet)
         except Exception as exc:
             raise HTTPException(502, f"Không đọc được dữ liệu bảng lương cũ từ Google Sheets: {str(exc)[:300]}") from exc
 

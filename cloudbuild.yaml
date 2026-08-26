@@ -43,7 +43,7 @@ steps:
       - "--min=0"
       - "--max=2"
       - "--concurrency=20"
-      - "--timeout=60"
+      - "--timeout=300"
       - "--clear-cloudsql-instances"
       - "--command=uvicorn"
       - "--args=vera_web_v2_api_shared:app,--host,0.0.0.0,--port,8080"

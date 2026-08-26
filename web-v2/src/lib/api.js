@@ -13,11 +13,19 @@ async function request(path, options = {}) {
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
 
   let response
-  try {
-    response = await fetch(`${apiBase}${path}`, { ...options, headers })
-  } catch (error) {
-    throw new Error(`Không kết nối được máy chủ VERA. Vui lòng bấm Làm mới và thử lại. (${error.message})`)
+  let lastError
+  const method = String(options.method || 'GET').toUpperCase()
+  const attempts = method === 'GET' || path === '/v2/payroll/history/sync-legacy' ? 2 : 1
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      response = await fetch(`${apiBase}${path}`, { ...options, headers })
+      break
+    } catch (error) {
+      lastError = error
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 800))
+    }
   }
+  if (!response) throw new Error(`Không kết nối được máy chủ VERA sau ${attempts} lần thử. Vui lòng bấm Làm mới. (${lastError?.message || 'Lỗi mạng'})`)
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -55,11 +63,17 @@ async function upload(path, file, params = null) {
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
   const query = params ? `?${new URLSearchParams(params)}` : ''
   let response
-  try {
-    response = await fetch(`${apiBase}${path}${query}`, { method: 'POST', headers, body: file })
-  } catch (error) {
-    throw new Error(`Không gửi được file Excel tới máy chủ VERA. Vui lòng kiểm tra mạng rồi thử lại. (${error.message})`)
+  let lastError
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      response = await fetch(`${apiBase}${path}${query}`, { method: 'POST', headers, body: file })
+      break
+    } catch (error) {
+      lastError = error
+      if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 800))
+    }
   }
+  if (!response) throw new Error(`Không gửi được file Excel tới máy chủ VERA sau 2 lần thử. (${lastError?.message || 'Lỗi mạng'})`)
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload

@@ -76,12 +76,17 @@ export default function PayrollPage({ user }) {
   }
   const loadHistory = async () => setHistory(await veraApi.payrollHistory(batch, employee))
   const loadSupporting = async () => {
-    const jobs = []
-    if (canCalculate || canEditConfig) jobs.push(veraApi.payrollConfig().then((result) => setConfig(result.config || CONFIG_DEFAULT)))
-    if (canManageObligations) jobs.push(veraApi.payrollObligations().then((result) => { setObligations(result.obligations || []); setObligationGroups(result.groups || []) }))
-    await Promise.all(jobs)
+    if (canCalculate || canEditConfig) {
+      const result = await veraApi.payrollConfig()
+      setConfig(result.config || CONFIG_DEFAULT)
+    }
+    if (canManageObligations) {
+      const result = await veraApi.payrollObligations()
+      setObligations(result.obligations || [])
+      setObligationGroups(result.groups || [])
+    }
   }
-  const reload = () => run('load', async () => { await Promise.all([loadHistory(), loadSupporting()]) })
+  const reload = () => run('load', async () => { await loadHistory(); await loadSupporting() })
   useEffect(() => { void reload() }, [batch, employee]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const historyTotal = useMemo(() => history.records.reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [history.records])
@@ -146,7 +151,8 @@ export default function PayrollPage({ user }) {
   const syncLegacy = () => run('sync-legacy', async () => {
     if (!window.confirm('Tải lại lịch sử bảng lương và Nghĩa vụ vi phạm từ hệ thống cũ? Dữ liệu Web V2 đã lưu vẫn được ưu tiên hiển thị.')) return
     const result = await veraApi.syncLegacyPayroll()
-    await Promise.all([loadHistory(), loadSupporting()])
+    await loadHistory()
+    await loadSupporting()
     setNotice({ type: 'success', message: result.message })
   })
 
