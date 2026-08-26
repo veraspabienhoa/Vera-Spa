@@ -48,6 +48,17 @@ DEFAULT_CONFIG = {
     "default_locker_support": 80000,
     "leader_responsibility_allowance": 0,
 }
+LEGACY_SPREADSHEET_ID = os.getenv(
+    "VERA_CREDENTIAL_SHEET_ID", "1DGXy3kPyMPwtz-3CnG8i6BiQbXFDApasoXVFzSmUe24"
+)
+LEGACY_PAYROLL_WORKSHEET = "BangLuong"
+LEGACY_OBLIGATION_WORKSHEET = "NoViPham"
+LEGACY_OBLIGATION_HEADERS = [
+    "STT", "Tên nhân viên", "Số tiền", "Nội dung", "Loại",
+    "Kỳ phát sinh từ", "Kỳ phát sinh đến", "Bắt đầu trừ từ",
+    "Trạng thái", "Mã nguồn", "Ngày cập nhật", "Giờ cập nhật",
+    "Người cập nhật", "Kỳ đã khấu trừ",
+]
 
 
 class PayrollConfigUpdate(BaseModel):
@@ -166,6 +177,42 @@ def _payload(conn) -> tuple[list[dict[str, Any]], str, str]:
     return list(by_key.values()), str(cached[1] or "") if cached else "", str(cached[2] or "") if cached else ""
 
 
+def _sheet_records(worksheet, fallback_headers: list[str]) -> list[dict[str, Any]]:
+    values = worksheet.get_all_values()
+    if len(values) < 2:
+        return []
+    headers = [str(value or "").strip() for value in values[0]]
+    if not any(headers):
+        headers = list(fallback_headers)
+    records: list[dict[str, Any]] = []
+    for source_row, values_row in enumerate(values[1:], start=2):
+        padded = list(values_row) + [""] * max(0, len(headers) - len(values_row))
+        item = {
+            header: padded[index]
+            for index, header in enumerate(headers)
+            if header
+        }
+        if any(str(value or "").strip() for value in item.values()):
+            item["__legacy_sheet_row"] = source_row
+            records.append(item)
+    return records
+
+
+def _write_dataset_cache(conn, dataset_key: str, records: list[dict[str, Any]], source_version: str) -> str:
+    serialized = json.dumps(records, ensure_ascii=False, separators=(",", ":"), default=str)
+    checksum = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    conn.execute(text("""
+        INSERT INTO vera_dataset_cache(dataset_key,payload,row_count,checksum,source_version,updated_at,expires_at)
+        VALUES (:dataset_key,CAST(:payload AS jsonb),:count,:checksum,:source_version,NOW(),NOW()+INTERVAL '3650 days')
+        ON CONFLICT(dataset_key) DO UPDATE SET payload=EXCLUDED.payload,row_count=EXCLUDED.row_count,
+          checksum=EXCLUDED.checksum,source_version=EXCLUDED.source_version,updated_at=NOW(),expires_at=EXCLUDED.expires_at
+    """), {
+        "dataset_key": dataset_key, "payload": serialized, "count": len(records),
+        "checksum": checksum, "source_version": source_version,
+    })
+    return checksum
+
+
 def _visible(records, ident, norm):
     if str(ident.role or "").lower() in {"admin", "quanly", "letan"}:
         return records
@@ -198,8 +245,12 @@ def _net(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _read_source(content: bytes) -> pd.DataFrame:
+    if not content:
+        raise HTTPException(400, "File Excel đang trống.")
     if len(content) > 15 * 1024 * 1024:
         raise HTTPException(413, "File Excel vượt quá 15 MB.")
+    if not content.startswith(b"PK"):
+        raise HTTPException(400, "File không đúng định dạng Excel .xlsx. Vui lòng xuất lại từ TimeSoft.")
     try:
         raw = pd.read_excel(BytesIO(content), sheet_name="Báo cáo doanh thu hóa đơn", header=None, engine="openpyxl")
     except Exception as exc:
@@ -256,6 +307,56 @@ def _obligations(conn) -> list[dict[str, Any]]:
     return [dict(item) for item in (custom or []) if isinstance(item, dict)]
 
 
+def _legacy_obligations(conn) -> list[dict[str, Any]]:
+    payload = conn.execute(text(
+        "SELECT payload FROM vera_dataset_cache WHERE dataset_key='violation_debt' LIMIT 1"
+    )).scalar_one_or_none()
+    return [dict(item) for item in (payload or []) if isinstance(item, dict)]
+
+
+def _open_obligation(value: Any, norm) -> bool:
+    return norm(value or "Chưa hoàn thành") in {"", "chua hoan thanh"}
+
+
+def _obligation_group(records: list[dict[str, Any]], obligation_type: str, norm) -> dict[str, Any]:
+    details: list[dict[str, Any]] = []
+    for item in records:
+        if norm(item.get("Loại")) != norm(obligation_type) or not _open_obligation(item.get("Trạng thái"), norm):
+            continue
+        employee_name = str(item.get("Tên nhân viên") or "").strip()
+        amount = max(0, _number(item.get("Số tiền")))
+        if not employee_name or amount <= 0:
+            continue
+        details.append({
+            "employee_name": employee_name,
+            "amount": amount,
+            "period_start": str(item.get("Kỳ phát sinh từ") or "").strip(),
+            "period_end": str(item.get("Kỳ phát sinh đến") or "").strip(),
+            "due_from": str(item.get("Bắt đầu trừ từ") or "").strip(),
+            "content": str(item.get("Nội dung") or "Chưa hoàn thành nghĩa vụ Vi phạm").strip(),
+            "type": str(item.get("Loại") or obligation_type).strip(),
+            "status": str(item.get("Trạng thái") or "Chưa hoàn thành").strip(),
+        })
+    details.sort(key=lambda item: (_parse_date(item["period_start"]) or date.max, norm(item["employee_name"])))
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in details:
+        grouped.setdefault(norm(item["employee_name"]), []).append(item)
+    summary = []
+    for items in grouped.values():
+        latest = max(items, key=lambda item: _parse_date(item["period_start"]) or date.min)
+        due_dates = [_parse_date(item["due_from"]) for item in items]
+        due_dates = [value for value in due_dates if value]
+        summary.append({
+            "employee_name": items[0]["employee_name"],
+            "total": sum(item["amount"] for item in items),
+            "period_count": len(items),
+            "latest_period": f'{latest["period_start"]} - {latest["period_end"]}',
+            "due_from": min(due_dates).strftime("%d/%m/%Y") if due_dates else latest["due_from"],
+        })
+    summary.sort(key=lambda item: (-item["total"], norm(item["employee_name"])))
+    return {"type": obligation_type, "summary": summary, "details": details}
+
+
 def _obligation_map(conn, start: date, norm) -> dict[str, int]:
     result: dict[str, int] = {}
     sources = list(_obligations(conn))
@@ -283,7 +384,7 @@ def _workbook(records: list[dict[str, Any]], fields: list[str], title: str = "B�
     stream = BytesIO(); wb.save(stream); return stream.getvalue()
 
 
-def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, norm, identity_type):
+def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, norm, identity_type, google_client):
     @app.get("/v2/payroll/history")
     def payroll_history(batch: str = Query(default=""), search: str = Query(default=""), ident: identity_type = Depends(current_identity)):
         with engine_instance().connect() as conn:
@@ -305,6 +406,33 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         records = _filter_rows(_visible(records, ident, norm), batch, search, norm)
         fields = ADMIN_FIELDS if str(ident.role).lower() == "admin" else PUBLIC_FIELDS
         return StreamingResponse(BytesIO(_workbook(records, fields, "Lịch sử bảng lương")), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote('VERA_BangLuong.xlsx')}"})
+
+    @app.post("/v2/payroll/history/sync-legacy")
+    def sync_legacy_payroll(ident: identity_type = Depends(current_identity)):
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "payroll_history_edit")
+        try:
+            spreadsheet = google_client().open_by_key(LEGACY_SPREADSHEET_ID)
+            payroll_records = _sheet_records(spreadsheet.worksheet(LEGACY_PAYROLL_WORKSHEET), PUBLIC_FIELDS)
+            obligation_records = _sheet_records(spreadsheet.worksheet(LEGACY_OBLIGATION_WORKSHEET), LEGACY_OBLIGATION_HEADERS)
+        except Exception as exc:
+            raise HTTPException(502, f"Không đọc được dữ liệu bảng lương cũ từ Google Sheets: {str(exc)[:300]}") from exc
+
+        for item in payroll_records:
+            item.pop("__legacy_sheet_row", None)
+            item.setdefault("Hoàn trả tiền tích lũy", 0)
+        for item in obligation_records:
+            item.pop("__legacy_sheet_row", None)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "payroll_history_edit")
+            _write_dataset_cache(conn, "payroll_history", payroll_records, "legacy_google_sheet")
+            _write_dataset_cache(conn, "violation_debt", obligation_records, "legacy_google_sheet")
+        return {
+            "ok": True,
+            "payroll_count": len(payroll_records),
+            "obligation_count": len(obligation_records),
+            "message": f"Đã tải {len(payroll_records)} dòng lịch sử lương và {len(obligation_records)} dòng nghĩa vụ từ hệ thống cũ.",
+        }
 
     @app.get("/v2/payroll/config")
     def payroll_config(ident: identity_type = Depends(current_identity)):
@@ -431,7 +559,15 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_penalty_obligation")
             rows = _obligations(conn)
-        return {"obligations": rows, "count": len(rows)}
+            legacy_rows = _legacy_obligations(conn)
+        groups = [
+            _obligation_group(legacy_rows, "Âm thực nhận", norm),
+            _obligation_group(legacy_rows, "Tạm hoãn vi phạm", norm),
+        ]
+        return {
+            "obligations": rows, "count": len(rows), "legacy_count": len(legacy_rows),
+            "groups": groups,
+        }
 
     @app.post("/v2/payroll/obligations")
     def create_obligation(body: ObligationCreate, ident: identity_type = Depends(current_identity)):

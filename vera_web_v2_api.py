@@ -2144,6 +2144,7 @@ install_payroll_routes(
     require_feature=_require_feature,
     norm=_norm,
     identity_type=Identity,
+    google_client=_google_client,
 )
 
 from vera_web_v2_people import install_people_routes

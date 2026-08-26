@@ -12,7 +12,12 @@ async function request(path, options = {}) {
   headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
 
-  const response = await fetch(`${apiBase}${path}`, { ...options, headers })
+  let response
+  try {
+    response = await fetch(`${apiBase}${path}`, { ...options, headers })
+  } catch (error) {
+    throw new Error(`Không kết nối được máy chủ VERA. Vui lòng bấm Làm mới và thử lại. (${error.message})`)
+  }
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -49,7 +54,12 @@ async function upload(path, file, params = null) {
   headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
   const query = params ? `?${new URLSearchParams(params)}` : ''
-  const response = await fetch(`${apiBase}${path}${query}`, { method: 'POST', headers, body: file })
+  let response
+  try {
+    response = await fetch(`${apiBase}${path}${query}`, { method: 'POST', headers, body: file })
+  } catch (error) {
+    throw new Error(`Không gửi được file Excel tới máy chủ VERA. Vui lòng kiểm tra mạng rồi thử lại. (${error.message})`)
+  }
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -166,6 +176,7 @@ export const veraApi = {
     if (search.trim()) params.set('search', search.trim())
     return request(`/v2/payroll/history?${params}`)
   },
+  syncLegacyPayroll: () => request('/v2/payroll/history/sync-legacy', { method: 'POST' }),
   exportPayrollExcel: (batch = '', search = '') => {
     const params = new URLSearchParams()
     if (batch) params.set('batch', batch)
