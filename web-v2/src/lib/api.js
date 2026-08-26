@@ -31,12 +31,13 @@ async function request(path, options = {}) {
   return payload
 }
 
-async function download(path, fallbackName) {
+async function download(path, fallbackName, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const session = await getCurrentSession()
-  const headers = new Headers()
+  const headers = new Headers(options.headers || {})
+  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
-  const response = await fetch(`${apiBase}${path}`, { headers })
+  const response = await fetch(`${apiBase}${path}`, { ...options, headers })
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
     throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
@@ -195,8 +196,11 @@ export const veraApi = {
     const params = new URLSearchParams()
     if (batch) params.set('batch', batch)
     if (search.trim()) params.set('search', search.trim())
-    return download(`/v2/payroll/history/export.xlsx?${params}`, 'VERA_BangLuong.xlsx')
+    return download(`/v2/payroll/history/export.xlsx?${params}`, 'VERA_BangLuong_BanCu.xlsx')
   },
+  exportPayrollDraft: (body) => download('/v2/payroll/draft/export.xlsx', 'VERA_BangLuong_BanMoi.xlsx', {
+    method: 'POST', body: JSON.stringify(body),
+  }),
   payrollConfig: () => request('/v2/payroll/config'),
   savePayrollConfig: (body) => request('/v2/payroll/config', { method: 'PUT', body: JSON.stringify(body) }),
   calculatePayroll: (file, month, periodNo) => upload('/v2/payroll/calculate', file, { month, period_no: periodNo }),

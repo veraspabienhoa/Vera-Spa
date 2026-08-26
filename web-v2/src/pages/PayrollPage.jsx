@@ -127,6 +127,18 @@ export default function PayrollPage({ user }) {
     setNotice({ type: result.failed?.length ? 'warning' : 'success', message: result.message })
   })
 
+  const exportDraft = () => run('export-draft', async () => {
+    if (!draft?.rows?.length) throw new Error('Chưa có bảng lương mới để xuất Excel.')
+    await veraApi.exportPayrollDraft({ start: draft.start, end: draft.end, rows: draft.rows })
+    setNotice({ type: 'success', message: `Đã xuất Excel bản mới: ${draft.period_label}.` })
+  })
+
+  const exportHistory = () => run('export-history', async () => {
+    if (!history.records.length) throw new Error('Không có dữ liệu lịch sử phù hợp để xuất Excel.')
+    await veraApi.exportPayrollExcel(batch, employee)
+    setNotice({ type: 'success', message: 'Đã xuất Excel bản lương cũ theo bộ lọc đang xem.' })
+  })
+
   const saveConfig = () => run('config', async () => {
     const result = await veraApi.savePayrollConfig(config)
     setConfig(result.config)
@@ -180,7 +192,7 @@ export default function PayrollPage({ user }) {
     </section>}
 
     {draft?.rows?.length > 0 && <section className="panel payroll-draft-panel">
-      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={saveDraft} disabled={busy === 'save'}><Save size={16} /> Lưu kỳ lương</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={busy === 'email'}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
+      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canExport && <button className="secondary-button" onClick={exportDraft} disabled={busy === 'export-draft'}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Xuất Excel bản mới'}</button>}{canSave && <button className="primary-button" onClick={saveDraft} disabled={busy === 'save'}><Save size={16} /> Lưu kỳ lương</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={busy === 'email'}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
       <div className="responsive-data-table payroll-editor"><table><thead><tr><th>Gửi</th><th>Nhân viên</th><th>Lương</th>{Object.entries(EDIT_LABELS).map(([field, label]) => <th key={field}>{label}</th>)}<th>Thực nhận</th></tr></thead><tbody>{draft.rows.map((row) => <tr key={row['Tên Hệ thống']}><td className="center"><input type="checkbox" checked={selected.includes(row['Tên Hệ thống'])} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} /></td><td><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></td><td className="money-cell">{money(row['Tiền Lương'])}</td>{Object.keys(EDIT_LABELS).map((field) => <td key={field}><input className="payroll-money-input" type="number" min="0" value={row[field] || 0} onChange={(event) => editMoney(row['Tên Hệ thống'], field, event.target.value)} /></td>)}<td className="money-cell"><strong>{money(row['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
     </section>}
 
@@ -195,7 +207,7 @@ export default function PayrollPage({ user }) {
 
     <section className="panel">
       <div className="panel-title-row"><div><h2>LỊCH SỬ BẢNG LƯƠNG</h2><p>Bộ lọc nhân viên dùng đối chiếu chính xác, không trộn dữ liệu người có tên gần giống.</p></div>{canSyncLegacy && <button className="secondary-button" onClick={syncLegacy} disabled={busy === 'sync-legacy'}><RefreshCw size={16} className={busy === 'sync-legacy' ? 'spin' : ''} /> {busy === 'sync-legacy' ? 'Đang tải…' : 'Tải dữ liệu hệ thống cũ'}</button>}</div>
-      <div className="data-toolbar"><label>Kỳ lương<select value={batch} onChange={(event) => setBatch(event.target.value)}><option value="">Tất cả kỳ lương</option>{history.batches.map((item) => <option key={item}>{item}</option>)}</select></label><label>Nhân viên<select value={employee} onChange={(event) => setEmployee(event.target.value)}><option value="">Tất cả nhân viên</option>{history.employees.map((item) => <option key={item}>{item}</option>)}</select></label>{canExport && <button className="secondary-button" onClick={() => veraApi.exportPayrollExcel(batch, employee)}><Download size={16} /> Export Excel</button>}</div>
+      <div className="data-toolbar"><label>Kỳ lương<select value={batch} onChange={(event) => setBatch(event.target.value)}><option value="">Tất cả kỳ lương</option>{history.batches.map((item) => <option key={item}>{item}</option>)}</select></label><label>Nhân viên<select value={employee} onChange={(event) => setEmployee(event.target.value)}><option value="">Tất cả nhân viên</option>{history.employees.map((item) => <option key={item}>{item}</option>)}</select></label>{canExport && <button className="secondary-button" onClick={exportHistory} disabled={busy === 'export-history'}><Download size={16} /> {busy === 'export-history' ? 'Đang xuất…' : 'Xuất Excel bản cũ'}</button>}</div>
       <div className="metric-grid small payroll-history-metrics"><div className="metric-card"><span>Số dòng lương</span><strong>{history.records.length}</strong></div><div className="metric-card"><span>Tổng thực nhận đang xem</span><strong>{money(historyTotal)}</strong></div></div>
       <div className="responsive-data-table"><table><thead><tr><th>Nhân viên</th><th>Kỳ lương</th><th>Lương</th><th>Hoàn trả tích lũy</th><th>Vi phạm</th><th>Nghĩa vụ cũ</th><th>Thực nhận</th></tr></thead><tbody>{history.records.map((item, index) => <tr key={`${item['Mã bản lưu']}-${item['Tên Hệ thống']}-${index}`}><td><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']}</small></td><td>{item['Mã bản lưu'] || `${item['Từ ngày']} – ${item['Đến ngày']}`}</td><td>{money(item['Tiền Lương'])}</td><td>{money(item['Hoàn trả tiền tích lũy'])}</td><td>{money(item['Tiền phạt trong tháng'])}</td><td>{money(item['Vi phạm kỳ trước'])}</td><td><strong>{money(item['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
       {!history.records.length && <div className="setup-note">Không có bảng lương phù hợp.</div>}

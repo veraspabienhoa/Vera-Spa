@@ -19,7 +19,8 @@ import pandas as pd
 from fastapi import Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -78,6 +79,12 @@ class PayrollEmail(BaseModel):
     start: date
     end: date
     rows: list[dict[str, Any]] = Field(min_length=1, max_length=100)
+
+
+class PayrollExport(BaseModel):
+    start: date
+    end: date
+    rows: list[dict[str, Any]] = Field(min_length=1, max_length=500)
 
 
 class ObligationCreate(BaseModel):
@@ -423,11 +430,35 @@ def _obligation_map(conn, start: date, norm) -> dict[str, int]:
 
 def _workbook(records: list[dict[str, Any]], fields: list[str], title: str = "Bảng lương") -> bytes:
     wb = Workbook(); ws = wb.active; ws.title = title[:31]; ws.append(fields)
+    ws.freeze_panes = "A2"
+    ws.sheet_view.showGridLines = False
+    ws.row_dimensions[1].height = 30
     for cell in ws[1]:
-        cell.font = Font(bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor="1F513F")
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1F513F")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for item in records:
         ws.append([_number(item.get(key)) if key in MONEY_FIELDS else item.get(key, "") for key in fields])
-    stream = BytesIO(); wb.save(stream); return stream.getvalue()
+    for column_index, field in enumerate(fields, start=1):
+        letter = get_column_letter(column_index)
+        cells = ws[letter]
+        if field in MONEY_FIELDS:
+            for cell in cells[1:]:
+                cell.number_format = "#,##0"
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            width = 18
+        else:
+            max_length = max([len(str(field))] + [len(str(cell.value or "")) for cell in cells[1:]])
+            width = min(max(max_length + 2, 12), 34)
+        ws.column_dimensions[letter].width = width
+    if ws.max_row > 1:
+        ws.auto_filter.ref = ws.dimensions
+        for row_index in range(2, ws.max_row + 1):
+            ws.row_dimensions[row_index].height = 21
+    stream = BytesIO()
+    wb.save(stream)
+    wb.close()
+    return stream.getvalue()
 
 
 def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, norm, identity_type, google_client):
@@ -451,7 +482,35 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             records, _checksum, _updated = _payload(conn)
         records = _filter_rows(_visible(records, ident, norm), batch, search, norm)
         fields = ADMIN_FIELDS if str(ident.role).lower() == "admin" else PUBLIC_FIELDS
-        return StreamingResponse(BytesIO(_workbook(records, fields, "Lịch sử bảng lương")), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote('VERA_BangLuong.xlsx')}"})
+        filename = "VERA_BangLuong_BanCu.xlsx" if not batch else f"VERA_BangLuong_BanCu_{batch.replace(' ', '_').replace('/', '-')}.xlsx"
+        return StreamingResponse(BytesIO(_workbook(records, fields, "Bảng lương bản cũ")), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+    @app.post("/v2/payroll/draft/export.xlsx")
+    def payroll_draft_export(body: PayrollExport, ident: identity_type = Depends(current_identity)):
+        label = _period_label(body.start, body.end)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "payroll_export")
+        records = []
+        for supplied in _visible(body.rows, ident, norm):
+            row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
+            row.update({
+                "Phiên bản": "Bản mới Web V2 (chưa lưu)",
+                "Mã bản lưu": label,
+                "Từ ngày": body.start.strftime("%d/%m/%Y"),
+                "Đến ngày": body.end.strftime("%d/%m/%Y"),
+            })
+            records.append(row)
+        if not records:
+            raise HTTPException(400, "Không có dữ liệu bảng lương mới để xuất.")
+        fields = ["Phiên bản", "Mã bản lưu", "Từ ngày", "Đến ngày"] + DRAFT_FIELDS
+        if str(ident.role or "").lower() != "admin":
+            fields = [field for field in fields if field not in {"Email", "Số tài khoản ngân hàng", "Tên ngân hàng"}]
+        filename = f"VERA_BangLuong_BanMoi_{label.replace(' ', '_').replace('/', '-')}.xlsx"
+        return StreamingResponse(
+            BytesIO(_workbook(records, fields, "Bảng lương bản mới")),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        )
 
     @app.post("/v2/payroll/history/sync-legacy")
     def sync_legacy_payroll(ident: identity_type = Depends(current_identity)):
