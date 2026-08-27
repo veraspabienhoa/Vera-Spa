@@ -37,7 +37,18 @@ async function download(path, fallbackName, options = {}) {
   const headers = new Headers(options.headers || {})
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
-  const response = await fetch(`${apiBase}${path}`, { ...options, headers })
+  let response
+  let lastError
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      response = await fetch(`${apiBase}${path}`, { ...options, headers })
+      break
+    } catch (error) {
+      lastError = error
+      if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 800))
+    }
+  }
+  if (!response) throw new Error(`Không tải được file Excel sau 2 lần thử. (${lastError?.message || 'Lỗi mạng'})`)
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
     throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
@@ -45,7 +56,14 @@ async function download(path, fallbackName, options = {}) {
   const blob = await response.blob()
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
-  const filename = encoded ? decodeURIComponent(encoded) : fallbackName
+  let filename = fallbackName
+  if (encoded) {
+    try {
+      filename = decodeURIComponent(encoded.replace(/^"|"$/g, ''))
+    } catch {
+      filename = fallbackName
+    }
+  }
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -53,7 +71,7 @@ async function download(path, fallbackName, options = {}) {
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 async function upload(path, file, params = null) {

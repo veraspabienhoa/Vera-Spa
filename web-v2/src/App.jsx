@@ -1,20 +1,37 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import AppShell from './components/AppShell'
 import LoginPage from './pages/LoginPage'
-import LeaveRegistrationPage from './pages/LeaveRegistrationPage'
-import EmployeePage from './pages/EmployeePage'
-import RulesPage from './pages/RulesPage'
-import ProfilePage from './pages/ProfilePage'
-import PermissionsPage from './pages/PermissionsPage'
-import PayrollPage from './pages/PayrollPage'
-import SnapshotPage from './pages/SnapshotPage'
-import AdminChangesPage from './pages/AdminChangesPage'
-import StorageAdminPage from './pages/StorageAdminPage'
-import BirthdayPage from './pages/BirthdayPage'
-import TourPage from './pages/TourPage'
-import LongLeaveSection from './components/LongLeaveSection'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+
+const lazyPage = (importer) => lazy(async () => {
+  try {
+    const module = await importer()
+    window.sessionStorage.removeItem('vera-v2-chunk-reload')
+    return module
+  } catch (error) {
+    if (!window.sessionStorage.getItem('vera-v2-chunk-reload')) {
+      window.sessionStorage.setItem('vera-v2-chunk-reload', '1')
+      window.location.reload()
+      return new Promise(() => {})
+    }
+    window.sessionStorage.removeItem('vera-v2-chunk-reload')
+    throw error
+  }
+})
+
+const LeaveRegistrationPage = lazyPage(() => import('./pages/LeaveRegistrationPage'))
+const EmployeePage = lazyPage(() => import('./pages/EmployeePage'))
+const RulesPage = lazyPage(() => import('./pages/RulesPage'))
+const ProfilePage = lazyPage(() => import('./pages/ProfilePage'))
+const PermissionsPage = lazyPage(() => import('./pages/PermissionsPage'))
+const PayrollPage = lazyPage(() => import('./pages/PayrollPage'))
+const SnapshotPage = lazyPage(() => import('./pages/SnapshotPage'))
+const AdminChangesPage = lazyPage(() => import('./pages/AdminChangesPage'))
+const StorageAdminPage = lazyPage(() => import('./pages/StorageAdminPage'))
+const BirthdayPage = lazyPage(() => import('./pages/BirthdayPage'))
+const TourPage = lazyPage(() => import('./pages/TourPage'))
+const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -99,18 +116,20 @@ export default function App() {
 
   return (
     <AppShell user={shellUser} currentPage={page} onPageChange={setPage} onSignOut={signOut}>
-      {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
-      {page === 'long-leave' && <LongLeaveSection user={shellUser} />}
-      {page === 'employees' && <EmployeePage user={shellUser} />}
-      {page === 'rules' && <RulesPage user={shellUser} />}
-      {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
-      {page === 'permissions' && <PermissionsPage user={shellUser} />}
-      {page === 'payroll' && <PayrollPage user={shellUser} />}
-      {page === 'snapshot' && <SnapshotPage user={shellUser} />}
-      {page === 'birthday' && <BirthdayPage />}
-      {page === 'tour' && <TourPage user={shellUser} />}
-      {page === 'changes' && <AdminChangesPage user={shellUser} />}
-      {page === 'storage' && <StorageAdminPage />}
+      <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>}>
+        {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
+        {page === 'long-leave' && <LongLeaveSection user={shellUser} />}
+        {page === 'employees' && <EmployeePage user={shellUser} />}
+        {page === 'rules' && <RulesPage user={shellUser} />}
+        {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
+        {page === 'permissions' && <PermissionsPage user={shellUser} />}
+        {page === 'payroll' && <PayrollPage user={shellUser} />}
+        {page === 'snapshot' && <SnapshotPage user={shellUser} />}
+        {page === 'birthday' && <BirthdayPage />}
+        {page === 'tour' && <TourPage user={shellUser} />}
+        {page === 'changes' && <AdminChangesPage user={shellUser} />}
+        {page === 'storage' && <StorageAdminPage />}
+      </Suspense>
     </AppShell>
   )
 }
