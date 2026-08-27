@@ -79,7 +79,13 @@ const normalizeSearch = (value) => String(value || '')
   .replace(/đ/g, 'd')
   .replace(/Đ/g, 'D')
   .toLocaleLowerCase('vi-VN')
+  .replace(/\s+/g, ' ')
   .trim()
+const matchesEmployeeName = (employeeName, searchValue) => {
+  const needle = normalizeSearch(searchValue)
+  if (!needle) return true
+  return [employeeName, shortEmployeeName(employeeName)].some((name) => normalizeSearch(name) === needle)
+}
 
 export default function LeaveRegistrationPage({ user }) {
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
@@ -243,9 +249,8 @@ export default function LeaveRegistrationPage({ user }) {
   }, [reasons])
 
   const filteredRecords = useMemo(() => {
-    const needle = normalizeSearch(employeeSearch)
-    if (!needle) return records
-    return records.filter((item) => normalizeSearch(`${item.employee_name} ${shortEmployeeName(item.employee_name)}`).includes(needle))
+    if (!normalizeSearch(employeeSearch)) return records
+    return records.filter((item) => matchesEmployeeName(item.employee_name, employeeSearch))
   }, [employeeSearch, records])
   const watchedDateSet = useMemo(() => new Set(watchDates.map((item) => item.date)), [watchDates])
   const unreadWatchDates = useMemo(() => watchDates.filter((item) => item.has_unread), [watchDates])
@@ -916,10 +921,14 @@ export default function LeaveRegistrationPage({ user }) {
                   setEmployeeSearch(event.target.value)
                   setSelectedUids([])
                 }}
-                placeholder="Nhập tên nhân viên"
+                placeholder="Chọn hoặc nhập đúng tên nhân viên"
                 aria-label="Tìm kiếm tên nhân viên"
+                list="list-employee-options"
               />
             </label>
+            <datalist id="list-employee-options">
+              {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
+            </datalist>
           </div>
           <div className="table-wrap leave-list-wrap">
             <table className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>

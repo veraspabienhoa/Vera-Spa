@@ -115,6 +115,14 @@ def _norm(value: Any) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _employee_name_matches(value: Any, query: Any) -> bool:
+    needle = _norm(query)
+    if not needle:
+        return True
+    short_name = re.split(r"\s*[-–—]\s*", str(value or ""), maxsplit=1)[0]
+    return needle in {_norm(value), _norm(short_name)}
+
+
 _WATCHED_PAID_REASON_KEYS = {
     _norm("Nghỉ CÓ phép"),
     _norm("Nghỉ CUỐI TUẦN CÓ phép"),
@@ -1335,7 +1343,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "3.4-stats-employee-search"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "3.5-exact-employee-filter"}
 
 
 @app.get("/v2/me")
@@ -2050,7 +2058,7 @@ def export_leave_excel(
     if (end_date - start_date).days > 365:
         raise HTTPException(400, "Khoảng xuất Excel tối đa là 366 ngày.")
 
-    needle = employee.strip()
+    needle = _norm(employee)
     with _engine_instance().connect() as conn:
         _require_feature(conn, ident, "leave")
         rows = conn.execute(text("""
@@ -2059,14 +2067,13 @@ def export_leave_excel(
                    update_date, update_time, updated_by, record_uid
             FROM leave_records
             WHERE leave_date BETWEEN :start_date AND :end_date
-              AND (:employee = '' OR employee_name ILIKE :employee_like)
             ORDER BY leave_date, employee_name, record_uid
         """), {
             "start_date": start_date,
             "end_date": end_date,
-            "employee": needle,
-            "employee_like": f"%{needle}%",
         }).mappings().all()
+    if needle:
+        rows = [row for row in rows if _employee_name_matches(row["employee_name"], needle)]
 
     workbook = Workbook()
     sheet = workbook.active
@@ -2158,7 +2165,7 @@ def leave_daily_stats(
 
     employee_needle = _norm(employee)
     if employee_needle:
-        rows = [row for row in rows if employee_needle in _norm(row["employee_name"])]
+        rows = [row for row in rows if _employee_name_matches(row["employee_name"], employee_needle)]
 
     buckets: dict[date, dict[str, Any]] = {}
     for row in rows:

@@ -19,7 +19,14 @@ const normalizeSearch = (value) => String(value || '')
   .replace(/đ/g, 'd')
   .replace(/Đ/g, 'D')
   .toLocaleLowerCase('vi-VN')
+  .replace(/\s+/g, ' ')
   .trim()
+const matchesEmployeeName = (employeeName, searchValue) => {
+  const needle = normalizeSearch(searchValue)
+  if (!needle) return true
+  const shortName = String(employeeName || '').split(/\s*[-–—]\s*/, 1)[0]
+  return [employeeName, shortName].some((name) => normalizeSearch(name) === needle)
+}
 
 const leaveStatsGroup = (row) => {
   const key = normalizeSearch(`${row.leave_type || ''} ${row.leave_reason || ''}`)
@@ -39,7 +46,7 @@ export async function loadLeaveDailyStats(start, end, employee = '') {
   const baseByDate = new Map(dailyRows.map((row) => [row.date, row]))
   const buckets = new Map()
   records
-    .filter((row) => normalizeSearch(row.employee_name).includes(needle))
+    .filter((row) => matchesEmployeeName(row.employee_name, needle))
     .forEach((row) => {
       const date = row.leave_date
       const bucket = buckets.get(date) || { paid: 0, generated: 0, unpaid: 0, total_penalty: 0 }
