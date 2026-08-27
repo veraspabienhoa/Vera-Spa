@@ -267,6 +267,46 @@ def _net(row: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _draft_key(start: date, end: date) -> str:
+    return f"draft:{start.isoformat()}:{end.isoformat()}"
+
+
+def _employee_catalog(conn, norm) -> dict[str, dict[str, Any]]:
+    return {
+        norm(item["username"]): dict(item)
+        for item in conn.execute(text("""
+            SELECT username,COALESCE(full_name,'') full_name,COALESCE(email,'') email,
+                   COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name
+            FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+        """)).mappings().all()
+    }
+
+
+def _clean_draft_rows(conn, supplied_rows: list[dict[str, Any]], norm) -> list[dict[str, Any]]:
+    employees = _employee_catalog(conn, norm)
+    clean_rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for supplied in supplied_rows:
+        key = norm(supplied.get("Tên Hệ thống"))
+        if not key or key in seen or key not in employees:
+            raise HTTPException(400, "Bảng lương có nhân viên trống, trùng tên hoặc không tồn tại.")
+        seen.add(key)
+        employee = employees[key]
+        row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
+        row.update({
+            "TT": len(clean_rows) + 1,
+            "Tên Hệ thống": employee["username"],
+            "Họ và tên": employee["full_name"],
+            "Email": employee["email"],
+            "Số tài khoản ngân hàng": employee["bank_account"],
+            "Tên ngân hàng": employee["bank_name"],
+        })
+        clean_rows.append(row)
+    if not clean_rows:
+        raise HTTPException(400, "Bảng lương nháp chưa có nhân viên.")
+    return clean_rows
+
+
 def _read_source(content: bytes) -> pd.DataFrame:
     if not content:
         raise HTTPException(400, "File Excel đang trống.")
@@ -461,6 +501,83 @@ def _workbook(records: list[dict[str, Any]], fields: list[str], title: str = "B�
     return stream.getvalue()
 
 
+def _saved_draft(conn, start: date, end: date) -> dict[str, Any] | None:
+    stored = conn.execute(text("""
+        SELECT value_json,updated_by,updated_at
+        FROM vera_app_setting
+        WHERE category='payroll' AND setting_key=:key
+        LIMIT 1
+    """), {"key": _draft_key(start, end)}).mappings().first()
+    if not stored or not isinstance(stored["value_json"], dict):
+        return None
+    value = dict(stored["value_json"])
+    rows = [
+        _net({field: item.get(field, "") for field in DRAFT_FIELDS})
+        for item in (value.get("rows") or [])
+        if isinstance(item, dict)
+    ]
+    if not rows:
+        return None
+    return {
+        "period_label": _period_label(start, end),
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "fields": DRAFT_FIELDS,
+        "editable_fields": sorted(EDITABLE_FIELDS),
+        "rows": rows,
+        "source_name": str(value.get("source_name") or "Bảng lương nháp"),
+        "saved_at": stored["updated_at"].isoformat() if stored["updated_at"] else "",
+        "saved_by": str(stored["updated_by"] or ""),
+    }
+
+
+def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str]]:
+    if not content:
+        raise HTTPException(400, "File Excel đang trống.")
+    if len(content) > 15 * 1024 * 1024:
+        raise HTTPException(413, "File Excel vượt quá 15 MB.")
+    if not content.startswith(b"PK"):
+        raise HTTPException(400, "File không đúng định dạng Excel .xlsx.")
+    workbook = None
+    try:
+        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+        worksheet = workbook["Bảng lương bản mới"] if "Bảng lương bản mới" in workbook.sheetnames else workbook.active
+        iterator = worksheet.iter_rows(values_only=True)
+        headers = [str(value or "").strip() for value in next(iterator, ())]
+        if not headers or "Tên Hệ thống" not in headers:
+            raise HTTPException(400, "File Import thiếu cột 'Tên Hệ thống'. Hãy dùng file Export to Excel từ Bảng lương.")
+        nonempty_headers = [header for header in headers if header]
+        if len(nonempty_headers) != len(set(nonempty_headers)):
+            raise HTTPException(400, "File Import có tiêu đề cột bị trùng.")
+        rows: list[dict[str, Any]] = []
+        period_labels: set[str] = set()
+        for row_number, values in enumerate(iterator, start=2):
+            if row_number > 502:
+                raise HTTPException(400, "File Import vượt quá 500 dòng bảng lương.")
+            padded = list(values) + [None] * max(0, len(headers) - len(values))
+            item = {header: padded[index] for index, header in enumerate(headers) if header}
+            if not any(str(value or "").strip() for value in item.values()):
+                continue
+            employee_name = str(item.get("Tên Hệ thống") or "").strip()
+            if not employee_name:
+                raise HTTPException(400, f"Dòng {row_number} chưa có Tên Hệ thống.")
+            item["Tên Hệ thống"] = employee_name
+            label = str(item.get("Mã bản lưu") or "").strip()
+            if label:
+                period_labels.add(label)
+            rows.append(item)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, f"Không đọc được file Bảng lương: {exc}") from exc
+    finally:
+        if workbook is not None:
+            workbook.close()
+    if not rows:
+        raise HTTPException(400, "File Import không có dòng bảng lương.")
+    return rows, period_labels
+
+
 def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, norm, identity_type, google_client):
     @app.get("/v2/payroll/history")
     def payroll_history(batch: str = Query(default=""), search: str = Query(default=""), ident: identity_type = Depends(current_identity)):
@@ -484,6 +601,63 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         fields = ADMIN_FIELDS if str(ident.role).lower() == "admin" else PUBLIC_FIELDS
         filename = "VERA_BangLuong_BanCu.xlsx" if not batch else f"VERA_BangLuong_BanCu_{batch.replace(' ', '_').replace('/', '-')}.xlsx"
         return StreamingResponse(BytesIO(_workbook(records, fields, "Bảng lương bản cũ")), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+    @app.get("/v2/payroll/draft")
+    def payroll_draft(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), ident: identity_type = Depends(current_identity)):
+        start, end, label = _period(month, period_no)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "payroll_calculate")
+            draft = _saved_draft(conn, start, end)
+        return {"draft": draft, "period_label": label}
+
+    @app.put("/v2/payroll/draft")
+    def save_payroll_draft(body: PayrollSave, ident: identity_type = Depends(current_identity)):
+        label = _period_label(body.start, body.end)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "payroll_save")
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll-draft:' || :label))"), {"label": label})
+            clean_rows = _clean_draft_rows(conn, body.rows, norm)
+            _put_setting(conn, _draft_key(body.start, body.end), {
+                "start": body.start.isoformat(),
+                "end": body.end.isoformat(),
+                "source_name": body.source_name,
+                "rows": clean_rows,
+            }, ident.employee_username)
+            draft = _saved_draft(conn, body.start, body.end)
+        return {"ok": True, "draft": draft, "message": f"Đã lưu bảng lương nháp {label} cho {len(clean_rows)} nhân viên."}
+
+    @app.delete("/v2/payroll/draft")
+    def delete_payroll_draft(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), ident: identity_type = Depends(current_identity)):
+        start, end, label = _period(month, period_no)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "payroll_save")
+            deleted = conn.execute(text("""
+                DELETE FROM vera_app_setting
+                WHERE category='payroll' AND setting_key=:key
+            """), {"key": _draft_key(start, end)}).rowcount
+        message = f"Đã xóa bảng lương nháp {label}." if deleted else f"Đã bỏ bảng lương nháp {label} khỏi màn hình; máy chủ chưa có bản nháp đã lưu."
+        return {"ok": True, "deleted": bool(deleted), "message": message}
+
+    @app.post("/v2/payroll/draft/import.xlsx")
+    async def import_payroll_draft(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), payload: bytes = Body(..., media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ident: identity_type = Depends(current_identity)):
+        start, end, label = _period(month, period_no)
+        supplied_rows, labels = _read_draft_workbook(payload)
+        if labels and labels != {label}:
+            raise HTTPException(400, f"File Excel thuộc kỳ {', '.join(sorted(labels))}; màn hình đang chọn {label}.")
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "payroll_calculate")
+            clean_rows = _clean_draft_rows(conn, supplied_rows, norm)
+        return {
+            "period_label": label,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "fields": DRAFT_FIELDS,
+            "editable_fields": sorted(EDITABLE_FIELDS),
+            "rows": clean_rows,
+            "source_name": "Excel Import",
+            "imported": len(clean_rows),
+            "message": f"Đã Import {len(clean_rows)} dòng vào bảng lương nháp {label}.",
+        }
 
     @app.post("/v2/payroll/draft/export.xlsx")
     def payroll_draft_export(body: PayrollExport, ident: identity_type = Depends(current_identity)):
@@ -608,26 +782,9 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         try:
             require_feature(conn, ident, "payroll_save")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll:' || :label))"), {"label": label})
-            employees = {
-                norm(item["username"]): dict(item)
-                for item in conn.execute(text("""
-                    SELECT username,COALESCE(full_name,'') full_name,COALESCE(email,'') email,
-                           COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name
-                    FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
-                """)).mappings().all()
-            }
-            seen = set()
-            for supplied in body.rows:
-                key = norm(supplied.get("Tên Hệ thống"))
-                if not key or key in seen or key not in employees:
-                    raise HTTPException(400, "Bảng lương có nhân viên trống, trùng tên hoặc không tồn tại.")
-                seen.add(key)
-                employee = employees[key]
-                row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
+            for row in _clean_draft_rows(conn, body.rows, norm):
                 row.update({
-                    "Tên Hệ thống": employee["username"], "Họ và tên": employee["full_name"],
-                    "Email": employee["email"], "Số tài khoản ngân hàng": employee["bank_account"],
-                    "Tên ngân hàng": employee["bank_name"], "Mã bản lưu": label,
+                    "Mã bản lưu": label,
                     "Từ ngày": body.start.strftime("%d/%m/%Y"), "Đến ngày": body.end.strftime("%d/%m/%Y"),
                     "Ngày lưu": now.strftime("%d/%m/%Y"), "Giờ lưu": now.strftime("%H:%M:%S"),
                     "Người lưu": ident.employee_username, "Nguồn dữ liệu": body.source_name,

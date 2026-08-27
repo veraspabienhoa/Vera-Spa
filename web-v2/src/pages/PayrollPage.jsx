@@ -70,6 +70,7 @@ export default function PayrollPage({ user }) {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
   const historyRequest = useRef(0)
+  const draftImportRef = useRef(null)
 
   const run = async (key, callback) => {
     setBusy(key); setNotice(null)
@@ -94,6 +95,23 @@ export default function PayrollPage({ user }) {
   }
   const reload = () => run('load', async () => { await loadHistory(); await loadSupporting() })
   useEffect(() => { void reload() }, [batch, employee]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let active = true
+    if (!canCalculate || !month) return () => { active = false }
+    setDraft(null)
+    setSelected([])
+    veraApi.payrollDraft(month, periodNo)
+      .then((result) => {
+        if (!active) return
+        const saved = result.draft || null
+        setDraft(saved)
+        setSelected((saved?.rows || []).map((row) => row['Tên Hệ thống']))
+      })
+      .catch((error) => {
+        if (active) setNotice({ type: 'error', message: error.message })
+      })
+    return () => { active = false }
+  }, [canCalculate, month, periodNo])
 
   const historyTotal = useMemo(() => history.records.reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [history.records])
   const draftTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [draft])
@@ -119,18 +137,56 @@ export default function PayrollPage({ user }) {
   const editMoney = (username, field, value) => {
     setDraft((current) => ({
       ...current,
+      saved_at: '',
+      saved_by: '',
       rows: current.rows.map((row) => row['Tên Hệ thống'] === username
         ? recalculate({ ...row, [field]: Number(value || 0) }) : row),
     }))
   }
 
-  const saveDraft = () => run('save', async () => {
+  const savePayrollPeriod = () => run('save', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương để lưu.')
     if (!window.confirm(`Lưu ${draft.period_label}? Bản lưu cũ của đúng kỳ này (nếu có) sẽ được thay thế.`)) return
-    const result = await veraApi.savePayroll({ start: draft.start, end: draft.end, source_name: file?.name || 'Excel upload', rows: draft.rows })
+    const result = await veraApi.savePayroll({ start: draft.start, end: draft.end, source_name: file?.name || draft.source_name || 'Excel upload', rows: draft.rows })
     await loadHistory()
     setNotice({ type: 'success', message: result.message })
   })
+
+  const saveDraftSnapshot = () => run('save-draft', async () => {
+    if (!draft?.rows?.length) throw new Error('Chưa có bảng lương nháp để lưu.')
+    const result = await veraApi.savePayrollDraft({
+      start: draft.start,
+      end: draft.end,
+      source_name: file?.name || draft.source_name || 'Bảng lương nháp',
+      rows: draft.rows,
+    })
+    setDraft(result.draft)
+    setSelected((result.draft?.rows || []).map((row) => row['Tên Hệ thống']))
+    setNotice({ type: 'success', message: result.message })
+  })
+
+  const deleteDraftSnapshot = () => run('delete-draft', async () => {
+    if (!draft?.rows?.length) throw new Error('Chưa có bảng lương nháp để xóa.')
+    if (!window.confirm(`Xóa bảng lương nháp ${draft.period_label}?`)) return
+    const result = await veraApi.deletePayrollDraft(month, periodNo)
+    setDraft(null)
+    setSelected([])
+    setNotice({ type: 'success', message: result.message })
+  })
+
+  const importDraftExcel = (event) => {
+    const selectedFile = event.target.files?.[0]
+    event.target.value = ''
+    if (!selectedFile) return
+    void run('import-draft', async () => {
+      if (!selectedFile.name.toLowerCase().endsWith('.xlsx')) throw new Error('Chỉ chấp nhận file Excel định dạng .xlsx.')
+      if (selectedFile.size > 15 * 1024 * 1024) throw new Error('File Excel vượt quá giới hạn 15 MB.')
+      const result = await veraApi.importPayrollDraft(selectedFile, month, periodNo)
+      setDraft(result)
+      setSelected((result.rows || []).map((row) => row['Tên Hệ thống']))
+      setNotice({ type: 'success', message: result.message })
+    })
+  }
 
   const emailDraft = () => run('email', async () => {
     const rows = (draft?.rows || []).filter((row) => selected.includes(row['Tên Hệ thống']))
@@ -143,7 +199,7 @@ export default function PayrollPage({ user }) {
   const exportDraft = () => run('export-draft', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương mới để xuất Excel.')
     await veraApi.exportPayrollDraft({ start: draft.start, end: draft.end, rows: draft.rows })
-    setNotice({ type: 'success', message: `Đã xuất Excel bản mới: ${draft.period_label}.` })
+    setNotice({ type: 'success', message: `Đã Export to Excel: ${draft.period_label}.` })
   })
 
   const exportHistory = () => run('export-history', async () => {
@@ -193,6 +249,16 @@ export default function PayrollPage({ user }) {
         <label className="payroll-file">File TimeSoft<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={isBusy} onChange={(event) => setFile(event.target.files?.[0] || null)} /><small>{file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : 'Định dạng .xlsx · tối đa 15 MB'}</small></label>
         <button className="primary-button" onClick={calculate} disabled={isBusy}><Upload size={16} /> {busy === 'calculate' ? 'Đang tính…' : 'Upload & tính lương'}</button>
       </div>
+      <input ref={draftImportRef} className="payroll-draft-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importDraftExcel} />
+      <div className="payroll-draft-toolbar">
+        <div><strong>BẢNG LƯƠNG NHÁP</strong><small>{draft?.rows?.length ? `${draft.period_label} · ${draft.rows.length} nhân viên${draft.saved_at ? ` · Đã lưu bởi ${draft.saved_by}` : ' · Chưa lưu trên máy chủ'}` : 'Chưa có dữ liệu nháp cho kỳ đang chọn.'}</small></div>
+        <div className="list-actions">
+          <button className="secondary-button" type="button" onClick={() => draftImportRef.current?.click()} disabled={isBusy}><Upload size={16} /> {busy === 'import-draft' ? 'Đang Import…' : 'Import Excel'}</button>
+          {canExport && <button className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang Export…' : 'Export to Excel'}</button>}
+          {canSave && <button className="primary-button" type="button" onClick={saveDraftSnapshot} disabled={isBusy || !draftRows.length}><Save size={16} /> {busy === 'save-draft' ? 'Đang lưu…' : 'Lưu bảng lương nháp'}</button>}
+          {canSave && <button className="danger-button" type="button" onClick={deleteDraftSnapshot} disabled={isBusy || !draftRows.length}><Trash2 size={16} /> {busy === 'delete-draft' ? 'Đang xóa…' : 'Xóa bảng lương nháp'}</button>}
+        </div>
+      </div>
     </section>}
 
     {canEditConfig && <section className="panel">
@@ -205,7 +271,7 @@ export default function PayrollPage({ user }) {
     </section>}
 
     {draft?.rows?.length > 0 && <section className="panel payroll-draft-panel">
-      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canExport && <button className="secondary-button" onClick={exportDraft} disabled={isBusy}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Excel bản mới'}</button>}{canSave && <button className="primary-button" onClick={saveDraft} disabled={isBusy}><Save size={16} /> Lưu kỳ lương</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
+      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={savePayrollPeriod} disabled={isBusy}><Save size={16} /> Lưu bảng lương chính thức</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
       {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allSelected} onChange={toggleAllSelected} disabled={isBusy} /> Chọn tất cả {draftRows.length} nhân viên để gửi email</label>}
       <div className="responsive-data-table payroll-editor payroll-desktop-table"><table><thead><tr>{canEmail && <th>Gửi</th>}<th>Nhân viên</th><th>Lương</th>{Object.entries(EDIT_LABELS).map(([field, label]) => <th key={field}>{label}</th>)}<th>Thực nhận</th></tr></thead><tbody>{draftRows.map((row) => <tr key={row['Tên Hệ thống']}>{canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${row['Tên Hệ thống']}`} checked={selected.includes(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} /></td>}<td><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></td><td className="money-cell">{money(row['Tiền Lương'])}</td>{Object.keys(EDIT_LABELS).map((field) => <td key={field}><input className="payroll-money-input" type="number" min="0" inputMode="numeric" disabled={isBusy} value={row[field] || 0} onChange={(event) => editMoney(row['Tên Hệ thống'], field, event.target.value)} /></td>)}<td className="money-cell"><strong>{money(row['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
       <div className="payroll-mobile-list">{draftRows.map((row) => <article className="payroll-mobile-card" key={row['Tên Hệ thống']}>

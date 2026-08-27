@@ -1,4 +1,4 @@
-import { Bell, BellRing, CalendarDays, CheckCircle2, Clock3, Download, RefreshCw, Save, Search, Trash2, Upload, UserRoundCheck, UsersRound, X } from 'lucide-react'
+import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
@@ -13,7 +13,6 @@ import {
   loadLeaveDailyStats,
   loadLeaveReasons,
   loadLeaveRecords,
-  loadLeaveSummary,
 } from '../lib/data'
 
 const VIEWED_DATE_FILTER = 'Ngày đang xem'
@@ -99,7 +98,6 @@ export default function LeaveRegistrationPage({ user }) {
   const [statsEmployeeSearch, setStatsEmployeeSearch] = useState('')
   const [statsEmployeeFilter, setStatsEmployeeFilter] = useState('')
   const [employeeSearch, setEmployeeSearch] = useState('')
-  const [summary, setSummary] = useState({ working: 0, leave: 0, paid: 0, unpaid: 0 })
   const [dailyStats, setDailyStats] = useState([])
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
@@ -163,14 +161,12 @@ export default function LeaveRegistrationPage({ user }) {
     setError('')
     try {
       if (isApiConfigured) {
-        const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
-          veraApi.leaveSummary(date),
+        const [dailyData, recordData, reasonData, employeeData] = await Promise.all([
           veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter),
           veraApi.leaveRecords(listRangeStart, listRangeEnd),
           veraApi.leaveReasons(date),
           veraApi.employees(),
         ])
-        setSummary(summaryData)
         setDailyStats(dailyData.days || [])
         const loadedRecords = recordData.records || []
         setRecords(loadedRecords)
@@ -179,14 +175,12 @@ export default function LeaveRegistrationPage({ user }) {
         setReasons(reasonData.reasons || [])
         setEmployees(employeeData.employees || [])
       } else {
-        const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
-          loadLeaveSummary(date),
+        const [dailyData, recordData, reasonData, employeeData] = await Promise.all([
           loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter),
           loadLeaveRecords(listRangeStart, listRangeEnd),
           loadLeaveReasons(date),
           loadEmployees(),
         ])
-        setSummary(summaryData)
         setDailyStats(dailyData)
         setRecords(recordData)
         setReasonDrafts(Object.fromEntries(recordData.map((item) => [item.record_uid, item.leave_reason])))
@@ -572,13 +566,6 @@ export default function LeaveRegistrationPage({ user }) {
       {isApiConfigured && user?.permissions?.leave_create === false && (
         <div className="warning-box"><strong>Chế độ chỉ xem.</strong> Tài khoản này chưa được cấp quyền ghi lịch nghỉ.</div>
       )}
-
-      <section className="metric-grid">
-        <Metric icon={UserRoundCheck} label="Đang làm việc" value={summary.working ?? 0} />
-        <Metric icon={UsersRound} label="Tổng nghỉ" value={summary.leave ?? 0} />
-        <Metric icon={CheckCircle2} label="Có phép" value={summary.paid ?? 0} />
-        <Metric icon={Clock3} label="Không phép" value={summary.unpaid ?? 0} />
-      </section>
 
       <div className="date-toolbar viewed-date-toolbar">
         <DatePickerControl
@@ -992,8 +979,4 @@ function DatePickerControl({ label, value, onChange, min, max }) {
       </label>
     </div>
   )
-}
-
-function Metric({ icon: Icon, label, value }) {
-  return <div className="metric-card"><div className="metric-icon"><Icon size={20} /></div><div><span>{label}</span><strong>{value}</strong></div></div>
 }

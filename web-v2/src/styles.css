@@ -267,6 +267,11 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .payroll-config-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .payroll-config-grid label, .payroll-obligation-form label { display: grid; gap: 6px; color: #4b5b53; font-size: 11px; font-weight: 800; }
 .payroll-file small { max-width: 260px; overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.payroll-draft-file-input { display: none; }
+.payroll-draft-toolbar { margin-top: 14px; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: #f5f8f6; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.payroll-draft-toolbar > div:first-child { min-width: 0; display: grid; gap: 3px; }
+.payroll-draft-toolbar > div:first-child > strong { color: var(--green-950); font-size: 12px; }
+.payroll-draft-toolbar > div:first-child > small { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
 .payroll-select-all { width: fit-content; display: flex; align-items: center; gap: 8px; margin: -3px 0 10px; color: #44564c; font-size: 11px; font-weight: 800; }
 .payroll-select-all input { width: 18px; height: 18px; padding: 0; accent-color: var(--green-800); }
 .payroll-editor table { min-width: 1800px; }
@@ -803,7 +808,10 @@ tr:last-child td { border-bottom: 0; }
   .payroll-draft-panel .list-actions { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .payroll-draft-panel .list-actions button { width: 100%; min-width: 0; padding-inline: 7px; font-size: 9px; }
   .payroll-draft-panel .list-actions button:last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .payroll-calculate-panel .payroll-file, .payroll-calculate-panel .primary-button { grid-column: 1 / -1; }
+  .payroll-draft-toolbar { display: grid; padding: 10px; }
+  .payroll-draft-toolbar .list-actions { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px; }
+  .payroll-draft-toolbar .list-actions button { width: 100%; min-width: 0; padding: 8px 5px; font-size: 8px; }
+  .payroll-calculate-panel > .data-toolbar > .payroll-file, .payroll-calculate-panel > .data-toolbar > .primary-button { grid-column: 1 / -1; }
   .payroll-file small { max-width: calc(100vw - 54px); }
   .payroll-select-all { width: 100%; margin: 0 0 9px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #f5f8f6; font-size: 10px; }
   .payroll-desktop-table, .payroll-history-desktop { display: none; }
