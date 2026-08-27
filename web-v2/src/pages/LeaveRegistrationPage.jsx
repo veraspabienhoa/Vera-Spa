@@ -90,6 +90,8 @@ export default function LeaveRegistrationPage({ user }) {
   const [listRangeFilter, setListRangeFilter] = useState('Hôm nay')
   const [listRangeStart, setListRangeStart] = useState(initialRange[0])
   const [listRangeEnd, setListRangeEnd] = useState(initialRange[1])
+  const [statsEmployeeSearch, setStatsEmployeeSearch] = useState('')
+  const [statsEmployeeFilter, setStatsEmployeeFilter] = useState('')
   const [employeeSearch, setEmployeeSearch] = useState('')
   const [summary, setSummary] = useState({ working: 0, leave: 0, paid: 0, unpaid: 0 })
   const [dailyStats, setDailyStats] = useState([])
@@ -157,7 +159,7 @@ export default function LeaveRegistrationPage({ user }) {
       if (isApiConfigured) {
         const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
           veraApi.leaveSummary(date),
-          veraApi.leaveDailyStats(rangeStart, rangeEnd),
+          veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter),
           veraApi.leaveRecords(listRangeStart, listRangeEnd),
           veraApi.leaveReasons(date),
           veraApi.employees(),
@@ -173,7 +175,7 @@ export default function LeaveRegistrationPage({ user }) {
       } else {
         const [summaryData, dailyData, recordData, reasonData, employeeData] = await Promise.all([
           loadLeaveSummary(date),
-          loadLeaveDailyStats(rangeStart, rangeEnd),
+          loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter),
           loadLeaveRecords(listRangeStart, listRangeEnd),
           loadLeaveReasons(date),
           loadEmployees(),
@@ -191,7 +193,7 @@ export default function LeaveRegistrationPage({ user }) {
     } finally {
       setBusy(false)
     }
-  }, [date, listRangeEnd, listRangeStart, rangeEnd, rangeStart])
+  }, [date, listRangeEnd, listRangeStart, rangeEnd, rangeStart, statsEmployeeFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -252,6 +254,10 @@ export default function LeaveRegistrationPage({ user }) {
   const totalPenalty = useMemo(
     () => filteredRecords.reduce((sum, item) => sum + Number(item.penalty || 0), 0),
     [filteredRecords],
+  )
+  const statsTotalPenalty = useMemo(
+    () => dailyStats.reduce((sum, item) => sum + Number(item.total_penalty || 0), 0),
+    [dailyStats],
   )
   const selectedReason = useMemo(() => reasons.find((item) => item.name === form.leave_reason), [reasons, form.leave_reason])
   const changedRecords = useMemo(
@@ -704,11 +710,17 @@ export default function LeaveRegistrationPage({ user }) {
           <div className="panel-title-row">
             <div>
               <h2>THỐNG KÊ</h2>
-              <p>Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)}.</p>
+              <p>
+                Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)}
+                {statsEmployeeFilter ? ` · Nhân viên: ${statsEmployeeFilter}` : ''}.
+              </p>
             </div>
-            <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
-              <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
-            </button>
+            <div className="list-actions statistics-title-actions">
+              {canViewPenalty && <div className="penalty-chip">Tổng tiền phạt: {statsTotalPenalty.toLocaleString('vi-VN')}đ</div>}
+              <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
+                <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
+              </button>
+            </div>
           </div>
           <div className="list-filter-toolbar statistics-filter-toolbar">
             <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian thống kê">
@@ -729,6 +741,46 @@ export default function LeaveRegistrationPage({ user }) {
                 <DatePickerControl label="Đến ngày" value={rangeEnd} onChange={changeCustomEnd} />
               </div>
             )}
+            <div className="statistics-employee-search">
+              <label className="employee-search-field statistics-employee-search-field">
+                <span><Search size={15} aria-hidden="true" /> Tên nhân viên</span>
+                <input
+                  type="search"
+                  value={statsEmployeeSearch}
+                  onChange={(event) => setStatsEmployeeSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      setStatsEmployeeFilter(statsEmployeeSearch.trim())
+                    }
+                  }}
+                  placeholder="Nhập tên nhân viên"
+                  aria-label="Tìm kiếm tên nhân viên trong thống kê"
+                  list="statistics-employee-options"
+                />
+              </label>
+              <datalist id="statistics-employee-options">
+                {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
+              </datalist>
+              <div className="statistics-search-actions">
+                <button type="button" className="secondary-button compact" onClick={() => setStatsEmployeeFilter(statsEmployeeSearch.trim())} disabled={busy}>
+                  <Search size={14} /> Tìm
+                </button>
+                {(statsEmployeeFilter || statsEmployeeSearch) && (
+                  <button
+                    type="button"
+                    className="secondary-button compact"
+                    onClick={() => {
+                      setStatsEmployeeSearch('')
+                      setStatsEmployeeFilter('')
+                    }}
+                    disabled={busy}
+                  >
+                    <X size={14} /> Bỏ lọc
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           <div className="table-wrap daily-summary-wrap">
             <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
@@ -754,7 +806,7 @@ export default function LeaveRegistrationPage({ user }) {
               </thead>
               <tbody>
                 {dailyStats.length === 0 ? (
-                  <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">Không có dữ liệu trong khoảng thời gian này.</td></tr>
+                  <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">{statsEmployeeFilter ? `Không có dữ liệu của ${statsEmployeeFilter} trong khoảng thời gian này.` : 'Không có dữ liệu trong khoảng thời gian này.'}</td></tr>
                 ) : dailyStats.map((day) => (
                   <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
                     <td>

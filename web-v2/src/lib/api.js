@@ -132,9 +132,11 @@ export const veraApi = {
     const row = Array.isArray(rows) ? rows[0] : rows
     return row || { working: 0, leave: 0, paid: 0, unpaid: 0 }
   },
-  leaveDailyStats: async (start, end) => {
+  leaveDailyStats: async (start, end, employee = '') => {
     if (isApiConfigured) {
-      return request(`/v2/leave/daily-stats?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+      const params = new URLSearchParams({ start, end })
+      if (employee.trim()) params.set('employee', employee.trim())
+      return request(`/v2/leave/daily-stats?${params}`)
     }
     const rows = await rpc('vera_v2_leave_daily_stats', { p_start: start, p_end: end })
     return {

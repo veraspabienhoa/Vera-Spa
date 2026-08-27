@@ -290,6 +290,10 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .range-toolbar { justify-content: space-between; }
 .viewed-date-toolbar { justify-content: flex-start; }
 .statistics-filter-toolbar { margin: 0 0 12px; }
+.statistics-title-actions { min-width: fit-content; }
+.statistics-employee-search { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.statistics-employee-search-field { flex: 1 1 280px; }
+.statistics-search-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .range-filter-buttons { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
 .date-toolbar .range-filter-buttons button.active { background: var(--green-800); color: white; box-shadow: 0 6px 14px rgba(33,70,57,.16); }
 .date-toolbar .watch-current-date-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; border: 1px solid #d9e4dd; background: #f5f8f6; }
@@ -605,6 +609,12 @@ tr:last-child td { border-bottom: 0; }
   .daily-summary-panel .panel-title-row { margin: 0 4px 9px; }
   .daily-summary-panel .panel-title-row h2 { font-size: 15px; }
   .daily-summary-panel .panel-title-row p { font-size: 9px; line-height: 1.3; }
+  .daily-summary-panel .statistics-title-actions { display: grid; grid-template-columns: 1fr; width: auto; min-width: 112px; gap: 5px; }
+  .daily-summary-panel .statistics-title-actions .penalty-chip { padding: 6px 7px; font-size: 8px; text-align: center; white-space: normal; }
+  .daily-summary-panel .statistics-title-actions button { width: 100%; padding: 7px 6px; font-size: 9px; }
+  .statistics-employee-search { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+  .statistics-search-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .statistics-search-actions button { width: 100%; }
   .daily-summary-table { font-size: clamp(7px, 2.25vw, 9px); line-height: 1.1; }
   .daily-summary-table th { padding: 5px 1px; font-size: clamp(6.5px, 2vw, 8px); letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
   .daily-summary-table td { padding: 5px 1px; }

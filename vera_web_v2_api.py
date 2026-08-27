@@ -1335,7 +1335,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "3.3-leave-import"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "3.4-stats-employee-search"}
 
 
 @app.get("/v2/me")
@@ -2129,6 +2129,7 @@ def export_leave_excel(
 def leave_daily_stats(
     start_date: date = Query(alias="start"),
     end_date: date = Query(alias="end"),
+    employee: str = Query(default="", max_length=200),
     ident: Identity = Depends(current_identity),
 ):
     if end_date < start_date:
@@ -2141,7 +2142,7 @@ def leave_daily_stats(
         can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
         quota = _daily_quota_config(conn)
         rows = conn.execute(text("""
-            SELECT l.leave_date, l.leave_reason, l.leave_type,
+            SELECT l.leave_date, l.employee_name, l.leave_reason, l.leave_type,
                    COALESCE(l.penalty, 0) AS penalty
             FROM leave_records l
             WHERE l.leave_date BETWEEN :start_date AND :end_date
@@ -2154,6 +2155,10 @@ def leave_daily_stats(
               )
             ORDER BY l.leave_date, l.employee_name, l.record_uid
         """), {"start_date": start_date, "end_date": end_date}).mappings().all()
+
+    employee_needle = _norm(employee)
+    if employee_needle:
+        rows = [row for row in rows if employee_needle in _norm(row["employee_name"])]
 
     buckets: dict[date, dict[str, Any]] = {}
     for row in rows:

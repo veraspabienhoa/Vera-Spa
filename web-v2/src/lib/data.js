@@ -13,9 +13,56 @@ export async function loadLeaveSummary(date) {
   return row || { working: 0, leave: 0, paid: 0, unpaid: 0 }
 }
 
-export async function loadLeaveDailyStats(start, end) {
+const normalizeSearch = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd')
+  .replace(/Đ/g, 'D')
+  .toLocaleLowerCase('vi-VN')
+  .trim()
+
+const leaveStatsGroup = (row) => {
+  const key = normalizeSearch(`${row.leave_type || ''} ${row.leave_reason || ''}`)
+  if (key.includes('phat sinh')) return 'generated'
+  if (key.includes('khong phep')) return 'unpaid'
+  if (key.includes('co phep') || key.includes('phep nam')) return 'paid'
+  return ''
+}
+
+export async function loadLeaveDailyStats(start, end, employee = '') {
   const rows = await rpc('vera_v2_leave_daily_stats', { p_start: start, p_end: end })
-  return Array.isArray(rows) ? rows.map((row) => ({ ...row, date: row.date || row.day })) : []
+  const dailyRows = Array.isArray(rows) ? rows.map((row) => ({ ...row, date: row.date || row.day })) : []
+  const needle = normalizeSearch(employee)
+  if (!needle) return dailyRows
+
+  const records = await loadLeaveRecords(start, end)
+  const baseByDate = new Map(dailyRows.map((row) => [row.date, row]))
+  const buckets = new Map()
+  records
+    .filter((row) => normalizeSearch(row.employee_name).includes(needle))
+    .forEach((row) => {
+      const date = row.leave_date
+      const bucket = buckets.get(date) || { paid: 0, generated: 0, unpaid: 0, total_penalty: 0 }
+      const group = leaveStatsGroup(row)
+      if (group) bucket[group] += 1
+      bucket.total_penalty += Number(row.penalty || 0)
+      buckets.set(date, bucket)
+    })
+
+  return [...buckets.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, bucket]) => {
+    const base = baseByDate.get(date) || {}
+    const paidLimit = Number(base.paid_limit || 0)
+    const generatedLimit = Number(base.generated_limit || 0)
+    return {
+      ...base,
+      date,
+      weekday_label: base.weekday_label || '',
+      total_leave: bucket.paid + bucket.generated + bucket.unpaid,
+      ...bucket,
+      paid_full: paidLimit > 0 && bucket.paid >= paidLimit,
+      generated_full: generatedLimit === 0 ? bucket.generated > 0 : bucket.generated >= generatedLimit,
+    }
+  })
 }
 
 export async function loadLeaveRecords(start, end = start) {
