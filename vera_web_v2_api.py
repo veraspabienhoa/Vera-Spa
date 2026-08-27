@@ -13,9 +13,11 @@ be interpreted.  That is safer than allowing Web V2 to bypass a legacy rule.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 import hmac
 from io import BytesIO
 import json
+import math
 import os
 import re
 import unicodedata
@@ -26,14 +28,15 @@ from urllib.parse import quote
 import google.auth
 import gspread
 import requests
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils.datetime import from_excel
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import URL
 
 from vera_leave_registration_shared import summarize_leave_day
@@ -1332,7 +1335,7 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "3.2-payroll-export"}
+    return {"ok": True, "service": "vera-web-v2-api", "version": "3.3-leave-import"}
 
 
 @app.get("/v2/me")
@@ -1630,6 +1633,407 @@ def leave_records(
             item.pop("penalty", None)
         records.append(item)
     return {"records": records}
+
+
+LEAVE_IMPORT_MAX_BYTES = 5 * 1024 * 1024
+LEAVE_IMPORT_MAX_ROWS = 10_000
+
+
+def _leave_import_value(row: dict[str, Any], *names: str, default: Any = "") -> Any:
+    for name in names:
+        key = _norm(name)
+        if key in row:
+            return row[key]
+    return default
+
+
+def _leave_import_date(value: Any, row_number: int) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            parsed = from_excel(value)
+            if isinstance(parsed, datetime):
+                return parsed.date()
+            if isinstance(parsed, date):
+                return parsed
+        except Exception:
+            pass
+    raw = str(value or "").strip()
+    for pattern in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(raw, pattern).date()
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except ValueError as exc:
+        raise HTTPException(400, f"Dòng {row_number}: cột Ngày không hợp lệ ({raw or 'trống'}).") from exc
+
+
+def _leave_import_number(
+    value: Any,
+    *,
+    row_number: int,
+    field_name: str,
+    default: float | None = None,
+    money: bool = False,
+    maximum: float = 1_000_000_000_000,
+) -> float | None:
+    if value is None or str(value).strip() == "":
+        return default
+    if isinstance(value, bool):
+        raise HTTPException(400, f"Dòng {row_number}: {field_name} phải là số.")
+    if isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        raw = str(value).strip()
+        token = re.sub(r"[^0-9,.-]", "", raw)
+        if money:
+            if re.fullmatch(r"-?\d{1,3}([.,]\d{3})+", token):
+                token = token.replace(".", "").replace(",", "")
+            elif "." in token and "," in token:
+                token = token.replace(".", "").replace(",", "")
+            elif token.count(".") + token.count(",") == 1:
+                separator = "." if "." in token else ","
+                left, right = token.split(separator)
+                token = left + right if len(right) == 3 else f"{left}.{right}"
+            else:
+                token = token.replace(".", "").replace(",", "")
+        else:
+            token = token.replace(",", ".")
+        try:
+            number = float(token)
+        except ValueError as exc:
+            raise HTTPException(400, f"Dòng {row_number}: {field_name} không phải số hợp lệ ({raw}).") from exc
+    if not math.isfinite(number) or number < 0 or number > maximum:
+        raise HTTPException(400, f"Dòng {row_number}: {field_name} nằm ngoài phạm vi cho phép.")
+    return number
+
+
+def _leave_import_text(value: Any, *, limit: int = 3000) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%d/%m/%Y %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%d/%m/%Y")
+    return str(value).strip()[:limit]
+
+
+def _leave_import_fingerprint(record: dict[str, Any]) -> str:
+    canonical = [
+        record["leave_date"].isoformat(), _norm(record["employee_name"]),
+        _norm(record["leave_reason"]), _norm(record.get("leave_type")),
+        str(record.get("detail") or "").strip(), record.get("calculated_days"),
+        record.get("accumulated_leave"), record.get("penalty"),
+        str(record.get("update_date") or ""), str(record.get("update_time") or ""),
+        _norm(record.get("updated_by")),
+    ]
+    payload = json.dumps(canonical, ensure_ascii=False, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _leave_import_identity(record: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        record["leave_date"].isoformat(),
+        _norm(record["employee_name"]),
+        _norm(record["leave_reason"]),
+    )
+
+
+def _parse_leave_import(content: bytes) -> tuple[list[dict[str, Any]], int]:
+    workbook = None
+    try:
+        workbook = load_workbook(BytesIO(content), read_only=True, data_only=False)
+        worksheet = workbook["Lịch nghỉ"] if "Lịch nghỉ" in workbook.sheetnames else workbook.active
+        rows = worksheet.iter_rows()
+        try:
+            header_cells = next(rows)
+        except StopIteration as exc:
+            raise HTTPException(400, "File Excel không có dữ liệu.") from exc
+        if any(cell.data_type == "f" for cell in header_cells):
+            raise HTTPException(400, "Dòng tiêu đề Excel không được chứa công thức.")
+        headers = [_norm(cell.value) for cell in header_cells]
+        nonempty_headers = [header for header in headers if header]
+        if len(nonempty_headers) != len(set(nonempty_headers)):
+            raise HTTPException(400, "File Excel có tên cột bị trùng.")
+        header_keys = set(nonempty_headers)
+        required_groups = {
+            "Ngày": {_norm("Ngày"), _norm("Ngày nghỉ"), "leave_date"},
+            "Tên nhân viên": {_norm("Tên nhân viên"), _norm("Nhân viên"), _norm("Tên Hệ thống"), "employee_name"},
+            "Lý do nghỉ": {_norm("Lý do nghỉ"), _norm("Lý do"), "leave_reason"},
+        }
+        missing = [label for label, aliases in required_groups.items() if not aliases.intersection(header_keys)]
+        if missing:
+            raise HTTPException(400, "File import thiếu cột bắt buộc: " + ", ".join(missing) + ".")
+
+        output: list[dict[str, Any]] = []
+        fingerprints_by_uid: dict[str, str] = {}
+        fingerprints_by_identity: dict[tuple[str, str, str], str] = {}
+        duplicate_rows = 0
+        for row_number, cells in enumerate(rows, start=2):
+            if not any(cell.value not in (None, "") for cell in cells):
+                continue
+            if len(output) + duplicate_rows >= LEAVE_IMPORT_MAX_ROWS:
+                raise HTTPException(400, f"File Excel chỉ được tối đa {LEAVE_IMPORT_MAX_ROWS:,} dòng dữ liệu.")
+            formula_columns = [
+                str(header_cells[index].value or index + 1)
+                for index, cell in enumerate(cells)
+                if cell.data_type == "f"
+            ]
+            if formula_columns:
+                raise HTTPException(400, f"Dòng {row_number}: không nhận ô công thức Excel ({', '.join(formula_columns)}).")
+            row = {
+                headers[index]: cell.value
+                for index, cell in enumerate(cells)
+                if index < len(headers) and headers[index]
+            }
+            leave_date_value = _leave_import_date(
+                _leave_import_value(row, "Ngày", "Ngày nghỉ", "leave_date"),
+                row_number,
+            )
+            employee_name = _leave_import_text(
+                _leave_import_value(row, "Tên nhân viên", "Nhân viên", "Tên Hệ thống", "employee_name"),
+                limit=200,
+            )
+            leave_reason = _leave_import_text(
+                _leave_import_value(row, "Lý do nghỉ", "Lý do", "leave_reason"),
+                limit=300,
+            )
+            if not employee_name:
+                raise HTTPException(400, f"Dòng {row_number}: Tên nhân viên đang trống.")
+            if not leave_reason:
+                raise HTTPException(400, f"Dòng {row_number}: Lý do nghỉ đang trống.")
+            calculated_raw = _leave_import_value(row, "Số ngày tính", "Số ngày tính phép", "calculated_days", default=None)
+            accumulated_raw = _leave_import_value(row, "Số ngày phép cộng dồn", "Phép cộng dồn", "accumulated_leave", default=None)
+            penalty_raw = _leave_import_value(row, "Phạt", "Phạt vi phạm", "Tiền phạt", "penalty", default=None)
+            record = {
+                "leave_date": leave_date_value,
+                "employee_name": employee_name,
+                "leave_reason": leave_reason,
+                "leave_type": _leave_import_text(_leave_import_value(row, "Loại nghỉ", "Loại", "leave_type"), limit=100),
+                "detail": _leave_import_text(_leave_import_value(row, "Chi tiết", "Ghi chú", "detail")),
+                "calculated_days": _leave_import_number(calculated_raw, row_number=row_number, field_name="Số ngày tính", default=None, maximum=366),
+                "accumulated_leave": _leave_import_number(accumulated_raw, row_number=row_number, field_name="Số ngày phép cộng dồn", default=None, maximum=10_000),
+                "penalty": _leave_import_number(penalty_raw, row_number=row_number, field_name="Phạt", default=None, money=True),
+                "update_date": _leave_import_text(_leave_import_value(row, "Ngày ghi", "Ngày cập nhật", "update_date"), limit=30),
+                "update_time": _leave_import_text(_leave_import_value(row, "Giờ ghi", "Giờ cập nhật", "update_time"), limit=30),
+                "updated_by": _leave_import_text(_leave_import_value(row, "Người ghi", "Người cập nhật", "updated_by"), limit=200),
+                "weekday_label": _weekday_label(leave_date_value),
+                "_row": row_number,
+            }
+            fingerprint = _leave_import_fingerprint(record)
+            identity = _leave_import_identity(record)
+            supplied_uid = _leave_import_text(
+                _leave_import_value(row, "Mã bản ghi", "record_uid", "__record_uid"),
+                limit=201,
+            )
+            if supplied_uid and (len(supplied_uid) > 200 or not re.fullmatch(r"[A-Za-z0-9._:-]+", supplied_uid)):
+                raise HTTPException(400, f"Dòng {row_number}: Mã bản ghi không hợp lệ.")
+            identity_hash = hashlib.sha256("|".join(identity).encode("utf-8")).hexdigest()
+            record_uid = supplied_uid or f"lr-import-{identity_hash[:32]}"
+            if record_uid in fingerprints_by_uid:
+                if fingerprints_by_uid[record_uid] != fingerprint:
+                    raise HTTPException(400, f"Dòng {row_number}: Mã bản ghi bị trùng nhưng nội dung khác nhau.")
+                duplicate_rows += 1
+                continue
+            if identity in fingerprints_by_identity:
+                if fingerprints_by_identity[identity] != fingerprint:
+                    raise HTTPException(
+                        400,
+                        f"Dòng {row_number}: trùng Ngày + Tên nhân viên + Lý do nghỉ nhưng nội dung khác nhau.",
+                    )
+                duplicate_rows += 1
+                continue
+            fingerprints_by_uid[record_uid] = fingerprint
+            fingerprints_by_identity[identity] = fingerprint
+            record["record_uid"] = record_uid
+            output.append(record)
+        if not output:
+            raise HTTPException(400, "File Excel không có lịch nghỉ hợp lệ.")
+        return output, duplicate_rows
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, f"Không đọc được file Excel lịch nghỉ: {exc}") from exc
+    finally:
+        if workbook is not None:
+            workbook.close()
+
+
+@app.post("/v2/leave/import.xlsx")
+async def import_leave_excel(request: Request, ident: Identity = Depends(current_identity)):
+    length = int(request.headers.get("content-length") or 0)
+    if length > LEAVE_IMPORT_MAX_BYTES:
+        raise HTTPException(413, "File Excel vượt quá 5 MB.")
+    content = await request.body()
+    if not content:
+        raise HTTPException(400, "Chưa chọn file Excel.")
+    if len(content) > LEAVE_IMPORT_MAX_BYTES:
+        raise HTTPException(413, "File Excel vượt quá 5 MB.")
+    if not content.startswith(b"PK"):
+        raise HTTPException(400, "File không đúng định dạng Excel .xlsx.")
+    imported, duplicate_rows = _parse_leave_import(content)
+
+    engine = _engine_instance()
+    conn = engine.connect()
+    tx = conn.begin()
+    worksheet = None
+    sheet_range = ""
+    try:
+        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+        if ident.role != "admin":
+            raise HTTPException(403, "Chỉ tài khoản admin được Import dữ liệu lịch nghỉ cũ.")
+        _require_feature(conn, ident, "leave")
+        now = datetime.now(VN_TZ)
+        for record in imported:
+            policy = {}
+            if not record["leave_type"] or record["calculated_days"] is None or record["penalty"] is None:
+                try:
+                    policy = _reason_item(conn, record["leave_reason"])
+                except HTTPException:
+                    policy = {}
+            record["leave_type"] = record["leave_type"] or str(policy.get("leave_type") or "")
+            record["calculated_days"] = float(
+                policy.get("days") if record["calculated_days"] is None and policy else record["calculated_days"] or 0
+            )
+            record["accumulated_leave"] = float(record["accumulated_leave"] or 0)
+            record["penalty"] = float(
+                policy.get("penalty") if record["penalty"] is None and policy else record["penalty"] or 0
+            )
+            record["update_date"] = record["update_date"] or now.strftime("%d/%m/%Y")
+            record["update_time"] = record["update_time"] or now.strftime("%H:%M:%S")
+            record["updated_by"] = record["updated_by"] or ident.employee_username
+
+        existing_uids: set[str] = set()
+        uid_query = text("SELECT record_uid FROM leave_records WHERE record_uid IN :uids").bindparams(
+            bindparam("uids", expanding=True)
+        )
+        for offset in range(0, len(imported), 500):
+            chunk = [record["record_uid"] for record in imported[offset:offset + 500]]
+            existing_uids.update(str(value) for value in conn.execute(uid_query, {"uids": chunk}).scalars())
+        existing_identities: set[tuple[str, str, str]] = set()
+        date_query = text("""
+            SELECT leave_date, employee_name, leave_reason
+            FROM leave_records
+            WHERE leave_date IN :dates
+        """).bindparams(bindparam("dates", expanding=True))
+        imported_dates = sorted({record["leave_date"] for record in imported})
+        for offset in range(0, len(imported_dates), 300):
+            chunk = imported_dates[offset:offset + 300]
+            rows = conn.execute(date_query, {"dates": chunk}).mappings().all()
+            existing_identities.update(_leave_import_identity(dict(row)) for row in rows)
+        new_records = [
+            record for record in imported
+            if record["record_uid"] not in existing_uids
+            and _leave_import_identity(record) not in existing_identities
+        ]
+        skipped = duplicate_rows + len(imported) - len(new_records)
+        if not new_records:
+            tx.rollback()
+            return {
+                "ok": True,
+                "imported": 0,
+                "skipped": skipped,
+                "message": f"Không có dữ liệu mới. Đã bỏ qua {skipped} dòng đã tồn tại hoặc bị trùng.",
+            }
+
+        worksheet = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
+        all_values = worksheet.get_all_values()
+        headers = all_values[0][:13] if all_values else []
+        if len(headers) < 13:
+            raise HTTPException(503, "MainData chưa có đủ 13 cột A:M để nhận dữ liệu import.")
+        sheet_last_row = 1
+        for index, values in enumerate(all_values[1:], start=2):
+            if any(str(value or "").strip() for value in values[:13]):
+                sheet_last_row = index
+        database_last_row = conn.execute(text("""
+            SELECT COALESCE(MAX(source_row), 1)
+            FROM leave_records
+            WHERE source_sheet_id=:source_sheet_id AND source_row IS NOT NULL
+        """), {"source_sheet_id": LEAVE_SHEET_ID}).scalar() or 1
+        start_row = max(sheet_last_row + 1, int(database_last_row) + 1, 2)
+        sheet_values = []
+        for index, record in enumerate(new_records):
+            source_row = start_row + index
+            record["source_row"] = source_row
+            sheet_values.append(_sheet_values_for_record(headers, record, source_row))
+        insert_rows = [
+            {
+                **record,
+                "sid": LEAVE_SHEET_ID,
+                "srow": record["source_row"],
+                "payload": json_text(_record_payload(record, record["source_row"])),
+            }
+            for record in new_records
+        ]
+        conn.execute(text("""
+            INSERT INTO leave_records(
+                source_sheet_id, source_row, leave_date, employee_name, leave_reason,
+                leave_type, detail, calculated_days, accumulated_leave, penalty,
+                update_date, update_time, updated_by, weekday_label, payload, record_uid,
+                created_at, updated_at
+            ) VALUES (
+                :sid, :srow, :leave_date, :employee_name, :leave_reason,
+                :leave_type, :detail, :calculated_days, :accumulated_leave, :penalty,
+                :update_date, :update_time, :updated_by, :weekday_label, CAST(:payload AS jsonb), :record_uid,
+                NOW(), NOW()
+            )
+        """), insert_rows)
+        try:
+            with conn.begin_nested():
+                conn.execute(text("""
+                    INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at)
+                    VALUES ('leave_primary','web_v2_leave_import',:detail,NOW())
+                """), {"detail": f"count={len(new_records)}; actor={ident.employee_username}"})
+        except Exception:
+            pass
+        end_row = start_row + len(new_records) - 1
+        sheet_range = f"A{start_row}:M{end_row}"
+        worksheet.update(range_name=sheet_range, values=sheet_values, value_input_option="USER_ENTERED")
+        try:
+            tx.commit()
+        except Exception:
+            try:
+                worksheet.batch_clear([sheet_range])
+            except Exception:
+                pass
+            raise
+        dates = [record["leave_date"] for record in new_records]
+        return {
+            "ok": True,
+            "imported": len(new_records),
+            "skipped": skipped,
+            "start": min(dates).isoformat(),
+            "end": max(dates).isoformat(),
+            "message": (
+                f"Đã Import {len(new_records)} lịch nghỉ cũ THÀNH CÔNG"
+                + (f"; bỏ qua {skipped} dòng đã tồn tại hoặc bị trùng." if skipped else ".")
+            ),
+        }
+    except HTTPException:
+        if tx.is_active:
+            tx.rollback()
+        if worksheet is not None and sheet_range:
+            try:
+                worksheet.batch_clear([sheet_range])
+            except Exception:
+                pass
+        raise
+    except Exception as exc:
+        if tx.is_active:
+            tx.rollback()
+        if worksheet is not None and sheet_range:
+            try:
+                worksheet.batch_clear([sheet_range])
+            except Exception:
+                pass
+        raise HTTPException(500, f"Không Import được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
+    finally:
+        conn.close()
 
 
 @app.get("/v2/leave/export.xlsx")

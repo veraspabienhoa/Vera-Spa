@@ -353,6 +353,8 @@ textarea { resize: vertical; }
 .reason-edit-cell { min-width: 240px; }
 .reason-edit-cell select { min-width: 220px; padding: 8px 9px; }
 .leave-list-wrap { max-width: 100%; }
+.leave-file-input { display: none; }
+.leave-records-table .weekday-cell { white-space: nowrap; }
 .full { width: 100%; }
 .text-button { border: 0; background: transparent; color: #466b59; font-weight: 700; }
 .table-wrap { overflow-x: auto; }
@@ -632,14 +634,16 @@ tr:last-child td { border-bottom: 0; }
   .leave-list-wrap { width: 100%; overflow-x: clip; }
   .leave-records-table { width: 100%; min-width: 0; table-layout: fixed; font-size: 10px; }
   .leave-records-table.without-penalty .leave-col-select { width: 8%; }
-  .leave-records-table.without-penalty .leave-col-date { width: 14%; }
-  .leave-records-table.without-penalty .leave-col-employee { width: 16%; }
-  .leave-records-table.without-penalty .leave-col-reason { width: 34%; }
-  .leave-records-table.without-penalty .leave-col-detail { width: 28%; }
+  .leave-records-table.without-penalty .leave-col-date { width: 13%; }
+  .leave-records-table.without-penalty .leave-col-weekday { width: 9%; }
+  .leave-records-table.without-penalty .leave-col-employee { width: 15%; }
+  .leave-records-table.without-penalty .leave-col-reason { width: 30%; }
+  .leave-records-table.without-penalty .leave-col-detail { width: 25%; }
   .leave-records-table.with-penalty .leave-col-select { width: 7%; }
-  .leave-records-table.with-penalty .leave-col-date { width: 13%; }
-  .leave-records-table.with-penalty .leave-col-employee { width: 14%; }
-  .leave-records-table.with-penalty .leave-col-reason { width: 29%; }
+  .leave-records-table.with-penalty .leave-col-date { width: 11%; }
+  .leave-records-table.with-penalty .leave-col-weekday { width: 8%; }
+  .leave-records-table.with-penalty .leave-col-employee { width: 13%; }
+  .leave-records-table.with-penalty .leave-col-reason { width: 24%; }
   .leave-records-table.with-penalty .leave-col-detail { width: 23%; }
   .leave-records-table.with-penalty .leave-col-penalty { width: 14%; }
   .leave-records-table th { padding: 5px 2px; font-size: 7px; letter-spacing: .03em; overflow-wrap: anywhere; }
@@ -649,6 +653,7 @@ tr:last-child td { border-bottom: 0; }
   .leave-records-table .reason-edit-cell, .leave-records-table .detail-cell { min-width: 0; }
   .leave-records-table .reason-edit-cell select { min-width: 0; padding: 7px 3px; border-radius: 8px; font-size: 10px; }
   .leave-records-table .list-date-link { font-size: 7px; font-weight: 700; letter-spacing: -.05em; white-space: nowrap; }
+  .leave-records-table .weekday-cell { font-size: 7px; letter-spacing: -.04em; white-space: normal; }
   .leave-records-table .detail-cell { font-size: 9px; line-height: 1.25; }
   .leave-records-table .money-cell, .leave-records-table td.right { min-width: 0; font-size: 7px; white-space: normal; letter-spacing: -.03em; }
   .login-contact { margin-top: 20px; }
