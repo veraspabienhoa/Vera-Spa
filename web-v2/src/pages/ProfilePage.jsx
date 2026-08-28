@@ -1,6 +1,7 @@
 import { BellRing, CheckCircle2, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
+import EmployeeIdentityPanel from './EmployeeIdentityPanel'
 import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
 
 const toInputDate = (value) => {
@@ -12,7 +13,7 @@ const toVnDate = (value) => {
   return year && month && day ? `${day}/${month}/${year}` : ''
 }
 
-export default function ProfilePage({ onPasswordChanged, forcePasswordChange = false }) {
+export default function ProfilePage({ user, onPasswordChanged, forcePasswordChange = false }) {
   const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', phone: '', email: '', address: '', province: '', ward: '', address_detail: '', bank_account: '', bank_name: '' })
   const [references, setReferences] = useState({ provinces: [], wards: [], banks: [] })
   const [loading, setLoading] = useState(true)
@@ -93,6 +94,7 @@ export default function ProfilePage({ onPasswordChanged, forcePasswordChange = f
             <label>Mật khẩu mới<input type="password" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Tối thiểu 8 ký tự" /></label>
           </div>
         </div>
+        <EmployeeIdentityPanel username={user?.employee_username || ''} className="wide-field" />
         <button className="primary-button wide-field" disabled={saving}><Save size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>
       </form>
     </section>
