@@ -1,10 +1,20 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import AppShell from './components/AppShell'
+import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
 import LoginPage from './pages/LoginPage'
 import LeaveListPersonalStats from './pages/LeaveListPersonalStats'
+import LeaveRegistrationEnhancements from './pages/LeaveRegistrationEnhancements'
 import EmployeeManagementEnhancements from './pages/EmployeeManagementEnhancements'
 import { veraApi } from './lib/api'
+import {
+  claimCurrentDevice,
+  clearFreshLoginClaim,
+  hasFreshLoginClaim,
+  installDeviceSessionGuard,
+} from './lib/deviceSession'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+
+installDeviceSessionGuard()
 
 const lazyPage = (importer) => lazy(async () => {
   try {
@@ -41,6 +51,21 @@ export default function App() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [authError, setAuthError] = useState('')
   const [page, setPage] = useState('leave')
+  const [longLeaveRevision, setLongLeaveRevision] = useState(0)
+
+  useEffect(() => {
+    if (!supabase) return undefined
+    const handleDeviceConflict = async (event) => {
+      const message = event?.detail?.detail || 'Tài khoản này đã đăng nhập trên thiết bị khác.'
+      setAuthError(message)
+      setProfile(null)
+      setSession(null)
+      clearFreshLoginClaim()
+      await supabase.auth.signOut().catch(() => {})
+    }
+    window.addEventListener('vera-device-conflict', handleDeviceConflict)
+    return () => window.removeEventListener('vera-device-conflict', handleDeviceConflict)
+  }, [])
 
   useEffect(() => {
     if (!supabase) return undefined
@@ -56,6 +81,13 @@ export default function App() {
         return
       }
       try {
+        if (hasFreshLoginClaim()) {
+          try {
+            await claimCurrentDevice(nextSession)
+          } finally {
+            clearFreshLoginClaim()
+          }
+        }
         const me = await veraApi.me()
         if (!me?.employee_username || me?.is_active === false) {
           throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
@@ -95,6 +127,7 @@ export default function App() {
   }
 
   const signOut = async () => {
+    clearFreshLoginClaim()
     setProfile(null)
     if (supabase && session) await supabase.auth.signOut()
   }
@@ -121,9 +154,13 @@ export default function App() {
       <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>}>
         {page === 'leave' && <>
           <LeaveRegistrationPage user={shellUser} />
+          <LeaveRegistrationEnhancements user={shellUser} />
           <LeaveListPersonalStats user={shellUser} />
         </>}
-        {page === 'long-leave' && <LongLeaveSection user={shellUser} />}
+        {page === 'long-leave' && <>
+          <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
+          <LongLeaveSection key={longLeaveRevision} user={shellUser} />
+        </>}
         {page === 'employees' && <>
           <EmployeePage user={shellUser} />
           <EmployeeManagementEnhancements user={shellUser} />
