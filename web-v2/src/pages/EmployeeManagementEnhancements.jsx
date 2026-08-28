@@ -33,6 +33,17 @@ export default function EmployeeManagementEnhancements({ user }) {
         }
       }
 
+      // Sensitive employee identity/password controls are available only to
+      // Admin in DANH SÁCH NHÂN VIÊN. Employees manage their own CCCD from
+      // HỒ SƠ & MẬT KHẨU instead.
+      if (!isAdmin) {
+        if (ownedHost?.isConnected) ownedHost.remove()
+        ownedHost = null
+        setTarget(null)
+        setProfileUser('')
+        return
+      }
+
       const profilePanels = Array.from(document.querySelectorAll('.staff-form-panel'))
       const profilePanel = profilePanels.find((panel) => String(panel.querySelector('h2')?.textContent || '').startsWith('SỬA HỒ SƠ ·')) || null
       const heading = String(profilePanel?.querySelector('h2')?.textContent || '')
@@ -77,11 +88,11 @@ export default function EmployeeManagementEnhancements({ user }) {
       document.removeEventListener('click', schedule, true)
       if (ownedHost?.isConnected) ownedHost.remove()
     }
-  }, [])
+  }, [isAdmin])
 
-  if (!target || !profileUser) return null
+  if (!isAdmin || !target || !profileUser) return null
   return createPortal(
-    <EmployeeIdentityPanel username={profileUser} allowPasswordReset={isAdmin} />,
+    <EmployeeIdentityPanel username={profileUser} allowPasswordReset />,
     target,
   )
 }
