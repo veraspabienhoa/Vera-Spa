@@ -20,9 +20,84 @@ async function payrollV38Request(path, options = {}) {
   return payload
 }
 
+async function detectPayrollPeriod(file) {
+  if (!apiBase || !file) return null
+  const session = await getCurrentSession()
+  const headers = new Headers({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  const response = await fetch(`${apiBase}/v2/payroll/detect-period`, { method: 'POST', headers, body: file })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
+}
+
+function setReactControlValue(element, value) {
+  if (!element || String(element.value) === String(value)) return
+  const prototype = element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value')
+  if (descriptor?.set) descriptor.set.call(element, String(value))
+  else element.value = String(value)
+  element.dispatchEvent(new Event('input', { bubbles: true }))
+  element.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function PayrollPeriodAutoSelector({ enabled }) {
+  useEffect(() => {
+    if (!enabled) return undefined
+    let disposed = false
+    let cleanup = () => {}
+
+    const install = () => {
+      if (disposed) return
+      const root = document.querySelector('.feature-page.payroll-page')
+      if (!root) {
+        window.setTimeout(install, 80)
+        return
+      }
+      const monthInput = root.querySelector('input[type="month"]')
+      const periodSelect = Array.from(root.querySelectorAll('select')).find((node) => {
+        const labels = Array.from(node.options || []).map((option) => option.textContent || '')
+        return labels.some((label) => label.includes('Kỳ 1')) && labels.some((label) => label.includes('Kỳ 2'))
+      })
+      const sourceFile = Array.from(root.querySelectorAll('input[type="file"]')).find((node) => !node.classList.contains('payroll-draft-file-input')) || root.querySelector('input[type="file"]')
+      if (!monthInput || !periodSelect || !sourceFile) {
+        window.setTimeout(install, 80)
+        return
+      }
+
+      // Default follows the calendar period: 01–15 = Kỳ 1, 16–cuối tháng = Kỳ 2.
+      const now = new Date()
+      setReactControlValue(monthInput, `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+      setReactControlValue(periodSelect, now.getDate() <= 15 ? 1 : 2)
+
+      const onFile = async () => {
+        const file = sourceFile.files?.[0]
+        if (!file) return
+        try {
+          const detected = await detectPayrollPeriod(file)
+          if (disposed || !detected) return
+          setReactControlValue(monthInput, detected.month)
+          setReactControlValue(periodSelect, detected.period_no)
+          root.dataset.payrollDetectedPeriod = `${detected.month}-${detected.period_no}`
+        } catch (error) {
+          // Calculation itself will show the authoritative validation error.
+          console.warn('Không tự nhận được Kỳ lương từ Sheet2:', error.message)
+        }
+      }
+      sourceFile.addEventListener('change', onFile)
+      cleanup = () => sourceFile.removeEventListener('change', onFile)
+    }
+
+    install()
+    return () => { disposed = true; cleanup() }
+  }, [enabled])
+  return null
+}
+
 export default function PayrollPageV38({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const canEditConfig = isAdmin || Boolean(user?.permissions?.payroll_config_edit)
+  const canCalculate = isAdmin || Boolean(user?.permissions?.payroll_calculate)
   const [data, setData] = useState({ employees: [], overrides: [], config: {} })
   const [selected, setSelected] = useState([])
   const [living, setLiving] = useState(150000)
@@ -106,6 +181,7 @@ export default function PayrollPageV38({ user }) {
   const configured = data.overrides || []
 
   return <>
+    <PayrollPeriodAutoSelector key={`period-${payrollVersion}`} enabled={canCalculate} />
     <PayrollPage key={payrollVersion} user={user} />
     <PayrollSavedAdminPanel user={user} />
     {isAdmin && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
