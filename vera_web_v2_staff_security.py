@@ -115,8 +115,8 @@ def install_staff_security_routes(
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             require_feature(conn, ident, "employee_edit_save")
             row = employee_row(conn, username, for_update=True)
-            if str(row.get("role") or "").lower() == "admin" and norm(row["username"]) != norm(username):
-                raise HTTPException(400, "Không thể reset tài khoản Admin qua hồ sơ nhân viên.")
+            if str(row.get("role") or "").lower() == "admin":
+                raise HTTPException(400, "Không reset mật khẩu tài khoản Admin qua hồ sơ nhân viên.")
 
             error = password_policy_error(
                 body.new_password,
