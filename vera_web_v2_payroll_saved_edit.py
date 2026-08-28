@@ -1,8 +1,8 @@
 """Saved-payroll edit workflow for Web V2 Payroll 3.8.
 
-A completed payroll remains the official history record.  This module lets an
+A completed payroll remains the official history record. This module lets an
 Admin/history editor reopen one completed batch as the editable draft for the
-same payroll period.  Completing the draft again uses the canonical save route,
+same payroll period. Completing the draft again uses the canonical save route,
 which atomically replaces that batch instead of creating duplicate rows.
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import Depends, HTTPException
+from sqlalchemy import text
 
 import vera_web_v2_payroll as _payroll
 
@@ -62,7 +63,7 @@ def install_payroll_saved_edit_routes(
             start, end = _period_dates(batch_rows)
             if not start or not end:
                 row = conn.execute(
-                    _payroll.text("""
+                    text("""
                         SELECT period_start,period_end
                         FROM payroll_history_rows
                         WHERE batch_id=:batch
