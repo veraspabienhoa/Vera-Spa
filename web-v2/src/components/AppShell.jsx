@@ -45,6 +45,11 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
 
   return (
     <div className="app-shell">
+      <style>{`
+        .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:400;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
+        @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05}}
+        @media(max-width:430px){.topbar-title.vera-script-tagline{font-size:20px;white-space:normal}}
+      `}</style>
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
         <div className="brand-block">
           <div className="brand-mark">VERA</div>
@@ -99,7 +104,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
           </button>
           <div>
             <div className="topbar-kicker">VERA SPA</div>
-            <div className="topbar-title">Suối nguồn thư giãn, trọn vẹn an yên.</div>
+            <div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div>
           </div>
           <button type="button" className="topbar-refresh-button" onClick={() => window.location.reload()} aria-label="Làm mới toàn bộ Web V2">
             <RefreshCw size={15} /> Làm mới
