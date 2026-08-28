@@ -157,7 +157,28 @@ export default function LeaveListPersonalStats({ user }) {
       .leave-list-personal-stat-value{margin-top:8px;font-size:16px;font-weight:800;color:#0f201a}.leave-list-personal-stat.paid .leave-list-personal-stat-value{color:#c7192d}
       .leave-list-personal-summary-note{padding:8px 14px;font-size:12px;color:#68736f;border-top:1px solid #edf0ef}
       .leave-list-personal-summary-error{padding:8px 14px;color:#b42318;background:#fff6f5;border-top:1px solid #ffd9d5;font-size:12px}
-      @media(max-width:760px){.leave-list-personal-summary-grid,.leave-list-personal-summary.admin .leave-list-personal-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.leave-list-personal-stat{border-bottom:1px solid #edf0ef}.leave-list-personal-summary-head{align-items:flex-start;flex-direction:column}.leave-list-personal-summary-head span{text-align:left}}
+      @media(max-width:760px){
+        .leave-list-personal-summary{margin:8px 0 10px;border-radius:10px}
+        .leave-list-personal-summary-head{padding:7px 9px;gap:3px;align-items:flex-start;flex-direction:column}
+        .leave-list-personal-summary-head strong{font-size:12px;line-height:1.15}
+        .leave-list-personal-summary-head span{font-size:10px;line-height:1.15;text-align:left}
+        .leave-list-personal-summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+        .leave-list-personal-summary.admin .leave-list-personal-summary-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+        .leave-list-personal-stat{min-width:0;padding:6px 2px;border-bottom:0}
+        .leave-list-personal-stat-label{gap:2px;font-size:9px;line-height:1.05;white-space:normal;min-height:20px}
+        .leave-list-personal-stat-label>span{font-size:11px;line-height:1}
+        .leave-list-personal-stat-value{margin-top:3px;font-size:14px;line-height:1.05}
+        .leave-list-personal-summary-note{padding:5px 8px;font-size:9px;line-height:1.2}
+        .leave-list-personal-summary-error{padding:5px 8px;font-size:10px}
+      }
+      @media(max-width:390px){
+        .leave-list-personal-summary-head strong{font-size:11px}
+        .leave-list-personal-summary-head span{font-size:9px}
+        .leave-list-personal-stat{padding:5px 1px}
+        .leave-list-personal-stat-label{font-size:8px;gap:1px;min-height:18px}
+        .leave-list-personal-stat-label>span{font-size:10px}
+        .leave-list-personal-stat-value{font-size:13px;margin-top:2px}
+      }
       ${!isAdmin ? `
         .leave-list-panel .penalty-chip,
         .daily-summary-panel .penalty-chip,
