@@ -51,6 +51,7 @@ export default function App() {
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [authError, setAuthError] = useState('')
   const [page, setPage] = useState('leave')
+  const [pageRefreshRevision, setPageRefreshRevision] = useState(0)
   const [longLeaveRevision, setLongLeaveRevision] = useState(0)
 
   useEffect(() => {
@@ -132,6 +133,15 @@ export default function App() {
     if (supabase && session) await supabase.auth.signOut()
   }
 
+  const changePage = (nextPage) => {
+    setPage(nextPage)
+    setPageRefreshRevision(0)
+  }
+
+  const refreshCurrentPage = () => {
+    setPageRefreshRevision((value) => value + 1)
+  }
+
   const shellUser = profile
     ? {
         ...user,
@@ -150,8 +160,8 @@ export default function App() {
   if (!shellUser) return <div className="boot-screen">Đang xác minh hồ sơ VERA SPA…</div>
 
   return (
-    <AppShell user={shellUser} currentPage={page} onPageChange={setPage} onSignOut={signOut}>
-      <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>}>
+    <AppShell user={shellUser} currentPage={page} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
+      <Suspense key={`${page}:${pageRefreshRevision}`} fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>}>
         {page === 'leave' && <>
           <LeaveRegistrationPage user={shellUser} />
           <LeaveRegistrationEnhancements user={shellUser} />
