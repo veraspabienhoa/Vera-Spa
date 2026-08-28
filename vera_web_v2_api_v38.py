@@ -11,6 +11,7 @@ from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
 from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
 from vera_web_v2_payroll_saved_edit import install_payroll_saved_edit_routes
 from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_routes
+from vera_web_v2_policy_v39 import install_policy_v39
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
@@ -82,6 +83,17 @@ install_staff_status_sort(
     _shared.app,
     current_identity=_api.current_identity,
     identity_type=_api.Identity,
+)
+
+# V3.9 installs before leave-preview/long-leave so every registration path sees
+# the same late-month 3-day cap. It also forces payroll imports to Sheet2 and
+# exposes authenticated period detection for the browser.
+install_policy_v39(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    vn_tz=_api.VN_TZ,
 )
 
 # Registration preview delegates to the exact canonical validator/calculator,
