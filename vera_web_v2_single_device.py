@@ -1,7 +1,7 @@
 """One-active-device session guard for VERA SPA Web V2.
 
-Supabase remains responsible for authentication.  This guard adds a VERA-side
-active-device lease keyed by the authenticated Supabase user ID.  A successful
+Supabase remains responsible for authentication. This guard adds a VERA-side
+active-device lease keyed by the authenticated Supabase user ID. A successful
 fresh login explicitly claims the device; the previous device is rejected on
 its next Python API request.
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Query, Request
@@ -49,6 +50,18 @@ def _jwt_subject(token: str) -> str:
         return str(payload.get('sub') or '').strip()
     except Exception:
         return ''
+
+
+def _blocked_response(request: Request, status_code: int, content: dict[str, Any]) -> JSONResponse:
+    response = JSONResponse(status_code=status_code, content=content)
+    origin = str(request.headers.get("origin") or "").strip()
+    configured = str(os.getenv("VERA_V2_CORS_ORIGINS", "https://veraspabienhoa.github.io") or "")
+    allowed = {item.strip() for item in configured.split(",") if item.strip()}
+    if origin and origin in allowed:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    return response
 
 
 def install_single_device_guard(
@@ -111,7 +124,6 @@ def install_single_device_guard(
 
         authorization = str(request.headers.get("authorization") or "")
         if not authorization.lower().startswith("bearer "):
-            # Public/webhook routes remain governed by their existing checks.
             return await call_next(request)
         token = authorization.split(" ", 1)[1].strip()
         auth_uid = _jwt_subject(token)
@@ -120,13 +132,10 @@ def install_single_device_guard(
 
         device_id = str(request.query_params.get("device_id") or "").strip()
         if not device_id or len(device_id) > DEVICE_ID_MAX:
-            return JSONResponse(
-                status_code=428,
-                content={
-                    "detail": "Phiên Web V2 chưa có mã thiết bị. Vui lòng tải lại trang rồi đăng nhập lại.",
-                    "code": "DEVICE_ID_REQUIRED",
-                },
-            )
+            return _blocked_response(request, 428, {
+                "detail": "Phiên Web V2 chưa có mã thiết bị. Vui lòng tải lại trang rồi đăng nhập lại.",
+                "code": "DEVICE_ID_REQUIRED",
+            })
 
         try:
             with engine_instance().begin() as conn:
@@ -138,9 +147,6 @@ def install_single_device_guard(
                     FOR UPDATE
                 """), {"auth_user_id": auth_uid}).mappings().first()
                 if row is None:
-                    # Safe migration path for a session that existed before this
-                    # feature was deployed.  Its first refreshed Web V2 request
-                    # becomes the active device.
                     conn.execute(text("""
                         INSERT INTO vera_v2_active_device(
                             auth_user_id, employee_username, device_id, user_agent,
@@ -155,13 +161,10 @@ def install_single_device_guard(
                         "user_agent": str(request.headers.get("user-agent") or "")[:1000],
                     })
                 elif str(row.get("device_id") or "") != device_id:
-                    return JSONResponse(
-                        status_code=409,
-                        content={
-                            "detail": "Tài khoản này đã đăng nhập trên thiết bị khác. Thiết bị hiện tại đã bị đăng xuất.",
-                            "code": "DEVICE_CONFLICT",
-                        },
-                    )
+                    return _blocked_response(request, 409, {
+                        "detail": "Tài khoản này đã đăng nhập trên thiết bị khác. Thiết bị hiện tại đã bị đăng xuất.",
+                        "code": "DEVICE_CONFLICT",
+                    })
                 else:
                     conn.execute(text("""
                         UPDATE vera_v2_active_device
@@ -172,15 +175,10 @@ def install_single_device_guard(
                         "user_agent": str(request.headers.get("user-agent") or "")[:1000],
                     })
         except Exception:
-            # Fail closed for authenticated business API calls: a broken lease
-            # check must never silently allow multiple devices.
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "detail": "Không kiểm tra được thiết bị đăng nhập. Vui lòng thử lại.",
-                    "code": "DEVICE_GUARD_UNAVAILABLE",
-                },
-            )
+            return _blocked_response(request, 503, {
+                "detail": "Không kiểm tra được thiết bị đăng nhập. Vui lòng thử lại.",
+                "code": "DEVICE_GUARD_UNAVAILABLE",
+            })
 
         return await call_next(request)
 
