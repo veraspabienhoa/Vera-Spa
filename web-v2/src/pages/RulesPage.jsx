@@ -21,6 +21,11 @@ function documentSignature(columns, rows) {
   return JSON.stringify({ columns, rows: rows.map((row) => row.values) })
 }
 
+function uniqueOptions(rows, key) {
+  return Array.from(new Set(rows.map((row) => String(row.values?.[key] ?? '').trim()).filter(Boolean)))
+    .sort((left, right) => left.localeCompare(right, 'vi'))
+}
+
 function Notice({ notice, onClose }) {
   if (!notice) return null
   return (
@@ -42,6 +47,8 @@ export default function RulesPage() {
   const [selected, setSelected] = useState([])
   const [expanded, setExpanded] = useState([])
   const [search, setSearch] = useState('')
+  const [reasonFilter, setReasonFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
   const [newColumn, setNewColumn] = useState('')
   const [deleteColumn, setDeleteColumn] = useState('')
   const [loading, setLoading] = useState(true)
@@ -88,12 +95,18 @@ export default function RulesPage() {
   const quotaDirty = JSON.stringify(quotaRows) !== quotaOriginalSignature
   const requiredColumns = new Set(data?.required_columns || [])
   const deletableColumns = columns.filter((column) => !requiredColumns.has(column))
+  const reasonOptions = useMemo(() => uniqueOptions(rows, 'Lý do nghỉ'), [rows])
+  const typeOptions = useMemo(() => uniqueOptions(rows, 'Loại nghỉ'), [rows])
 
   const visibleRows = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('vi')
-    if (!needle) return rows
-    return rows.filter((row) => columns.some((column) => String(row.values[column] ?? '').toLocaleLowerCase('vi').includes(needle)))
-  }, [columns, rows, search])
+    return rows.filter((row) => {
+      if (reasonFilter && String(row.values['Lý do nghỉ'] ?? '').trim() !== reasonFilter) return false
+      if (typeFilter && String(row.values['Loại nghỉ'] ?? '').trim() !== typeFilter) return false
+      if (!needle) return true
+      return columns.some((column) => String(row.values[column] ?? '').toLocaleLowerCase('vi').includes(needle))
+    })
+  }, [columns, rows, search, reasonFilter, typeFilter])
 
   const updateCell = (id, column, value) => {
     setRows((current) => current.map((row) => (
@@ -223,6 +236,21 @@ export default function RulesPage() {
 
   return (
     <div className="rules-page">
+      <style>{`
+        .rules-page{max-width:100%;overflow-x:hidden}
+        .rules-filter-row{display:grid;grid-template-columns:minmax(260px,2fr) minmax(180px,1fr) minmax(180px,1fr);gap:9px;width:100%}
+        .rules-filter-row>div,.rules-filter-row label{min-width:0}
+        .rules-filter-row label{display:flex;flex-direction:column;gap:5px;font-weight:800;font-size:12px}
+        .rules-filter-row select{width:100%;min-width:0}
+        .rules-page .rules-grid-panel,.rules-page .rules-desktop-table,.rules-page .table-wrap{max-width:100%;max-height:none!important;overflow:visible!important}
+        .rules-page .rules-table{width:100%;max-width:100%;table-layout:fixed}
+        .rules-page .rules-table th,.rules-page .rules-table td{min-width:0!important;width:auto!important;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;padding:6px 5px}
+        .rules-page .rules-table input{width:100%;min-width:0;box-sizing:border-box;padding:7px 5px}
+        .rules-page .rules-table th{font-size:11px;line-height:1.15}
+        .rules-page .rules-table td{font-size:12px;line-height:1.2}
+        @media(max-width:900px){.rules-page .rules-desktop-table{display:none!important}.rules-page .rules-mobile-list{display:grid!important}}
+        @media(max-width:720px){.rules-filter-row{grid-template-columns:1fr}.rules-page .rules-control-panel{padding:12px}}
+      `}</style>
       <div className="page-heading-row rules-heading">
         <div>
           <span className="eyebrow"><FileText size={14} /> Quy định vận hành</span>
@@ -282,13 +310,15 @@ export default function RulesPage() {
       </section>
 
       <section className="panel rules-control-panel">
-        <div className="rules-toolbar">
+        <div className="rules-filter-row">
           <div className="rules-search"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm trong toàn bộ Bảng nội quy" /></div>
-          {canEdit && <>
-            <div className="rules-add-column"><input value={newColumn} onChange={(event) => setNewColumn(event.target.value)} placeholder="Tên cột mới" /><button className="secondary-button" onClick={addColumn}><Plus size={16} /> Thêm cột</button></div>
-            <div className="rules-delete-column"><select value={deleteColumn} onChange={(event) => setDeleteColumn(event.target.value)}><option value="">Chọn cột cần xóa</option>{deletableColumns.map((column) => <option key={column}>{column}</option>)}</select><button className="danger-button" disabled={!deleteColumn} onClick={removeColumn}><Trash2 size={16} /> Xóa cột</button></div>
-          </>}
+          <label>Lý do nghỉ<select value={reasonFilter} onChange={(event) => setReasonFilter(event.target.value)}><option value="">Tất cả lý do nghỉ</option>{reasonOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label>Loại nghỉ<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="">Tất cả loại nghỉ</option>{typeOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         </div>
+        {canEdit && <div className="rules-toolbar" style={{ marginTop: 9 }}>
+          <div className="rules-add-column"><input value={newColumn} onChange={(event) => setNewColumn(event.target.value)} placeholder="Tên cột mới" /><button className="secondary-button" onClick={addColumn}><Plus size={16} /> Thêm cột</button></div>
+          <div className="rules-delete-column"><select value={deleteColumn} onChange={(event) => setDeleteColumn(event.target.value)}><option value="">Chọn cột cần xóa</option>{deletableColumns.map((column) => <option key={column}>{column}</option>)}</select><button className="danger-button" disabled={!deleteColumn} onClick={removeColumn}><Trash2 size={16} /> Xóa cột</button></div>
+        </div>}
         <div className="rules-actionbar">
           {canEdit && <button className="primary-button" onClick={addRow}><Plus size={17} /> Thêm dòng</button>}
           {permissions.official_rules_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportRulesExcel())}><Download size={17} /> Export Excel</button>}
