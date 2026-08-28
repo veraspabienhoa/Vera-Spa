@@ -25,7 +25,8 @@ steps:
   # WEB V2 PYTHON BUSINESS API
   # Public Cloud Run ingress is required by GitHub Pages, but every business
   # endpoint validates the Supabase Bearer session before reading/writing data.
-  # Payroll 3.8 is installed after the shared leave-validation wrapper.
+  # Payroll 3.8 wraps the former vera_web_v2_api_shared:app entrypoint and
+  # installs employee-specific deductions after shared leave validation.
   # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     id: "deploy-web-v2-api"
