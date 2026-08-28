@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import vera_web_v2_api_shared as _shared
+import vera_web_v2_admin_audit_archive as _audit_archive
+import vera_web_v2_staff_status_sort as _staff_sort
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
@@ -14,6 +16,14 @@ from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
 
 _api = _shared._api
+
+# These installers use local model types in FastAPI route annotations while
+# postponed annotations are enabled. Publish the concrete types in their module
+# namespaces before route registration so FastAPI can resolve them reliably.
+_audit_archive.identity_type = _api.Identity
+_audit_archive.leave_update_type = _api.LeaveUpdate
+_audit_archive.leave_delete_type = _api.LeaveDelete
+_staff_sort.identity_type = _api.Identity
 
 install_payroll_v38_routes(
     _shared.app,
