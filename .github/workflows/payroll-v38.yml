@@ -1,0 +1,99 @@
+name: Payroll 3.8 CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vera_web_v2_payroll_v38.py"
+      - "vera_web_v2_api_v38.py"
+      - "web-v2/src/pages/PayrollPageV38.jsx"
+      - "web-v2/src/App.jsx"
+      - ".github/workflows/payroll-v38.yml"
+      - "cloudbuild.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "vera_web_v2_payroll_v38.py"
+      - "vera_web_v2_api_v38.py"
+      - "web-v2/src/pages/PayrollPageV38.jsx"
+      - "web-v2/src/App.jsx"
+      - ".github/workflows/payroll-v38.yml"
+      - "cloudbuild.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: payroll-v38-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-payroll-v38:
+    name: Payroll 3.8 backend + Web V2
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Compile Payroll 3.8 Python
+        run: python -m py_compile vera_web_v2_payroll_v38.py vera_web_v2_api_v38.py
+
+      - name: Verify Payroll 3.8 invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          backend = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
+          wrapper = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
+          page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
+          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
+          build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
+
+          ast.parse(backend)
+          ast.parse(wrapper)
+
+          checks = {
+              'release is Payroll 3.8': '3.8-payroll-employee-overrides' in backend,
+              'legacy override key is migrated': 'employee_payroll_overrides_json' in backend and 'CauHinhLuong' in backend,
+              'PostgreSQL override store exists': "PG_OVERRIDE_KEY = \"employee_overrides\"" in backend,
+              '3.7 calculator is delegated first': 'result = await original_calculate(' in backend,
+              'canonical net calculation remains authoritative': '_payroll._net(row)' in backend,
+              'salary zero rule is documented in v38 wrapper': 'salary=0 clears both deductions' in backend,
+              'v38 health endpoint exists': '/v2/payroll-v38/health' in backend,
+              'override get save reset endpoints exist': all(token in backend for token in ('@app.get("/v2/payroll-v38/employee-overrides")', '@app.put("/v2/payroll-v38/employee-overrides")', '@app.post("/v2/payroll-v38/employee-overrides/reset")')),
+              'API wrapper installs v38 after shared API': 'import vera_web_v2_api_shared as _shared' in wrapper and 'install_payroll_v38_routes(' in wrapper,
+              'Web V2 loads Payroll 3.8 page': "import('./pages/PayrollPageV38')" in app,
+              'UI exposes employee and leader overrides': 'MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8' in page,
+              'UI supports save and reset': 'Áp dụng mức riêng' in page and 'Dùng lại mặc định' in page,
+              'UI calls v38 endpoints': all(token in page for token in ('/v2/payroll-v38/employee-overrides', '/v2/payroll-v38/employee-overrides/reset')),
+              'Cloud Run deploys v38 wrapper': 'vera_web_v2_api_v38:app' in build,
+              'Cloud Build verifies v38 health': '/v2/payroll-v38/health' in build and '3.8-payroll-employee-overrides' in build,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Payroll 3.8 invariant failures: ' + ', '.join(failed))
+          PY
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Build Web V2
+        working-directory: web-v2
+        run: |
+          npm ci
+          npm run build

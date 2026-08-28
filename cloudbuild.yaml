@@ -25,7 +25,7 @@ steps:
   # WEB V2 PYTHON BUSINESS API
   # Public Cloud Run ingress is required by GitHub Pages, but every business
   # endpoint validates the Supabase Bearer session before reading/writing data.
-  # The same runtime service account keeps the existing Google Sheet mirror.
+  # Payroll 3.8 is installed after the shared leave-validation wrapper.
   # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     id: "deploy-web-v2-api"
@@ -46,7 +46,7 @@ steps:
       - "--timeout=300"
       - "--clear-cloudsql-instances"
       - "--command=uvicorn"
-      - "--args=vera_web_v2_api_shared:app,--host,0.0.0.0,--port,8080"
+      - "--args=vera_web_v2_api_v38:app,--host,0.0.0.0,--port,8080"
       - "--set-env-vars=DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_RECYCLE=600,SUPABASE_URL=https://nunxfjhrszmlyyrvphuq.supabase.co,SUPABASE_ANON_KEY=${_SUPABASE_ANON_KEY},VERA_LEAVE_SHEET_ID=1Kz0aw-JatptAN9G7YSwZ6rJO09urOPaD-rS-18eZSY0,VERA_V2_CORS_ORIGINS=https://veraspabienhoa.github.io,SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com"
       - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,SMTP_APP_PASSWORD=vera-smtp-app-password:latest"
 
@@ -76,6 +76,28 @@ steps:
                 print(f'API health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
             time.sleep(5)
         raise SystemExit(f'Web V2 API health check failed: {last}')
+        PY
+
+        echo "Health checking Payroll 3.8: $${API_URL}/v2/payroll-v38/health"
+        python3 - "$${API_URL}/v2/payroll-v38/health" <<'PY'
+        import json, sys, time, urllib.request
+        url=sys.argv[1]
+        expected='3.8-payroll-employee-overrides'
+        last=None
+        for attempt in range(1,13):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as r:
+                    body=r.read(2048).decode('utf-8','replace')
+                    payload=json.loads(body)
+                    if 200 <= r.status < 300 and payload.get('ok') is True and payload.get('release') == expected:
+                        print(body)
+                        raise SystemExit(0)
+                    last=RuntimeError(f'Unexpected Payroll 3.8 health payload: {body}')
+            except Exception as exc:
+                last=exc
+                print(f'Payroll 3.8 health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
+            time.sleep(5)
+        raise SystemExit(f'Payroll 3.8 health check failed: {last}')
         PY
 
   # ============================================================
