@@ -2,6 +2,7 @@ import { RefreshCw, Save, Settings2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
 import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
+import PayrollSavedAdminPanel from './PayrollSavedAdminPanel'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -106,6 +107,7 @@ export default function PayrollPageV38({ user }) {
 
   return <>
     <PayrollPage key={payrollVersion} user={user} />
+    <PayrollSavedAdminPanel user={user} />
     {isAdmin && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
     {canEditConfig && <div className="feature-page payroll-page payroll-v38-config">
       <section className="panel">
