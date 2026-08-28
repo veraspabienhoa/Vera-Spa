@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "vera_web_v2_payroll_v38.py"
+      - "vera_web_v2_payroll_debt_sync.py"
       - "vera_web_v2_api_v38.py"
       - "web-v2/src/pages/PayrollPageV38.jsx"
       - "web-v2/src/App.jsx"
@@ -14,6 +15,7 @@ on:
     branches: [main]
     paths:
       - "vera_web_v2_payroll_v38.py"
+      - "vera_web_v2_payroll_debt_sync.py"
       - "vera_web_v2_api_v38.py"
       - "web-v2/src/pages/PayrollPageV38.jsx"
       - "web-v2/src/App.jsx"
@@ -43,7 +45,7 @@ jobs:
           python-version: "3.12"
 
       - name: Compile Payroll 3.8 Python
-        run: python -m py_compile vera_web_v2_payroll_v38.py vera_web_v2_api_v38.py
+        run: python -m py_compile vera_web_v2_payroll_v38.py vera_web_v2_payroll_debt_sync.py vera_web_v2_api_v38.py
 
       - name: Verify Payroll 3.8 invariants
         shell: bash
@@ -53,12 +55,14 @@ jobs:
           import ast
 
           backend = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
+          debt_sync = Path('vera_web_v2_payroll_debt_sync.py').read_text(encoding='utf-8')
           wrapper = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
           page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
           app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
 
           ast.parse(backend)
+          ast.parse(debt_sync)
           ast.parse(wrapper)
 
           checks = {
@@ -70,7 +74,14 @@ jobs:
               'salary zero rule is documented in v38 wrapper': 'salary=0 clears both deductions' in backend,
               'v38 health endpoint exists': '/v2/payroll-v38/health' in backend,
               'override get save reset endpoints exist': all(token in backend for token in ('@app.get("/v2/payroll-v38/employee-overrides")', '@app.put("/v2/payroll-v38/employee-overrides")', '@app.post("/v2/payroll-v38/employee-overrides/reset")')),
+              'legacy NoViPham debt source is refreshed': 'LEGACY_OBLIGATION_WORKSHEET' in debt_sync and 'legacy_google_sheet_auto' in debt_sync,
+              'legacy violation debt cache is refreshed': 'LEGACY_DEBT_DATASET_KEY = "violation_debt"' in debt_sync and '_write_dataset_cache(' in debt_sync,
+              'debt refresh happens before payroll calculation': debt_sync.find('_refresh_legacy_obligations(') < debt_sync.rfind('result = await original_calculate('),
+              'safe cache fallback avoids silently dropping debt': 'cache_exists' in debt_sync and 'Đã dừng tính lương để tránh bỏ sót khấu trừ' in debt_sync,
+              'debt sync health and manual refresh endpoints exist': '/v2/payroll-debt-sync/health' in debt_sync and '/v2/payroll-debt-sync/refresh' in debt_sync,
+              'obligation panel also refreshes legacy debt': 'obligations_with_legacy_refresh' in debt_sync,
               'API wrapper installs v38 after shared API': 'import vera_web_v2_api_shared as _shared' in wrapper and 'install_payroll_v38_routes(' in wrapper,
+              'API wrapper installs automatic debt sync after v38': 'install_payroll_debt_sync_routes(' in wrapper and wrapper.find('install_payroll_v38_routes(') < wrapper.rfind('install_payroll_debt_sync_routes('),
               'Web V2 loads Payroll 3.8 page': "import('./pages/PayrollPageV38')" in app,
               'UI exposes employee and leader overrides': 'MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8' in page,
               'UI supports save and reset': 'Áp dụng mức riêng' in page and 'Dùng lại mặc định' in page,
