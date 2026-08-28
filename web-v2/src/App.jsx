@@ -161,7 +161,7 @@ export default function App() {
 
   return (
     <AppShell user={shellUser} currentPage={page} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
-      <Suspense key={`${page}:${pageRefreshRevision}`} fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>}>
+      <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
         {page === 'leave' && <>
           <LeaveRegistrationPage user={shellUser} />
           <LeaveRegistrationEnhancements user={shellUser} />
