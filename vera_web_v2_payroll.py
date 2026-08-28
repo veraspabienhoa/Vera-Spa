@@ -60,6 +60,12 @@ LEGACY_OBLIGATION_HEADERS = [
     "Trạng thái", "Mã nguồn", "Ngày cập nhật", "Giờ cập nhật",
     "Người cập nhật", "Kỳ đã khấu trừ",
 ]
+TIMESOFT_PAYROLL_HEADERS = [
+    "STT", "Thời gian", "Mã hóa đơn", "Mã KH2", "Tên KH",
+    "Sản phẩm/ Dịch vụ/ PT", "Tổng tiền", "Giảm giá",
+    "NV tư vấn", "Ghi chú", "Nhân viên tư vấn",
+]
+TIP_ITEM_PATTERN = r"^tip(?:\b|[_\-\s])"
 
 
 class PayrollConfigUpdate(BaseModel):
@@ -321,34 +327,26 @@ def _read_source(content: bytes) -> pd.DataFrame:
         if sheet_name not in workbook.sheetnames:
             raise HTTPException(400, f"File TimeSoft không có sheet '{sheet_name}'.")
         worksheet = workbook[sheet_name]
-        pending: list[tuple[Any, ...]] = []
+        if worksheet.max_row < 4 or worksheet.max_column < len(TIMESOFT_PAYROLL_HEADERS):
+            raise HTTPException(400, "File TimeSoft phải có header dòng 3 và đủ 11 cột A:K.")
+        header_row = next(worksheet.iter_rows(
+            min_row=3, max_row=3, min_col=1, max_col=len(TIMESOFT_PAYROLL_HEADERS), values_only=True
+        ), ())
+        actual_headers = [str(value or "").strip() for value in header_row]
+        if actual_headers != TIMESOFT_PAYROLL_HEADERS:
+            mismatches = [
+                f"{get_column_letter(index + 1)}: '{actual}' ≠ '{expected}'"
+                for index, (actual, expected) in enumerate(zip(actual_headers, TIMESOFT_PAYROLL_HEADERS))
+                if actual != expected
+            ]
+            raise HTTPException(400, "File TimeSoft không đúng header chuẩn ở dòng 3. " + " | ".join(mismatches[:6]))
         selected_rows: list[tuple[Any, Any, Any, Any]] = []
-        data_started = False
 
-        def append_selected(row: tuple[Any, ...]) -> None:
-            padded = row + (None,) * max(0, 9 - len(row))
+        for row in worksheet.iter_rows(min_row=4, min_col=1, max_col=9, values_only=True):
+            padded = tuple(row) + (None,) * max(0, 9 - len(row))
             time_value, item_value, amount_value, employee_value = padded[1], padded[5], padded[6], padded[8]
             if any(value not in (None, "") for value in (time_value, item_value, amount_value, employee_value)):
                 selected_rows.append((time_value, item_value, amount_value, employee_value))
-
-        for index, row in enumerate(worksheet.iter_rows(min_col=1, max_col=9, values_only=True)):
-            values = tuple(row)
-            if not data_started and index < 20:
-                pending.append(values)
-                joined = " | ".join(str(value or "").strip().casefold() for value in values)
-                if "thời gian" in joined and ("sản phẩm" in joined or "dịch vụ" in joined) and "tổng tiền" in joined:
-                    data_started = True
-                    pending.clear()
-                elif index == 19:
-                    data_started = True
-                    for pending_row in pending:
-                        append_selected(pending_row)
-                    pending.clear()
-                continue
-            append_selected(values)
-        if not data_started:
-            for pending_row in pending:
-                append_selected(pending_row)
     except HTTPException:
         raise
     except Exception as exc:
@@ -358,11 +356,61 @@ def _read_source(content: bytes) -> pd.DataFrame:
             workbook.close()
 
     output = pd.DataFrame(selected_rows, columns=["time", "item", "amount", "employee"])
-    output["time"] = pd.to_datetime(output["time"], dayfirst=True, errors="coerce")
+    numeric_input = output["time"].apply(
+        lambda value: isinstance(value, numbers.Number) and not isinstance(value, bool)
+    )
+    numeric_time = pd.to_numeric(output["time"], errors="coerce")
+    output["time"] = pd.to_datetime(output["time"], dayfirst=True, errors="coerce", format="mixed")
+    numeric_mask = numeric_input & numeric_time.between(1, 100_000, inclusive="both")
+    if numeric_mask.any():
+        output.loc[numeric_mask, "time"] = (
+            pd.Timestamp("1899-12-30") + pd.to_timedelta(numeric_time[numeric_mask], unit="D")
+        )
     output["amount"] = output["amount"].apply(_number)
-    output["item"] = output["item"].astype(str).str.strip()
-    output["employee"] = output["employee"].astype(str).str.strip()
-    return output.dropna(subset=["time"])
+    output["item"] = output["item"].fillna("").astype(str).str.strip()
+    output["employee"] = output["employee"].fillna("").astype(str).str.strip()
+    return output
+
+
+def _tip_rows(source: pd.DataFrame, start: date, end: date, norm) -> tuple[pd.DataFrame, dict[str, Any]]:
+    dated = source.dropna(subset=["time"]).copy()
+    if dated.empty:
+        preview = ", ".join(str(value) for value in source["time"].head(5).tolist())
+        raise HTTPException(400, f"Không đọc được ngày ở cột B của file TimeSoft. Giá trị đầu tiên: {preview}")
+    filtered = dated[(dated["time"].dt.date >= start) & (dated["time"].dt.date <= end)].copy()
+    if filtered.empty:
+        source_start = dated["time"].min().strftime("%d/%m/%Y")
+        source_end = dated["time"].max().strftime("%d/%m/%Y")
+        raise HTTPException(
+            400,
+            f"File TimeSoft có dữ liệu {source_start}–{source_end}, không thuộc kỳ "
+            f"{start.strftime('%d/%m/%Y')}–{end.strftime('%d/%m/%Y')}.",
+        )
+    item_norm = filtered["item"].astype(str).str.strip().str.casefold()
+    tips = filtered[item_norm.str.match(TIP_ITEM_PATTERN, na=False)].copy()
+    if tips.empty:
+        preview = ", ".join(
+            filtered["item"].loc[lambda values: values.astype(str).str.strip().ne("")]
+            .astype(str).drop_duplicates().head(10).tolist()
+        )
+        raise HTTPException(
+            400,
+            "File TimeSoft không có dòng Tip hợp lệ ở cột F trong kỳ đã chọn. "
+            f"Giá trị đầu tiên: {preview}",
+        )
+    tips["key"] = tips["employee"].apply(norm)
+    if not tips["key"].astype(str).str.strip().ne("").any():
+        raise HTTPException(400, "Các dòng Tip chưa có tên nhân viên ở cột I (NV tư vấn).")
+    salary_total = int(tips["amount"].sum())
+    if salary_total <= 0:
+        raise HTTPException(400, "Tổng tiền các dòng Tip đang bằng 0; hệ thống dừng để tránh tạo bảng lương sai.")
+    return tips, {
+        "source_rows": int(len(source)),
+        "dated_rows": int(len(dated)),
+        "period_rows": int(len(filtered)),
+        "tip_rows": int(len(tips)),
+        "salary_total": salary_total,
+    }
 
 
 def _tichluy_map(conn, employees: list[dict[str, Any]], start: date, end: date, norm) -> dict[str, int]:
@@ -377,7 +425,19 @@ def _tichluy_map(conn, employees: list[dict[str, Any]], start: date, end: date, 
             continue
         target = _number(item.get("Mục tiêu tích lũy")) or 5_000_000
         accumulated = _number(item.get("Đã tích lũy"))
-        remaining = _number(item.get("Còn lại")) if str(item.get("Còn lại") or "").strip() else max(0, target - accumulated)
+        # D/E là nguồn xác nhận hoàn thành. Một số dòng legacy còn giữ F=Còn lại=5.000.000
+        # dù Đã tích lũy đã đủ mục tiêu; không được tiếp tục khấu trừ các dòng này.
+        completed = target > 0 and accumulated >= target
+        if completed:
+            remaining = 0
+        else:
+            remaining_raw = str(item.get("Còn lại") or "").strip()
+            remaining = (
+                _number(remaining_raw)
+                if remaining_raw and remaining_raw not in {"-", "–", "—"}
+                else max(0, target - accumulated)
+            )
+            remaining = max(0, min(remaining, max(0, target - accumulated)))
         history = {}
         try:
             history = json.loads(str(item.get("Chi tiết các kỳ") or "{}"))
@@ -387,7 +447,7 @@ def _tichluy_map(conn, employees: list[dict[str, Any]], start: date, end: date, 
         if period_key in history:
             result[key] = max(0, min(500_000, _number(history[period_key])))
             continue
-        start_work = _parse_date(employee.get("employment_start_date"))
+        start_work = _parse_date(employee.get("employment_start_date")) or _parse_date(item.get("Ngày bắt đầu làm"))
         if start_work and start <= start_work <= end and (end - start_work).days + 1 < 10:
             result[key] = 0
         else:
@@ -738,8 +798,6 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                        COALESCE(email,'') email,COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
                        COALESCE(employment_start_date,'') employment_start_date
                 FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
-                  AND COALESCE(login_locked,false)=false
-                  AND COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc')='Đang làm việc'
                 ORDER BY COALESCE(stt,2147483647),username
             """)).mappings().all()]
             penalties = conn.execute(text("""
@@ -749,12 +807,30 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             penalty_map = {norm(item["employee_name"]): _number(item["amount"]) for item in penalties}
             tichluy = _tichluy_map(conn, employees, start, end, norm)
             obligations = _obligation_map(conn, start, norm)
-        filtered = source[(source["time"].dt.date >= start) & (source["time"].dt.date <= end)]
-        tips = filtered[filtered["item"].str.casefold().str.startswith("tip")].copy()
-        tips["key"] = tips["employee"].apply(norm)
-        salaries = tips.groupby("key")["amount"].sum().to_dict() if not tips.empty else {}
-        counts = tips.groupby("key").size().to_dict() if not tips.empty else {}
+        tips, source_summary = _tip_rows(source, start, end, norm)
         known = {norm(item["username"]) for item in employees}
+        matched_tips = tips[tips["key"].isin(known)].copy()
+        unmatched = sorted({
+            value for value in tips.loc[~tips["key"].isin(known), "employee"].tolist() if value
+        }, key=norm)
+        if matched_tips.empty:
+            preview = ", ".join(unmatched[:10])
+            raise HTTPException(
+                400,
+                "Đã đọc được dòng Tip nhưng không tên nào khớp Tên Hệ thống của Nhân viên/Leader. "
+                f"Tên TimeSoft đầu tiên: {preview}",
+            )
+        matched_salary_total = int(matched_tips["amount"].sum())
+        if matched_salary_total <= 0:
+            raise HTTPException(400, "Tổng Tiền Lương sau khi khớp tên nhân viên đang bằng 0; hệ thống dừng tính.")
+        source_summary.update({
+            "matched_tip_rows": int(len(matched_tips)),
+            "matched_salary_total": matched_salary_total,
+            "employee_rows": int(len(employees)),
+            "unmatched_tip_names": int(len(unmatched)),
+        })
+        salaries = matched_tips.groupby("key")["amount"].sum().to_dict()
+        counts = matched_tips.groupby("key").size().to_dict()
         rows = []
         for index, employee in enumerate(employees, start=1):
             key = norm(employee["username"])
@@ -770,8 +846,11 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 "Tên ngân hàng": employee["bank_name"], "Số dòng Tip": int(counts.get(key, 0)),
             }
             rows.append(_net(row))
-        unmatched = sorted({value for value in tips.loc[~tips["key"].isin(known), "employee"].tolist() if value}, key=norm)
-        return {"period_label": label, "start": start.isoformat(), "end": end.isoformat(), "fields": DRAFT_FIELDS, "editable_fields": sorted(EDITABLE_FIELDS), "rows": rows, "unmatched": unmatched, "config": cfg}
+        return {
+            "period_label": label, "start": start.isoformat(), "end": end.isoformat(),
+            "fields": DRAFT_FIELDS, "editable_fields": sorted(EDITABLE_FIELDS),
+            "rows": rows, "unmatched": unmatched, "config": cfg, "source_summary": source_summary,
+        }
 
     @app.post("/v2/payroll/save")
     def save_payroll(body: PayrollSave, ident: identity_type = Depends(current_identity)):
@@ -782,7 +861,14 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         try:
             require_feature(conn, ident, "payroll_save")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll:' || :label))"), {"label": label})
-            for row in _clean_draft_rows(conn, body.rows, norm):
+            prepared_rows = _clean_draft_rows(conn, body.rows, norm)
+            if sum(_number(row.get("Tiền Lương")) for row in prepared_rows) <= 0:
+                raise HTTPException(
+                    400,
+                    "Tổng Tiền Lương đang bằng 0. Hệ thống không lưu bảng lương chính thức; "
+                    "hãy kiểm tra lại file TimeSoft và số dòng Tip.",
+                )
+            for row in prepared_rows:
                 row.update({
                     "Mã bản lưu": label,
                     "Từ ngày": body.start.strftime("%d/%m/%Y"), "Đến ngày": body.end.strftime("%d/%m/%Y"),

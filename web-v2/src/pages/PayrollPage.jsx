@@ -115,6 +115,7 @@ export default function PayrollPage({ user }) {
 
   const historyTotal = useMemo(() => history.records.reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [history.records])
   const draftTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [draft])
+  const draftSalaryTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Tiền Lương'] || 0), 0), [draft])
   const draftRows = draft?.rows || []
   const isBusy = Boolean(busy)
   const allSelected = draftRows.length > 0 && draftRows.every((row) => selected.includes(row['Tên Hệ thống']))
@@ -131,7 +132,16 @@ export default function PayrollPage({ user }) {
     setDraft(result)
     setSelected((result.rows || []).map((row) => row['Tên Hệ thống']))
     setConfig(result.config || config)
-    setNotice({ type: result.unmatched?.length ? 'warning' : 'success', message: result.unmatched?.length ? `Đã tính lương; chưa khớp tài khoản: ${result.unmatched.join(', ')}` : `Đã tính ${result.period_label}.` })
+    const summary = result.source_summary || {}
+    const detail = summary.matched_tip_rows
+      ? `${summary.matched_tip_rows} dòng Tip · Tổng Tiền Lương ${money(summary.matched_salary_total)}`
+      : ''
+    setNotice({
+      type: result.unmatched?.length ? 'warning' : 'success',
+      message: result.unmatched?.length
+        ? `Đã tính ${result.period_label} · ${detail}. Chưa khớp tài khoản: ${result.unmatched.join(', ')}`
+        : `Đã tính ${result.period_label}${detail ? ` · ${detail}` : ''}.`,
+    })
   })
 
   const editMoney = (username, field, value) => {
@@ -146,6 +156,7 @@ export default function PayrollPage({ user }) {
 
   const savePayrollPeriod = () => run('save', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương để lưu.')
+    if (draftSalaryTotal <= 0) throw new Error('Tổng Tiền Lương đang bằng 0. Không thể lưu chính thức; hãy kiểm tra file TimeSoft và số dòng Tip.')
     if (!window.confirm(`Lưu ${draft.period_label}? Bản lưu cũ của đúng kỳ này (nếu có) sẽ được thay thế.`)) return
     const result = await veraApi.savePayroll({ start: draft.start, end: draft.end, source_name: file?.name || draft.source_name || 'Excel upload', rows: draft.rows })
     await loadHistory()
@@ -271,7 +282,7 @@ export default function PayrollPage({ user }) {
     </section>}
 
     {draft?.rows?.length > 0 && <section className="panel payroll-draft-panel">
-      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={savePayrollPeriod} disabled={isBusy}><Save size={16} /> Lưu bảng lương chính thức</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
+      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={savePayrollPeriod} disabled={isBusy || draftSalaryTotal <= 0}><Save size={16} /> Lưu bảng lương chính thức</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
       {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allSelected} onChange={toggleAllSelected} disabled={isBusy} /> Chọn tất cả {draftRows.length} nhân viên để gửi email</label>}
       <div className="responsive-data-table payroll-editor payroll-desktop-table"><table><thead><tr>{canEmail && <th>Gửi</th>}<th>Nhân viên</th><th>Lương</th>{Object.entries(EDIT_LABELS).map(([field, label]) => <th key={field}>{label}</th>)}<th>Thực nhận</th></tr></thead><tbody>{draftRows.map((row) => <tr key={row['Tên Hệ thống']}>{canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${row['Tên Hệ thống']}`} checked={selected.includes(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} /></td>}<td><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></td><td className="money-cell">{money(row['Tiền Lương'])}</td>{Object.keys(EDIT_LABELS).map((field) => <td key={field}><input className="payroll-money-input" type="number" min="0" inputMode="numeric" disabled={isBusy} value={row[field] || 0} onChange={(event) => editMoney(row['Tên Hệ thống'], field, event.target.value)} /></td>)}<td className="money-cell"><strong>{money(row['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
       <div className="payroll-mobile-list">{draftRows.map((row) => <article className="payroll-mobile-card" key={row['Tên Hệ thống']}>
