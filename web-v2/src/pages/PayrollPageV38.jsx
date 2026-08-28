@@ -1,6 +1,6 @@
 import { RefreshCw, Save, Settings2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import PayrollPage from './PayrollPage'
+import PayrollPage from './PayrollPageEnhanced'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
