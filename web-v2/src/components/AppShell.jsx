@@ -17,7 +17,7 @@ const items = [
   { id: 'storage', label: 'Bộ nhớ hệ thống', icon: HardDrive, ready: true, permission: 'storage_admin_view' },
 ]
 
-export default function AppShell({ user, currentPage, onPageChange, onSignOut, children }) {
+export default function AppShell({ user, currentPage, onPageChange, onRefreshCurrentPage, onSignOut, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [birthdayNotice, setBirthdayNotice] = useState(null)
 
@@ -46,8 +46,9 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
   return (
     <div className="app-shell">
       {/* Canonical phrase retained for CI/history: Suối nguồn thư giãn, trọn vẹn an yên. */}
+      {/* Legacy full reload used window.location.reload(); current refresh remounts only the visible page. */}
       <style>{`
-        .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:400;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
+        .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:700;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
         @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05}}
         @media(max-width:430px){.topbar-title.vera-script-tagline{font-size:20px;white-space:normal}}
       `}</style>
@@ -107,7 +108,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
             <div className="topbar-kicker">VERA SPA</div>
             <div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div>
           </div>
-          <button type="button" className="topbar-refresh-button" onClick={() => window.location.reload()} aria-label="Làm mới toàn bộ Web V2">
+          <button type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại">
             <RefreshCw size={15} /> Làm mới
           </button>
         </header>
