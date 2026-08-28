@@ -1,11 +1,13 @@
-import { LockKeyhole } from 'lucide-react'
+import { Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { clearFreshLoginClaim, markFreshLoginClaim } from '../lib/deviceSession'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { unlockWatchBellAudio } from '../lib/watchBell'
 
 export default function LoginPage({ externalError = '' }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(externalError)
   useEffect(() => { if (externalError) setError(externalError) }, [externalError])
@@ -35,13 +37,22 @@ export default function LoginPage({ externalError = '' }) {
       }
       if (!bridge?.email || !bridge?.password) throw new Error(bridge?.message || 'Không xác thực được tài khoản VERA.')
 
+      // A successful password verification is a fresh login. App.jsx consumes
+      // this marker immediately after Supabase creates the session and claims
+      // this browser/device as the account's one active device.
+      markFreshLoginClaim()
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: bridge.email,
         password: bridge.password,
       })
-      if (signInError) throw signInError
+      if (signInError) {
+        clearFreshLoginClaim()
+        throw signInError
+      }
       setPassword('')
+      setShowPassword(false)
     } catch (err) {
+      clearFreshLoginClaim()
       setError(err.message || 'Đăng nhập thất bại.')
     } finally {
       setBusy(false)
@@ -50,6 +61,12 @@ export default function LoginPage({ externalError = '' }) {
 
   return (
     <div className="login-screen">
+      <style>{`
+        .login-password-control{position:relative;width:100%}
+        .login-password-control input{width:100%;padding-right:46px}
+        .login-password-eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:#52645b}
+        .login-password-eye:hover{background:#edf3ef;color:#173329}
+      `}</style>
       <section className="login-visual">
         <div className="visual-glow one" />
         <div className="visual-glow two" />
@@ -90,7 +107,25 @@ export default function LoginPage({ externalError = '' }) {
           <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Tên nhân viên" autoComplete="username" required />
 
           <label>Mật khẩu</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required />
+          <div className="login-password-control">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              className="login-password-eye"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Xem mật khẩu'}
+              title={showPassword ? 'Ẩn mật khẩu' : 'Xem mật khẩu'}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
 
           {error && <div className="error-box">{error}</div>}
           <button className="primary-button full" type="submit" disabled={busy}>{busy ? 'Đang xác thực…' : 'Đăng nhập'}</button>
