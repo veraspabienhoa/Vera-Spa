@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import vera_web_v2_api_shared as _shared
+from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
@@ -10,6 +11,7 @@ from vera_web_v2_payroll_saved_edit import install_payroll_saved_edit_routes
 from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_routes
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
+from vera_web_v2_staff_status_sort import install_staff_status_sort
 
 _api = _shared._api
 
@@ -65,6 +67,13 @@ install_staff_security_routes(
     google_client=_api._google_client,
 )
 
+# Employee list order is status-first: active, temporarily away, then left.
+install_staff_status_sort(
+    _shared.app,
+    current_identity=_api.current_identity,
+    identity_type=_api.Identity,
+)
+
 # Registration preview delegates to the exact canonical validator/calculator,
 # so the displayed Người Thứ N penalty is the amount that POST /records stores.
 install_leave_preview_routes(
@@ -93,6 +102,19 @@ install_long_leave_admin_routes(
     leave_create_type=_api.LeaveCreate,
     sheet_row_for_record=_api._sheet_row_for_record,
     insert_record=_api._insert_record,
+)
+
+# Every insert/edit/delete is captured by a database trigger. The pre-edit or
+# deleted version stays available to Admin for 30 days, while the change feed
+# returns exact field-level before/after values.
+install_admin_audit_archive_routes(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    identity_type=_api.Identity,
+    leave_update_type=_api.LeaveUpdate,
+    leave_delete_type=_api.LeaveDelete,
 )
 
 # Install the one-device lease guard last so it protects all authenticated V2
