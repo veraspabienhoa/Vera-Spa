@@ -71,6 +71,17 @@ export async function claimCurrentDevice(session) {
     },
   })
   const payload = await response.json().catch(() => ({}))
+
+  // Frontend and Cloud Run are deployed independently. During a rolling
+  // deployment the browser can receive this login flow before the backend has
+  // /v2/device/claim. Do not turn a valid username/password into a forced
+  // logout just because the optional claim route is not live yet. Once the
+  // backend guard is deployed, the claim succeeds and still replaces the old
+  // device as designed.
+  if ([404, 405].includes(response.status)) {
+    return { ok: true, rollout_pending: true }
+  }
+
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
 }
