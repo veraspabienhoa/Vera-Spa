@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import vera_web_v2_api_shared as _shared
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
+from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
 from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_routes
 
 _api = _shared._api
@@ -26,6 +27,17 @@ install_payroll_debt_sync_routes(
     require_feature=_api._require_feature,
     identity_type=_api.Identity,
     google_client=_api._google_client,
+)
+
+# Completion/history/deferral routes are installed last so they wrap the final
+# Payroll 3.8 save/history endpoints without disturbing the calculation chain.
+install_payroll_enhancement_routes(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    norm=_api._norm,
+    identity_type=_api.Identity,
 )
 
 app = _shared.app
