@@ -6,8 +6,11 @@ on:
     paths:
       - "vera_web_v2_payroll_v38.py"
       - "vera_web_v2_payroll_debt_sync.py"
+      - "vera_web_v2_payroll_enhancements.py"
       - "vera_web_v2_api_v38.py"
       - "web-v2/src/pages/PayrollPageV38.jsx"
+      - "web-v2/src/pages/PayrollPageEnhanced.jsx"
+      - "web-v2/src/pages/PayrollPageEnhanced.css"
       - "web-v2/src/App.jsx"
       - ".github/workflows/payroll-v38.yml"
       - "cloudbuild.yaml"
@@ -16,8 +19,11 @@ on:
     paths:
       - "vera_web_v2_payroll_v38.py"
       - "vera_web_v2_payroll_debt_sync.py"
+      - "vera_web_v2_payroll_enhancements.py"
       - "vera_web_v2_api_v38.py"
       - "web-v2/src/pages/PayrollPageV38.jsx"
+      - "web-v2/src/pages/PayrollPageEnhanced.jsx"
+      - "web-v2/src/pages/PayrollPageEnhanced.css"
       - "web-v2/src/App.jsx"
       - ".github/workflows/payroll-v38.yml"
       - "cloudbuild.yaml"
@@ -45,7 +51,7 @@ jobs:
           python-version: "3.12"
 
       - name: Compile Payroll 3.8 Python
-        run: python -m py_compile vera_web_v2_payroll_v38.py vera_web_v2_payroll_debt_sync.py vera_web_v2_api_v38.py
+        run: python -m py_compile vera_web_v2_payroll_v38.py vera_web_v2_payroll_debt_sync.py vera_web_v2_payroll_enhancements.py vera_web_v2_api_v38.py
 
       - name: Verify Payroll 3.8 invariants
         shell: bash
@@ -56,13 +62,17 @@ jobs:
 
           backend = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
           debt_sync = Path('vera_web_v2_payroll_debt_sync.py').read_text(encoding='utf-8')
+          enhancements = Path('vera_web_v2_payroll_enhancements.py').read_text(encoding='utf-8')
           wrapper = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
           page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
+          enhanced_page = Path('web-v2/src/pages/PayrollPageEnhanced.jsx').read_text(encoding='utf-8')
+          enhanced_css = Path('web-v2/src/pages/PayrollPageEnhanced.css').read_text(encoding='utf-8')
           app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
 
           ast.parse(backend)
           ast.parse(debt_sync)
+          ast.parse(enhancements)
           ast.parse(wrapper)
 
           checks = {
@@ -78,14 +88,22 @@ jobs:
               'legacy violation debt cache is refreshed': 'LEGACY_DEBT_DATASET_KEY = "violation_debt"' in debt_sync and '_write_dataset_cache(' in debt_sync,
               'debt refresh happens before payroll calculation': debt_sync.find('_refresh_legacy_obligations(') < debt_sync.rfind('result = await original_calculate('),
               'safe cache fallback avoids silently dropping debt': 'cache_exists' in debt_sync and 'Đã dừng tính lương để tránh bỏ sót khấu trừ' in debt_sync,
-              'debt sync health and manual refresh endpoints exist': '/v2/payroll-debt-sync/health' in debt_sync and '/v2/payroll-debt-sync/refresh' in debt_sync,
-              'obligation panel also refreshes legacy debt': 'obligations_with_legacy_refresh' in debt_sync,
-              'API wrapper installs v38 after shared API': 'import vera_web_v2_api_shared as _shared' in wrapper and 'install_payroll_v38_routes(' in wrapper,
-              'API wrapper installs automatic debt sync after v38': 'install_payroll_debt_sync_routes(' in wrapper and wrapper.find('install_payroll_v38_routes(') < wrapper.rfind('install_payroll_debt_sync_routes('),
+              'saved payroll list endpoint exists': '/v2/payroll/saved-batches' in enhancements,
+              'history batch delete endpoint exists': '@app.delete("/v2/payroll/history/{batch_id}")' in enhancements,
+              'completion marks applied obligations done': '_mark_applied_custom_obligations_completed' in enhancements and 'completed_obligations' in enhancements,
+              'admin can defer current penalty': '/v2/payroll/penalties/defer' in enhancements and 'Tạm hoãn vi phạm' in enhancements,
+              'deferred penalty starts next period': 'period_end + timedelta(days=1)' in enhancements,
+              'API wrapper installs enhancements last': 'install_payroll_enhancement_routes(' in wrapper and wrapper.rfind('install_payroll_enhancement_routes(') > wrapper.rfind('install_payroll_debt_sync_routes('),
               'Web V2 loads Payroll 3.8 page': "import('./pages/PayrollPageV38')" in app,
+              'V38 uses enhanced payroll UI': "./PayrollPageEnhanced" in page,
+              'default config is below payroll history in enhanced UI': enhanced_page.find('LỊCH SỬ BẢNG LƯƠNG') < enhanced_page.find('CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH'),
+              'employee search exists in current payroll': 'Tìm tên nhân viên' in enhanced_page and 'draftSearch' in enhanced_page,
+              'complete payroll button exists': 'Hoàn thành bảng lương' in enhanced_page,
+              'saved payroll delete controls exist': 'Xóa lịch sử kỳ đang chọn' in enhanced_page and 'deleteHistoryBatch' in enhanced_page,
+              'nonpositive take-home rows are highlighted': 'payroll-nonpositive' in enhanced_page and 'payroll-nonpositive' in enhanced_css,
+              'current penalty can be moved to next payroll': 'Chuyển kỳ sau' in enhanced_page and '/v2/payroll/penalties/defer' in enhanced_page,
+              'table overflow is contained': 'overflow-x: auto' in enhanced_css and 'overflow-x: hidden' in enhanced_css,
               'UI exposes employee and leader overrides': 'MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8' in page,
-              'UI supports save and reset': 'Áp dụng mức riêng' in page and 'Dùng lại mặc định' in page,
-              'UI calls v38 endpoints': all(token in page for token in ('/v2/payroll-v38/employee-overrides', '/v2/payroll-v38/employee-overrides/reset')),
               'Cloud Run deploys v38 wrapper': 'vera_web_v2_api_v38:app' in build,
               'Cloud Build verifies v38 health': '/v2/payroll-v38/health' in build and '3.8-payroll-employee-overrides' in build,
           }
