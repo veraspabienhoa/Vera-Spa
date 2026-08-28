@@ -1,6 +1,7 @@
 import { RefreshCw, Save, Settings2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
+import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -27,6 +28,7 @@ export default function PayrollPageV38({ user }) {
   const [locker, setLocker] = useState(80000)
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
+  const [payrollVersion, setPayrollVersion] = useState(0)
 
   const loadOverrides = async (silent = false) => {
     if (!canEditConfig) return
@@ -103,7 +105,8 @@ export default function PayrollPageV38({ user }) {
   const configured = data.overrides || []
 
   return <>
-    <PayrollPage user={user} />
+    <PayrollPage key={payrollVersion} user={user} />
+    {isAdmin && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
     {canEditConfig && <div className="feature-page payroll-page payroll-v38-config">
       <section className="panel">
         <div className="panel-title-row">
