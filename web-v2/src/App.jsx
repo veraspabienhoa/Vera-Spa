@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import AppShell from './components/AppShell'
 import LoginPage from './pages/LoginPage'
+import LeaveListPersonalStats from './pages/LeaveListPersonalStats'
 import { veraApi } from './lib/api'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
@@ -117,7 +118,10 @@ export default function App() {
   return (
     <AppShell user={shellUser} currentPage={page} onPageChange={setPage} onSignOut={signOut}>
       <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>}>
-        {page === 'leave' && <LeaveRegistrationPage user={shellUser} />}
+        {page === 'leave' && <>
+          <LeaveRegistrationPage user={shellUser} />
+          <LeaveListPersonalStats user={shellUser} />
+        </>}
         {page === 'long-leave' && <LongLeaveSection user={shellUser} />}
         {page === 'employees' && <EmployeePage user={shellUser} />}
         {page === 'rules' && <RulesPage user={shellUser} />}
