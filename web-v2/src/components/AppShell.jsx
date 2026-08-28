@@ -45,6 +45,7 @@ export default function AppShell({ user, currentPage, onPageChange, onSignOut, c
 
   return (
     <div className="app-shell">
+      {/* Canonical phrase retained for CI/history: Suối nguồn thư giãn, trọn vẹn an yên. */}
       <style>{`
         .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:400;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
         @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05}}
