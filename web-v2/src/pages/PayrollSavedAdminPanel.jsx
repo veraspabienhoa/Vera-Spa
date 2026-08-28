@@ -1,5 +1,5 @@
 import { Edit3, Save, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getCurrentSession } from '../lib/supabase'
 
@@ -48,11 +48,11 @@ export default function PayrollSavedAdminPanel({ user }) {
     const locate = () => {
       if (cancelled) return
       const draftActions = document.querySelector('.payroll-page-enhanced .payroll-draft-panel .panel-title-row .list-actions')
-      setDraftActionsTarget(draftActions || null)
+      setDraftActionsTarget((current) => current === draftActions ? current : (draftActions || null))
 
       const sections = Array.from(document.querySelectorAll('.payroll-page-enhanced section.panel'))
       const history = sections.find((section) => section.querySelector('h2')?.textContent?.includes('LỊCH SỬ BẢNG LƯƠNG')) || null
-      setHistoryPanel(history)
+      setHistoryPanel((current) => current === history ? current : history)
 
       const cards = Array.from(document.querySelectorAll('.payroll-page-enhanced .saved-payroll-card'))
         .map((card) => ({
@@ -60,7 +60,10 @@ export default function PayrollSavedAdminPanel({ user }) {
           target: card.querySelector('header'),
         }))
         .filter((item) => item.batch && item.target)
-      setCardTargets(cards)
+      setCardTargets((current) => {
+        const same = current.length === cards.length && current.every((item, index) => item.batch === cards[index].batch && item.target === cards[index].target)
+        return same ? current : cards
+      })
     }
     locate()
     const observer = new MutationObserver(locate)
@@ -70,8 +73,6 @@ export default function PayrollSavedAdminPanel({ user }) {
       observer.disconnect()
     }
   }, [canManage])
-
-  const cardKey = useMemo(() => cardTargets.map((item) => item.batch).join('|'), [cardTargets])
 
   const reopenForEdit = async (batch) => {
     setBusy(batch); setNotice(null)
@@ -85,15 +86,15 @@ export default function PayrollSavedAdminPanel({ user }) {
       const wantedPeriod = String(result.period_no)
       if (monthInput.value === wantedMonth && periodSelect.value === wantedPeriod) {
         setNativeValue(periodSelect, wantedPeriod === '1' ? '2' : '1')
-        await new Promise((resolve) => window.setTimeout(resolve, 80))
+        await new Promise((resolve) => window.setTimeout(resolve, 100))
       }
       if (monthInput.value !== wantedMonth) {
         setNativeValue(monthInput, wantedMonth)
-        await new Promise((resolve) => window.setTimeout(resolve, 80))
+        await new Promise((resolve) => window.setTimeout(resolve, 100))
       }
       setNativeValue(periodSelect, wantedPeriod)
       setNotice({ type: 'success', message: result.message })
-      window.setTimeout(() => document.querySelector('.payroll-page-enhanced .payroll-draft-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 450)
+      window.setTimeout(() => document.querySelector('.payroll-page-enhanced .payroll-draft-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 500)
     } catch (error) {
       setNotice({ type: 'error', message: error.message })
     } finally {
@@ -107,16 +108,18 @@ export default function PayrollSavedAdminPanel({ user }) {
     {draftActionsTarget && createPortal(<>
       <button className="secondary-button" type="button" disabled={Boolean(busy)} onClick={() => clickExistingButton('Lưu bảng lương nháp')}><Save size={16} /> Lưu bảng lương</button>
       <button className="danger-button" type="button" disabled={Boolean(busy)} onClick={() => clickExistingButton('Xóa bảng lương nháp')}><Trash2 size={16} /> Xóa bảng lương đã lưu</button>
-    </>, draftActionsTarget)}
+    </>, draftActionsTarget, 'payroll-current-save-actions')}
 
     {cardTargets.map(({ batch, target }) => createPortal(
-      <button key={`${cardKey}-${batch}`} className="secondary-button compact" type="button" disabled={Boolean(busy)} onClick={() => reopenForEdit(batch)}><Edit3 size={14} /> {busy === batch ? 'Đang mở…' : 'Chỉnh sửa'}</button>,
+      <button className="secondary-button compact" type="button" disabled={Boolean(busy)} onClick={() => reopenForEdit(batch)}><Edit3 size={14} /> {busy === batch ? 'Đang mở…' : 'Chỉnh sửa'}</button>,
       target,
+      `edit-${batch}`,
     ))}
 
     {historyPanel && notice && createPortal(
       <div className={notice.type === 'error' ? 'error-box' : 'success-box'} style={{ marginTop: 12 }}>{notice.message}</div>,
       historyPanel,
+      'payroll-edit-notice',
     )}
   </>
 }
