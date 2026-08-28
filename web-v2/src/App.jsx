@@ -158,6 +158,7 @@ export default function App() {
           <LeaveListPersonalStats user={shellUser} />
         </>}
         {page === 'long-leave' && <>
+          {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
           <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
           <LongLeaveSection key={longLeaveRevision} user={shellUser} />
         </>}
