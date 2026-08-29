@@ -43,8 +43,17 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   const submit = async (event) => {
     event.preventDefault(); setSaving(true); setNotice(null)
     try {
-      const result = await veraApi.updateProfile({ ...form, birth_date: toVnDate(form.birth_date) })
+      if ((forcePasswordChange || form.new_password) && !form.current_password) {
+        throw new Error('Chỉ khi đổi mật khẩu mới cần nhập Mật khẩu hiện tại.')
+      }
+      const payload = { ...form, birth_date: toVnDate(form.birth_date) }
+      if (!forcePasswordChange && !form.new_password) {
+        delete payload.current_password
+        delete payload.new_password
+      }
+      const result = await veraApi.updateProfile(payload)
       setNotice({ status: 'success', message: result.message })
+      window.dispatchEvent(new CustomEvent('vera-profile-updated'))
       if (result.password_changed) window.setTimeout(onPasswordChanged, 1200)
       else await load()
     } catch (error) { setNotice({ status: 'error', message: `KHÔNG THÀNH CÔNG (${error.message})` }) }
@@ -73,8 +82,10 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
     }
   }
 
+  const passwordRequired = forcePasswordChange || Boolean(form.new_password)
+
   return <div className="feature-page">
-    <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật thông tin của chính tài khoản đang đăng nhập.'}</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button></div>
+    <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật hồ sơ mà không bắt buộc thay đổi mật khẩu.'}</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button></div>
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}
     <section className="panel profile-panel">
       <form className="profile-form" onSubmit={submit}>
@@ -88,10 +99,10 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value })} /></label>
         <label>Tên ngân hàng<select value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{form.bank_name && !references.banks.includes(form.bank_name) && <option>{form.bank_name}</option>}{references.banks.map((bank) => <option key={bank}>{bank}</option>)}</select></label>
         <div className="profile-password-box wide-field">
-          <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU'}</h3><p>Mật khẩu mới tối thiểu 8 ký tự, kết hợp ít nhất 3 nhóm chữ thường, chữ hoa, số, ký tự đặc biệt và không chứa tên của bạn.</p>
+          <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3><p>{forcePasswordChange ? 'Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.' : 'Để trống cả hai ô nếu chỉ cập nhật hồ sơ. Hệ thống không yêu cầu đổi mật khẩu khi lưu thông tin cá nhân.'}</p>
           <div className="profile-password-grid">
-            <label>Mật khẩu hiện tại<input type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required /></label>
-            <label>Mật khẩu mới<input type="password" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Tối thiểu 8 ký tự" /></label>
+            <label>Mật khẩu hiện tại<input type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required={passwordRequired} autoComplete="current-password" /></label>
+            <label>Mật khẩu mới<input type="password" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Để trống nếu không đổi" autoComplete="new-password" /></label>
           </div>
         </div>
         <EmployeeIdentityPanel username={user?.employee_username || ''} className="wide-field" />
