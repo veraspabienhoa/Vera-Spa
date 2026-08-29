@@ -41,7 +41,11 @@ export default function LeaveListTypeColumn() {
         for (const item of items) {
           const key = normalizeReason(item?.name)
           if (!key) continue
-          next[key] = String(item?.leave_type || '').trim()
+          const leaveType = String(item?.leave_type || '').trim()
+          next[key] = {
+            leaveType,
+            typeKey: normalizeReason(leaveType),
+          }
         }
         setCatalog(next)
       })
@@ -53,6 +57,61 @@ export default function LeaveListTypeColumn() {
 
   useEffect(() => {
     let scheduled = false
+
+    const reasonInfo = (reason) => catalog[normalizeReason(reason)] || null
+
+    const restoreAllOptions = (select) => {
+      for (const option of select?.options || []) {
+        option.hidden = false
+        option.disabled = false
+      }
+    }
+
+    const lockSelectToRowType = (select) => {
+      if (!select) return
+      const row = select.closest('tr')
+      if (!row) return
+
+      const selectedReason = String(select.value || '').trim()
+      const selectedInfo = reasonInfo(selectedReason)
+
+      if (!row.dataset.leaveTypeKey && selectedInfo?.typeKey) {
+        row.dataset.leaveTypeKey = selectedInfo.typeKey
+        row.dataset.leaveTypeLabel = selectedInfo.leaveType
+      }
+
+      const lockedTypeKey = String(row.dataset.leaveTypeKey || '').trim()
+      const lockedTypeLabel = String(row.dataset.leaveTypeLabel || selectedInfo?.leaveType || '').trim()
+      if (!lockedTypeKey) {
+        restoreAllOptions(select)
+        select.removeAttribute('data-leave-type-filtered')
+        return
+      }
+
+      const selectedKey = normalizeReason(selectedReason)
+      for (const option of select.options) {
+        const optionKey = normalizeReason(option.value)
+        const optionInfo = catalog[optionKey]
+        const sameType = optionInfo?.typeKey === lockedTypeKey
+        const isCurrentValue = optionKey === selectedKey
+        const allowed = sameType || isCurrentValue
+        option.hidden = !allowed
+        option.disabled = !allowed
+      }
+
+      select.dataset.leaveTypeFiltered = 'true'
+      select.dataset.leaveTypeKey = lockedTypeKey
+      select.dataset.leaveTypeLabel = lockedTypeLabel
+      select.title = lockedTypeLabel
+        ? `Chỉ hiển thị Lý do nghỉ thuộc Loại nghỉ: ${lockedTypeLabel}`
+        : 'Lý do nghỉ được giới hạn theo Loại nghỉ của dòng.'
+      select.setAttribute(
+        'aria-label',
+        lockedTypeLabel
+          ? `Lý do nghỉ, chỉ hiển thị nhóm ${lockedTypeLabel}`
+          : 'Lý do nghỉ, giới hạn theo Loại nghỉ của dòng',
+      )
+    }
 
     const syncTable = () => {
       scheduled = false
@@ -101,11 +160,20 @@ export default function LeaveListTypeColumn() {
 
         const reasonSelect = reasonCell.querySelector('select')
         const reason = String(reasonSelect?.value || reasonCell.textContent || '').trim()
-        const leaveType = catalog[normalizeReason(reason)] || '—'
+        const info = reasonInfo(reason)
+
+        if (reasonSelect && !row.dataset.leaveTypeKey && info?.typeKey) {
+          row.dataset.leaveTypeKey = info.typeKey
+          row.dataset.leaveTypeLabel = info.leaveType
+        }
+
+        const leaveType = info?.leaveType || row.dataset.leaveTypeLabel || '—'
         if (typeCell.textContent !== leaveType) typeCell.textContent = leaveType
         typeCell.title = leaveType === '—'
           ? 'Chưa tìm thấy Loại nghỉ tương ứng trong BẢNG NỘI QUY.'
           : `Theo BẢNG NỘI QUY: ${leaveType}`
+
+        if (reasonSelect) lockSelectToRowType(reasonSelect)
       }
     }
 
@@ -115,20 +183,36 @@ export default function LeaveListTypeColumn() {
       window.requestAnimationFrame(syncTable)
     }
 
+    const handleReasonOpen = (event) => {
+      const select = event.target?.closest?.('.reason-edit-cell select')
+      if (select) lockSelectToRowType(select)
+    }
+
     const handleReasonChange = (event) => {
-      if (event.target?.closest?.('.reason-edit-cell')) scheduleSync()
+      const select = event.target?.closest?.('.reason-edit-cell select')
+      if (!select) return
+      lockSelectToRowType(select)
+      scheduleSync()
     }
 
     syncTable()
     const observer = new MutationObserver(scheduleSync)
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    document.addEventListener('pointerdown', handleReasonOpen, true)
+    document.addEventListener('focusin', handleReasonOpen, true)
+    document.addEventListener('keydown', handleReasonOpen, true)
     document.addEventListener('change', handleReasonChange, true)
     document.addEventListener('input', handleReasonChange, true)
 
     return () => {
       observer.disconnect()
+      document.removeEventListener('pointerdown', handleReasonOpen, true)
+      document.removeEventListener('focusin', handleReasonOpen, true)
+      document.removeEventListener('keydown', handleReasonOpen, true)
       document.removeEventListener('change', handleReasonChange, true)
       document.removeEventListener('input', handleReasonChange, true)
+      const table = document.querySelector('.leave-list-panel .leave-records-table')
+      for (const select of table?.querySelectorAll('.reason-edit-cell select') || []) restoreAllOptions(select)
     }
   }, [catalog])
 
@@ -136,6 +220,7 @@ export default function LeaveListTypeColumn() {
     .leave-records-table .leave-type-header,
     .leave-records-table .leave-type-cell{vertical-align:middle}
     .leave-records-table .leave-type-cell{min-width:110px;color:#31483d;font-weight:800;line-height:1.25}
+    .leave-records-table .reason-edit-cell select[data-leave-type-filtered="true"]{border-color:#b8cbc0;background:#fbfdfc}
     @media(max-width:820px){
       .leave-records-table.with-leave-type-column.without-penalty .leave-col-select{width:7%}
       .leave-records-table.with-leave-type-column.without-penalty .leave-col-date{width:11%}
