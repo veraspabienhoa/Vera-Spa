@@ -63,13 +63,13 @@ export default function PermissionsPage() {
     if (scope === 'account' && inherit) setInherit(false)
     setAllowed((current) => current.includes(feature) ? current.filter((item) => item !== feature) : [...current, feature])
   }
-  const usePrivatePermissions = () => {
+  const enablePrivatePermissions = () => {
     if (scope !== 'account') return
     const account = data?.accounts?.find((item) => item.username === target)
     if (!allowed.length) setAllowed(roleAllowed(account?.role))
     setInherit(false)
   }
-  const useRolePermissions = () => {
+  const resetToRolePermissions = () => {
     if (scope !== 'account') return
     const account = data?.accounts?.find((item) => item.username === target)
     setAllowed(roleAllowed(account?.role))
@@ -100,11 +100,11 @@ export default function PermissionsPage() {
       <div className="permission-scope-tabs"><button className={scope === 'role' ? 'active' : ''} onClick={() => chooseScope('role')}>Theo nhóm</button><button className={scope === 'account' ? 'active' : ''} onClick={() => chooseScope('account')}>Theo tài khoản</button></div>
       <label>{scope === 'role' ? 'Chọn nhóm' : 'Chọn tài khoản'}<select value={target} onChange={(e) => chooseTarget(e.target.value)}>{scope === 'role' ? data?.roles?.map((role) => <option key={role} value={role}>{roleLabel[role] || role}</option>) : data?.accounts?.map((item) => <option key={item.username} value={item.username}>{item.username} · {roleLabel[item.role] || item.role}</option>)}</select></label>
       {scope === 'account' && <>
-        <label className="inherit-toggle"><input type="checkbox" checked={inherit} onChange={(e) => e.target.checked ? useRolePermissions() : usePrivatePermissions()} /> Kế thừa quyền của nhóm</label>
+        <label className="inherit-toggle"><input type="checkbox" checked={inherit} onChange={(e) => e.target.checked ? resetToRolePermissions() : enablePrivatePermissions()} /> Kế thừa quyền của nhóm</label>
         <div className="permission-account-actions">
           {inherit
-            ? <button type="button" className="secondary-button" onClick={usePrivatePermissions}>Phân quyền riêng tài khoản này</button>
-            : <button type="button" className="secondary-button" onClick={useRolePermissions}>Dùng lại quyền của nhóm</button>}
+            ? <button type="button" className="secondary-button" onClick={enablePrivatePermissions}>Phân quyền riêng tài khoản này</button>
+            : <button type="button" className="secondary-button" onClick={resetToRolePermissions}>Dùng lại quyền của nhóm</button>}
           <small>Trạng thái: <span className="permission-account-state">{inherit ? 'Đang kế thừa theo nhóm' : 'Đang phân quyền riêng'}</span>. Có thể bấm trực tiếp vào bất kỳ quyền nào để tạo ghi đè riêng.</small>
         </div>
       </>}
