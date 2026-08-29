@@ -6,6 +6,7 @@ import vera_web_v2_admin_audit_archive as _audit_archive
 import vera_web_v2_staff_status_sort as _staff_sort
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_admin_change_push import install_admin_change_push
+from vera_web_v2_attendance_v42 import install_attendance_v42
 from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
@@ -63,6 +64,11 @@ install_revenue_leave_list_routes(
     progressive_key=_api._progressive_key,
     google_client=_api._google_client,
 )
+
+# Attendance 4.2 ports the old Auto Check FaceID grouping into the PostgreSQL
+# snapshot path. It must run before Operations 4.1 so screen/filter/export all
+# consume the same nhanvien/leader-only reconstructed attendance dataset.
+install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
 
 # Operations 4.1 replaces Chấm công display/export routes and adds filtered
 # Thay đổi hệ thống export. Install before the single-device wrapper so the
