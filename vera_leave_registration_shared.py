@@ -123,7 +123,12 @@ def validate_registration_rule(item: dict, role: str, target: date, now: datetim
     if now.tzinfo is None:
         now = now.replace(tzinfo=VN_TZ)
     today = now.astimezone(VN_TZ).date()
+    is_violation = "vi pham" in norm(item.get("leave_type", ""))
     if target < today:
+        # Quản lý/Lễ tân may backfill only rows whose canonical Loại nghỉ is
+        # Vi phạm. Allowed-role and allowed-day checks above still apply.
+        if role in {"quanly", "letan"} and is_violation:
+            return
         raise LeaveRuleError(400, "Không được đăng ký lịch ở ngày quá khứ.")
     if role in role_tokens(item.get("register_exceptions", "")):
         return
