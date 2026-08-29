@@ -367,7 +367,7 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
   }
 
   const resetPassword = () => run('password', async () => {
-    if (!window.confirm(`Reset mật khẩu cho ${username} về ${DEFAULT_RESET_PASSWORD}? Nhân viên sẽ phải đổi mật khẩu sau lần đăng nhập kế tiếp.`)) return false
+    if (!window.confirm(`Reset mật khẩu cho ${username} về ${DEFAULT_RESET_PASSWORD}?`)) return false
     const result = await staffSecurityApi.resetPassword(username, DEFAULT_RESET_PASSWORD)
     setNotice({ type: 'success', message: `${result.message} Mật khẩu mặc định: ${DEFAULT_RESET_PASSWORD}.` }); return false
   })
@@ -385,7 +385,7 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
     `}</style>
     <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3><p>Camera chụp CCCD dùng khung chữ nhật ngang theo tỷ lệ thẻ CCCD và có viền để canh đúng bốn góc. Trước khi upload, ảnh vẫn được Crop, Rotate và nén WebP. Chỉ chính nhân viên và Admin được xem; Admin có thêm nút tải ảnh xuống.</p></div></div>
     <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.startsWith('upload-front') || busy.startsWith('view-front') || busy.startsWith('download-front') || busy.startsWith('delete-front')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.startsWith('upload-back') || busy.startsWith('view-back') || busy.startsWith('download-back') || busy.startsWith('delete-back')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset}/></div>
-    {allowPasswordReset && <div className="employee-password-reset"><div className="employee-password-reset-head"><KeyRound size={17}/><div><h4>RESET MẬT KHẨU NHÂN VIÊN</h4><p>Bấm Reset để tự động đặt mật khẩu mặc định. Phiên đăng nhập cũ bị xóa và nhân viên bắt buộc đổi lại mật khẩu sau lần đăng nhập tiếp theo.</p></div></div><div className="employee-password-reset-grid"><div className="employee-password-default"><span>Mật khẩu mặc định</span><strong>{DEFAULT_RESET_PASSWORD}</strong></div><button type="button" className="primary-button employee-password-submit" onClick={resetPassword} disabled={busy === 'password'}>{busy === 'password' ? <LoaderCircle className="spin" size={16}/> : <KeyRound size={16}/>} Reset mật khẩu</button></div></div>}
+    {allowPasswordReset && <div className="employee-password-reset"><div className="employee-password-reset-head"><KeyRound size={17}/><div><h4>RESET MẬT KHẨU NHÂN VIÊN</h4><p>Bấm Reset để tự động đặt mật khẩu mặc định và xóa phiên đăng nhập cũ.</p></div></div><div className="employee-password-reset-grid"><div className="employee-password-default"><span>Mật khẩu mặc định</span><strong>{DEFAULT_RESET_PASSWORD}</strong></div><button type="button" className="primary-button employee-password-submit" onClick={resetPassword} disabled={busy === 'password'}>{busy === 'password' ? <LoaderCircle className="spin" size={16}/> : <KeyRound size={16}/>} Reset mật khẩu</button></div></div>}
     {notice && <div className={`employee-identity-notice ${notice.type}`}>{notice.message}</div>}
   </div>
 }
