@@ -633,6 +633,7 @@ jobs:
           payroll = Path('vera_web_v2_payroll.py').read_text(encoding='utf-8')
           people = Path('vera_web_v2_people.py').read_text(encoding='utf-8')
           security = Path('vera_web_v2_security.py').read_text(encoding='utf-8')
+          staff_security = Path('vera_web_v2_staff_security.py').read_text(encoding='utf-8')
           snapshot = Path('vera_web_v2_snapshot.py').read_text(encoding='utf-8')
           storage = Path('vera_web_v2_storage.py').read_text(encoding='utf-8')
           sql = Path('vera_postgres_phase20_admin_daily_push.sql').read_text(encoding='utf-8')
@@ -643,6 +644,7 @@ jobs:
           sw = Path('web-v2/public/sw.js').read_text(encoding='utf-8')
           edge_login = Path('supabase/functions/vera-v2-login/index.ts').read_text(encoding='utf-8')
           employee_page = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
+          employee_identity_panel = Path('web-v2/src/pages/EmployeeIdentityPanel.jsx').read_text(encoding='utf-8')
           profile_page = Path('web-v2/src/pages/ProfilePage.jsx').read_text(encoding='utf-8')
           storage_page = Path('web-v2/src/pages/StorageAdminPage.jsx').read_text(encoding='utf-8')
           payroll_page = Path('web-v2/src/pages/PayrollPage.jsx').read_text(encoding='utf-8')
@@ -655,11 +657,12 @@ jobs:
           api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
-          for source in (api, permissions, profile, payroll, payroll_v38, people, security, snapshot, storage): ast.parse(source)
+          for source in (api, permissions, profile, payroll, payroll_v38, people, security, staff_security, snapshot, storage): ast.parse(source)
           checks = {
               'statistics and list have local refresh controls': leave.count('onClick={load}') >= 3 and leave.count('Làm mới') >= 3,
               'profile requires current password and mirrors credentials': 'hmac.compare_digest' in profile and 'A{source_row}:U{source_row}' in profile,
               'password update clears remember token': 'remember_token_hash' in profile and 'remember_token_expiry' in profile,
+              'Admin reset uses requested default and forces next-login change': "DEFAULT_RESET_PASSWORD = 'Vera123456'" in employee_identity_panel and 'resetPassword(username, DEFAULT_RESET_PASSWORD)' in employee_identity_panel and 'payload["must_change_password"] = True' in staff_security and 'remember_token_hash=\'\'' in staff_security,
               'password minimum and strength are enforced end to end': 'password_policy_error' in profile and 'len(value) < 8' in security and 'minLength="8"' in profile_page and 'minLength={8}' in employee_page,
               'first Web V2 login forces password change': 'must_change_password' in api and 'isFirstWebLogin' in edge_login and "setPage('profile')" in app,
               'inactive employment status blocks both login layers': "payload->>'Trạng thái làm việc'" in api and 'employmentStatus(employee.payload) !== "dang lam viec"' in edge_login and 'is_active=:is_active' in Path('vera_web_v2_staff.py').read_text(encoding='utf-8'),
