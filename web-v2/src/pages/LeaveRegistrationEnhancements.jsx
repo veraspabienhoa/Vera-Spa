@@ -57,7 +57,11 @@ async function authenticatedJson(path, options = {}) {
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
   const response = await fetch(`${apiBase}${path}`, { ...options, headers })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  if (!response.ok) {
+    const error = new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+    error.status = response.status
+    throw error
+  }
   return payload
 }
 
@@ -71,6 +75,12 @@ async function previewLeave(body, signal) {
 
 async function loadReasonGroups(date, signal) {
   return authenticatedJson(`/v2/leave/reason-groups?date=${encodeURIComponent(date)}`, { signal })
+}
+
+function isPreviewRolloutError(error) {
+  const status = Number(error?.status || 0)
+  const message = String(error?.message || '').toLowerCase()
+  return status === 404 || status === 405 || message === 'not found' || message.includes('http 404') || message.includes('http 405')
 }
 
 function setNativeSelectValue(select, value) {
@@ -126,6 +136,7 @@ export default function LeaveRegistrationEnhancements({ user }) {
       current.reasonSelect.classList.toggle('violation-original-hidden', splitActive)
       current.reasonSelect.required = !splitActive
       if (current.reasonLabel) current.reasonLabel.classList.toggle('violation-original-hidden', splitActive)
+      current.form.classList.toggle('live-penalty-preview-ready', Boolean(preview) && !error)
 
       let nextReasonHost = current.form.querySelector('[data-violation-reason-host="true"]')
       if (splitActive) {
@@ -193,9 +204,10 @@ export default function LeaveRegistrationEnhancements({ user }) {
       if (current.reasonSelect) current.reasonSelect.required = true
       current.reasonLabel?.classList.remove('violation-original-hidden')
       current.form?.classList.remove('past-violation-entry-enabled')
+      current.form?.classList.remove('live-penalty-preview-ready')
       current.form?.querySelector('[data-violation-reason-host="true"]')?.remove()
     }
-  }, [canEnterViolations, groupError, pastSubmitBusy, reasonGroups.date, reasonGroups.ready, reasonGroups.violations, role, user?.permissions?.leave_create, user?.registration_locked])
+  }, [canEnterViolations, error, groupError, pastSubmitBusy, preview, reasonGroups.date, reasonGroups.ready, reasonGroups.violations, role, user?.permissions?.leave_create, user?.registration_locked])
 
   useEffect(() => {
     if (!canEnterViolations || !selection.date) {
@@ -217,8 +229,6 @@ export default function LeaveRegistrationEnhancements({ user }) {
       })
       .catch((err) => {
         if (err?.name === 'AbortError') return
-        // Safe rollout: if the new backend endpoint is not deployed yet, keep
-        // the original reason dropdown visible instead of blocking registration.
         setReasonGroups({ date: selection.date, leave_reasons: [], violations: [], ready: false })
         setGroupError(err.message || 'Không tải được nhóm Lỗi vi phạm từ Nội quy.')
       })
@@ -344,7 +354,8 @@ export default function LeaveRegistrationEnhancements({ user }) {
       } catch (err) {
         if (err?.name !== 'AbortError') {
           setPreview(null)
-          setError(err.message || 'Không tính trước được mức phạt.')
+          if (isPreviewRolloutError(err)) setError('')
+          else setError(err.message || 'Không tính trước được mức phạt.')
         }
       } finally {
         if (!controller.signal.aborted) setBusy(false)
@@ -359,7 +370,8 @@ export default function LeaveRegistrationEnhancements({ user }) {
   return <>
     <style>{`
       .statistics-employee-search{display:none!important}
-      .registration-panel .leave-form>.info-box{display:none!important}
+      .registration-panel .leave-form>.info-box{display:block!important}
+      .registration-panel .leave-form.live-penalty-preview-ready>.info-box{display:none!important}
       .violation-original-hidden{display:none!important}
       .violation-reason-host,.violation-reason-controls{display:contents}
       .violation-reason-note{display:block;margin:-2px 0 2px;color:#68766f;font-size:11px;line-height:1.35}
@@ -419,7 +431,7 @@ export default function LeaveRegistrationEnhancements({ user }) {
                   Số ngày tính: <strong>{Number(preview.calculated_days || 0).toLocaleString('vi-VN')}</strong>
                   {preview.progressive && preview.ordinal ? <span className="ordinal">Người Thứ {preview.ordinal}</span> : null}
                   {preview.penalty !== null && preview.penalty !== undefined
-                    ? <> · Phạt dự kiến: <strong>{Number(preview.penalty || 0).toLocaleString('vi-VN')}đ</strong></>
+                    ? <> · Phạt vi phạm dự kiến: <strong>{Number(preview.penalty || 0).toLocaleString('vi-VN')}đ</strong></>
                     : null}
                 </div>
               : null}
