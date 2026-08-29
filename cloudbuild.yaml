@@ -26,7 +26,7 @@ steps:
   # Public Cloud Run ingress is required by GitHub Pages, but every business
   # endpoint validates the Supabase Bearer session before reading/writing data.
   # Payroll 3.8 wraps the former vera_web_v2_api_shared:app entrypoint and
-  # installs employee-specific deductions after shared leave validation.
+  # V3.9 installs the current leave/payroll policy on top of that shared API.
   # ============================================================
   - name: "gcr.io/cloud-builders/gcloud"
     id: "deploy-web-v2-api"
@@ -99,6 +99,31 @@ steps:
                 print(f'Payroll 3.8 health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
             time.sleep(5)
         raise SystemExit(f'Payroll 3.8 health check failed: {last}')
+        PY
+
+        echo "Health checking Policy V3.9: $${API_URL}/v2/policy-v39/health"
+        python3 - "$${API_URL}/v2/policy-v39/health" <<'PY'
+        import json, sys, time, urllib.request
+        url=sys.argv[1]
+        expected='3.9-policy-payroll-period'
+        last=None
+        for attempt in range(1,13):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as r:
+                    body=r.read(2048).decode('utf-8','replace')
+                    payload=json.loads(body)
+                    if (200 <= r.status < 300 and payload.get('ok') is True
+                            and payload.get('release') == expected
+                            and payload.get('payroll_sheet') == 'Sheet2'
+                            and int(payload.get('auto_penalty_minutes') or 0) == 5):
+                        print(body)
+                        raise SystemExit(0)
+                    last=RuntimeError(f'Unexpected V3.9 health payload: {body}')
+            except Exception as exc:
+                last=exc
+                print(f'V3.9 health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
+            time.sleep(5)
+        raise SystemExit(f'Policy V3.9 health check failed: {last}')
         PY
 
   # ============================================================
@@ -239,7 +264,7 @@ steps:
       - "--tasks=1"
       - "--parallelism=1"
       - "--command=python"
-      - "--args=auto_penalty_runtime_wrapper.py"
+      - "--args=auto_penalty_runtime_wrapper_v39.py"
       - "--set-env-vars=SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com,TIMESOFT_BASE_URL=https://vera.timesoft.vn,TIMESOFT_CHECKIN_PAGE_SIZE=100"
       - "--set-secrets=SMTP_APP_PASSWORD=vera-smtp-app-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
 
