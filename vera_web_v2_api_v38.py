@@ -7,6 +7,7 @@ import vera_web_v2_staff_status_sort as _staff_sort
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
+from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
 from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
@@ -164,6 +165,15 @@ install_admin_audit_archive_routes(
     identity_type=_api.Identity,
     leave_update_type=_api.LeaveUpdate,
     leave_delete_type=_api.LeaveDelete,
+)
+
+# Lễ tân policy is installed after the archive wrapper so the audited PATCH and
+# DELETE routes still delegate through the same canonical permission helpers.
+# The guard therefore blocks direct API calls as well as browser actions.
+install_letan_leave_guard(
+    _shared.app,
+    api_module=_api,
+    vn_tz=_api.VN_TZ,
 )
 
 # Install the one-device lease guard last so it protects all authenticated V2
