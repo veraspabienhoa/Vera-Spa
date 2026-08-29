@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import EmployeeIdentityPanel from './EmployeeIdentityPanel'
+import ShiftBreakSettingsPanel from './ShiftBreakSettingsPanel'
 
 export default function EmployeeManagementEnhancements({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const [target, setTarget] = useState(null)
   const [profileUser, setProfileUser] = useState('')
+  const [breakTarget, setBreakTarget] = useState(null)
 
   useEffect(() => {
     let cancelled = false
-    let ownedHost = null
+    let ownedSecurityHost = null
+    let ownedBreakHost = null
     let timer = null
 
     const synchronize = () => {
@@ -33,12 +36,32 @@ export default function EmployeeManagementEnhancements({ user }) {
         }
       }
 
+      // Admin-only break configuration is shown directly in NHÂN VIÊN, before
+      // the staff filters/table. It edits the exact shift settings consumed by
+      // CHẤM CÔNG, so there is only one source of truth.
+      const staffPage = document.querySelector('.staff-page')
+      const controlPanel = staffPage?.querySelector('.staff-control-panel')
+      if (isAdmin && staffPage && controlPanel) {
+        let host = staffPage.querySelector('[data-shift-break-settings-host="true"]')
+        if (!host) {
+          host = document.createElement('div')
+          host.dataset.shiftBreakSettingsHost = 'true'
+          staffPage.insertBefore(host, controlPanel)
+          ownedBreakHost = host
+        }
+        setBreakTarget((current) => current === host ? current : host)
+      } else {
+        if (ownedBreakHost?.isConnected) ownedBreakHost.remove()
+        ownedBreakHost = null
+        setBreakTarget(null)
+      }
+
       // Sensitive employee identity/password controls are available only to
       // Admin in DANH SÁCH NHÂN VIÊN. Employees manage their own CCCD from
       // HỒ SƠ & MẬT KHẨU instead.
       if (!isAdmin) {
-        if (ownedHost?.isConnected) ownedHost.remove()
-        ownedHost = null
+        if (ownedSecurityHost?.isConnected) ownedSecurityHost.remove()
+        ownedSecurityHost = null
         setTarget(null)
         setProfileUser('')
         return
@@ -52,8 +75,8 @@ export default function EmployeeManagementEnhancements({ user }) {
       const actions = grid?.querySelector('.staff-form-actions')
 
       if (!profilePanel || !grid || !actions || !username) {
-        if (ownedHost?.isConnected) ownedHost.remove()
-        ownedHost = null
+        if (ownedSecurityHost?.isConnected) ownedSecurityHost.remove()
+        ownedSecurityHost = null
         setTarget(null)
         setProfileUser('')
         return
@@ -65,7 +88,7 @@ export default function EmployeeManagementEnhancements({ user }) {
         host.dataset.staffSecurityHost = 'true'
         host.className = 'span-2'
         grid.insertBefore(host, actions)
-        ownedHost = host
+        ownedSecurityHost = host
       }
       setTarget((current) => current === host ? current : host)
       setProfileUser((current) => current === username ? current : username)
@@ -86,13 +109,17 @@ export default function EmployeeManagementEnhancements({ user }) {
       observer.disconnect()
       document.removeEventListener('change', schedule, true)
       document.removeEventListener('click', schedule, true)
-      if (ownedHost?.isConnected) ownedHost.remove()
+      if (ownedSecurityHost?.isConnected) ownedSecurityHost.remove()
+      if (ownedBreakHost?.isConnected) ownedBreakHost.remove()
     }
   }, [isAdmin])
 
-  if (!isAdmin || !target || !profileUser) return null
-  return createPortal(
-    <EmployeeIdentityPanel username={profileUser} allowPasswordReset />,
-    target,
-  )
+  if (!isAdmin) return null
+  return <>
+    {breakTarget && createPortal(<ShiftBreakSettingsPanel />, breakTarget)}
+    {target && profileUser && createPortal(
+      <EmployeeIdentityPanel username={profileUser} allowPasswordReset />,
+      target,
+    )}
+  </>
 }
