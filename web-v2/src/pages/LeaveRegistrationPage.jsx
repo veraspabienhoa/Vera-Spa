@@ -1,6 +1,7 @@
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
+import { numberInputDisplayValue } from '../lib/numberInput'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
 import {
   disablePushNotifications,
@@ -679,7 +680,7 @@ export default function LeaveRegistrationPage({ user }) {
                   type="number"
                   min="0"
                   step="1000"
-                  value={form.manual_penalty}
+                  value={numberInputDisplayValue(form.manual_penalty)}
                   onChange={(e) => setForm({ ...form, manual_penalty: e.target.value })}
                   placeholder="Nhập số tiền"
                   required

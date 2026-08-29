@@ -1,5 +1,6 @@
 import { CalendarDays, CircleDollarSign, ExternalLink, RefreshCw, Save, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -123,7 +124,7 @@ export default function RevenuePage() {
     </div>
 
     {canEditTip && <section className="revenue-tip-editor">
-      <label>TIỀN TIP TRONG KỲ<input type="number" min="0" step="1000" inputMode="numeric" value={tip} disabled={savingTip} onChange={(event) => setTip(event.target.value)} /></label>
+      <label>TIỀN TIP TRONG KỲ<input type="number" min="0" step="1000" inputMode="numeric" value={numberInputDisplayValue(tip)} disabled={savingTip} onChange={(event) => setTip(event.target.value)} /></label>
       <button type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>
       <small>Số tiền này được lưu theo kỳ Doanh thu hiện tại. Công thức Còn lại sẽ trừ Tiền TIP trong kỳ ngay sau khi lưu.</small>
     </section>}

@@ -1,6 +1,7 @@
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -143,7 +144,7 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
     <form className="payroll-obligation-form" onSubmit={addDebt}>
       <label>Loại nợ<select value={form.debt_type} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, debt_type: event.target.value })}><option>Âm thực nhận</option><option>Tạm hoãn vi phạm</option></select></label>
       <label>Nhân viên<input required list="payroll-admin-debt-employees" value={form.employee_name} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, employee_name: event.target.value })} /></label>
-      <label>Số tiền<input required type="number" min="1" inputMode="numeric" value={form.amount} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
+      <label>Số tiền<input required type="number" min="1" inputMode="numeric" value={numberInputDisplayValue(form.amount)} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
       <label>Kỳ phát sinh từ<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.period_start} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_start: event.target.value })} /></label>
       <label>Kỳ phát sinh đến<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.period_end} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_end: event.target.value })} /></label>
       <label>Bắt đầu trừ từ<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.due_from} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, due_from: event.target.value })} /></label>

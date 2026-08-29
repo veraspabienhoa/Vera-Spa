@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
+import { numberInputDisplayValue } from '../lib/numberInput'
 
 let nextRowId = 1
 const makeRows = (rows = []) => rows.map((values) => ({ id: `rule-${nextRowId++}`, values: { ...values } }))
@@ -290,11 +291,11 @@ export default function RulesPage() {
               <tr key={item.weekday}>
                 <td><strong>{item.weekday_label}</strong></td>
                 <td>{canEditDailyQuota
-                  ? <input type="number" min="0" max="100" inputMode="numeric" value={item.paid_limit} onChange={(event) => updateQuota(item.weekday, 'paid_limit', event.target.value)} aria-label={`Nghỉ CÓ phép ${item.weekday_label}`} />
+                  ? <input type="number" min="0" max="100" inputMode="numeric" value={numberInputDisplayValue(item.paid_limit)} onChange={(event) => updateQuota(item.weekday, 'paid_limit', event.target.value)} aria-label={`Nghỉ CÓ phép ${item.weekday_label}`} />
                   : <strong>{item.paid_limit}</strong>}
                 </td>
                 <td>{canEditDailyQuota
-                  ? <input type="number" min="0" max="100" inputMode="numeric" value={item.generated_limit} onChange={(event) => updateQuota(item.weekday, 'generated_limit', event.target.value)} aria-label={`Nghỉ phát sinh ${item.weekday_label}`} />
+                  ? <input type="number" min="0" max="100" inputMode="numeric" value={numberInputDisplayValue(item.generated_limit)} onChange={(event) => updateQuota(item.weekday, 'generated_limit', event.target.value)} aria-label={`Nghỉ phát sinh ${item.weekday_label}`} />
                   : <strong>{item.generated_limit}</strong>}
                 </td>
               </tr>

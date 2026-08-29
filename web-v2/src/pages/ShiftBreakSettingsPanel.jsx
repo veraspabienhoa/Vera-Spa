@@ -1,5 +1,6 @@
 import { Clock3, RefreshCw, Save } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -137,8 +138,8 @@ export default function ShiftBreakSettingsPanel() {
           {shifts.map((row) => <div className="shift-break-card" key={row.id}>
             <div><strong>{row.name || row.id}</strong><br /><small>{row.department}{row.start || row.end ? ` · ${row.start || '--:--'}–${row.end || '--:--'}` : ''}</small></div>
             <label className="shift-break-toggle"><input type="checkbox" checked={Boolean(row.enabled)} onChange={(event) => updateShift(row.id, 'enabled', event.target.checked)} /> Áp dụng nghỉ giữa ca</label>
-            <label className="shift-break-field">Thời lượng nghỉ (phút)<input type="number" min="0" max="360" step="5" value={row.duration_minutes ?? 0} onChange={(event) => updateShift(row.id, 'duration_minutes', event.target.value)} /></label>
-            <label className="shift-break-field">Khoảng gom FaceID (phút)<input type="number" min="1" max="60" step="1" value={row.faceid_cluster_minutes ?? 10} onChange={(event) => updateShift(row.id, 'faceid_cluster_minutes', event.target.value)} /></label>
+            <label className="shift-break-field">Thời lượng nghỉ (phút)<input type="number" min="0" max="360" step="5" value={numberInputDisplayValue(row.duration_minutes)} onChange={(event) => updateShift(row.id, 'duration_minutes', event.target.value)} /></label>
+            <label className="shift-break-field">Khoảng gom FaceID (phút)<input type="number" min="1" max="60" step="1" value={numberInputDisplayValue(row.faceid_cluster_minutes ?? 10)} onChange={(event) => updateShift(row.id, 'faceid_cluster_minutes', event.target.value)} /></label>
           </div>)}
           {!shifts.length && !loading && <div className="setup-note">Chưa có ca đang dùng để cài nghỉ giữa ca.</div>}
         </div>}
@@ -150,7 +151,7 @@ export default function ShiftBreakSettingsPanel() {
           {departments.map((row) => <div className="shift-break-card" key={row.department}>
             <strong>{row.department}</strong>
             <label className="shift-break-toggle"><input type="checkbox" checked={Boolean(row.enabled)} onChange={(event) => updateDepartment(row.department, 'enabled', event.target.checked)} /> Áp dụng mặc định</label>
-            <label className="shift-break-field">Thời lượng nghỉ (phút)<input type="number" min="0" max="360" step="5" value={row.duration_minutes ?? 0} onChange={(event) => updateDepartment(row.department, 'duration_minutes', event.target.value)} /></label>
+            <label className="shift-break-field">Thời lượng nghỉ (phút)<input type="number" min="0" max="360" step="5" value={numberInputDisplayValue(row.duration_minutes)} onChange={(event) => updateDepartment(row.department, 'duration_minutes', event.target.value)} /></label>
           </div>)}
         </div>
       </details>

@@ -4,6 +4,7 @@ import PayrollPage from './PayrollPageEnhanced'
 import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
 import PayrollSavedAdminPanel from './PayrollSavedAdminPanel'
 import PayrollTimesoftAutoLoader from './PayrollTimesoftAutoLoader'
+import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -200,8 +201,8 @@ export default function PayrollPageV38({ user }) {
         {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
 
         <div className="payroll-config-grid">
-          <label>Chi phí sinh hoạt riêng<input type="number" min="0" inputMode="numeric" disabled={Boolean(busy)} value={living} onChange={(event) => setLiving(Number(event.target.value))} /></label>
-          <label>Hỗ trợ Locker riêng<input type="number" min="0" inputMode="numeric" disabled={Boolean(busy)} value={locker} onChange={(event) => setLocker(Number(event.target.value))} /></label>
+          <label>Chi phí sinh hoạt riêng<input type="number" min="0" inputMode="numeric" disabled={Boolean(busy)} value={numberInputDisplayValue(living)} onChange={(event) => setLiving(Number(event.target.value))} /></label>
+          <label>Hỗ trợ Locker riêng<input type="number" min="0" inputMode="numeric" disabled={Boolean(busy)} value={numberInputDisplayValue(locker)} onChange={(event) => setLocker(Number(event.target.value))} /></label>
           <div><strong>Đã chọn: {selected.length}</strong><small style={{ display: 'block', marginTop: 6 }}>Mặc định hiện tại: {money(data.config?.default_living_expense)} / {money(data.config?.default_locker_support)}</small></div>
         </div>
 
