@@ -3,6 +3,7 @@ import AppShell from './components/AppShell'
 import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
 import LoginPage from './pages/LoginPage'
 import LeaveListPersonalStats from './pages/LeaveListPersonalStats'
+import LeaveListTypeColumn from './pages/LeaveListTypeColumn'
 import LeaveRegistrationEnhancements from './pages/LeaveRegistrationEnhancements'
 import EmployeeManagementEnhancements from './pages/EmployeeManagementEnhancements'
 import { veraApi } from './lib/api'
@@ -166,6 +167,7 @@ export default function App() {
           <LeaveRegistrationPage user={shellUser} />
           <LeaveRegistrationEnhancements user={shellUser} />
           <LeaveListPersonalStats user={shellUser} />
+          <LeaveListTypeColumn />
         </>}
         {page === 'long-leave' && <>
           {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
