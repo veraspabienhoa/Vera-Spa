@@ -5,10 +5,12 @@ import vera_web_v2_api_shared as _shared
 import vera_web_v2_admin_audit_archive as _audit_archive
 import vera_web_v2_staff_status_sort as _staff_sort
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
+from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
 from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
+from vera_web_v2_operations_v41 import install_operations_v41
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
 from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
 from vera_web_v2_payroll_saved_edit import install_payroll_saved_edit_routes
@@ -61,7 +63,22 @@ install_revenue_leave_list_routes(
     google_client=_api._google_client,
 )
 
+# Operations 4.1 replaces Chấm công display/export routes and adds filtered
+# Thay đổi hệ thống export. Install before the single-device wrapper so the
+# new routes receive the same session/device protection as the rest of Web V2.
+install_operations_v41(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    identity_type=_api.Identity,
+)
+
 install_single_device_guard(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+
+# Every .xlsx response is normalized centrally: colored header, freeze pane,
+# AutoFilter and AutoFit. This covers current and future Web V2 exports.
+install_excel_export_style(_shared.app)
 
 app = _shared.app
 app.version = PAYROLL_V38_RELEASE
