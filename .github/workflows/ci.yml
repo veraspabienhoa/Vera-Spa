@@ -616,6 +616,7 @@ jobs:
           payroll_v38 = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
           payroll_timesoft = Path('vera_web_v2_payroll_timesoft_auto.py').read_text(encoding='utf-8')
           timesoft_job = Path('timesoft_sync_job.py').read_text(encoding='utf-8')
+          build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
           payroll_v38_page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
           api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
