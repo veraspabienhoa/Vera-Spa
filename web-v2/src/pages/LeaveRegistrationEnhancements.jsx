@@ -5,6 +5,19 @@ import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const VIOLATION_ENTRY_ROLES = new Set(['admin', 'quanly', 'letan'])
+const PAST_VIOLATION_ROLES = new Set(['quanly', 'letan'])
+
+function todayInput() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function isPastDate(value) {
+  return Boolean(value && value < todayInput())
+}
 
 function readRegistrationForm() {
   const form = document.querySelector('.registration-panel .leave-form')
@@ -17,16 +30,22 @@ function readRegistrationForm() {
   const reasonLabel = form
     ? Array.from(form.querySelectorAll('label')).find((label) => String(label.textContent || '').trim() === 'Lý do nghỉ') || null
     : null
-  const manual = form?.querySelector('input[type="number"]')?.value || ''
+  const manualInput = form?.querySelector('input[type="number"]') || null
+  const detailInput = form?.querySelector('textarea') || null
+  const submitButton = form?.querySelector('button[type="submit"]') || null
   return {
     form,
     employeeSelect,
     reasonSelect,
     reasonLabel,
+    manualInput,
+    detailInput,
+    submitButton,
     date: viewedDate?.value || '',
     employee: employeeSelect?.value || '',
     reason: reasonSelect?.value || '',
-    manual,
+    manual: manualInput?.value || '',
+    detail: detailInput?.value || '',
   }
 }
 
@@ -62,6 +81,16 @@ function setNativeSelectValue(select, value) {
   select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function setNativeControlValue(control, value) {
+  if (!control) return
+  const prototype = control instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+  if (setter) setter.call(control, value)
+  else control.value = value
+  control.dispatchEvent(new Event('input', { bubbles: true }))
+  control.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
 export default function LeaveRegistrationEnhancements({ user }) {
   const role = String(user?.role || '').trim().toLowerCase()
   const canEnterViolations = VIOLATION_ENTRY_ROLES.has(role)
@@ -73,6 +102,8 @@ export default function LeaveRegistrationEnhancements({ user }) {
   const [preview, setPreview] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pastSubmitBusy, setPastSubmitBusy] = useState(false)
+  const [pastSubmitNotice, setPastSubmitNotice] = useState(null)
 
   useEffect(() => {
     let timer = null
@@ -120,6 +151,23 @@ export default function LeaveRegistrationEnhancements({ user }) {
       if (anchor.nextElementSibling !== nextPreviewHost) anchor.insertAdjacentElement('afterend', nextPreviewHost)
       setPreviewHost((old) => old === nextPreviewHost ? old : nextPreviewHost)
 
+      const isPastViolation = PAST_VIOLATION_ROLES.has(role)
+        && isPastDate(current.date)
+        && reasonGroups.violations.some((item) => item.name === current.reason)
+      current.form.classList.toggle('past-violation-entry-enabled', isPastViolation)
+      if (current.submitButton) {
+        if (isPastViolation) {
+          current.submitButton.dataset.pastViolationEntry = 'true'
+          current.submitButton.disabled = pastSubmitBusy
+        } else if (current.submitButton.dataset.pastViolationEntry === 'true') {
+          delete current.submitButton.dataset.pastViolationEntry
+          current.submitButton.disabled = !apiBase
+            || user?.permissions?.leave_create === false
+            || Boolean(user?.registration_locked)
+            || (role !== 'admin' && isPastDate(current.date))
+        }
+      }
+
       setSelection((old) => {
         const next = { date: current.date, employee: current.employee, reason: current.reason, manual: current.manual }
         return JSON.stringify(old) === JSON.stringify(next) ? old : next
@@ -144,9 +192,10 @@ export default function LeaveRegistrationEnhancements({ user }) {
       current.reasonSelect?.classList.remove('violation-original-hidden')
       if (current.reasonSelect) current.reasonSelect.required = true
       current.reasonLabel?.classList.remove('violation-original-hidden')
+      current.form?.classList.remove('past-violation-entry-enabled')
       current.form?.querySelector('[data-violation-reason-host="true"]')?.remove()
     }
-  }, [canEnterViolations, groupError, reasonGroups.date, reasonGroups.ready])
+  }, [canEnterViolations, groupError, pastSubmitBusy, reasonGroups.date, reasonGroups.ready, reasonGroups.violations, role, user?.permissions?.leave_create, user?.registration_locked])
 
   useEffect(() => {
     if (!canEnterViolations || !selection.date) {
@@ -186,19 +235,93 @@ export default function LeaveRegistrationEnhancements({ user }) {
   )
   const selectedViolation = violationNames.has(selection.reason) ? selection.reason : ''
   const selectedLeave = leaveNames.has(selection.reason) ? selection.reason : ''
+  const canBackfillPastViolation = PAST_VIOLATION_ROLES.has(role) && isPastDate(selection.date) && Boolean(selectedViolation)
 
   const chooseReason = (value) => {
+    setPastSubmitNotice(null)
     const current = readRegistrationForm()
     setNativeSelectValue(current.reasonSelect, value)
   }
 
+  useEffect(() => {
+    const current = readRegistrationForm()
+    const form = current.form
+    if (!form) return undefined
+
+    const handlePastViolationSubmit = async (event) => {
+      const latest = readRegistrationForm()
+      const isPastViolation = PAST_VIOLATION_ROLES.has(role)
+        && isPastDate(latest.date)
+        && violationNames.has(latest.reason)
+      if (!isPastViolation) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation()
+      if (pastSubmitBusy) return
+
+      setPastSubmitNotice(null)
+      if (!apiBase || user?.permissions?.leave_create === false || user?.registration_locked) {
+        setPastSubmitNotice({ type: 'error', message: 'Tài khoản hiện tại chưa được phép ghi lịch nghỉ.' })
+        return
+      }
+      if (!latest.employee || !latest.reason || !latest.date) {
+        setPastSubmitNotice({ type: 'error', message: 'Vui lòng chọn đầy đủ nhân viên, lỗi vi phạm và ngày.' })
+        return
+      }
+
+      const violationItem = reasonGroups.violations.find((item) => item.name === latest.reason)
+      if (violationItem?.requires_manual_penalty && latest.manual === '') {
+        setPastSubmitNotice({ type: 'error', message: 'Lỗi vi phạm này bắt buộc nhập Mức phạt vi phạm.' })
+        return
+      }
+
+      const body = {
+        leave_date: latest.date,
+        employee_name: latest.employee,
+        leave_reason: latest.reason,
+        detail: latest.detail || '',
+      }
+      if (latest.manual !== '') body.manual_penalty = Number(latest.manual)
+
+      setPastSubmitBusy(true)
+      try {
+        const result = await authenticatedJson('/v2/leave/records', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        })
+        setPastSubmitNotice({
+          type: 'success',
+          message: `Đã ghi lỗi vi phạm ngày ${latest.date.split('-').reverse().join('/')} THÀNH CÔNG.`,
+        })
+        setNativeSelectValue(latest.reasonSelect, '')
+        setNativeControlValue(latest.detailInput, '')
+        setNativeControlValue(latest.manualInput, '')
+        window.setTimeout(() => {
+          document.querySelector('.page-heading-row .secondary-button')?.click()
+        }, 80)
+        if (Array.isArray(result?.warnings) && result.warnings.length) {
+          setPastSubmitNotice({ type: 'success', message: `Đã ghi THÀNH CÔNG · ${result.warnings.join(' · ')}` })
+        }
+      } catch (err) {
+        setPastSubmitNotice({ type: 'error', message: `KHÔNG THÀNH CÔNG (${err.message || 'Không ghi được lỗi vi phạm.'})` })
+      } finally {
+        setPastSubmitBusy(false)
+      }
+    }
+
+    form.addEventListener('submit', handlePastViolationSubmit, true)
+    return () => form.removeEventListener('submit', handlePastViolationSubmit, true)
+  }, [pastSubmitBusy, reasonGroups.violations, role, user?.permissions?.leave_create, user?.registration_locked, violationNames])
+
   const requestBody = useMemo(() => {
     if (!selection.date || !selection.employee || !selection.reason) return null
+    const current = readRegistrationForm()
     const body = {
       leave_date: selection.date,
       employee_name: selection.employee,
       leave_reason: selection.reason,
-      detail: '',
+      detail: current.detail || '',
     }
     if (selection.manual !== '') body.manual_penalty = Number(selection.manual)
     return body
@@ -245,8 +368,11 @@ export default function LeaveRegistrationEnhancements({ user }) {
       .live-penalty-preview strong{color:#10251e}
       .live-penalty-preview .ordinal{display:inline-flex;margin-left:5px;padding:2px 7px;border-radius:999px;background:#fff1d7;color:#78551d;font-size:11px;font-weight:900}
       .live-penalty-preview.loading{display:flex;align-items:center;gap:7px;color:#66746d}
-      .live-penalty-preview.error{border-color:#efd8a4;background:#fff8e8;color:#75561e}
-      @media(max-width:820px){.live-penalty-preview{padding:8px 9px;font-size:11px}.live-penalty-preview .ordinal{font-size:9px}.violation-reason-note{font-size:10px}}
+      .live-penalty-preview.error,.past-violation-submit-notice.error{border-color:#efd8a4;background:#fff8e8;color:#75561e}
+      .past-violation-entry-note{margin-top:6px;padding:8px 10px;border:1px solid #d7e5dc;border-radius:9px;background:#f1f8f4;color:#2d5945;font-size:11px;font-weight:700}
+      .past-violation-submit-notice{margin-top:6px;padding:8px 10px;border:1px solid #cfe5d7;border-radius:9px;background:#eff9f2;color:#23643f;font-size:11px;font-weight:800}
+      .leave-form.past-violation-entry-enabled button[type="submit"]{opacity:1!important;cursor:pointer!important}
+      @media(max-width:820px){.live-penalty-preview{padding:8px 9px;font-size:11px}.live-penalty-preview .ordinal{font-size:9px}.violation-reason-note,.past-violation-entry-note,.past-violation-submit-notice{font-size:10px}}
     `}</style>
 
     {reasonHost && reasonGroups.ready && createPortal(
@@ -279,19 +405,25 @@ export default function LeaveRegistrationEnhancements({ user }) {
     )}
 
     {previewHost && createPortal(
-      !selection.reason ? null : busy
-        ? <div className="live-penalty-preview loading"><LoaderCircle className="spin" size={15} /> Đang tính đúng mức Người Thứ N…</div>
-        : error
-          ? <div className="live-penalty-preview error">{error}</div>
-          : preview
-            ? <div className="live-penalty-preview">
-                Số ngày tính: <strong>{Number(preview.calculated_days || 0).toLocaleString('vi-VN')}</strong>
-                {preview.progressive && preview.ordinal ? <span className="ordinal">Người Thứ {preview.ordinal}</span> : null}
-                {preview.penalty !== null && preview.penalty !== undefined
-                  ? <> · Phạt dự kiến: <strong>{Number(preview.penalty || 0).toLocaleString('vi-VN')}đ</strong></>
-                  : null}
-              </div>
-            : null,
+      <>
+        {canBackfillPastViolation && (
+          <div className="past-violation-entry-note">Quản lý/Lễ tân được nhập lỗi vi phạm cho ngày quá khứ. Các lý do nghỉ khác vẫn bị khóa.</div>
+        )}
+        {pastSubmitNotice && <div className={`past-violation-submit-notice ${pastSubmitNotice.type}`}>{pastSubmitNotice.message}</div>}
+        {!selection.reason ? null : busy
+          ? <div className="live-penalty-preview loading"><LoaderCircle className="spin" size={15} /> Đang tính đúng mức Người Thứ N…</div>
+          : error
+            ? <div className="live-penalty-preview error">{error}</div>
+            : preview
+              ? <div className="live-penalty-preview">
+                  Số ngày tính: <strong>{Number(preview.calculated_days || 0).toLocaleString('vi-VN')}</strong>
+                  {preview.progressive && preview.ordinal ? <span className="ordinal">Người Thứ {preview.ordinal}</span> : null}
+                  {preview.penalty !== null && preview.penalty !== undefined
+                    ? <> · Phạt dự kiến: <strong>{Number(preview.penalty || 0).toLocaleString('vi-VN')}đ</strong></>
+                    : null}
+                </div>
+              : null}
+      </>,
       previewHost,
     )}
   </>
