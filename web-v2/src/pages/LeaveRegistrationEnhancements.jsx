@@ -117,7 +117,7 @@ export default function LeaveRegistrationEnhancements({ user }) {
         nextPreviewHost.dataset.livePenaltyPreview = 'true'
       }
       const anchor = nextReasonHost || current.reasonSelect
-      anchor.insertAdjacentElement('afterend', nextPreviewHost)
+      if (anchor.nextElementSibling !== nextPreviewHost) anchor.insertAdjacentElement('afterend', nextPreviewHost)
       setPreviewHost((old) => old === nextPreviewHost ? old : nextPreviewHost)
 
       setSelection((old) => {
