@@ -99,7 +99,7 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
       @media(max-width:700px){.profile-completion-reminder{display:grid;grid-template-columns:auto 1fr}.profile-completion-reminder-actions{grid-column:1/-1}.profile-completion-reminder-actions button{flex:1}}
     `}</style>
     <AlertTriangle size={18} />
-    <div className="profile-completion-reminder-content"><strong>HỒ SƠ CHƯA ĐẦY ĐỦ</strong><p>Còn thiếu: {text}. Hệ thống không tính “Thay đổi mật khẩu / Mật khẩu mới” là hồ sơ bắt buộc.</p></div>
+    <div className="profile-completion-reminder-content"><strong>HỒ SƠ CHƯA ĐẦY ĐỦ</strong><p>Còn thiếu: {text}.</p></div>
     <div className="profile-completion-reminder-actions">
       <button type="button" className="primary-button compact" onClick={onOpenProfile}><UserRoundPen size={14}/> Cập nhật hồ sơ</button>
       <button type="button" className="secondary-button compact" onClick={() => setDismissed(true)}><X size={14}/> Đóng</button>
