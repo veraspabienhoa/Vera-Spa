@@ -99,7 +99,11 @@ export default function App() {
     <AppShell user={shellUser} currentPage={page} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
         {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
-        {page === 'long-leave' && <><LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} /><LongLeaveSection key={longLeaveRevision} user={shellUser} /></>}
+        {page === 'long-leave' && <>
+          {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
+          <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
+          <LongLeaveSection key={longLeaveRevision} user={shellUser} />
+        </>}
         {page === 'employees' && <><EmployeePage user={shellUser} /><EmployeeManagementEnhancements user={shellUser} /></>}
         {page === 'rules' && <><RulesPage user={shellUser} /><LetanLeavePolicyRules /></>}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
