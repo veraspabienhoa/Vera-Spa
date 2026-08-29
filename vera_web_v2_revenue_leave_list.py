@@ -14,7 +14,7 @@ from sqlalchemy import text
 import vera_web_v2_permissions as permissions
 
 
-RELEASE = "revenue-leave-list-2026-08-29.3-tip"
+RELEASE = "revenue-leave-list-2026-08-29.4-input-current-date"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_TIP_SETTING = "current_period_tip"
@@ -32,6 +32,10 @@ REVENUE_ENTRY_FORM_URL = os.getenv(
     "https://docs.google.com/forms/d/e/1FAIpQLSeJp1bLrl8zSyESu_K0eo6NxdKsm85p4fxGXPXigPlmgkAs7w/viewform",
 )
 VN_TZ = timezone(timedelta(hours=7))
+REVENUE_CURRENT_DATE_COLUMN_INDEX = 4  # Sheet Input, column E.
+DATE_IN_TEXT_RE = re.compile(
+    r"(?<!\d)(\d{1,2})\s*([./-])\s*(\d{1,2})\s*\2\s*(\d{4})(?!\d)"
+)
 
 
 class RevenueTipUpdate(BaseModel):
@@ -73,17 +77,28 @@ def _money(value: Any) -> float:
         return 0.0
 
 
+def _dates_in_text(value: Any) -> list[date]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    parsed_dates: list[date] = []
+    for match in DATE_IN_TEXT_RE.finditer(raw):
+        try:
+            parsed_dates.append(date(int(match.group(4)), int(match.group(3)), int(match.group(1))))
+        except (TypeError, ValueError):
+            pass
+    return parsed_dates
+
+
 def _parse_date(value: Any) -> date | None:
     raw = str(value or "").strip()
     if not raw:
         return None
-    raw = raw.split(" ", 1)[0]
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-        try:
-            return datetime.strptime(raw, fmt).date()
-        except ValueError:
-            continue
-    return None
+    try:
+        return datetime.strptime(raw.split(" ", 1)[0], "%Y-%m-%d").date()
+    except ValueError:
+        parsed_dates = _dates_in_text(raw)
+        return parsed_dates[0] if parsed_dates else None
 
 
 def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dict[str, Any]:
@@ -104,7 +119,10 @@ def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dic
     income = expense = 0.0
     transaction_count = 0
     transaction_dates: list[date] = []
+    input_column_e_dates: list[date] = []
     for row in values[1:]:
+        if REVENUE_CURRENT_DATE_COLUMN_INDEX < len(row):
+            input_column_e_dates.extend(_dates_in_text(row[REVENUE_CURRENT_DATE_COLUMN_INDEX]))
         tx_type = norm(row[type_index] if type_index < len(row) else "")
         if tx_type not in {"thu", "chi"}:
             continue
@@ -120,7 +138,15 @@ def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dic
                 transaction_dates.append(parsed)
 
     start_date = min(transaction_dates) if transaction_dates else None
-    current_date = datetime.now(VN_TZ).date()
+    if input_column_e_dates:
+        current_date = max(input_column_e_dates)
+        current_date_source = "input_column_e"
+    elif transaction_dates:
+        current_date = max(transaction_dates)
+        current_date_source = "transaction_date_fallback"
+    else:
+        current_date = datetime.now(VN_TZ).date()
+        current_date_source = "server_date_fallback"
     return {
         "total_income": round(income, 2),
         "total_expense": round(expense, 2),
@@ -129,6 +155,7 @@ def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dic
         "current_date": current_date.isoformat(),
         "start_date_label": start_date.strftime("%d/%m/%Y") if start_date else "—",
         "current_date_label": current_date.strftime("%d/%m/%Y"),
+        "current_date_source": current_date_source,
     }
 
 
@@ -233,6 +260,7 @@ def install_revenue_leave_list_routes(
             "release": RELEASE,
             "worksheet": REVENUE_WORKSHEET,
             "period_metadata": True,
+            "current_date_source": "Input!E:E latest parsed date",
             "period_tip": True,
             "balance_formula": "total_income-total_expense-period_tip",
             "entry_form": True,
