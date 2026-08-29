@@ -1,4 +1,4 @@
-import { Activity, Cake, CalendarDays, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
 
@@ -7,6 +7,7 @@ const items = [
   { id: 'tour', label: 'Bảng tua', icon: Compass, ready: true, permission: 'tour' },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'payroll', label: 'Bảng lương', icon: WalletCards, ready: true, permission: 'payroll_history' },
+  { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
   { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
@@ -55,12 +56,8 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
         <div className="brand-block">
           <div className="brand-mark">VERA</div>
-          <div>
-            <div className="brand-name">SPA</div>
-          </div>
-          <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Đóng menu">
-            <X size={20} />
-          </button>
+          <div><div className="brand-name">SPA</div></div>
+          <button className="mobile-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Đóng menu"><X size={20} /></button>
         </div>
 
         <div className="menu-caption">MENU</div>
@@ -72,15 +69,8 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
             if (anyPermission && !anyPermission.some((key) => user?.permissions?.[key] === true)) return false
             return true
           }).map(({ id, label, icon: Icon, ready }) => (
-            <button
-              key={id}
-              className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`}
-              onClick={() => choose(id, ready)}
-              title={ready ? label : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}
-            >
-              <Icon size={19} />
-              <span>{label}</span>
-              {!ready && <span className="soon-pill">Sau</span>}
+            <button key={id} className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`} onClick={() => choose(id, ready)} title={ready ? label : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}>
+              <Icon size={19} /><span>{label}</span>{!ready && <span className="soon-pill">Sau</span>}
             </button>
           ))}
         </nav>
@@ -88,10 +78,7 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
         <div className="sidebar-footer">
           <div className="user-card">
             <div className="avatar">{(user?.email || 'V')[0].toUpperCase()}</div>
-            <div className="user-copy">
-              <strong>{user?.user_metadata?.full_name || user?.email || 'Nhân viên VERA'}</strong>
-              <span>{user?.role ? `Vai trò: ${user.role}` : 'Đang đăng nhập'}</span>
-            </div>
+            <div className="user-copy"><strong>{user?.user_metadata?.full_name || user?.email || 'Nhân viên VERA'}</strong><span>{user?.role ? `Vai trò: ${user.role}` : 'Đang đăng nhập'}</span></div>
           </div>
           <button className="signout-button" onClick={onSignOut}><LogOut size={18} /> Đăng xuất</button>
         </div>
@@ -101,16 +88,9 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
 
       <main className="main-area">
         <header className="topbar">
-          <button className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu">
-            <Menu size={22} />
-          </button>
-          <div>
-            <div className="topbar-kicker">VERA SPA</div>
-            <div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div>
-          </div>
-          <button type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại">
-            <RefreshCw size={15} /> Làm mới
-          </button>
+          <button className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu"><Menu size={22} /></button>
+          <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
+          <button type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /> Làm mới</button>
         </header>
         <div className="page-wrap">
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
