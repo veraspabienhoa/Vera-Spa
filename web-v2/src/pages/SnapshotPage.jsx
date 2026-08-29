@@ -27,12 +27,6 @@ const rangeFor = (filter) => {
 const FILTERS = ['Hôm Qua', 'Hôm nay', 'Tuần Trước', 'Tuần này', 'Tháng trước', 'Tháng này', 'Tùy chỉnh']
 const emptyFilters = { employee: '', department: '', shift: '' }
 
-const breakLabel = (item) => {
-  if (!item.break_enabled) return 'Không áp dụng'
-  if (item.break_detail) return item.break_detail
-  return 'Chưa ghi nhận FaceID nghỉ'
-}
-
 async function authHeaders() {
   const session = await getCurrentSession()
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
@@ -126,7 +120,7 @@ export default function SnapshotPage({ user }) {
       .attendance-search-actions{display:flex;gap:7px}.attendance-date-custom{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
       @media(max-width:820px){.attendance-search-grid{grid-template-columns:1fr}.attendance-search-actions{width:100%}.attendance-search-actions button{flex:1}.attendance-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.attendance-filter-buttons button:last-child{grid-column:1/-1}}
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>Dữ liệu chấm công, nghỉ giữa ca và FaceID được đồng bộ vào PostgreSQL. Trang này không hiển thị doanh thu.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
+    <div className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>Dữ liệu chấm công TimeSoft được đồng bộ vào PostgreSQL. Danh sách chỉ hiển thị Nhân viên và Leader.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
     {error && <div className="error-box">{error}</div>}
 
     <section className="panel data-toolbar attendance-toolbar">
@@ -148,6 +142,6 @@ export default function SnapshotPage({ user }) {
       {user?.permissions?.snapshot_export && <button className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button>}
     </section>
 
-    <section className="panel"><div className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{records.length} bản ghi · {start} → {end}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div><div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Bộ phận</th><th>Ca</th><th>Giờ vào</th><th>Giờ ra</th><th>Nghỉ giữa ca</th><th>Trạng thái</th><th>Trễ</th><th>Về sớm</th></tr></thead><tbody>{records.map((item, index) => <tr key={`${item.date}-${item.employee_code}-${item.check_in}-${index}`}><td>{item.date}</td><td><strong>{item.employee_name}</strong><small>{item.employee_code}</small></td><td>{item.break_department || '—'}</td><td>{item.shift}<small>{item.shift_start} – {item.shift_end}</small></td><td>{item.check_in || '—'}</td><td>{item.check_out || '—'}</td><td><strong>{item.break_enabled ? `${item.break_planned_minutes || 0} phút` : '—'}</strong><small>{breakLabel(item)}</small>{item.break_detail && <small>Thực tế: {item.break_actual_minutes || 0} phút · {item.break_status}</small>}</td><td>{item.arrival_status}<small>{item.departure_status}</small></td><td>{item.late_minutes} phút</td><td>{item.early_minutes} phút</td></tr>)}</tbody></table></div>{!records.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
+    <section className="panel"><div className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{records.length} bản ghi · {start} → {end}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div><div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Bộ phận</th><th>Ca</th><th>Giờ vào</th><th>Giờ ra</th><th>Trạng thái</th><th>Trễ</th><th>Về sớm</th></tr></thead><tbody>{records.map((item, index) => <tr key={`${item.date}-${item.employee_code}-${item.check_in}-${index}`}><td>{item.date}</td><td><strong>{item.employee_name}</strong><small>{item.employee_code}</small></td><td>{item.break_department || '—'}</td><td>{item.shift}<small>{item.shift_start} – {item.shift_end}</small></td><td>{item.check_in || '—'}</td><td>{item.check_out || '—'}</td><td>{item.arrival_status}<small>{item.departure_status}</small></td><td>{item.late_minutes} phút</td><td>{item.early_minutes} phút</td></tr>)}</tbody></table></div>{!records.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
   </div>
 }
