@@ -133,7 +133,7 @@ def install_shift_break_admin_routes(
     *,
     engine_instance: Callable[[], Any],
     current_identity,
-    identity_type,
+    identity_type=None,
 ) -> None:
     if getattr(app.state, "shift_break_admin_installed", False):
         return
@@ -143,7 +143,7 @@ def install_shift_break_admin_routes(
             raise HTTPException(403, "Chỉ Admin được cài đặt nghỉ giữa ca.")
 
     @app.get("/v2/staff/shift-break-settings")
-    def get_shift_break_settings(ident: identity_type = Depends(current_identity)):
+    def get_shift_break_settings(ident=Depends(current_identity)):
         ensure_admin(ident)
         with engine_instance().connect() as conn:
             definitions = _as_list(_setting(conn, "shift_definitions", []))
@@ -156,7 +156,7 @@ def install_shift_break_admin_routes(
         }
 
     @app.put("/v2/staff/shift-break-settings")
-    def put_shift_break_settings(body: ShiftBreakUpdate, ident: identity_type = Depends(current_identity)):
+    def put_shift_break_settings(body: ShiftBreakUpdate, ident=Depends(current_identity)):
         ensure_admin(ident)
         actor = str(getattr(ident, "employee_username", "") or getattr(ident, "email", "") or "admin")
         shift_updates = {row.id: row for row in body.shifts}
