@@ -150,7 +150,11 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          from vera_leave_registration_shared import summarize_leave_day
+          from vera_leave_registration_shared import (
+              count_unique_leave_people,
+              summarize_leave_day,
+              summarize_leave_days,
+          )
 
           rows = []
           for index in range(1, 5):
@@ -189,11 +193,34 @@ jobs:
           if actual != expected:
               raise SystemExit(f'Coverage summary mismatch: {actual} != {expected}')
 
+          quota_rows = [
+              {'employee_name': 'An', 'leave_reason': 'Nghỉ CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 0.5},
+              {'employee_name': 'An', 'leave_reason': 'Nghỉ CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 1},
+              {'employee_name': 'Bình', 'leave_reason': 'Nghỉ CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 1},
+          ]
+          quota_actual = count_unique_leave_people(quota_rows)
+          quota_expected = {'total_leave': 2, 'paid': 2, 'generated': 0, 'unpaid': 0}
+          if quota_actual != quota_expected:
+              raise SystemExit(f'Unique-person quota mismatch: {quota_actual} != {quota_expected}')
+
+          personal_rows = [
+              {'leave_reason': 'Nghỉ CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 1},
+              {'leave_reason': 'Nghỉ CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 1},
+              {'leave_reason': 'Nghỉ CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 1},
+              {'leave_reason': 'Nghỉ CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 1},
+              {'leave_reason': 'Về sớm CÓ phép', 'leave_type': 'CÓ phép', 'calculated_days': 0.5},
+          ]
+          personal_actual = summarize_leave_days(personal_rows)
+          if personal_actual['total_leave'] != 4.5 or personal_actual['paid'] != 4.5:
+              raise SystemExit(f'Actual-day summary must preserve 0.5 days: {personal_actual}')
+
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
           permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           shared_api = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
           login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
           leave_page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
+          leave_day_stats_api = Path('vera_web_v2_leave_day_stats.py').read_text(encoding='utf-8')
+          api_entrypoint = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
           web_styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
           hardening = Path('web-v2/supabase_web_v2_pilot_hardening.sql').read_text(encoding='utf-8')
@@ -202,6 +229,8 @@ jobs:
           leave_watch_sql = Path('vera_postgres_phase18_leave_watch.sql').read_text(encoding='utf-8')
           push_sql = Path('vera_postgres_phase19_web_push.sql').read_text(encoding='utf-8')
           api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
+          leave_list_stats = Path('web-v2/src/pages/LeaveListPersonalStats.jsx').read_text(encoding='utf-8')
+          leave_stats_helper = Path('web-v2/src/lib/leaveStats.js').read_text(encoding='utf-8')
           push_client = Path('web-v2/src/lib/pushNotifications.js').read_text(encoding='utf-8')
           service_worker = Path('web-v2/public/sw.js').read_text(encoding='utf-8')
           manifest = Path('web-v2/public/manifest.webmanifest').read_text(encoding='utf-8')
@@ -232,6 +261,10 @@ jobs:
               'Web V2 daily list contains detail column': '<th>Chi tiết</th>' in leave_page and "item.detail || '—'" in leave_page,
               'Web V2 leave list contains weekday column': '<col className="leave-col-weekday" />' in leave_page and '<th>Ngày</th><th>Thứ</th><th>Nhân viên</th>' in leave_page and 'item.weekday_label || weekdayForDate(item.leave_date)' in leave_page,
               'Web V2 daily quota comes from PostgreSQL': "setting_key='daily_quota'" in api and 'paid_full' in api,
+              'Web V2 daily quota counts unique employees': 'count_unique_leave_people(bucket["rows"])' in leave_day_stats_api and 'grouped_employees[policy_group].add(employee_key)' in Path('vera_leave_registration_shared.py').read_text(encoding='utf-8'),
+              'Web V2 list statistics sums actual calculated days': '@app.get("/v2/leave/list-stats")' in leave_day_stats_api and 'summarize_leave_days(rows)' in leave_day_stats_api and 'veraApi.leaveListStats' in leave_list_stats and 'summary.total_leave += days' in leave_stats_helper,
+              'Web V2 installs separated leave statistics routes': 'install_leave_day_stats_routes(' in api_entrypoint and 'LEAVE_DAY_STATS_RELEASE' in leave_day_stats_api,
+              'Web V2 clears stale list statistics before changing employees': 'requestRevisionRef.current += 1' in leave_list_stats and 'setSummary(emptyLeaveDaySummary())' in leave_list_stats,
               'Web V2 daily summary only highlights full paid quota': 'paid-limit-full' in leave_page and 'day.generated_full' not in leave_page,
               'Web V2 daily summary fits all role columns': 'colSpan={canViewPenalty ? 7 : 6}' in leave_page and 'with-penalty' in leave_page and 'without-penalty' in leave_page,
               'Web V2 daily summary has no fixed mobile overflow': 'min-width: 920px' not in web_styles and '.daily-summary-wrap { width: 100%; max-width: 100%; overflow-x: clip; }' in web_styles and 'table-layout: fixed' in web_styles,
@@ -318,6 +351,7 @@ jobs:
               'employees menu is permission gated': "permission: 'staff_list'" in shell and 'user?.permissions?.[permission]' in shell,
               'employee page covers all requested operations': all(label in page for label in ('THÊM NHÂN VIÊN', 'DANH SÁCH NHÂN VIÊN', 'Export Excel', 'Import Excel', 'Xóa đã chọn', 'Lưu thay đổi')),
               'employee list filters and exports by shift': 'shiftFilter' in page and "params.set('shift', shift)" in client and 'shift: str = Query' in staff_api,
+              'changing employee search closes stale profile': 'const changeEmployeeSearch = (value) =>' in page and "setProfileDraft({})" in page and 'onChange={(event) => changeEmployeeSearch(event.target.value)}' in page,
               'employee ordering is role then employment status': 'role_rank.get(row["role"], 99)' in staff_api and 'status_rank.get(row["employment_status"], 99)' in staff_api,
               'mobile employee cards avoid table overflow': 'staff-mobile-list' in page and '.staff-desktop-table { display: none; }' in styles and '.staff-mobile-fields' in styles,
               'Excel upload uses authenticated raw xlsx body': 'importStaffExcel' in client and 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in client,

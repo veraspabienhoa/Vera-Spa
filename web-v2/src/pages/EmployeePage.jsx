@@ -214,6 +214,12 @@ export default function EmployeePage({ user }) {
     ])))
   }
 
+  const changeEmployeeSearch = (value) => {
+    setSearch(value)
+    setProfileUser('')
+    setProfileDraft({})
+  }
+
   const saveProfile = () => run('profile', async () => {
     const payload = { ...profileDraft }
     payload.birth_date = datePayload(payload.birth_date)
@@ -277,7 +283,7 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-control-panel">
         <div className="staff-toolbar">
-          <div className="staff-search"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm tên nhân viên hoặc họ tên" /></div>
+          <div className="staff-search"><Search size={17} /><input value={search} onChange={(event) => changeEmployeeSearch(event.target.value)} placeholder="Tìm tên nhân viên hoặc họ tên" /></div>
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Lọc phân quyền">
             <option value="">Tất cả phân quyền</option>
             {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

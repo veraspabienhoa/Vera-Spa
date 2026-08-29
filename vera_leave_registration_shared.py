@@ -242,3 +242,78 @@ def summarize_leave_day(rows, active_employee_count: int) -> dict[str, int]:
         "paid": len(paid_employees),
         "unpaid": len(unpaid_employees),
     }
+
+
+def _row_leave_group(row) -> str:
+    """Resolve the canonical leave group for API/statistics rows."""
+    type_key = norm(row.get("leave_type", ""))
+    if "khong phep" in type_key:
+        return "khong_phep"
+    if "phat sinh" in type_key:
+        return "phat_sinh"
+    if "co phep" in type_key:
+        return "co_phep"
+    return group(str(row.get("leave_reason", "") or ""))
+
+
+def count_unique_leave_people(rows) -> dict[str, int]:
+    """Count employees once per daily leave group, regardless of 0.5/1 day."""
+    grouped_employees = {
+        "co_phep": set(),
+        "phat_sinh": set(),
+        "khong_phep": set(),
+    }
+    for row in rows or []:
+        try:
+            employee_key = norm(row.get("employee_name", ""))
+            calculated_days = number(row.get("calculated_days", 0), default=0)
+            policy_group = _row_leave_group(row)
+        except (AttributeError, TypeError):
+            continue
+        if not employee_key or policy_group not in grouped_employees:
+            continue
+        # Zero-day CÓ phép entries (for example a non-leave operational row)
+        # do not consume the daily paid-leave quota.
+        if policy_group == "co_phep" and calculated_days <= 0:
+            continue
+        grouped_employees[policy_group].add(employee_key)
+
+    all_employees = set().union(*grouped_employees.values())
+    return {
+        "total_leave": len(all_employees),
+        "paid": len(grouped_employees["co_phep"]),
+        "generated": len(grouped_employees["phat_sinh"]),
+        "unpaid": len(grouped_employees["khong_phep"]),
+    }
+
+
+def summarize_leave_days(rows) -> dict[str, float]:
+    """Sum actual calculated days for a filtered leave-record list.
+
+    This intentionally does not share the daily quota formula above: a 0.5-day
+    record contributes 0.5 here while it still occupies one employee slot in
+    the daily quota.
+    """
+    summary = {
+        "total_leave": 0.0,
+        "paid": 0.0,
+        "generated": 0.0,
+        "unpaid": 0.0,
+        "total_penalty": 0.0,
+    }
+    for row in rows or []:
+        try:
+            calculated_days = max(0.0, number(row.get("calculated_days", 0), default=0))
+            penalty = max(0.0, number(row.get("penalty", 0), default=0))
+            policy_group = _row_leave_group(row)
+        except (AttributeError, TypeError):
+            continue
+        summary["total_leave"] += calculated_days
+        if policy_group == "co_phep":
+            summary["paid"] += calculated_days
+        elif policy_group == "phat_sinh":
+            summary["generated"] += calculated_days
+        elif policy_group == "khong_phep":
+            summary["unpaid"] += calculated_days
+        summary["total_penalty"] += penalty
+    return summary

@@ -9,6 +9,7 @@ from vera_web_v2_admin_change_push import install_admin_change_push
 from vera_web_v2_attendance_v42 import install_attendance_v42
 from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
+from vera_web_v2_leave_day_stats import install_leave_day_stats_routes
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
 from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
@@ -47,6 +48,19 @@ install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_i
 # Quản lý/Lễ tân to backfill past rows whose canonical Loại nghỉ is Vi phạm.
 # Install before preview/write wrappers so every Web V2 registration path uses it.
 install_policy_v40(_shared.app, shared_module=_shared)
+
+install_leave_day_stats_routes(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    feature_allowed=_api._feature_allowed,
+    daily_quota_config=_api._daily_quota_config,
+    employee_name_matches=_api._employee_name_matches,
+    norm=_api._norm,
+    weekday_short_label=_api._weekday_short_label,
+    identity_type=_api.Identity,
+)
 
 install_leave_violation_split_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, policy_rows=_api._policy_rows, field=_api._field, reason_item=_api._reason_item, role_tokens=_api._role_tokens, day_allowed=_api._day_allowed, norm=_api._norm)
 install_leave_preview_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity)

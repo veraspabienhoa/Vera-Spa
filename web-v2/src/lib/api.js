@@ -1,5 +1,6 @@
 import { getCurrentSession, isSupabaseConfigured, supabase } from './supabase'
 import { apiErrorMessage } from './apiError'
+import { summarizeLeaveRecordDays } from './leaveStats'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 export const isApiConfigured = Boolean(apiBase)
@@ -143,6 +144,18 @@ export const veraApi = {
     return {
       days: Array.isArray(rows) ? rows.map((row) => ({ ...row, date: row.date || row.day })) : [],
     }
+  },
+  leaveListStats: async (start, end, employee = '') => {
+    if (isApiConfigured) {
+      const params = new URLSearchParams({ start, end })
+      if (employee.trim()) params.set('employee', employee.trim())
+      return request(`/v2/leave/list-stats?${params}`)
+    }
+    const batches = await Promise.all(datesBetween(start, end).map(async (date) => {
+      const rows = await rpc('vera_v2_leave_records', { p_date: date })
+      return (Array.isArray(rows) ? rows : []).map((row) => ({ ...row, leave_date: row.leave_date || date }))
+    }))
+    return { summary: summarizeLeaveRecordDays(batches.flat(), employee) }
   },
   leaveRecords: async (start, end = start) => {
     if (isApiConfigured) return request(`/v2/leave/records?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
