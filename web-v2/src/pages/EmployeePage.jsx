@@ -23,6 +23,18 @@ const PROFILE_FIELDS = [
   ['monthly_leave', 'Có phép tháng'], ['annual_leave', 'Phép năm'],
 ]
 
+const REQUIRED_PROFILE_FIELDS = [
+  ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'],
+  ['phone', 'Điện thoại'], ['email', 'Email'], ['address', 'Địa chỉ'],
+  ['bank_account', 'Số tài khoản ngân hàng'], ['bank_name', 'Tên ngân hàng'],
+]
+
+function missingEmployeeProfileFields(employee) {
+  return REQUIRED_PROFILE_FIELDS
+    .filter(([field]) => !String(employee?.[field] ?? '').trim())
+    .map(([, label]) => label)
+}
+
 function toInputDate(value) {
   const match = String(value || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   return match ? `${match[3]}-${match[2]}-${match[1]}` : String(value || '')
@@ -127,6 +139,11 @@ export default function EmployeePage({ user }) {
     ...(data?.employees || []).map((employee) => employee.work_shift),
     ...Object.values(data?.shifts_by_department || {}).flat(),
   ].filter(Boolean))).sort((left, right) => left.localeCompare(right, 'vi')), [data])
+
+  const incompleteVisible = useMemo(
+    () => visible.filter((employee) => missingEmployeeProfileFields(employee).length).length,
+    [visible],
+  )
 
   const permissions = data?.permissions || {}
   const isAdmin = user?.role === 'admin'
@@ -340,17 +357,20 @@ export default function EmployeePage({ user }) {
       </section>}
 
       <section className="panel staff-list-panel">
-        <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.</p></div></div>
+        <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div></div>
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">
             <table className="staff-table">
+              <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-lock"/><col className="staff-col-profile"/><col className="staff-col-admin"/></colgroup>
               <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Khóa</th><th>Hồ sơ</th><th>Admin</th></tr></thead>
               <tbody>{visible.map((employee) => {
                 const draft = drafts[employee.username] || rowDraft(employee)
                 const editable = canManage(employee)
-                return <tr key={employee.username} className={employee.employment_status === 'Đã nghỉ việc' ? 'staff-left-row' : ''}>
+                const missingFields = missingEmployeeProfileFields(employee)
+                const rowClassName = [employee.employment_status === 'Đã nghỉ việc' ? 'staff-left-row' : '', missingFields.length ? 'staff-incomplete-row' : ''].filter(Boolean).join(' ')
+                return <tr key={employee.username} className={rowClassName} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
                   <td className="center"><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} aria-label={`Chọn ${employee.username}`} /></td>
-                  <td><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small></td>
+                  <td><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</td>
                   <td><select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></td>
                   <td><select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></td>
                   <td><select value={draft.work_shift} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'work_shift', event.target.value)}><option value="">Chưa chia ca</option>{shiftsFor(employee).map((shift) => <option key={shift}>{shift}</option>)}</select></td>
@@ -367,8 +387,9 @@ export default function EmployeePage({ user }) {
           <div className="staff-mobile-list">{visible.map((employee) => {
             const draft = drafts[employee.username] || rowDraft(employee)
             const editable = canManage(employee)
-            return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''}`} key={employee.username}>
-              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!isAdmin || !editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small></span></label><div className="list-actions"><button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
+            const missingFields = missingEmployeeProfileFields(employee)
+            return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''} ${missingFields.length ? 'incomplete' : ''}`} key={employee.username} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
+              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!isAdmin || !editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><div className="list-actions"><button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
               <div className="staff-mobile-fields">
                 <label>Phân quyền<select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
                 <label>Trạng thái<select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></label>
