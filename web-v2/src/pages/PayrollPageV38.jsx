@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
 import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
 import PayrollSavedAdminPanel from './PayrollSavedAdminPanel'
+import PayrollTimesoftAutoLoader from './PayrollTimesoftAutoLoader'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -80,8 +81,9 @@ function PayrollPeriodAutoSelector({ enabled }) {
           setReactControlValue(periodSelect, detected.period_no)
           root.dataset.payrollDetectedPeriod = `${detected.month}-${detected.period_no}`
         } catch (error) {
-          // Calculation itself will show the authoritative validation error.
-          console.warn('Không tự nhận được Kỳ lương từ Sheet2:', error.message)
+          // Automatic PostgreSQL source contains only the canonical payroll sheet;
+          // period remains the already selected month/period in that case.
+          console.warn('Không tự nhận được Kỳ lương từ file nguồn:', error.message)
         }
       }
       sourceFile.addEventListener('change', onFile)
@@ -182,6 +184,7 @@ export default function PayrollPageV38({ user }) {
 
   return <>
     <PayrollPeriodAutoSelector key={`period-${payrollVersion}`} enabled={canCalculate} />
+    <PayrollTimesoftAutoLoader enabled={canCalculate} />
     <PayrollPage key={payrollVersion} user={user} />
     <PayrollSavedAdminPanel user={user} />
     {isAdmin && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
