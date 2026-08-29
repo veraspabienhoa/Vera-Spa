@@ -72,7 +72,7 @@ jobs:
           grep -q 'recordDate === todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
           grep -q 'recordDate < todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
           grep -q 'isTodaySpecialGroup' web-v2/src/pages/LeaveListTypeColumn.jsx
-          grep -q 'if (!old_group)' vera_web_v2_letan_leave_guard.py
+          grep -q 'if not old_group:' vera_web_v2_letan_leave_guard.py
           grep -q 'groups_1_to_5_only' vera_web_v2_letan_leave_guard.py
           grep -q '<LetanLeavePolicyRules />' web-v2/src/App.jsx
           grep -q '<LeaveListTypeColumn user={shellUser} />' web-v2/src/App.jsx
