@@ -5,6 +5,7 @@ import { staffSecurityApi } from '../lib/staffSecurityApi'
 const TARGET_BYTES = 450 * 1024
 const MAX_SOURCE_BYTES = 20 * 1024 * 1024
 const MIN_CROP = 20
+const CCCD_ASPECT_RATIO = 85.6 / 53.98
 
 function formatBytes(value) {
   const bytes = Number(value || 0)
@@ -100,8 +101,8 @@ function IdentityCamera({ title, onCancel, onCapture }) {
           video: {
             facingMode: { ideal: 'environment' },
             width: { ideal: 1920 },
-            height: { ideal: 1920 },
-            aspectRatio: { ideal: 1 },
+            height: { ideal: 1210 },
+            aspectRatio: { ideal: CCCD_ASPECT_RATIO },
           },
         })
         if (!active) { stream.getTracks().forEach((track) => track.stop()); return }
@@ -130,15 +131,27 @@ function IdentityCamera({ title, onCancel, onCapture }) {
       setError('Camera chưa sẵn sàng để chụp.')
       return
     }
-    const side = Math.min(video.videoWidth, video.videoHeight)
-    const sx = Math.max(0, Math.round((video.videoWidth - side) / 2))
-    const sy = Math.max(0, Math.round((video.videoHeight - side) / 2))
-    const output = Math.min(1800, side)
+
+    const sourceRatio = video.videoWidth / video.videoHeight
+    let sx = 0
+    let sy = 0
+    let sw = video.videoWidth
+    let sh = video.videoHeight
+    if (sourceRatio > CCCD_ASPECT_RATIO) {
+      sw = Math.round(video.videoHeight * CCCD_ASPECT_RATIO)
+      sx = Math.max(0, Math.round((video.videoWidth - sw) / 2))
+    } else if (sourceRatio < CCCD_ASPECT_RATIO) {
+      sh = Math.round(video.videoWidth / CCCD_ASPECT_RATIO)
+      sy = Math.max(0, Math.round((video.videoHeight - sh) / 2))
+    }
+
+    const outputWidth = Math.min(1800, sw)
+    const outputHeight = Math.max(1, Math.round(outputWidth / CCCD_ASPECT_RATIO))
     const canvas = document.createElement('canvas')
-    canvas.width = output
-    canvas.height = output
+    canvas.width = outputWidth
+    canvas.height = outputHeight
     const context = canvas.getContext('2d', { alpha: false })
-    context.drawImage(video, sx, sy, side, side, 0, 0, output, output)
+    context.drawImage(video, sx, sy, sw, sh, 0, 0, outputWidth, outputHeight)
     canvas.toBlob((blob) => {
       if (!blob) { setError('Không tạo được ảnh từ Camera.'); return }
       const file = new File([blob], `CCCD_${title.replace(/\s+/g, '_')}_${Date.now()}.jpg`, { type: 'image/jpeg' })
@@ -148,13 +161,13 @@ function IdentityCamera({ title, onCancel, onCapture }) {
 
   return <div className="identity-editor-backdrop" role="dialog" aria-modal="true" aria-label={`Camera ${title} CCCD`}>
     <div className="identity-camera-card">
-      <div className="identity-editor-head"><div><span className="eyebrow"><Camera size={14}/> Camera CCCD</span><h3>CHỤP {title.toUpperCase()}</h3><p>Khung Camera luôn là hình vuông. Đưa toàn bộ CCCD vào khung chữ nhật hướng dẫn rồi chụp.</p></div><button type="button" className="secondary-button compact" onClick={onCancel}><X size={16}/> Đóng</button></div>
-      <div className="identity-camera-square">
+      <div className="identity-editor-head"><div><span className="eyebrow"><Camera size={14}/> Camera CCCD</span><h3>CHỤP {title.toUpperCase()}</h3><p>Khung Camera là hình chữ nhật ngang theo tỷ lệ thẻ CCCD. Canh đủ bốn góc CCCD trong khung rồi chụp.</p></div><button type="button" className="secondary-button compact" onClick={onCancel}><X size={16}/> Đóng</button></div>
+      <div className="identity-camera-landscape">
         <video ref={videoRef} playsInline muted autoPlay />
-        <div className="identity-camera-card-guide"><span>CANH CCCD TRONG KHUNG NÀY</span></div>
+        <div className="identity-camera-card-guide"><span>CANH 4 GÓC CCCD TRONG KHUNG NÀY</span></div>
         {busy && <div className="identity-camera-loading"><LoaderCircle className="spin" size={24}/> Đang mở Camera…</div>}
       </div>
-      <div className="identity-camera-help">Khung ngoài 1:1 giúp giữ Camera vuông; khung trong mô phỏng đúng tỷ lệ thẻ CCCD để dễ căn thẳng bốn góc.</div>
+      <div className="identity-camera-help">Khung chụp nằm ngang, tỷ lệ gần đúng kích thước CCCD 85,6 × 53,98 mm. Ảnh chụp cũng được cắt theo đúng tỷ lệ ngang này trước khi chuyển sang bước Crop/Rotate/Nén.</div>
       {error && <div className="employee-identity-notice error">{error}</div>}
       <div className="identity-editor-footer"><button type="button" className="secondary-button" onClick={onCancel}>Hủy</button><button type="button" className="primary-button" onClick={capture} disabled={busy || Boolean(error)}><Camera size={16}/> Chụp ảnh</button></div>
     </div>
@@ -369,11 +382,11 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
       .employee-identity-panel{display:grid;gap:14px;padding:16px;border:1px solid #dfe7e3;border-radius:16px;background:#f9fbfa}.employee-identity-title{display:flex;gap:10px;align-items:flex-start}.employee-identity-title h3{margin:0;font-size:15px}.employee-identity-title p{margin:3px 0 0;color:#6c7873;font-size:12px;line-height:1.45}
       .employee-identity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.employee-id-side{border:1px solid #e2e8e5;border-radius:14px;background:#fff;padding:12px;min-width:0}.employee-id-side-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.employee-id-side-head div{display:grid;gap:2px}.employee-id-side-head strong{font-size:13px}.employee-id-side-head span{font-size:11px;color:#74807b}.employee-id-preview{height:132px;margin:10px 0;border-radius:10px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-id-preview img{width:100%;height:100%;object-fit:contain;background:#111}.employee-id-placeholder{font-weight:900;color:#9aa6a1;letter-spacing:.12em}.employee-id-actions{display:flex;flex-wrap:wrap;gap:7px}.employee-id-actions button{min-height:34px}
       .employee-password-reset{display:grid;gap:10px;padding:13px;border:1px solid #eadfcf;border-radius:14px;background:#fffaf2}.employee-password-reset-head{display:flex;gap:8px;align-items:flex-start}.employee-password-reset-head h4{margin:0;font-size:13px}.employee-password-reset-head p{margin:3px 0 0;font-size:11px;color:#776d60;line-height:1.45}.employee-password-reset-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:9px;align-items:end}.employee-password-reset-grid label{display:grid;gap:5px;font-size:12px;font-weight:700}.employee-password-reset-grid input{min-width:0}.employee-identity-notice{padding:9px 11px;border-radius:10px;font-size:12px}.employee-identity-notice.success{background:#edf8f2;color:#17603b}.employee-identity-notice.error{background:#fff1f0;color:#a62a20}
-      .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(680px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{display:flex;justify-content:flex-end;gap:9px;margin-top:14px}
-      .identity-camera-square{position:relative;width:min(82vw,560px);max-width:100%;aspect-ratio:1/1;margin:16px auto 0;overflow:hidden;border-radius:18px;background:#101815}.identity-camera-square video{width:100%;height:100%;object-fit:cover}.identity-camera-card-guide{position:absolute;left:7%;right:7%;top:22.9%;height:54.2%;border:3px solid rgba(255,255,255,.96);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.22),inset 0 0 0 1px rgba(0,0,0,.25);display:flex;align-items:flex-end;justify-content:center;padding:10px;pointer-events:none}.identity-camera-card-guide span{padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.58);color:#fff;font-size:10px;font-weight:900;letter-spacing:.05em}.identity-camera-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,.35);color:#fff;font-weight:800}.identity-camera-help{margin:10px auto 0;max-width:560px;color:#68736f;font-size:11px;line-height:1.45;text-align:center}
-      @media(max-width:700px){.employee-identity-panel{padding:12px;gap:11px}.employee-identity-grid{grid-template-columns:1fr}.employee-id-preview{height:118px}.employee-password-reset-grid{grid-template-columns:1fr}.employee-password-reset-grid button{width:100%}.identity-editor-backdrop{padding:7px}.identity-editor-card,.identity-camera-card{padding:12px;border-radius:14px}.identity-editor-layout{grid-template-columns:1fr}.identity-editor-preview{min-height:220px}.identity-editor-preview canvas{max-height:34vh}.identity-editor-footer{display:grid;grid-template-columns:1fr 1fr}.identity-editor-footer button{width:100%}.identity-camera-square{width:min(92vw,520px)}}
+      .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(760px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{display:flex;justify-content:flex-end;gap:9px;margin-top:14px}
+      .identity-camera-landscape{position:relative;width:min(90vw,680px);max-width:100%;aspect-ratio:85.6/53.98;margin:16px auto 0;overflow:hidden;border-radius:18px;background:#101815}.identity-camera-landscape video{width:100%;height:100%;object-fit:cover}.identity-camera-card-guide{position:absolute;inset:4%;border:3px solid rgba(255,255,255,.98);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.20),inset 0 0 0 1px rgba(0,0,0,.25);display:flex;align-items:flex-end;justify-content:center;padding:10px;pointer-events:none}.identity-camera-card-guide span{padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.58);color:#fff;font-size:10px;font-weight:900;letter-spacing:.05em}.identity-camera-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,.35);color:#fff;font-weight:800}.identity-camera-help{margin:10px auto 0;max-width:680px;color:#68736f;font-size:11px;line-height:1.45;text-align:center}
+      @media(max-width:700px){.employee-identity-panel{padding:12px;gap:11px}.employee-identity-grid{grid-template-columns:1fr}.employee-id-preview{height:118px}.employee-password-reset-grid{grid-template-columns:1fr}.employee-password-reset-grid button{width:100%}.identity-editor-backdrop{padding:7px}.identity-editor-card,.identity-camera-card{padding:12px;border-radius:14px}.identity-editor-layout{grid-template-columns:1fr}.identity-editor-preview{min-height:220px}.identity-editor-preview canvas{max-height:34vh}.identity-editor-footer{display:grid;grid-template-columns:1fr 1fr}.identity-editor-footer button{width:100%}.identity-camera-landscape{width:min(95vw,680px)}}
     `}</style>
-    <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3><p>Camera chụp CCCD dùng khung vuông 1:1 và có khung thẻ để canh đúng bốn góc. Trước khi upload, ảnh vẫn được Crop, Rotate và nén WebP. Chỉ chính nhân viên và Admin được xem; Admin có thêm nút tải ảnh xuống.</p></div></div>
+    <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3><p>Camera chụp CCCD dùng khung chữ nhật ngang theo tỷ lệ thẻ CCCD và có viền để canh đúng bốn góc. Trước khi upload, ảnh vẫn được Crop, Rotate và nén WebP. Chỉ chính nhân viên và Admin được xem; Admin có thêm nút tải ảnh xuống.</p></div></div>
     <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.startsWith('upload-front') || busy.startsWith('view-front') || busy.startsWith('download-front') || busy.startsWith('delete-front')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.startsWith('upload-back') || busy.startsWith('view-back') || busy.startsWith('download-back') || busy.startsWith('delete-back')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset}/></div>
     {allowPasswordReset && <div className="employee-password-reset"><div className="employee-password-reset-head"><KeyRound size={17}/><div><h4>RESET MẬT KHẨU NHÂN VIÊN</h4><p>Mật khẩu hiện tại không hiển thị trên trình duyệt để bảo vệ tài khoản. Admin có thể đặt mật khẩu mới; nhân viên bắt buộc đổi lại sau lần đăng nhập tiếp theo.</p></div></div><div className="employee-password-reset-grid"><label>Mật khẩu mới<input type="password" minLength={8} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tối thiểu 8 ký tự"/></label><label>Xác nhận mật khẩu<input type="password" minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/></label><button type="button" className="primary-button" onClick={resetPassword} disabled={busy === 'password'}>{busy === 'password' ? <LoaderCircle className="spin" size={16}/> : <KeyRound size={16}/>} Reset mật khẩu</button></div></div>}
     {notice && <div className={`employee-identity-notice ${notice.type}`}>{notice.message}</div>}
