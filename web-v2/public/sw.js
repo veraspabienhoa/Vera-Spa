@@ -21,7 +21,7 @@ self.addEventListener('push', (event) => {
     badge: payload.badge || BADGE_URL,
     tag: payload.tag || 'vera-spa-leave-watch',
     renotify: true,
-    requireInteraction: isAdminChange ? false : true,
+    requireInteraction: true,
     silent: false,
     vibrate: [220, 100, 220, 100, 360],
     timestamp: Number(payload.timestamp || Date.now()),
@@ -34,6 +34,9 @@ self.addEventListener('push', (event) => {
   }
 
   if (isAdminChange) {
+    // Admin system-change notifications must be easy to dismiss by native
+    // swipe while leave-watch alerts retain their existing sticky behavior.
+    options.requireInteraction = false
     options.actions = [
       { action: 'open', title: 'Xem chi tiết' },
       { action: 'dismiss', title: 'Xóa' },
