@@ -3,6 +3,14 @@ import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
+const LETAN_REASON_GROUPS = [
+  ['group-1', ['Nghỉ CÓ phép', 'Đi trễ CÓ phép', 'Về sớm CÓ phép']],
+  ['group-2', ['Nghỉ KHÔNG phép', 'Đi trễ KHÔNG phép', 'Về sớm KHÔNG phép']],
+  ['group-3', ['Nghỉ CUỐI TUẦN CÓ phép', 'Đi trễ CUỐI TUẦN CÓ phép', 'Về sớm CUỐI TUẦN CÓ phép']],
+  ['group-4', ['Nghỉ CUỐI TUẦN KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép', 'Về sớm CUỐI TUẦN KHÔNG phép']],
+  ['group-5', ['Leader nghỉ phép theo chính sách', 'Leader đi trễ sớm theo chính sách', 'Leader về sớm về sớm theo chính sách', 'Leader về sớm theo chính sách']],
+]
+
 const normalizeReason = (value) => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -11,6 +19,28 @@ const normalizeReason = (value) => String(value || '')
   .toLocaleLowerCase('vi-VN')
   .replace(/\s+/g, ' ')
   .trim()
+
+const LETAN_REASON_TO_GROUP = Object.fromEntries(
+  LETAN_REASON_GROUPS.flatMap(([group, reasons]) => reasons.map((reason) => [normalizeReason(reason), group])),
+)
+
+function letanGroupKey(reason) {
+  return LETAN_REASON_TO_GROUP[normalizeReason(reason)] || ''
+}
+
+function localDateKey() {
+  const value = new Date()
+  const year = value.getFullYear()
+  const month = `${value.getMonth() + 1}`.padStart(2, '0')
+  const day = `${value.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function rowDateKey(row) {
+  const raw = String(row?.querySelector?.('.list-date-link')?.textContent || '').trim()
+  const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : ''
+}
 
 async function loadReasonTypes(signal) {
   if (!apiBase) return []
@@ -29,8 +59,9 @@ function insertAfter(referenceNode, nextNode) {
   referenceNode.parentNode.insertBefore(nextNode, referenceNode.nextSibling)
 }
 
-export default function LeaveListTypeColumn() {
+export default function LeaveListTypeColumn({ user }) {
   const [catalog, setCatalog] = useState({})
+  const isLetan = String(user?.role || '').trim().toLowerCase() === 'letan'
 
   useEffect(() => {
     const controller = new AbortController()
@@ -65,15 +96,53 @@ export default function LeaveListTypeColumn() {
         option.hidden = false
         option.disabled = false
       }
+      select?.removeAttribute('data-letan-group-filtered')
+      select?.removeAttribute('data-leave-type-filtered')
     }
 
-    const lockSelectToRowType = (select) => {
+    const lockSelectToPolicy = (select) => {
       if (!select) return
       const row = select.closest('tr')
       if (!row) return
 
       const selectedReason = String(select.value || '').trim()
       const selectedInfo = reasonInfo(selectedReason)
+      const selectedKey = normalizeReason(selectedReason)
+      const recordDate = rowDateKey(row)
+      const todayKey = localDateKey()
+
+      if (isLetan && recordDate && recordDate < todayKey) {
+        restoreAllOptions(select)
+        select.disabled = true
+        select.title = 'Lễ tân không được sửa đăng ký có ngày trước ngày hiện tại.'
+        select.setAttribute('aria-label', 'Lý do nghỉ bị khóa vì đăng ký thuộc ngày trong quá khứ')
+        return
+      }
+
+      if (isLetan && recordDate === todayKey) {
+        if (!row.dataset.letanGroupKey) row.dataset.letanGroupKey = letanGroupKey(selectedReason)
+        const lockedGroupKey = String(row.dataset.letanGroupKey || '').trim()
+        if (!lockedGroupKey) {
+          restoreAllOptions(select)
+          select.disabled = true
+          select.title = 'Lý do hiện tại không thuộc Nhóm 1–5 nên Lễ tân không được sửa trong ngày hiện tại.'
+          return
+        }
+
+        for (const option of select.options) {
+          const optionKey = normalizeReason(option.value)
+          const sameGroup = letanGroupKey(option.value) === lockedGroupKey
+          const isCurrentValue = optionKey === selectedKey
+          const allowed = sameGroup || isCurrentValue
+          option.hidden = !allowed
+          option.disabled = !allowed
+        }
+        select.dataset.letanGroupFiltered = 'true'
+        select.removeAttribute('data-leave-type-filtered')
+        select.title = `Lễ tân chỉ được đổi Lý do nghỉ trong cùng ${lockedGroupKey.replace('group-', 'Nhóm ')}`
+        select.setAttribute('aria-label', `Lý do nghỉ, giới hạn trong ${lockedGroupKey.replace('group-', 'Nhóm ')}`)
+        return
+      }
 
       if (!row.dataset.leaveTypeKey && selectedInfo?.typeKey) {
         row.dataset.leaveTypeKey = selectedInfo.typeKey
@@ -84,11 +153,9 @@ export default function LeaveListTypeColumn() {
       const lockedTypeLabel = String(row.dataset.leaveTypeLabel || selectedInfo?.leaveType || '').trim()
       if (!lockedTypeKey) {
         restoreAllOptions(select)
-        select.removeAttribute('data-leave-type-filtered')
         return
       }
 
-      const selectedKey = normalizeReason(selectedReason)
       for (const option of select.options) {
         const optionKey = normalizeReason(option.value)
         const optionInfo = catalog[optionKey]
@@ -100,6 +167,7 @@ export default function LeaveListTypeColumn() {
       }
 
       select.dataset.leaveTypeFiltered = 'true'
+      select.removeAttribute('data-letan-group-filtered')
       select.dataset.leaveTypeKey = lockedTypeKey
       select.dataset.leaveTypeLabel = lockedTypeLabel
       select.title = lockedTypeLabel
@@ -173,7 +241,16 @@ export default function LeaveListTypeColumn() {
           ? 'Chưa tìm thấy Loại nghỉ tương ứng trong BẢNG NỘI QUY.'
           : `Theo BẢNG NỘI QUY: ${leaveType}`
 
-        if (reasonSelect) lockSelectToRowType(reasonSelect)
+        const recordDate = rowDateKey(row)
+        const checkbox = row.querySelector('.select-column input[type="checkbox"]')
+        if (isLetan && checkbox && recordDate && recordDate <= localDateKey()) {
+          checkbox.disabled = true
+          checkbox.title = recordDate < localDateKey()
+            ? 'Lễ tân không được xóa đăng ký của ngày trong quá khứ.'
+            : 'Lễ tân không được xóa đăng ký của ngày hiện tại.'
+        }
+
+        if (reasonSelect) lockSelectToPolicy(reasonSelect)
       }
     }
 
@@ -185,13 +262,13 @@ export default function LeaveListTypeColumn() {
 
     const handleReasonOpen = (event) => {
       const select = event.target?.closest?.('.reason-edit-cell select')
-      if (select) lockSelectToRowType(select)
+      if (select) lockSelectToPolicy(select)
     }
 
     const handleReasonChange = (event) => {
       const select = event.target?.closest?.('.reason-edit-cell select')
       if (!select) return
-      lockSelectToRowType(select)
+      lockSelectToPolicy(select)
       scheduleSync()
     }
 
@@ -214,13 +291,14 @@ export default function LeaveListTypeColumn() {
       const table = document.querySelector('.leave-list-panel .leave-records-table')
       for (const select of table?.querySelectorAll('.reason-edit-cell select') || []) restoreAllOptions(select)
     }
-  }, [catalog])
+  }, [catalog, isLetan])
 
   return <style>{`
     .leave-records-table .leave-type-header,
     .leave-records-table .leave-type-cell{vertical-align:middle}
     .leave-records-table .leave-type-cell{min-width:110px;color:#31483d;font-weight:800;line-height:1.25}
     .leave-records-table .reason-edit-cell select[data-leave-type-filtered="true"]{border-color:#b8cbc0;background:#fbfdfc}
+    .leave-records-table .reason-edit-cell select[data-letan-group-filtered="true"]{border-color:#96b7a5;background:#f4faf6;font-weight:800}
     @media(max-width:820px){
       .leave-records-table.with-leave-type-column.without-penalty .leave-col-select{width:7%}
       .leave-records-table.with-leave-type-column.without-penalty .leave-col-date{width:11%}
