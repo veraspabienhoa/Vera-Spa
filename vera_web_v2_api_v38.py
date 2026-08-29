@@ -6,6 +6,7 @@ import vera_web_v2_admin_audit_archive as _audit_archive
 import vera_web_v2_staff_status_sort as _staff_sort
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_leave_preview import install_leave_preview_routes
+from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
 from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
@@ -103,6 +104,23 @@ install_policy_v39(
     current_identity=_api.current_identity,
     require_feature=_api._require_feature,
     vn_tz=_api.VN_TZ,
+)
+
+# Admin/Quản lý/Lễ tân receive a second registration dropdown for policy rows
+# whose "Loại nghỉ" is "Vi phạm". The catalog is generated directly from the
+# active Nội quy, so edits in BẢNG NỘI QUY flow through without hard-coded names.
+install_leave_violation_split_routes(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    feature_allowed=_api._feature_allowed,
+    policy_rows=_api._policy_rows,
+    field=_api._field,
+    reason_item=_api._reason_item,
+    role_tokens=_api._role_tokens,
+    day_allowed=_api._day_allowed,
+    norm=_api._norm,
 )
 
 # Registration preview delegates to the exact canonical validator/calculator,
