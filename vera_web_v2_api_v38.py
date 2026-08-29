@@ -12,6 +12,7 @@ from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
 from vera_web_v2_payroll_saved_edit import install_payroll_saved_edit_routes
 from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_routes
 from vera_web_v2_policy_v39 import install_policy_v39
+from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
@@ -81,6 +82,14 @@ install_staff_security_routes(
 # Employee list order is status-first: active, temporarily away, then left.
 install_staff_status_sort(
     _shared.app,
+    current_identity=_api.current_identity,
+    identity_type=_api.Identity,
+)
+
+# Admin edits the same shift definitions/break fallback that CHẤM CÔNG reads.
+install_shift_break_admin_routes(
+    _shared.app,
+    engine_instance=_api._engine_instance,
     current_identity=_api.current_identity,
     identity_type=_api.Identity,
 )
