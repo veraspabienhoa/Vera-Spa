@@ -4,6 +4,7 @@ import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
 import LoginPage from './pages/LoginPage'
 import LeaveListPersonalStats from './pages/LeaveListPersonalStats'
 import LeaveListTypeColumn from './pages/LeaveListTypeColumn'
+import LetanLeavePolicyRules from './pages/LetanLeavePolicyRules'
 import LeaveRegistrationEnhancements from './pages/LeaveRegistrationEnhancements'
 import EmployeeManagementEnhancements from './pages/EmployeeManagementEnhancements'
 import { veraApi } from './lib/api'
@@ -167,7 +168,7 @@ export default function App() {
           <LeaveRegistrationPage user={shellUser} />
           <LeaveRegistrationEnhancements user={shellUser} />
           <LeaveListPersonalStats user={shellUser} />
-          <LeaveListTypeColumn />
+          <LeaveListTypeColumn user={shellUser} />
         </>}
         {page === 'long-leave' && <>
           {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
@@ -178,7 +179,10 @@ export default function App() {
           <EmployeePage user={shellUser} />
           <EmployeeManagementEnhancements user={shellUser} />
         </>}
-        {page === 'rules' && <RulesPage user={shellUser} />}
+        {page === 'rules' && <>
+          <RulesPage user={shellUser} />
+          <LetanLeavePolicyRules />
+        </>}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}
         {page === 'payroll' && <PayrollPage user={shellUser} />}
