@@ -33,6 +33,33 @@ function normalizedColumn(column) {
   return String(column || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toUpperCase()
 }
 
+function findColumn(columns, acceptedNames) {
+  const wanted = new Set(acceptedNames)
+  return columns.find((column) => wanted.has(normalizedColumn(column))) || ''
+}
+
+function cellValue(record, column) {
+  return column ? String(record?.[column] ?? '').trim() : ''
+}
+
+function sttColumn(columns) {
+  return findColumn(columns, ['STT', 'SO THU TU'])
+}
+
+function employeeNameColumn(columns) {
+  return findColumn(columns, ['TEN NHAN VIEN', 'NHAN VIEN', 'HO VA TEN', 'HO TEN'])
+}
+
+function validTourRecord(record, columns) {
+  const stt = cellValue(record, sttColumn(columns))
+  const employeeName = cellValue(record, employeeNameColumn(columns))
+  return Boolean(stt && employeeName)
+}
+
+function sttValue(record, columns) {
+  return cellValue(record, sttColumn(columns))
+}
+
 function columnClass(column) {
   const key = normalizedColumn(column)
   if (key === 'TG CON LAI' || key === 'THOI GIAN CON LAI') return 'tour-col-remaining center'
@@ -75,21 +102,46 @@ function prioritizeRecords(records, columns, activeFilter) {
 }
 
 function shiftValue(record, columns) {
-  const shiftColumn = columns.find((column) => {
-    const key = normalizedColumn(column)
-    return key === 'CA' || key === 'CA LAM VIEC' || key === 'CA LAM'
-  })
-  return String(
-    (shiftColumn ? record?.[shiftColumn] : '')
-      || record?.Ca || record?.['Ca làm việc'] || record?._shift || '',
-  ).trim()
+  const shiftColumn = findColumn(columns, ['VAO CA', 'GIO VAO CA', 'THOI GIAN VAO CA'])
+  return cellValue(record, shiftColumn)
+}
+
+function shiftBucket(record, columns) {
+  const raw = shiftValue(record, columns)
+  if (!raw) return ''
+
+  const normalized = normalizedColumn(raw).replace(/\s+/g, ' ')
+  if (/(^|\s)CA\s*1(\s|$)/.test(normalized) || normalized === 'CA1') return 'ca1'
+  if (/(^|\s)CA\s*2(\s|$)/.test(normalized) || normalized === 'CA2') return 'ca2'
+
+  const timeMatch = raw.match(/(?:^|\s)(\d{1,2})\s*[:Hh]\s*(\d{2})?/) 
+  if (timeMatch) {
+    const hour = Number(timeMatch[1])
+    if (Number.isFinite(hour)) return hour < 12 ? 'ca1' : 'ca2'
+  }
+
+  const compact = normalized.replace(/\s+/g, '')
+  if (['10', '10H', '10H00'].includes(compact)) return 'ca1'
+  if (['12', '12H', '12H00', '14', '14H', '14H00'].includes(compact)) return 'ca2'
+  return ''
 }
 
 function matchesShift(record, columns, shiftFilter) {
   if (shiftFilter === 'all') return true
-  const value = normalizedColumn(shiftValue(record, columns)).replace(/\s+/g, ' ')
-  const wanted = shiftFilter === 'ca1' ? 'CA 1' : 'CA 2'
-  return value === wanted || value.includes(wanted)
+  return shiftBucket(record, columns) === shiftFilter
+}
+
+function hasGroup(record, key) {
+  return Array.isArray(record?._tour_groups) && record._tour_groups.includes(key)
+}
+
+function groupCount(records, key) {
+  return records.reduce((count, record) => count + (hasGroup(record, key) ? 1 : 0), 0)
+}
+
+function employeeCountFromStt(records, columns) {
+  const values = records.map((record) => sttValue(record, columns)).filter(Boolean)
+  return new Set(values).size
 }
 
 export default function TourPage({ user }) {
@@ -120,24 +172,29 @@ export default function TourPage({ user }) {
     return () => window.clearInterval(interval)
   }, [load])
 
-  const metrics = [
-    { key: 'available', label: 'Có thể lên tua', value: data.available || 0, className: 'tour-available-metric' },
-    { key: 'all', label: 'Số nhân viên', value: data.employee_count ?? data.count ?? 0, className: '' },
-    { key: 'finishing', label: 'Sắp xong', value: data.finishing_count || 0, className: '' },
-    { key: 'working', label: 'Đi làm', value: data.working_count || 0, className: '' },
-    { key: 'waiting', label: 'Đang chờ', value: data.waiting_count || 0, className: '' },
-    { key: 'leave', label: 'Nghỉ phép', value: data.leave_count || 0, className: '' },
-    { key: 'doing', label: 'Đang thực hiện', value: data.doing_count || 0, className: '' },
-    { key: 'break', label: 'Nghỉ giữa Ca', value: data.break_count || 0, className: 'tour-break-metric' },
-  ]
+  const columns = data.columns || []
+  const validRecords = useMemo(
+    () => (data.records || []).filter((record) => validTourRecord(record, columns)),
+    [columns, data.records],
+  )
   const shiftRecords = useMemo(
-    () => (data.records || []).filter((record) => matchesShift(record, data.columns || [], shiftFilter)),
-    [data.columns, data.records, shiftFilter],
+    () => validRecords.filter((record) => matchesShift(record, columns, shiftFilter)),
+    [columns, shiftFilter, validRecords],
   )
   const displayedRecords = useMemo(
-    () => prioritizeRecords(shiftRecords, data.columns || [], activeFilter),
-    [activeFilter, data.columns, shiftRecords],
+    () => prioritizeRecords(shiftRecords, columns, activeFilter),
+    [activeFilter, columns, shiftRecords],
   )
+  const metrics = useMemo(() => [
+    { key: 'available', label: 'Có thể lên tua', value: groupCount(shiftRecords, 'available'), className: 'tour-available-metric' },
+    { key: 'all', label: 'Số nhân viên', value: employeeCountFromStt(shiftRecords, columns), className: '' },
+    { key: 'finishing', label: 'Sắp xong', value: groupCount(shiftRecords, 'finishing'), className: '' },
+    { key: 'working', label: 'Đi làm', value: groupCount(shiftRecords, 'working'), className: '' },
+    { key: 'waiting', label: 'Đang chờ', value: groupCount(shiftRecords, 'waiting'), className: '' },
+    { key: 'leave', label: 'Nghỉ phép', value: groupCount(shiftRecords, 'leave'), className: '' },
+    { key: 'doing', label: 'Đang thực hiện', value: groupCount(shiftRecords, 'doing'), className: '' },
+    { key: 'break', label: 'Nghỉ giữa Ca', value: groupCount(shiftRecords, 'break'), className: 'tour-break-metric' },
+  ], [columns, shiftRecords])
   const chooseFilter = (key) => setActiveFilter((current) => key === 'all' || current === key ? 'all' : key)
 
   return <div className="feature-page">
@@ -152,13 +209,13 @@ export default function TourPage({ user }) {
     {error && <div className="error-box">{error}</div>}
     {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
     <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca">
-      <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả ca</button>
+      <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
       <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
       <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
-      <small>Đang hiển thị {displayedRecords.length}/{data.records?.length || 0} nhân viên</small>
+      <small>Đang hiển thị {displayedRecords.length}/{validRecords.length} nhân viên</small>
     </div>
     <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
-    <section className="panel tour-table-panel"><div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{data.columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={index}>{data.columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>{!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}</section>
+    <section className="panel tour-table-panel"><div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>{!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}</section>
     <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu áp dụng cho toàn bộ dòng và Break luôn được ưu tiên cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
     <div className="setup-note tour-countdown-note">Thời gian còn lại do hệ thống tự đếm: Yêu cầu trống dùng “TG bắt đầu thực hiện”; Yêu cầu YC dùng “TG bắt đầu thực hiện YC”; cả hai cộng theo Thời lượng.</div>
   </div>
