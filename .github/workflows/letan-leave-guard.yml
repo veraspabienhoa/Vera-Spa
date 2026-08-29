@@ -68,7 +68,11 @@ jobs:
       - name: Verify Nội quy table and frontend lock
         run: |
           grep -q 'QUYỀN SỬA / XÓA ĐĂNG KÝ – TÀI KHOẢN LỄ TÂN' web-v2/src/pages/LetanLeavePolicyRules.jsx
+          grep -q 'Ngày hiện tại – Lý do/Loại nghỉ khác' web-v2/src/pages/LetanLeavePolicyRules.jsx
           grep -q 'recordDate === todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
-          grep -q 'recordDate <= localDateKey()' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'recordDate < todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'isTodaySpecialGroup' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'if (!old_group)' vera_web_v2_letan_leave_guard.py
+          grep -q 'groups_1_to_5_only' vera_web_v2_letan_leave_guard.py
           grep -q '<LetanLeavePolicyRules />' web-v2/src/App.jsx
           grep -q '<LeaveListTypeColumn user={shellUser} />' web-v2/src/App.jsx

@@ -2,9 +2,11 @@
 
 Business rule:
 - A ``letan`` account cannot edit or delete any leave registration before today.
-- A ``letan`` account cannot delete a registration dated today.
-- On today only, ``letan`` may change ``Lý do nghỉ`` only to another reason in
-  the same explicitly approved group below.
+- For registrations dated today whose current reason belongs to one of the five
+  explicitly approved groups below, ``letan`` cannot delete the row and may
+  change ``Lý do nghỉ`` only within that same group.
+- Other reasons/types that ``letan`` is allowed to use today keep the existing
+  canonical edit/delete behavior from Phân quyền + Nội quy.
 - Future-dated records continue through the existing canonical permission and
   cancellation rules unchanged.
 
@@ -20,7 +22,7 @@ from typing import Any
 from fastapi import HTTPException
 
 
-RELEASE = "letan-leave-guard-2026-08-29"
+RELEASE = "letan-leave-guard-2026-08-29-v2"
 
 LETAN_REASON_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -106,12 +108,15 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
         if target == today:
             old_reason = str(row.get("leave_reason") or "").strip()
             old_group = _reason_group(old_reason, norm)
-            new_group = _reason_group(new_reason, norm)
+
+            # The five named groups are the only same-day rows with the special
+            # lock. Every other reason/type falls back to the canonical rules,
+            # so anything Lễ tân is normally allowed to manage today remains
+            # editable/changeable.
             if not old_group:
-                raise HTTPException(
-                    403,
-                    "Lý do hiện tại không thuộc Nhóm 1–5 nên Lễ tân không được sửa trong ngày hiện tại.",
-                )
+                return original_edit(conn, row, new_reason, ident)
+
+            new_group = _reason_group(new_reason, norm)
             if new_group != old_group:
                 raise HTTPException(
                     403,
@@ -143,11 +148,16 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
                 403,
                 "Tài khoản Lễ tân không được xóa đăng ký có ngày trước ngày hiện tại.",
             )
-        if target == today:
+
+        reason = str(row.get("leave_reason") or "").strip()
+        if target == today and _reason_group(reason, norm):
             raise HTTPException(
                 403,
-                "Tài khoản Lễ tân không được xóa đăng ký của ngày hiện tại; chỉ được đổi Lý do nghỉ trong cùng Nhóm 1–5.",
+                "Tài khoản Lễ tân không được xóa đăng ký ngày hiện tại thuộc Nhóm 1–5; chỉ được đổi Lý do nghỉ trong cùng nhóm.",
             )
+
+        # Today + non-group, and all future rows, retain the canonical delete
+        # permission/cancellation rules.
         return original_delete(conn, row, ident)
 
     api_module._validate_edit_permission = validate_edit_permission
@@ -158,6 +168,8 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
         return {
             "ok": True,
             "release": RELEASE,
+            "today_special_scope": "groups_1_to_5_only",
+            "other_today_reasons": "canonical_edit_delete",
             "groups": [
                 {"name": name, "reasons": list(reasons[:3])}
                 for name, reasons in LETAN_REASON_GROUPS

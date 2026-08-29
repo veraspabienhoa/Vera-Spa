@@ -4,8 +4,8 @@ import { getCurrentSession } from '../lib/supabase'
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
 // The visible Lễ tân editor for a record dated today always contains exactly
-// these three choices. Compatibility aliases are only used to recognize old
-// rows and are never rendered as a fourth choice.
+// these three choices when the current reason belongs to one of the five
+// special groups. Other reasons keep the canonical edit/delete behavior.
 const LETAN_REASON_GROUPS = [
   ['group-1', ['Nghỉ CÓ phép', 'Đi trễ CÓ phép', 'Về sớm CÓ phép']],
   ['group-2', ['Nghỉ KHÔNG phép', 'Đi trễ KHÔNG phép', 'Về sớm KHÔNG phép']],
@@ -203,22 +203,23 @@ export default function LeaveListTypeColumn({ user }) {
 
       if (isLetan && recordDate === todayKey) {
         const currentGroup = letanGroupKey(selectedReason)
-        if (!row.dataset.letanGroupKey && currentGroup) row.dataset.letanGroupKey = currentGroup
-        const lockedGroupKey = String(row.dataset.letanGroupKey || currentGroup || '').trim()
-        if (!lockedGroupKey) {
-          restoreAllOptions(select)
-          select.disabled = true
-          select.title = 'Lý do hiện tại không thuộc Nhóm 1–5 nên Lễ tân không được sửa trong ngày hiện tại.'
+        if (currentGroup) {
+          if (!row.dataset.letanGroupKey) row.dataset.letanGroupKey = currentGroup
+          const lockedGroupKey = String(row.dataset.letanGroupKey || currentGroup).trim()
+          ensureLetanThreeChoiceProxy(select, row, lockedGroupKey, selectedReason)
+          select.removeAttribute('data-leave-type-filtered')
+          select.title = `Lễ tân chỉ được đổi Lý do nghỉ trong cùng ${lockedGroupKey.replace('group-', 'Nhóm ')}; nhóm này luôn có đúng 3 lựa chọn.`
           return
         }
 
-        ensureLetanThreeChoiceProxy(select, row, lockedGroupKey, selectedReason)
-        select.removeAttribute('data-leave-type-filtered')
-        select.title = `Lễ tân chỉ được đổi Lý do nghỉ trong cùng ${lockedGroupKey.replace('group-', 'Nhóm ')}; nhóm này luôn có đúng 3 lựa chọn.`
-        return
+        // Today + non-group: do not apply the special Lễ tân guard. Restore the
+        // native editor and continue with the normal Loại nghỉ filter below,
+        // preserving the existing edit/change behavior.
+        delete row.dataset.letanGroupKey
+        removeLetanProxy(select)
+      } else {
+        removeLetanProxy(select)
       }
-
-      removeLetanProxy(select)
 
       if (!row.dataset.leaveTypeKey && selectedInfo?.typeKey) {
         row.dataset.leaveTypeKey = selectedInfo.typeKey
@@ -318,12 +319,17 @@ export default function LeaveListTypeColumn({ user }) {
           : `Theo BẢNG NỘI QUY: ${leaveType}`
 
         const recordDate = rowDateKey(row)
+        const todayKey = localDateKey()
         const checkbox = row.querySelector('.select-column input[type="checkbox"]')
-        if (isLetan && checkbox && recordDate && recordDate <= localDateKey()) {
-          checkbox.disabled = true
-          checkbox.title = recordDate < localDateKey()
-            ? 'Lễ tân không được xóa đăng ký của ngày trong quá khứ.'
-            : 'Lễ tân không được xóa đăng ký của ngày hiện tại.'
+        if (isLetan && checkbox && recordDate) {
+          const isPast = recordDate < todayKey
+          const isTodaySpecialGroup = recordDate === todayKey && Boolean(letanGroupKey(reason))
+          if (isPast || isTodaySpecialGroup) {
+            checkbox.disabled = true
+            checkbox.title = isPast
+              ? 'Lễ tân không được xóa đăng ký của ngày trong quá khứ.'
+              : 'Lễ tân không được xóa đăng ký ngày hiện tại thuộc Nhóm 1–5.'
+          }
         }
 
         if (reasonSelect) lockSelectToPolicy(reasonSelect)

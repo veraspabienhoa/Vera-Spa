@@ -37,14 +37,15 @@ export default function LetanLeavePolicyRules() {
 
       <div className="letan-policy-note">
         <span><strong>Trước ngày hiện tại:</strong> Lễ tân không được xóa hoặc sửa bất cứ đăng ký nào.</span>
-        <span><strong>Ngày hiện tại:</strong> Lễ tân không được xóa; chỉ được đổi <strong>Lý do nghỉ</strong> sang một lý do khác trong đúng cùng nhóm bên dưới.</span>
+        <span><strong>Ngày hiện tại – Nhóm 1 đến Nhóm 5:</strong> Lễ tân không được xóa; chỉ được đổi <strong>Lý do nghỉ</strong> sang một trong 3 lý do thuộc đúng cùng nhóm.</span>
+        <span><strong>Ngày hiện tại – Lý do/Loại nghỉ khác:</strong> nếu Lễ tân được phép nhập theo Phân quyền + Nội quy thì vẫn được <strong>xóa, sửa và thay đổi</strong> theo quyền hiện hành.</span>
         <span><strong>Ngày tương lai:</strong> tiếp tục áp dụng Phân quyền và Bảng nội quy hiện hành.</span>
       </div>
 
       <div className="letan-policy-table-wrap">
         <table className="letan-policy-table">
           <thead>
-            <tr><th>Nhóm</th><th>Các Lý do nghỉ được phép đổi qua lại trong cùng nhóm</th></tr>
+            <tr><th>Nhóm</th><th>Các Lý do nghỉ đặc biệt được phép đổi qua lại trong cùng nhóm</th></tr>
           </thead>
           <tbody>
             {GROUPS.map(([group, reasons]) => (
