@@ -5,6 +5,7 @@ import vera_web_v2_api_shared as _shared
 import vera_web_v2_admin_audit_archive as _audit_archive
 import vera_web_v2_staff_status_sort as _staff_sort
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
+from vera_web_v2_admin_change_push import install_admin_change_push
 from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
@@ -72,6 +73,20 @@ install_operations_v41(
     current_identity=_api.current_identity,
     require_feature=_api._require_feature,
     identity_type=_api.Identity,
+)
+
+# Every successful leave create/update/delete that appears in Thay đổi hệ thống
+# queues an immediate detailed Web Push to active Admin subscriptions. Install
+# after all write guards so notifications reflect the final canonical write.
+install_admin_change_push(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    api_module=_api,
+    current_identity=_api.current_identity,
+    identity_type=_api.Identity,
+    leave_create_type=_api.LeaveCreate,
+    leave_update_type=_api.LeaveUpdate,
+    leave_delete_type=_api.LeaveDelete,
 )
 
 install_single_device_guard(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
