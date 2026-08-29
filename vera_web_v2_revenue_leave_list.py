@@ -1,7 +1,7 @@
 """Revenue summary and leave-list read enhancements for VERA SPA Web V2."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import os
 import re
 from typing import Any, Callable
@@ -12,13 +12,22 @@ from sqlalchemy import text
 import vera_web_v2_permissions as permissions
 
 
-RELEASE = "revenue-leave-list-2026-08-29"
+RELEASE = "revenue-leave-list-2026-08-29.2"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_SPREADSHEET_ID = os.getenv(
     "VERA_REVENUE_SHEET_ID",
     "1KLYz2iQSfNU0xOfrl8V9iz9-dQKMkwyUicuuiGsqC4U",
 )
 REVENUE_WORKSHEET = os.getenv("VERA_REVENUE_SHEET_NAME", "Input")
+REVENUE_REPORT_URL = os.getenv(
+    "VERA_REVENUE_REPORT_URL",
+    "https://docs.google.com/spreadsheets/d/1KLYz2iQSfNU0xOfrl8V9iz9-dQKMkwyUicuuiGsqC4U/edit?usp=drivesdk",
+)
+REVENUE_ENTRY_FORM_URL = os.getenv(
+    "VERA_REVENUE_ENTRY_FORM_URL",
+    "https://docs.google.com/forms/d/e/1FAIpQLSeJp1bLrl8zSyESu_K0eo6NxdKsm85p4fxGXPXigPlmgkAs7w/viewform",
+)
+VN_TZ = timezone(timedelta(hours=7))
 
 
 def _find_route(app, path: str, method: str):
@@ -56,6 +65,19 @@ def _money(value: Any) -> float:
         return 0.0
 
 
+def _parse_date(value: Any) -> date | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    raw = raw.split(" ", 1)[0]
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dict[str, Any]:
     if not values:
         raise HTTPException(503, "Sheet Input chưa có dữ liệu.")
@@ -66,8 +88,14 @@ def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dic
     except ValueError as exc:
         raise HTTPException(503, "Sheet Input phải có cột 'Loại giao dịch' và 'Số tiền'.") from exc
 
+    try:
+        date_index = headers.index(norm("Ngày giao dịch"))
+    except ValueError:
+        date_index = -1
+
     income = expense = 0.0
     transaction_count = 0
+    transaction_dates: list[date] = []
     for row in values[1:]:
         tx_type = norm(row[type_index] if type_index < len(row) else "")
         if tx_type not in {"thu", "chi"}:
@@ -78,11 +106,22 @@ def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dic
         else:
             expense += amount
         transaction_count += 1
+        if date_index >= 0:
+            parsed = _parse_date(row[date_index] if date_index < len(row) else "")
+            if parsed:
+                transaction_dates.append(parsed)
+
+    start_date = min(transaction_dates) if transaction_dates else None
+    current_date = datetime.now(VN_TZ).date()
     return {
         "total_income": round(income, 2),
         "total_expense": round(expense, 2),
         "balance": round(income - expense, 2),
         "transaction_count": transaction_count,
+        "start_date": start_date.isoformat() if start_date else "",
+        "current_date": current_date.isoformat(),
+        "start_date_label": start_date.strftime("%d/%m/%Y") if start_date else "—",
+        "current_date_label": current_date.strftime("%d/%m/%Y"),
     }
 
 
@@ -128,7 +167,14 @@ def install_revenue_leave_list_routes(
 
     @app.get("/v2/revenue/health")
     def revenue_health():
-        return {"ok": True, "release": RELEASE, "worksheet": REVENUE_WORKSHEET}
+        return {
+            "ok": True,
+            "release": RELEASE,
+            "worksheet": REVENUE_WORKSHEET,
+            "period_metadata": True,
+            "entry_form": True,
+            "report_link": True,
+        }
 
     @app.get("/v2/leave/list-enhancements/health")
     def leave_list_enhancements_health():
@@ -143,7 +189,15 @@ def install_revenue_leave_list_routes(
             values = worksheet.get_all_values()
         except Exception as exc:
             raise HTTPException(503, f"Không đọc được Quản lý Thu Chi · sheet {REVENUE_WORKSHEET}: {type(exc).__name__}.") from exc
-        return {"ok": True, "release": RELEASE, "source": "Quản lý Thu Chi", "worksheet": REVENUE_WORKSHEET, **_revenue_summary(values, norm)}
+        return {
+            "ok": True,
+            "release": RELEASE,
+            "source": "Quản lý Thu Chi",
+            "worksheet": REVENUE_WORKSHEET,
+            "entry_form_url": REVENUE_ENTRY_FORM_URL,
+            "report_url": REVENUE_REPORT_URL,
+            **_revenue_summary(values, norm),
+        }
 
     @app.get("/v2/leave/records")
     def leave_records_enhanced(
