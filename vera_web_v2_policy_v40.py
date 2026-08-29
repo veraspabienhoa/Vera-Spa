@@ -167,5 +167,15 @@ def install_policy_v40(app, *, shared_module) -> None:
     shared_module.monthly_weekend_registration_limit = group3_monthly_weekend_registration_limit
     shared_module.validate_leave_registration_request_live = validate_with_policy_v40
 
+    @app.get("/v2/policy-v40/health")
+    def policy_v40_health():
+        return {
+            "ok": True,
+            "release": RELEASE,
+            "weekend_monthly_limit": 2,
+            "weekend_group3_reasons": list(GROUP3_WEEKEND_REASONS),
+            "past_violation_roles": sorted(PAST_VIOLATION_ROLES),
+        }
+
     app.state.leave_policy_v40_installed = True
     app.state.leave_policy_v40_release = RELEASE
