@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import AppShell from './components/AppShell'
 import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
+import ProfileCompletionReminder from './components/ProfileCompletionReminder'
 import LoginPage from './pages/LoginPage'
 import LeaveListPersonalStats from './pages/LeaveListPersonalStats'
 import LeaveListTypeColumn from './pages/LeaveListTypeColumn'
@@ -99,6 +100,7 @@ export default function App() {
 
   return (
     <AppShell user={shellUser} currentPage={page} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
+      <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
       <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
         {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
         {page === 'long-leave' && <>
