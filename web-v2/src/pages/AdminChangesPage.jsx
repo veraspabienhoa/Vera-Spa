@@ -1,6 +1,7 @@
-import { Activity, Archive, CalendarDays, Download, RefreshCw, Search, X } from 'lucide-react'
+import { Activity, Archive, BellRing, CalendarDays, Download, RefreshCw, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
+import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const formatTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value)) : '—'
@@ -95,6 +96,9 @@ export default function AdminChangesPage() {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  const [push, setPush] = useState({ loading: true, supported: false, subscribed: false })
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushNotice, setPushNotice] = useState('')
 
   const params = useCallback(() => {
     const query = new URLSearchParams({ start, end })
@@ -110,6 +114,13 @@ export default function AdminChangesPage() {
   }, [params])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    let active = true
+    syncExistingPushSubscription().then((state) => { if (active) setPush({ ...state, loading: false }) })
+      .catch(() => readPushState().then((state) => { if (active) setPush({ ...state, loading: false }) })
+        .catch((pushError) => { if (active) setPush({ loading: false, supported: false, subscribed: false, reason: pushError.message }) }))
+    return () => { active = false }
+  }, [])
 
   const choosePeriod = (next) => {
     setPeriod(next)
@@ -130,6 +141,21 @@ export default function AdminChangesPage() {
     finally { setExporting(false) }
   }
 
+  const togglePush = async () => {
+    setPushBusy(true); setPushNotice(''); setError('')
+    try {
+      const state = push.subscribed ? await disablePushNotifications() : await enablePushNotifications()
+      setPush({ ...state, loading: false })
+      setPushNotice(state.subscribed
+        ? 'Đã bật thông báo cập nhật tức thời cho Admin trên thiết bị này.'
+        : 'Đã tắt thông báo cập nhật trên thiết bị này.')
+    } catch (pushError) {
+      setError(pushError.message || 'Không thay đổi được trạng thái thông báo.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
   return <div className="feature-page">
     <style>{`
       .audit-detailed article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start}
@@ -142,10 +168,16 @@ export default function AdminChangesPage() {
       .audit-archive-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}.audit-archive-head small{color:#786d62}
       .audit-snapshot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px}.audit-snapshot-grid div{display:flex;flex-direction:column;gap:2px}.audit-snapshot-grid span{font-size:11px;color:#778179;text-transform:uppercase}.audit-snapshot-grid strong{font-size:13px;overflow-wrap:anywhere}
       .audit-filter-buttons{display:flex;flex-wrap:wrap;gap:7px;width:100%}.audit-filter-buttons button{padding:8px 11px}.audit-toolbar-content{display:grid;gap:10px;width:100%}.audit-search-line{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.audit-search-line label{display:flex;flex:1;min-width:240px;flex-direction:column;gap:5px;font-size:12px;font-weight:800}.audit-search-actions{display:flex;gap:7px}.audit-custom-range{display:flex;gap:10px;flex-wrap:wrap}
-      @media(max-width:640px){.audit-detailed article{grid-template-columns:1fr}.audit-detailed time{font-size:11px}.audit-field-grid{grid-template-columns:1fr}.audit-snapshot-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.audit-filter-buttons button:last-child{grid-column:1/-1}.audit-search-line label{min-width:100%}.audit-search-actions{width:100%}.audit-search-actions button{flex:1}}
+      .admin-change-push{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.admin-change-push>div{min-width:0}.admin-change-push h3{margin:2px 0 4px;font-size:14px}.admin-change-push p{margin:0;color:#68736f;font-size:12px;line-height:1.45}.admin-change-push small{display:block;margin-top:5px;color:#176342;font-weight:800}
+      @media(max-width:640px){.audit-detailed article{grid-template-columns:1fr}.audit-detailed time{font-size:11px}.audit-field-grid{grid-template-columns:1fr}.audit-snapshot-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.audit-filter-buttons button:last-child{grid-column:1/-1}.audit-search-line label{min-width:100%}.audit-search-actions{width:100%}.audit-search-actions button{flex:1}.admin-change-push{align-items:stretch;flex-direction:column}.admin-change-push button{width:100%}}
     `}</style>
     <div className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1><p>Tìm theo người thực hiện, lọc thời gian, xem chi tiết trước/sau và export Excel.</p></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button><button className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div></div>
     {error && <div className="error-box">{error}</div>}
+
+    <section className="panel admin-change-push">
+      <div><span className="eyebrow"><BellRing size={14} /> Màn hình khóa</span><h3>THÔNG BÁO CẬP NHẬT TỨC THỜI</h3><p>Mỗi Đăng ký mới, Sửa hoặc Xóa trong Thay đổi hệ thống sẽ gửi chi tiết tới thiết bị Admin đã bật thông báo. Trên điện thoại có thể vuốt để xóa; nếu hệ điều hành hiển thị action, có nút Xóa ngay trên thông báo.</p>{pushNotice && <small>{pushNotice}</small>}{!push.loading && !push.supported && <small>{push.reason || 'Thiết bị này chưa hỗ trợ Web Push.'}</small>}</div>
+      <button type="button" className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo Admin')}</button>
+    </section>
 
     <section className="panel data-toolbar"><div className="audit-toolbar-content">
       <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
