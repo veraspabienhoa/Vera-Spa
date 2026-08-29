@@ -1,7 +1,8 @@
-import { Activity, Archive, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { veraApi } from '../lib/api'
+import { Activity, Archive, CalendarDays, Download, RefreshCw, Search, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { getCurrentSession } from '../lib/supabase'
 
+const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const formatTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value)) : '—'
 const labels = { insert: 'Đăng ký mới', update: 'Sửa lịch nghỉ', delete: 'Xóa lịch nghỉ' }
 const snapshotFields = [
@@ -10,6 +11,58 @@ const snapshotFields = [
   ['accumulated_leave', 'Phép cộng dồn'], ['penalty', 'Phạt vi phạm'], ['updated_by', 'Người cập nhật'],
 ]
 const showValue = (value) => value === null || value === undefined || value === '' ? '—' : String(value)
+
+const dateText = (value) => {
+  const date = new Date(value)
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+const today = () => dateText(new Date())
+const addDays = (value, days) => { const next = new Date(value); next.setDate(next.getDate() + days); return next }
+const FILTERS = ['Hôm Qua', 'Hôm nay', 'Tuần Trước', 'Tuần này', 'Tháng trước', 'Tháng này', 'Tùy chỉnh']
+const rangeFor = (filter) => {
+  const now = new Date()
+  const monday = addDays(now, -((now.getDay() + 6) % 7))
+  if (filter === 'Hôm Qua') { const d = addDays(now, -1); return [dateText(d), dateText(d)] }
+  if (filter === 'Hôm nay') return [today(), today()]
+  if (filter === 'Tuần Trước') { const start = addDays(monday, -7); return [dateText(start), dateText(addDays(start, 6))] }
+  if (filter === 'Tuần này') return [dateText(monday), dateText(addDays(monday, 6))]
+  if (filter === 'Tháng trước') return [dateText(new Date(now.getFullYear(), now.getMonth() - 1, 1)), dateText(new Date(now.getFullYear(), now.getMonth(), 0))]
+  if (filter === 'Tháng này') return [dateText(new Date(now.getFullYear(), now.getMonth(), 1)), dateText(new Date(now.getFullYear(), now.getMonth() + 1, 0))]
+  return [today(), today()]
+}
+
+async function authHeaders() {
+  const session = await getCurrentSession()
+  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
+}
+
+async function requestJson(path) {
+  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
+  const response = await fetch(`${apiBase}${path}`, { headers: await authHeaders() })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
+}
+
+async function downloadExcel(path, fallbackName) {
+  const response = await fetch(`${apiBase}${path}`, { headers: await authHeaders() })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  }
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  let filename = fallbackName
+  if (encoded) { try { filename = decodeURIComponent(encoded.replace(/^"|"$/g, '')) } catch { /* keep fallback */ } }
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 function FieldChanges({ item }) {
   const changes = item.field_changes || []
@@ -32,12 +85,51 @@ function Snapshot({ item }) {
 }
 
 export default function AdminChangesPage() {
-  const [days, setDays] = useState(7)
+  const initial = useMemo(() => rangeFor('Hôm nay'), [])
+  const [period, setPeriod] = useState('Hôm nay')
+  const [start, setStart] = useState(initial[0])
+  const [end, setEnd] = useState(initial[1])
+  const [actorSearch, setActorSearch] = useState('')
+  const [actor, setActor] = useState('')
   const [data, setData] = useState({ changes: [], archive: [] })
   const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
-  const load = async () => { setBusy(true); setError(''); try { setData(await veraApi.adminChanges(days)) } catch (e) { setError(e.message) } finally { setBusy(false) } }
-  useEffect(() => { void load() }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const params = useCallback(() => {
+    const query = new URLSearchParams({ start, end })
+    if (actor.trim()) query.set('actor', actor.trim())
+    return query.toString()
+  }, [actor, end, start])
+
+  const load = useCallback(async () => {
+    setBusy(true); setError('')
+    try { setData(await requestJson(`/v2/admin/changes-v41?${params()}`)) }
+    catch (e) { setError(e.message || 'Không tải được Thay đổi hệ thống.') }
+    finally { setBusy(false) }
+  }, [params])
+
+  useEffect(() => { void load() }, [load])
+
+  const choosePeriod = (next) => {
+    setPeriod(next)
+    if (next === 'Tùy chỉnh') return
+    const [nextStart, nextEnd] = rangeFor(next)
+    setStart(nextStart); setEnd(nextEnd)
+  }
+
+  const actors = useMemo(() => Array.from(new Set([
+    ...(data.changes || []).map((item) => item.actor),
+    ...(data.archive || []).map((item) => item.actor),
+  ].filter(Boolean))).sort((a, b) => a.localeCompare(b, 'vi')), [data])
+
+  const exportExcel = async () => {
+    setExporting(true); setError('')
+    try { await downloadExcel(`/v2/admin/changes-v41/export.xlsx?${params()}`, 'VERA_ThayDoiHeThong.xlsx') }
+    catch (e) { setError(e.message || 'Không export được Thay đổi hệ thống.') }
+    finally { setExporting(false) }
+  }
+
   return <div className="feature-page">
     <style>{`
       .audit-detailed article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start}
@@ -49,16 +141,20 @@ export default function AdminChangesPage() {
       .audit-archive{margin-top:18px}.audit-archive-list{display:grid;gap:10px}.audit-archive-item{border:1px solid #eadfce;border-radius:12px;padding:12px;background:#fffdf9}
       .audit-archive-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}.audit-archive-head small{color:#786d62}
       .audit-snapshot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px}.audit-snapshot-grid div{display:flex;flex-direction:column;gap:2px}.audit-snapshot-grid span{font-size:11px;color:#778179;text-transform:uppercase}.audit-snapshot-grid strong{font-size:13px;overflow-wrap:anywhere}
-      @media(max-width:640px){.audit-detailed article{grid-template-columns:1fr}.audit-detailed time{font-size:11px}.audit-field-grid{grid-template-columns:1fr}.audit-snapshot-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      .audit-filter-buttons{display:flex;flex-wrap:wrap;gap:7px;width:100%}.audit-filter-buttons button{padding:8px 11px}.audit-toolbar-content{display:grid;gap:10px;width:100%}.audit-search-line{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.audit-search-line label{display:flex;flex:1;min-width:240px;flex-direction:column;gap:5px;font-size:12px;font-weight:800}.audit-search-actions{display:flex;gap:7px}.audit-custom-range{display:flex;gap:10px;flex-wrap:wrap}
+      @media(max-width:640px){.audit-detailed article{grid-template-columns:1fr}.audit-detailed time{font-size:11px}.audit-field-grid{grid-template-columns:1fr}.audit-snapshot-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.audit-filter-buttons button:last-child{grid-column:1/-1}.audit-search-line label{min-width:100%}.audit-search-actions{width:100%}.audit-search-actions button{flex:1}}
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1><p>Hiển thị chi tiết nội dung đăng ký mới, trường đã sửa, giá trị trước/sau và lịch nghỉ đã xóa.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
+    <div className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1><p>Tìm theo người thực hiện, lọc thời gian, xem chi tiết trước/sau và export Excel.</p></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button><button className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div></div>
     {error && <div className="error-box">{error}</div>}
-    <section className="panel data-toolbar"><label>Khoảng xem<select value={days} onChange={(e) => setDays(Number(e.target.value))}><option value="1">24 giờ</option><option value="7">7 ngày</option><option value="14">14 ngày</option><option value="31">31 ngày</option></select></label><div className="audit-total">{data.changes?.length || 0} thay đổi</div></section>
-    <section className="panel audit-list audit-detailed">{(data.changes || []).map((item) => <article key={item.id}><span className={`audit-operation ${item.event_type}`}>{labels[item.event_type] || item.event_type}</span><div><strong>{item.employee_name || 'Lịch nghỉ'}</strong><p>{item.detail || 'Thay đổi lịch nghỉ'}</p><FieldChanges item={item} />{item.actor && <small>Người thực hiện: <b>{item.actor}</b></small>}</div><time>{formatTime(item.created_at)}</time></article>)}{!data.changes?.length && <div className="setup-note">Không có thay đổi lịch nghỉ trong khoảng đã chọn.</div>}</section>
 
-    <section className="panel audit-archive">
-      <div className="panel-title-row"><div><span className="eyebrow"><Archive size={14} /> Chỉ Admin</span><h2>BẢN LỊCH NGHỈ TRƯỚC KHI SỬA / XÓA · LƯU 30 NGÀY</h2><p>Mỗi lần sửa hoặc xóa, bản dữ liệu trước thao tác được giữ độc lập trong 30 ngày rồi tự hết hạn.</p></div><div className="audit-total">{data.archive?.length || 0} bản lưu</div></div>
-      <div className="audit-archive-list">{(data.archive || []).map((item) => <article className="audit-archive-item" key={`archive-${item.id}`}><div className="audit-archive-head"><div><span className={`audit-operation ${item.event_type}`}>{item.event_type === 'delete' ? 'BẢN ĐÃ XÓA' : 'BẢN TRƯỚC KHI SỬA'}</span> <strong>{item.employee_name || item.old_data?.employee_name || 'Lịch nghỉ'}</strong></div><small>Lưu đến {formatTime(item.expires_at)}</small></div><Snapshot item={item} /><div style={{marginTop:8}}><small>Thao tác lúc {formatTime(item.created_at)}{item.actor ? ` · ${item.actor}` : ''}</small></div></article>)}{!data.archive?.length && <div className="setup-note">Chưa có bản lịch nghỉ đã sửa/xóa trong 30 ngày gần đây.</div>}</div>
-    </section>
+    <section className="panel data-toolbar"><div className="audit-toolbar-content">
+      <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
+      {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<input type="date" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<input type="date" min={start} value={end} onChange={(e) => setEnd(e.target.value)}/></label></div>}
+      <div className="audit-search-line"><label>Người thực hiện<input type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setActor(actorSearch.trim()) } }} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-search-actions"><button type="button" className="primary-button" onClick={() => setActor(actorSearch.trim())}><Search size={15}/> Tìm</button>{actor && <button type="button" className="secondary-button" onClick={() => { setActorSearch(''); setActor('') }}><X size={15}/> Bỏ lọc</button>}</div><div className="audit-total">{data.changes?.length || 0} thay đổi</div></div>
+    </div></section>
+
+    <section className="panel audit-list audit-detailed">{(data.changes || []).map((item) => <article key={item.id}><span className={`audit-operation ${item.event_type}`}>{labels[item.event_type] || item.event_type}</span><div><strong>{item.employee_name || 'Lịch nghỉ'}</strong><p>{item.detail || 'Thay đổi lịch nghỉ'}</p><FieldChanges item={item} />{item.actor && <small>Người thực hiện: <b>{item.actor}</b></small>}</div><time>{formatTime(item.created_at)}</time></article>)}{!data.changes?.length && <div className="setup-note">Không có thay đổi phù hợp bộ lọc.</div>}</section>
+
+    <section className="panel audit-archive"><div className="panel-title-row"><div><span className="eyebrow"><Archive size={14} /> Chỉ Admin</span><h2>BẢN LỊCH NGHỈ TRƯỚC KHI SỬA / XÓA · LƯU 30 NGÀY</h2><p>Bản dữ liệu trước thao tác được giữ độc lập trong 30 ngày và áp dụng cùng bộ lọc thời gian/người thực hiện phía trên.</p></div><div className="audit-total">{data.archive?.length || 0} bản lưu</div></div><div className="audit-archive-list">{(data.archive || []).map((item) => <article className="audit-archive-item" key={`archive-${item.id}`}><div className="audit-archive-head"><div><span className={`audit-operation ${item.event_type}`}>{item.event_type === 'delete' ? 'BẢN ĐÃ XÓA' : 'BẢN TRƯỚC KHI SỬA'}</span> <strong>{item.employee_name || item.old_data?.employee_name || 'Lịch nghỉ'}</strong></div><small>Lưu đến {formatTime(item.expires_at)}</small></div><Snapshot item={item}/><div style={{marginTop:8}}><small>Thao tác lúc {formatTime(item.created_at)}{item.actor ? ` · ${item.actor}` : ''}</small></div></article>)}{!data.archive?.length && <div className="setup-note">Không có bản lưu phù hợp bộ lọc.</div>}</div></section>
   </div>
 }
