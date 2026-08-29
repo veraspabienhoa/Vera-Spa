@@ -566,10 +566,12 @@ def install_staff_routes(
             "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
         )
         output = {key: feature_allowed(conn, ident, key) for key in keys}
-        # Xóa nhân viên là thao tác quản trị tài khoản, chỉ Admin được thực hiện.
-        if str(ident.role).lower() != "admin":
-            output["employee_delete"] = False
-            output["employee_delete_confirm"] = False
+        # Xóa nhân viên là thao tác quản trị tài khoản chỉ dựa trên vai trò
+        # Admin. Không để một override phân quyền cũ làm giao diện hiện nút Xóa
+        # nhưng API lại từ chối ở quyền xác nhận ẩn.
+        is_admin = str(ident.role).lower() == "admin"
+        output["employee_delete"] = is_admin
+        output["employee_delete_confirm"] = is_admin
         return output
 
     def allowed_roles(ident) -> list[str]:
@@ -986,8 +988,6 @@ def install_staff_routes(
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             if str(ident.role).lower() != "admin":
                 raise HTTPException(403, "Chỉ Admin được xóa nhân viên.")
-            require_feature(conn, ident, "employee_delete")
-            require_feature(conn, ident, "employee_delete_confirm")
             rows = _select_staff_rows(conn, for_update=True)
             targets = [find_row(rows, name) for name in names]
             for row in targets:
