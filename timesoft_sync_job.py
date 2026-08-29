@@ -41,6 +41,19 @@ BASE_URL = str(os.getenv("TIMESOFT_BASE_URL", "https://vera.timesoft.vn") or "ht
 USERNAME = str(os.getenv("TIMESOFT_USERNAME", "") or "").strip()
 PASSWORD = str(os.getenv("TIMESOFT_PASSWORD", "") or "")
 SYNC_DAYS = max(1, min(7, int(os.getenv("TIMESOFT_SYNC_DAYS", "2") or 2)))
+# Payroll reads one immutable invoice snapshot per calendar day.  The normal
+# five-minute sync only needs today + yesterday, but a newly-created PostgreSQL
+# database may not contain the earlier days of the active payroll period even
+# though TimeSoft itself has them.  Backfill only missing invoice snapshots in
+# small batches; existing historical rows are never re-fetched by this path.
+PAYROLL_BACKFILL_DAYS = max(
+    SYNC_DAYS,
+    min(120, int(os.getenv("TIMESOFT_PAYROLL_BACKFILL_DAYS", "45") or 45)),
+)
+PAYROLL_BACKFILL_BATCH_DAYS = max(
+    1,
+    min(31, int(os.getenv("TIMESOFT_PAYROLL_BACKFILL_BATCH_DAYS", "12") or 12)),
+)
 CHECKIN_PAGE_SIZE = max(20, min(500, int(os.getenv("TIMESOFT_CHECKIN_PAGE_SIZE", "100") or 100)))
 MAX_CHECKIN_PAGES = 500
 # V93.3: snapshot theo ngày là dữ liệu lịch sử, không còn TTL 24 giờ.
@@ -1081,10 +1094,32 @@ def _key(prefix: str, target_date: date) -> str:
     return f"{prefix}_{target_date.strftime('%Y%m%d')}"
 
 
-def write_snapshot(target_date: date, invoice_df: pd.DataFrame, invoice_meta: dict,
-                   checkin_df: pd.DataFrame, checkin_meta: dict) -> None:
+def _missing_payroll_invoice_dates(conn, today: date) -> list[date]:
+    """Return absent daily invoice snapshots, oldest first.
+
+    ``dataset_key`` is the primary key of ``vera_dataset_cache``.  The bounded
+    key range therefore uses the existing primary-key index and avoids scanning
+    payload JSON.  An existing zero-row snapshot is complete and must not be
+    treated as missing because a day can legitimately have no matching rows.
+    """
+    first_date = today - timedelta(days=PAYROLL_BACKFILL_DAYS - 1)
+    first_key = _key("timesoft_summary_invoice", first_date)
+    last_key = _key("timesoft_summary_invoice", today)
+    existing = set(conn.execute(text("""
+        SELECT dataset_key
+        FROM vera_dataset_cache
+        WHERE dataset_key BETWEEN :first_key AND :last_key
+    """), {"first_key": first_key, "last_key": last_key}).scalars().all())
+    return [
+        first_date + timedelta(days=index)
+        for index in range(PAYROLL_BACKFILL_DAYS)
+        if _key("timesoft_summary_invoice", first_date + timedelta(days=index)) not in existing
+    ]
+
+
+def write_invoice_snapshot(target_date: date, invoice_df: pd.DataFrame, invoice_meta: dict) -> None:
+    """Persist the invoice datasets consumed by automatic Payroll."""
     source_version = target_date.isoformat()
-    # Snapshot gắn ngày được giữ dài hạn để Admin xem lịch sử/export.
     vpg.write_dataset(
         _key("timesoft_summary_invoice", target_date),
         invoice_df,
@@ -1097,6 +1132,26 @@ def write_snapshot(target_date: date, invoice_df: pd.DataFrame, invoice_meta: di
         ttl_seconds=TIMESOFT_HISTORY_TTL_SECONDS,
         source_version=source_version,
     )
+    if target_date == datetime.now(VN_TZ).date():
+        vpg.write_dataset(
+            "timesoft_summary_invoice_today",
+            invoice_df,
+            ttl_seconds=1800,
+            source_version=source_version,
+        )
+        vpg.write_dataset(
+            "timesoft_summary_totals_today",
+            pd.DataFrame([invoice_meta]),
+            ttl_seconds=1800,
+            source_version=source_version,
+        )
+
+
+def write_snapshot(target_date: date, invoice_df: pd.DataFrame, invoice_meta: dict,
+                   checkin_df: pd.DataFrame, checkin_meta: dict) -> None:
+    source_version = target_date.isoformat()
+    # Snapshot gắn ngày được giữ dài hạn để Admin xem lịch sử/export.
+    write_invoice_snapshot(target_date, invoice_df, invoice_meta)
     vpg.write_dataset(
         _key("timesoft_employee_checkin", target_date),
         checkin_df,
@@ -1104,17 +1159,46 @@ def write_snapshot(target_date: date, invoice_df: pd.DataFrame, invoice_meta: di
         source_version=source_version,
     )
     if target_date == datetime.now(VN_TZ).date():
-        vpg.write_dataset("timesoft_summary_invoice_today", invoice_df, ttl_seconds=1800, source_version=source_version)
-        vpg.write_dataset("timesoft_summary_totals_today", pd.DataFrame([invoice_meta]), ttl_seconds=1800, source_version=source_version)
         vpg.write_dataset("timesoft_employee_checkin_today", checkin_df, ttl_seconds=1800, source_version=source_version)
 
 
+def backfill_missing_payroll_snapshots(session: requests.Session, conn, today: date) -> dict:
+    """Fetch only missing historical invoice days, newest first.
+
+    A bounded batch keeps the frequently scheduled job fast.  With the default
+    batch of 12, the six missing days of a payroll period are repaired in one
+    execution; older gaps continue automatically on later scheduler runs.
+    """
+    missing = _missing_payroll_invoice_dates(conn, today)
+    targets = list(reversed(missing))[:PAYROLL_BACKFILL_BATCH_DAYS]
+    result = {
+        "missing_before": len(missing),
+        "attempted": len(targets),
+        "added": 0,
+        "errors": 0,
+        "dates": [],
+    }
+    for target_date in targets:
+        try:
+            invoice_df, invoice_meta = fetch_summary(session, target_date)
+            write_invoice_snapshot(target_date, invoice_df, invoice_meta)
+            result["added"] += 1
+            result["dates"].append(target_date.isoformat())
+            _log(f"Payroll backfill {target_date.isoformat()}: invoice_rows={len(invoice_df)}")
+        except Exception as exc:
+            result["errors"] += 1
+            _log(f"PAYROLL BACKFILL ERROR {target_date.isoformat()}: {type(exc).__name__}: {exc}")
+    return result
+
+
 def write_status(status: str, started_at: datetime, details: list[dict], error: str = "",
-                 auto_status: str = "", tour_result: dict | None = None, timesoft_result: dict | None = None) -> None:
+                 auto_status: str = "", tour_result: dict | None = None, timesoft_result: dict | None = None,
+                 payroll_backfill_result: dict | None = None) -> None:
     now = datetime.now(VN_TZ)
     today_detail = next((x for x in details if x.get("date") == now.date().isoformat()), {})
     tour_result = tour_result or {}
     timesoft_result = timesoft_result or {}
+    payroll_backfill_result = payroll_backfill_result or {}
     row = {
         "status": status,
         "synced_at": now.isoformat(),
@@ -1132,6 +1216,10 @@ def write_status(status: str, started_at: datetime, details: list[dict], error: 
         "auto_timesoft_added": int(timesoft_result.get("added", 0) or 0),
         "auto_tour_errors": int(tour_result.get("errors", 0) or 0),
         "auto_timesoft_errors": int(timesoft_result.get("errors", 0) or 0),
+        "payroll_backfill_missing_before": int(payroll_backfill_result.get("missing_before", 0) or 0),
+        "payroll_backfill_attempted": int(payroll_backfill_result.get("attempted", 0) or 0),
+        "payroll_backfill_added": int(payroll_backfill_result.get("added", 0) or 0),
+        "payroll_backfill_errors": int(payroll_backfill_result.get("errors", 0) or 0),
         "error": str(error or "")[:500],
     }
     vpg.write_dataset(
@@ -1170,6 +1258,7 @@ def run_sync() -> int:
     checkin_by_date: list[tuple[date, pd.DataFrame]] = []
     tour_result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
     timesoft_result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
+    payroll_backfill_result = {"missing_before": 0, "attempted": 0, "added": 0, "errors": 0}
     auto_status = "UNKNOWN"
 
     try:
@@ -1197,6 +1286,18 @@ def run_sync() -> int:
             }
             details.append(detail)
             _log(f"Đã đồng bộ {target_date.isoformat()}: invoice_rows={len(invoice_df)}; checkin_rows={len(checkin_df)}")
+
+        # PostgreSQL được tạo sau TimeSoft nên những ngày đầu kỳ lương có thể
+        # chưa từng được snapshot.  Chỉ bù các ngày invoice còn thiếu; không tải
+        # lại check-in lịch sử và không làm nặng luồng đồng bộ 2 ngày thường lệ.
+        payroll_backfill_result = backfill_missing_payroll_snapshots(session, lock_conn, today)
+        _log(
+            "Payroll backfill: "
+            f"missing_before={payroll_backfill_result['missing_before']} "
+            f"attempted={payroll_backfill_result['attempted']} "
+            f"added={payroll_backfill_result['added']} "
+            f"errors={payroll_backfill_result['errors']}"
+        )
 
         # Auto penalty chỉ chạy sau khi snapshot thành công.
         try:
@@ -1228,6 +1329,7 @@ def run_sync() -> int:
             auto_status=auto_status,
             tour_result=tour_result,
             timesoft_result=timesoft_result,
+            payroll_backfill_result=payroll_backfill_result,
         )
         _log(f"Hoàn tất Job V93.3 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
         return 0
@@ -1240,6 +1342,7 @@ def run_sync() -> int:
                 auto_status=auto_status,
                 tour_result=tour_result,
                 timesoft_result=timesoft_result,
+                payroll_backfill_result=payroll_backfill_result,
             )
         except Exception as status_exc:
             _log(f"Không ghi được sync status: {type(status_exc).__name__}")

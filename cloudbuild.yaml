@@ -126,6 +126,30 @@ steps:
         raise SystemExit(f'Policy V3.9 health check failed: {last}')
         PY
 
+        echo "Health checking Payroll TimeSoft auto source: $${API_URL}/v2/payroll-timesoft-auto/health"
+        python3 - "$${API_URL}/v2/payroll-timesoft-auto/health" <<'PY'
+        import json, sys, time, urllib.request
+        url=sys.argv[1]
+        expected='payroll-timesoft-auto-2026-08-29.2'
+        last=None
+        for attempt in range(1,13):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as r:
+                    body=r.read(2048).decode('utf-8','replace')
+                    payload=json.loads(body)
+                    if (200 <= r.status < 300 and payload.get('ok') is True
+                            and payload.get('release') == expected
+                            and payload.get('source') == 'timesoft_summary_invoice_YYYYMMDD'):
+                        print(body)
+                        raise SystemExit(0)
+                    last=RuntimeError(f'Unexpected Payroll TimeSoft health payload: {body}')
+            except Exception as exc:
+                last=exc
+                print(f'Payroll TimeSoft health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
+            time.sleep(5)
+        raise SystemExit(f'Payroll TimeSoft health check failed: {last}')
+        PY
+
   # ============================================================
   # WEB APP VERA SPA - SAFE CANDIDATE REVISION
   # Supabase Session Pooler Singapore is preserved exactly as before.
@@ -234,7 +258,7 @@ steps:
       - "--parallelism=1"
       - "--command=python"
       - "--args=timesoft_snapshot_job.py"
-      - "--set-env-vars=VERA_DB_ENABLED=1,VERA_DATA_BACKEND=postgres,DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=600,DB_CONNECT_TIMEOUT=10,TIMESOFT_BASE_URL=https://vera.timesoft.vn,TIMESOFT_SYNC_DAYS=2,TIMESOFT_CHECKIN_PAGE_SIZE=100"
+      - "--set-env-vars=VERA_DB_ENABLED=1,VERA_DATA_BACKEND=postgres,DB_HOST=${_DB_HOST},DB_PORT=${_DB_PORT},DB_NAME=${_DB_NAME},DB_USER=${_DB_USER},DB_POOL_SIZE=2,DB_MAX_OVERFLOW=0,DB_POOL_TIMEOUT=20,DB_POOL_RECYCLE=600,DB_CONNECT_TIMEOUT=10,TIMESOFT_BASE_URL=https://vera.timesoft.vn,TIMESOFT_SYNC_DAYS=2,TIMESOFT_PAYROLL_BACKFILL_DAYS=45,TIMESOFT_PAYROLL_BACKFILL_BATCH_DAYS=12,TIMESOFT_CHECKIN_PAGE_SIZE=100"
       - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
 
   - name: "gcr.io/cloud-builders/gcloud"

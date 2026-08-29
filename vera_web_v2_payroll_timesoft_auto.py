@@ -25,7 +25,7 @@ from sqlalchemy import text
 import vera_web_v2_payroll as payroll
 
 
-RELEASE = "payroll-timesoft-auto-2026-08-29.1"
+RELEASE = "payroll-timesoft-auto-2026-08-29.2"
 VN_TZ = timezone(timedelta(hours=7))
 DATASET_PREFIX = "timesoft_summary_invoice_"
 
