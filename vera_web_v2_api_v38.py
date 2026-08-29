@@ -14,6 +14,7 @@ from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
 from vera_web_v2_payroll_saved_edit import install_payroll_saved_edit_routes
 from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_routes
 from vera_web_v2_policy_v39 import install_policy_v39
+from vera_web_v2_policy_v40 import install_policy_v40
 from vera_web_v2_revenue_leave_list import install_revenue_leave_list_routes
 from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
@@ -35,6 +36,12 @@ install_staff_security_routes(_shared.app, engine_instance=_api._engine_instance
 install_staff_status_sort(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, vn_tz=_api.VN_TZ)
+
+# Policy 4.0 narrows the monthly weekend cap to Group 3 and permits only
+# Quản lý/Lễ tân to backfill past rows whose canonical Loại nghỉ is Vi phạm.
+# Install before preview/write wrappers so every Web V2 registration path uses it.
+install_policy_v40(_shared.app, shared_module=_shared)
+
 install_leave_violation_split_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, policy_rows=_api._policy_rows, field=_api._field, reason_item=_api._reason_item, role_tokens=_api._role_tokens, day_allowed=_api._day_allowed, norm=_api._norm)
 install_leave_preview_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity)
 install_long_leave_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, validate_and_prepare=_shared._validate_and_prepare, leave_create_type=_api.LeaveCreate, sheet_row_for_record=_api._sheet_row_for_record, insert_record=_api._insert_record)
