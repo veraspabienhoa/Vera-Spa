@@ -10,6 +10,13 @@ const currentMonth = () => {
   const date = new Date()
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
+const periodDates = (month, periodNo) => {
+  const [year, monthNumber] = month.split('-').map(Number)
+  const startDay = periodNo === 1 ? 1 : 16
+  const endDay = periodNo === 1 ? 15 : new Date(year, monthNumber, 0).getDate()
+  const iso = (day) => `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return { start: iso(startDay), end: iso(endDay) }
+}
 const CONFIG_DEFAULT = { default_living_expense: 150000, default_locker_support: 80000, leader_responsibility_allowance: 0 }
 const EDIT_LABELS = {
   'Tiền Hỗ Trợ Hoàn Lại': 'Trách nhiệm / hỗ trợ',
@@ -97,6 +104,9 @@ export default function PayrollPageEnhanced({ user }) {
   const [draftSearch, setDraftSearch] = useState('')
   const [selected, setSelected] = useState([])
   const [config, setConfig] = useState(CONFIG_DEFAULT)
+  const [accumulationRefunds, setAccumulationRefunds] = useState([])
+  const [formerEmployees, setFormerEmployees] = useState([])
+  const [refundForm, setRefundForm] = useState({ employee_name: '', amount: '', note: 'Hoàn trả tiền tích lũy khi nghỉ việc' })
   const [obligations, setObligations] = useState([])
   const [obligationGroups, setObligationGroups] = useState([])
   const [obligationForm, setObligationForm] = useState({ employee_name: '', amount: '', content: 'Chưa hoàn thành nghĩa vụ Vi phạm', due_from: '' })
@@ -127,6 +137,11 @@ export default function PayrollPageEnhanced({ user }) {
     if (canCalculate || canEditConfig) {
       const result = await veraApi.payrollConfig()
       setConfig(result.config || CONFIG_DEFAULT)
+    }
+    if (isAdmin && canEditConfig) {
+      const result = await veraApi.payrollAccumulationRefunds()
+      setAccumulationRefunds(result.refunds || [])
+      setFormerEmployees(result.employees || [])
     }
     if (canManageObligations) {
       const result = await veraApi.payrollObligations()
@@ -330,6 +345,32 @@ export default function PayrollPageEnhanced({ user }) {
     setNotice({ type: 'success', message: result.message })
   })
 
+  const addAccumulationRefund = (event) => {
+    event.preventDefault()
+    void run('accumulation-refund', async () => {
+      const dates = periodDates(month, periodNo)
+      const result = await veraApi.createPayrollAccumulationRefund({
+        ...refundForm,
+        amount: Number(refundForm.amount),
+        start: dates.start,
+        end: dates.end,
+      })
+      setAccumulationRefunds((current) => [
+        ...current.filter((item) => item.id !== result.refund.id),
+        result.refund,
+      ])
+      setRefundForm({ employee_name: '', amount: '', note: 'Hoàn trả tiền tích lũy khi nghỉ việc' })
+      setNotice({ type: 'success', message: `${result.message} Hãy Upload & tính lương lại để áp dụng vào bảng nháp.` })
+    })
+  }
+
+  const removeAccumulationRefund = (id) => run(`accumulation-refund-${id}`, async () => {
+    if (!window.confirm('Xóa cài đặt hoàn trả tiền tích lũy này?')) return
+    const result = await veraApi.deletePayrollAccumulationRefund(id)
+    setAccumulationRefunds((current) => current.filter((item) => item.id !== id))
+    setNotice({ type: 'success', message: `${result.message} Hãy Upload & tính lương lại nếu bảng nháp đã được tạo.` })
+  })
+
   const addObligation = (event) => {
     event.preventDefault()
     void run('obligation', async () => {
@@ -436,6 +477,20 @@ export default function PayrollPageEnhanced({ user }) {
         <label>Hỗ trợ Locker<input type="number" min="0" inputMode="numeric" disabled={isBusy} value={config.default_locker_support} onChange={(event) => setConfig({ ...config, default_locker_support: Number(event.target.value) })} /></label>
         <label>Tiền trách nhiệm Leader (Kỳ 2)<input type="number" min="0" inputMode="numeric" disabled={isBusy} value={config.leader_responsibility_allowance} onChange={(event) => setConfig({ ...config, leader_responsibility_allowance: Number(event.target.value) })} /></label>
       </div>
+    </section>}
+
+    {isAdmin && canEditConfig && <section className="panel payroll-accumulation-refund-panel">
+      <div className="panel-title-row"><div><h2>HOÀN TRẢ TIỀN TÍCH LŨY – NHÂN VIÊN NGHỈ VIỆC</h2><p>Admin nhập thủ công; khoản hoàn trả được cộng đúng vào kỳ đang chọn và không khấu trừ Tích lũy thêm trong kỳ đó.</p></div></div>
+      <form className="payroll-refund-form" onSubmit={addAccumulationRefund}>
+        <label>Nhân viên nghỉ việc<select required disabled={isBusy} value={refundForm.employee_name} onChange={(event) => setRefundForm({ ...refundForm, employee_name: event.target.value })}><option value="">-- Chọn nhân viên --</option>{formerEmployees.map((item) => <option key={item.employee_name} value={item.employee_name}>{item.employee_name} · {item.employment_status}</option>)}</select></label>
+        <label>Số tiền hoàn trả<input required type="number" min="1" inputMode="numeric" disabled={isBusy} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>
+        <label>Kỳ áp dụng<input readOnly value={`Kỳ ${periodNo} - Tháng ${Number(month.slice(5))}/${month.slice(0, 4)}`} /></label>
+        <label>Ghi chú<input required disabled={isBusy} value={refundForm.note} onChange={(event) => setRefundForm({ ...refundForm, note: event.target.value })} /></label>
+        <button className="primary-button" disabled={isBusy || !formerEmployees.length}><Plus size={16} /> Lưu hoàn trả</button>
+      </form>
+      <div className="responsive-data-table payroll-setting-table"><table><thead><tr><th>Nhân viên</th><th>Số tiền</th><th>Kỳ áp dụng</th><th>Ghi chú</th><th></th></tr></thead><tbody>{accumulationRefunds.map((item) => <tr key={item.id}><td><strong>{item.employee_name}</strong></td><td>{money(item.amount)}</td><td>{item.period_label || `${item.start} – ${item.end}`}</td><td>{item.note}</td><td><button type="button" className="danger-button compact" disabled={isBusy} onClick={() => removeAccumulationRefund(item.id)}><Trash2 size={14} /> Xóa</button></td></tr>)}</tbody></table></div>
+      {!formerEmployees.length && <div className="setup-note">Chưa có nhân viên ở trạng thái Tạm thời nghỉ việc hoặc Đã nghỉ việc.</div>}
+      {!accumulationRefunds.length && <div className="setup-note">Chưa có khoản hoàn trả tích lũy được cài đặt.</div>}
     </section>}
   </div>
 }

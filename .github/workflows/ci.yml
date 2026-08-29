@@ -612,10 +612,13 @@ jobs:
           profile_page = Path('web-v2/src/pages/ProfilePage.jsx').read_text(encoding='utf-8')
           storage_page = Path('web-v2/src/pages/StorageAdminPage.jsx').read_text(encoding='utf-8')
           payroll_page = Path('web-v2/src/pages/PayrollPage.jsx').read_text(encoding='utf-8')
+          payroll_enhanced_page = Path('web-v2/src/pages/PayrollPageEnhanced.jsx').read_text(encoding='utf-8')
+          payroll_v38 = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
+          payroll_v38_page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
           api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
-          for source in (api, permissions, profile, payroll, people, security, snapshot, storage): ast.parse(source)
+          for source in (api, permissions, profile, payroll, payroll_v38, people, security, snapshot, storage): ast.parse(source)
           checks = {
               'statistics and list have local refresh controls': leave.count('onClick={load}') >= 3 and leave.count('Làm mới') >= 3,
               'profile requires current password and mirrors credentials': 'hmac.compare_digest' in profile and 'A{source_row}:U{source_row}' in profile,
@@ -635,6 +638,9 @@ jobs:
               'payroll UI exposes salary reconciliation and blocks zero-salary official save': all(token in payroll_page for token in ('draftSalaryTotal', 'source_summary', 'matched_tip_rows', 'Tổng Tiền Lương đang bằng 0', 'disabled={isBusy || draftSalaryTotal <= 0}')),
               'payroll drafts persist by exact period': all(token in payroll for token in ('@app.get("/v2/payroll/draft")', '@app.put("/v2/payroll/draft")', '@app.delete("/v2/payroll/draft")', '_draft_key', 'pg_advisory_xact_lock')),
               'payroll draft Import and Export Excel roundtrip is wired': '/v2/payroll/draft/import.xlsx' in payroll and '/v2/payroll/draft/export.xlsx' in payroll and '_read_draft_workbook' in payroll and all(token in api_client for token in ('importPayrollDraft', 'exportPayrollDraft', 'savePayrollDraft', 'deletePayrollDraft')) and all(label in payroll_page for label in ('Import Excel', 'Export to Excel', 'Lưu bảng lương nháp', 'Xóa bảng lương nháp')),
+              'payroll new Excel has title period and safe columns': all(token in payroll for token in ('BẢNG LƯƠNG NHÂN VIÊN', 'KỲ LƯƠNG', "Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}", '_new_payroll_sheet_title', 'field not in {"Email", "Số dòng Tip"}', 'field == "TT"', 'period_ranges')),
+              'Payroll 3.8 keeps employee-specific deductions': all(token in payroll_v38 for token in ('PAYROLL_V38_RELEASE', 'PG_OVERRIDE_KEY = "employee_overrides"', '_apply_overrides_to_calculation', '/v2/payroll-v38/employee-overrides')) and all(token in payroll_v38_page for token in ('MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8', 'Áp dụng mức riêng', 'Dùng lại mặc định')),
+              'Admin can configure former employee accumulation refunds': all(token in payroll for token in ('AccumulationRefundCreate', '/v2/payroll/accumulation-refunds', '_accumulation_refund_map', 'Chỉ Admin được cài đặt hoàn trả tiền tích lũy', 'Tạm thời nghỉ việc hoặc Đã nghỉ việc')) and all(token in payroll_enhanced_page for token in ('HOÀN TRẢ TIỀN TÍCH LŨY – NHÂN VIÊN NGHỈ VIỆC', 'addAccumulationRefund', 'removeAccumulationRefund')) and all(token in api_client for token in ('payrollAccumulationRefunds', 'createPayrollAccumulationRefund', 'deletePayrollAccumulationRefund')),
               'payroll employee filtering is exact': 'needle in {norm(item.get("Tên Hệ thống")), norm(item.get("Họ và tên"))}' in payroll,
               'payroll legacy history and obligation sync are wired': all(token in payroll for token in ('/v2/payroll/history/sync-legacy', 'LEGACY_PAYROLL_WORKSHEET', 'LEGACY_OBLIGATION_WORKSHEET', '_obligation_group')) and 'syncLegacyPayroll' in api_client and 'Tải dữ liệu hệ thống cũ' in payroll_page,
               'payroll legacy obligation groups are visible to Admin': all(token in payroll_page for token in ('Nợ do Thực nhận âm', 'Nghĩa vụ Vi phạm Admin chủ động tạm hoãn', 'canManageObligations', 'isAdmin')),

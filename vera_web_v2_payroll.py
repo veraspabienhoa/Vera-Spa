@@ -100,6 +100,14 @@ class ObligationCreate(BaseModel):
     due_from: date
 
 
+class AccumulationRefundCreate(BaseModel):
+    employee_name: str = Field(min_length=1, max_length=200)
+    amount: float = Field(gt=0, le=1_000_000_000)
+    start: date
+    end: date
+    note: str = Field(default="Hoàn trả tiền tích lũy khi nghỉ việc", max_length=1000)
+
+
 def _number(value: Any) -> int:
     if isinstance(value, numbers.Number):
         return int(round(float(value)))
@@ -282,7 +290,8 @@ def _employee_catalog(conn, norm) -> dict[str, dict[str, Any]]:
         norm(item["username"]): dict(item)
         for item in conn.execute(text("""
             SELECT username,COALESCE(full_name,'') full_name,COALESCE(email,'') email,
-                   COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name
+                   COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
+                   COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status
             FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
         """)).mappings().all()
     }
@@ -460,6 +469,22 @@ def _obligations(conn) -> list[dict[str, Any]]:
     return [dict(item) for item in (custom or []) if isinstance(item, dict)]
 
 
+def _accumulation_refunds(conn) -> list[dict[str, Any]]:
+    custom = _setting(conn, "accumulation_refunds", [])
+    return [dict(item) for item in (custom or []) if isinstance(item, dict)]
+
+
+def _accumulation_refund_map(conn, start: date, end: date, norm) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for item in _accumulation_refunds(conn):
+        if _parse_date(item.get("start")) != start or _parse_date(item.get("end")) != end:
+            continue
+        key = norm(item.get("employee_name"))
+        if key:
+            result[key] = result.get(key, 0) + max(0, _number(item.get("amount")))
+    return result
+
+
 def _legacy_obligations(conn) -> list[dict[str, Any]]:
     payload = conn.execute(text(
         "SELECT payload FROM vera_dataset_cache WHERE dataset_key='violation_debt' LIMIT 1"
@@ -561,6 +586,78 @@ def _workbook(records: list[dict[str, Any]], fields: list[str], title: str = "B�
     return stream.getvalue()
 
 
+def _new_payroll_sheet_title(start: date) -> str:
+    period_no = 1 if start.day == 1 else 2
+    return f"Bảng lương bản mới K{period_no} Tháng {start.month}"[:31]
+
+
+def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], start: date, end: date) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = _new_payroll_sheet_title(start)
+    ws.sheet_view.showGridLines = False
+    last_column = get_column_letter(len(fields))
+
+    ws.merge_cells(f"A1:{last_column}1")
+    ws["A1"] = "BẢNG LƯƠNG NHÂN VIÊN"
+    ws["A1"].font = Font(bold=True, size=16, color="FFFFFF")
+    ws["A1"].fill = PatternFill("solid", fgColor="1F513F")
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 30
+
+    ws["A2"] = "KỲ LƯƠNG"
+    ws["A2"].font = Font(bold=True, color="1F513F")
+    ws["A2"].fill = PatternFill("solid", fgColor="E5EFEA")
+    ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
+    if len(fields) > 1:
+        ws.merge_cells(f"B2:{last_column}2")
+    ws["B2"] = f"Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
+    ws["B2"].font = Font(bold=True, color="1F513F")
+    ws["B2"].fill = PatternFill("solid", fgColor="E5EFEA")
+    ws["B2"].alignment = Alignment(horizontal="left", vertical="center")
+    for cell in ws[2]:
+        cell.fill = PatternFill("solid", fgColor="E5EFEA")
+    ws.row_dimensions[2].height = 24
+
+    header_row = 4
+    for column_index, field in enumerate(fields, start=1):
+        cell = ws.cell(header_row, column_index, field)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1F513F")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[header_row].height = 30
+
+    for item in records:
+        ws.append([_number(item.get(key)) if key in MONEY_FIELDS else item.get(key, "") for key in fields])
+
+    for column_index, field in enumerate(fields, start=1):
+        letter = get_column_letter(column_index)
+        data_cells = [ws.cell(row_index, column_index) for row_index in range(header_row + 1, ws.max_row + 1)]
+        if field in MONEY_FIELDS:
+            for cell in data_cells:
+                cell.number_format = "#,##0"
+                cell.alignment = Alignment(horizontal="right", vertical="center")
+            width = 18
+        elif field == "TT":
+            for cell in data_cells:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            width = 7
+        else:
+            max_length = max([len(str(field))] + [len(str(cell.value or "")) for cell in data_cells])
+            width = min(max(max_length + 2, 12), 34)
+        ws.column_dimensions[letter].width = width
+
+    if ws.max_row > header_row:
+        ws.auto_filter.ref = f"A{header_row}:{last_column}{ws.max_row}"
+        for row_index in range(header_row + 1, ws.max_row + 1):
+            ws.row_dimensions[row_index].height = 21
+    ws.freeze_panes = f"A{header_row + 1}"
+    stream = BytesIO()
+    wb.save(stream)
+    wb.close()
+    return stream.getvalue()
+
+
 def _saved_draft(conn, start: date, end: date) -> dict[str, Any] | None:
     stored = conn.execute(text("""
         SELECT value_json,updated_by,updated_at
@@ -591,7 +688,7 @@ def _saved_draft(conn, start: date, end: date) -> dict[str, Any] | None:
     }
 
 
-def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str]]:
+def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str], set[tuple[date, date]]]:
     if not content:
         raise HTTPException(400, "File Excel đang trống.")
     if len(content) > 15 * 1024 * 1024:
@@ -601,18 +698,30 @@ def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str]
     workbook = None
     try:
         workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
-        worksheet = workbook["Bảng lương bản mới"] if "Bảng lương bản mới" in workbook.sheetnames else workbook.active
-        iterator = worksheet.iter_rows(values_only=True)
-        headers = [str(value or "").strip() for value in next(iterator, ())]
-        if not headers or "Tên Hệ thống" not in headers:
+        worksheet = workbook.active
+        source_rows = list(worksheet.iter_rows(values_only=True))
+        header_index = next((
+            index for index, values in enumerate(source_rows[:12])
+            if "Tên Hệ thống" in [str(value or "").strip() for value in values]
+        ), None)
+        if header_index is None:
             raise HTTPException(400, "File Import thiếu cột 'Tên Hệ thống'. Hãy dùng file Export to Excel từ Bảng lương.")
+        headers = [str(value or "").strip() for value in source_rows[header_index]]
         nonempty_headers = [header for header in headers if header]
         if len(nonempty_headers) != len(set(nonempty_headers)):
             raise HTTPException(400, "File Import có tiêu đề cột bị trùng.")
         rows: list[dict[str, Any]] = []
         period_labels: set[str] = set()
-        for row_number, values in enumerate(iterator, start=2):
-            if row_number > 502:
+        period_ranges: set[tuple[date, date]] = set()
+        for values in source_rows[:header_index]:
+            text_value = " ".join(str(value or "").strip() for value in values if str(value or "").strip())
+            match = re.search(r"Từ ngày\s+(\d{2}/\d{2}/\d{4})\s+đến\s+(\d{2}/\d{2}/\d{4})", text_value, re.IGNORECASE)
+            if match:
+                parsed_start, parsed_end = _parse_date(match.group(1)), _parse_date(match.group(2))
+                if parsed_start and parsed_end:
+                    period_ranges.add((parsed_start, parsed_end))
+        for row_number, values in enumerate(source_rows[header_index + 1:], start=header_index + 2):
+            if row_number > header_index + 501:
                 raise HTTPException(400, "File Import vượt quá 500 dòng bảng lương.")
             padded = list(values) + [None] * max(0, len(headers) - len(values))
             item = {header: padded[index] for index, header in enumerate(headers) if header}
@@ -635,7 +744,7 @@ def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str]
             workbook.close()
     if not rows:
         raise HTTPException(400, "File Import không có dòng bảng lương.")
-    return rows, period_labels
+    return rows, period_labels, period_ranges
 
 
 def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, norm, identity_type, google_client):
@@ -701,9 +810,15 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
     @app.post("/v2/payroll/draft/import.xlsx")
     async def import_payroll_draft(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), payload: bytes = Body(..., media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ident: identity_type = Depends(current_identity)):
         start, end, label = _period(month, period_no)
-        supplied_rows, labels = _read_draft_workbook(payload)
+        supplied_rows, labels, period_ranges = _read_draft_workbook(payload)
         if labels and labels != {label}:
             raise HTTPException(400, f"File Excel thuộc kỳ {', '.join(sorted(labels))}; màn hình đang chọn {label}.")
+        if period_ranges and period_ranges != {(start, end)}:
+            descriptions = ", ".join(
+                f"{period_start.strftime('%d/%m/%Y')}–{period_end.strftime('%d/%m/%Y')}"
+                for period_start, period_end in sorted(period_ranges)
+            )
+            raise HTTPException(400, f"File Excel thuộc kỳ {descriptions}; màn hình đang chọn {label}.")
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
             clean_rows = _clean_draft_rows(conn, supplied_rows, norm)
@@ -728,20 +843,20 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         for supplied in _visible(body.rows, ident, norm):
             row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
             row.update({
-                "Phiên bản": "Bản mới Web V2 (chưa lưu)",
-                "Mã bản lưu": label,
                 "Từ ngày": body.start.strftime("%d/%m/%Y"),
                 "Đến ngày": body.end.strftime("%d/%m/%Y"),
             })
             records.append(row)
         if not records:
             raise HTTPException(400, "Không có dữ liệu bảng lương mới để xuất.")
-        fields = ["Phiên bản", "Mã bản lưu", "Từ ngày", "Đến ngày"] + DRAFT_FIELDS
+        fields = ["Từ ngày", "Đến ngày"] + [
+            field for field in DRAFT_FIELDS if field not in {"Email", "Số dòng Tip"}
+        ]
         if str(ident.role or "").lower() != "admin":
-            fields = [field for field in fields if field not in {"Email", "Số tài khoản ngân hàng", "Tên ngân hàng"}]
+            fields = [field for field in fields if field not in {"Số tài khoản ngân hàng", "Tên ngân hàng"}]
         filename = f"VERA_BangLuong_BanMoi_{label.replace(' ', '_').replace('/', '-')}.xlsx"
         return StreamingResponse(
-            BytesIO(_workbook(records, fields, "Bảng lương bản mới")),
+            BytesIO(_new_payroll_workbook(records, fields, body.start, body.end)),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
         )
@@ -786,6 +901,87 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             _put_setting(conn, "config", value, ident.employee_username)
         return {"ok": True, "config": value, "message": "Đã lưu cài đặt khấu trừ mặc định và tiền trách nhiệm Leader."}
 
+    @app.get("/v2/payroll/accumulation-refunds")
+    def accumulation_refunds(ident: identity_type = Depends(current_identity)):
+        if str(ident.role or "").lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được cài đặt hoàn trả tiền tích lũy khi nghỉ việc.")
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "payroll_config_edit")
+            employees = [
+                item for item in _employee_catalog(conn, norm).values()
+                if norm(item.get("employment_status")) != "dang lam viec"
+            ]
+            refunds = _accumulation_refunds(conn)
+        employees.sort(key=lambda item: norm(item["username"]))
+        refunds.sort(key=lambda item: (_parse_date(item.get("start")) or date.max, norm(item.get("employee_name"))))
+        return {
+            "refunds": refunds,
+            "employees": [
+                {
+                    "employee_name": item["username"],
+                    "full_name": item["full_name"],
+                    "employment_status": item["employment_status"],
+                }
+                for item in employees
+            ],
+        }
+
+    @app.post("/v2/payroll/accumulation-refunds")
+    def create_accumulation_refund(body: AccumulationRefundCreate, ident: identity_type = Depends(current_identity)):
+        if str(ident.role or "").lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được cài đặt hoàn trả tiền tích lũy khi nghỉ việc.")
+        label = _period_label(body.start, body.end)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "payroll_config_edit")
+            employees = _employee_catalog(conn, norm)
+            key = norm(body.employee_name)
+            employee = employees.get(key)
+            if not employee:
+                raise HTTPException(400, "Tên nhân viên không tồn tại trong hồ sơ Nhân viên/Leader.")
+            if norm(employee.get("employment_status")) == "dang lam viec":
+                raise HTTPException(400, "Chỉ được hoàn trả tích lũy cho nhân viên Tạm thời nghỉ việc hoặc Đã nghỉ việc.")
+            rows = _accumulation_refunds(conn)
+            existing = next((
+                item for item in rows
+                if norm(item.get("employee_name")) == key
+                and _parse_date(item.get("start")) == body.start
+                and _parse_date(item.get("end")) == body.end
+            ), None)
+            item = {
+                "id": str(existing.get("id") if existing else uuid.uuid4()),
+                "employee_name": employee["username"],
+                "amount": _number(body.amount),
+                "start": body.start.isoformat(),
+                "end": body.end.isoformat(),
+                "period_label": label,
+                "note": body.note.strip() or "Hoàn trả tiền tích lũy khi nghỉ việc",
+                "updated_by": ident.employee_username,
+            }
+            keep = [
+                value for value in rows
+                if not (
+                    norm(value.get("employee_name")) == key
+                    and _parse_date(value.get("start")) == body.start
+                    and _parse_date(value.get("end")) == body.end
+                )
+            ]
+            keep.append(item)
+            _put_setting(conn, "accumulation_refunds", keep, ident.employee_username)
+        return {"ok": True, "refund": item, "message": f"Đã cài hoàn trả tích lũy cho {employee['username']} trong {label}."}
+
+    @app.delete("/v2/payroll/accumulation-refunds/{refund_id}")
+    def delete_accumulation_refund(refund_id: str, ident: identity_type = Depends(current_identity)):
+        if str(ident.role or "").lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được xóa cài đặt hoàn trả tiền tích lũy.")
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "payroll_config_edit")
+            rows = _accumulation_refunds(conn)
+            keep = [item for item in rows if str(item.get("id")) != refund_id]
+            if len(keep) == len(rows):
+                raise HTTPException(404, "Không tìm thấy cài đặt hoàn trả tiền tích lũy.")
+            _put_setting(conn, "accumulation_refunds", keep, ident.employee_username)
+        return {"ok": True, "message": "Đã xóa cài đặt hoàn trả tiền tích lũy."}
+
     @app.post("/v2/payroll/calculate")
     async def calculate_payroll(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), payload: bytes = Body(..., media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ident: identity_type = Depends(current_identity)):
         start, end, label = _period(month, period_no)
@@ -807,6 +1003,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             penalty_map = {norm(item["employee_name"]): _number(item["amount"]) for item in penalties}
             tichluy = _tichluy_map(conn, employees, start, end, norm)
             obligations = _obligation_map(conn, start, norm)
+            accumulation_refunds = _accumulation_refund_map(conn, start, end, norm)
         tips, source_summary = _tip_rows(source, start, end, norm)
         known = {norm(item["username"]) for item in employees}
         matched_tips = tips[tips["key"].isin(known)].copy()
@@ -834,11 +1031,13 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         rows = []
         for index, employee in enumerate(employees, start=1):
             key = norm(employee["username"])
+            accumulation_refund = accumulation_refunds.get(key, 0)
             row = {
                 "TT": index, "Tên Hệ thống": employee["username"], "Họ và tên": employee["full_name"],
                 "Tiền Lương": _number(salaries.get(key)),
                 "Tiền Hỗ Trợ Hoàn Lại": cfg["leader_responsibility_allowance"] if employee["role"] == "leader" and period_no == 2 else 0,
-                "Hoàn trả tiền tích lũy": 0, "Tích lũy": tichluy.get(key, 0),
+                "Hoàn trả tiền tích lũy": accumulation_refund,
+                "Tích lũy": 0 if accumulation_refund else tichluy.get(key, 0),
                 "Chi Phí Sinh Hoạt": cfg["default_living_expense"], "Tiền phạt trong tháng": penalty_map.get(key, 0),
                 "Vi phạm kỳ trước": obligations.get(key, 0), "Tiền ứng lương": 0,
                 "Tiền hỗ trợ Locker": cfg["default_locker_support"], "Số tiền thực nhận": 0,

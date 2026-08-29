@@ -265,7 +265,9 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .tour-legend-grid .leave { color: #8a8a8a; background: #fff; }
 .tour-countdown-note { margin-top: 12px; }
 .payroll-config-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.payroll-config-grid label, .payroll-obligation-form label { display: grid; gap: 6px; color: #4b5b53; font-size: 11px; font-weight: 800; }
+.payroll-config-grid label, .payroll-obligation-form label, .payroll-refund-form label { display: grid; gap: 6px; color: #4b5b53; font-size: 11px; font-weight: 800; }
+.payroll-refund-form { display: grid; grid-template-columns: 1.2fr .8fr .9fr 1.4fr auto; align-items: end; gap: 10px; }
+.payroll-setting-table { margin-top: 12px; }
 .payroll-file small { max-width: 260px; overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .payroll-draft-file-input { display: none; }
 .payroll-draft-toolbar { margin-top: 14px; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: #f5f8f6; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -802,8 +804,8 @@ tr:last-child td { border-bottom: 0; }
   .birthday-notice { grid-template-columns: auto minmax(0, 1fr) auto; padding: 10px; }
   .birthday-notice > button:first-of-type { display: none; }
   .birthday-grid, .payroll-config-grid { grid-template-columns: minmax(0, 1fr); }
-  .payroll-obligation-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .payroll-obligation-form label:nth-of-type(4), .payroll-obligation-form button { grid-column: 1 / -1; }
+  .payroll-obligation-form, .payroll-refund-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .payroll-obligation-form label:nth-of-type(4), .payroll-obligation-form button, .payroll-refund-form label:nth-of-type(4), .payroll-refund-form button { grid-column: 1 / -1; }
   .payroll-draft-panel .panel-title-row { display: grid; }
   .payroll-draft-panel .list-actions { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .payroll-draft-panel .list-actions button { width: 100%; min-width: 0; padding-inline: 7px; font-size: 9px; }
