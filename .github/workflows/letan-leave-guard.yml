@@ -1,0 +1,66 @@
+name: Lễ tân Leave Guard CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vera_web_v2_letan_leave_guard.py'
+      - 'vera_web_v2_api_v38.py'
+      - 'web-v2/src/App.jsx'
+      - 'web-v2/src/pages/LeaveListTypeColumn.jsx'
+      - 'web-v2/src/pages/LetanLeavePolicyRules.jsx'
+      - '.github/workflows/letan-leave-guard.yml'
+  pull_request:
+    paths:
+      - 'vera_web_v2_letan_leave_guard.py'
+      - 'vera_web_v2_api_v38.py'
+      - 'web-v2/src/App.jsx'
+      - 'web-v2/src/pages/LeaveListTypeColumn.jsx'
+      - 'web-v2/src/pages/LetanLeavePolicyRules.jsx'
+      - '.github/workflows/letan-leave-guard.yml'
+
+jobs:
+  verify-letan-leave-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile guard
+        run: python -m py_compile vera_web_v2_letan_leave_guard.py vera_web_v2_api_v38.py
+      - name: Verify five exact groups
+        run: |
+          python - <<'PY'
+          from vera_web_v2_letan_leave_guard import LETAN_REASON_GROUPS
+          expected = [
+              ['Nghỉ CÓ phép', 'Đi trễ CÓ phép', 'Về sớm CÓ phép'],
+              ['Nghỉ KHÔNG phép', 'Đi trễ KHÔNG phép', 'Về sớm KHÔNG phép'],
+              ['Nghỉ CUỐI TUẦN CÓ phép', 'Đi trễ CUỐI TUẦN CÓ phép', 'Về sớm CUỐI TUẦN CÓ phép'],
+              ['Nghỉ CUỐI TUẦN KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép', 'Về sớm CUỐI TUẦN KHÔNG phép'],
+              ['Leader nghỉ phép theo chính sách', 'Leader đi trễ sớm theo chính sách', 'Leader về sớm về sớm theo chính sách'],
+          ]
+          assert len(LETAN_REASON_GROUPS) == 5
+          for index, expected_reasons in enumerate(expected):
+              actual = list(LETAN_REASON_GROUPS[index][1])
+              assert actual[:3] == expected_reasons, (index + 1, actual)
+          print('Lễ tân same-group policy: OK')
+          PY
+      - name: Verify installer order
+        run: |
+          python - <<'PY'
+          source = open('vera_web_v2_api_v38.py', encoding='utf-8').read()
+          audit = source.index('install_admin_audit_archive_routes(')
+          letan = source.index('install_letan_leave_guard(')
+          device = source.index('install_single_device_guard(')
+          assert audit < letan < device
+          assert 'api_module=_api' in source
+          print('Installer order: audit -> letan guard -> device guard')
+          PY
+      - name: Verify Nội quy table and frontend lock
+        run: |
+          grep -q 'QUYỀN SỬA / XÓA ĐĂNG KÝ – TÀI KHOẢN LỄ TÂN' web-v2/src/pages/LetanLeavePolicyRules.jsx
+          grep -q 'recordDate === todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'recordDate <= localDateKey()' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q '<LetanLeavePolicyRules />' web-v2/src/App.jsx
+          grep -q '<LeaveListTypeColumn user={shellUser} />' web-v2/src/App.jsx
