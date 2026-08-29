@@ -16,6 +16,19 @@ from fastapi import Depends, Query
 VIOLATION_ENTRY_ROLES = {"admin", "quanly", "letan"}
 
 
+def _leave_type_key(value: Any, norm: Callable[[Any], str]) -> str:
+    token = norm(value)
+    if "vi pham" in token:
+        return "vi_pham"
+    if "khong phep" in token:
+        return "khong_phep"
+    if "co phep" in token:
+        return "co_phep"
+    if "phat sinh" in token:
+        return "phat_sinh"
+    return "khac"
+
+
 def install_leave_violation_split_routes(
     app,
     *,
@@ -80,6 +93,37 @@ def install_leave_violation_split_routes(
             "leave_reasons": leave_reasons,
             "violations": violations,
             "violation_entry_roles": sorted(VIOLATION_ENTRY_ROLES),
+            "source": "BẢNG NỘI QUY · Loại nghỉ",
+        }
+
+    @app.get("/v2/leave/reason-types")
+    def reason_types(ident=Depends(current_identity)):
+        """Return the current Nội quy leave-type mapping without penalty data.
+
+        This endpoint powers the DANH SÁCH type filter for every account.  It
+        intentionally returns only reason name + type, so changing Loại nghỉ in
+        BẢNG NỘI QUY is reflected without duplicating policy in the browser.
+        """
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "leave")
+            items: list[dict[str, str]] = []
+            seen: set[str] = set()
+            for row in policy_rows(conn):
+                name = str(field(row, "Lý do nghỉ", default="") or "").strip()
+                key = norm(name)
+                if not name or key in seen:
+                    continue
+                item = reason_item(conn, name)
+                leave_type = str(item.get("leave_type", "") or "").strip()
+                items.append({
+                    "name": item["name"],
+                    "leave_type": leave_type,
+                    "type_key": _leave_type_key(leave_type, norm),
+                })
+                seen.add(key)
+        return {
+            "ok": True,
+            "items": items,
             "source": "BẢNG NỘI QUY · Loại nghỉ",
         }
 
