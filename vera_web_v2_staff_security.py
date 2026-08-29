@@ -1,7 +1,7 @@
 """Secure staff password reset and compressed identity-document storage for Web V2.
 
 Passwords are never returned to the browser. Admin may replace a legacy VERA
-password and force the employee to change it at the next Web V2 login.
+password without forcing the employee to change it at the next Web V2 login.
 
 Citizen-ID images are stored in PostgreSQL only after the browser compresses
 them to a small raster image. Access is restricted to the employee themself or
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Request, Response
@@ -25,6 +26,29 @@ STAFF_SECURITY_RELEASE = "3.8-staff-security-identity"
 MAX_IDENTITY_BYTES = 700 * 1024
 IDENTITY_SIDES = {"front": "Mặt trước", "back": "Mặt sau"}
 ALLOWED_IMAGE_TYPES = {"image/webp", "image/jpeg", "image/png"}
+SHEETS_MAX_ATTEMPTS = 3
+
+
+def _is_sheets_quota_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    message = str(exc).lower()
+    return status == 429 or "quota exceeded" in message or "rate limit" in message
+
+
+def _update_sheet_password(sheet_ref, sheet_row: int, password: str) -> None:
+    for attempt in range(SHEETS_MAX_ATTEMPTS):
+        try:
+            sheet_ref.update(
+                range_name=f"C{sheet_row}",
+                values=[[password]],
+                value_input_option="USER_ENTERED",
+            )
+            return
+        except Exception as exc:
+            if not _is_sheets_quota_error(exc) or attempt == SHEETS_MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(2 ** attempt)
 
 
 class StaffPasswordReset(BaseModel):
@@ -127,7 +151,7 @@ def install_staff_security_routes(
                 raise HTTPException(400, error)
 
             payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
-            payload["must_change_password"] = True
+            payload["must_change_password"] = False
             conn.execute(text("""
                 UPDATE employees
                 SET password_value=:password,
@@ -140,41 +164,33 @@ def install_staff_security_routes(
                 "username": row["username"],
             })
 
-            # Mirror the reset to the legacy credential worksheet. The browser
-            # never receives this value; only the sheet and PostgreSQL are updated.
-            sheet_ref = google_client().open_by_key(CREDENTIAL_SHEET_ID).get_worksheet(0)
-            values = sheet_ref.get_all_values()
-            for index, values_row in enumerate(values[1:], start=2):
-                candidate = values_row[1] if len(values_row) > 1 else ""
-                if norm(candidate) == norm(row["username"]):
-                    sheet_row = index
-                    old_sheet_password = values_row[2] if len(values_row) > 2 else ""
-                    break
+            # source_row is persisted when the employee is imported/synchronised.
+            # Use it directly so one reset does not read the whole credential sheet.
+            # password_value is the previous mirrored password and is sufficient to
+            # restore Sheet1 if the PostgreSQL transaction later fails.
+            try:
+                sheet_row = int(row.get("source_row") or 0)
+            except (TypeError, ValueError):
+                sheet_row = 0
             if sheet_row < 2:
-                raise RuntimeError(f"Không tìm thấy {row['username']} trong Sheet1 để đồng bộ mật khẩu.")
-            sheet_ref.update(
-                range_name=f"C{sheet_row}",
-                values=[[body.new_password]],
-                value_input_option="USER_ENTERED",
-            )
+                raise RuntimeError(
+                    f"Nhân viên {row['username']} chưa có dòng nguồn hợp lệ trong Sheet1."
+                )
+            old_sheet_password = str(row.get("password_value") or "")
+            sheet_ref = google_client().open_by_key(CREDENTIAL_SHEET_ID).get_worksheet(0)
+            _update_sheet_password(sheet_ref, sheet_row, body.new_password)
             sheet_changed = True
             tx.commit()
             return {
                 "ok": True,
-                "message": (
-                    f"Đã reset mật khẩu cho {row['username']}. Nhân viên phải đổi mật khẩu "
-                    "sau lần đăng nhập kế tiếp."
-                ),
+                "message": f"Đã reset mật khẩu cho {row['username']}.",
             }
         except HTTPException:
             if tx.is_active:
                 tx.rollback()
             if sheet_changed and sheet_ref is not None and sheet_row >= 2:
                 try:
-                    sheet_ref.update(
-                        range_name=f"C{sheet_row}", values=[[old_sheet_password]],
-                        value_input_option="USER_ENTERED",
-                    )
+                    _update_sheet_password(sheet_ref, sheet_row, old_sheet_password)
                 except Exception:
                     pass
             raise
@@ -183,13 +199,15 @@ def install_staff_security_routes(
                 tx.rollback()
             if sheet_changed and sheet_ref is not None and sheet_row >= 2:
                 try:
-                    sheet_ref.update(
-                        range_name=f"C{sheet_row}", values=[[old_sheet_password]],
-                        value_input_option="USER_ENTERED",
-                    )
+                    _update_sheet_password(sheet_ref, sheet_row, old_sheet_password)
                 except Exception:
                     pass
-            raise HTTPException(500, f"Không reset được mật khẩu an toàn: {type(exc).__name__}: {exc}") from exc
+            if _is_sheets_quota_error(exc):
+                raise HTTPException(
+                    503,
+                    "Google Sheets đang bận. Vui lòng thử lại sau ít phút.",
+                ) from exc
+            raise HTTPException(500, "Không reset được mật khẩu. Vui lòng thử lại.") from exc
         finally:
             conn.close()
 
