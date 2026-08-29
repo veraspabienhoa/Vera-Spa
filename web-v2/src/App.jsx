@@ -7,6 +7,8 @@ import LeaveListTypeColumn from './pages/LeaveListTypeColumn'
 import LetanLeavePolicyRules from './pages/LetanLeavePolicyRules'
 import LeaveRegistrationEnhancements from './pages/LeaveRegistrationEnhancements'
 import EmployeeManagementEnhancements from './pages/EmployeeManagementEnhancements'
+import EmployeeExactSearch from './pages/EmployeeExactSearch'
+import TourAdminCustomerCount from './pages/TourAdminCustomerCount'
 import { veraApi } from './lib/api'
 import { claimCurrentDevice, clearFreshLoginClaim, hasFreshLoginClaim, installDeviceSessionGuard } from './lib/deviceSession'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
@@ -104,7 +106,7 @@ export default function App() {
           <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
           <LongLeaveSection key={longLeaveRevision} user={shellUser} />
         </>}
-        {page === 'employees' && <><EmployeePage user={shellUser} /><EmployeeManagementEnhancements user={shellUser} /></>}
+        {page === 'employees' && <><EmployeePage user={shellUser} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
         {page === 'rules' && <><RulesPage user={shellUser} /><LetanLeavePolicyRules /></>}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}
@@ -112,7 +114,7 @@ export default function App() {
         {page === 'revenue' && <RevenuePage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
         {page === 'birthday' && <BirthdayPage />}
-        {page === 'tour' && <TourPage user={shellUser} />}
+        {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'changes' && <AdminChangesPage user={shellUser} />}
         {page === 'storage' && <StorageAdminPage />}
       </Suspense>
