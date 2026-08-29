@@ -118,12 +118,14 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
                     f"Ngày hiện tại Lễ tân chỉ được đổi Lý do nghỉ trong cùng {old_group}.",
                 )
 
-            # Keep Nội quy role/day applicability, but intentionally bypass the
-            # old cancellation/registration timing rule for this one same-day,
-            # same-group exception requested for Lễ tân. Returning True makes
-            # the canonical update path skip registration timing while all
-            # remaining duplicate/quota/employee validations still run.
-            item = api_module._catalog_rule_for_edit(conn, new_reason, target, "letan")
+            # This is an explicit editor-role exception. The editor is Lễ tân,
+            # so the old allowed_roles check must not reject Leader-policy rows
+            # merely because they are intended for a Leader employee. The new
+            # reason still has to exist in the canonical Nội quy. Returning
+            # True bypasses only the old edit/cancellation timing rule; the
+            # canonical update path still performs duplicate, quota, employee,
+            # penalty and persistence validation.
+            item = api_module._reason_item(conn, new_reason)
             return item, True
 
         # Future-dated rows preserve the existing feature flags, notice period,
