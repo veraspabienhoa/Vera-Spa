@@ -3,12 +3,15 @@ import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
+// The visible Lễ tân editor for a record dated today always contains exactly
+// these three choices. Compatibility aliases are only used to recognize old
+// rows and are never rendered as a fourth choice.
 const LETAN_REASON_GROUPS = [
   ['group-1', ['Nghỉ CÓ phép', 'Đi trễ CÓ phép', 'Về sớm CÓ phép']],
   ['group-2', ['Nghỉ KHÔNG phép', 'Đi trễ KHÔNG phép', 'Về sớm KHÔNG phép']],
   ['group-3', ['Nghỉ CUỐI TUẦN CÓ phép', 'Đi trễ CUỐI TUẦN CÓ phép', 'Về sớm CUỐI TUẦN CÓ phép']],
   ['group-4', ['Nghỉ CUỐI TUẦN KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép', 'Về sớm CUỐI TUẦN KHÔNG phép']],
-  ['group-5', ['Leader nghỉ phép theo chính sách', 'Leader đi trễ sớm theo chính sách', 'Leader về sớm về sớm theo chính sách', 'Leader về sớm theo chính sách']],
+  ['group-5', ['Leader nghỉ phép theo chính sách', 'Leader đi trễ sớm theo chính sách', 'Leader về sớm về sớm theo chính sách']],
 ]
 
 const normalizeReason = (value) => String(value || '')
@@ -23,6 +26,11 @@ const normalizeReason = (value) => String(value || '')
 const LETAN_REASON_TO_GROUP = Object.fromEntries(
   LETAN_REASON_GROUPS.flatMap(([group, reasons]) => reasons.map((reason) => [normalizeReason(reason), group])),
 )
+// Existing Nội quy data may contain this corrected legacy wording. Recognize it
+// as Group 5, but keep the requested three visible choices above.
+LETAN_REASON_TO_GROUP[normalizeReason('Leader về sớm theo chính sách')] = 'group-5'
+
+const LETAN_GROUP_CHOICES = Object.fromEntries(LETAN_REASON_GROUPS)
 
 function letanGroupKey(reason) {
   return LETAN_REASON_TO_GROUP[normalizeReason(reason)] || ''
@@ -91,7 +99,7 @@ export default function LeaveListTypeColumn({ user }) {
 
     const reasonInfo = (reason) => catalog[normalizeReason(reason)] || null
 
-    const restoreAllOptions = (select) => {
+    const restoreNativeOptions = (select) => {
       for (const option of select?.options || []) {
         option.hidden = false
         option.disabled = false
@@ -100,8 +108,82 @@ export default function LeaveListTypeColumn({ user }) {
       select?.removeAttribute('data-leave-type-filtered')
     }
 
-    const lockSelectToPolicy = (select) => {
+    const removeLetanProxy = (select) => {
       if (!select) return
+      select.classList.remove('letan-native-reason-select')
+      select.removeAttribute('aria-hidden')
+      select.removeAttribute('data-letan-proxy-source')
+      const proxy = select.parentElement?.querySelector('.letan-three-choice-select')
+      proxy?.remove()
+    }
+
+    const restoreAllOptions = (select) => {
+      restoreNativeOptions(select)
+      removeLetanProxy(select)
+    }
+
+    const ensureNativeOption = (select, value) => {
+      const wanted = normalizeReason(value)
+      let option = Array.from(select.options).find((item) => normalizeReason(item.value) === wanted)
+      if (!option) {
+        option = document.createElement('option')
+        option.value = value
+        option.textContent = value
+        option.dataset.letanInjected = 'true'
+        select.appendChild(option)
+      }
+      return option
+    }
+
+    const ensureLetanThreeChoiceProxy = (select, row, groupKey, selectedReason) => {
+      const choices = LETAN_GROUP_CHOICES[groupKey] || []
+      if (choices.length !== 3) return false
+
+      restoreNativeOptions(select)
+      select.classList.add('letan-native-reason-select')
+      select.setAttribute('aria-hidden', 'true')
+      select.dataset.letanProxySource = 'true'
+
+      let proxy = select.parentElement?.querySelector('.letan-three-choice-select')
+      if (!proxy) {
+        proxy = document.createElement('select')
+        proxy.className = 'letan-three-choice-select'
+        insertAfter(select, proxy)
+        proxy.addEventListener('change', () => {
+          const nextReason = String(proxy.value || '').trim()
+          if (!nextReason) return
+          const nativeOption = ensureNativeOption(select, nextReason)
+          select.value = nativeOption.value
+          // React owns reasonDrafts. Dispatching on the original select keeps
+          // Save edits on the canonical React/API path instead of bypassing it.
+          select.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+      }
+
+      proxy.replaceChildren(...choices.map((reason) => {
+        const option = document.createElement('option')
+        option.value = reason
+        option.textContent = reason
+        return option
+      }))
+
+      const selectedKey = normalizeReason(selectedReason)
+      let visibleValue = choices.find((reason) => normalizeReason(reason) === selectedKey)
+      // Compatibility: an old Group-5 alias is displayed as the requested
+      // third Group-5 choice without silently changing the saved row.
+      if (!visibleValue && letanGroupKey(selectedReason) === groupKey) visibleValue = choices[2]
+      proxy.value = visibleValue || choices[0]
+      proxy.disabled = Boolean(select.disabled)
+      proxy.dataset.letanGroupKey = groupKey
+      proxy.title = `${groupKey.replace('group-', 'Nhóm ')}: luôn có đúng 3 lựa chọn cho Lễ tân trong ngày hiện tại.`
+      proxy.setAttribute('aria-label', `Lý do nghỉ, đúng 3 lựa chọn trong ${groupKey.replace('group-', 'Nhóm ')}`)
+      row.dataset.letanGroupKey = groupKey
+      select.dataset.letanGroupFiltered = 'true'
+      return true
+    }
+
+    const lockSelectToPolicy = (select) => {
+      if (!select || select.classList.contains('letan-three-choice-select')) return
       const row = select.closest('tr')
       if (!row) return
 
@@ -120,8 +202,9 @@ export default function LeaveListTypeColumn({ user }) {
       }
 
       if (isLetan && recordDate === todayKey) {
-        if (!row.dataset.letanGroupKey) row.dataset.letanGroupKey = letanGroupKey(selectedReason)
-        const lockedGroupKey = String(row.dataset.letanGroupKey || '').trim()
+        const currentGroup = letanGroupKey(selectedReason)
+        if (!row.dataset.letanGroupKey && currentGroup) row.dataset.letanGroupKey = currentGroup
+        const lockedGroupKey = String(row.dataset.letanGroupKey || currentGroup || '').trim()
         if (!lockedGroupKey) {
           restoreAllOptions(select)
           select.disabled = true
@@ -129,20 +212,13 @@ export default function LeaveListTypeColumn({ user }) {
           return
         }
 
-        for (const option of select.options) {
-          const optionKey = normalizeReason(option.value)
-          const sameGroup = letanGroupKey(option.value) === lockedGroupKey
-          const isCurrentValue = optionKey === selectedKey
-          const allowed = sameGroup || isCurrentValue
-          option.hidden = !allowed
-          option.disabled = !allowed
-        }
-        select.dataset.letanGroupFiltered = 'true'
+        ensureLetanThreeChoiceProxy(select, row, lockedGroupKey, selectedReason)
         select.removeAttribute('data-leave-type-filtered')
-        select.title = `Lễ tân chỉ được đổi Lý do nghỉ trong cùng ${lockedGroupKey.replace('group-', 'Nhóm ')}`
-        select.setAttribute('aria-label', `Lý do nghỉ, giới hạn trong ${lockedGroupKey.replace('group-', 'Nhóm ')}`)
+        select.title = `Lễ tân chỉ được đổi Lý do nghỉ trong cùng ${lockedGroupKey.replace('group-', 'Nhóm ')}; nhóm này luôn có đúng 3 lựa chọn.`
         return
       }
+
+      removeLetanProxy(select)
 
       if (!row.dataset.leaveTypeKey && selectedInfo?.typeKey) {
         row.dataset.leaveTypeKey = selectedInfo.typeKey
@@ -152,7 +228,7 @@ export default function LeaveListTypeColumn({ user }) {
       const lockedTypeKey = String(row.dataset.leaveTypeKey || '').trim()
       const lockedTypeLabel = String(row.dataset.leaveTypeLabel || selectedInfo?.leaveType || '').trim()
       if (!lockedTypeKey) {
-        restoreAllOptions(select)
+        restoreNativeOptions(select)
         return
       }
 
@@ -226,7 +302,7 @@ export default function LeaveListTypeColumn({ user }) {
           insertAfter(reasonCell, typeCell)
         }
 
-        const reasonSelect = reasonCell.querySelector('select')
+        const reasonSelect = reasonCell.querySelector('select:not(.letan-three-choice-select)')
         const reason = String(reasonSelect?.value || reasonCell.textContent || '').trim()
         const info = reasonInfo(reason)
 
@@ -261,12 +337,12 @@ export default function LeaveListTypeColumn({ user }) {
     }
 
     const handleReasonOpen = (event) => {
-      const select = event.target?.closest?.('.reason-edit-cell select')
+      const select = event.target?.closest?.('.reason-edit-cell select:not(.letan-three-choice-select)')
       if (select) lockSelectToPolicy(select)
     }
 
     const handleReasonChange = (event) => {
-      const select = event.target?.closest?.('.reason-edit-cell select')
+      const select = event.target?.closest?.('.reason-edit-cell select:not(.letan-three-choice-select)')
       if (!select) return
       lockSelectToPolicy(select)
       scheduleSync()
@@ -289,7 +365,7 @@ export default function LeaveListTypeColumn({ user }) {
       document.removeEventListener('change', handleReasonChange, true)
       document.removeEventListener('input', handleReasonChange, true)
       const table = document.querySelector('.leave-list-panel .leave-records-table')
-      for (const select of table?.querySelectorAll('.reason-edit-cell select') || []) restoreAllOptions(select)
+      for (const select of table?.querySelectorAll('.reason-edit-cell select:not(.letan-three-choice-select)') || []) restoreAllOptions(select)
     }
   }, [catalog, isLetan])
 
@@ -298,7 +374,8 @@ export default function LeaveListTypeColumn({ user }) {
     .leave-records-table .leave-type-cell{vertical-align:middle}
     .leave-records-table .leave-type-cell{min-width:110px;color:#31483d;font-weight:800;line-height:1.25}
     .leave-records-table .reason-edit-cell select[data-leave-type-filtered="true"]{border-color:#b8cbc0;background:#fbfdfc}
-    .leave-records-table .reason-edit-cell select[data-letan-group-filtered="true"]{border-color:#96b7a5;background:#f4faf6;font-weight:800}
+    .leave-records-table .reason-edit-cell .letan-native-reason-select{display:none!important}
+    .leave-records-table .reason-edit-cell .letan-three-choice-select{width:100%;border-color:#96b7a5;background:#f4faf6;font-weight:800}
     @media(max-width:820px){
       .leave-records-table.with-leave-type-column.without-penalty .leave-col-select{width:7%}
       .leave-records-table.with-leave-type-column.without-penalty .leave-col-date{width:11%}
