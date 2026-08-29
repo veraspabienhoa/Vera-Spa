@@ -171,6 +171,18 @@ def install_admin_change_push(
     if getattr(app.state, "admin_change_push_installed", False):
         return
 
+    # This module enables postponed annotations.  FastAPI resolves the nested
+    # route annotations against module globals, not this installer's local
+    # arguments.  Publish the concrete models before registering the wrapper
+    # routes; otherwise ``body`` becomes an unresolved ForwardRef, every write
+    # returns 422 (missing query parameter ``body``), and OpenAPI returns 500.
+    globals().update({
+        "identity_type": identity_type,
+        "leave_create_type": leave_create_type,
+        "leave_update_type": leave_update_type,
+        "leave_delete_type": leave_delete_type,
+    })
+
     original_create = _remove_route(app, "/v2/leave/records", "POST")
     original_update = _remove_route(app, "/v2/leave/records/{record_uid}", "PATCH")
     original_delete = _remove_route(app, "/v2/leave/records", "DELETE")

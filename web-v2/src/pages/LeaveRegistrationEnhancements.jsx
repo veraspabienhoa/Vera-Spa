@@ -1,6 +1,7 @@
 import { LoaderCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { apiErrorMessage } from '../lib/apiError'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -58,7 +59,7 @@ async function authenticatedJson(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, { ...options, headers })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const error = new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+    const error = new Error(apiErrorMessage(payload, response.status))
     error.status = response.status
     throw error
   }

@@ -1,4 +1,5 @@
 import { getCurrentSession, isSupabaseConfigured, supabase } from './supabase'
+import { apiErrorMessage } from './apiError'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 export const isApiConfigured = Boolean(apiBase)
@@ -27,7 +28,7 @@ async function request(path, options = {}) {
   }
   if (!response) throw new Error(`Không kết nối được máy chủ VERA sau ${attempts} lần thử. Vui lòng bấm Làm mới. (${lastError?.message || 'Lỗi mạng'})`)
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  if (!response.ok) throw new Error(apiErrorMessage(payload, response.status))
   return payload
 }
 
@@ -51,7 +52,7 @@ async function download(path, fallbackName, options = {}) {
   if (!response) throw new Error(`Không tải được file Excel sau 2 lần thử. (${lastError?.message || 'Lỗi mạng'})`)
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+    throw new Error(apiErrorMessage(payload, response.status))
   }
   const blob = await response.blob()
   const disposition = response.headers.get('Content-Disposition') || ''
@@ -94,7 +95,7 @@ async function upload(path, file, params = null) {
   }
   if (!response) throw new Error(`Không gửi được file Excel tới máy chủ VERA sau 2 lần thử. (${lastError?.message || 'Lỗi mạng'})`)
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  if (!response.ok) throw new Error(apiErrorMessage(payload, response.status))
   return payload
 }
 
