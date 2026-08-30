@@ -607,6 +607,7 @@ def employee_directory():
             SELECT username, role, email
             FROM employees
             WHERE btrim(COALESCE(username, '')) <> ''
+              AND COALESCE(payload->>'__deleted', 'false') <> 'true'
             ORDER BY COALESCE(stt, 2147483647), username
         """)).mappings().all()
 

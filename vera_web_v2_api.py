@@ -1476,7 +1476,7 @@ def employees(ident: Identity = Depends(current_identity)):
                 SELECT username, COALESCE(full_name,'') full_name, COALESCE(role,'') role
                 FROM employees
                 WHERE COALESCE(login_locked,false)=false
-                  AND COALESCE(source_sheet_id,'credentials')='credentials'
+                  AND COALESCE(payload->>'__deleted','false') <> 'true'
                   AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
                   AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
                 ORDER BY username
@@ -1486,6 +1486,7 @@ def employees(ident: Identity = Depends(current_identity)):
                 SELECT username, COALESCE(full_name,'') full_name, COALESCE(role,'') role
                 FROM employees
                 WHERE COALESCE(login_locked,false)=false
+                  AND COALESCE(payload->>'__deleted','false') <> 'true'
                   AND lower(btrim(username))=lower(btrim(:username))
                   AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
                 LIMIT 1
@@ -2157,7 +2158,6 @@ def leave_daily_stats(
                 SELECT 1
                 FROM employees e
                 WHERE lower(btrim(e.username)) = lower(btrim(l.employee_name))
-                  AND COALESCE(e.source_sheet_id, 'credentials') = 'credentials'
                   AND lower(COALESCE(e.role, '')) NOT IN ('admin','letan','locker','tapvu')
               )
             ORDER BY l.leave_date, l.employee_name, l.record_uid
@@ -2220,7 +2220,7 @@ def leave_summary(date_value: date = Query(alias="date"), ident: Identity = Depe
             SELECT count(*)
             FROM employees
             WHERE COALESCE(login_locked,false)=false
-              AND COALESCE(source_sheet_id,'credentials')='credentials'
+              AND COALESCE(payload->>'__deleted','false') <> 'true'
               AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
               AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
         """)).scalar() or 0

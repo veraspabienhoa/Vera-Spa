@@ -355,6 +355,7 @@ def _employment_status_map(_client=None) -> dict[str, str]:
                    COALESCE(NULLIF(payload->>'Trạng thái làm việc', ''), 'Đang làm việc') AS status
             FROM employees
             WHERE btrim(COALESCE(username, '')) <> ''
+              AND COALESCE(payload->>'__deleted', 'false') <> 'true'
         """)).mappings().all()
     return {
         ts._employee_key(row.get("username")): ts._norm(row.get("status"))
@@ -371,6 +372,7 @@ def _active_shifted_staff(_client=None) -> list[dict]:
                    COALESCE(NULLIF(payload->>'Trạng thái làm việc', ''), 'Đang làm việc') AS status
             FROM employees
             WHERE btrim(COALESCE(username, '')) <> ''
+              AND COALESCE(payload->>'__deleted', 'false') <> 'true'
             ORDER BY COALESCE(stt, 2147483647), username
         """)).mappings().all()
     active_key = ts._norm("Đang làm việc")
@@ -656,6 +658,7 @@ def employee_directory(_client=None) -> tuple[dict[str, str], list[str]]:
             SELECT username, role, email
             FROM employees
             WHERE btrim(COALESCE(username, '')) <> ''
+              AND COALESCE(payload->>'__deleted', 'false') <> 'true'
             ORDER BY COALESCE(stt, 2147483647), username
         """)).mappings().all()
     emails: dict[str, str] = {}

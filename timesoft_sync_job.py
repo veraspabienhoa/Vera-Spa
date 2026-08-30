@@ -394,6 +394,7 @@ def load_employee_name_map() -> dict[str, str]:
             SELECT username
             FROM employees
             WHERE btrim(COALESCE(username, '')) <> ''
+              AND COALESCE(payload->>'__deleted', 'false') <> 'true'
             ORDER BY COALESCE(stt, 2147483647), username
         """)).scalars().all()
     out: dict[str, str] = {}

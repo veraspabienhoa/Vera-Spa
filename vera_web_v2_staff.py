@@ -228,8 +228,13 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
     }
 
 
-def _select_staff_rows(conn, *, for_update: bool = False) -> list[dict[str, Any]]:
+def _select_staff_rows(
+    conn, *, for_update: bool = False, include_deleted: bool = False,
+) -> list[dict[str, Any]]:
     suffix = " FOR UPDATE" if for_update else ""
+    deleted_filter = "" if include_deleted else """
+        WHERE COALESCE(payload->>'__deleted', 'false') <> 'true'
+    """
     rows = conn.execute(text("""
         SELECT username, stt, password_value, role, full_name, birth_date, phone, email,
                address, bank_account, bank_name, monthly_generated, monthly_leave,
@@ -237,6 +242,7 @@ def _select_staff_rows(conn, *, for_update: bool = False) -> list[dict[str, Any]
                remember_token_hash, remember_token_expiry, employment_start_date,
                source_sheet_id, source_row, payload
         FROM employees
+    """ + deleted_filter + """
         ORDER BY COALESCE(stt, 2147483647), username
     """ + suffix)).mappings().all()
     return [dict(row) for row in rows]
@@ -583,9 +589,13 @@ def install_staff_routes(
                 raise HTTPException(400, password_error)
             if norm(username) in {"quan tri vien", "admin"}:
                 raise HTTPException(400, "Tên nhân viên này được dành cho tài khoản hệ thống.")
-            rows = _select_staff_rows(conn, for_update=True)
-            if any(norm(row["username"]) == norm(username) for row in rows):
+            all_rows = _select_staff_rows(conn, for_update=True, include_deleted=True)
+            if any(norm(row["username"]) == norm(username) for row in all_rows):
                 raise HTTPException(409, "Tên nhân viên đã tồn tại; hệ thống không phân biệt dấu hoặc HOA/thường.")
+            rows = [
+                row for row in all_rows
+                if str((row.get("payload") or {}).get("__deleted") or "").lower() != "true"
+            ]
             role = validate_role(ident, body.role)
             start_work = _date_text(
                 body.employment_start_date or datetime.now(vn_tz).strftime("%d/%m/%Y"),
@@ -705,8 +715,30 @@ def install_staff_routes(
                 if str(row.get("role") or "").lower() == "admin" or norm(row.get("username")) == "quan tri vien":
                     raise HTTPException(400, "Không thể xóa tài khoản hệ thống/admin.")
             deleted_count = len(targets)
+            deleted_at = datetime.now(vn_tz).isoformat()
             for row in targets:
-                conn.execute(text("DELETE FROM employees WHERE username=:username"), {"username": row["username"]})
+                archived = dict(row)
+                archived["login_locked"] = True
+                archived["remember_token_hash"] = ""
+                archived["remember_token_expiry"] = ""
+                payload = _employee_payload(archived, STATUS_OPTIONS[2])
+                payload.update({
+                    "__deleted": True,
+                    "__deleted_at": deleted_at,
+                    "__deleted_by": str(ident.employee_username or ""),
+                })
+                updated = conn.execute(text("""
+                    UPDATE employees SET
+                        login_locked=true,
+                        remember_token_hash='', remember_token_expiry='',
+                        payload=CAST(:payload AS jsonb), updated_at=NOW()
+                    WHERE username=:username
+                """), {
+                    "username": row["username"],
+                    "payload": json.dumps(payload, ensure_ascii=False),
+                })
+                if updated.rowcount != 1:
+                    raise HTTPException(409, f"Nhân viên {row['username']} đã thay đổi. Hãy Làm mới rồi thử lại.")
                 if conn.execute(text("SELECT to_regclass('public.vera_v2_user_profile')")).scalar():
                     conn.execute(text("""
                         UPDATE vera_v2_user_profile SET is_active=false, updated_at=NOW()
@@ -735,7 +767,7 @@ def install_staff_routes(
             conn.close()
             raise HTTPException(500, "Không xóa được nhân viên trong hệ thống chính. Vui lòng thử lại.") from exc
 
-        message = f"Đã xóa {deleted_count} nhân viên THÀNH CÔNG. Lịch sử lịch nghỉ được giữ nguyên."
+        message = f"Đã xóa {deleted_count} nhân viên THÀNH CÔNG. Toàn bộ lịch sử được giữ nguyên."
         conn.close()
         return {
             "ok": True,

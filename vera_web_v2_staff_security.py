@@ -75,6 +75,7 @@ def install_staff_security_routes(
                    remember_token_hash, remember_token_expiry
             FROM employees
             WHERE lower(btrim(username))=lower(btrim(:username))
+              AND COALESCE(payload->>'__deleted','false') <> 'true'
             LIMIT 1
         """ + suffix), {"username": str(username or "").strip()}).mappings().first()
         if not row:

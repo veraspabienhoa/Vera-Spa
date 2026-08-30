@@ -66,7 +66,6 @@ def install_leave_day_stats_routes(
                     SELECT 1
                     FROM employees e
                     WHERE lower(btrim(e.username)) = lower(btrim(l.employee_name))
-                      AND COALESCE(e.source_sheet_id, 'credentials') = 'credentials'
                       AND lower(COALESCE(e.role, '')) NOT IN ('admin','letan','locker','tapvu')
                   )
                 ORDER BY l.leave_date, l.employee_name, l.record_uid

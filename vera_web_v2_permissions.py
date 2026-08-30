@@ -142,7 +142,9 @@ def install_permission_routes(
             payload = _payload(row.get("value_json") if row else None)
             accounts = conn.execute(text("""
                 SELECT username, COALESCE(full_name,'') full_name, lower(COALESCE(role,'')) role
-                FROM employees ORDER BY lower(username)
+                FROM employees
+                WHERE COALESCE(payload->>'__deleted','false') <> 'true'
+                ORDER BY lower(username)
             """)).mappings().all()
         return {
             "groups": FEATURE_GROUPS, "roles": ROLES, "accounts": [dict(item) for item in accounts],

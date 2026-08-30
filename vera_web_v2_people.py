@@ -330,8 +330,8 @@ def install_people_routes(
                 SELECT username, COALESCE(full_name,'') full_name, COALESCE(birth_date,'') birth_date,
                        lower(COALESCE(role,'')) role
                 FROM employees
-                WHERE COALESCE(source_sheet_id,'credentials')='credentials'
-                  AND COALESCE(login_locked,false)=false
+                WHERE COALESCE(login_locked,false)=false
+                  AND COALESCE(payload->>'__deleted','false') <> 'true'
                   AND lower(COALESCE(role,'')) IN ('nhanvien','leader','letan','locker')
                   AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc')='Đang làm việc'
                 ORDER BY lower(COALESCE(full_name,username))
