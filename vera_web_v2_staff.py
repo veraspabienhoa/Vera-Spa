@@ -980,10 +980,8 @@ def install_staff_routes(
         engine = engine_instance()
         conn = engine.connect()
         tx = conn.begin()
-        deleted_sheet_rows: list[tuple[int, list[Any]]] = []
-        deleted_status_rows: list[tuple[int, list[Any]]] = []
-        staff_ws = None
-        status_ws = None
+        target_keys: set[str] = set()
+        deleted_count = 0
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             if str(ident.role).lower() != "admin":
@@ -995,12 +993,14 @@ def install_staff_routes(
                 if str(row.get("role") or "").lower() == "admin" or norm(row.get("username")) == "quan tri vien":
                     raise HTTPException(400, "Không thể xóa tài khoản hệ thống/admin.")
             target_keys = {norm(row["username"]) for row in targets}
+            deleted_count = len(targets)
             for row in targets:
                 conn.execute(text("DELETE FROM employees WHERE username=:username"), {"username": row["username"]})
-                conn.execute(text("""
-                    UPDATE vera_v2_user_profile SET is_active=false, updated_at=NOW()
-                    WHERE lower(btrim(employee_username))=lower(btrim(:username))
-                """), {"username": row["username"]})
+                if conn.execute(text("SELECT to_regclass('public.vera_v2_user_profile')")).scalar():
+                    conn.execute(text("""
+                        UPDATE vera_v2_user_profile SET is_active=false, updated_at=NOW()
+                        WHERE lower(btrim(employee_username))=lower(btrim(:username))
+                    """), {"username": row["username"]})
             remaining = _select_staff_rows(conn)
             for index, row in enumerate(remaining, start=1):
                 payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
@@ -1013,49 +1013,45 @@ def install_staff_routes(
                     "stt": index, "source_row": index + 1, "username": row["username"],
                     "payload": json.dumps(payload, ensure_ascii=False),
                 })
-            staff_ws = credential_ws()
-            deleted_sheet_rows = delete_rows_by_name(staff_ws, target_keys, 2)
-            renumber_sheet(staff_ws)
-            status_ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
-            deleted_status_rows = delete_rows_by_name(status_ws, target_keys, 2)
-            renumber_sheet(status_ws)
+            # PostgreSQL is the canonical store. Commit the account deletion and
+            # login revocation before touching optional legacy mirrors so a quota
+            # or temporary Google Sheets failure cannot resurrect/block deletion.
             tx.commit()
-            sync_tichluy_members(conn)
-            return {"ok": True, "deleted": len(targets), "message": f"Đã xóa {len(targets)} nhân viên THÀNH CÔNG. Lịch sử lịch nghỉ được giữ nguyên."}
         except HTTPException:
             if tx.is_active:
                 tx.rollback()
-            if staff_ws is not None:
-                for index, values in sorted(deleted_sheet_rows):
-                    try:
-                        staff_ws.insert_row(values, index=index, value_input_option="USER_ENTERED")
-                    except Exception:
-                        pass
-            if status_ws is not None:
-                for index, values in sorted(deleted_status_rows):
-                    try:
-                        status_ws.insert_row(values, index=index, value_input_option="USER_ENTERED")
-                    except Exception:
-                        pass
+            conn.close()
             raise
         except Exception as exc:
             if tx.is_active:
                 tx.rollback()
-            if staff_ws is not None:
-                for index, values in sorted(deleted_sheet_rows):
-                    try:
-                        staff_ws.insert_row(values, index=index, value_input_option="USER_ENTERED")
-                    except Exception:
-                        pass
-            if status_ws is not None:
-                for index, values in sorted(deleted_status_rows):
-                    try:
-                        status_ws.insert_row(values, index=index, value_input_option="USER_ENTERED")
-                    except Exception:
-                        pass
-            raise HTTPException(500, f"Không xóa được nhân viên an toàn: {type(exc).__name__}: {exc}") from exc
-        finally:
             conn.close()
+            raise HTTPException(500, "Không xóa được nhân viên trong hệ thống chính. Vui lòng thử lại.") from exc
+
+        mirror_warnings: list[str] = []
+        try:
+            staff_ws = credential_ws()
+            delete_rows_by_name(staff_ws, target_keys, 2)
+            renumber_sheet(staff_ws)
+        except Exception:
+            mirror_warnings.append("Sheet1")
+        try:
+            status_ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
+            delete_rows_by_name(status_ws, target_keys, 2)
+            renumber_sheet(status_ws)
+        except Exception:
+            mirror_warnings.append(STATUS_WORKSHEET)
+        sync_tichluy_members(conn)
+        message = f"Đã xóa {deleted_count} nhân viên THÀNH CÔNG. Lịch sử lịch nghỉ được giữ nguyên."
+        if mirror_warnings:
+            message += " Tài khoản đã bị xóa khỏi hệ thống chính; sheet phụ đang bận nên chưa dọn xong."
+        conn.close()
+        return {
+            "ok": True,
+            "deleted": deleted_count,
+            "mirror_pending": bool(mirror_warnings),
+            "message": message,
+        }
 
     def filtered_staff(conn, ident, search: str, role: str, status: str, shift: str) -> list[dict[str, Any]]:
         data = staff_result(conn, ident)["employees"]
