@@ -1,8 +1,8 @@
 import {
   BriefcaseBusiness, Download, FilePenLine, LoaderCircle, LockKeyhole, Plus,
-  RefreshCw, Save, Search, Trash2, Upload, UserCheck, UserRoundCog, UsersRound,
+  RefreshCw, Save, Search, Trash2, UserCheck, UserRoundCog, UsersRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 
 const ROLE_LABELS = {
@@ -103,7 +103,6 @@ export default function EmployeePage({ user }) {
   const [createForm, setCreateForm] = useState(EMPTY_CREATE)
   const [profileUser, setProfileUser] = useState('')
   const [profileDraft, setProfileDraft] = useState({})
-  const importRef = useRef(null)
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true)
@@ -248,22 +247,6 @@ export default function EmployeePage({ user }) {
     setNotice({ type: 'success', message: result.message })
   })
 
-  const importExcel = (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    if (!file.name.toLowerCase().endsWith('.xlsx')) {
-      setNotice({ type: 'error', message: 'Chỉ chấp nhận file Excel .xlsx.' })
-      return
-    }
-    if (!window.confirm(`Import file ${file.name}? Hệ thống sẽ kiểm tra toàn bộ file trước khi ghi.`)) return
-    run('import', async () => {
-      const result = await veraApi.importStaffExcel(file)
-      await load(true)
-      setNotice({ type: 'success', message: result.message })
-    })
-  }
-
   const toggleSelected = (username) => {
     setSelected((current) => current.includes(username)
       ? current.filter((item) => item !== username)
@@ -280,9 +263,6 @@ export default function EmployeePage({ user }) {
           <h1 className="page-title">Nhân viên</h1>
           <p className="page-subtitle">Danh sách, hồ sơ, trạng thái làm việc và phân ca trong một màn hình.</p>
         </div>
-        <button className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}>
-          <RefreshCw size={17} className={loading ? 'spin' : ''} /> Làm mới
-        </button>
       </div>
 
       <Notice notice={notice} onClose={() => setNotice(null)} />
@@ -317,10 +297,6 @@ export default function EmployeePage({ user }) {
         <div className="staff-actionbar">
           {permissions.employee_add && <button className="primary-button" onClick={() => setAddOpen((value) => !value)}><Plus size={17} /> Thêm nhân viên</button>}
           {permissions.staff_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /> Export Excel</button>}
-          {permissions.staff_import && <>
-            <input ref={importRef} className="staff-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importExcel} />
-            <button className="secondary-button" disabled={busy === 'import'} onClick={() => importRef.current?.click()}><Upload size={17} /> Import Excel</button>
-          </>}
           {canSaveRows && <button className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
           {isAdmin && permissions.employee_delete && <button className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
         </div>
@@ -357,7 +333,7 @@ export default function EmployeePage({ user }) {
       </section>}
 
       <section className="panel staff-list-panel">
-        <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div></div>
+        <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /> Làm mới</button></div>
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">
             <table className="staff-table">
