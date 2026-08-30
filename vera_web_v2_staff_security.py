@@ -1,7 +1,7 @@
 """Secure staff password reset and compressed identity-document storage for Web V2.
 
-Passwords are never returned to the browser. Admin may replace a legacy VERA
-password without forcing the employee to change it at the next Web V2 login.
+Passwords are never returned to the browser. Admin may replace a VERA password
+in PostgreSQL without forcing the employee to change it at the next Web V2 login.
 
 Citizen-ID images are stored in PostgreSQL only after the browser compresses
 them to a small raster image. Access is restricted to the employee themself or
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
 from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Request, Response
@@ -19,36 +18,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from vera_web_v2_security import password_policy_error
-from vera_web_v2_staff import CREDENTIAL_SHEET_ID
 
 
-STAFF_SECURITY_RELEASE = "3.8-staff-security-identity"
+STAFF_SECURITY_RELEASE = "3.9-postgres-only-staff-security"
 MAX_IDENTITY_BYTES = 700 * 1024
 IDENTITY_SIDES = {"front": "Mặt trước", "back": "Mặt sau"}
 ALLOWED_IMAGE_TYPES = {"image/webp", "image/jpeg", "image/png"}
-SHEETS_MAX_ATTEMPTS = 3
-
-
-def _is_sheets_quota_error(exc: Exception) -> bool:
-    response = getattr(exc, "response", None)
-    status = getattr(response, "status_code", None)
-    message = str(exc).lower()
-    return status == 429 or "quota exceeded" in message or "rate limit" in message
-
-
-def _update_sheet_password(sheet_ref, sheet_row: int, password: str) -> None:
-    for attempt in range(SHEETS_MAX_ATTEMPTS):
-        try:
-            sheet_ref.update(
-                range_name=f"C{sheet_row}",
-                values=[[password]],
-                value_input_option="USER_ENTERED",
-            )
-            return
-        except Exception as exc:
-            if not _is_sheets_quota_error(exc) or attempt == SHEETS_MAX_ATTEMPTS - 1:
-                raise
-            time.sleep(2 ** attempt)
 
 
 class StaffPasswordReset(BaseModel):
@@ -89,7 +64,6 @@ def install_staff_security_routes(
     require_feature: Callable[[Any, Any, str], None],
     norm: Callable[[Any], str],
     identity_type: type,
-    google_client: Callable[[], Any],
 ) -> None:
     if getattr(app.state, "staff_security_routes_installed", False):
         return
@@ -97,7 +71,7 @@ def install_staff_security_routes(
     def employee_row(conn, username: str, *, for_update: bool = False) -> dict[str, Any]:
         suffix = " FOR UPDATE" if for_update else ""
         row = conn.execute(text("""
-            SELECT username, full_name, role, password_value, payload, source_row,
+            SELECT username, full_name, role, password_value, payload,
                    remember_token_hash, remember_token_expiry
             FROM employees
             WHERE lower(btrim(username))=lower(btrim(:username))
@@ -131,10 +105,6 @@ def install_staff_security_routes(
         engine = engine_instance()
         conn = engine.connect()
         tx = conn.begin()
-        sheet_ref = None
-        sheet_row = 0
-        old_sheet_password = ""
-        sheet_changed = False
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             require_feature(conn, ident, "employee_edit_save")
@@ -163,23 +133,6 @@ def install_staff_security_routes(
                 "payload": json.dumps(payload, ensure_ascii=False),
                 "username": row["username"],
             })
-
-            # source_row is persisted when the employee is imported/synchronised.
-            # Use it directly so one reset does not read the whole credential sheet.
-            # password_value is the previous mirrored password and is sufficient to
-            # restore Sheet1 if the PostgreSQL transaction later fails.
-            try:
-                sheet_row = int(row.get("source_row") or 0)
-            except (TypeError, ValueError):
-                sheet_row = 0
-            if sheet_row < 2:
-                raise RuntimeError(
-                    f"Nhân viên {row['username']} chưa có dòng nguồn hợp lệ trong Sheet1."
-                )
-            old_sheet_password = str(row.get("password_value") or "")
-            sheet_ref = google_client().open_by_key(CREDENTIAL_SHEET_ID).get_worksheet(0)
-            _update_sheet_password(sheet_ref, sheet_row, body.new_password)
-            sheet_changed = True
             tx.commit()
             return {
                 "ok": True,
@@ -188,25 +141,10 @@ def install_staff_security_routes(
         except HTTPException:
             if tx.is_active:
                 tx.rollback()
-            if sheet_changed and sheet_ref is not None and sheet_row >= 2:
-                try:
-                    _update_sheet_password(sheet_ref, sheet_row, old_sheet_password)
-                except Exception:
-                    pass
             raise
         except Exception as exc:
             if tx.is_active:
                 tx.rollback()
-            if sheet_changed and sheet_ref is not None and sheet_row >= 2:
-                try:
-                    _update_sheet_password(sheet_ref, sheet_row, old_sheet_password)
-                except Exception:
-                    pass
-            if _is_sheets_quota_error(exc):
-                raise HTTPException(
-                    503,
-                    "Google Sheets đang bận. Vui lòng thử lại sau ít phút.",
-                ) from exc
             raise HTTPException(500, "Không reset được mật khẩu. Vui lòng thử lại.") from exc
         finally:
             conn.close()

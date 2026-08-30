@@ -7,15 +7,14 @@ V92.6.99 Streamlit core:
 - ``credentials``  <- normalized PostgreSQL ``employees``
 - ``leave_primary`` <- normalized PostgreSQL ``leave_records``
 
-Safety during the transition:
-- Other datasets keep the Phase-2/Phase-3 read behavior.
-- If the normalized sync state is missing/stale, or row counts do not match,
-  Phase 5 delegates one read to the legacy source path. That path reconciles
-  PostgreSQL, after which subsequent reads use PostgreSQL again.
-- This stale fallback is especially important while Google Sheets is still a
-  synchronous mirror because deleting a physical Sheet row shifts the source
-  row numbers used by existing edit/delete business code.
-- Set ``VERA_PHASE5_READ_BACKEND=sheets`` for an immediate read-path rollback.
+Storage policy:
+- Employee credentials always read from PostgreSQL and never fall back to
+  Sheet1, including explicit refreshes and stale sync-state recovery.
+- Other datasets keep the Phase-2/Phase-3 transition behavior.
+- Leave data may still use its legacy reconcile path while that migration is
+  active.
+- ``VERA_PHASE5_READ_BACKEND=sheets`` only rolls back non-employee datasets;
+  credentials remain PostgreSQL-only.
 """
 from __future__ import annotations
 
@@ -311,6 +310,28 @@ def install(vpg) -> bool:
             _event(vpg, "phase5", "phase5_schema_warning", f"{type(exc).__name__}: {exc}")
 
     def phase5_load_dataset(dataset_key, source_loader, ttl_seconds=120, force_refresh=False, wait_seconds=3.0):
+        # Credentials have no legacy read fallback.  Keep this branch before
+        # the general Phase-5 activation/rollback check so an environment flag
+        # cannot accidentally reconnect employee data to Sheet1.
+        if dataset_key == EMPLOYEE_DATASET and _enabled(vpg):
+            try:
+                pg_df = _credentials_from_pg(vpg)
+                _event(
+                    vpg,
+                    dataset_key,
+                    "phase5_pg_only_read",
+                    f"rows={len(pg_df)}; force_refresh={bool(force_refresh)}",
+                )
+                return pg_df
+            except Exception as exc:
+                _event(
+                    vpg,
+                    dataset_key,
+                    "phase5_pg_only_read_error",
+                    f"{type(exc).__name__}: {str(exc)[:900]}",
+                )
+                raise
+
         if dataset_key not in TARGET_DATASETS or not is_active(vpg):
             return original_load_dataset(
                 dataset_key,

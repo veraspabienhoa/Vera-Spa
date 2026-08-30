@@ -70,6 +70,8 @@ API_SUMMARY = "/Report/ReportSummaryInvoice/SearchFullText"
 API_CHECKIN = "/Report/ReportEmployeeCheckin/SearchElastic"
 
 # -------------------- Vera / Google --------------------
+# The workbook still hosts non-employee operational/audit worksheets.  Sheet1
+# employee reads are retired; employee identity comes from PostgreSQL below.
 SHEET_MAT_KHAU_ID = "1DGXy3kPyMPwtz-3CnG8i6BiQbXFDApasoXVFzSmUe24"
 SHEET_DU_PHONG_ID = "1Kz0aw-JatptAN9G7YSwZ6rJO09urOPaD-rS-18eZSY0"
 BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
@@ -385,24 +387,18 @@ def load_all_leave_rows(client: gspread.Client) -> list[dict]:
     return list(logical.values())
 
 
-def load_employee_name_map(client: gspread.Client) -> dict[str, str]:
-    ws = client.open_by_key(SHEET_MAT_KHAU_ID).get_worksheet(0)
-    values = ws.get_all_values()
-    if len(values) < 2:
-        return {}
-    header = values[0]
-    name_idx = None
-    for i, h in enumerate(header):
-        if _norm(h) in {"ten nhan vien", "ten he thong", "username", "user name"}:
-            name_idx = i
-            break
-    if name_idx is None:
-        name_idx = 1  # Sheet1 hiện dùng cột B cho Tên nhân viên.
+def load_employee_name_map() -> dict[str, str]:
+    """Load canonical employee names from PostgreSQL, never credential Sheet1."""
+    with vpg.get_engine().connect() as conn:
+        values = conn.execute(text("""
+            SELECT username
+            FROM employees
+            WHERE btrim(COALESCE(username, '')) <> ''
+            ORDER BY COALESCE(stt, 2147483647), username
+        """)).scalars().all()
     out: dict[str, str] = {}
-    for row in values[1:]:
-        if name_idx >= len(row):
-            continue
-        name = str(row[name_idx]).strip()
+    for value in values:
+        name = str(value or "").strip()
         key = _employee_key(name)
         if key and key not in out:
             out[key] = name
@@ -1308,7 +1304,7 @@ def run_sync() -> int:
             if cfg.get("paused"):
                 _log("Auto penalty PAUSED bởi Admin -> chỉ đồng bộ snapshot, KHÔNG ghi phạt.")
             else:
-                employee_map = load_employee_name_map(client)
+                employee_map = load_employee_name_map()
                 catalog = load_leave_catalog(client)
                 _log(f"Đã tải danh mục: employees={len(employee_map)}; leave_types={len(catalog)}")
                 timesoft_result = process_timesoft_penalties(client, cfg, employee_map, catalog, checkin_by_date)

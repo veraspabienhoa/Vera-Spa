@@ -1,21 +1,19 @@
 """Vera Spa PostgreSQL Phase 3 normalized CRUD + reconciliation layer.
 
-Phase 3 intentionally keeps the existing Streamlit/business code untouched.
-The current Google Sheets write path remains authoritative in ``dual`` mode,
-while the two primary operational datasets are continuously reconciled into
-normalized PostgreSQL tables:
+Employee credentials are owned exclusively by PostgreSQL.  Legacy
+``credentials`` snapshots are ignored so Sheet1 can never recreate an account
+that was deleted from ``employees``.  Leave data retains its transitional
+Google Sheets reconciliation path:
 
-- ``credentials`` -> ``employees``
-- ``leave_primary`` -> ``leave_records``
+- ``credentials`` -> PostgreSQL ``employees`` state only (no Sheet1 import)
+- ``leave_primary`` -> reconciled PostgreSQL ``leave_records``
 
-The module also exposes explicit PostgreSQL CRUD helpers for the next cutover
-step. Existing app writes invalidate the dataset; Phase 3 marks its normalized
-copy stale and the next successful source load reconciles the full table.
+The module also exposes explicit PostgreSQL CRUD helpers used by later phases.
 
 Safety properties:
-- ``sheets`` mode behaves exactly as before.
-- PostgreSQL errors never block the legacy Google Sheets flow in ``dual`` mode.
-- Empty/invalid snapshots do not destructively wipe normalized tables by
+- Employee snapshots never insert, update, or delete PostgreSQL rows.
+- Leave reconciliation errors do not block the legacy flow in ``dual`` mode.
+- Empty/invalid leave snapshots do not destructively wipe normalized tables by
   default. Set VERA_PHASE3_ALLOW_EMPTY_SYNC=1 only for controlled maintenance.
 - Every normalized row keeps the complete source row in JSONB ``payload`` so no
   source column is lost when schemas evolve.
@@ -448,42 +446,22 @@ _LEAVE_UPSERT_SQL = text(
 )
 
 
-def _sync_employees(vpg, df: pd.DataFrame) -> dict:
-    records = []
-    for offset, (_, row) in enumerate(df.iterrows(), start=2):
-        item = _credential_record(row.to_dict(), offset)
-        if item:
-            records.append(item)
-    if not records and not _allow_empty_sync():
-        raise ValueError("credentials snapshot is empty/invalid; destructive Phase 3 sync skipped")
-
+def _postgres_employee_state(vpg) -> dict:
+    """Record employee sync health without importing the retired Sheet1 source."""
     engine = vpg.get_engine()
     _ensure_phase3_schema(vpg, engine)
-    checksum = _frame_checksum(df)
-    current = {r["username"] for r in records}
     with engine.begin() as conn:
-        for record in records:
-            conn.execute(_EMPLOYEE_UPSERT_SQL, record)
-        if current:
-            # The credentials snapshot owns only rows imported from the credentials
-            # sheet. Keep system/bootstrap accounts (for example Web V2 admin)
-            # managed by another source instead of deleting them on every sync.
-            existing = {
-                str(r[0])
-                for r in conn.execute(
-                    text("SELECT username FROM employees WHERE source_sheet_id=:source"),
-                    {"source": "credentials"},
-                ).all()
-            }
-            for username in existing - current:
-                conn.execute(text("DELETE FROM employees WHERE username=:u"), {"u": username})
-        elif _allow_empty_sync():
-            conn.execute(
-                text("DELETE FROM employees WHERE source_sheet_id=:source"),
-                {"source": "credentials"},
-            )
-        _update_state_conn(conn, EMPLOYEE_DATASET, "employees", len(records), checksum)
-    return {"dataset_key": EMPLOYEE_DATASET, "table": "employees", "rows": len(records), "checksum": checksum}
+        row_count = int(conn.execute(text("SELECT COUNT(*) FROM employees")).scalar_one() or 0)
+        checksum = hashlib.sha256(f"postgresql-only:{row_count}".encode("utf-8")).hexdigest()
+        _update_state_conn(conn, EMPLOYEE_DATASET, "employees", row_count, checksum)
+    return {
+        "dataset_key": EMPLOYEE_DATASET,
+        "table": "employees",
+        "rows": row_count,
+        "checksum": checksum,
+        "source": "postgresql",
+        "sheet_import_skipped": True,
+    }
 
 
 def _sync_leave_records(vpg, df: pd.DataFrame) -> dict:
@@ -525,9 +503,14 @@ def sync_dataset(vpg, dataset_key: str, df: pd.DataFrame) -> Optional[dict]:
     if not isinstance(df, pd.DataFrame):
         df = pd.DataFrame(df if df is not None else [])
     try:
-        result = _sync_employees(vpg, df) if dataset_key == EMPLOYEE_DATASET else _sync_leave_records(vpg, df)
+        # Employee records are PostgreSQL-owned.  Ignoring every legacy
+        # credentials snapshot prevents a deleted account from being recreated
+        # by a later Sheet1 refresh.  Leave records retain their existing
+        # migration/mirror workflow.
+        result = _postgres_employee_state(vpg) if dataset_key == EMPLOYEE_DATASET else _sync_leave_records(vpg, df)
         try:
-            vpg.record_event(dataset_key, "phase3_normalized_sync", f"table={result['table']}; rows={result['rows']}")
+            event_type = "phase3_postgres_only" if dataset_key == EMPLOYEE_DATASET else "phase3_normalized_sync"
+            vpg.record_event(dataset_key, event_type, f"table={result['table']}; rows={result['rows']}")
         except Exception:
             pass
         return result

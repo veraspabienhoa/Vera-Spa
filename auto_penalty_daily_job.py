@@ -347,43 +347,44 @@ def _read_added_row(client, add_msg: str) -> dict:
     return out
 
 
-def _employment_status_map(client) -> dict[str, str]:
-    """Đọc TrangThaiNhanSu; mặc định nhân sự không có dòng trạng thái là Đang làm việc."""
-    out = {}
-    try:
-        ss = client.open_by_key(ts.SHEET_MAT_KHAU_ID)
-        ws = ss.worksheet("TrangThaiNhanSu")
-        vals = ws.get_all_values()
-        for row in vals[1:]:
-            name = str(row[1] if len(row) > 1 else "").strip()
-            status = str(row[2] if len(row) > 2 else "").strip()
-            if name:
-                out[ts._employee_key(name)] = ts._norm(status)
-    except Exception as exc:
-        _log(f"ABSENCE status WARN: {type(exc).__name__}")
-    return out
+def _employment_status_map(_client=None) -> dict[str, str]:
+    """Read employment status from PostgreSQL employee payload only."""
+    with ts.vpg.get_engine().connect() as conn:
+        rows = conn.execute(ts.text("""
+            SELECT username,
+                   COALESCE(NULLIF(payload->>'Trạng thái làm việc', ''), 'Đang làm việc') AS status
+            FROM employees
+            WHERE btrim(COALESCE(username, '')) <> ''
+        """)).mappings().all()
+    return {
+        ts._employee_key(row.get("username")): ts._norm(row.get("status"))
+        for row in rows
+        if ts._employee_key(row.get("username"))
+    }
 
 
-def _active_shifted_staff(client) -> list[dict]:
+def _active_shifted_staff(_client=None) -> list[dict]:
     """Chỉ nhanvien/leader đang làm việc và có Ca làm việc."""
-    ws = client.open_by_key(ts.SHEET_MAT_KHAU_ID).get_worksheet(0)
-    vals = ws.get_all_values()
-    if len(vals) <= 1:
-        return []
-
-    statuses = _employment_status_map(client)
+    with ts.vpg.get_engine().connect() as conn:
+        vals = conn.execute(ts.text("""
+            SELECT username, role, work_shift,
+                   COALESCE(NULLIF(payload->>'Trạng thái làm việc', ''), 'Đang làm việc') AS status
+            FROM employees
+            WHERE btrim(COALESCE(username, '')) <> ''
+            ORDER BY COALESCE(stt, 2147483647), username
+        """)).mappings().all()
     active_key = ts._norm("Đang làm việc")
     temp_key = ts._norm("Tạm thời nghỉ việc")
     left_key = ts._norm("Đã nghỉ việc")
 
     out = []
-    for row in vals[1:]:
-        name = str(row[1] if len(row) > 1 else "").strip()
-        role = ts._norm(row[3] if len(row) > 3 else "")
-        shift = str(row[14] if len(row) > 14 else "").strip()
+    for row in vals:
+        name = str(row.get("username") or "").strip()
+        role = ts._norm(row.get("role"))
+        shift = str(row.get("work_shift") or "").strip()
         if not name or role not in ABSENCE_AUTO_ROLES or not shift:
             continue
-        status = statuses.get(ts._employee_key(name), active_key)
+        status = ts._norm(row.get("status")) or active_key
         if status in {temp_key, left_key} or status != active_key:
             continue
         out.append({"name": name, "key": ts._employee_key(name), "role": role, "shift": shift})
@@ -648,29 +649,24 @@ def process_tour_today(client, cfg: dict, employee_map: dict, catalog: dict) -> 
     return result, added_rows
 
 
-def employee_directory(client) -> tuple[dict[str, str], list[str]]:
-    ws = client.open_by_key(ts.SHEET_MAT_KHAU_ID).get_worksheet(0)
-    vals = ws.get_all_values()
+def employee_directory(_client=None) -> tuple[dict[str, str], list[str]]:
+    """Read employee email recipients from PostgreSQL only."""
+    with ts.vpg.get_engine().connect() as conn:
+        vals = conn.execute(ts.text("""
+            SELECT username, role, email
+            FROM employees
+            WHERE btrim(COALESCE(username, '')) <> ''
+            ORDER BY COALESCE(stt, 2147483647), username
+        """)).mappings().all()
     emails: dict[str, str] = {}
     cc = [AUTO_CC_EMAIL]
     if not vals:
         return emails, cc
-    header = [ts._norm(x) for x in vals[0]]
 
-    def find_idx(candidates, fallback):
-        for i, h in enumerate(header):
-            if h in candidates:
-                return i
-        return fallback
-
-    name_idx = find_idx({"ten nhan vien", "ten he thong", "username", "user name"}, 1)
-    role_idx = find_idx({"phan quyen", "role", "quyen"}, 3)
-    email_idx = find_idx({"email", "e mail", "mail"}, 7)
-
-    for row in vals[1:]:
-        name = str(row[name_idx] if name_idx < len(row) else "").strip()
-        role = ts._norm(row[role_idx] if role_idx < len(row) else "")
-        email = str(row[email_idx] if email_idx < len(row) else "").strip()
+    for row in vals:
+        name = str(row.get("username") or "").strip()
+        role = ts._norm(row.get("role"))
+        email = str(row.get("email") or "").strip()
         if name and "@" in email:
             emails[ts._employee_key(name)] = email
         if role in {"quanly", "quan ly", "letan", "le tan"} and "@" in email:

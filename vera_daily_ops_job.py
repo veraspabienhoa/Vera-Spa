@@ -31,8 +31,10 @@ import gspread
 import pandas as pd
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2.service_account import Credentials
+from sqlalchemy import text
 
 import auto_penalty_daily_job as daily_mail
+import vera_postgres as vpg
 
 
 VN_TZ = timezone(timedelta(hours=7))
@@ -591,31 +593,31 @@ def sent_keys(client) -> set:
     return result
 
 
-def employee_directory(client):
+def employee_directory():
     """
     TO = email nhân viên.
     CC = veraspabienhoa@gmail.com + quanly + letan.
     Không tự CC toàn bộ admin.
+    Hồ sơ nhân viên chỉ đọc từ PostgreSQL; Sheet1 không còn là nguồn.
     """
-    ws = client.open_by_key(
-        SHEET_MAT_KHAU_ID
-    ).get_worksheet(0)
-    vals = ws.get_all_values()
+    if not vpg.is_enabled():
+        raise RuntimeError("PostgreSQL chưa được cấu hình cho danh bạ nhân viên.")
+    with vpg.get_engine().connect() as conn:
+        vals = conn.execute(text("""
+            SELECT username, role, email
+            FROM employees
+            WHERE btrim(COALESCE(username, '')) <> ''
+            ORDER BY COALESCE(stt, 2147483647), username
+        """)).mappings().all()
 
     emails = {}
     canonical_names = {}
     cc = [AUTO_CC_EMAIL]
 
-    for row in vals[1:]:
-        name = str(
-            row[1] if len(row) > 1 else ""
-        ).strip()
-        role = str(
-            row[3] if len(row) > 3 else ""
-        ).strip().lower()
-        email = str(
-            row[7] if len(row) > 7 else ""
-        ).strip()
+    for row in vals:
+        name = str(row.get("username") or "").strip()
+        role = str(row.get("role") or "").strip().lower()
+        email = str(row.get("email") or "").strip()
 
         key = normalize_text(name)
         if name:
@@ -993,9 +995,7 @@ def process_violations() -> str:
     target_date = vn_now().date()
     catalog = leave_catalog(client)
 
-    emails, canonical_names, cc = (
-        employee_directory(client)
-    )
+    emails, canonical_names, cc = employee_directory()
 
     violations = collect_violations(
         target_date,

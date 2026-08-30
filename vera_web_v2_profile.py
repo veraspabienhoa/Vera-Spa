@@ -1,10 +1,9 @@
-"""Self-service employee profile and legacy-login password updates."""
+"""Self-service employee profile and password updates in PostgreSQL."""
 from __future__ import annotations
 
 from datetime import datetime
 import hmac
 import json
-import os
 import time
 from typing import Any, Callable
 
@@ -14,17 +13,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from vera_web_v2_security import password_policy_error
-
-
-CREDENTIAL_SHEET_ID = os.getenv(
-    "VERA_CREDENTIAL_SHEET_ID", "1DGXy3kPyMPwtz-3CnG8i6BiQbXFDApasoXVFzSmUe24"
-)
-HEADERS = [
-    "STT", "Tên nhân viên", "Mật khẩu", "Phân quyền", "Họ và tên đầy đủ", "Ngày sinh",
-    "Điện thoại", "Email", "Địa chỉ", "Số tài khoản ngân hàng", "Tên ngân hàng",
-    "Phát sinh tháng", "Có phép tháng", "Phép năm", "Ca làm việc", "Ngày bắt đầu ca",
-    "Chu kỳ", "Khóa đăng nhập", "Remember Token Hash", "Remember Token Expiry", "Ngày bắt đầu làm",
-]
 
 
 class ProfileUpdate(BaseModel):
@@ -120,22 +108,9 @@ def _date_text(value: str) -> str:
     raise HTTPException(400, "Ngày sinh không hợp lệ. Dùng định dạng DD/MM/YYYY.")
 
 
-def _credential_values(row: dict[str, Any]) -> list[Any]:
-    return [
-        row.get("stt") or "", row.get("username") or "", row.get("password_value") or "",
-        row.get("role") or "", row.get("full_name") or "", row.get("birth_date") or "",
-        row.get("phone") or "", row.get("email") or "", row.get("address") or "",
-        row.get("bank_account") or "", row.get("bank_name") or "", float(row.get("monthly_generated") or 0),
-        float(row.get("monthly_leave") or 0), float(row.get("annual_leave") or 0), row.get("work_shift") or "",
-        row.get("shift_start_date") or "", row.get("rotation_cycle") or "",
-        "TRUE" if row.get("login_locked") else "FALSE", row.get("remember_token_hash") or "",
-        row.get("remember_token_expiry") or "", row.get("employment_start_date") or "",
-    ]
-
-
 def install_profile_routes(
     app, *, engine_instance: Callable[[], Any], current_identity,
-    require_feature: Callable[[Any, Any, str], None], google_client: Callable[[], Any], identity_type,
+    require_feature: Callable[[Any, Any, str], None], identity_type,
 ):
     @app.get("/v2/profile")
     def get_profile(ident: identity_type = Depends(current_identity)):
@@ -181,9 +156,6 @@ def install_profile_routes(
         birth_date = _date_text(body.birth_date)
         conn = engine_instance().connect()
         tx = conn.begin()
-        ws = None
-        source_row = 0
-        backup: list[Any] | None = None
         try:
             require_feature(conn, ident, "profile_edit")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:profile:' || lower(:username)))"), {"username": ident.employee_username})
@@ -233,16 +205,6 @@ def install_profile_routes(
                 payload["must_change_password"] = False
             updated["payload"] = payload
 
-            ws = google_client().open_by_key(CREDENTIAL_SHEET_ID).get_worksheet(0)
-            values = ws.get_all_values()
-            source_row = int(current.get("source_row") or 0)
-            if source_row < 2 or source_row > len(values) or str(values[source_row - 1][1] if len(values[source_row - 1]) > 1 else "").strip().casefold() != ident.employee_username.strip().casefold():
-                source_row = next((index for index, row in enumerate(values[1:], 2) if len(row) > 1 and str(row[1]).strip().casefold() == ident.employee_username.strip().casefold()), 0)
-            if source_row < 2:
-                raise RuntimeError("Không tìm thấy dòng hồ sơ tương ứng trong bảng tài khoản.")
-            backup = list(values[source_row - 1][:len(HEADERS)])
-            ws.update(range_name=f"A{source_row}:U{source_row}", values=[_credential_values(updated)], value_input_option="USER_ENTERED")
-
             conn.execute(text("""
                 UPDATE employees SET full_name=:full_name, birth_date=:birth_date, phone=:phone,
                     email=:email, address=:address, bank_account=:bank_account, bank_name=:bank_name,
@@ -267,11 +229,6 @@ def install_profile_routes(
             raise
         except Exception as exc:
             if tx.is_active: tx.rollback()
-            if ws is not None and backup is not None and source_row:
-                try:
-                    ws.update(range_name=f"A{source_row}:U{source_row}", values=[backup], value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
             raise HTTPException(500, f"Không cập nhật được hồ sơ an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()

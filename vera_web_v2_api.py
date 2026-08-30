@@ -2537,7 +2537,6 @@ install_profile_routes(
     engine_instance=_engine_instance,
     current_identity=current_identity,
     require_feature=_require_feature,
-    google_client=_google_client,
     identity_type=Identity,
 )
 

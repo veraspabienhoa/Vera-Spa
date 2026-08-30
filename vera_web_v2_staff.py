@@ -1,16 +1,13 @@
 """Authenticated employee-management routes for VERA SPA Web V2.
 
-PostgreSQL is the canonical store.  Mutations are mirrored to the legacy
-credential/status worksheets so Streamlit and Web V2 remain convergent while
-the migration is in progress.  The browser never receives passwords or token
-hashes and never writes the employees table directly.
+PostgreSQL is the only employee store.  The legacy credential workbook is not
+read or written by these routes.  The browser never receives passwords or
+token hashes and never writes the employees table directly.
 """
 from datetime import date, datetime
 from io import BytesIO
 import json
-import os
 import re
-import threading
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -27,18 +24,6 @@ from sqlalchemy import text
 from vera_web_v2_security import password_policy_error
 
 
-CREDENTIAL_SHEET_ID = os.getenv(
-    "VERA_CREDENTIAL_SHEET_ID", "1DGXy3kPyMPwtz-3CnG8i6BiQbXFDApasoXVFzSmUe24"
-)
-STATUS_WORKSHEET = "TrangThaiNhanSu"
-STATUS_HEADERS = ["STT", "Tên nhân viên", "Trạng thái", "Ngày cập nhật", "Giờ cập nhật", "Người cập nhật"]
-CREDENTIAL_HEADERS = [
-    "STT", "Tên nhân viên", "Mật khẩu", "Phân quyền", "Họ và tên đầy đủ", "Ngày sinh",
-    "Điện thoại", "Email", "Địa chỉ", "Số tài khoản ngân hàng", "Tên ngân hàng",
-    "Phát sinh tháng", "Có phép tháng", "Phép năm", "Ca làm việc", "Ngày bắt đầu ca",
-    "Chu kỳ", "Khóa đăng nhập", "Remember Token Hash", "Remember Token Expiry",
-    "Ngày bắt đầu làm",
-]
 STAFF_EXPORT_COLUMNS = [
     "Tên nhân viên", "Họ và tên đầy đủ", "Ngày bắt đầu làm", "Ngày sinh",
     "Phân quyền", "Trạng thái làm việc", "Điện thoại", "Email", "Địa chỉ",
@@ -58,14 +43,6 @@ STATUS_ALIASES = {
 }
 CYCLE_OPTIONS = ["Luân phiên (14 ngày)", "Theo chu kỳ Tháng", "Cố định (Không đổi)"]
 DEPARTMENT_ORDER = ["Nhân viên + Leader", "Lễ tân", "Quản lý", "Locker", "Tạp vụ"]
-TICHLUY_ELIGIBLE_ROLES = {"nhanvien", "leader"}
-TICHLUY_WORKSHEET = "TichLuy"
-TICHLUY_HEADERS = [
-    "STT", "Tên nhân viên", "Ngày bắt đầu làm", "Mục tiêu tích lũy", "Đã tích lũy",
-    "Còn lại", "Kỳ gần nhất", "Số tiền kỳ gần nhất", "Chi tiết các kỳ",
-]
-
-
 class StaffCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=8, max_length=300)
@@ -227,11 +204,6 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
     return payload
 
 
-def _credential_values(row: dict[str, Any], status: str) -> list[Any]:
-    payload = _employee_payload(row, status)
-    return [payload.get(header, "") for header in CREDENTIAL_HEADERS]
-
-
 def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
     return {
         "username": str(row.get("username") or ""),
@@ -265,16 +237,12 @@ def _select_staff_rows(conn, *, for_update: bool = False) -> list[dict[str, Any]
                remember_token_hash, remember_token_expiry, employment_start_date,
                source_sheet_id, source_row, payload
         FROM employees
-        WHERE COALESCE(source_sheet_id,'credentials')='credentials'
-        ORDER BY COALESCE(source_row, 2147483647), COALESCE(stt, 2147483647), username
+        ORDER BY COALESCE(stt, 2147483647), username
     """ + suffix)).mappings().all()
     return [dict(row) for row in rows]
 
 
-def _effective_status(row: dict[str, Any], google_status: dict[str, str], norm: Callable[[Any], str]) -> str:
-    key = norm(row.get("username"))
-    if key in google_status:
-        return google_status[key]
+def _effective_status(row: dict[str, Any], norm: Callable[[Any], str]) -> str:
     payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
     raw = payload.get("Trạng thái làm việc") or payload.get("employment_status") or STATUS_OPTIONS[0]
     return STATUS_ALIASES.get(norm(raw), STATUS_OPTIONS[0])
@@ -298,112 +266,6 @@ def install_staff_routes(
     identity_type: type,
     vn_tz,
 ) -> None:
-    def credential_spreadsheet():
-        return google_client().open_by_key(CREDENTIAL_SHEET_ID)
-
-    def credential_ws():
-        return credential_spreadsheet().get_worksheet(0)
-
-    def worksheet(title: str, rows: int, cols: int, headers: list[str]):
-        spreadsheet = credential_spreadsheet()
-        try:
-            ws = spreadsheet.worksheet(title)
-        except Exception:
-            ws = spreadsheet.add_worksheet(title=title, rows=rows, cols=cols)
-        current = ws.row_values(1)
-        if current[:len(headers)] != headers:
-            ws.update(
-                range_name=f"A1:{get_column_letter(len(headers))}1",
-                values=[headers], value_input_option="USER_ENTERED",
-            )
-        return ws
-
-    def google_status_map() -> dict[str, str]:
-        result: dict[str, str] = {}
-        try:
-            ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
-            for row in ws.get_all_values()[1:]:
-                if len(row) < 2 or not norm(row[1]):
-                    continue
-                result[norm(row[1])] = STATUS_ALIASES.get(norm(row[2] if len(row) > 2 else ""), STATUS_OPTIONS[0])
-        except Exception:
-            pass
-        return result
-
-    def reconcile_employment_status_login_gates() -> None:
-        """Seed PostgreSQL login gates from the legacy status worksheet at rollout."""
-        statuses = google_status_map()
-        if not statuses:
-            return
-        try:
-            with engine_instance().begin() as conn:
-                rows = conn.execute(text("SELECT username FROM employees")).mappings().all()
-                for row in rows:
-                    status = statuses.get(norm(row["username"]))
-                    if not status:
-                        continue
-                    conn.execute(text("""
-                        UPDATE employees
-                        SET payload=jsonb_set(
-                              COALESCE(payload, '{}'::jsonb),
-                              '{Trạng thái làm việc}',
-                              to_jsonb(CAST(:status AS text)),
-                              true
-                            ),
-                            remember_token_hash=CASE WHEN :is_active THEN remember_token_hash ELSE '' END,
-                            remember_token_expiry=CASE WHEN :is_active THEN remember_token_expiry ELSE '' END,
-                            updated_at=NOW()
-                        WHERE username=:username
-                          AND (
-                            COALESCE(payload->>'Trạng thái làm việc','') IS DISTINCT FROM :status
-                            OR (NOT :is_active AND (
-                              COALESCE(remember_token_hash,'') <> ''
-                              OR COALESCE(remember_token_expiry,'') <> ''
-                            ))
-                          )
-                    """), {
-                        "username": row["username"], "status": status,
-                        "is_active": status == STATUS_OPTIONS[0],
-                    })
-                    conn.execute(text("""
-                        UPDATE vera_v2_user_profile
-                        SET is_active=:is_active, updated_at=NOW()
-                        WHERE lower(btrim(employee_username))=lower(btrim(:username))
-                          AND is_active IS DISTINCT FROM :is_active
-                    """), {
-                        "username": row["username"],
-                        "is_active": status == STATUS_OPTIONS[0],
-                    })
-        except Exception:
-            # The API must remain available when Google is temporarily unreachable;
-            # every later Web V2 status change still writes PostgreSQL synchronously.
-            return
-
-    @app.on_event("startup")
-    def schedule_employment_status_reconciliation() -> None:
-        # Google availability must never delay Cloud Run readiness. The worker
-        # only seeds legacy rows; every Web V2 status write remains synchronous.
-        threading.Thread(
-            target=reconcile_employment_status_login_gates,
-            name="vera-employment-status-reconcile",
-            daemon=True,
-        ).start()
-
-    def write_status(username: str, status: str, actor: str) -> None:
-        ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
-        values = ws.get_all_values()
-        row_number = None
-        for index, row in enumerate(values[1:], start=2):
-            if len(row) > 1 and norm(row[1]) == norm(username):
-                row_number = index
-                break
-        now = datetime.now(vn_tz)
-        data = [username, status, now.strftime("%d/%m/%Y"), now.strftime("%H:%M:%S"), actor]
-        if row_number:
-            ws.update(range_name=f"B{row_number}:F{row_number}", values=[data], value_input_option="USER_ENTERED")
-        else:
-            ws.append_row([max(1, len(values))] + data, value_input_option="USER_ENTERED")
-
     def restore_pruned_leave(change: dict[str, Any] | None) -> None:
         if not change or change.get("restored"):
             return
@@ -505,60 +367,6 @@ def install_staff_routes(
             restore_pruned_leave(change)
             raise
 
-    def delete_rows_by_name(ws, names: set[str], name_col: int) -> list[tuple[int, list[Any]]]:
-        values = ws.get_all_values()
-        targets = []
-        for index, row in enumerate(values[1:], start=2):
-            value = row[name_col - 1] if len(row) >= name_col else ""
-            if norm(value) in names:
-                targets.append((index, list(row)))
-        for index, _ in sorted(targets, reverse=True):
-            ws.delete_rows(index)
-        return targets
-
-    def renumber_sheet(ws, stt_col: int = 1) -> None:
-        values = ws.get_all_values()
-        count = max(0, len(values) - 1)
-        if count:
-            column = get_column_letter(stt_col)
-            ws.update(
-                range_name=f"{column}2:{column}{count + 1}",
-                values=[[index] for index in range(1, count + 1)],
-                value_input_option="USER_ENTERED",
-            )
-
-    def sync_tichluy_members(conn) -> None:
-        try:
-            ws = worksheet(TICHLUY_WORKSHEET, 2000, len(TICHLUY_HEADERS), TICHLUY_HEADERS)
-            old_values = ws.get_all_values()
-            old_by_name = {
-                norm(row[1]): list(row[:len(TICHLUY_HEADERS)])
-                for row in old_values[1:]
-                if len(row) > 1 and norm(row[1])
-            }
-            eligible = [
-                row for row in _select_staff_rows(conn)
-                if str(row.get("role") or "").lower() in TICHLUY_ELIGIBLE_ROLES
-            ]
-            output = []
-            for index, row in enumerate(eligible, start=1):
-                existing = old_by_name.get(norm(row["username"]), [])
-                existing += [""] * max(0, len(TICHLUY_HEADERS) - len(existing))
-                start_date = str(row.get("employment_start_date") or "") or str(existing[2] or "")
-                output.append([
-                    index, row["username"], start_date,
-                    existing[3] or 5000000, existing[4] or 0, existing[5] or 5000000,
-                    existing[6], existing[7] or 0, existing[8],
-                ])
-            if len(old_values) > 1:
-                ws.batch_clear([f"A2:I{max(len(old_values), len(output) + 1)}"])
-            if output:
-                ws.update(range_name=f"A2:I{len(output) + 1}", values=output, value_input_option="USER_ENTERED")
-        except Exception:
-            # Tích lũy is an auxiliary legacy mirror; employee CRUD must not be lost
-            # when that worksheet is temporarily unavailable.
-            pass
-
     def permissions(conn, ident) -> dict[str, bool]:
         keys = (
             "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save",
@@ -602,9 +410,8 @@ def install_staff_routes(
 
     def staff_result(conn, ident) -> dict[str, Any]:
         rows = _select_staff_rows(conn)
-        statuses = google_status_map()
         public_rows = [
-            _public_employee(row, _effective_status(row, statuses, norm))
+            _public_employee(row, _effective_status(row, norm))
             for row in rows
             if str(row.get("role") or "").lower() != "admin"
         ]
@@ -646,8 +453,6 @@ def install_staff_routes(
         ident,
         row: dict[str, Any],
         values: dict[str, Any],
-        *,
-        status_map: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         ensure_manageable(ident, str(row.get("role") or ""))
         profile_fields = {
@@ -700,7 +505,7 @@ def install_staff_routes(
             if merged["login_locked"]:
                 merged["remember_token_hash"] = ""
                 merged["remember_token_expiry"] = ""
-        old_status = _effective_status(row, status_map if status_map is not None else google_status_map(), norm)
+        old_status = _effective_status(row, norm)
         status = _status_value(values.get("employment_status", old_status), norm)
         if str(merged.get("role") or "").lower() == "admin" and status != STATUS_OPTIONS[0]:
             raise HTTPException(400, "Không áp dụng trạng thái nghỉ việc cho tài khoản admin.")
@@ -754,28 +559,6 @@ def install_staff_routes(
             "_status_changed": "employment_status" in values and status != old_status,
         }
 
-    def mirror_database_row(row: dict[str, Any], status: str) -> tuple[Any, int, list[Any]]:
-        ws = credential_ws()
-        all_values = ws.get_all_values()
-        if not all_values:
-            ws.update(range_name="A1:U1", values=[CREDENTIAL_HEADERS], value_input_option="USER_ENTERED")
-            all_values = [CREDENTIAL_HEADERS]
-        source_row = int(row.get("source_row") or 0)
-        if source_row < 2 or source_row > len(all_values) or norm(all_values[source_row - 1][1] if len(all_values[source_row - 1]) > 1 else "") != norm(row["username"]):
-            source_row = 0
-            for index, values in enumerate(all_values[1:], start=2):
-                if len(values) > 1 and norm(values[1]) == norm(row["username"]):
-                    source_row = index
-                    break
-        if source_row < 2:
-            raise RuntimeError(f"Không tìm thấy {row['username']} trong Sheet1 để đồng bộ.")
-        backup = list(all_values[source_row - 1][:len(CREDENTIAL_HEADERS)])
-        ws.update(
-            range_name=f"A{source_row}:U{source_row}",
-            values=[_credential_values(row, status)], value_input_option="USER_ENTERED",
-        )
-        return ws, source_row, backup
-
     @app.get("/v2/staff")
     def get_staff(ident: identity_type = Depends(current_identity)):
         with engine_instance().connect() as conn:
@@ -787,9 +570,6 @@ def install_staff_routes(
         engine = engine_instance()
         conn = engine.connect()
         tx = conn.begin()
-        inserted_sheet_row = 0
-        status_created = False
-        ws = None
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             require_feature(conn, ident, "employee_add")
@@ -812,14 +592,6 @@ def install_staff_routes(
                 field_name="Ngày bắt đầu làm", allow_blank=False,
             )
             stt = max([int(row.get("stt") or 0) for row in rows] + [0]) + 1
-            ws = credential_ws()
-            sheet_values = ws.get_all_values()
-            if not sheet_values:
-                ws.update(range_name="A1:U1", values=[CREDENTIAL_HEADERS], value_input_option="USER_ENTERED")
-                sheet_values = [CREDENTIAL_HEADERS]
-            if any(len(row) > 1 and norm(row[1]) == norm(username) for row in sheet_values[1:]):
-                raise HTTPException(409, "Tên nhân viên đã tồn tại trong Sheet1.")
-            source_row = len(sheet_values) + 1
             record = {
                 "username": username, "stt": stt, "password_value": body.password,
                 "role": role, "full_name": full_name,
@@ -830,8 +602,8 @@ def install_staff_routes(
                 "monthly_leave": 0, "annual_leave": 0, "work_shift": "",
                 "shift_start_date": "", "rotation_cycle": "", "login_locked": False,
                 "remember_token_hash": "", "remember_token_expiry": "",
-                "employment_start_date": start_work, "source_sheet_id": "credentials",
-                "source_row": source_row, "payload": {"must_change_password": True},
+                "employment_start_date": start_work, "source_sheet_id": "postgresql",
+                "source_row": None, "payload": {"must_change_password": True},
             }
             status = STATUS_OPTIONS[0]
             payload = _employee_payload(record, status)
@@ -850,44 +622,15 @@ def install_staff_routes(
                     :source_sheet_id, :source_row, CAST(:payload AS jsonb), NOW()
                 )
             """), {**record, "payload": json.dumps(payload, ensure_ascii=False)})
-            ws.append_row(_credential_values(record, status), value_input_option="USER_ENTERED")
-            inserted_sheet_row = source_row
-            write_status(username, status, ident.employee_username)
-            status_created = True
             tx.commit()
-            sync_tichluy_members(conn)
             return {"ok": True, "message": f"Đã thêm nhân viên {username} THÀNH CÔNG."}
         except HTTPException:
             if tx.is_active:
                 tx.rollback()
-            if inserted_sheet_row and ws is not None:
-                try:
-                    ws.delete_rows(inserted_sheet_row)
-                except Exception:
-                    pass
-            if status_created:
-                try:
-                    delete_rows_by_name(worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS), {norm(body.username)}, 2)
-                except Exception:
-                    pass
             raise
         except Exception as exc:
             if tx.is_active:
                 tx.rollback()
-            if inserted_sheet_row and ws is not None:
-                try:
-                    ws.delete_rows(inserted_sheet_row)
-                except Exception:
-                    pass
-            if status_created:
-                try:
-                    delete_rows_by_name(
-                        worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS),
-                        {norm(body.username)},
-                        2,
-                    )
-                except Exception:
-                    pass
             raise HTTPException(500, f"Không thêm được nhân viên an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
@@ -900,21 +643,14 @@ def install_staff_routes(
         engine = engine_instance()
         conn = engine.connect()
         tx = conn.begin()
-        sheet_backup = None
-        sheet_ref = None
-        status_before = None
         leave_prune = None
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             require_feature(conn, ident, "staff_list")
             rows = _select_staff_rows(conn, for_update=True)
             row = find_row(rows, username)
-            status_before = _effective_status(row, google_status_map(), norm)
             updated = update_database_row(conn, ident, row, values)
-            sheet_ref, sheet_row, sheet_values = mirror_database_row(updated, updated["_status"])
-            sheet_backup = (sheet_row, sheet_values)
             if updated["_status_changed"]:
-                write_status(updated["username"], updated["_status"], ident.employee_username)
                 if updated["_status"] in {STATUS_OPTIONS[1], STATUS_OPTIONS[2]}:
                     leave_prune = prune_registered_leave(
                         conn,
@@ -922,7 +658,6 @@ def install_staff_routes(
                         datetime.now(vn_tz).date(),
                     )
             tx.commit()
-            sync_tichluy_members(conn)
             deleted_leave = int((leave_prune or {}).get("count") or 0)
             suffix = (
                 f" Đã xóa {deleted_leave} lịch nghỉ từ ngày "
@@ -939,33 +674,11 @@ def install_staff_routes(
             if tx.is_active:
                 tx.rollback()
             restore_pruned_leave(leave_prune)
-            if sheet_backup and sheet_ref is not None:
-                try:
-                    row_number, old_values = sheet_backup
-                    sheet_ref.update(range_name=f"A{row_number}:U{row_number}", values=[old_values], value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
-            if status_before is not None and "employment_status" in values:
-                try:
-                    write_status(username, status_before, ident.employee_username)
-                except Exception:
-                    pass
             raise
         except Exception as exc:
             if tx.is_active:
                 tx.rollback()
             restore_pruned_leave(leave_prune)
-            if sheet_backup and sheet_ref is not None:
-                try:
-                    row_number, old_values = sheet_backup
-                    sheet_ref.update(range_name=f"A{row_number}:U{row_number}", values=[old_values], value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
-            if status_before is not None and "employment_status" in values:
-                try:
-                    write_status(username, status_before, ident.employee_username)
-                except Exception:
-                    pass
             raise HTTPException(500, f"Không cập nhật được nhân viên an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
@@ -980,7 +693,6 @@ def install_staff_routes(
         engine = engine_instance()
         conn = engine.connect()
         tx = conn.begin()
-        target_keys: set[str] = set()
         deleted_count = 0
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
@@ -992,7 +704,6 @@ def install_staff_routes(
                 ensure_manageable(ident, str(row.get("role") or ""))
                 if str(row.get("role") or "").lower() == "admin" or norm(row.get("username")) == "quan tri vien":
                     raise HTTPException(400, "Không thể xóa tài khoản hệ thống/admin.")
-            target_keys = {norm(row["username"]) for row in targets}
             deleted_count = len(targets)
             for row in targets:
                 conn.execute(text("DELETE FROM employees WHERE username=:username"), {"username": row["username"]})
@@ -1006,16 +717,12 @@ def install_staff_routes(
                 payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
                 payload["STT"] = index
                 conn.execute(text("""
-                    UPDATE employees SET stt=:stt, source_row=:source_row,
-                        payload=CAST(:payload AS jsonb), updated_at=NOW()
+                    UPDATE employees SET stt=:stt, payload=CAST(:payload AS jsonb), updated_at=NOW()
                     WHERE username=:username
                 """), {
-                    "stt": index, "source_row": index + 1, "username": row["username"],
+                    "stt": index, "username": row["username"],
                     "payload": json.dumps(payload, ensure_ascii=False),
                 })
-            # PostgreSQL is the canonical store. Commit the account deletion and
-            # login revocation before touching optional legacy mirrors so a quota
-            # or temporary Google Sheets failure cannot resurrect/block deletion.
             tx.commit()
         except HTTPException:
             if tx.is_active:
@@ -1028,28 +735,12 @@ def install_staff_routes(
             conn.close()
             raise HTTPException(500, "Không xóa được nhân viên trong hệ thống chính. Vui lòng thử lại.") from exc
 
-        mirror_warnings: list[str] = []
-        try:
-            staff_ws = credential_ws()
-            delete_rows_by_name(staff_ws, target_keys, 2)
-            renumber_sheet(staff_ws)
-        except Exception:
-            mirror_warnings.append("Sheet1")
-        try:
-            status_ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
-            delete_rows_by_name(status_ws, target_keys, 2)
-            renumber_sheet(status_ws)
-        except Exception:
-            mirror_warnings.append(STATUS_WORKSHEET)
-        sync_tichluy_members(conn)
         message = f"Đã xóa {deleted_count} nhân viên THÀNH CÔNG. Lịch sử lịch nghỉ được giữ nguyên."
-        if mirror_warnings:
-            message += " Tài khoản đã bị xóa khỏi hệ thống chính; sheet phụ đang bận nên chưa dọn xong."
         conn.close()
         return {
             "ok": True,
             "deleted": deleted_count,
-            "mirror_pending": bool(mirror_warnings),
+            "mirror_pending": False,
             "message": message,
         }
 
@@ -1287,10 +978,6 @@ def install_staff_routes(
         engine = engine_instance()
         conn = engine.connect()
         tx = conn.begin()
-        staff_ws = None
-        old_sheet_values = None
-        old_status_values = None
-        status_ws = None
         leave_prunes: list[dict[str, Any]] = []
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
@@ -1300,42 +987,13 @@ def install_staff_routes(
             unknown = [str(item["Tên nhân viên"]) for item in imported if norm(item["Tên nhân viên"]) not in known]
             if unknown:
                 raise HTTPException(400, "Không tìm thấy trong hệ thống: " + ", ".join(unknown))
-            status_snapshot = google_status_map()
             updates = []
             for item in imported:
                 row = known[norm(item["Tên nhân viên"])]
                 ensure_manageable(ident, str(row.get("role") or ""))
                 values = import_values(item)
-                updates.append(update_database_row(conn, ident, row, values, status_map=status_snapshot))
+                updates.append(update_database_row(conn, ident, row, values))
 
-            statuses = dict(status_snapshot)
-            for updated in updates:
-                statuses[norm(updated["username"])] = updated["_status"]
-            refreshed = _select_staff_rows(conn)
-            staff_ws = credential_ws()
-            old_sheet_values = staff_ws.get_all_values()
-            output = [
-                _credential_values(row, statuses.get(norm(row["username"]), _effective_status(row, statuses, norm)))
-                for row in refreshed
-            ]
-            if output:
-                staff_ws.update(range_name=f"A2:U{len(output) + 1}", values=output, value_input_option="USER_ENTERED")
-
-            status_ws = worksheet(STATUS_WORKSHEET, 1000, len(STATUS_HEADERS), STATUS_HEADERS)
-            old_status_values = status_ws.get_all_values()
-            now = datetime.now(vn_tz)
-            status_rows = []
-            for index, row in enumerate(refreshed, start=1):
-                if str(row.get("role") or "").lower() == "admin":
-                    continue
-                status_rows.append([
-                    index, row["username"], statuses.get(norm(row["username"]), STATUS_OPTIONS[0]),
-                    now.strftime("%d/%m/%Y"), now.strftime("%H:%M:%S"), ident.employee_username,
-                ])
-            if len(old_status_values) > 1:
-                status_ws.batch_clear([f"A2:F{max(len(old_status_values), len(status_rows) + 1)}"])
-            if status_rows:
-                status_ws.update(range_name=f"A2:F{len(status_rows) + 1}", values=status_rows, value_input_option="USER_ENTERED")
             effective_date = datetime.now(vn_tz).date()
             for updated in updates:
                 if updated["_status_changed"] and updated["_status"] in {STATUS_OPTIONS[1], STATUS_OPTIONS[2]}:
@@ -1343,7 +1001,6 @@ def install_staff_routes(
                     if int(change.get("count") or 0):
                         leave_prunes.append(change)
             tx.commit()
-            sync_tichluy_members(conn)
             deleted_leave = sum(int(change.get("count") or 0) for change in leave_prunes)
             suffix = f" Đã xóa {deleted_leave} lịch nghỉ từ ngày hiệu lực trở về sau." if deleted_leave else ""
             return {
@@ -1357,36 +1014,12 @@ def install_staff_routes(
                 tx.rollback()
             for change in reversed(leave_prunes):
                 restore_pruned_leave(change)
-            if staff_ws is not None and old_sheet_values:
-                try:
-                    staff_ws.batch_clear([f"A1:U{max(len(old_sheet_values), 2)}"])
-                    staff_ws.update(range_name=f"A1:U{len(old_sheet_values)}", values=old_sheet_values, value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
-            if status_ws is not None and old_status_values:
-                try:
-                    status_ws.batch_clear([f"A1:F{max(len(old_status_values), 2)}"])
-                    status_ws.update(range_name=f"A1:F{len(old_status_values)}", values=old_status_values, value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
             raise
         except Exception as exc:
             if tx.is_active:
                 tx.rollback()
             for change in reversed(leave_prunes):
                 restore_pruned_leave(change)
-            if staff_ws is not None and old_sheet_values:
-                try:
-                    staff_ws.batch_clear([f"A1:U{max(len(old_sheet_values), 2)}"])
-                    staff_ws.update(range_name=f"A1:U{len(old_sheet_values)}", values=old_sheet_values, value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
-            if status_ws is not None and old_status_values:
-                try:
-                    status_ws.batch_clear([f"A1:F{max(len(old_status_values), 2)}"])
-                    status_ws.update(range_name=f"A1:F{len(old_status_values)}", values=old_status_values, value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
             raise HTTPException(500, f"Không Import được danh sách nhân viên an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
