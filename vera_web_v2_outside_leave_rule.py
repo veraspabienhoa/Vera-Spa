@@ -5,10 +5,13 @@ Business rule:
   KHÔNG phép), that employee cannot use the normal outside/mid-shift break.
 - TimeSoft remains the first source of the actual outside time; the attendance
   break stack may then fall back to TourVera R=Break, S=Giờ ra, U=Giờ vào.
-- If the employee went outside before/equal 17:00 and the late/early record is
-  entered afterwards, Auto Check still catches it on the next attendance poll.
+- A Về sớm record that already existed before a TimeSoft checkout at/after
+  17:00 means that FaceID is the employee's final early checkout, not a break.
+- If the employee went outside first and the late/early record was entered
+  afterwards, Auto Check still catches it on the next attendance poll.
   Violation minutes are calculated from the actual Giờ ra through 17:00.
-- If Giờ ra is after 17:00, use "Ra ngoài chỉ có dữ liệu một lần".
+- If a real outside Giờ ra is after 17:00, use
+  "Ra ngoài chỉ có dữ liệu một lần".
 
 The module wraps snapshot._records after TimeSoft/TourVera break reconstruction,
 so it works for both the CHẤM CÔNG screen and the break-alert poller without
@@ -28,7 +31,7 @@ import vera_web_v2_attendance_break_alerts as break_alerts
 import vera_web_v2_snapshot as snapshot
 
 
-RELEASE = "outside-leave-restriction-2026-08-31-v1"
+RELEASE = "outside-leave-restriction-2026-08-31-v2"
 VN_TZ = timezone(timedelta(hours=7))
 CUTOFF = time(17, 0, 0)
 
@@ -44,22 +47,40 @@ def _restricted_leave_reason(value: Any) -> bool:
     return "di tre" in key or "ve som" in key or "ra som" in key
 
 
-def _restriction_map(conn, start: date, end: date) -> dict[tuple[date, str], list[str]]:
+def _early_leave_reason(value: Any) -> bool:
+    key = _norm(value)
+    return "ve som" in key or "ra som" in key
+
+
+def _local_naive(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(VN_TZ).replace(tzinfo=None)
+
+
+def _restriction_map(conn, start: date, end: date) -> dict[tuple[date, str], dict[str, Any]]:
     rows = conn.execute(text("""
-        SELECT leave_date, employee_name, leave_reason
+        SELECT leave_date, employee_name, leave_reason, created_at
         FROM leave_records
         WHERE leave_date BETWEEN :start_date AND :end_date
         ORDER BY leave_date, employee_name, created_at
     """), {"start_date": start, "end_date": end}).mappings().all()
-    output: dict[tuple[date, str], list[str]] = {}
+    output: dict[tuple[date, str], dict[str, Any]] = {}
     for row in rows:
         reason = str(row.get("leave_reason") or "").strip()
         if not _restricted_leave_reason(reason):
             continue
         key = (row["leave_date"], _norm(row.get("employee_name")))
-        bucket = output.setdefault(key, [])
-        if reason and reason not in bucket:
-            bucket.append(reason)
+        entry = output.setdefault(key, {"reasons": [], "early_leave_registered_at": None})
+        if reason and reason not in entry["reasons"]:
+            entry["reasons"].append(reason)
+        if _early_leave_reason(reason):
+            created_at = _local_naive(row.get("created_at"))
+            current = entry.get("early_leave_registered_at")
+            if created_at is not None and (current is None or created_at < current):
+                entry["early_leave_registered_at"] = created_at
     return output
 
 
@@ -80,6 +101,13 @@ def _parse_clock(value: Any, work_day: date) -> datetime | None:
         except ValueError:
             continue
     return None
+
+
+def _number(value: Any) -> float:
+    try:
+        return float(str(value or "0").replace(",", "."))
+    except ValueError:
+        return 0.0
 
 
 def _work_day(item: dict[str, Any]) -> date | None:
@@ -117,6 +145,78 @@ def _violation_for(
     return auto_check.outside_reason(catalog, minutes), minutes, "Tính từ Giờ ra đến 17:00"
 
 
+def _same_event(left: datetime | None, right: datetime | None, tolerance_seconds: int = 180) -> bool:
+    if left is None or right is None:
+        return False
+    return abs((left - right).total_seconds()) <= tolerance_seconds
+
+
+def _scheduled_early_checkout(
+    item: dict[str, Any],
+    *,
+    work_day: date,
+    reasons: list[str],
+    early_leave_registered_at: datetime | None,
+    break_out: datetime,
+) -> datetime | None:
+    """Return the final checkout when a Về sớm schedule existed before FaceID.
+
+    This deliberately distinguishes two business cases:
+    1) Về sớm was already registered before the >=17:00 checkout -> final exit,
+       not a mid-shift break and never an outside-break penalty.
+    2) Employee went outside first, then Về sớm was entered afterwards -> keep
+       the recorded outside event so the existing automatic penalty still runs.
+    """
+    if not any(_early_leave_reason(reason) for reason in reasons):
+        return None
+    if break_out.time() < CUTOFF:
+        return None
+    if early_leave_registered_at is None or early_leave_registered_at > break_out:
+        return None
+
+    source = _norm(item.get("break_source") or item.get("break_method"))
+    if source and "timesoft" not in source:
+        return None
+
+    departure_status = _norm(item.get("departure_status"))
+    early_minutes = _number(item.get("early_minutes"))
+    if "ve som" not in departure_status and "ra som" not in departure_status and early_minutes <= 0:
+        return None
+
+    faceid_last = _parse_clock(item.get("faceid_last"), work_day)
+    summary_checkout = _parse_clock(item.get("check_out"), work_day)
+    candidate = faceid_last or summary_checkout
+    if candidate is None or not _same_event(candidate, break_out):
+        return None
+    return candidate
+
+
+def _mark_final_early_checkout(
+    item: dict[str, Any],
+    *,
+    checkout: datetime,
+    restriction_text: str,
+) -> None:
+    checkout_text = checkout.strftime("%H:%M:%S")
+    item["check_out"] = checkout_text
+    item["faceid_check_out"] = checkout_text
+    item["break_out"] = ""
+    item["break_in"] = ""
+    item["break_started"] = False
+    item["break_count"] = 0
+    item["break_actual_minutes"] = 0
+    item["break_over_minutes"] = 0
+    item["break_return_late_minutes"] = 0
+    item["break_return_deadline"] = ""
+    item["break_return_deadline_iso"] = ""
+    item["break_remaining_seconds"] = 0
+    item["break_source"] = ""
+    item["break_method"] = "Check-out Về sớm đã đăng ký trước"
+    item["break_detail"] = f"Check-out Về sớm {item.get('date', '')} {checkout_text}"
+    item["break_status"] = f"KHÔNG NGHỈ GIỮA CA · {restriction_text} · Check-out {checkout_text}"
+    item["break_final_early_checkout"] = True
+
+
 def _apply_restrictions_and_penalties(
     engine_instance: Callable[[], Any],
     conn,
@@ -139,11 +239,12 @@ def _apply_restrictions_and_penalties(
             output.append(item)
             continue
 
-        reasons = restrictions.get((work_day, _norm(item.get("employee_name"))))
-        if not reasons:
+        restriction = restrictions.get((work_day, _norm(item.get("employee_name"))))
+        if not restriction:
             output.append(item)
             continue
 
+        reasons = list(restriction.get("reasons") or [])
         restriction_text = " / ".join(reasons)
         item["break_restricted_reason"] = restriction_text
         item["break_alert_suppressed"] = True
@@ -153,7 +254,27 @@ def _apply_restrictions_and_penalties(
         item["break_remaining_seconds"] = 0
 
         break_out = _parse_clock(item.get("break_out"), work_day)
-        if break_out is None or work_day != today:
+        if break_out is None:
+            output.append(item)
+            continue
+
+        checkout = _scheduled_early_checkout(
+            item,
+            work_day=work_day,
+            reasons=reasons,
+            early_leave_registered_at=restriction.get("early_leave_registered_at"),
+            break_out=break_out,
+        )
+        if checkout is not None:
+            _mark_final_early_checkout(
+                item,
+                checkout=checkout,
+                restriction_text=restriction_text,
+            )
+            output.append(item)
+            continue
+
+        if work_day != today:
             output.append(item)
             continue
 
@@ -240,6 +361,8 @@ def install_outside_leave_rule(
             "release": RELEASE,
             "restricted_when_same_day_reason_contains": ["Đi trễ", "Về sớm"],
             "permission_independent": True,
+            "scheduled_early_checkout_rule": "Về sớm registered before >=17:00 TimeSoft checkout is final checkout, not break",
+            "late_entered_early_leave_rule": "outside first, Về sớm entered later keeps outside penalty",
             "before_or_at_1700": "penalty minutes = 17:00 - Giờ ra",
             "after_1700": "Ra ngoài chỉ có dữ liệu một lần",
             "source_priority": ["TimeSoft", "TourVera R=Break S=Giờ ra U=Giờ vào"],
