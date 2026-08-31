@@ -1,5 +1,5 @@
-import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, Upload, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { numberInputDisplayValue } from '../lib/numberInput'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
@@ -121,8 +121,6 @@ export default function LeaveRegistrationPage({ user }) {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushMessage, setPushMessage] = useState('')
   const [exporting, setExporting] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const importRef = useRef(null)
   const role = String(user?.role || '').toLowerCase()
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
@@ -134,7 +132,6 @@ export default function LeaveRegistrationPage({ user }) {
     || user?.permissions?.leave_manage_delete === true
     || user?.permissions?.leave_detail_delete === true
     || user?.permissions?.leave_today_khong_phep_edit_delete === true
-  const canImport = role === 'admin'
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
     && user?.permissions?.leave_create !== false
@@ -409,7 +406,7 @@ export default function LeaveRegistrationPage({ user }) {
   }
 
   const exportExcel = async () => {
-    if (role !== 'admin' || exporting || importing) return
+    if (role !== 'admin' || exporting) return
     setExporting(true)
     setError('')
     try {
@@ -418,33 +415,6 @@ export default function LeaveRegistrationPage({ user }) {
       setError(err.message || 'Không xuất được danh sách Excel.')
     } finally {
       setExporting(false)
-    }
-  }
-
-  const importExcel = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || !canImport || importing) return
-    if (!file.name.toLowerCase().endsWith('.xlsx')) {
-      setListActionNotice({ action: 'import', status: 'error', message: 'Chỉ chấp nhận file Excel định dạng .xlsx.' })
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setListActionNotice({ action: 'import', status: 'error', message: 'File Excel vượt quá giới hạn 5 MB.' })
-      return
-    }
-    if (!window.confirm(`Import dữ liệu lịch nghỉ cũ từ ${file.name}? Hệ thống sẽ kiểm tra toàn bộ file và tự bỏ qua các dòng đã tồn tại.`)) return
-    setImporting(true)
-    setError('')
-    setListActionNotice(null)
-    try {
-      const result = await veraApi.importLeaveExcel(file)
-      await load()
-      setListActionNotice({ action: 'import', status: 'success', message: result.message })
-    } catch (err) {
-      setListActionNotice({ action: 'import', status: 'error', message: err.message || 'Không Import được dữ liệu lịch nghỉ cũ.' })
-    } finally {
-      setImporting(false)
     }
   }
 
@@ -850,19 +820,15 @@ export default function LeaveRegistrationPage({ user }) {
                   : `Có ${filteredRecords.length} lịch nghỉ.`}
               </p>
             </div>
-            <div className="list-actions">
-              <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
-                <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
-              </button>
-              {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting || importing}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
-              {canImport && <>
-                <input ref={importRef} className="leave-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importExcel} />
-                <button type="button" className="secondary-button compact" onClick={() => importRef.current?.click()} disabled={importing || exporting}><Upload size={15} /> {importing ? 'Đang Import…' : 'Import Excel cũ'}</button>
-              </>}
+            <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
+              <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
+            </button>
+          </div>
+          <div className="list-actions">
+              {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
-            </div>
           </div>
           {listActionNotice && (
             <div
@@ -871,15 +837,13 @@ export default function LeaveRegistrationPage({ user }) {
               aria-live="polite"
             >
               <div className="list-action-notice-icon" aria-hidden="true">
-                {listActionNotice.action === 'edit' ? <Save size={17} /> : listActionNotice.action === 'import' ? <Upload size={17} /> : <Trash2 size={17} />}
+                {listActionNotice.action === 'edit' ? <Save size={17} /> : <Trash2 size={17} />}
               </div>
               <div className="list-action-notice-copy">
                 <strong>
                   {listActionNotice.action === 'edit'
                     ? (listActionNotice.status === 'success' ? 'LƯU SỬA THÀNH CÔNG' : 'LƯU SỬA KHÔNG THÀNH CÔNG')
-                    : listActionNotice.action === 'import'
-                      ? (listActionNotice.status === 'success' ? 'IMPORT EXCEL THÀNH CÔNG' : 'IMPORT EXCEL KHÔNG THÀNH CÔNG')
-                      : (listActionNotice.status === 'success' ? 'XÓA ĐÃ CHỌN THÀNH CÔNG' : 'XÓA ĐÃ CHỌN KHÔNG THÀNH CÔNG')}
+                    : (listActionNotice.status === 'success' ? 'XÓA ĐÃ CHỌN THÀNH CÔNG' : 'XÓA ĐÃ CHỌN KHÔNG THÀNH CÔNG')}
                 </strong>
                 <span>{listActionNotice.message}</span>
               </div>

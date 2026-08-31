@@ -668,7 +668,9 @@ tr:last-child td { border-bottom: 0; }
   .daily-summary-table .paid-stat.paid-limit-full { font-size: 1.28em; }
   .full-column-label { display: none; }
   .compact-column-label { display: inline; }
-  .leave-list-panel .panel-title-row { display: block; }
+  .leave-list-panel .panel-title-row { display: flex; align-items: flex-start; gap: 8px; }
+  .leave-list-panel .panel-title-row > div { min-width: 0; flex: 1; }
+  .leave-list-panel .panel-title-row > button { flex: 0 0 auto; padding: 8px 10px; white-space: nowrap; }
   .leave-list-panel .list-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; margin-top: 9px; }
   .leave-list-panel .list-actions button { width: 100%; min-width: 0; padding: 8px 5px; font-size: 9px; white-space: nowrap; }
   .leave-list-panel .penalty-chip { grid-column: 1 / -1; text-align: center; }
