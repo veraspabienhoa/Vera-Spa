@@ -1,9 +1,11 @@
 """Attendance break-window rules for Web V2.
 
-A FaceID cluster from 15:00 onward is already the start of the employee's
-mid-shift break even when the matching return FaceID has not happened yet.
-The return deadline is the exact break-start time plus the configured break
-length (normally 90 minutes); there is no fixed 20:00 deadline.
+A FaceID event from 15:00 onward is the start of the employee's mid-shift
+break even when the matching return FaceID has not happened yet. Repeated
+FaceID scans inside the same 5-minute window are one attendance event and the
+first scan in that group is authoritative. The return deadline is the exact
+break-start time plus the configured break length (normally 90 minutes); there
+is no fixed 20:00 deadline.
 """
 from __future__ import annotations
 
@@ -13,10 +15,11 @@ from typing import Any, Callable
 import vera_web_v2_attendance_v42 as attendance
 
 
-RELEASE = "break-start-1500-dynamic-deadline-2026-08-31-v2"
+RELEASE = "break-start-1500-faceid-groups-5m-2026-08-31-v3"
 BREAK_START = time(15, 0, 0)
 BREAK_START_LATEST = time(23, 0, 0)
 DEFAULT_BREAK_MINUTES = 90
+FACEID_GROUP_MINUTES = 5
 
 
 def _is_break_start(value: datetime, work_day: date) -> bool:
@@ -26,14 +29,14 @@ def _is_break_start(value: datetime, work_day: date) -> bool:
 def _pick_break_pair(values: list[datetime], planned: int, cluster_minutes: int):
     """Choose a break pair whose break-out begins from 15:00 onward.
 
-    The first FaceID cluster is still the shift check-in and is removed by the
-    caller.  A return later than the planned duration remains paired so the UI
+    The first FaceID group is still the shift check-in and is removed by the
+    caller. A return later than the planned duration remains paired so the UI
     can report the exact late time instead of losing the event.
     """
     if len(values) < 2:
         return None
     target = max(1, int(planned or DEFAULT_BREAK_MINUTES))
-    minimum = max(int(cluster_minutes or 10) + 1, min(30, max(15, round(target * .25))))
+    minimum = max(FACEID_GROUP_MINUTES + 1, min(30, max(15, round(target * .25))))
     candidates = []
     for index, (start, end) in enumerate(zip(values, values[1:])):
         if not _is_break_start(start, start.date()):
@@ -46,7 +49,7 @@ def _pick_break_pair(values: list[datetime], planned: int, cluster_minutes: int)
     if not candidates:
         return None
     _, _, index, start, end = min(candidates)
-    return start, end, f"Cụm FaceID {index + 2} → {index + 3} từ 15:00"
+    return start, end, f"Nhóm FaceID {index + 2} → {index + 3} từ 15:00"
 
 
 def _parse_clock_on_day(value: Any, work_day: date) -> datetime | None:
@@ -70,15 +73,18 @@ def _enhance_break_payload(
     representative: dict[str, Any],
     cfg: dict[str, Any],
 ) -> dict[str, Any]:
+    # Canonical rule: every group spans at most 5 minutes from its first scan.
+    # Example 15:30:00 / 15:32:10 / 15:35:00 => one group at 15:30:00.
+    grouped_cfg = dict(cfg)
+    grouped_cfg["faceid_cluster_minutes"] = FACEID_GROUP_MINUTES
     result = dict(original(
         punches,
         work_day=work_day,
         representative=representative,
-        cfg=cfg,
+        cfg=grouped_cfg,
     ))
 
-    cluster_minutes = int(cfg.get("faceid_cluster_minutes") or 10)
-    clustered = attendance._cluster_punches(punches, cluster_minutes)
+    clustered = attendance._cluster_punches(punches, FACEID_GROUP_MINUTES)
     middle = list(clustered[1:])
     if middle and attendance._looks_like_final_checkout(middle[-1], work_day, representative, len(clustered)):
         middle.pop()
@@ -87,9 +93,9 @@ def _enhance_break_payload(
     break_in = _parse_clock_on_day(result.get("break_in"), work_day)
     planned = max(1, int(cfg.get("break_planned_minutes") or DEFAULT_BREAK_MINUTES))
 
-    # Example: 12:58:59 / 12:59:02 are one shift-check-in cluster, while
-    # 15:53:31 / 15:53:33 are one break-start cluster.  Do not wait for the
-    # employee's return FaceID before exposing 15:53:31 as the break start.
+    # Example: 12:58:59 / 12:59:02 are one shift-check-in group, while
+    # 15:53:31 / 15:53:33 are one later group. Do not wait for another scan
+    # before exposing the first scan of that later group as break-out.
     if break_out is None:
         starts = [value for value in middle if _is_break_start(value, work_day)]
         if starts:
@@ -116,6 +122,7 @@ def _enhance_break_payload(
     result["break_return_late_minutes"] = return_late_minutes
     result["break_started"] = bool(break_out)
     result["break_planned_minutes"] = planned
+    result["faceid_group_minutes"] = FACEID_GROUP_MINUTES
     result["break_remaining_seconds"] = (
         int((deadline - datetime.now()).total_seconds())
         if deadline is not None and break_in is None else 0
@@ -152,6 +159,15 @@ def install_attendance_break_window(app) -> None:
     if getattr(app.state, "attendance_break_window_installed", False):
         return
 
+    # Attendance 4.2 resolves _cluster_punches at runtime. Force every screen,
+    # export and break calculation to use the user's 5-minute grouping rule.
+    original_cluster = attendance._cluster_punches
+
+    def cluster_in_five_minutes(values, minutes=FACEID_GROUP_MINUTES):
+        return original_cluster(values, FACEID_GROUP_MINUTES)
+
+    attendance._cluster_punches = cluster_in_five_minutes
+
     # _records_v42 resolves these globals on every request, so patching them after
     # Attendance 4.2 is installed upgrades both screen and Excel data builders.
     original_break = attendance._break_from_punches
@@ -176,6 +192,8 @@ def install_attendance_break_window(app) -> None:
             "break_start_from": "15:00:00",
             "deadline_rule": "break_out + configured break minutes",
             "default_break_minutes": DEFAULT_BREAK_MINUTES,
+            "faceid_group_minutes": FACEID_GROUP_MINUTES,
+            "group_rule": "first FaceID in each <=5 minute group",
             "show_in_progress_break": True,
         }
 
