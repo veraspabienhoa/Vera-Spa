@@ -10,10 +10,11 @@ permission defaults, employee ordering, department labels, and Nội quy role-to
 parsing. Giám đốc starts from the same base feature set as Quản lý/Lễ tân, while
 sensitive actions that are explicitly Admin-only remain Admin-only.
 
-Thanh Dung and Thu Trang are management accounts that must remain valid accounts
-and keep historical data, but they are intentionally hidden from employee/account
-directory lists throughout Web V2. Historical records are not removed because the
-filter only applies to named directory collections such as ``employees`` and
+Thanh Dung/Thanh Dũng and Thu Trang are management accounts that must remain valid
+accounts and keep historical data. They are hidden from employee/account directory
+lists for non-Admin users only. Admin remains unrestricted and can view/edit these
+accounts like every other employee. Historical records are never removed because
+the filter only applies to named directory collections such as ``employees`` and
 ``accounts`` in JSON responses.
 """
 from __future__ import annotations
@@ -42,6 +43,7 @@ GIAMDOC_LABEL = "Giám đốc"
 
 # Exact directory identities requested by operations. Keep both spaced and compact
 # forms because old employee rows may use either style for username/full_name.
+# Accent normalization also makes "Thanh Dũng" match "thanh dung".
 HIDDEN_DIRECTORY_IDENTITIES = {
     "thanh dung",
     "thanhdung",
@@ -101,6 +103,21 @@ def _is_hidden_directory_account(item: Any) -> bool:
     return False
 
 
+def _payload_contains_hidden_directory_account(value: Any) -> bool:
+    """Return True only when a filterable directory list contains a hidden account."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            key_text = str(key or "")
+            if isinstance(child, list) and key_text in DIRECTORY_LIST_KEYS:
+                if any(_is_hidden_directory_account(item) for item in child):
+                    return True
+            if _payload_contains_hidden_directory_account(child):
+                return True
+    elif isinstance(value, list):
+        return any(_payload_contains_hidden_directory_account(item) for item in value)
+    return False
+
+
 def _sanitize_directory_payload(value: Any, parent_key: str = "") -> Any:
     if isinstance(value, dict):
         output: dict[str, Any] = {}
@@ -145,7 +162,26 @@ def _install_directory_visibility_middleware() -> None:
 
         try:
             payload = json.loads(raw.decode("utf-8"))
-            filtered = _sanitize_directory_payload(payload)
+            filtered = payload
+
+            # Only resolve identity when the payload actually contains one of the
+            # specially hidden directory accounts. This avoids an extra auth/DB
+            # lookup on ordinary API responses.
+            if _payload_contains_hidden_directory_account(payload):
+                is_admin = False
+                try:
+                    ident = await shared._api.current_identity(
+                        authorization=request.headers.get("authorization")
+                    )
+                    is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
+                except Exception:
+                    # Fail closed for visibility: unauthenticated/unknown callers
+                    # never gain access to the specially hidden directory entries.
+                    is_admin = False
+
+                if not is_admin:
+                    filtered = _sanitize_directory_payload(payload)
+
             body = json.dumps(filtered, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         except Exception:
             body = raw
@@ -254,6 +290,6 @@ def install_work_schedule_permissions() -> None:
 
     _install_giamdoc_role()
 
-    # Global Web V2 directory visibility rule. It affects employee/account lists
-    # across pages while deliberately preserving historical transaction records.
+    # Global Web V2 directory visibility rule. Non-Admin accounts still do not
+    # see the two management identities; Admin sees the unfiltered directories.
     _install_directory_visibility_middleware()
