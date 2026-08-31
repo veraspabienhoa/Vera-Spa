@@ -236,6 +236,7 @@ jobs:
           service_worker = Path('web-v2/public/sw.js').read_text(encoding='utf-8')
           manifest = Path('web-v2/public/manifest.webmanifest').read_text(encoding='utf-8')
           requirements = Path('requirements.txt').read_text(encoding='utf-8')
+          delete_leave_route = api.split('def _delete_leave_uids(', 1)[1].split('@app.delete("/v2/leave/records")', 1)[0]
           checks = {
               'summary queries canonical leave type': 'employee_name, leave_reason, leave_type, calculated_days' in api,
               'summary uses shared unique-employee helper': 'summarize_leave_day(rows, int(active))' in api,
@@ -284,6 +285,7 @@ jobs:
               'Web V2 RPCs revoke anonymous execution': 'from public, anon' in hardening.lower(),
               'Web V2 reason catalog follows selected date': 'date_value: date = Query(alias="date")' in api and '_day_allowed(item["allowed_days"], date_value)' in api,
               'Web V2 exposes permission-gated edit and delete': '@app.patch("/v2/leave/records/{record_uid}")' in api and '@app.delete("/v2/leave/records")' in api and '_validate_edit_permission' in api and '_validate_delete_permission' in api,
+              'Web V2 delete accepts Auto Check rows without MainData position': 'Có bản ghi không có vị trí MainData hợp lệ' not in delete_leave_route and delete_leave_route.index('tx.commit()') < delete_leave_route.index('_google_client().open_by_key') and 'mirror_pending' in delete_leave_route,
               'Web V2 list supports range queries': 'start_date: date | None = Query(default=None, alias="start")' in api and 'WHERE leave_date BETWEEN :start_date AND :end_date' in api and 'Khoảng danh sách tối đa là 366 ngày' in api,
               'Web V2 list has time and employee filters': 'aria-label="Lọc thời gian danh sách"' in leave_page and 'employeeSearch' in leave_page and 'aria-label="Tìm kiếm tên nhân viên"' in leave_page,
               'Web V2 list checkbox date and weekday stay first': '<th className="select-column">Chọn</th><th>Ngày</th><th>Thứ</th><th>Nhân viên</th>' in leave_page,
