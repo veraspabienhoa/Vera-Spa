@@ -17,6 +17,13 @@ self.addEventListener('push', (event) => {
     event.waitUntil((async () => {
       const notifications = await self.registration.getNotifications({ tag: payload.tag })
       notifications.forEach((notification) => notification.close())
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      windows.forEach((client) => client.postMessage({
+        type: 'attendance-break-cleared',
+        tag: payload.tag,
+        eventKey: payload.event_key || '',
+        globallyDeleted: Boolean(payload.globally_deleted),
+      }))
     })())
     return
   }
@@ -27,6 +34,8 @@ self.addEventListener('push', (event) => {
       notifications.forEach((notification) => {
         if (String(notification.tag || '').startsWith('vera-break-')) notification.close()
       })
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      windows.forEach((client) => client.postMessage({ type: 'attendance-break-global-disabled' }))
     })())
     return
   }
@@ -68,7 +77,8 @@ self.addEventListener('push', (event) => {
   if (isBreakReminder || isBreakPenalty) options.requireInteraction = false
   if (isBreakOverdue) {
     // No dismiss action is provided. The in-app alert may be temporarily hidden,
-    // while Admin can globally disable the break-alert channel for all accounts.
+    // while Admin can globally disable the break-alert channel for all accounts
+    // or permanently delete one specific event from the in-app alert card.
     options.requireInteraction = true
     options.actions = [{ action: 'open', title: 'Mở VERA SPA' }]
   }
