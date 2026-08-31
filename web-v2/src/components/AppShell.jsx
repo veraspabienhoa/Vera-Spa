@@ -1,4 +1,4 @@
-import { Activity, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
 
@@ -6,6 +6,7 @@ const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
   { id: 'tour', label: 'Bảng tua', icon: Compass, ready: true, permission: 'tour' },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
+  { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Bảng lương', icon: WalletCards, ready: true, permission: 'payroll_history' },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },

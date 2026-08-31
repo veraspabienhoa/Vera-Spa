@@ -7,6 +7,7 @@ import vera_web_v2_staff_status_sort as _staff_sort
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_admin_change_push import install_admin_change_push
 from vera_web_v2_attendance_v42 import install_attendance_v42
+from vera_web_v2_auto_check import install_auto_check_routes
 from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_leave_day_stats import install_leave_day_stats_routes
@@ -42,6 +43,7 @@ install_payroll_saved_edit_routes(_shared.app, engine_instance=_api._engine_inst
 install_staff_security_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
 install_staff_status_sort(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, vn_tz=_api.VN_TZ)
 
 # Policy 4.0 narrows the monthly weekend cap to Group 3 and permits only

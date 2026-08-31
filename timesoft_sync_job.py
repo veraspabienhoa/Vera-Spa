@@ -33,6 +33,7 @@ from google.auth import default as google_auth_default
 from sqlalchemy import text
 
 import vera_postgres as vpg
+import vera_auto_check as auto_check
 
 VN_TZ = timezone(timedelta(hours=7))
 
@@ -683,7 +684,7 @@ def _tour_late_minutes(value) -> float | None:
     return None
 
 
-def process_tour_penalties(client: gspread.Client, cfg: dict, employee_map: dict, catalog: dict) -> dict:
+def process_tour_penalties(engine, cfg: dict, employee_map: dict, catalog: dict) -> dict:
     result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
     try:
         df = load_bang_tour_input()
@@ -729,9 +730,11 @@ def process_tour_penalties(client: gspread.Client, cfg: dict, employee_map: dict
             detail_parts.append(f"Giờ ra {str(row.get(out_col)).strip()}")
         if in_col is not None and str(row.get(in_col, "")).strip():
             detail_parts.append(f"Giờ vào {str(row.get(in_col)).strip()}")
-        ok, msg = save_auto_violation(
-            client, today, employee, reason_item, " · ".join(detail_parts), "AUTO UPDATE 24/7 - BẢNG TOUR"
-        )
+        with engine.begin() as conn:
+            ok, msg = auto_check.save_violation(
+                conn, work_date=today, employee=employee, reason_item=reason_item,
+                detail=" · ".join(detail_parts), source="AUTO UPDATE 24/7 - BẢNG TOUR", minutes=minutes,
+            )
         if ok and msg == "SKIP_DUPLICATE":
             result["skipped"] += 1
         elif ok:
@@ -1026,7 +1029,7 @@ def _parse_minutes_late(row) -> float | None:
 
 
 def process_timesoft_penalties(
-    client: gspread.Client,
+    engine,
     cfg: dict,
     employee_map: dict,
     catalog: dict,
@@ -1070,9 +1073,11 @@ def process_timesoft_penalties(
                 detail += f" · Ca bắt đầu {shift_start}"
             if checkin_time:
                 detail += f" · Check-in {checkin_time}"
-            ok, msg = save_auto_violation(
-                client, work_date, employee, reason_item, detail, "AUTO UPDATE 24/7 - TIMESOFT"
-            )
+            with engine.begin() as conn:
+                ok, msg = auto_check.save_violation(
+                    conn, work_date=work_date, employee=employee, reason_item=reason_item,
+                    detail=detail, source="AUTO UPDATE 24/7 - TIMESOFT", minutes=minutes,
+                )
             if ok and msg == "SKIP_DUPLICATE":
                 result["skipped"] += 1
             elif ok:
@@ -1296,30 +1301,46 @@ def run_sync() -> int:
             f"errors={payroll_backfill_result['errors']}"
         )
 
-        # Auto penalty chỉ chạy sau khi snapshot thành công.
+        # Auto Check PostgreSQL-only: config, policy, history and violations no
+        # longer depend on Google Sheets. The Tour workbook remains read-only.
+        run_id = None
         try:
-            client = get_gspread_client()
-            cfg = load_auto_penalty_config(client)
+            with engine.begin() as conn:
+                cfg = auto_check.load_config(conn)
+                trigger_type = "manual" if cfg.get("manual_run_requested") else "scheduled"
+                run_id = auto_check.start_run(conn, trigger_type)
+                if cfg.get("manual_run_requested"):
+                    cfg = auto_check.save_config(conn, {"manual_run_requested": False}, "AUTO CHECK JOB")
             auto_status = str(cfg.get("status", "UNKNOWN"))
             _log(f"Auto penalty status={auto_status}; threshold={cfg.get('threshold_minutes', AUTO_PENALTY_MINUTES)} phút")
-            if cfg.get("paused"):
+            if auto_status == AUTO_PENALTY_PAUSED:
                 _log("Auto penalty PAUSED bởi Admin -> chỉ đồng bộ snapshot, KHÔNG ghi phạt.")
             else:
                 employee_map = load_employee_name_map()
-                catalog = load_leave_catalog(client)
+                with engine.connect() as conn:
+                    catalog = auto_check.load_catalog(conn)
                 _log(f"Đã tải danh mục: employees={len(employee_map)}; leave_types={len(catalog)}")
-                timesoft_result = process_timesoft_penalties(client, cfg, employee_map, catalog, checkin_by_date)
-                tour_result = process_tour_penalties(client, cfg, employee_map, catalog)
+                timesoft_result = process_timesoft_penalties(engine, cfg, employee_map, catalog, checkin_by_date)
+                tour_result = process_tour_penalties(engine, cfg, employee_map, catalog)
                 _log(
                     "Auto penalty hoàn tất: "
                     f"TimeSoft eligible={timesoft_result['eligible']} added={timesoft_result['added']} skipped={timesoft_result['skipped']} errors={timesoft_result['errors']}; "
                     f"Tour eligible={tour_result['eligible']} added={tour_result['added']} skipped={tour_result['skipped']} errors={tour_result['errors']}"
                 )
+            if run_id is not None:
+                with engine.begin() as conn:
+                    auto_check.finish_run(conn, run_id, "success", {"timesoft": timesoft_result, "tour": tour_result, "auto_status": auto_status})
         except Exception as auto_exc:
-            # Không làm mất snapshot TimeSoft nếu riêng phần Google/Auto penalty lỗi.
+            # Do not lose the TimeSoft snapshot if Auto Check alone fails.
             auto_status = "ERROR"
             _log(f"AUTO PENALTY ERROR: {type(auto_exc).__name__}: {auto_exc}")
             tour_result["errors"] = int(tour_result.get("errors", 0)) + 1
+            if run_id is not None:
+                try:
+                    with engine.begin() as conn:
+                        auto_check.finish_run(conn, run_id, "error", {"timesoft": timesoft_result, "tour": tour_result}, str(auto_exc))
+                except Exception:
+                    pass
 
         write_status(
             "success", started_at, details,

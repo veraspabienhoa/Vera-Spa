@@ -36,6 +36,7 @@ const AdminChangesPage = lazyPage(() => import('./pages/AdminChangesPage'))
 const StorageAdminPage = lazyPage(() => import('./pages/StorageAdminPage'))
 const BirthdayPage = lazyPage(() => import('./pages/BirthdayPage'))
 const TourPage = lazyPage(() => import('./pages/TourPage'))
+const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
 const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
 
 export default function App() {
@@ -117,6 +118,7 @@ export default function App() {
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
+        {page === 'auto-check' && <AutoCheckPage user={shellUser} />}
         {page === 'changes' && <AdminChangesPage user={shellUser} />}
         {page === 'storage' && <StorageAdminPage />}
       </Suspense>
