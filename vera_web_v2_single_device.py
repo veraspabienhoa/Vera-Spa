@@ -1,36 +1,43 @@
-"""One-active-device session guard for VERA SPA Web V2.
+"""Durable multi-device session tracking for VERA SPA Web V2.
 
-Supabase remains responsible for authentication. This guard adds a VERA-side
-active-device lease keyed by the authenticated Supabase user ID. A successful
-fresh login explicitly claims the device; the previous device is rejected on
-its next Python API request.
+Supabase remains responsible for authentication and already persists/refreshes
+browser sessions. This module keeps lightweight per-device activity records
+without invalidating a user's other logged-in devices. That is important for
+an employee who keeps the VERA SPA PWA installed on iPhone for lock-screen push
+while also using the same account on another browser/device.
 """
 from __future__ import annotations
 
 import base64
 import json
-import os
 from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 
-SINGLE_DEVICE_RELEASE = "single-device-v1"
+SINGLE_DEVICE_RELEASE = "multi-device-durable-v2"
 DEVICE_ID_MAX = 160
 
 
 def _ensure_table(conn) -> None:
+    # Keep the legacy one-device table untouched for rollback/history. The new
+    # composite key lets the same authenticated account remain active on every
+    # browser/PWA that it has explicitly logged into.
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS vera_v2_active_device (
-            auth_user_id uuid PRIMARY KEY,
-            employee_username text NOT NULL DEFAULT '',
+        CREATE TABLE IF NOT EXISTS vera_v2_active_device_session (
+            auth_user_id uuid NOT NULL,
             device_id text NOT NULL,
+            employee_username text NOT NULL DEFAULT '',
             user_agent text NOT NULL DEFAULT '',
             claimed_at timestamptz NOT NULL DEFAULT NOW(),
-            last_seen_at timestamptz NOT NULL DEFAULT NOW()
+            last_seen_at timestamptz NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (auth_user_id, device_id)
         )
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_vera_v2_active_device_session_seen
+        ON vera_v2_active_device_session(last_seen_at DESC)
     """))
 
 
@@ -42,7 +49,7 @@ def _clean_device_id(value: Any) -> str:
 
 
 def _jwt_subject(token: str) -> str:
-    """Read JWT subject only for lease lookup; route auth still verifies token."""
+    """Read JWT subject only for activity tracking; route auth still verifies it."""
     try:
         segment = token.split('.')[1]
         segment += '=' * (-len(segment) % 4)
@@ -52,16 +59,35 @@ def _jwt_subject(token: str) -> str:
         return ''
 
 
-def _blocked_response(request: Request, status_code: int, content: dict[str, Any]) -> JSONResponse:
-    response = JSONResponse(status_code=status_code, content=content)
-    origin = str(request.headers.get("origin") or "").strip()
-    configured = str(os.getenv("VERA_V2_CORS_ORIGINS", "https://veraspabienhoa.github.io") or "")
-    allowed = {item.strip() for item in configured.split(",") if item.strip()}
-    if origin and origin in allowed:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Vary"] = "Origin"
-    return response
+def _upsert_device(
+    conn,
+    *,
+    auth_user_id: str,
+    device_id: str,
+    employee_username: str,
+    user_agent: str,
+) -> None:
+    conn.execute(text("""
+        INSERT INTO vera_v2_active_device_session(
+            auth_user_id, device_id, employee_username, user_agent,
+            claimed_at, last_seen_at
+        ) VALUES (
+            CAST(:auth_user_id AS uuid), :device_id, :employee_username,
+            :user_agent, NOW(), NOW()
+        )
+        ON CONFLICT (auth_user_id, device_id) DO UPDATE SET
+            employee_username=CASE
+                WHEN EXCLUDED.employee_username <> '' THEN EXCLUDED.employee_username
+                ELSE vera_v2_active_device_session.employee_username
+            END,
+            user_agent=EXCLUDED.user_agent,
+            last_seen_at=NOW()
+    """), {
+        "auth_user_id": auth_user_id,
+        "device_id": device_id,
+        "employee_username": employee_username,
+        "user_agent": user_agent[:1000],
+    })
 
 
 def install_single_device_guard(
@@ -71,12 +97,19 @@ def install_single_device_guard(
     current_identity,
     identity_type,
 ) -> None:
+    """Compatibility installer; the old one-device restriction is retired."""
     if getattr(app.state, "single_device_guard_installed", False):
         return
 
     @app.get("/v2/device/health")
     def device_health():
-        return {"ok": True, "release": SINGLE_DEVICE_RELEASE}
+        return {
+            "ok": True,
+            "release": SINGLE_DEVICE_RELEASE,
+            "mode": "multi_device",
+            "durable_login": True,
+            "other_devices_are_not_revoked": True,
+        }
 
     @app.post("/v2/device/claim")
     def claim_device(
@@ -87,35 +120,22 @@ def install_single_device_guard(
         clean_id = _clean_device_id(device_id)
         with engine_instance().begin() as conn:
             _ensure_table(conn)
-            conn.execute(text("""
-                INSERT INTO vera_v2_active_device(
-                    auth_user_id, employee_username, device_id, user_agent,
-                    claimed_at, last_seen_at
-                ) VALUES (
-                    CAST(:auth_user_id AS uuid), :employee_username, :device_id,
-                    :user_agent, NOW(), NOW()
-                )
-                ON CONFLICT (auth_user_id) DO UPDATE SET
-                    employee_username=EXCLUDED.employee_username,
-                    device_id=EXCLUDED.device_id,
-                    user_agent=EXCLUDED.user_agent,
-                    claimed_at=NOW(),
-                    last_seen_at=NOW()
-            """), {
-                "auth_user_id": ident.auth_user_id,
-                "employee_username": ident.employee_username,
-                "device_id": clean_id,
-                "user_agent": str(request.headers.get("user-agent") or "")[:1000],
-            })
+            _upsert_device(
+                conn,
+                auth_user_id=ident.auth_user_id,
+                device_id=clean_id,
+                employee_username=ident.employee_username,
+                user_agent=str(request.headers.get("user-agent") or ""),
+            )
         return {
             "ok": True,
             "release": SINGLE_DEVICE_RELEASE,
             "device_id": clean_id,
-            "message": "Thiết bị này hiện là thiết bị đăng nhập duy nhất của tài khoản.",
+            "message": "Thiết bị đã được duy trì đăng nhập; các thiết bị khác không bị đăng xuất.",
         }
 
     @app.middleware("http")
-    async def enforce_single_device(request: Request, call_next):
+    async def track_active_device(request: Request, call_next):
         path = request.url.path
         if request.method == "OPTIONS" or not path.startswith("/v2/"):
             return await call_next(request)
@@ -130,55 +150,23 @@ def install_single_device_guard(
         if not auth_uid:
             return await call_next(request)
 
+        # Device ID is telemetry only. A valid authenticated request is never
+        # rejected because another iPhone/desktop session exists.
         device_id = str(request.query_params.get("device_id") or "").strip()
-        if not device_id or len(device_id) > DEVICE_ID_MAX:
-            return _blocked_response(request, 428, {
-                "detail": "Phiên Web V2 chưa có mã thiết bị. Vui lòng tải lại trang rồi đăng nhập lại.",
-                "code": "DEVICE_ID_REQUIRED",
-            })
-
-        try:
-            with engine_instance().begin() as conn:
-                _ensure_table(conn)
-                row = conn.execute(text("""
-                    SELECT device_id
-                    FROM vera_v2_active_device
-                    WHERE auth_user_id=CAST(:auth_user_id AS uuid)
-                    FOR UPDATE
-                """), {"auth_user_id": auth_uid}).mappings().first()
-                if row is None:
-                    conn.execute(text("""
-                        INSERT INTO vera_v2_active_device(
-                            auth_user_id, employee_username, device_id, user_agent,
-                            claimed_at, last_seen_at
-                        ) VALUES (
-                            CAST(:auth_user_id AS uuid), '', :device_id, :user_agent,
-                            NOW(), NOW()
-                        )
-                    """), {
-                        "auth_user_id": auth_uid,
-                        "device_id": device_id,
-                        "user_agent": str(request.headers.get("user-agent") or "")[:1000],
-                    })
-                elif str(row.get("device_id") or "") != device_id:
-                    return _blocked_response(request, 409, {
-                        "detail": "Tài khoản này đã đăng nhập trên thiết bị khác. Thiết bị hiện tại đã bị đăng xuất.",
-                        "code": "DEVICE_CONFLICT",
-                    })
-                else:
-                    conn.execute(text("""
-                        UPDATE vera_v2_active_device
-                        SET last_seen_at=NOW(), user_agent=:user_agent
-                        WHERE auth_user_id=CAST(:auth_user_id AS uuid)
-                    """), {
-                        "auth_user_id": auth_uid,
-                        "user_agent": str(request.headers.get("user-agent") or "")[:1000],
-                    })
-        except Exception:
-            return _blocked_response(request, 503, {
-                "detail": "Không kiểm tra được thiết bị đăng nhập. Vui lòng thử lại.",
-                "code": "DEVICE_GUARD_UNAVAILABLE",
-            })
+        if device_id and len(device_id) <= DEVICE_ID_MAX:
+            try:
+                with engine_instance().begin() as conn:
+                    _ensure_table(conn)
+                    _upsert_device(
+                        conn,
+                        auth_user_id=auth_uid,
+                        device_id=device_id,
+                        employee_username="",
+                        user_agent=str(request.headers.get("user-agent") or ""),
+                    )
+            except Exception:
+                # Session tracking must never break authentication/navigation.
+                pass
 
         return await call_next(request)
 
