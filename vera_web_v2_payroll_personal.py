@@ -2,8 +2,8 @@
 
 This module is read-only. It derives each employee's accumulation payments from
 saved payroll history, combines them with the canonical TichLuy snapshot, and
-shows only open violation obligations. Non-admin identities are always scoped
-to their own employee account; Admin can review everybody.
+shows only open violation obligations. Tracking applies only to Leader/Nhân viên;
+non-admin identities are always scoped to their own employee account.
 """
 from __future__ import annotations
 
@@ -12,14 +12,15 @@ import json
 import re
 from typing import Any, Callable
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlalchemy import text
 
 import vera_web_v2_permissions as permissions
 
 
-RELEASE = "payroll-personal-tracking-2026-08-31-v1"
-_EMPLOYEE_PAYROLL_ROLES = ("nhanvien", "leader", "locker", "tapvu")
+RELEASE = "payroll-personal-tracking-2026-08-31-v2"
+_EMPLOYEE_PAYROLL_ROLES = ("nhanvien", "leader")
+_NON_TRACKED_ROLES = ("locker", "tapvu")
 _DEFAULT_ACCUMULATION_TARGET = 5_000_000
 
 
@@ -175,19 +176,22 @@ def _merge_tichluy_periods(periods: list[dict[str, Any]], tichluy_item: dict[str
 
 
 def install_payroll_personal_defaults(api_module=None) -> None:
-    """Expose the existing payroll menu to employee-like roles, read-only.
-
-    PayrollPageV38 treats payroll_history-only accounts as personal-view users,
-    while privileged payroll permissions continue to open the full admin/editor UI.
-    """
+    """Expose payroll-history view only to Leader/Nhân viên by default."""
     for role in _EMPLOYEE_PAYROLL_ROLES:
         permissions.DEFAULT_ROLE_FEATURES.setdefault(role, set()).add("payroll_history")
+    # This base set is shared by Leader/Nhân viên.
     permissions.EMPLOYEE.add("payroll_history")
+    # The previous release temporarily exposed the personal page to Locker/Tạp vụ.
+    # Remove only that default exposure; explicit account/role permission overrides still win.
+    for role in _NON_TRACKED_ROLES:
+        permissions.DEFAULT_ROLE_FEATURES.setdefault(role, set()).discard("payroll_history")
     if api_module is not None:
         defaults = getattr(api_module, "WEB_V2_DEFAULT_FEATURES", None)
         if isinstance(defaults, dict):
             for role in _EMPLOYEE_PAYROLL_ROLES:
                 defaults.setdefault(role, set()).add("payroll_history")
+            for role in _NON_TRACKED_ROLES:
+                defaults.setdefault(role, set()).discard("payroll_history")
 
 
 def install_payroll_personal_routes(
@@ -203,7 +207,10 @@ def install_payroll_personal_routes(
 
     @app.get("/v2/payroll/personal-tracking")
     def payroll_personal_tracking(ident: identity_type = Depends(current_identity)):
-        is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
+        role = str(getattr(ident, "role", "") or "").strip().lower()
+        is_admin = role == "admin"
+        if not is_admin and role not in _EMPLOYEE_PAYROLL_ROLES:
+            raise HTTPException(403, "Theo dõi Tích lũy chỉ áp dụng cho Leader và Nhân viên.")
         viewer_key = norm(getattr(ident, "employee_username", ""))
         viewer_full_key = norm(getattr(ident, "full_name", ""))
 
@@ -214,7 +221,8 @@ def install_payroll_personal_routes(
                        COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') AS employment_status
                 FROM employees
                 WHERE COALESCE(payload->>'__deleted','false') <> 'true'
-                ORDER BY lower(COALESCE(role,'')), lower(username)
+                  AND lower(COALESCE(role,'')) IN ('leader','nhanvien')
+                ORDER BY CASE lower(COALESCE(role,'')) WHEN 'leader' THEN 0 ELSE 1 END, lower(username)
             """)).mappings().all()]
             history = _dataset(conn, "payroll_history")
             tichluy_rows = _dataset(conn, "tichluy")
@@ -229,7 +237,7 @@ def install_payroll_personal_routes(
                 employees = [{
                     "username": str(getattr(ident, "employee_username", "") or ""),
                     "full_name": str(getattr(ident, "full_name", "") or ""),
-                    "role": str(getattr(ident, "role", "") or ""),
+                    "role": role,
                     "employment_status": "Đang làm việc",
                 }]
 
@@ -267,7 +275,7 @@ def install_payroll_personal_routes(
                 "obligations": employee_obligations,
             })
 
-        output.sort(key=lambda row: (norm(row.get("role")), norm(row.get("employee_name"))))
+        output.sort(key=lambda row: (0 if row.get("role") == "leader" else 1, norm(row.get("employee_name"))))
         return {
             "ok": True,
             "release": RELEASE,
