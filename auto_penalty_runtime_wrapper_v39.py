@@ -8,6 +8,7 @@ policy only:
 - Support reasons retain their legacy grace allowances (120/180/60 minutes),
   but are evaluated by the same five-minute engine.
 - Bảng tour uses the current LoaiNghi names <=30/<=60/<=120/>120.
+- TimeSoft check-in is recalculated in the browser before SearchElastic is read.
 """
 from __future__ import annotations
 
@@ -15,10 +16,17 @@ import sys
 from datetime import datetime
 
 import auto_penalty_runtime_wrapper as base
+from timesoft_recalculate_checkin import install as install_recalculate_checkin
+from timesoft_tour_snapshot_cache import install as install_tour_snapshot_cache
 
 
 ts = base.ts
 daily = base.daily
+
+# base has already installed the hardened login wrapper. Wrap that final login
+# so the same browser session clicks TimeSoft "Tính lại ngày công" first.
+install_recalculate_checkin(ts)
+install_tour_snapshot_cache(ts)
 
 DEFAULT_AUTO_THRESHOLD_MINUTES = 5
 
