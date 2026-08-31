@@ -1,8 +1,12 @@
 """PostgreSQL-only TourVera reader for Web V2 attendance requests.
 
-Background jobs download TourVera and persist `tourvera_input_today`.  Web V2
+Background jobs download TourVera and persist `tourvera_input_today`. Web V2
 must never download/parse the XLSM while a user is opening Chấm công, Đăng ký
 nghỉ, or while the global break-alert poll is running.
+
+Admin can pause this TourVera-backed Web V2 alert source. While paused, Web V2
+returns no TourVera fallback data immediately, even if an older cache row has
+not expired yet. TimeSoft attendance itself continues normally.
 """
 from __future__ import annotations
 
@@ -11,20 +15,22 @@ from typing import Any
 
 from sqlalchemy import text
 
+import vera_tour_cache_control as cache_control
 import vera_web_v2_attendance_break_alerts as alerts
 
 
-RELEASE = "tourvera-web-postgres-cache-2026-08-31-v1"
-DATASET_KEY = "tourvera_input_today"
+RELEASE = "tourvera-web-postgres-cache-2026-08-31-v2-pausable"
+DATASET_KEY = cache_control.DATASET_KEY
 
 
 def tour_records(conn) -> list[dict[str, Any]]:
     """Return only a fresh background-cached TourVera snapshot.
 
-    Expired/missing cache deliberately returns an empty list.  The web request
-    never falls back to Google Drive; the next scheduled background job repairs
-    the cache instead.
+    Expired/missing/paused cache deliberately returns an empty list. The web
+    request never falls back to Google Drive.
     """
+    if cache_control.disabled(conn):
+        return []
     row = conn.execute(text("""
         SELECT payload
         FROM vera_dataset_cache
