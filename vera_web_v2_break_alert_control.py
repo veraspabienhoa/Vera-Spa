@@ -5,8 +5,9 @@ When paused, browser alerts and Web Push deliveries are suppressed. Existing
 native break notifications are cleared on every subscribed device.
 
 This installer also exposes the separate Admin-only TourVera cache switch used
-to stop the frequent Google Drive -> PostgreSQL cache refresh without turning
-off TimeSoft attendance or the independent Auto Check policy engine.
+to stop the frequent Google Drive -> PostgreSQL cache-only refresh without
+turning off break alerts, TimeSoft attendance, or the independent Auto Check
+policy engine.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ import vera_tour_cache_control as tour_cache_control
 import vera_web_v2_attendance_break_alerts as alerts
 
 
-RELEASE = "attendance-break-alert-control-2026-08-31-v2-tour-cache"
+RELEASE = "attendance-break-alert-control-2026-08-31-v3-tour-refresh-only"
 CATEGORY = "attendance_break_alert_control"
 SETTING_KEY = "global"
 
@@ -162,8 +163,10 @@ def install_break_alert_control(
             "ok": True,
             "release": RELEASE,
             **state,
-            "scope": "web_v2_tour_cache",
+            "scope": "web_v2_tour_cache_refresh",
             "auto_check_unchanged": True,
+            "break_alerts_unchanged": True,
+            "break_alert_roles": ["quanly", "letan", "nhanvien"],
         }
 
     @app.put("/v2/attendance/tour-cache/control")
@@ -173,7 +176,7 @@ def install_break_alert_control(
     ):
         role = str(getattr(ident, "role", "") or "").strip().lower()
         if role != "admin":
-            raise HTTPException(403, "Chỉ Admin được tạm dừng hoặc mở lại đồng bộ TourVera cho Web V2.")
+            raise HTTPException(403, "Chỉ Admin được tạm dừng hoặc mở lại làm mới TourVera cho Web V2.")
         disabled = bool(payload.get("disabled"))
         actor = str(getattr(ident, "employee_username", "") or "admin").strip()
         with engine_instance().begin() as conn:
@@ -183,12 +186,14 @@ def install_break_alert_control(
             "ok": True,
             "release": RELEASE,
             **state,
-            "scope": "web_v2_tour_cache",
+            "scope": "web_v2_tour_cache_refresh",
             "auto_check_unchanged": True,
+            "break_alerts_unchanged": True,
+            "break_alert_roles": ["quanly", "letan", "nhanvien"],
             "message": (
-                "Đã tạm dừng đồng bộ TourVera cho cảnh báo nghỉ giữa ca Web V2."
+                "Đã tạm dừng làm mới TourVera định kỳ. Cảnh báo nghỉ giữa ca vẫn hoạt động cho Quản lý, Lễ tân và Nhân viên."
                 if disabled else
-                "Đã mở lại đồng bộ TourVera; job nền kế tiếp sẽ làm mới cache."
+                "Đã mở lại làm mới TourVera định kỳ. Cảnh báo nghỉ giữa ca vẫn hoạt động bình thường."
             ),
         }
 
@@ -201,6 +206,8 @@ def install_break_alert_control(
             "suppresses_browser_alerts": True,
             "suppresses_web_push": True,
             "admin_tour_cache_control": True,
+            "tour_pause_only_stops_refresh": True,
+            "tour_pause_keeps_break_alerts": True,
         }
 
     app.state.break_alert_control_installed = True
