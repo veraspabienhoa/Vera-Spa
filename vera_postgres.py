@@ -94,7 +94,7 @@ def get_engine() -> Engine:
     pool_size = max(2, int(os.getenv("DB_POOL_SIZE", "8")))
     max_overflow = max(0, int(os.getenv("DB_MAX_OVERFLOW", "12")))
     timeout = max(5, int(os.getenv("DB_POOL_TIMEOUT", "20")))
-    recycle = max(60, int(os.getenv("DB_POOL_RECYCLE", "1200")))
+    recycle = max(3600, int(os.getenv("DB_POOL_RECYCLE", "3600")))
     connect_timeout = max(3, int(os.getenv("DB_CONNECT_TIMEOUT", "10")))
 
     engine = create_engine(

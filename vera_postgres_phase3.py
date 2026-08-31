@@ -26,6 +26,8 @@ import hashlib
 import json
 import os
 import re
+import threading
+import time
 from typing import Any, Mapping, Optional
 
 import pandas as pd
@@ -37,6 +39,16 @@ SYNC_STATE_TABLE = "vera_normalized_sync_state"
 EMPLOYEE_DATASET = "credentials"
 LEAVE_DATASET = "leave_primary"
 TARGET_DATASETS = {EMPLOYEE_DATASET, LEAVE_DATASET}
+LEAVE_LIST_CACHE_SECONDS = max(
+    1.0, float(os.getenv("VERA_LEAVE_LIST_CACHE_SECONDS", "15") or 15),
+)
+_leave_list_cache_lock = threading.Lock()
+_leave_list_cache: dict[tuple[str, str, str], tuple[float, pd.DataFrame]] = {}
+
+
+def _clear_leave_list_cache() -> None:
+    with _leave_list_cache_lock:
+        _leave_list_cache.clear()
 
 
 def _enabled(vpg) -> bool:
@@ -612,23 +624,44 @@ def delete_employee(vpg, username: str) -> bool:
 def list_leave_records(vpg, employee_name: str = "", start_date=None, end_date=None) -> pd.DataFrame:
     if not _enabled(vpg):
         return pd.DataFrame()
+    employee = _safe_text(employee_name)
+    start = _safe_date(start_date)
+    end = _safe_date(end_date)
+    cache_key = (employee, str(start or ""), str(end or ""))
+    now = time.monotonic()
+    with _leave_list_cache_lock:
+        cached = _leave_list_cache.get(cache_key)
+        if cached and now - cached[0] <= LEAVE_LIST_CACHE_SECONDS:
+            return cached[1].copy(deep=True)
+
     clauses = []
     params = {}
-    if _safe_text(employee_name):
+    if employee:
         clauses.append("employee_name=:employee")
-        params["employee"] = _safe_text(employee_name)
-    if _safe_date(start_date):
+        params["employee"] = employee
+    if start:
         clauses.append("leave_date>=:start_date")
-        params["start_date"] = _safe_date(start_date)
-    if _safe_date(end_date):
+        params["start_date"] = start
+    if end:
         clauses.append("leave_date<=:end_date")
-        params["end_date"] = _safe_date(end_date)
+        params["end_date"] = end
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     engine = vpg.get_engine()
     _ensure_phase3_schema(vpg, engine)
     with engine.connect() as conn:
-        rows = conn.execute(text("SELECT * FROM leave_records" + where + " ORDER BY leave_date DESC, source_row DESC"), params).mappings().all()
-    return pd.DataFrame([dict(r) for r in rows])
+        rows = conn.execute(text("""
+            SELECT source_sheet_id, source_row, leave_date, weekday_label,
+                   employee_name, leave_reason, leave_type, detail,
+                   calculated_days, accumulated_leave, penalty, update_date,
+                   update_time, updated_by,
+                   to_jsonb(leave_records)->>'record_uid' AS record_uid,
+                   payload->'__raw_values' AS raw_values
+            FROM leave_records
+        """ + where + " ORDER BY leave_date DESC, source_row DESC"), params).mappings().all()
+    result = pd.DataFrame([dict(r) for r in rows])
+    with _leave_list_cache_lock:
+        _leave_list_cache[cache_key] = (time.monotonic(), result.copy(deep=True))
+    return result
 
 
 def upsert_leave_record(vpg, record: Mapping[str, Any]) -> dict:
@@ -666,6 +699,7 @@ def upsert_leave_record(vpg, record: Mapping[str, Any]) -> dict:
             text("SELECT * FROM leave_records WHERE source_sheet_id=:s AND source_row=:r"),
             {"s": normalized["source_sheet_id"], "r": normalized["source_row"]},
         ).mappings().first()
+    _clear_leave_list_cache()
     return dict(row) if row else normalized
 
 
@@ -677,6 +711,7 @@ def delete_leave_record(vpg, source_sheet_id: str, source_row: int) -> bool:
             text("DELETE FROM leave_records WHERE source_sheet_id=:s AND source_row=:r"),
             {"s": _safe_text(source_sheet_id), "r": int(source_row)},
         )
+    _clear_leave_list_cache()
     return bool(getattr(result, "rowcount", 0))
 
 

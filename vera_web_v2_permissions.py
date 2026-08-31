@@ -126,6 +126,7 @@ def _scope_rows(payload: dict[str, Any], scope: str, target: str) -> dict[str, b
 def install_permission_routes(
     app, *, engine_instance: Callable[[], Any], current_identity,
     google_client: Callable[[], Any], identity_type, vn_tz,
+    permissions_changed: Callable[[], None] | None = None,
 ):
     def require_admin(ident):
         if str(ident.role or "").lower() != "admin":
@@ -221,6 +222,8 @@ def install_permission_routes(
                     revision=vera_app_setting.revision+1, updated_at=NOW()
             """), {"payload": json.dumps(payload, ensure_ascii=False), "updated_by": ident.employee_username})
             tx.commit()
+            if permissions_changed is not None:
+                permissions_changed()
             return {"ok": True, "message": "Đã lưu phân quyền THÀNH CÔNG", "revision": revision + 1}
         except HTTPException:
             if tx.is_active: tx.rollback()

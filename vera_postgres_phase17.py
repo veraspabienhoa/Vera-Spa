@@ -391,6 +391,10 @@ def leave_dataframe(vpg):
     base = base_fn() if callable(base_fn) else pd.DataFrame()
     if not isinstance(base, pd.DataFrame):
         base = pd.DataFrame(base if base is not None else [])
+    # Phase 5 now carries the UID from the same normalized query.  Returning it
+    # directly avoids a second full-table read on every Streamlit rerun.
+    if "__record_uid" in base.columns:
+        return base
     try:
         raw = vpg.list_leave_records_pg()
         if not isinstance(raw, pd.DataFrame):

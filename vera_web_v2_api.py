@@ -20,6 +20,8 @@ import json
 import math
 import os
 import re
+import threading
+import time
 import unicodedata
 import uuid
 from typing import Any
@@ -90,7 +92,9 @@ def _engine_instance():
             pool_pre_ping=True,
             pool_size=int(os.getenv("DB_POOL_SIZE", "2")),
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "0")),
-            pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "600")),
+            # Keep healthy pooler connections longer.  Recreating a connection
+            # repeatedly triggers PostgreSQL timezone-catalog discovery.
+            pool_recycle=max(3600, int(os.getenv("DB_POOL_RECYCLE", "3600"))),
         )
     return _engine
 
@@ -418,6 +422,12 @@ class Identity(BaseModel):
 
 from vera_web_v2_permissions import DEFAULT_ROLE_FEATURES as WEB_V2_DEFAULT_FEATURES, FEATURES as WEB_V2_FEATURES
 
+_PERMISSION_CACHE_SECONDS = max(
+    1.0, float(os.getenv("VERA_PERMISSION_CACHE_SECONDS", "60") or 60),
+)
+_permission_cache_lock = threading.Lock()
+_permission_cache: dict[str, Any] = {"loaded_at": 0.0, "payload": {}}
+
 
 def _as_bool(value: Any) -> bool:
     if isinstance(value, bool):
@@ -425,20 +435,37 @@ def _as_bool(value: Any) -> bool:
     return _norm(value) in {"1", "true", "yes", "y", "co", "có", "x"}
 
 
-def _feature_allowed(conn, ident: Identity, feature: str) -> bool:
+def _clear_permission_cache() -> None:
+    with _permission_cache_lock:
+        _permission_cache.update({"loaded_at": 0.0, "payload": {}})
+
+
+def _permission_payload(conn) -> dict[str, Any]:
+    now = time.monotonic()
+    with _permission_cache_lock:
+        if now - float(_permission_cache["loaded_at"] or 0) <= _PERMISSION_CACHE_SECONDS:
+            return dict(_permission_cache["payload"])
+        payload = conn.execute(text("""
+            SELECT value_json
+            FROM vera_app_setting
+            WHERE category='authorization' AND setting_key='feature_permissions'
+            LIMIT 1
+        """)).scalar_one_or_none()
+        payload = payload if isinstance(payload, dict) else {}
+        _permission_cache.update({"loaded_at": time.monotonic(), "payload": dict(payload)})
+        return dict(payload)
+
+
+def _feature_allowed(
+    conn, ident: Identity, feature: str, permission_payload: dict[str, Any] | None = None,
+) -> bool:
     """Mirror Streamlit precedence: admin -> account -> role -> defaults."""
     feature = str(feature or "").strip()
     role = str(ident.role or "").strip().lower()
     if role == "admin":
         return True
 
-    payload = conn.execute(text("""
-        SELECT value_json
-        FROM vera_app_setting
-        WHERE category='authorization' AND setting_key='feature_permissions'
-        LIMIT 1
-    """)).scalar_one_or_none()
-    payload = payload if isinstance(payload, dict) else {}
+    payload = permission_payload if isinstance(permission_payload, dict) else _permission_payload(conn)
 
     username_key = _norm(ident.employee_username)
     for item in payload.get("accounts", []) or []:
@@ -1349,8 +1376,9 @@ def health():
 @app.get("/v2/me")
 def me(ident: Identity = Depends(current_identity)):
     with _engine_instance().connect() as conn:
+        permission_payload = _permission_payload(conn)
         permissions = {
-            feature: _feature_allowed(conn, ident, feature)
+            feature: _feature_allowed(conn, ident, feature, permission_payload)
             for feature in WEB_V2_FEATURES
         }
         registration_locked = _registration_role_locked(conn, ident.role)
@@ -2528,6 +2556,7 @@ install_permission_routes(
     google_client=_google_client,
     identity_type=Identity,
     vn_tz=VN_TZ,
+    permissions_changed=_clear_permission_cache,
 )
 
 from vera_web_v2_profile import install_profile_routes

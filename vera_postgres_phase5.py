@@ -241,12 +241,15 @@ def _leave_from_pg(vpg) -> pd.DataFrame:
             "Người cập nhật": _text(r.get("updated_by")),
             "__source_sheet_id": _text(r.get("source_sheet_id")),
             "__source_row": r.get("source_row"),
+            "__record_uid": _text(r.get("record_uid")),
         })
-        raw_values = p.get("__raw_values")
+        raw_values = r.get("raw_values")
+        if not isinstance(raw_values, list):
+            raw_values = p.get("__raw_values")
         item["__raw_values"] = raw_values if isinstance(raw_values, list) else []
         rows.append(item)
 
-    cols = LEAVE_DATA_COLUMNS + ["__source_sheet_id", "__source_row", "__raw_values"]
+    cols = LEAVE_DATA_COLUMNS + ["__source_sheet_id", "__source_row", "__record_uid", "__raw_values"]
     out = pd.DataFrame(rows, columns=cols)
     if not out.empty:
         out["__phase5_sheet_sort"] = pd.to_numeric(out["__source_row"], errors="coerce")
