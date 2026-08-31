@@ -42,6 +42,18 @@ export async function setAttendanceBreakAlertControl(disabled) {
   return payload
 }
 
+export async function deleteAttendanceBreakAlertForAll(key, tag) {
+  if (!apiBase) return { globally_deleted: true, key, tag }
+  const params = new URLSearchParams({ key: String(key || ''), tag: String(tag || '') })
+  const response = await fetch(`${apiBase}/v2/attendance/break-alerts/item?${params.toString()}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
+}
+
 export async function syncPersistentBreakNotifications(alerts = []) {
   if (!('serviceWorker' in navigator) || !('Notification' in window) || Notification.permission !== 'granted') return
   const registration = await navigator.serviceWorker.ready.catch(() => null)
