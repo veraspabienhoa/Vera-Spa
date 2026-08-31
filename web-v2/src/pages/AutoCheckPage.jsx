@@ -20,6 +20,7 @@ export default function AutoCheckPage({ user }) {
     try { const result = await veraApi.runAutoCheck(); await load(); window.alert(result.message) } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   const cfg = data?.config || {}
+  const connected = Boolean(data)
   const canControl = user?.role === 'admin' || user?.permissions?.auto_penalty_control
   const canRun = user?.role === 'admin' || user?.permissions?.auto_penalty_run
   return <section className="page-stack auto-check-page">
@@ -27,13 +28,13 @@ export default function AutoCheckPage({ user }) {
     <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={18}/> VẬN HÀNH</span><h1>Auto Check</h1><p>Kiểm tra tự động từ TimeSoft và Bảng tua; dữ liệu được ghi trực tiếp vào PostgreSQL.</p></div><button className="secondary-button" onClick={load}><RefreshCw size={17}/> Làm mới</button></div>
     {error && <div className="error-box">{error}</div>}
     <div className="auto-check-grid">
-      <div className="auto-check-card"><span>Trạng thái</span><strong className={cfg.status === 'PAUSED' ? 'auto-check-paused' : 'auto-check-ok'}>{cfg.status === 'PAUSED' ? 'Tạm dừng' : 'Đang chạy'}</strong></div>
-      <div className="auto-check-card"><span>Ngưỡng ghi nhận</span><strong>{cfg.threshold_minutes || 5} phút</strong></div>
-      <div className="auto-check-card"><span>Lịch kiểm tra chuẩn</span><strong>{(cfg.schedule_hours || [15,20,21]).map(x => `${x}:00`).join(' · ')}</strong></div>
+      <div className="auto-check-card"><span>Trạng thái</span><strong className={connected && cfg.status !== 'PAUSED' ? 'auto-check-ok' : 'auto-check-paused'}>{!connected ? 'Chưa kết nối' : cfg.status === 'PAUSED' ? 'Tạm dừng' : 'Đang chạy'}</strong></div>
+      <div className="auto-check-card"><span>Ngưỡng ghi nhận</span><strong>{connected ? `${cfg.threshold_minutes || 5} phút` : '—'}</strong></div>
+      <div className="auto-check-card"><span>Lịch kiểm tra chuẩn</span><strong>{connected ? (cfg.schedule_hours || [15,20,21]).map(x => `${x}:00`).join(' · ') : '—'}</strong></div>
     </div>
     <div className="panel auto-check-card"><h2>Điều khiển</h2><div className="auto-check-actions">
-      {canControl && <button className="secondary-button" disabled={busy} onClick={() => update({status: cfg.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'})}>{cfg.status === 'PAUSED' ? <Play size={17}/> : <Pause size={17}/>} {cfg.status === 'PAUSED' ? 'Mở Auto Check' : 'Tạm dừng'}</button>}
-      {canRun && <button className="primary-button" disabled={busy || cfg.status === 'PAUSED'} onClick={run}><Activity size={17}/> Chạy Auto Check</button>}
+      {canControl && <button className="secondary-button" disabled={busy || !connected} onClick={() => update({status: cfg.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'})}>{cfg.status === 'PAUSED' ? <Play size={17}/> : <Pause size={17}/>} {cfg.status === 'PAUSED' ? 'Mở Auto Check' : 'Tạm dừng'}</button>}
+      {canRun && <button className="primary-button" disabled={busy || !connected || cfg.status === 'PAUSED'} onClick={run}><Activity size={17}/> Chạy Auto Check</button>}
     </div></div>
     <div className="panel auto-check-card"><h2>Lịch sử ghi nhận gần nhất</h2><div className="table-scroll"><table className="auto-check-table"><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Lý do</th><th>Nguồn</th><th>Phút</th></tr></thead><tbody>{(data?.events || []).map((row, i) => <tr key={`${row.created_at}-${i}`}><td>{row.work_date}</td><td><b>{row.employee_name}</b></td><td>{row.reason}</td><td>{row.source}</td><td>{row.minutes}</td></tr>)}{!data?.events?.length && <tr><td colSpan="5">Chưa có dữ liệu Auto Check trong PostgreSQL.</td></tr>}</tbody></table></div></div>
   </section>

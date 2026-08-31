@@ -17,14 +17,17 @@ async function request(path, options = {}) {
   let response
   let lastError
   const method = String(options.method || 'GET').toUpperCase()
-  const attempts = method === 'GET' || path === '/v2/payroll/history/sync-legacy' ? 2 : 1
+  // Cloud Run can need a few seconds to wake or switch revisions. Three GET
+  // attempts prevent a transient rollout/cold-start from becoming a false
+  // "Failed to fetch" screen while keeping writes single-shot.
+  const attempts = method === 'GET' || path === '/v2/payroll/history/sync-legacy' ? 3 : 1
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       response = await fetch(`${apiBase}${path}`, { ...options, headers })
       break
     } catch (error) {
       lastError = error
-      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 800))
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 1200))
     }
   }
   if (!response) throw new Error(`Không kết nối được máy chủ VERA sau ${attempts} lần thử. Vui lòng bấm Làm mới. (${lastError?.message || 'Lỗi mạng'})`)
