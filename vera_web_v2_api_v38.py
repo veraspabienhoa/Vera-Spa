@@ -27,6 +27,7 @@ from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
+from vera_web_v2_violation_unlimited import install_violation_unlimited
 from vera_web_v2_work_schedule import install_work_schedule_routes
 
 _api = _shared._api
@@ -53,6 +54,10 @@ install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_i
 # Install before preview/write wrappers so every Web V2 registration path uses it.
 install_policy_v40(_shared.app, shared_module=_shared)
 
+# Nội quy Loại nghỉ is authoritative for same-day grouping. Vi phạm rows have
+# no per-employee/day count limit even when their reason text contains KHÔNG phép.
+install_violation_unlimited(_shared.app, shared_module=_shared)
+
 install_leave_day_stats_routes(
     _shared.app,
     engine_instance=_api._engine_instance,
@@ -72,8 +77,6 @@ install_long_leave_admin_routes(_shared.app, engine_instance=_api._engine_instan
 install_admin_audit_archive_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
 install_letan_leave_guard(_shared.app, api_module=_api, vn_tz=_api.VN_TZ)
 
-# Read-only leave-list enhancements and permission-gated revenue are installed
-# after canonical write guards, before the one-device wrapper protects routes.
 install_revenue_leave_list_routes(
     _shared.app,
     engine_instance=_api._engine_instance,
@@ -85,14 +88,8 @@ install_revenue_leave_list_routes(
     google_client=_api._google_client,
 )
 
-# Attendance 4.2 ports the old Auto Check FaceID grouping into the PostgreSQL
-# snapshot path. It must run before Operations 4.1 so screen/filter/export all
-# consume the same nhanvien/leader-only reconstructed attendance dataset.
 install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
 
-# Operations 4.1 replaces Chấm công display/export routes and adds filtered
-# Thay đổi hệ thống export. Install before the single-device wrapper so the
-# new routes receive the same session/device protection as the rest of Web V2.
 install_operations_v41(
     _shared.app,
     engine_instance=_api._engine_instance,
@@ -101,9 +98,6 @@ install_operations_v41(
     identity_type=_api.Identity,
 )
 
-# Every successful leave create/update/delete that appears in Thay đổi hệ thống
-# queues an immediate detailed Web Push to active Admin subscriptions. Install
-# after all write guards so notifications reflect the final canonical write.
 install_admin_change_push(
     _shared.app,
     engine_instance=_api._engine_instance,
@@ -116,9 +110,6 @@ install_admin_change_push(
 )
 
 install_single_device_guard(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
-
-# Every .xlsx response is normalized centrally: colored header, freeze pane,
-# AutoFilter and AutoFit. This covers current and future Web V2 exports.
 install_excel_export_style(_shared.app)
 
 app = _shared.app
