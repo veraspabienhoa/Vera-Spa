@@ -2402,10 +2402,9 @@ def _delete_leave_uids(record_uids: list[str], ident: Identity):
     engine = _engine_instance()
     conn = engine.connect()
     tx = conn.begin()
-    ws = None
-    deleted_sheet_rows: list[int] = []
-    deleted_values: dict[int, list[Any]] = {}
-    changed_backups: dict[int, list[Any]] = {}
+    source_rows: list[int] = []
+    rebalanced: list[tuple[int, dict]] = []
+    deleted_count = 0
     try:
         conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
         rows = []
@@ -2419,21 +2418,14 @@ def _delete_leave_uids(record_uids: list[str], ident: Identity):
             if not row:
                 raise HTTPException(404, "Một lịch nghỉ đã chọn không còn tồn tại; vui lòng làm mới dữ liệu.")
             item = dict(row)
-            if str(item.get("source_sheet_id") or "") != LEAVE_SHEET_ID or int(item.get("source_row") or 0) < 2:
-                raise HTTPException(409, "Có bản ghi không có vị trí MainData hợp lệ; từ chối xóa để tránh lệch dữ liệu.")
             _validate_delete_permission(conn, item, ident)
             rows.append(item)
-
-        ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
-        all_values = ws.get_all_values()
-        headers = all_values[0][:13] if all_values else []
-        if not headers:
-            raise RuntimeError("MainData chưa có header A:M")
-        source_rows = sorted({int(row["source_row"]) for row in rows})
-        for source_row in source_rows:
-            if source_row > len(all_values):
-                raise RuntimeError(f"MainData thiếu dòng nguồn {source_row}")
-            deleted_values[source_row] = list(all_values[source_row - 1][:13])
+        source_rows = sorted({
+            int(row.get("source_row") or 0)
+            for row in rows
+            if str(row.get("source_sheet_id") or "") == LEAVE_SHEET_ID
+            and int(row.get("source_row") or 0) >= 2
+        })
 
         affected: dict[date, set[str]] = {}
         for row in rows:
@@ -2444,48 +2436,56 @@ def _delete_leave_uids(record_uids: list[str], ident: Identity):
             if int(result.rowcount or 0) != 1:
                 raise RuntimeError("Xóa PostgreSQL không đúng một bản ghi.")
         _reindex_after_delete(conn, source_rows)
-        rebalanced: list[tuple[int, dict]] = []
         for target, keys in affected.items():
             rebalanced.extend(_rebalance_progressive_rows(conn, target, keys))
-
-        for source_row in sorted(source_rows, reverse=True):
-            ws.delete_rows(source_row)
-            deleted_sheet_rows.append(source_row)
-
-        after_delete_values = ws.get_all_values() if rebalanced else []
-        for row_number, changed in rebalanced:
-            changed_backups[row_number] = list(after_delete_values[row_number - 1][:13]) if row_number <= len(after_delete_values) else []
-            ws.update(
-                range_name=f"A{row_number}:M{row_number}",
-                values=[_sheet_values_for_record(headers, changed, row_number)],
-                value_input_option="USER_ENTERED",
-            )
+        deleted_count = len(rows)
+        # PostgreSQL/record_uid is canonical. A historical Auto Check row may
+        # legitimately have no MainData source_row when its optional mirror
+        # failed. Commit the deletion first instead of blocking or resurrecting it.
         tx.commit()
-        return {"ok": True, "deleted": len(rows), "message": f"Đã xóa {len(rows)} lịch nghỉ và đồng bộ PostgreSQL/MainData."}
     except HTTPException:
         if tx.is_active:
             tx.rollback()
-        if ws is not None and deleted_sheet_rows:
-            _restore_sheet_updates(ws, changed_backups)
-            for source_row in sorted(deleted_sheet_rows):
-                try:
-                    ws.insert_row(deleted_values[source_row], index=source_row, value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
+        conn.close()
         raise
     except Exception as exc:
         if tx.is_active:
             tx.rollback()
-        if ws is not None and deleted_sheet_rows:
-            _restore_sheet_updates(ws, changed_backups)
-            for source_row in sorted(deleted_sheet_rows):
-                try:
-                    ws.insert_row(deleted_values[source_row], index=source_row, value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
-        raise HTTPException(500, f"Không xóa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
-    finally:
         conn.close()
+        raise HTTPException(500, f"Không xóa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
+
+    mirror_pending = False
+    if source_rows or rebalanced:
+        try:
+            ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
+            all_values = ws.get_all_values()
+            headers = all_values[0][:13] if all_values else []
+            if not headers:
+                raise RuntimeError("MainData chưa có header A:M")
+            for source_row in sorted(source_rows, reverse=True):
+                if source_row <= len(all_values):
+                    ws.delete_rows(source_row)
+            after_delete_values = ws.get_all_values() if rebalanced else []
+            for row_number, changed in rebalanced:
+                if row_number > len(after_delete_values):
+                    continue
+                ws.update(
+                    range_name=f"A{row_number}:M{row_number}",
+                    values=[_sheet_values_for_record(headers, changed, row_number)],
+                    value_input_option="USER_ENTERED",
+                )
+        except Exception:
+            mirror_pending = True
+    conn.close()
+    message = f"Đã xóa {deleted_count} bản ghi THÀNH CÔNG."
+    if mirror_pending:
+        message += " PostgreSQL đã cập nhật; MainData đang chờ đồng bộ lại."
+    return {
+        "ok": True,
+        "deleted": deleted_count,
+        "mirror_pending": mirror_pending,
+        "message": message,
+    }
 
 
 @app.delete("/v2/leave/records")
