@@ -21,9 +21,20 @@ self.addEventListener('push', (event) => {
     return
   }
 
+  if (payload.kind === 'attendance-break-global-disabled') {
+    event.waitUntil((async () => {
+      const notifications = await self.registration.getNotifications()
+      notifications.forEach((notification) => {
+        if (String(notification.tag || '').startsWith('vera-break-')) notification.close()
+      })
+    })())
+    return
+  }
+
   const isAdminChange = payload.kind === 'admin-system-change'
   const isBreakOverdue = payload.kind === 'attendance-break-overdue'
   const isBreakReminder = payload.kind === 'attendance-break-reminder'
+  const isBreakPenalty = payload.kind === 'attendance-break-penalty'
   const title = payload.title || 'VERA SPA · Lịch nghỉ thay đổi'
   const options = {
     body: payload.body || 'Một ngày bạn quan tâm vừa thay đổi số lịch nghỉ CÓ phép.',
@@ -54,11 +65,10 @@ self.addEventListener('push', (event) => {
     ]
   }
 
-  if (isBreakReminder) options.requireInteraction = false
+  if (isBreakReminder || isBreakPenalty) options.requireInteraction = false
   if (isBreakOverdue) {
-    // No dismiss action is provided.  The receptionist Web V2 page also keeps
-    // a non-dismissible in-app alert and recreates this native notification if
-    // the browser/OS closes it before the employee FaceID return is recorded.
+    // No dismiss action is provided. The in-app alert may be temporarily hidden,
+    // while Admin can globally disable the break-alert channel for all accounts.
     options.requireInteraction = true
     options.actions = [{ action: 'open', title: 'Mở VERA SPA' }]
   }
