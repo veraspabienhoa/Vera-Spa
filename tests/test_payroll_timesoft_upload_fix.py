@@ -59,6 +59,7 @@ def _timesoft_workbook_with_stale_dimension() -> bytes:
 def test_canonical_payroll_reader_uses_revenue_invoice_sheet_and_ignores_stale_dimension():
     assert payroll.PAYROLL_SOURCE_WORKSHEET == "Báo cáo doanh thu hóa đơn"
     assert payroll.PAYROLL_SOURCE_READER_RELEASE == RELEASE
+    assert payroll.PAYROLL_SOURCE_READER_MODE == "openpyxl-normal-workbook"
     source = payroll._read_source(_timesoft_workbook_with_stale_dimension())
     assert len(source) == 4
     assert source["item"].tolist() == ["90'", "Tip_250", "Tip-300", "TIP 200"]

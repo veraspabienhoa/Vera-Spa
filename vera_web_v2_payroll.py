@@ -66,7 +66,8 @@ TIMESOFT_PAYROLL_HEADERS = [
     "NV tư vấn", "Ghi chú", "Nhân viên tư vấn",
 ]
 PAYROLL_SOURCE_WORKSHEET = "Báo cáo doanh thu hóa đơn"
-PAYROLL_SOURCE_READER_RELEASE = "payroll-timesoft-sheet-reader-2026-09-01.2"
+PAYROLL_SOURCE_READER_RELEASE = "payroll-timesoft-sheet-reader-2026-09-01.3"
+PAYROLL_SOURCE_READER_MODE = "openpyxl-normal-workbook"
 TIP_ITEM_PATTERN = r"^tip(?:\b|[_\-\s])"
 
 
@@ -333,18 +334,14 @@ def _read_source(content: bytes) -> pd.DataFrame:
         raise HTTPException(400, "File không đúng định dạng Excel .xlsx. Vui lòng xuất lại từ TimeSoft.")
     workbook = None
     try:
-        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+        # Không dùng read_only cho file TimeSoft. Một số file có XML dimension
+        # sai A1:K4 dù dữ liệu thật kéo dài hàng nghìn dòng. Normal worksheet
+        # quét các cell XML thực tế và không cắt ở dòng dữ liệu đầu tiên 90'.
+        workbook = load_workbook(BytesIO(content), read_only=False, data_only=True)
         sheet_name = PAYROLL_SOURCE_WORKSHEET
         if sheet_name not in workbook.sheetnames:
             raise HTTPException(400, f"File TimeSoft không có sheet '{sheet_name}'.")
         worksheet = workbook[sheet_name]
-
-        # TimeSoft có thể xuất XML với dimension sai A1:K4 dù sheet thật có
-        # hàng nghìn dòng. ReadOnlyWorksheet sẽ dừng ở dòng 4 nếu không reset,
-        # khiến hệ thống bỏ qua toàn bộ các dòng Tip phía sau.
-        reset_dimensions = getattr(worksheet, "reset_dimensions", None)
-        if callable(reset_dimensions):
-            reset_dimensions()
 
         header_row = next(worksheet.iter_rows(
             min_row=3, max_row=3, min_col=1, max_col=len(TIMESOFT_PAYROLL_HEADERS), values_only=True

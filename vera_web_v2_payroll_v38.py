@@ -222,6 +222,7 @@ def install_payroll_v38_routes(
             "release": PAYROLL_V38_RELEASE,
             "source_worksheet": _payroll.PAYROLL_SOURCE_WORKSHEET,
             "source_reader_release": _payroll.PAYROLL_SOURCE_READER_RELEASE,
+            "source_reader_mode": _payroll.PAYROLL_SOURCE_READER_MODE,
         }
 
     @app.get("/v2/payroll-v38/employee-overrides")
