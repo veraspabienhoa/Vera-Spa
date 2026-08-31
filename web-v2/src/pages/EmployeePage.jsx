@@ -1,9 +1,12 @@
 import {
-  BriefcaseBusiness, Download, FilePenLine, LoaderCircle, LockKeyhole, Plus,
+  BriefcaseBusiness, Download, FilePenLine, LoaderCircle, LockKeyhole, PencilLine, Plus,
   RefreshCw, Save, Search, Trash2, UserCheck, UserRoundCog, UsersRound,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
+import { getCurrentSession } from '../lib/supabase'
+
+const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
 const ROLE_LABELS = {
   admin: 'Admin', giamdoc: 'Giám đốc', quanly: 'Quản lý', letan: 'Lễ tân', leader: 'Leader',
@@ -52,6 +55,21 @@ function searchKey(value) {
 function departmentForRole(role) {
   if (role === 'nhanvien' || role === 'leader') return 'Nhân viên + Leader'
   return { giamdoc: 'Giám đốc', letan: 'Lễ tân', quanly: 'Quản lý', locker: 'Locker', tapvu: 'Tạp vụ' }[role] || 'Khác'
+}
+
+async function renameSystemNameRequest(username, systemName) {
+  if (!API_BASE) throw new Error('Python API V2 chưa được cấu hình.')
+  const session = await getCurrentSession()
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  const response = await fetch(`${API_BASE}/v2/staff/${encodeURIComponent(username)}/system-name`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ system_name: systemName }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload?.detail || payload?.message || 'Không đổi được Tên hệ thống.')
+  return payload
 }
 
 function rowDraft(employee) {
@@ -188,6 +206,22 @@ export default function EmployeePage({ user }) {
       setBusy('')
     }
   }
+
+  const renameSystemName = (employee) => run(`rename-${employee.username}`, async () => {
+    if (!isAdmin) return
+    const next = window.prompt(
+      `Tên hệ thống mới cho ${employee.username}:\nTên đăng nhập cũng sẽ đổi theo tên này.`,
+      employee.username,
+    )
+    if (next === null) return
+    const clean = next.trim().replace(/\s+/g, ' ')
+    if (!clean || clean === employee.username) return
+    if (!window.confirm(`Đổi Tên hệ thống và Tên đăng nhập:\n${employee.username} → ${clean}\n\nDữ liệu lịch nghỉ, chấm công, lịch làm việc và thông báo sẽ được chuyển theo tài khoản mới.`)) return
+    const result = await renameSystemNameRequest(employee.username, clean)
+    if (profileUser === employee.username) setProfileUser('')
+    await load(true)
+    setNotice({ type: 'success', message: result.message || `Đã đổi Tên hệ thống/Tên đăng nhập thành ${clean}.` })
+  })
 
   const saveRows = () => run('save', async () => {
     if (!dirtyRows.length) throw new Error('Chưa có thay đổi cần lưu.')
@@ -353,7 +387,7 @@ export default function EmployeePage({ user }) {
                 const rowClassName = [employee.employment_status === 'Đã nghỉ việc' ? 'staff-left-row' : '', missingFields.length ? 'staff-incomplete-row' : ''].filter(Boolean).join(' ')
                 return <tr key={employee.username} className={rowClassName} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
                   <td className="center"><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} aria-label={`Chọn ${employee.username}`} /></td>
-                  <td><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</td>
+                  <td><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><strong>{employee.username}</strong>{isAdmin && <button type="button" className="text-button" title="Đổi Tên hệ thống và Tên đăng nhập" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={13} /></button>}</div><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</td>
                   <td><select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></td>
                   <td><select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></td>
                   <td><select value={draft.work_shift} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'work_shift', event.target.value)}><option value="">Chưa chia ca</option>{shiftsFor(employee).map((shift) => <option key={shift}>{shift}</option>)}</select></td>
@@ -372,7 +406,7 @@ export default function EmployeePage({ user }) {
             const editable = canManage(employee)
             const missingFields = missingEmployeeProfileFields(employee)
             return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''} ${missingFields.length ? 'incomplete' : ''}`} key={employee.username} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
-              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!isAdmin || !editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><div className="list-actions"><button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
+              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!isAdmin || !editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><div className="list-actions">{isAdmin && <button className="text-button" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={15} /> Đổi tên</button>}<button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
               <div className="staff-mobile-fields">
                 <label>Phân quyền<select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
                 <label>Trạng thái<select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></label>
