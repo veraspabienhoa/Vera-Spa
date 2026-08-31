@@ -95,7 +95,8 @@ steps:
                             and payload.get('release') == expected
                             and payload.get('source_worksheet') == 'Báo cáo doanh thu hóa đơn'
                             and payload.get('source_reader_release') == expected_reader
-                            and payload.get('source_reader_mode') == 'openpyxl-normal-workbook'):
+                            and payload.get('source_reader_mode') == 'openpyxl-normal-workbook'
+                            and payload.get('email_template_release') == 'payroll-email-layout-2026-09-01.1'):
                         print(body)
                         raise SystemExit(0)
                     last=RuntimeError(f'Unexpected Payroll 3.8 health payload: {body}')

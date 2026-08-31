@@ -4,7 +4,9 @@ from __future__ import annotations
 import calendar
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import formataddr
 import hashlib
+from html import escape
 from io import BytesIO
 import json
 import numbers
@@ -68,6 +70,7 @@ TIMESOFT_PAYROLL_HEADERS = [
 PAYROLL_SOURCE_WORKSHEET = "Báo cáo doanh thu hóa đơn"
 PAYROLL_SOURCE_READER_RELEASE = "payroll-timesoft-sheet-reader-2026-09-01.3"
 PAYROLL_SOURCE_READER_MODE = "openpyxl-normal-workbook"
+PAYROLL_EMAIL_TEMPLATE_RELEASE = "payroll-email-layout-2026-09-01.1"
 TIP_ITEM_PATTERN = r"^tip(?:\b|[_\-\s])"
 
 
@@ -143,6 +146,131 @@ def _parse_date(value: Any) -> date | None:
         except ValueError:
             pass
     return None
+
+
+def _email_money(value: Any) -> str:
+    return f"{_number(value):,} VNĐ"
+
+
+def _email_date(value: Any) -> str:
+    parsed = _parse_date(value)
+    return parsed.strftime("%d/%m/%Y") if parsed else str(value or "").strip()
+
+
+def _payroll_email_subject(employee_name: str, start: date, end: date) -> str:
+    return (
+        f"Bảng lương {str(employee_name or '').strip()} - "
+        f"{start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
+    )
+
+
+def _payroll_email_summary_rows(row: dict[str, Any]) -> list[tuple[str, int]]:
+    rows = [
+        ("Tiền Lương", _number(row.get("Tiền Lương"))),
+        ("Hỗ trợ/Hoàn tiền", _number(row.get("Tiền Hỗ Trợ Hoàn Lại"))),
+    ]
+    accumulation_refund = _number(row.get("Hoàn trả tiền tích lũy"))
+    if accumulation_refund:
+        rows.append(("Hoàn trả tiền tích lũy", accumulation_refund))
+    rows.extend([
+        ("Tích lũy", _number(row.get("Tích lũy"))),
+        ("Phí sinh hoạt", _number(row.get("Chi Phí Sinh Hoạt"))),
+        ("Vi phạm trong kỳ", _number(row.get("Tiền phạt trong tháng"))),
+        ("Vi phạm kỳ trước", _number(row.get("Vi phạm kỳ trước"))),
+        ("Tiền ứng lương", _number(row.get("Tiền ứng lương"))),
+        ("Tiền hỗ trợ Locker", _number(row.get("Tiền hỗ trợ Locker"))),
+        ("Số tiền thực nhận", _number(row.get("Số tiền thực nhận"))),
+    ])
+    return rows
+
+
+def _payroll_email_text(
+    name: str,
+    start: date,
+    end: date,
+    row: dict[str, Any],
+    violations: list[dict[str, Any]],
+) -> str:
+    lines = [
+        f"Chào {name},",
+        "",
+        f"VERA SPA gửi bảng lương kỳ từ {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}.",
+        "",
+    ]
+    lines.extend(f"{label}: {_email_money(amount)}" for label, amount in _payroll_email_summary_rows(row))
+    lines.extend(["", f"Số tiền thực nhận: {_email_money(row.get('Số tiền thực nhận'))}"])
+    if violations:
+        lines.extend(["", "Chi tiết vi phạm trong kỳ:"])
+        for item in violations:
+            lines.append(
+                " - " + " | ".join([
+                    _email_date(item.get("leave_date")),
+                    str(item.get("leave_reason") or ""),
+                    str(item.get("detail") or ""),
+                    _email_money(item.get("penalty")),
+                ])
+            )
+        lines.extend(["", f"Tổng vi phạm: {_email_money(row.get('Tiền phạt trong tháng'))}"])
+    lines.extend(["", "Vui lòng kiểm tra và phản hồi nếu có sai sót.", "", "Trân trọng,", "VERA SPA"])
+    return "\n".join(lines)
+
+
+def _payroll_email_html(
+    name: str,
+    start: date,
+    end: date,
+    row: dict[str, Any],
+    violations: list[dict[str, Any]],
+) -> str:
+    summary_html = "".join(
+        "<tr>"
+        f"<td style=\"padding:8px 7px;border:1px solid #dddddd;\">{escape(label)}</td>"
+        f"<td style=\"padding:8px 7px;border:1px solid #dddddd;text-align:right;white-space:nowrap;\">{escape(_email_money(amount))}</td>"
+        "</tr>"
+        for label, amount in _payroll_email_summary_rows(row)
+    )
+    violation_section = ""
+    if violations:
+        violation_rows = "".join(
+            "<tr>"
+            f"<td style=\"padding:7px 6px;border:1px solid #dddddd;white-space:nowrap;\">{escape(_email_date(item.get('leave_date')))}</td>"
+            f"<td style=\"padding:7px 6px;border:1px solid #dddddd;\">{escape(str(item.get('leave_reason') or ''))}</td>"
+            f"<td style=\"padding:7px 6px;border:1px solid #dddddd;\">{escape(str(item.get('detail') or ''))}</td>"
+            f"<td style=\"padding:7px 6px;border:1px solid #dddddd;text-align:right;white-space:nowrap;\">{escape(_email_money(item.get('penalty')))}</td>"
+            "</tr>"
+            for item in violations
+        )
+        violation_section = f"""
+          <p style="margin:26px 0 12px;font-weight:700;">Chi tiết vi phạm trong kỳ:</p>
+          <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:620px;font-size:14px;">
+            <thead><tr style="background:#a99d97;color:#111111;">
+              <th style="padding:8px 6px;border:1px solid #dddddd;width:20%;">Ngày</th>
+              <th style="padding:8px 6px;border:1px solid #dddddd;width:44%;">Lý do</th>
+              <th style="padding:8px 6px;border:1px solid #dddddd;width:14%;">Chi tiết</th>
+              <th style="padding:8px 6px;border:1px solid #dddddd;width:22%;">Phạt</th>
+            </tr></thead>
+            <tbody>{violation_rows}</tbody>
+          </table>
+          <p style="margin:14px 0 0;font-weight:700;">Tổng vi phạm: {escape(_email_money(row.get('Tiền phạt trong tháng')))}</p>
+        """
+    return f"""<!doctype html>
+<html lang="vi"><body style="margin:0;padding:0;background:#ffffff;color:#222222;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;">
+  <div style="max-width:680px;padding:24px;">
+    <p style="margin:0 0 20px;">Chào <strong>{escape(name)}</strong>,</p>
+    <p style="margin:0 0 14px;">VERA SPA gửi bảng lương kỳ từ <strong>{start.strftime('%d/%m/%Y')}</strong> đến <strong>{end.strftime('%d/%m/%Y')}</strong>.</p>
+    <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:520px;font-size:14px;">
+      <thead><tr style="background:#a99d97;color:#111111;">
+        <th style="padding:8px 7px;border:1px solid #dddddd;width:56%;">Khoản mục</th>
+        <th style="padding:8px 7px;border:1px solid #dddddd;width:44%;">Số tiền</th>
+      </tr></thead>
+      <tbody>{summary_html}</tbody>
+    </table>
+    <p style="margin:14px 0 0;font-weight:700;">Số tiền thực nhận: {escape(_email_money(row.get('Số tiền thực nhận')))}</p>
+    {violation_section}
+    <p style="margin:18px 0 0;">Vui lòng kiểm tra và phản hồi nếu có sai sót.</p>
+    <p style="margin:18px 0 0;">Trân trọng,<br><strong>VERA SPA</strong></p>
+  </div>
+</body></html>"""
 
 
 def _period(month: str, period_no: int) -> tuple[date, date, str]:
@@ -1164,7 +1292,17 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                        COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name
                 FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
             """)).mappings().all()
+            violation_rows = conn.execute(text("""
+                SELECT employee_name,leave_date,leave_reason,detail,COALESCE(penalty,0) penalty
+                FROM leave_records
+                WHERE leave_date BETWEEN :start AND :end
+                  AND COALESCE(penalty,0) > 0
+                ORDER BY leave_date,COALESCE(source_row,0),id
+            """), {"start": body.start, "end": body.end}).mappings().all()
         employees = {norm(item["username"]): dict(item) for item in employee_rows}
+        violations_by_employee: dict[str, list[dict[str, Any]]] = {}
+        for item in violation_rows:
+            violations_by_employee.setdefault(norm(item["employee_name"]), []).append(dict(item))
         sent, failed = [], []
         try:
             smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20)
@@ -1185,17 +1323,16 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                     failed.append({"employee": name, "error": "Chưa có email hợp lệ"})
                     continue
                 message = EmailMessage()
-                message["Subject"] = f"VERA SPA · Bảng lương {label}"
-                message["From"] = sender
+                message["Subject"] = _payroll_email_subject(employee["username"], body.start, body.end)
+                message["From"] = formataddr(("VERA SPA", sender))
                 message["To"] = recipient
-                details = [
-                    ("Tiền lương", row["Tiền Lương"]), ("Tiền trách nhiệm / hỗ trợ hoàn lại", row["Tiền Hỗ Trợ Hoàn Lại"]),
-                    ("Hoàn trả tiền tích lũy", row["Hoàn trả tiền tích lũy"]), ("Tích lũy", -row["Tích lũy"]),
-                    ("Chi phí sinh hoạt", -row["Chi Phí Sinh Hoạt"]), ("Vi phạm trong kỳ", -row["Tiền phạt trong tháng"]),
-                    ("Nghĩa vụ vi phạm kỳ trước", -row["Vi phạm kỳ trước"]), ("Tiền ứng", -row["Tiền ứng lương"]),
-                    ("Hỗ trợ Locker", -row["Tiền hỗ trợ Locker"]), ("THỰC NHẬN", row["Số tiền thực nhận"]),
-                ]
-                message.set_content("\n".join([f"Kính gửi {name},", f"Bảng lương {label}:"] + [f"- {title}: {amount:,.0f} đ" for title, amount in details] + ["", "VERA SPA"]).replace(",", "."))
+                employee_violations = violations_by_employee.get(norm(employee["username"]), [])
+                message.set_content(_payroll_email_text(
+                    name, body.start, body.end, row, employee_violations,
+                ))
+                message.add_alternative(_payroll_email_html(
+                    name, body.start, body.end, row, employee_violations,
+                ), subtype="html")
                 attachment = _workbook([row], [field for field in DRAFT_FIELDS if field != "Email"], "Bảng lương")
                 message.add_attachment(attachment, maintype="application", subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"Bang_luong_{row.get('Tên Hệ thống','nhan_vien')}.xlsx")
                 try:
