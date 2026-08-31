@@ -10,7 +10,7 @@ from sqlalchemy import text
 from vera_leave_registration_shared import count_unique_leave_people, summarize_leave_days
 
 
-LEAVE_DAY_STATS_RELEASE = "leave-day-stats-2026-08-29.1"
+LEAVE_DAY_STATS_RELEASE = "leave-day-stats-2026-09-01.1-all-visible"
 
 
 def _remove_route(app, path: str, method: str) -> None:
@@ -34,7 +34,13 @@ def install_leave_day_stats_routes(
     weekday_short_label,
     identity_type,
 ) -> None:
-    """Install unique-person daily counts and actual-day list totals."""
+    """Install unique-person daily counts and actual-day list totals.
+
+    Every account that can open the leave feature sees the same operational
+    leave statistics. The optional employee filter only narrows the requested
+    view; it is never silently replaced with the logged-in employee. Penalty
+    money remains protected separately by employee_penalty_view.
+    """
     if getattr(app.state, "leave_day_stats_installed", False):
         return
 
@@ -102,7 +108,7 @@ def install_leave_day_stats_routes(
             if can_view_penalty:
                 item["total_penalty"] = bucket["total_penalty"]
             output.append(item)
-        return {"days": output, "release": LEAVE_DAY_STATS_RELEASE}
+        return {"days": output, "release": LEAVE_DAY_STATS_RELEASE, "scope": "all_registered_employees"}
 
     @app.get("/v2/leave/list-stats")
     def leave_list_day_stats(
@@ -117,8 +123,6 @@ def install_leave_day_stats_routes(
             raise HTTPException(400, "Khoảng thống kê tối đa là 366 ngày.")
 
         employee_filter = employee.strip()
-        if str(ident.role or "").strip().lower() not in {"admin", "quanly", "letan"}:
-            employee_filter = ident.employee_username
 
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "leave")
@@ -136,6 +140,10 @@ def install_leave_day_stats_routes(
         summary = summarize_leave_days(rows)
         if not can_view_penalty:
             summary.pop("total_penalty", None)
-        return {"summary": summary, "release": LEAVE_DAY_STATS_RELEASE}
+        return {
+            "summary": summary,
+            "release": LEAVE_DAY_STATS_RELEASE,
+            "scope": "employee_filter" if employee_filter else "all_registered_employees",
+        }
 
     app.state.leave_day_stats_installed = True
