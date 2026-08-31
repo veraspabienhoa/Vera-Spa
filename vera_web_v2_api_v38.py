@@ -34,6 +34,7 @@ from vera_web_v2_purchase_reconcile import install_purchase_reconcile_routes
 from vera_web_v2_purchase_reconcile_alert_check import install_purchase_reconcile_alert_check
 from vera_web_v2_purchase_reconcile_v2 import install_purchase_reconcile_v2
 from vera_web_v2_revenue_leave_list import install_revenue_leave_list_routes
+from vera_web_v2_revenue_report_target import install_revenue_report_target
 from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
@@ -106,6 +107,11 @@ install_revenue_leave_list_routes(
     norm=_api._norm,
     progressive_key=_api._progressive_key,
     google_client=_api._google_client,
+)
+# "Xem báo cáo" always opens the Input tab and focuses its latest transaction row.
+install_revenue_report_target(
+    _shared.app,
+    current_identity=_api.current_identity,
 )
 
 install_purchase_reconcile_routes(
