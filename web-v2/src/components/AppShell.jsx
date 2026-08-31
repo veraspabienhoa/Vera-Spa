@@ -21,6 +21,30 @@ const items = [
   { id: 'storage', label: 'Bộ nhớ hệ thống', icon: HardDrive, ready: true, permission: 'storage_admin_view' },
 ]
 
+const BREAK_ALERT_DISMISSED_KEY = 'vera-break-alerts-admin-dismissed'
+
+const readDismissedBreakAlerts = () => {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(BREAK_ALERT_DISMISSED_KEY) || '[]')
+    return Array.isArray(value) ? value.filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
+const writeDismissedBreakAlerts = (tags) => {
+  try { window.localStorage.setItem(BREAK_ALERT_DISMISSED_KEY, JSON.stringify([...new Set(tags.filter(Boolean))])) } catch { /* ignore storage failures */ }
+}
+
+const filterAdminDismissedAlerts = (alerts, role) => {
+  if (role !== 'admin') return alerts
+  const activeTags = new Set((alerts || []).map((item) => item.tag).filter(Boolean))
+  const dismissed = readDismissedBreakAlerts().filter((tag) => activeTags.has(tag))
+  writeDismissedBreakAlerts(dismissed)
+  const dismissedSet = new Set(dismissed)
+  return (alerts || []).filter((item) => !item.tag || !dismissedSet.has(item.tag))
+}
+
 const durationText = (seconds) => {
   const total = Math.max(0, Math.floor(Math.abs(Number(seconds || 0))))
   const hours = Math.floor(total / 3600)
@@ -72,7 +96,7 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
       try {
         const result = await checkAttendanceBreakAlerts()
         if (stopped) return
-        const alerts = result.alerts || []
+        const alerts = filterAdminDismissedAlerts(result.alerts || [], role)
         setBreakAlerts(alerts)
         setClockMs(Date.now())
         await syncPersistentBreakNotifications(alerts)
@@ -107,6 +131,16 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
     setBirthdayNotice(null)
   }
 
+  const dismissBreakAlert = (alert) => {
+    if (String(user?.role || '').toLowerCase() !== 'admin' || !alert?.tag) return
+    const dismissed = new Set(readDismissedBreakAlerts())
+    dismissed.add(alert.tag)
+    writeDismissedBreakAlerts([...dismissed])
+    const next = breakAlerts.filter((item) => item.tag !== alert.tag)
+    setBreakAlerts(next)
+    void syncPersistentBreakNotifications(next)
+  }
+
   const choose = (id, ready) => {
     if (!ready || (user?.must_change_password && id !== 'profile')) return
     onPageChange(id)
@@ -119,7 +153,7 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
       {/* Legacy full reload used window.location.reload(); current refresh remounts only the visible page. */}
       <style>{`
         .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:700;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
-        .break-alert-stack{position:fixed;top:82px;right:18px;z-index:1200;width:min(560px,calc(100vw - 36px));max-height:calc(100vh - 100px);overflow-y:auto;display:grid;gap:9px;margin:0;pointer-events:auto}.break-alert-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:11px;align-items:flex-start;padding:13px 15px;border:2px solid #a92c25;border-radius:14px;background:#fff3f1;box-shadow:0 8px 24px rgba(120,24,17,.18)}.break-alert-card.employee{border-color:#c98212;background:#fff8e8}.break-alert-card svg{margin-top:2px;color:#a92c25}.break-alert-card.employee svg{color:#a46708}.break-alert-card strong{display:block;font-size:15px;color:#8d211b}.break-alert-card.employee strong{color:#8b5a05}.break-alert-card span{display:block;margin-top:3px;font-size:13px;line-height:1.45;color:#543d38}.break-alert-card .break-alert-timer{font-weight:900;font-size:14px}.break-alert-card .break-alert-source{font-size:12px;color:#79615c}
+        .break-alert-stack{position:fixed;top:82px;right:18px;z-index:1200;width:min(560px,calc(100vw - 36px));max-height:calc(100vh - 100px);overflow-y:auto;display:grid;gap:9px;margin:0;pointer-events:auto}.break-alert-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:11px;align-items:flex-start;padding:13px 15px;border:2px solid #a92c25;border-radius:14px;background:#fff3f1;box-shadow:0 8px 24px rgba(120,24,17,.18)}.break-alert-card.employee{border-color:#c98212;background:#fff8e8}.break-alert-card svg{margin-top:2px;color:#a92c25}.break-alert-card.employee svg{color:#a46708}.break-alert-card strong{display:block;font-size:15px;color:#8d211b}.break-alert-card.employee strong{color:#8b5a05}.break-alert-card span{display:block;margin-top:3px;font-size:13px;line-height:1.45;color:#543d38}.break-alert-card .break-alert-timer{font-weight:900;font-size:14px}.break-alert-actions{display:flex;justify-content:flex-end;margin-top:9px}.break-alert-dismiss{display:inline-flex;align-items:center;gap:5px;border:1px solid #9f3028;background:#fff;color:#8d211b;border-radius:9px;padding:6px 9px;font-size:12px;font-weight:800;cursor:pointer}.break-alert-dismiss:hover{background:#fde9e6}.break-alert-dismiss svg{margin:0;color:inherit}
         @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05}.break-alert-stack{top:70px;right:8px;width:calc(100vw - 16px);max-height:calc(100vh - 82px)}.break-alert-card{padding:12px}}
         @media(max-width:430px){.topbar-title.vera-script-tagline{font-size:20px;white-space:normal}}
       `}</style>
@@ -171,7 +205,7 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
                 <strong>{alert.audience === 'staff' ? `NHÂN VIÊN VÀO LẠI TRỄ · ${alert.employee}` : `NHẮC VÀO LẠI SAU NGHỈ · ${alert.employee}`}</strong>
                 <span>Nghỉ lúc {alert.break_out} · phải FaceID vào lại lúc {alert.deadline} · {alert.planned_minutes} phút nghỉ.</span>
                 <span className="break-alert-timer">{liveAlertTiming(alert, clockMs)}</span>
-                <span className="break-alert-source">Nguồn: {alert.source}. Thông báo này tự biến mất khi hệ thống ghi nhận FaceID vào lại.</span>
+                {String(user?.role || '').toLowerCase() === 'admin' && <div className="break-alert-actions"><button type="button" className="break-alert-dismiss" onClick={() => dismissBreakAlert(alert)}><X size={14} /> Tắt thông báo</button></div>}
               </div>
             </div>)}
           </div>}
