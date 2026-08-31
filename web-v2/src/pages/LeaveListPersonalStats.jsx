@@ -7,10 +7,7 @@ const parseDisplayDate = (value) => { const match = String(value || '').trim().m
 const sameContext = (a, b) => a.start === b.start && a.end === b.end && a.employee === b.employee && a.displayStart === b.displayStart && a.displayEnd === b.displayEnd
 
 export default function LeaveListPersonalStats({ user }) {
-  const role = String(user?.role || '').toLowerCase()
-  const isAdmin = role === 'admin'
-  const canViewListScope = ['admin', 'quanly', 'letan'].includes(role)
-  const ownEmployee = String(user?.employee_username || '').trim()
+  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const [target, setTarget] = useState(null)
   const [context, setContext] = useState({ start: '', end: '', employee: '', displayStart: '', displayEnd: '' })
   const [summary, setSummary] = useState(emptyLeaveDaySummary)
@@ -32,8 +29,8 @@ export default function LeaveListPersonalStats({ user }) {
       const rangeMatch = description.match(/Bộ lọc\s+(\d{2}\/\d{2}\/\d{4})\s*[–-]\s*(\d{2}\/\d{2}\/\d{4})/)
       if (!rangeMatch) return
       const searchValue = String(panel.querySelector('.employee-search-field input[type="search"]')?.value || '').trim()
-      const next = { start: parseDisplayDate(rangeMatch[1]), end: parseDisplayDate(rangeMatch[2]), employee: canViewListScope ? searchValue : ownEmployee, displayStart: rangeMatch[1], displayEnd: rangeMatch[2] }
-      if (!next.start || !next.end || (!canViewListScope && !next.employee)) return
+      const next = { start: parseDisplayDate(rangeMatch[1]), end: parseDisplayDate(rangeMatch[2]), employee: searchValue, displayStart: rangeMatch[1], displayEnd: rangeMatch[2] }
+      if (!next.start || !next.end) return
       if (sameContext(contextRef.current, next)) return
       contextRef.current = next
       requestRevisionRef.current += 1
@@ -54,10 +51,10 @@ export default function LeaveListPersonalStats({ user }) {
     const observer = new MutationObserver(scheduleSync); observer.observe(document.body, { childList: true, subtree: true, characterData: true })
     document.addEventListener('input', scheduleSync, true); document.addEventListener('change', scheduleSync, true); document.addEventListener('click', scheduleSync, true)
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); observer.disconnect(); document.removeEventListener('input', scheduleSync, true); document.removeEventListener('change', scheduleSync, true); document.removeEventListener('click', scheduleSync, true); if (ownedHost?.isConnected) ownedHost.remove() }
-  }, [canViewListScope, ownEmployee])
+  }, [])
 
   useEffect(() => {
-    if (!context.start || !context.end || (!canViewListScope && !context.employee)) return undefined
+    if (!context.start || !context.end) return undefined
     let cancelled = false
     const revision = ++requestRevisionRef.current
     const load = async () => {
@@ -72,13 +69,12 @@ export default function LeaveListPersonalStats({ user }) {
       }
     }
     void load(); return () => { cancelled = true }
-  }, [context.start, context.end, context.employee, canViewListScope])
+  }, [context.start, context.end, context.employee])
 
   const subtitle = useMemo(() => {
     const range = context.displayStart && context.displayEnd ? `${context.displayStart} – ${context.displayEnd}` : ''
-    if (canViewListScope) return context.employee ? `Nhân viên: ${context.employee}${range ? ` · ${range}` : ''}` : `Tất cả nhân viên${range ? ` · ${range}` : ''}`
-    return `Của bạn${range ? ` · ${range}` : ''}`
-  }, [context.displayEnd, context.displayStart, context.employee, canViewListScope])
+    return context.employee ? `Nhân viên: ${context.employee}${range ? ` · ${range}` : ''}` : `Tất cả nhân viên${range ? ` · ${range}` : ''}`
+  }, [context.displayEnd, context.displayStart, context.employee])
 
   if (!target) return null
   const stats = [
@@ -109,7 +105,7 @@ export default function LeaveListPersonalStats({ user }) {
     <section className={`leave-list-personal-summary ${isAdmin ? 'admin' : ''}`} aria-live="polite">
       <div className="leave-list-personal-summary-head"><strong>THỐNG KÊ TRONG DANH SÁCH</strong><span>{subtitle}</span></div>
       <div className="leave-list-personal-summary-grid">{stats.map((item) => <div className={`leave-list-personal-stat ${item.key}`} key={item.key}><div className="leave-list-personal-stat-label">{item.icon && <span aria-hidden="true">{item.icon}</span>}{item.label}</div><div className="leave-list-personal-stat-value">{busy ? '…' : item.value}</div></div>)}</div>
-      <div className="leave-list-personal-summary-note">Tổng ngày nghỉ/Có phép cộng theo ngày thực tế (0,5 tính đúng 0,5); Phát sinh/Không phép đếm số bản ghi.{!isAdmin && ` ${canViewListScope ? 'Tiền vi phạm không hiển thị cho tài khoản này.' : 'Chỉ tính lịch nghỉ của tài khoản đang đăng nhập; tiền vi phạm không hiển thị.'}`}</div>
+      <div className="leave-list-personal-summary-note">Tổng ngày nghỉ/Có phép cộng theo ngày thực tế (0,5 tính đúng 0,5); Phát sinh/Không phép đếm số bản ghi.{!isAdmin && ' Tiền vi phạm không hiển thị cho tài khoản này.'}</div>
       {error && <div className="leave-list-personal-summary-error">{error}</div>}
     </section>
   </>, target)
