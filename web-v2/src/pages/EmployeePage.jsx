@@ -19,8 +19,7 @@ const PROFILE_FIELDS = [
   ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'],
   ['employment_start_date', 'Ngày bắt đầu làm'], ['phone', 'Điện thoại'],
   ['email', 'Email'], ['address', 'Địa chỉ'], ['bank_account', 'Số tài khoản ngân hàng'],
-  ['bank_name', 'Tên ngân hàng'], ['monthly_generated', 'Phát sinh tháng'],
-  ['monthly_leave', 'Có phép tháng'], ['annual_leave', 'Phép năm'],
+  ['bank_name', 'Tên ngân hàng'],
 ]
 
 const REQUIRED_PROFILE_FIELDS = [
@@ -240,7 +239,6 @@ export default function EmployeePage({ user }) {
     const payload = { ...profileDraft }
     payload.birth_date = datePayload(payload.birth_date)
     payload.employment_start_date = datePayload(payload.employment_start_date)
-    for (const field of ['monthly_generated', 'monthly_leave', 'annual_leave']) payload[field] = Number(payload[field] || 0)
     const result = await veraApi.updateStaff(profileUser, payload)
     setProfileUser('')
     await load(true)
@@ -321,12 +319,11 @@ export default function EmployeePage({ user }) {
       </section>}
 
       {profileUser && <section className="panel staff-form-panel">
-        <div className="panel-title-row"><div><h2>SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân và hạn mức phép.</p></div></div>
+        <div className="panel-title-row"><div><h2>SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div></div>
         <div className="staff-form-grid">
           {PROFILE_FIELDS.map(([field, label]) => {
             const isDate = field.includes('date')
-            const isNumber = ['monthly_generated', 'monthly_leave', 'annual_leave'].includes(field)
-            return <label key={field}>{label}<input type={isDate ? 'date' : isNumber ? 'number' : 'text'} min={isNumber ? '0' : undefined} step={isNumber ? '0.5' : undefined} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })} /></label>
+            return <label key={field}>{label}<input type={isDate ? 'date' : 'text'} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })} /></label>
           })}
           <div className="staff-form-actions span-2"><button className="secondary-button" onClick={() => setProfileUser('')}>Hủy</button><button className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={17} /> Lưu hồ sơ</button></div>
         </div>
