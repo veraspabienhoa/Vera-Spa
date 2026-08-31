@@ -156,8 +156,14 @@ Deno.serve(async (req: Request) => {
     }
     let authUserId = profile?.auth_user_id ? String(profile.auth_user_id) : "";
     if (authUserId) {
+      // Username renames keep the same auth_user_id through the profile FK.
+      // Align the deterministic internal auth email with the new canonical
+      // username before returning it to the browser for sign-in.
       const { error } = await admin.auth.admin.updateUserById(authUserId, {
-        password: ephemeralPassword, email_confirm: true, user_metadata: metadata,
+        email: internalEmail,
+        password: ephemeralPassword,
+        email_confirm: true,
+        user_metadata: metadata,
       });
       if (error) throw error;
     } else {
@@ -171,7 +177,10 @@ Deno.serve(async (req: Request) => {
         authUser = (listed.users || []).find((user) => String(user.email || "").toLowerCase() === internalEmail.toLowerCase()) || null;
         if (!authUser?.id) throw createError;
         const { error } = await admin.auth.admin.updateUserById(authUser.id, {
-          password: ephemeralPassword, email_confirm: true, user_metadata: metadata,
+          email: internalEmail,
+          password: ephemeralPassword,
+          email_confirm: true,
+          user_metadata: metadata,
         });
         if (error) throw error;
       } else {
