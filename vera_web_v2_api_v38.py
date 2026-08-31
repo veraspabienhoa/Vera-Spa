@@ -37,6 +37,7 @@ from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
+from vera_web_v2_system_name import install_system_name_routes
 from vera_web_v2_violation_unlimited import install_violation_unlimited
 from vera_web_v2_work_schedule import install_work_schedule_routes
 from vera_web_v2_work_schedule_permissions import install_work_schedule_permissions
@@ -60,6 +61,7 @@ install_payroll_saved_edit_routes(_shared.app, engine_instance=_api._engine_inst
 install_staff_security_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
 install_staff_status_sort(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_work_schedule_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, feature_allowed=_api._feature_allowed)
 install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, vn_tz=_api.VN_TZ)
