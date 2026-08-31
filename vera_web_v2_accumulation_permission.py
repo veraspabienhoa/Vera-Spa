@@ -14,6 +14,14 @@ from typing import Any, Callable
 from fastapi import Depends
 
 import vera_web_v2_permissions as permissions
+from vera_web_v2_payroll_timesoft_upload_fix import install_payroll_timesoft_upload_fix
+
+
+# The API V3.8 imports this module during startup after the canonical Payroll
+# routes have been registered.  Patching the module global here means the
+# existing calculate route automatically uses the resilient TimeSoft reader
+# without replacing the payroll calculation or permission flow.
+install_payroll_timesoft_upload_fix()
 
 
 RELEASE = "accumulation-permission-2026-09-01.1"
