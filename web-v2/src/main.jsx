@@ -4,6 +4,7 @@ import App from './App.jsx'
 import { startPurchaseReconcileAlertWatcher } from './lib/purchaseReconcileAlerts'
 import { registerVeraServiceWorker } from './lib/pushNotifications'
 import './styles.css'
+import './visibility-cleanup.css'
 
 void registerVeraServiceWorker().catch(() => {})
 startPurchaseReconcileAlertWatcher()
