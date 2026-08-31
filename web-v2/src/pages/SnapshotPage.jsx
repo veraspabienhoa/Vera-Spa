@@ -1,5 +1,5 @@
-import { CalendarDays, Download, RefreshCw, ScanLine, Search, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CalendarDays, Download, RefreshCw, ScanLine, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -26,6 +26,27 @@ const rangeFor = (filter) => {
 }
 const FILTERS = ['Hôm Qua', 'Hôm nay', 'Tuần Trước', 'Tuần này', 'Tháng trước', 'Tháng này', 'Tùy chỉnh']
 const emptyFilters = { employee: '', department: '', shift: '' }
+const normalizedFilters = (values) => ({
+  employee: values.employee.trim(),
+  department: values.department.trim(),
+  shift: values.shift.trim(),
+})
+const minutes = (value) => Math.max(0, Number(value) || 0)
+
+const startStatusFor = (item) => {
+  if (!item.check_in) return { label: 'Chưa có FaceID đầu ca', detail: 'Chưa xác định giờ vào', tone: 'attendance-warning' }
+  const late = minutes(item.late_minutes)
+  if (late > 0) return { label: 'Đi trễ', detail: `Trễ ${late} phút`, tone: 'attendance-warning' }
+  return { label: 'Đúng giờ', detail: 'Không trễ', tone: 'attendance-ok' }
+}
+
+const breakReturnStatusFor = (item) => {
+  if (!item.break_enabled) return { label: 'Không áp dụng', detail: 'Ca không áp dụng nghỉ giữa ca', tone: '' }
+  if (!item.break_out || !item.break_in) return { label: 'Chưa đủ FaceID vào lại', detail: item.break_status || 'Chưa xác định', tone: 'attendance-warning' }
+  const late = minutes(item.break_over_minutes)
+  if (late > 0) return { label: 'Vào lại trễ', detail: `Trễ ${late} phút`, tone: 'attendance-warning' }
+  return { label: 'Vào lại đúng giờ', detail: 'Không trễ', tone: 'attendance-ok' }
+}
 
 async function authHeaders() {
   const session = await getCurrentSession()
@@ -70,6 +91,7 @@ export default function SnapshotPage({ user }) {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  const requestRevisionRef = useRef(0)
   const summary = useMemo(() => ({
     employees: records.length,
     breaks: records.filter((item) => item.break_out && item.break_in).length,
@@ -86,16 +108,33 @@ export default function SnapshotPage({ user }) {
   }, [applied, end, start])
 
   const load = useCallback(async () => {
+    const revision = requestRevisionRef.current + 1
+    requestRevisionRef.current = revision
     setBusy(true); setError('')
     try {
       const result = await requestJson(`/v2/snapshot?${queryString()}`)
+      if (revision !== requestRevisionRef.current) return
       setRecords(result.records || [])
       setOptions(result.filters || { employees: [], departments: [], shifts: [] })
-    } catch (e) { setError(e.message || 'Không tải được dữ liệu chấm công.') }
-    finally { setBusy(false) }
+    } catch (e) {
+      if (revision === requestRevisionRef.current) setError(e.message || 'Không tải được dữ liệu chấm công.')
+    } finally {
+      if (revision === requestRevisionRef.current) setBusy(false)
+    }
   }, [queryString])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const next = normalizedFilters(filters)
+      setApplied((current) => (
+        current.employee === next.employee && current.department === next.department && current.shift === next.shift
+          ? current
+          : next
+      ))
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [filters])
 
   const choosePeriod = (next) => {
     setPeriod(next)
@@ -104,16 +143,11 @@ export default function SnapshotPage({ user }) {
     setStart(nextStart); setEnd(nextEnd)
   }
 
-  const applyFilters = () => setApplied({
-    employee: filters.employee.trim(),
-    department: filters.department.trim(),
-    shift: filters.shift.trim(),
-  })
   const clearFilters = () => { setFilters(emptyFilters); setApplied(emptyFilters) }
 
   const exportExcel = async () => {
     setExporting(true); setError('')
-    try { await downloadExcel(`/v2/snapshot/export.xlsx?${queryString()}`, 'VERA_ChamCong.xlsx') }
+    try { await downloadExcel(`/v2/snapshot/export.xlsx?${queryString(normalizedFilters(filters))}`, 'VERA_ChamCong.xlsx') }
     catch (e) { setError(e.message || 'Không export được Chấm công.') }
     finally { setExporting(false) }
   }
@@ -126,6 +160,7 @@ export default function SnapshotPage({ user }) {
       .attendance-search-actions{display:flex;gap:7px}.attendance-date-custom{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
       .attendance-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.attendance-kpi{padding:14px;border:1px solid var(--line,#dfe8e2);border-radius:14px;background:#f8fbf9}.attendance-kpi strong{display:block;font-size:24px;color:#173d31}.attendance-kpi span{font-size:12px;color:#63736d}
       .attendance-break{min-width:190px}.attendance-break strong{display:block}.attendance-break small{display:block;margin-top:4px}.attendance-source{color:#6d7d77}.attendance-warning{color:#a33b32;font-weight:800}.attendance-ok{color:#28705a;font-weight:800}
+      .attendance-status-cell{min-width:150px}.attendance-status-cell strong,.attendance-status-cell small{display:block}.attendance-status-cell small{margin-top:4px}
       @media(max-width:820px){.attendance-search-grid{grid-template-columns:1fr}.attendance-search-actions{width:100%}.attendance-search-actions button{flex:1}.attendance-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.attendance-filter-buttons button:last-child{grid-column:1/-1}}
       @media(max-width:820px){.attendance-kpis{grid-template-columns:repeat(2,1fr)}}
     `}</style>
@@ -142,7 +177,7 @@ export default function SnapshotPage({ user }) {
           <label>Tên nhân viên<input type="search" value={filters.employee} onChange={(e) => setFilters({...filters, employee:e.target.value})} placeholder="Tìm tên nhân viên" list="attendance-employees" /></label>
           <label>Bộ phận<input type="search" value={filters.department} onChange={(e) => setFilters({...filters, department:e.target.value})} placeholder="Tìm bộ phận" list="attendance-departments" /></label>
           <label>Ca làm việc<input type="search" value={filters.shift} onChange={(e) => setFilters({...filters, shift:e.target.value})} placeholder="Tìm ca làm việc" list="attendance-shifts" /></label>
-          <div className="attendance-search-actions"><button className="primary-button" type="button" onClick={applyFilters}><Search size={16}/> Tìm</button>{Object.values(applied).some(Boolean) && <button className="secondary-button" type="button" onClick={clearFilters}><X size={16}/> Bỏ lọc</button>}</div>
+          {Object.values(filters).some(Boolean) && <div className="attendance-search-actions"><button className="secondary-button" type="button" onClick={clearFilters}><X size={16}/> Bỏ lọc</button></div>}
           <datalist id="attendance-employees">{(options.employees || []).map((value) => <option key={value} value={value}/>)}</datalist>
           <datalist id="attendance-departments">{(options.departments || []).map((value) => <option key={value} value={value}/>)}</datalist>
           <datalist id="attendance-shifts">{(options.shifts || []).map((value) => <option key={value} value={value}/>)}</datalist>
@@ -153,6 +188,18 @@ export default function SnapshotPage({ user }) {
 
     <section className="panel"><div className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{records.length} bản ghi · {start} → {end}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div>
       <div className="attendance-kpis"><div className="attendance-kpi"><strong>{summary.employees}</strong><span>Bản ghi chấm công</span></div><div className="attendance-kpi"><strong>{summary.breaks}</strong><span>Đủ cặp nghỉ giữa ca</span></div><div className="attendance-kpi"><strong>{summary.over}</strong><span>Nghỉ quá quy định</span></div><div className="attendance-kpi"><strong>{summary.incomplete}</strong><span>Thiếu FaceID nghỉ</span></div></div>
-      <div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Ca làm việc</th><th>Vào ca</th><th>Nghỉ giữa ca</th><th>FaceID / Ra ca</th><th>Trạng thái</th><th>Tổng giờ</th></tr></thead><tbody>{records.map((item, index) => <tr key={`${item.date}-${item.employee_code}-${item.check_in}-${index}`}><td>{item.date}</td><td><strong>{item.employee_name}</strong><small>{item.employee_code} · {item.break_department || '—'}</small></td><td>{item.shift || '—'}<small>{item.shift_start || '—'} – {item.shift_end || '—'}</small></td><td><strong>{item.check_in || '—'}</strong><small>{item.arrival_status || 'Chưa xác định'} · trễ {item.late_minutes || 0} phút</small></td><td className="attendance-break"><strong>{item.break_out || '—'} → {item.break_in || '—'}</strong><small>{item.break_actual_minutes || 0}/{item.break_planned_minutes || 0} phút</small><small className={Number(item.break_over_minutes || 0) > 0 ? 'attendance-warning' : 'attendance-ok'}>{item.break_status || '—'}</small><small className="attendance-source">{item.break_source || item.break_method || ''}</small></td><td><strong>Cuối: {item.faceid_last || '—'}</strong><small>Ra ca: {item.check_out || '—'}</small><small>{(item.punch_times || []).join(' · ')}</small></td><td>{item.departure_status || '—'}<small>Về sớm {item.early_minutes || 0} phút</small></td><td>{item.total_minutes || 0} phút<small>{item.punch_count || item.raw_faceid_count || 0} lần chấm</small></td></tr>)}</tbody></table></div>{!records.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
+      <div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Ca làm việc</th><th>Tình trạng đầu ca</th><th>Nghỉ giữa ca</th><th>Tình trạng vào lại sau nghỉ</th><th>Tổng giờ</th></tr></thead><tbody>{records.map((item, index) => {
+        const startStatus = startStatusFor(item)
+        const returnStatus = breakReturnStatusFor(item)
+        return <tr key={`${item.date}-${item.employee_code}-${item.check_in}-${index}`}>
+          <td>{item.date}</td>
+          <td><strong>{item.employee_name}</strong><small>{item.employee_code} · {item.break_department || '—'}</small></td>
+          <td>{item.shift || '—'}<small>{item.shift_start || '—'} – {item.shift_end || '—'}</small></td>
+          <td className="attendance-status-cell"><strong className={startStatus.tone}>{startStatus.label}</strong><small>FaceID: {item.check_in || '—'}</small><small>{startStatus.detail}</small></td>
+          <td className="attendance-break"><strong>{item.break_out || '—'} → {item.break_in || '—'}</strong><small>{item.break_actual_minutes || 0}/{item.break_planned_minutes || 0} phút</small><small>{item.break_status || '—'}</small><small className="attendance-source">{item.break_source || item.break_method || ''}</small></td>
+          <td className="attendance-status-cell"><strong className={returnStatus.tone}>{returnStatus.label}</strong><small>{returnStatus.detail}</small><small>FaceID vào lại: {item.break_in || '—'}</small></td>
+          <td>{item.total_minutes || 0} phút<small>{item.punch_count || item.raw_faceid_count || 0} lần chấm</small></td>
+        </tr>
+      })}</tbody></table></div>{!records.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
   </div>
 }
