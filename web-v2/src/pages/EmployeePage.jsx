@@ -2,7 +2,7 @@ import {
   BriefcaseBusiness, Download, FilePenLine, LoaderCircle, LockKeyhole, Plus,
   RefreshCw, Save, Search, Trash2, UserCheck, UserRoundCog, UsersRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 
 const ROLE_LABELS = {
@@ -102,6 +102,8 @@ export default function EmployeePage({ user }) {
   const [createForm, setCreateForm] = useState(EMPTY_CREATE)
   const [profileUser, setProfileUser] = useState('')
   const [profileDraft, setProfileDraft] = useState({})
+  const [profileScrollRequest, setProfileScrollRequest] = useState(0)
+  const profileSectionRef = useRef(null)
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true)
@@ -119,6 +121,14 @@ export default function EmployeePage({ user }) {
   }
 
   useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (!profileScrollRequest) return undefined
+    const frame = window.requestAnimationFrame(() => {
+      profileSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [profileScrollRequest])
 
   const visible = useMemo(() => {
     const employees = data?.employees || []
@@ -227,6 +237,7 @@ export default function EmployeePage({ user }) {
       field,
       field.includes('date') ? toInputDate(employee[field]) : employee[field] ?? '',
     ])))
+    setProfileScrollRequest((request) => request + 1)
   }
 
   const changeEmployeeSearch = (value) => {
@@ -318,7 +329,7 @@ export default function EmployeePage({ user }) {
         </form>
       </section>}
 
-      {profileUser && <section className="panel staff-form-panel">
+      {profileUser && <section ref={profileSectionRef} className="panel staff-form-panel" style={{ scrollMarginTop: 128 }}>
         <div className="panel-title-row"><div><h2>SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div></div>
         <div className="staff-form-grid">
           {PROFILE_FIELDS.map(([field, label]) => {
