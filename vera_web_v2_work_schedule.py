@@ -104,6 +104,21 @@ def _allowed_department(conn, ident, department: str, feature_allowed) -> bool:
     return bool(feature_allowed(conn, ident, _feature_for_department(department)))
 
 
+def _employee_catalog(conn, department: str) -> list[dict[str, Any]]:
+    """Schedule viewers do not need the broad staff_list permission."""
+    rows = conn.execute(text("""
+        SELECT username,
+               COALESCE(NULLIF(full_name,''), username) AS full_name,
+               lower(COALESCE(role,'')) AS role,
+               COALESCE(payload->>'Trạng thái làm việc','') AS employment_status
+        FROM employees
+        WHERE lower(COALESCE(role,''))=:department
+          AND COALESCE(payload->>'__deleted','false') <> 'true'
+        ORDER BY lower(COALESCE(NULLIF(full_name,''), username)), lower(username)
+    """), {"department": department}).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def _validate_row(row: ScheduleRow) -> tuple[str, str]:
     """Validate and normalize schedule-specific fields."""
     start_time = str(row.start_time or "").strip()
@@ -184,6 +199,7 @@ def install_work_schedule_routes(
                 params["departments"] = allowed_departments
             sql += " ORDER BY department, employee_name, employee_username, work_date"
             rows = conn.execute(text(sql), params).mappings().all()
+            employees = _employee_catalog(conn, dep) if dep else []
 
         return {
             "ok": True,
@@ -191,6 +207,7 @@ def install_work_schedule_routes(
             "end": end.isoformat(),
             "shift_definitions": SHIFT_DEFINITIONS,
             "rows": [dict(row) for row in rows],
+            "employees": employees,
             "can_edit": _role(ident) in {"admin", "quanly"},
             "allowed_departments": allowed_departments,
             "assignment_mode": "daily",
