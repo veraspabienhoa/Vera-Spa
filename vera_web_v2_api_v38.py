@@ -10,6 +10,8 @@ from vera_web_v2_attendance_v42 import install_attendance_v42
 from vera_web_v2_attendance_break_window import install_attendance_break_window
 from vera_web_v2_attendance_break_alerts import install_attendance_break_alerts
 from vera_web_v2_attendance_break_dispatch import install_attendance_break_dispatch
+from vera_web_v2_break_alert_control import install_break_alert_control
+from vera_web_v2_break_return_penalty import install_break_return_penalty
 from vera_web_v2_auto_check import install_auto_check_routes
 from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
@@ -139,8 +141,29 @@ install_attendance_break_alerts(
 # reconstruction, so a late-entered Về sớm record can still trigger Auto Check
 # from the employee's already-recorded Giờ ra.
 install_outside_leave_rule(_shared.app, engine_instance=_api._engine_instance)
-# Background dispatcher uses the final snapshot chain (including the same-day
-# restriction) and allows lock-screen push even when the PWA is closed.
+
+# Admin can pause/resume break notifications for every account. The control is
+# installed before return-penalty notifications so the same global switch also
+# suppresses those employee pushes while leaving the automatic penalty intact.
+install_break_alert_control(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    api_module=_api,
+    current_identity=_api.current_identity,
+    identity_type=_api.Identity,
+)
+
+# Once FaceID confirms a late return, record the official Ra ngoài vào muộn
+# violation and notify the affected employee. Open breaks are never penalized.
+install_break_return_penalty(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    api_module=_api,
+    vn_tz=_api.VN_TZ,
+)
+
+# Background dispatcher uses the final snapshot chain and allows lock-screen
+# push even when the PWA is closed.
 install_attendance_break_dispatch(
     _shared.app,
     engine_instance=_api._engine_instance,
