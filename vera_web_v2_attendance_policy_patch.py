@@ -16,6 +16,12 @@ This module keeps four business rules in one place:
    when TourVera already has a completed S=Giờ ra / U=Giờ vào pair. R=Break is
    still authoritative while the employee is actively out; after return R may
    be blank while S/U retain the completed pair, which must clear the alert.
+
+Performance patches are installed at module-import time because api_v38 imports
+this module before it installs the attendance route chain. This guarantees
+Chấm công reads only requested TimeSoft date keys and TourVera fallback reads
+only the PostgreSQL cache populated by background jobs; user requests never
+open/download the XLSM from Google Drive.
 """
 from __future__ import annotations
 
@@ -26,11 +32,19 @@ from typing import Any
 import vera_auto_check as auto_check
 import vera_web_v2_attendance_break_alerts as break_alerts
 import vera_web_v2_outside_leave_rule as outside_rule
+import vera_web_v2_tour_cache_perf as tour_cache_perf
+from vera_web_v2_attendance_query_perf import install as install_attendance_query_perf
+from vera_web_v2_tour_cache_perf import install as install_tour_cache_perf
 
 
-RELEASE = "attendance-policy-faceid-5m-tour-completed-2026-08-31-v3"
+RELEASE = "attendance-policy-faceid-5m-tour-pg-fast-2026-08-31-v4"
 EARLY_CHECKOUT_GROUP_START = time(16, 55, 0)
 TOUR_MATCH_PADDING = timedelta(minutes=5)
+
+# api_v38 imports this module before calling install_attendance_v42(). Patching
+# here ensures snapshot._records captures the optimized function from the start.
+install_attendance_query_perf()
+install_tour_cache_perf()
 
 
 def _catalog_first(catalog: dict[str, dict], names: list[str]):
@@ -109,39 +123,8 @@ def _parse_group_times(item: dict[str, Any], work_day) -> list[datetime]:
 
 
 def _tour_completed_pairs(conn, work_day) -> dict[str, dict[str, Any]]:
-    """Read completed current-day TourVera S/U pairs even after R is cleared."""
-    columns, records = break_alerts._tour_snapshot()
-    if len(columns) < 21:
-        return {}
-    name_column = break_alerts.people._find_column(columns, "Tên nhân viên")
-    if not name_column:
-        return {}
-
-    break_column = columns[17]       # R
-    break_out_column = columns[18]   # S
-    break_in_column = columns[20]    # U
-    aliases = break_alerts._employee_aliases(conn)
-    output: dict[str, dict[str, Any]] = {}
-
-    for row in records:
-        username = aliases.get(break_alerts._norm(row.get(name_column)))
-        if not username:
-            continue
-        break_out = break_alerts._parse_clock(row.get(break_out_column), work_day)
-        break_in = break_alerts._parse_clock(row.get(break_in_column), work_day)
-        if break_out is None or break_in is None or break_out.time() < time(15, 0):
-            continue
-        if break_in < break_out:
-            break_in += timedelta(days=1)
-        if break_out.date() != work_day:
-            continue
-        output[break_alerts._norm(username)] = {
-            "break_out": break_out,
-            "break_in": break_in,
-            "break_flag": str(row.get(break_column) or ""),
-            "completed_pair": True,
-        }
-    return output
+    """Read completed S/U pairs from the fresh PostgreSQL TourVera cache."""
+    return tour_cache_perf.completed_pairs(conn, work_day)
 
 
 def _completed_tour_covers_timesoft_open(
@@ -221,16 +204,15 @@ def install_attendance_policy_patch() -> None:
         result = dict(original_tour_break_map(conn, work_day))
         for key, pair in _tour_completed_pairs(conn, work_day).items():
             current = result.get(key)
-            # Active R=Break from the original map remains authoritative. Once
-            # R is blank, the persisted S/U pair confirms that the employee has
-            # already returned and can clear an old open-break alert.
+            # Active R=Break from the cached map remains authoritative. Once R
+            # is blank, persisted S/U confirms the employee has already returned.
             if not current or not str(current.get("break_flag") or "").strip():
                 result[key] = pair
         return result
 
     def apply_tour_fallback_with_completed(conn, records, start, end):
         # Preserve the existing fallback first. The original function resolves
-        # _tour_break_map at runtime, so it also sees completed S/U pairs.
+        # _tour_break_map at runtime, so it also sees PostgreSQL active breaks.
         output = original_apply_tour_fallback(conn, records, start, end)
         today = datetime.now().date()
         if not (start <= today <= end):
