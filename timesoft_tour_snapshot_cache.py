@@ -4,11 +4,13 @@ Web requests must not download the XLSM from Google Drive. The scheduled
 TimeSoft/Auto Check jobs cache that same DataFrame in PostgreSQL and Web V2
 consumes it locally.
 
-Admin may pause only the frequent Web V2 TourVera cache refresh. When paused:
+Admin may pause only the frequent cache-only Google Drive refresh. When paused:
 - the snapshot job does not download TourVera merely to refresh this cache;
-- an Auto Check run that genuinely needs TourVera may still read its workbook,
-  but the result is not written into the Web V2 cache;
-- Web V2 ignores old cache data immediately via vera_web_v2_tour_cache_perf.
+- break alerts keep running from TimeSoft plus the last same-day PostgreSQL
+  TourVera fallback;
+- if a dedicated Auto Check run already downloads TourVera for its own work,
+  that already-loaded DataFrame may still refresh PostgreSQL because doing so
+  creates no additional Google Drive request.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ from datetime import datetime
 import vera_tour_cache_control as cache_control
 
 
-RELEASE = "tourvera-postgres-cache-2026-08-31-v3-pausable"
+RELEASE = "tourvera-postgres-cache-2026-08-31-v4-alerts-continue"
 DATASET_KEY = cache_control.DATASET_KEY
 TTL_SECONDS = 15 * 60
 
@@ -42,13 +44,11 @@ def install(ts) -> None:
     state = {"loaded_during_run": False}
 
     def load_and_cache():
-        # This wrapper can also be called by a genuine Auto Check execution.
-        # Preserve that source read even when the Web V2 cache is paused.
+        # This wrapper is reached only after some workflow genuinely decided to
+        # read TourVera. Writing that already-loaded DataFrame to PostgreSQL adds
+        # no extra Google Drive request, so keep the Web V2 fallback fresh.
         df = original_load()
         state["loaded_during_run"] = True
-        if _cache_disabled(ts):
-            ts._log("TOUR CACHE PAUSED BY ADMIN: bỏ qua ghi PostgreSQL cache")
-            return df
         try:
             if df is not None and not getattr(df, "empty", True):
                 now = datetime.now(ts.VN_TZ)
@@ -58,7 +58,8 @@ def install(ts) -> None:
                     ttl_seconds=TTL_SECONDS,
                     source_version=now.isoformat(),
                 )
-                ts._log(f"TOUR CACHE: PostgreSQL {DATASET_KEY} rows={len(df)}")
+                mode = "passive" if _cache_disabled(ts) else "normal"
+                ts._log(f"TOUR CACHE {mode}: PostgreSQL {DATASET_KEY} rows={len(df)}")
         except Exception as exc:
             # Cache failure must not change existing Auto Check behaviour.
             ts._log(f"TOUR CACHE WARN: {type(exc).__name__}: {exc}")
@@ -71,7 +72,7 @@ def install(ts) -> None:
             if _cache_disabled(ts):
                 # Critical overload guard: do not touch Google Drive at all when
                 # this run would only be refreshing the Web V2 Tour cache.
-                ts._log("TOUR CACHE PAUSED BY ADMIN: bỏ qua tải TourVera cho cache")
+                ts._log("TOUR CACHE REFRESH PAUSED BY ADMIN: bỏ qua tải TourVera chỉ để làm mới cache")
                 return result
             try:
                 load_and_cache()
