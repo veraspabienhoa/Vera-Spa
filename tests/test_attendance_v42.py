@@ -56,12 +56,12 @@ class DepartureStatusFinalTests(unittest.TestCase):
 class SupportedShiftStartTests(unittest.TestCase):
     def setUp(self):
         self.reason = "Hỗ trợ Ca 1 đi trễ 2 tiếng"
-        self.allowances = {(date(2026, 8, 31), _norm("Mỹ Duyên")): (120, self.reason)}
+        self.allowances = {(date(2026, 8, 31), _norm("Nhân viên A")): (120, self.reason)}
 
     def test_checkin_before_supported_start_is_on_time(self):
         item = {
             "date": "31/08/2026",
-            "employee_name": "Mỹ Duyên",
+            "employee_name": "Nhân viên A",
             "shift_start": "10:00",
             "check_in": "31/08/2026 10:24:06",
             "late_minutes": 24,
@@ -77,7 +77,7 @@ class SupportedShiftStartTests(unittest.TestCase):
     def test_checkin_after_supported_start_uses_new_late_minutes(self):
         item = {
             "date": "31/08/2026",
-            "employee_name": "Mỹ Duyên",
+            "employee_name": "Nhân viên A",
             "shift_start": "10:00",
             "check_in": "31/08/2026 12:02:31",
             "late_minutes": 122,
