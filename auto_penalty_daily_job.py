@@ -559,8 +559,6 @@ def process_timesoft_today(client, cfg: dict, employee_map: dict, catalog: dict,
                 f"AUTO TIMESOFT SUPPORT EXCEEDED: {employee} · {work_date.strftime('%d/%m/%Y')} · "
                 f"trễ sau hỗ trợ {adjusted_minutes:.0f} phút >= ngưỡng {threshold} phút · '{support_reason}'"
             )
-            minutes = adjusted_minutes
-
         shift_start = ts._timesoft_row_value(row, ["StartWorkTime", "WorkTimeStart", "ShiftStartTime"])
         checkin_time = ts._timesoft_row_value(row, ["MachineTimeCheckInStr", "CheckInTimeStr", "CheckInTime"])
         detail = f"Auto Update TimeSoft · check-in muộn {int(round(minutes))} phút"
