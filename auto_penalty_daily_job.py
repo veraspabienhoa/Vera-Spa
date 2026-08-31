@@ -101,6 +101,7 @@ def _is_support_reason(value) -> bool:
 
 
 SUPPORT_LATE_ALLOWANCES = {
+    ts._norm("Hỗ trợ Ca 1 sau 23H đi trễ 2 tiếng"): 120,
     ts._norm("Hỗ trợ Ca 1 đi trễ 2 tiếng"): 120,
     ts._norm("Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng"): 180,
     ts._norm("Hỗ trợ Ca 2 sau 0:0H đi trễ 1 tiếng"): 60,
