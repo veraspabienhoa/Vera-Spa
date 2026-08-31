@@ -12,6 +12,7 @@ import EmployeeExactSearch from './pages/EmployeeExactSearch'
 import TourAdminCustomerCount from './pages/TourAdminCustomerCount'
 import { veraApi } from './lib/api'
 import { claimCurrentDevice, clearFreshLoginClaim, hasFreshLoginClaim, installDeviceSessionGuard } from './lib/deviceSession'
+import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 installDeviceSessionGuard()
@@ -79,6 +80,35 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => applySession(nextSession))
     return () => { mounted = false; listener.subscription.unsubscribe() }
   }, [])
+
+  // Every authenticated account keeps an already-approved Web Push endpoint
+  // synchronized with the backend. This is especially important on iPhone:
+  // once the Home Screen PWA has Notification.permission=granted, the endpoint
+  // is recreated/re-registered without another prompt and remains usable for
+  // lock-screen push while the app is not in the foreground.
+  useEffect(() => {
+    if (!session?.access_token || !profile?.employee_username) return undefined
+    let stopped = false
+    let running = false
+    const syncPush = async () => {
+      if (stopped || running) return
+      running = true
+      try { await ensureGrantedPushSubscription() } catch { /* notification sync must not block the app */ }
+      finally { running = false }
+    }
+    void syncPush()
+    const timer = window.setInterval(syncPush, 10 * 60 * 1000)
+    const onFocus = () => { void syncPush() }
+    const onVisible = () => { if (document.visibilityState === 'visible') void syncPush() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [profile?.employee_username, session?.access_token])
 
   if (loading) return <div className="boot-screen">Đang mở VERA SPA…</div>
   const user = session?.user
