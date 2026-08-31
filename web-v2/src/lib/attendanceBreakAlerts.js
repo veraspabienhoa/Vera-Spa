@@ -38,7 +38,7 @@ export async function syncPersistentBreakNotifications(alerts = []) {
     const remainingMinutes = Math.max(1, Math.ceil(Math.max(0, Number(item.remaining_seconds || 0)) / 60))
     const lateMinutes = Math.max(1, Math.ceil(Math.max(0, Number(item.late_seconds || 0)) / 60))
     const body = overdue
-      ? `${item.employee}: nghỉ từ ${item.break_out}, phải vào lại ${item.deadline}, hiện đã trễ ${lateMinutes} phút. Nguồn: ${item.source}.`
+      ? `${item.employee}: nghỉ từ ${item.break_out}, phải vào lại ${item.deadline}, hiện đã trễ ${lateMinutes} phút.`
       : `${item.employee}: còn ${remainingMinutes} phút. Nghỉ từ ${item.break_out}, phải FaceID vào lại lúc ${item.deadline}.`
     await registration.showNotification(title, {
       body,
