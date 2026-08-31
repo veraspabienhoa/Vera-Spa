@@ -13,7 +13,17 @@ self.addEventListener('push', (event) => {
     payload = { body: event.data?.text() || '' }
   }
 
+  if (payload.kind === 'attendance-break-cleared' && payload.tag) {
+    event.waitUntil((async () => {
+      const notifications = await self.registration.getNotifications({ tag: payload.tag })
+      notifications.forEach((notification) => notification.close())
+    })())
+    return
+  }
+
   const isAdminChange = payload.kind === 'admin-system-change'
+  const isBreakOverdue = payload.kind === 'attendance-break-overdue'
+  const isBreakReminder = payload.kind === 'attendance-break-reminder'
   const title = payload.title || 'VERA SPA · Lịch nghỉ thay đổi'
   const options = {
     body: payload.body || 'Một ngày bạn quan tâm vừa thay đổi số lịch nghỉ CÓ phép.',
@@ -23,24 +33,34 @@ self.addEventListener('push', (event) => {
     renotify: true,
     requireInteraction: true,
     silent: false,
-    vibrate: [220, 100, 220, 100, 360],
+    vibrate: isBreakOverdue ? [260, 120, 260, 120, 420] : [220, 100, 220, 100, 360],
     timestamp: Number(payload.timestamp || Date.now()),
     data: {
       url: payload.url || APP_URL,
       watchedDate: payload.watched_date || '',
       kind: payload.kind || '',
       changeId: payload.change_id || null,
+      employee: payload.employee || '',
+      deadline: payload.deadline || '',
     },
   }
 
   if (isAdminChange) {
-    // Admin system-change notifications must be easy to dismiss by native
-    // swipe while leave-watch alerts retain their existing sticky behavior.
+    // Admin system-change notifications remain normally dismissible.
     options.requireInteraction = false
     options.actions = [
       { action: 'open', title: 'Xem chi tiết' },
       { action: 'dismiss', title: 'Xóa' },
     ]
+  }
+
+  if (isBreakReminder) options.requireInteraction = false
+  if (isBreakOverdue) {
+    // No dismiss action is provided.  The receptionist Web V2 page also keeps
+    // a non-dismissible in-app alert and recreates this native notification if
+    // the browser/OS closes it before the employee FaceID return is recorded.
+    options.requireInteraction = true
+    options.actions = [{ action: 'open', title: 'Mở VERA SPA' }]
   }
 
   event.waitUntil(self.registration.showNotification(title, options))
