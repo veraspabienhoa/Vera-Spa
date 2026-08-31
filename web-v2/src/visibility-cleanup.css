@@ -1,0 +1,10 @@
+/* User-facing cleanup: keep the data/features, remove the requested explanatory copy. */
+.revenue-page .page-heading .revenue-source,
+.revenue-page .revenue-tip-editor > small,
+.revenue-page > .revenue-formula,
+.revenue-page > .revenue-meta,
+.revenue-page .reconcile-head p,
+.revenue-page .reconcile-panel > .revenue-meta:has(strong),
+.attendance-page .page-heading p {
+  display: none !important;
+}
