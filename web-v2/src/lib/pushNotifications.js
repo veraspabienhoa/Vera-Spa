@@ -50,6 +50,35 @@ export const syncExistingPushSubscription = async () => {
   return { ...support, permission: Notification.permission, subscribed: Boolean(subscription) }
 }
 
+// Used after every authenticated login/focus. If the user has already granted
+// notification permission, silently create/recover the PushSubscription and
+// register it against the current VERA account. No permission prompt is shown,
+// so this also works safely for an installed iPhone/iPad Home Screen PWA.
+export const ensureGrantedPushSubscription = async () => {
+  const support = getPushSupport()
+  if (!support.supported || Notification.permission !== 'granted') {
+    return { ...support, permission: 'Notification' in window ? Notification.permission : 'unsupported', subscribed: false }
+  }
+
+  const config = await veraApi.pushConfig()
+  if (!config.enabled || !config.public_key) {
+    return { ...support, permission: Notification.permission, subscribed: false, serverEnabled: false }
+  }
+
+  const registration = await registerVeraServiceWorker()
+  if (!registration) return { ...support, permission: Notification.permission, subscribed: false }
+
+  let subscription = await registration.pushManager.getSubscription()
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: decodeVapidKey(config.public_key),
+    })
+  }
+  await veraApi.registerPushSubscription(subscription.toJSON())
+  return { ...support, permission: Notification.permission, subscribed: true, serverEnabled: true }
+}
+
 export const enablePushNotifications = async () => {
   const support = getPushSupport()
   if (!support.supported) throw new Error(support.reason)
@@ -59,18 +88,7 @@ export const enablePushNotifications = async () => {
       ? 'Quyền thông báo đang bị chặn. Hãy bật lại trong Cài đặt trình duyệt/điện thoại.'
       : 'Bạn chưa cho phép nhận thông báo.')
   }
-  const config = await veraApi.pushConfig()
-  if (!config.enabled || !config.public_key) throw new Error('Máy chủ chưa bật khóa Web Push.')
-  const registration = await registerVeraServiceWorker()
-  let subscription = await registration.pushManager.getSubscription()
-  if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: decodeVapidKey(config.public_key),
-    })
-  }
-  await veraApi.registerPushSubscription(subscription.toJSON())
-  return { ...support, permission, subscribed: true }
+  return ensureGrantedPushSubscription()
 }
 
 export const disablePushNotifications = async () => {
