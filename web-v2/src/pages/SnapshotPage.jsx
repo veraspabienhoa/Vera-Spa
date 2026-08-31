@@ -32,7 +32,35 @@ const normalizedFilters = (values) => ({
   shift: values.shift.trim(),
 })
 const minutes = (value) => Math.max(0, Number(value) || 0)
-const shortClock = (value, fallback) => String(value || fallback || '').slice(0, 5)
+const shortClock = (value, fallback = '') => String(value || fallback || '').slice(0, 8)
+const durationClock = (seconds) => {
+  const total = Math.max(0, Math.floor(Math.abs(Number(seconds || 0))))
+  const hours = Math.floor(total / 3600)
+  const mins = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  return `${`${hours}`.padStart(2, '0')}:${`${mins}`.padStart(2, '0')}:${`${secs}`.padStart(2, '0')}`
+}
+const deadlineMsFor = (item) => {
+  if (item.break_return_deadline_iso) {
+    const value = new Date(item.break_return_deadline_iso).getTime()
+    if (Number.isFinite(value)) return value
+  }
+  const parts = String(item.date || '').split('/')
+  const clock = String(item.break_return_deadline || '')
+  if (parts.length !== 3 || !clock) return NaN
+  const [day, month, year] = parts
+  const value = new Date(`${year}-${month}-${day}T${clock}`).getTime()
+  return Number.isFinite(value) ? value : NaN
+}
+const liveBreakTiming = (item, nowMs) => {
+  if (!item.break_out || item.break_in) return ''
+  const deadlineMs = deadlineMsFor(item)
+  if (!Number.isFinite(deadlineMs)) return ''
+  const deltaSeconds = Math.floor((deadlineMs - nowMs) / 1000)
+  return deltaSeconds >= 0
+    ? `Còn ${durationClock(deltaSeconds)} · phải vào lại lúc ${shortClock(item.break_return_deadline)}`
+    : `VÀO LẠI TRỄ ${durationClock(-deltaSeconds)} · hạn ${shortClock(item.break_return_deadline)}`
+}
 
 const startStatusFor = (item) => {
   if (!item.check_in) return { label: 'Chưa có FaceID đầu ca', detail: 'Chưa xác định giờ vào', tone: 'attendance-warning' }
@@ -43,20 +71,20 @@ const startStatusFor = (item) => {
 
 const breakReturnStatusFor = (item) => {
   if (!item.break_enabled) return { label: 'Không áp dụng', detail: 'Ca không áp dụng nghỉ giữa ca', tone: '' }
-  const deadline = shortClock(item.break_return_deadline, '20:00')
+  const deadline = shortClock(item.break_return_deadline)
   if (item.break_out && !item.break_in) {
     return {
       label: 'Đang nghỉ giữa ca',
-      detail: `Bắt đầu nghỉ giữa ca ${item.date} ${item.break_out} · phải quay lại trước ${deadline}`,
+      detail: `Bắt đầu nghỉ giữa ca ${item.date} ${item.break_out}${deadline ? ` · phải vào lại lúc ${deadline}` : ''}`,
       tone: 'attendance-warning',
     }
   }
   if (!item.break_out) return { label: 'Chưa ghi nhận nghỉ giữa ca', detail: item.break_status || 'Chưa xác định', tone: 'attendance-warning' }
   const deadlineLate = minutes(item.break_return_late_minutes)
-  if (deadlineLate > 0) return { label: 'Vào lại sau 20:00', detail: `Trễ ${deadlineLate} phút so với ${deadline}`, tone: 'attendance-warning' }
+  if (deadlineLate > 0) return { label: 'Vào lại trễ', detail: `Trễ ${deadlineLate} phút so với hạn ${deadline}`, tone: 'attendance-warning' }
   const late = minutes(item.break_over_minutes)
-  if (late > 0) return { label: 'Vào lại trễ', detail: `Nghỉ quá quy định ${late} phút`, tone: 'attendance-warning' }
-  return { label: 'Vào lại đúng giờ', detail: `Đã quay lại trước ${deadline}`, tone: 'attendance-ok' }
+  if (late > 0) return { label: 'Nghỉ quá quy định', detail: `Quá ${late} phút`, tone: 'attendance-warning' }
+  return { label: 'Vào lại đúng giờ', detail: deadline ? `Đã quay lại trước hạn ${deadline}` : 'Đã quay lại trong giới hạn', tone: 'attendance-ok' }
 }
 
 async function authHeaders() {
@@ -102,13 +130,19 @@ export default function SnapshotPage({ user }) {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  const [clockMs, setClockMs] = useState(Date.now())
   const requestRevisionRef = useRef(0)
   const summary = useMemo(() => ({
     employees: records.length,
     breaks: records.filter((item) => item.break_out && item.break_in).length,
-    over: records.filter((item) => Number(item.break_over_minutes || 0) > 0 || Number(item.break_return_late_minutes || 0) > 0).length,
+    over: records.filter((item) => {
+      if (Number(item.break_over_minutes || 0) > 0 || Number(item.break_return_late_minutes || 0) > 0) return true
+      if (!item.break_out || item.break_in) return false
+      const deadline = deadlineMsFor(item)
+      return Number.isFinite(deadline) && deadline < clockMs
+    }).length,
     incomplete: records.filter((item) => item.break_enabled && (!item.break_out || !item.break_in)).length,
-  }), [records])
+  }), [clockMs, records])
 
   const queryString = useCallback((extra = applied) => {
     const params = new URLSearchParams({ start, end })
@@ -127,6 +161,7 @@ export default function SnapshotPage({ user }) {
       if (revision !== requestRevisionRef.current) return
       setRecords(result.records || [])
       setOptions(result.filters || { employees: [], departments: [], shifts: [] })
+      setClockMs(Date.now())
     } catch (e) {
       if (revision === requestRevisionRef.current) setError(e.message || 'Không tải được dữ liệu chấm công.')
     } finally {
@@ -146,6 +181,11 @@ export default function SnapshotPage({ user }) {
     }, 250)
     return () => window.clearTimeout(timer)
   }, [filters])
+  useEffect(() => {
+    if (!records.some((item) => item.break_out && !item.break_in)) return undefined
+    const timer = window.setInterval(() => setClockMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [records])
 
   const choosePeriod = (next) => {
     setPeriod(next)
@@ -172,7 +212,7 @@ export default function SnapshotPage({ user }) {
       .attendance-toolbar-actions{display:flex;gap:8px;align-items:center}.attendance-toolbar-actions button{white-space:nowrap}
       .attendance-date-custom{display:grid;grid-template-columns:repeat(2,minmax(180px,260px));gap:10px;margin-bottom:12px}.attendance-date-custom label{min-width:0}
       .attendance-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.attendance-kpi{padding:14px;border:1px solid var(--line,#dfe8e2);border-radius:14px;background:#f8fbf9}.attendance-kpi strong{display:block;font-size:24px;color:#173d31}.attendance-kpi span{font-size:12px;color:#63736d}
-      .attendance-break{min-width:230px}.attendance-break strong{display:block}.attendance-break small{display:block;margin-top:4px}.attendance-source{color:#6d7d77}.attendance-warning{color:#a33b32;font-weight:800}.attendance-ok{color:#28705a;font-weight:800}.attendance-break-detail{font-weight:800;color:#324a40}
+      .attendance-break{min-width:250px}.attendance-break strong{display:block}.attendance-break small{display:block;margin-top:4px}.attendance-source{color:#6d7d77}.attendance-warning{color:#a33b32;font-weight:800}.attendance-ok{color:#28705a;font-weight:800}.attendance-break-detail{font-weight:800;color:#324a40}.attendance-break-live{font-weight:900;color:#9b2b22}.attendance-break-live.ok{color:#856009}
       .attendance-status-cell{min-width:180px}.attendance-status-cell strong,.attendance-status-cell small{display:block}.attendance-status-cell small{margin-top:4px}
       @media(max-width:820px){
         .attendance-toolbar{display:block;padding:12px}
@@ -192,7 +232,7 @@ export default function SnapshotPage({ user }) {
       }
       @media(max-width:390px){.attendance-filter-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}.attendance-filter-buttons button:last-child{grid-column:1/-1}}
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>Dữ liệu chấm công TimeSoft được đồng bộ vào PostgreSQL. Danh sách chỉ hiển thị Nhân viên và Leader.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
+    <div className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>Dữ liệu chấm công TimeSoft được đồng bộ vào PostgreSQL. Khi TimeSoft chưa có dữ liệu nghỉ giữa ca, hệ thống mới dùng TourVera R/S/U.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
     {error && <div className="error-box">{error}</div>}
 
     <section className="panel data-toolbar attendance-toolbar">
@@ -221,12 +261,14 @@ export default function SnapshotPage({ user }) {
       <div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Ca làm việc</th><th>Tình trạng đầu ca</th><th>Nghỉ giữa ca</th><th>Tình trạng vào lại sau nghỉ</th><th>Tổng giờ</th></tr></thead><tbody>{records.map((item, index) => {
         const startStatus = startStatusFor(item)
         const returnStatus = breakReturnStatusFor(item)
+        const liveBreak = liveBreakTiming(item, clockMs)
+        const breakIsLate = liveBreak.startsWith('VÀO LẠI TRỄ')
         return <tr key={`${item.date}-${item.employee_code}-${item.check_in}-${index}`}>
           <td>{item.date}</td>
           <td><strong>{item.employee_name}</strong><small>{item.employee_code} · {item.break_department || '—'}</small></td>
           <td>{item.shift || '—'}<small>{item.shift_start || '—'} – {item.shift_end || '—'}</small></td>
           <td className="attendance-status-cell"><strong className={startStatus.tone}>{startStatus.label}</strong><small>FaceID: {item.check_in || '—'}</small><small>{startStatus.detail}</small></td>
-          <td className="attendance-break"><strong>{item.break_out || '—'} → {item.break_in || '—'}</strong><small>{item.break_actual_minutes || 0}/{item.break_planned_minutes || 0} phút</small>{item.break_detail && <small className="attendance-break-detail">{item.break_detail}</small>}<small>Khung nghỉ: từ {shortClock(item.break_window_start, '15:00')} · phải quay lại trước {shortClock(item.break_return_deadline, '20:00')}</small><small>{item.break_status || '—'}</small><small className="attendance-source">{item.break_source || item.break_method || ''}</small></td>
+          <td className="attendance-break"><strong>{item.break_out || '—'} → {item.break_in || '—'}</strong><small>{item.break_actual_minutes || 0}/{item.break_planned_minutes || 0} phút</small>{item.break_detail && <small className="attendance-break-detail">{item.break_detail}</small>}<small>Khung nghỉ: bắt đầu từ {shortClock(item.break_window_start, '15:00:00')} · được nghỉ {item.break_planned_minutes || 90} phút{item.break_return_deadline ? ` · phải vào lại lúc ${shortClock(item.break_return_deadline)}` : ''}</small>{liveBreak && <small className={`attendance-break-live ${breakIsLate ? '' : 'ok'}`}>{liveBreak}</small>}<small>{item.break_status || '—'}</small><small className="attendance-source">{item.break_source || item.break_method || ''}</small></td>
           <td className="attendance-status-cell"><strong className={returnStatus.tone}>{returnStatus.label}</strong><small>{returnStatus.detail}</small><small>FaceID vào lại: {item.break_in || '—'}</small></td>
           <td>{item.total_minutes || 0} phút<small>{item.punch_count || item.raw_faceid_count || 0} lần chấm</small></td>
         </tr>
