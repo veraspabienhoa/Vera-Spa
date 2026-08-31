@@ -51,9 +51,9 @@ export default function AutoCheckPage({ user }) {
     try {
       const result = await tourCacheControl.setDisabled(!tourControl.disabled)
       setTourControl(result)
-      setTourMessage(result.message || (result.disabled ? 'Đã tạm dừng đồng bộ TourVera.' : 'Đã mở lại đồng bộ TourVera.'))
+      setTourMessage(result.message || (result.disabled ? 'Đã tạm dừng làm mới TourVera.' : 'Đã mở lại làm mới TourVera.'))
     } catch (err) {
-      setError(err.message || 'Không thay đổi được trạng thái đồng bộ TourVera.')
+      setError(err.message || 'Không thay đổi được trạng thái làm mới TourVera.')
     } finally {
       setTourBusy(false)
     }
@@ -84,7 +84,7 @@ export default function AutoCheckPage({ user }) {
           <span className="eyebrow"><Database size={17}/> GIẢM TẢI HỆ THỐNG</span>
           <h2>TourVera cho cảnh báo nghỉ giữa ca</h2>
           <div className={`tour-cache-control-status ${tourControl?.disabled ? 'auto-check-paused' : 'auto-check-ok'}`}>
-            {!tourControl ? 'Đang kiểm tra…' : tourControl.disabled ? 'ĐÃ TẠM DỪNG' : 'ĐANG ĐỒNG BỘ'}
+            {!tourControl ? 'Đang kiểm tra…' : tourControl.disabled ? 'ĐÃ TẠM DỪNG LÀM MỚI' : 'ĐANG LÀM MỚI ĐỊNH KỲ'}
           </div>
         </div>
         <button
@@ -93,13 +93,14 @@ export default function AutoCheckPage({ user }) {
           onClick={toggleTourCache}
         >
           {tourControl?.disabled ? <Play size={17}/> : <Pause size={17}/>}
-          {tourBusy ? 'Đang cập nhật…' : tourControl?.disabled ? 'Mở lại tải TourVera' : 'Tạm dừng tải TourVera'}
+          {tourBusy ? 'Đang cập nhật…' : tourControl?.disabled ? 'Mở lại làm mới TourVera' : 'Tạm dừng làm mới TourVera'}
         </button>
       </div>
       <p className="tour-cache-control-note">
-        Khi tạm dừng, job nền 5 phút sẽ không tải TourVera.xlsm chỉ để tạo cache cho Chấm công/cảnh báo nghỉ giữa ca. Web V2 cũng ngừng dùng cache TourVera ngay lập tức. Đồng bộ Chấm công TimeSoft vẫn chạy bình thường và Auto Check chuyên biệt không bị tắt.
+        Nút này chỉ tạm dừng lượt tải TourVera.xlsm định kỳ dùng riêng để làm mới cache, không tắt cảnh báo nghỉ giữa ca. Quản lý, Lễ tân và Nhân viên vẫn nhận cảnh báo bình thường: TimeSoft là nguồn chính; cache TourVera của cùng ngày tiếp tục được dùng làm fallback. Nếu Auto Check đã cần tải TourVera cho công việc riêng thì dữ liệu đã tải có thể cập nhật cache mà không phát sinh thêm lượt tải Google Drive.
       </p>
       <div className="tour-cache-meta">
+        <span>Cảnh báo nghỉ giữa ca: <b className="auto-check-ok">ĐANG HOẠT ĐỘNG</b></span>
         <span>Cache cập nhật gần nhất: <b>{dateTimeText(tourControl?.cache_updated_at)}</b></span>
         <span>Người thay đổi: <b>{tourControl?.updated_by || '—'}</b></span>
       </div>
