@@ -168,7 +168,7 @@ async function scheduleRequest(path, options = {}) {
 export default function WorkSchedulePage({ user }) {
   const today = atNoon()
   const todayIso = isoDate(today)
-  const [rangeMode, setRangeMode] = useState('month')
+  const [rangeMode, setRangeMode] = useState('week')
   const [month, setMonth] = useState(currentMonthValue())
   const [customStart, setCustomStart] = useState(todayIso)
   const [customEnd, setCustomEnd] = useState(todayIso)
