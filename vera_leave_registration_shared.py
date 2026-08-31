@@ -288,11 +288,12 @@ def count_unique_leave_people(rows) -> dict[str, int]:
 
 
 def summarize_leave_days(rows) -> dict[str, float]:
-    """Sum actual calculated days for a filtered leave-record list.
+    """Summarize a filtered leave-record list using the UI's two units.
 
-    This intentionally does not share the daily quota formula above: a 0.5-day
-    record contributes 0.5 here while it still occupies one employee slot in
-    the daily quota.
+    Total/Có phép use actual calculated days, so a half day remains 0.5.
+    Phát sinh/Không phép count visible records because operational violations
+    intentionally have zero calculated leave days but must still appear in the
+    list statistics.
     """
     summary = {
         "total_leave": 0.0,
@@ -312,8 +313,8 @@ def summarize_leave_days(rows) -> dict[str, float]:
         if policy_group == "co_phep":
             summary["paid"] += calculated_days
         elif policy_group == "phat_sinh":
-            summary["generated"] += calculated_days
+            summary["generated"] += 1
         elif policy_group == "khong_phep":
-            summary["unpaid"] += calculated_days
+            summary["unpaid"] += 1
         summary["total_penalty"] += penalty
     return summary

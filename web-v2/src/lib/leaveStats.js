@@ -35,7 +35,9 @@ export function summarizeLeaveRecordDays(records = [], employee = '') {
     const days = Math.max(0, Number(row.calculated_days || 0))
     const group = leaveGroup(row)
     summary.total_leave += days
-    if (group) summary[group] += days
+    if (group === 'paid') summary.paid += days
+    else if (group === 'generated') summary.generated += 1
+    else if (group === 'unpaid') summary.unpaid += 1
     summary.total_penalty += Math.max(0, Number(row.penalty || 0))
     return summary
   }, emptyLeaveDaySummary())

@@ -109,7 +109,7 @@ export default function LeaveListPersonalStats({ user }) {
     <section className={`leave-list-personal-summary ${isAdmin ? 'admin' : ''}`} aria-live="polite">
       <div className="leave-list-personal-summary-head"><strong>THỐNG KÊ TRONG DANH SÁCH</strong><span>{subtitle}</span></div>
       <div className="leave-list-personal-summary-grid">{stats.map((item) => <div className={`leave-list-personal-stat ${item.key}`} key={item.key}><div className="leave-list-personal-stat-label">{item.icon && <span aria-hidden="true">{item.icon}</span>}{item.label}</div><div className="leave-list-personal-stat-value">{busy ? '…' : item.value}</div></div>)}</div>
-      <div className="leave-list-personal-summary-note">Cộng theo số ngày thực tế; 0,5 ngày được tính đúng 0,5.{!isAdmin && ` ${canViewListScope ? 'Tiền vi phạm không hiển thị cho tài khoản này.' : 'Chỉ tính lịch nghỉ của tài khoản đang đăng nhập; tiền vi phạm không hiển thị.'}`}</div>
+      <div className="leave-list-personal-summary-note">Tổng ngày nghỉ/Có phép cộng theo ngày thực tế (0,5 tính đúng 0,5); Phát sinh/Không phép đếm số bản ghi.{!isAdmin && ` ${canViewListScope ? 'Tiền vi phạm không hiển thị cho tài khoản này.' : 'Chỉ tính lịch nghỉ của tài khoản đang đăng nhập; tiền vi phạm không hiển thị.'}`}</div>
       {error && <div className="leave-list-personal-summary-error">{error}</div>}
     </section>
   </>, target)
