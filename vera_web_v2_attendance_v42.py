@@ -20,10 +20,11 @@ from typing import Any, Callable
 
 from sqlalchemy import text
 
+from vera_attendance_rules import apply_break_restriction, departure_status_is_final
 import vera_web_v2_snapshot as snapshot
 
 
-RELEASE = "4.2-autocheck-faceid-attendance"
+RELEASE = "4.2.1-preserve-configured-break"
 ALLOWED_ROLES = {"nhanvien", "leader"}
 RAW_TIME_ALIASES = {
     "thoi gian", "thoigian", "time", "timestr", "datetime", "datetimestr",
@@ -228,6 +229,30 @@ def _looks_like_final_checkout(value: datetime, work_day: date, item: dict[str, 
     return False
 
 
+def _departure_status_is_final(
+    punches: list[datetime],
+    *,
+    work_day: date,
+    representative: dict[str, Any],
+    cluster_minutes: int,
+    now: datetime | None = None,
+) -> bool:
+    """Only trust TimeSoft's early-departure label after the shift is complete.
+
+    During an active shift TimeSoft can expose the morning check-in as the
+    current "last check-in" and temporarily label it as an early departure.
+    Requiring a second FaceID cluster also prevents a lone check-in from being
+    treated as a completed departure on historical rows.
+    """
+    clustered = _cluster_punches(punches, cluster_minutes)
+    return departure_status_is_final(
+        clustered_punch_count=len(clustered),
+        work_day=work_day,
+        expected_end=_expected_end(work_day, representative),
+        now=now,
+    )
+
+
 def _pick_break_pair(values: list[datetime], planned: int, cluster_minutes: int):
     """Choose a 15:00–21:00 break pair after the first (shift check-in) event.
 
@@ -377,15 +402,14 @@ def _records_v42(conn, start: date, end: date) -> list[dict[str, Any]]:
         restricted_reasons = []
         if "di tre" in arrival_status:
             restricted_reasons.append("đi trễ")
-        if "ve som" in departure_status:
+        if "ve som" in departure_status and _departure_status_is_final(
+            bucket["punches"],
+            work_day=work_day,
+            representative=representative,
+            cluster_minutes=int(cfg.get("faceid_cluster_minutes") or 10),
+        ):
             restricted_reasons.append("về sớm")
-        if restricted_reasons:
-            cfg = {
-                **cfg,
-                "break_enabled": False,
-                "break_planned_minutes": 0,
-                "break_restricted_reason": " và ".join(restricted_reasons),
-            }
+        cfg = apply_break_restriction(cfg, restricted_reasons)
         faceid = _break_from_punches(
             bucket["punches"],
             work_day=work_day,
