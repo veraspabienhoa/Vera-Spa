@@ -4,6 +4,7 @@ import { veraApi } from '../lib/api'
 
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
+  { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true },
   { id: 'tour', label: 'Bảng tua', icon: Compass, ready: true, permission: 'tour' },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
