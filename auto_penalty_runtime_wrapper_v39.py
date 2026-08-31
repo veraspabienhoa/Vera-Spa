@@ -2,7 +2,7 @@
 
 Keeps the hardened V93.4 runtime/login/run-log wrapper and changes business
 policy only:
-- Auto late threshold is exactly 5 minutes.
+- Auto late threshold comes from the Nội quy configuration.
 - Registered Đi trễ phát sinh / CÓ phép / KHÔNG phép uses 17:00:00 as the
   standard check-in for that employee/date.
 - Support reasons retain their legacy grace allowances (120/180/60 minutes),
@@ -20,7 +20,16 @@ import auto_penalty_runtime_wrapper as base
 ts = base.ts
 daily = base.daily
 
-AUTO_THRESHOLD_MINUTES = 5
+DEFAULT_AUTO_THRESHOLD_MINUTES = 5
+
+
+def _configured_threshold(cfg) -> int:
+    try:
+        return max(1, min(180, int((cfg or {}).get("threshold_minutes", DEFAULT_AUTO_THRESHOLD_MINUTES))))
+    except (TypeError, ValueError):
+        return DEFAULT_AUTO_THRESHOLD_MINUTES
+
+
 STANDARD_1700_REASONS = {
     ts._reason_key("Đi trễ phát sinh"),
     ts._reason_key("Đi trễ CÓ phép"),
@@ -99,10 +108,10 @@ _ORIGINAL_PROCESS_TIMESOFT = daily.process_timesoft_today
 
 
 def _process_timesoft_v39(client, cfg, employee_map, catalog, supports, checkin_df):
-    # A configured value above 5 must not silently move the business threshold.
     cfg_v39 = dict(cfg or {})
-    cfg_v39["threshold_minutes"] = AUTO_THRESHOLD_MINUTES
-    ts.AUTO_PENALTY_MINUTES = AUTO_THRESHOLD_MINUTES
+    threshold = _configured_threshold(cfg_v39)
+    cfg_v39["threshold_minutes"] = threshold
+    ts.AUTO_PENALTY_MINUTES = threshold
 
     if checkin_df is None or getattr(checkin_df, "empty", True):
         return _ORIGINAL_PROCESS_TIMESOFT(client, cfg_v39, employee_map, catalog, supports, checkin_df)
@@ -149,8 +158,9 @@ _ORIGINAL_PROCESS_TOUR = daily.process_tour_today
 
 def _process_tour_v39(client, cfg, employee_map, catalog):
     cfg_v39 = dict(cfg or {})
-    cfg_v39["threshold_minutes"] = AUTO_THRESHOLD_MINUTES
-    ts.AUTO_PENALTY_MINUTES = AUTO_THRESHOLD_MINUTES
+    threshold = _configured_threshold(cfg_v39)
+    cfg_v39["threshold_minutes"] = threshold
+    ts.AUTO_PENALTY_MINUTES = threshold
     return _ORIGINAL_PROCESS_TOUR(client, cfg_v39, employee_map, catalog)
 
 
