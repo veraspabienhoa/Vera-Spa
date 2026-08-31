@@ -8,6 +8,7 @@ from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_admin_change_push import install_admin_change_push
 from vera_web_v2_attendance_v42 import install_attendance_v42
 from vera_web_v2_attendance_break_window import install_attendance_break_window
+from vera_web_v2_attendance_break_alerts import install_attendance_break_alerts
 from vera_web_v2_auto_check import install_auto_check_routes
 from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
@@ -124,6 +125,14 @@ install_purchase_reconcile_alert_check(
 
 install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
 install_attendance_break_window(_shared.app)
+install_attendance_break_alerts(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    api_module=_api,
+    current_identity=_api.current_identity,
+    identity_type=_api.Identity,
+    vn_tz=_api.VN_TZ,
+)
 
 install_operations_v41(
     _shared.app,
