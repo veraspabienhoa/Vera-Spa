@@ -1,7 +1,12 @@
 from datetime import date, datetime
 import unittest
 
-from vera_attendance_rules import apply_break_restriction, departure_status_is_final
+from vera_attendance_rules import (
+    apply_break_restriction,
+    departure_status_is_final,
+    late_penalty_eligible,
+    supported_late_minutes,
+)
 from vera_web_v2_snapshot import _apply_support_shift_start, _norm
 
 
@@ -89,6 +94,20 @@ class SupportedShiftStartTests(unittest.TestCase):
         self.assertEqual(adjusted["shift_start"], "12:00")
         self.assertEqual(adjusted["late_minutes"], 2)
         self.assertEqual(adjusted["arrival_status"], "Đi trễ")
+
+
+class SupportedLatePenaltyThresholdTests(unittest.TestCase):
+    def test_support_is_subtracted_before_five_minute_threshold(self):
+        self.assertEqual(supported_late_minutes(122, 120), 2)
+        self.assertFalse(late_penalty_eligible(122, 5, 120))
+
+    def test_exactly_five_minutes_after_support_is_penalized(self):
+        self.assertEqual(supported_late_minutes(125, 120), 5)
+        self.assertTrue(late_penalty_eligible(125, 5, 120))
+
+    def test_unknown_support_is_fail_closed(self):
+        self.assertIsNone(supported_late_minutes(200, None))
+        self.assertFalse(late_penalty_eligible(200, 5, None))
 
 
 if __name__ == "__main__":

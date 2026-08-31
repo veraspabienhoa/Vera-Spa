@@ -9,6 +9,19 @@ from typing import Any
 VERA_TIMEZONE = timezone(timedelta(hours=7))
 
 
+def supported_late_minutes(raw_minutes: float, allowance_minutes: int | None) -> float | None:
+    """Return minutes late after support; None means unknown support is fail-closed."""
+    if allowance_minutes is None:
+        return None
+    return max(0.0, float(raw_minutes or 0) - max(0, int(allowance_minutes)))
+
+
+def late_penalty_eligible(raw_minutes: float, threshold_minutes: int, allowance_minutes: int | None = 0) -> bool:
+    """Apply support first, then the normal late-penalty threshold."""
+    adjusted = supported_late_minutes(raw_minutes, allowance_minutes)
+    return adjusted is not None and adjusted >= max(0, int(threshold_minutes))
+
+
 def apply_break_restriction(cfg: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
     """Attach eligibility reasons without changing the shift's configured break."""
     result = dict(cfg)
