@@ -38,6 +38,7 @@ const BirthdayPage = lazyPage(() => import('./pages/BirthdayPage'))
 const TourPage = lazyPage(() => import('./pages/TourPage'))
 const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
 const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
+const WorkSchedulePage = lazyPage(() => import('./pages/WorkSchedulePage'))
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -104,6 +105,7 @@ export default function App() {
       <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
       <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
         {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
+        {page === 'schedule' && <WorkSchedulePage user={shellUser} />}
         {page === 'long-leave' && <>
           {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
           <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
