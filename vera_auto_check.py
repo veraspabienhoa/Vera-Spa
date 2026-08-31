@@ -149,6 +149,58 @@ def outside_reason(catalog: dict, minutes: float):
     return next((catalog_item(catalog, name) for name in candidates if catalog_item(catalog, name)), None)
 
 
+def late_support_for_day(conn, work_date: date, employee: str) -> tuple[list[str], int | None, str]:
+    """Return same-day support reasons and their late allowance.
+
+    Unknown support wording is fail-closed: Auto Check skips the penalty instead
+    of guessing. Known ``đi trễ N tiếng/giờ`` wording is converted to minutes.
+    """
+    rows = conn.execute(text("""
+        SELECT employee_name, leave_reason
+        FROM leave_records
+        WHERE leave_date=:day
+    """), {"day": work_date}).mappings().all()
+    reasons = [str(row["leave_reason"] or "").strip() for row in rows
+               if _norm(row["employee_name"]) == _norm(employee)
+               and "ho tro" in _norm(row["leave_reason"])]
+    if not reasons:
+        return [], 0, ""
+    matched = []
+    unknown = []
+    for reason in reasons:
+        key = _norm(reason)
+        match = re.search(r"di tre\s+(\d+(?:[.,]\d+)?)\s*(?:tieng|gio)", key)
+        if match:
+            matched.append((int(round(float(match.group(1).replace(",", ".")) * 60)), reason))
+        else:
+            unknown.append(reason)
+    if unknown:
+        return reasons, None, unknown[0]
+    allowance, reason = max(matched, key=lambda item: item[0])
+    return reasons, allowance, reason
+
+
+def revoke_wrong_late_penalty(conn, *, work_date: date, employee: str, support_reason: str) -> int:
+    """Remove only a PostgreSQL Auto Check late penalty covered by support."""
+    deleted = conn.execute(text("""
+        DELETE FROM leave_records
+        WHERE source_sheet_id='postgres:auto_check'
+          AND leave_date=:day
+          AND lower(employee_name)=lower(:employee)
+          AND lower(leave_reason)=lower(:reason)
+        RETURNING record_uid
+    """), {"day": work_date, "employee": employee, "reason": "Đi trễ không phép"}).scalars().all()
+    if deleted:
+        conn.execute(text("""
+            UPDATE vera_auto_check_event
+            SET status='revoked', leave_record_uid=NULL,
+                detail=CONCAT(COALESCE(detail,''),' · Thu hồi vì có ',:support)
+            WHERE work_date=:day AND lower(employee_name)=lower(:employee)
+              AND lower(reason)=lower(:reason) AND status='added'
+        """), {"day": work_date, "employee": employee, "reason": "Đi trễ không phép", "support": support_reason})
+    return len(deleted)
+
+
 def start_run(conn, trigger_type="scheduled") -> int:
     ensure_schema(conn)
     return int(conn.execute(text("""
@@ -169,7 +221,11 @@ def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, d
     inserted = conn.execute(text("""
         INSERT INTO vera_auto_check_event(event_key,work_date,employee_name,reason,source,minutes,status,detail)
         VALUES (:key,:day,:employee,:reason,:source,:minutes,'processing',:detail)
-        ON CONFLICT(event_key) DO NOTHING RETURNING id
+        ON CONFLICT(event_key) DO UPDATE SET
+          status='processing', source=EXCLUDED.source, minutes=EXCLUDED.minutes,
+          detail=EXCLUDED.detail, created_at=NOW()
+        WHERE vera_auto_check_event.status='revoked'
+        RETURNING id
     """), {"key": event_key, "day": work_date, "employee": employee, "reason": reason, "source": source, "minutes": float(minutes or 0), "detail": detail}).scalar()
     if not inserted:
         return True, "SKIP_DUPLICATE"
@@ -208,7 +264,7 @@ def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, d
 def dashboard(conn, limit=100) -> dict:
     cfg = load_config(conn)
     runs = [dict(row) for row in conn.execute(text("SELECT id,trigger_type,status,started_at,completed_at,details,error FROM vera_auto_check_run ORDER BY id DESC LIMIT 20")).mappings()]
-    events = [dict(row) for row in conn.execute(text("SELECT work_date,employee_name,reason,source,minutes,status,detail,created_at FROM vera_auto_check_event ORDER BY id DESC LIMIT :limit"), {"limit": max(1, min(500, int(limit)))}).mappings()]
+    events = [dict(row) for row in conn.execute(text("SELECT work_date,employee_name,reason,source,minutes,status,detail,created_at FROM vera_auto_check_event WHERE status <> 'revoked' ORDER BY id DESC LIMIT :limit"), {"limit": max(1, min(500, int(limit)))}).mappings()]
     for collection in (runs, events):
         for row in collection:
             for key, value in list(row.items()):

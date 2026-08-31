@@ -1066,9 +1066,26 @@ def process_timesoft_penalties(
                 continue
             raw_date = _timesoft_row_value(row, ["WorkDateStr", "WorkDate", "CreateDateStr", "CreateDate"])
             work_date = _parse_date(raw_date) or target_date
+            with engine.begin() as conn:
+                support_reasons, allowance, support_reason = auto_check.late_support_for_day(conn, work_date, employee)
+                covered = bool(support_reasons) and (allowance is None or float(minutes) <= float(allowance))
+                if covered:
+                    revoked = auto_check.revoke_wrong_late_penalty(
+                        conn, work_date=work_date, employee=employee, support_reason=support_reason,
+                    )
+            if covered:
+                result["skipped"] += 1
+                allowance_text = "không xác định (ưu tiên không phạt)" if allowance is None else f"{allowance} phút"
+                _log(
+                    f"AUTO TIMESOFT SKIP SUPPORT: {employee} · trễ {minutes:.0f} phút · "
+                    f"cho phép {allowance_text} · revoked={revoked}"
+                )
+                continue
             shift_start = _timesoft_row_value(row, ["StartWorkTime", "WorkTimeStart", "ShiftStartTime"])
             checkin_time = _timesoft_row_value(row, ["MachineTimeCheckInStr", "CheckInTimeStr", "CheckInTime"])
             detail = f"Auto Update TimeSoft · check-in muộn {int(round(minutes))} phút"
+            if support_reasons and allowance is not None:
+                detail += f" · Hỗ trợ cho phép {allowance} phút nhưng vượt {int(round(minutes - allowance))} phút"
             if shift_start:
                 detail += f" · Ca bắt đầu {shift_start}"
             if checkin_time:
