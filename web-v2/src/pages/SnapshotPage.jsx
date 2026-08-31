@@ -32,6 +32,7 @@ const normalizedFilters = (values) => ({
   shift: values.shift.trim(),
 })
 const minutes = (value) => Math.max(0, Number(value) || 0)
+const shortClock = (value, fallback) => String(value || fallback || '').slice(0, 5)
 
 const startStatusFor = (item) => {
   if (!item.check_in) return { label: 'Chưa có FaceID đầu ca', detail: 'Chưa xác định giờ vào', tone: 'attendance-warning' }
@@ -42,10 +43,20 @@ const startStatusFor = (item) => {
 
 const breakReturnStatusFor = (item) => {
   if (!item.break_enabled) return { label: 'Không áp dụng', detail: 'Ca không áp dụng nghỉ giữa ca', tone: '' }
-  if (!item.break_out || !item.break_in) return { label: 'Chưa đủ FaceID vào lại', detail: item.break_status || 'Chưa xác định', tone: 'attendance-warning' }
+  const deadline = shortClock(item.break_return_deadline, '20:00')
+  if (item.break_out && !item.break_in) {
+    return {
+      label: 'Đang nghỉ giữa ca',
+      detail: `Bắt đầu nghỉ giữa ca ${item.date} ${item.break_out} · phải quay lại trước ${deadline}`,
+      tone: 'attendance-warning',
+    }
+  }
+  if (!item.break_out) return { label: 'Chưa ghi nhận nghỉ giữa ca', detail: item.break_status || 'Chưa xác định', tone: 'attendance-warning' }
+  const deadlineLate = minutes(item.break_return_late_minutes)
+  if (deadlineLate > 0) return { label: 'Vào lại sau 20:00', detail: `Trễ ${deadlineLate} phút so với ${deadline}`, tone: 'attendance-warning' }
   const late = minutes(item.break_over_minutes)
-  if (late > 0) return { label: 'Vào lại trễ', detail: `Trễ ${late} phút`, tone: 'attendance-warning' }
-  return { label: 'Vào lại đúng giờ', detail: 'Không trễ', tone: 'attendance-ok' }
+  if (late > 0) return { label: 'Vào lại trễ', detail: `Nghỉ quá quy định ${late} phút`, tone: 'attendance-warning' }
+  return { label: 'Vào lại đúng giờ', detail: `Đã quay lại trước ${deadline}`, tone: 'attendance-ok' }
 }
 
 async function authHeaders() {
@@ -95,7 +106,7 @@ export default function SnapshotPage({ user }) {
   const summary = useMemo(() => ({
     employees: records.length,
     breaks: records.filter((item) => item.break_out && item.break_in).length,
-    over: records.filter((item) => Number(item.break_over_minutes || 0) > 0).length,
+    over: records.filter((item) => Number(item.break_over_minutes || 0) > 0 || Number(item.break_return_late_minutes || 0) > 0).length,
     incomplete: records.filter((item) => item.break_enabled && (!item.break_out || !item.break_in)).length,
   }), [records])
 
@@ -161,8 +172,8 @@ export default function SnapshotPage({ user }) {
       .attendance-toolbar-actions{display:flex;gap:8px;align-items:center}.attendance-toolbar-actions button{white-space:nowrap}
       .attendance-date-custom{display:grid;grid-template-columns:repeat(2,minmax(180px,260px));gap:10px;margin-bottom:12px}.attendance-date-custom label{min-width:0}
       .attendance-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.attendance-kpi{padding:14px;border:1px solid var(--line,#dfe8e2);border-radius:14px;background:#f8fbf9}.attendance-kpi strong{display:block;font-size:24px;color:#173d31}.attendance-kpi span{font-size:12px;color:#63736d}
-      .attendance-break{min-width:190px}.attendance-break strong{display:block}.attendance-break small{display:block;margin-top:4px}.attendance-source{color:#6d7d77}.attendance-warning{color:#a33b32;font-weight:800}.attendance-ok{color:#28705a;font-weight:800}
-      .attendance-status-cell{min-width:150px}.attendance-status-cell strong,.attendance-status-cell small{display:block}.attendance-status-cell small{margin-top:4px}
+      .attendance-break{min-width:230px}.attendance-break strong{display:block}.attendance-break small{display:block;margin-top:4px}.attendance-source{color:#6d7d77}.attendance-warning{color:#a33b32;font-weight:800}.attendance-ok{color:#28705a;font-weight:800}.attendance-break-detail{font-weight:800;color:#324a40}
+      .attendance-status-cell{min-width:180px}.attendance-status-cell strong,.attendance-status-cell small{display:block}.attendance-status-cell small{margin-top:4px}
       @media(max-width:820px){
         .attendance-toolbar{display:block;padding:12px}
         .attendance-filter-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:10px}
@@ -206,7 +217,7 @@ export default function SnapshotPage({ user }) {
     </section>
 
     <section className="panel"><div className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{records.length} bản ghi · {start} → {end}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div>
-      <div className="attendance-kpis"><div className="attendance-kpi"><strong>{summary.employees}</strong><span>Bản ghi chấm công</span></div><div className="attendance-kpi"><strong>{summary.breaks}</strong><span>Đủ cặp nghỉ giữa ca</span></div><div className="attendance-kpi"><strong>{summary.over}</strong><span>Nghỉ quá quy định</span></div><div className="attendance-kpi"><strong>{summary.incomplete}</strong><span>Thiếu FaceID nghỉ</span></div></div>
+      <div className="attendance-kpis"><div className="attendance-kpi"><strong>{summary.employees}</strong><span>Bản ghi chấm công</span></div><div className="attendance-kpi"><strong>{summary.breaks}</strong><span>Đủ cặp nghỉ giữa ca</span></div><div className="attendance-kpi"><strong>{summary.over}</strong><span>Nghỉ/vào lại quá quy định</span></div><div className="attendance-kpi"><strong>{summary.incomplete}</strong><span>Đang nghỉ / thiếu FaceID vào lại</span></div></div>
       <div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Ca làm việc</th><th>Tình trạng đầu ca</th><th>Nghỉ giữa ca</th><th>Tình trạng vào lại sau nghỉ</th><th>Tổng giờ</th></tr></thead><tbody>{records.map((item, index) => {
         const startStatus = startStatusFor(item)
         const returnStatus = breakReturnStatusFor(item)
@@ -215,7 +226,7 @@ export default function SnapshotPage({ user }) {
           <td><strong>{item.employee_name}</strong><small>{item.employee_code} · {item.break_department || '—'}</small></td>
           <td>{item.shift || '—'}<small>{item.shift_start || '—'} – {item.shift_end || '—'}</small></td>
           <td className="attendance-status-cell"><strong className={startStatus.tone}>{startStatus.label}</strong><small>FaceID: {item.check_in || '—'}</small><small>{startStatus.detail}</small></td>
-          <td className="attendance-break"><strong>{item.break_out || '—'} → {item.break_in || '—'}</strong><small>{item.break_actual_minutes || 0}/{item.break_planned_minutes || 0} phút</small><small>{item.break_status || '—'}</small><small className="attendance-source">{item.break_source || item.break_method || ''}</small></td>
+          <td className="attendance-break"><strong>{item.break_out || '—'} → {item.break_in || '—'}</strong><small>{item.break_actual_minutes || 0}/{item.break_planned_minutes || 0} phút</small>{item.break_detail && <small className="attendance-break-detail">{item.break_detail}</small>}<small>Khung nghỉ: từ {shortClock(item.break_window_start, '15:00')} · phải quay lại trước {shortClock(item.break_return_deadline, '20:00')}</small><small>{item.break_status || '—'}</small><small className="attendance-source">{item.break_source || item.break_method || ''}</small></td>
           <td className="attendance-status-cell"><strong className={returnStatus.tone}>{returnStatus.label}</strong><small>{returnStatus.detail}</small><small>FaceID vào lại: {item.break_in || '—'}</small></td>
           <td>{item.total_minutes || 0} phút<small>{item.punch_count || item.raw_faceid_count || 0} lần chấm</small></td>
         </tr>
