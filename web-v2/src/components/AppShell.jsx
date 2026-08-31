@@ -1,7 +1,7 @@
 import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
-import { checkAttendanceBreakAlerts, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
+import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
 
 const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
@@ -83,6 +83,7 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
   const [breakAlertControl, setBreakAlertControl] = useState({ disabled: false, busy: false })
   const [breakAlertPosition, setBreakAlertPosition] = useState(readAlertPosition)
   const [clockMs, setClockMs] = useState(Date.now())
+  const [deletingBreakAlertTag, setDeletingBreakAlertTag] = useState('')
   const breakAlertStackRef = useRef(null)
   const dragRef = useRef(null)
   const role = String(user?.role || '').toLowerCase()
@@ -149,6 +150,22 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
   }, [role, user?.must_change_password])
 
   useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined
+    const onMessage = (event) => {
+      const message = event?.data || {}
+      if (message.type === 'attendance-break-cleared' && message.tag) {
+        setBreakAlerts((current) => current.filter((item) => item.tag !== message.tag))
+      }
+      if (message.type === 'attendance-break-global-disabled') {
+        setBreakAlerts([])
+        setBreakAlertsHidden(false)
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
+  }, [])
+
+  useEffect(() => {
     if (!breakAlerts.length) return undefined
     const timer = window.setInterval(() => setClockMs(Date.now()), 1000)
     return () => window.clearInterval(timer)
@@ -172,6 +189,25 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
     const next = breakAlerts.filter((item) => item.tag !== alert.tag)
     setBreakAlerts(next)
     void syncPersistentBreakNotifications(next)
+  }
+
+  const deleteBreakAlertForAll = async (alert) => {
+    if (!isAdmin || !alert?.key || !alert?.tag || deletingBreakAlertTag) return
+    const accepted = window.confirm(`Xóa hoàn toàn cảnh báo của ${alert.employee} cho tất cả tài khoản? Cảnh báo này sẽ không xuất hiện lại.`)
+    if (!accepted) return
+    setDeletingBreakAlertTag(alert.tag)
+    try {
+      await deleteAttendanceBreakAlertForAll(alert.key, alert.tag)
+      const dismissed = readDismissedBreakAlerts().filter((tag) => tag !== alert.tag)
+      writeDismissedBreakAlerts(dismissed)
+      const next = breakAlerts.filter((item) => item.tag !== alert.tag)
+      setBreakAlerts(next)
+      await syncPersistentBreakNotifications(next)
+    } catch (error) {
+      window.alert(error?.message || 'Không xóa được cảnh báo cho tất cả tài khoản.')
+    } finally {
+      setDeletingBreakAlertTag('')
+    }
   }
 
   const toggleGlobalBreakAlerts = async (disabled) => {
@@ -237,7 +273,7 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
       {/* Legacy full reload used window.location.reload(); current refresh remounts only the visible page. */}
       <style>{`
         .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:700;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
-        .break-alert-stack{position:fixed;z-index:1200;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 90px);overflow-y:auto;display:grid;gap:6px;margin:0;pointer-events:auto}.break-alert-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:10px;background:#173d31;color:white;box-shadow:0 5px 16px rgba(31,54,46,.18);cursor:move;touch-action:none;user-select:none}.break-alert-toolbar strong{font-size:12px;color:white}.break-alert-toolbar-actions{display:flex;align-items:center;gap:5px}.break-alert-toolbar button,.break-alert-card button,.break-alert-hidden-chip button,.break-alert-global-off button{border:1px solid currentColor;background:#fff;border-radius:7px;padding:4px 7px;font-size:11px;font-weight:800;cursor:pointer}.break-alert-toolbar button{color:#173d31}.break-alert-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px;align-items:flex-start;padding:8px 10px;border:1px solid #a92c25;border-radius:10px;background:#fff6f4;box-shadow:0 5px 16px rgba(120,24,17,.13)}.break-alert-card.employee{border-color:#c98212;background:#fff9ed}.break-alert-card>svg{margin-top:1px;color:#a92c25}.break-alert-card.employee>svg{color:#a46708}.break-alert-card strong{display:block;font-size:12px;line-height:1.3;color:#8d211b}.break-alert-card.employee strong{color:#8b5a05}.break-alert-card span{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:#543d38}.break-alert-card .break-alert-timer{font-weight:900;font-size:12px}.break-alert-actions{display:flex;justify-content:flex-end;margin-top:5px}.break-alert-dismiss{color:#8d211b}.break-alert-hidden-chip,.break-alert-global-off{position:fixed;z-index:1200;display:flex;align-items:center;gap:7px;border:1px solid #9c6a13;border-radius:10px;background:#fff8e8;box-shadow:0 5px 16px rgba(80,58,20,.16);padding:7px 9px;font-size:11px;font-weight:800}.break-alert-hidden-chip button,.break-alert-global-off button{color:#75500c}.break-alert-global-off{right:18px;top:82px;border-color:#6d746f;background:#f4f6f5;color:#34433d}.break-alert-global-off button{color:#34433d}
+        .break-alert-stack{position:fixed;z-index:1200;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 90px);overflow-y:auto;display:grid;gap:6px;margin:0;pointer-events:auto}.break-alert-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:10px;background:#173d31;color:white;box-shadow:0 5px 16px rgba(31,54,46,.18);cursor:move;touch-action:none;user-select:none}.break-alert-toolbar strong{font-size:12px;color:white}.break-alert-toolbar-actions{display:flex;align-items:center;gap:5px}.break-alert-toolbar button,.break-alert-card button,.break-alert-hidden-chip button,.break-alert-global-off button{border:1px solid currentColor;background:#fff;border-radius:7px;padding:4px 7px;font-size:11px;font-weight:800;cursor:pointer}.break-alert-toolbar button{color:#173d31}.break-alert-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px;align-items:flex-start;padding:8px 10px;border:1px solid #a92c25;border-radius:10px;background:#fff6f4;box-shadow:0 5px 16px rgba(120,24,17,.13)}.break-alert-card.employee{border-color:#c98212;background:#fff9ed}.break-alert-card>svg{margin-top:1px;color:#a92c25}.break-alert-card.employee>svg{color:#a46708}.break-alert-card strong{display:block;font-size:12px;line-height:1.3;color:#8d211b}.break-alert-card.employee strong{color:#8b5a05}.break-alert-card span{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:#543d38}.break-alert-card .break-alert-timer{font-weight:900;font-size:12px}.break-alert-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap;margin-top:5px}.break-alert-dismiss{color:#6c594f}.break-alert-delete-global{color:#a01818!important;border-color:#a01818!important;background:#fff!important}.break-alert-delete-global:disabled{opacity:.55;cursor:wait}.break-alert-hidden-chip,.break-alert-global-off{position:fixed;z-index:1200;display:flex;align-items:center;gap:7px;border:1px solid #9c6a13;border-radius:10px;background:#fff8e8;box-shadow:0 5px 16px rgba(80,58,20,.16);padding:7px 9px;font-size:11px;font-weight:800}.break-alert-hidden-chip button,.break-alert-global-off button{color:#75500c}.break-alert-global-off{right:18px;top:82px;border-color:#6d746f;background:#f4f6f5;color:#34433d}.break-alert-global-off button{color:#34433d}
         @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05}.break-alert-stack{width:calc(100vw - 12px);max-height:calc(100vh - 72px)}.break-alert-toolbar{padding:6px}.break-alert-card{padding:7px 8px}.break-alert-global-off{right:6px;top:70px}}
         @media(max-width:430px){.topbar-title.vera-script-tagline{font-size:20px;white-space:normal}.break-alert-toolbar{align-items:flex-start}.break-alert-toolbar-actions{flex-wrap:wrap;justify-content:flex-end}}
       `}</style>
@@ -301,7 +337,10 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
                 <strong>{alert.audience === 'staff' ? `VÀO LẠI TRỄ · ${alert.employee}` : `NHẮC VÀO LẠI · ${alert.employee}`}</strong>
                 <span>{alert.break_out} → hạn {alert.deadline} · {alert.planned_minutes} phút.</span>
                 <span className="break-alert-timer">{liveAlertTiming(alert, clockMs)}</span>
-                {isAdmin && <div className="break-alert-actions"><button type="button" className="break-alert-dismiss" onClick={() => dismissBreakAlert(alert)}>Tắt thông báo này</button></div>}
+                {isAdmin && <div className="break-alert-actions">
+                  <button type="button" className="break-alert-dismiss" onClick={() => dismissBreakAlert(alert)}>Tắt trên máy này</button>
+                  <button type="button" className="break-alert-delete-global" disabled={Boolean(deletingBreakAlertTag)} onClick={() => void deleteBreakAlertForAll(alert)}>{deletingBreakAlertTag === alert.tag ? 'Đang xóa…' : 'Xóa cho tất cả'}</button>
+                </div>}
               </div>
             </div>)}
           </div>}
