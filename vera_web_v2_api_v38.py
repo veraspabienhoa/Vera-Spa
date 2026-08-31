@@ -17,6 +17,7 @@ from vera_web_v2_leave_violation_split import install_leave_violation_split_rout
 from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
 from vera_web_v2_operations_v41 import install_operations_v41
+from vera_web_v2_outside_leave_rule import install_outside_leave_rule
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
 from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
 from vera_web_v2_payroll_saved_edit import install_payroll_saved_edit_routes
@@ -133,6 +134,10 @@ install_attendance_break_alerts(
     identity_type=_api.Identity,
     vn_tz=_api.VN_TZ,
 )
+# Apply the same-day Đi trễ/Về sớm restriction after TimeSoft + TourVera break
+# reconstruction, so a late-entered Về sớm record can still trigger Auto Check
+# from the employee's already-recorded Giờ ra.
+install_outside_leave_rule(_shared.app, engine_instance=_api._engine_instance)
 
 install_operations_v41(
     _shared.app,
