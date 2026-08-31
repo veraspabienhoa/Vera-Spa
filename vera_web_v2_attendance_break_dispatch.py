@@ -1,9 +1,9 @@
 """Server-side Web Push dispatcher for mid-shift break deadlines.
 
-Unlike the in-app 15-second polling, this endpoint is designed for pg_cron.
-It lets an installed iPhone PWA receive lock-screen push even while VERA SPA is
-closed. Existing alert state rows provide idempotency when browser polling and
-server cron happen at the same time.
+Unlike the in-app polling, this endpoint is designed for pg_cron. It lets an
+installed iPhone PWA receive lock-screen push even while VERA SPA is closed.
+Existing alert state rows provide idempotency when browser polling and server
+cron happen at the same time. Production cadence is every 5 minutes.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import vera_web_v2_attendance_break_alerts as alerts
 import vera_web_v2_snapshot as snapshot
 
 
-RELEASE = "attendance-break-server-push-2026-08-31-v1"
+RELEASE = "attendance-break-server-push-2026-08-31-v2"
 _ORIGINAL_PAYLOAD = alerts._payload
 
 
@@ -107,7 +107,7 @@ def install_attendance_break_dispatch(
                     "break_in": fact["break_in"].isoformat() if fact["break_in"] else "",
                     "source": fact["source"],
                     "last_checked_at": now_aware.isoformat(),
-                    "dispatch_mode": "server_cron",
+                    "dispatch_mode": "server_cron_5m",
                 })
                 alerts._save_state(conn, fact["key"], state)
 
@@ -140,7 +140,7 @@ def install_attendance_break_dispatch(
         return {
             "ok": True,
             "release": RELEASE,
-            "schedule_recommended": "every minute",
+            "schedule_recommended": "every 5 minutes",
             "works_when_pwa_closed": True,
             "reminder_before_minutes": 15,
         }
