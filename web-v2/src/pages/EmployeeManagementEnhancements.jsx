@@ -36,19 +36,19 @@ export default function EmployeeManagementEnhancements({ user }) {
         }
       }
 
-      // Admin-only break configuration is shown directly in NHÂN VIÊN, before
-      // the staff filters/table. It edits the exact shift settings consumed by
-      // CHẤM CÔNG, so there is only one source of truth.
+      // Admin-only break configuration belongs at the very bottom of NHÂN VIÊN,
+      // after the complete staff list on both desktop and mobile. It edits the
+      // exact shift settings consumed by CHẤM CÔNG.
       const staffPage = document.querySelector('.staff-page')
-      const controlPanel = staffPage?.querySelector('.staff-control-panel')
-      if (isAdmin && staffPage && controlPanel) {
+      const listPanel = staffPage?.querySelector('.staff-list-panel')
+      if (isAdmin && staffPage && listPanel) {
         let host = staffPage.querySelector('[data-shift-break-settings-host="true"]')
         if (!host) {
           host = document.createElement('div')
           host.dataset.shiftBreakSettingsHost = 'true'
-          staffPage.insertBefore(host, controlPanel)
           ownedBreakHost = host
         }
+        if (staffPage.lastElementChild !== host) staffPage.appendChild(host)
         setBreakTarget((current) => current === host ? current : host)
       } else {
         if (ownedBreakHost?.isConnected) ownedBreakHost.remove()
