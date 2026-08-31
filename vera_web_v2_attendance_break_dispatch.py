@@ -18,11 +18,12 @@ import vera_web_v2_snapshot as snapshot
 
 
 RELEASE = "attendance-break-server-push-2026-08-31-v1"
+_ORIGINAL_PAYLOAD = alerts._payload
 
 
 def _payload_without_source(fact: dict[str, Any], kind: str) -> dict[str, Any]:
     """Preserve the canonical payload but omit technical source text."""
-    payload = alerts._payload(fact, kind)
+    payload = _ORIGINAL_PAYLOAD(fact, kind)
     if kind == "overdue":
         employee = fact["employee"]
         start = fact["break_out"].strftime("%H:%M:%S")
