@@ -16,7 +16,7 @@ $do$;
 
 SELECT cron.schedule(
   'vera-v2-break-alert-dispatch',
-  '* * * * *',
+  '*/5 * * * *',
   $cron$
     SELECT net.http_post(
       url := 'https://vera-spa-api-589916994342.asia-southeast1.run.app/v2/attendance/break-alerts/dispatch',
