@@ -49,6 +49,11 @@ export default function TourAdminCustomerCount({ user }) {
         setCustomerCount(0)
         return
       }
+      const retainedValue = filter.dataset.tourCustomerCount
+      if (retainedValue !== undefined && retainedValue !== '') {
+        setCustomerCount(numberValue(retainedValue))
+        return
+      }
       const headers = Array.from(table.querySelectorAll('thead th'))
       const totalIndex = headers.findIndex((cell) => {
         const key = normalize(cell.textContent)
@@ -73,7 +78,7 @@ export default function TourAdminCustomerCount({ user }) {
 
     sync()
     const observer = new MutationObserver(schedule)
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true })
     document.addEventListener('click', schedule, true)
     return () => {
       observer.disconnect()

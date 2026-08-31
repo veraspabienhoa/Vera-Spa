@@ -139,6 +139,11 @@ function groupCount(records, key) {
   return records.reduce((count, record) => count + (hasGroup(record, key) ? 1 : 0), 0)
 }
 
+function numberValue(value) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9-]/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function employeeCountFromStt(records, columns) {
   const values = records.map((record) => sttValue(record, columns)).filter(Boolean)
   return new Set(values).size
@@ -185,6 +190,13 @@ export default function TourPage({ user }) {
     () => prioritizeRecords(shiftRecords, columns, activeFilter),
     [activeFilter, columns, shiftRecords],
   )
+  const retainedMetric = data.metric_snapshots?.[shiftFilter] || null
+  const customerCount = useMemo(() => {
+    if (retainedMetric && Number.isFinite(Number(retainedMetric.customer_count))) return Number(retainedMetric.customer_count)
+    const totalColumn = findColumn(columns, ['TONG SL', 'TONG SO LUONG'])
+    return shiftRecords.reduce((sum, record) => sum + numberValue(record[totalColumn]), 0)
+      + groupCount(shiftRecords, 'waiting')
+  }, [columns, retainedMetric, shiftRecords])
   const metrics = useMemo(() => [
     { key: 'available', label: 'Có thể lên tua', value: groupCount(shiftRecords, 'available'), className: 'tour-available-metric' },
     { key: 'all', label: 'Số nhân viên', value: employeeCountFromStt(shiftRecords, columns), className: '' },
@@ -193,8 +205,8 @@ export default function TourPage({ user }) {
     { key: 'waiting', label: 'Đang chờ', value: groupCount(shiftRecords, 'waiting'), className: '' },
     { key: 'leave', label: 'Nghỉ phép', value: groupCount(shiftRecords, 'leave'), className: '' },
     { key: 'doing', label: 'Đang thực hiện', value: groupCount(shiftRecords, 'doing'), className: '' },
-    { key: 'break', label: 'Nghỉ giữa Ca', value: groupCount(shiftRecords, 'break'), className: 'tour-break-metric' },
-  ], [columns, shiftRecords])
+    { key: 'break', label: 'Nghỉ giữa Ca', value: retainedMetric?.break_count ?? groupCount(shiftRecords, 'break'), className: 'tour-break-metric' },
+  ], [columns, retainedMetric, shiftRecords])
   const chooseFilter = (key) => setActiveFilter((current) => key === 'all' || current === key ? 'all' : key)
 
   return <div className="feature-page">
@@ -208,12 +220,13 @@ export default function TourPage({ user }) {
     <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1><p>Countdown cập nhật mỗi 30 giây; file TourVera được đọc lại tối đa mỗi 1 phút.</p></div>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div>
     {error && <div className="error-box">{error}</div>}
     {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
-    <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca">
+    <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca" data-tour-customer-count={customerCount}>
       <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
       <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
       <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
       <small>Đang hiển thị {displayedRecords.length}/{validRecords.length} nhân viên</small>
     </div>
+    {data.metrics_retained_until_10 && <div className="setup-note">Số khách và Nghỉ giữa ca đang giữ số chốt ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng.</div>}
     <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
     <section className="panel tour-table-panel"><div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>{!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}</section>
     <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu áp dụng cho toàn bộ dòng và Break luôn được ưu tiên cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>

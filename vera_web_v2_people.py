@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from io import BytesIO
+import json
 import math
 import re
 import threading
@@ -316,6 +317,76 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
     }
 
 
+def _tour_shift_bucket(record: dict[str, Any], columns: list[str]) -> str:
+    column = _find_column_any(columns, ("Vào ca", "Giờ vào ca", "Thời gian vào ca", "Ca"))
+    raw = str(record.get(column, "") or "").strip()
+    token = _token(raw).replace(" ", "")
+    if token in {"ca1", "10", "10h", "10h00"}:
+        return "ca1"
+    if token in {"ca2", "12", "12h", "12h00", "14", "14h", "14h00"}:
+        return "ca2"
+    match = re.search(r"(\d{1,2})\s*[:hH]", raw)
+    if match:
+        return "ca1" if int(match.group(1)) < 12 else "ca2"
+    return ""
+
+
+def _tour_metric_snapshots(prepared: dict[str, Any]) -> dict[str, dict[str, int]]:
+    columns = list(prepared.get("columns") or [])
+    records = list(prepared.get("records") or [])
+    total_column = _find_column_any(columns, ("Tổng SL", "Tổng số lượng"))
+    output: dict[str, dict[str, int]] = {}
+    for bucket in ("all", "ca1", "ca2"):
+        scoped = records if bucket == "all" else [
+            row for row in records if _tour_shift_bucket(row, columns) == bucket
+        ]
+        total_quantity = sum(int(round(_tour_number(row.get(total_column)) or 0)) for row in scoped) if total_column else 0
+        waiting = sum(1 for row in scoped if "waiting" in (row.get("_tour_groups") or []))
+        breaks = sum(1 for row in scoped if "break" in (row.get("_tour_groups") or []))
+        output[bucket] = {
+            "total_quantity": total_quantity,
+            "waiting_count": waiting,
+            "customer_count": total_quantity + waiting,
+            "break_count": breaks,
+        }
+    return output
+
+
+def _retained_tour_metrics(conn, current: dict[str, Any], now: datetime, actor: str) -> tuple[dict[str, Any], str, bool]:
+    """Keep the previous workday's closing counters until 10:00 Vietnam time."""
+    before_rollover = now.hour < 10
+    business_date = now.date() - timedelta(days=1) if before_rollover else now.date()
+    setting_key = business_date.isoformat()
+    if not before_rollover:
+        payload = {
+            "date": setting_key,
+            "updated_at": now.isoformat(),
+            "rollover_hour": 10,
+            "buckets": current,
+        }
+        conn.execute(text("""
+            INSERT INTO vera_app_setting(
+                category,setting_key,value_json,source,updated_by,revision,created_at,updated_at
+            ) VALUES (
+                'tour_daily_metrics',:key,CAST(:value AS jsonb),'web_v2',:actor,1,NOW(),NOW()
+            )
+            ON CONFLICT(category,setting_key) DO UPDATE SET
+                value_json=EXCLUDED.value_json,
+                source='web_v2', updated_by=EXCLUDED.updated_by,
+                revision=vera_app_setting.revision+1, updated_at=NOW()
+            WHERE vera_app_setting.value_json->'buckets' IS DISTINCT FROM EXCLUDED.value_json->'buckets'
+        """), {"key": setting_key, "value": json.dumps(payload, ensure_ascii=False), "actor": actor})
+        return current, setting_key, False
+
+    saved = conn.execute(text("""
+        SELECT value_json FROM vera_app_setting
+        WHERE category='tour_daily_metrics' AND setting_key=:key
+        LIMIT 1
+    """), {"key": setting_key}).scalar_one_or_none()
+    buckets = saved.get("buckets") if isinstance(saved, dict) else None
+    return (buckets if isinstance(buckets, dict) else current), setting_key, isinstance(buckets, dict)
+
+
 def install_people_routes(
     app, *, engine_instance: Callable[[], Any], current_identity, require_feature,
     identity_type, vn_tz,
@@ -366,9 +437,19 @@ def install_people_routes(
             columns = list(_tour_cache["columns"])
             source_updated_at = str(_tour_cache["source_updated_at"])
         prepared = _prepare_tour(columns, records, datetime.now(vn_tz))
+        now = datetime.now(vn_tz)
+        current_metrics = _tour_metric_snapshots(prepared)
+        with engine_instance().begin() as conn:
+            retained_metrics, metrics_date, metrics_retained = _retained_tour_metrics(
+                conn, current_metrics, now, str(ident.employee_username or "web_v2"),
+            )
         return {
             **prepared,
             "count": len(records),
             "source_updated_at": source_updated_at,
             "viewer_can_see_stats": str(ident.role or "").lower() in {"admin", "quanly", "letan"},
+            "metric_snapshots": retained_metrics,
+            "metrics_business_date": metrics_date,
+            "metrics_retained_until_10": metrics_retained,
+            "metrics_rollover_hour": 10,
         }
