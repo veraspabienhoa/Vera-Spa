@@ -1,12 +1,14 @@
-"""Shared PostgreSQL switch for the Web V2 TourVera cache.
+"""Shared PostgreSQL switch for the Web V2 TourVera cache refresh.
 
-This control is intentionally narrower than Auto Check:
-- Admin may pause the frequent TourVera -> PostgreSQL cache refresh used by
-  Chấm công / nghỉ giữa ca alerts.
+This control is intentionally narrower than Auto Check and break alerts:
+- Admin may pause the frequent TourVera -> PostgreSQL cache-only refresh used by
+  Chấm công / nghỉ giữa ca fallback logic.
 - Auto Check may still read TourVera on its own scheduled/manual run so the
   existing penalty business rules are not silently disabled.
-- Web requests never download TourVera directly; when paused they also ignore
-  any previously cached TourVera payload immediately.
+- Web requests never download TourVera directly.
+- Pausing refresh does NOT pause break alerts. Web V2 may continue to use the
+  last PostgreSQL TourVera snapshot from the same business day as a fallback,
+  while TimeSoft remains the authoritative source whenever it has break data.
 """
 from __future__ import annotations
 
@@ -77,4 +79,6 @@ def status(conn) -> dict[str, Any]:
         "cache_expires_at": (cache or {}).get("expires_at"),
         "cache_source_version": str((cache or {}).get("source_version") or ""),
         "dataset_key": DATASET_KEY,
+        "break_alerts_continue": True,
+        "paused_read_mode": "same_day_last_cache",
     }
