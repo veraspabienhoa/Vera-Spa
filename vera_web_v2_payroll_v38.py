@@ -217,7 +217,12 @@ def install_payroll_v38_routes(
 
     @app.get("/v2/payroll-v38/health")
     def payroll_v38_health():
-        return {"ok": True, "release": PAYROLL_V38_RELEASE}
+        return {
+            "ok": True,
+            "release": PAYROLL_V38_RELEASE,
+            "source_worksheet": _payroll.PAYROLL_SOURCE_WORKSHEET,
+            "source_reader_release": _payroll.PAYROLL_SOURCE_READER_RELEASE,
+        }
 
     @app.get("/v2/payroll-v38/employee-overrides")
     def get_employee_overrides(ident: identity_type = Depends(current_identity)):

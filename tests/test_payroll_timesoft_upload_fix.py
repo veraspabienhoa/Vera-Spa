@@ -56,10 +56,9 @@ def _timesoft_workbook_with_stale_dimension() -> bytes:
     return output.getvalue()
 
 
-def test_payroll_reader_ignores_stale_timesoft_dimension_and_finds_tip_rows():
-    install_payroll_timesoft_upload_fix()
-    assert getattr(payroll, "_timesoft_upload_dimension_fix_release") == RELEASE
-
+def test_canonical_payroll_reader_uses_revenue_invoice_sheet_and_ignores_stale_dimension():
+    assert payroll.PAYROLL_SOURCE_WORKSHEET == "Báo cáo doanh thu hóa đơn"
+    assert payroll.PAYROLL_SOURCE_READER_RELEASE == RELEASE
     source = payroll._read_source(_timesoft_workbook_with_stale_dimension())
     assert len(source) == 4
     assert source["item"].tolist() == ["90'", "Tip_250", "Tip-300", "TIP 200"]
@@ -73,3 +72,8 @@ def test_payroll_reader_ignores_stale_timesoft_dimension_and_finds_tip_rows():
     assert len(tips) == 3
     assert summary["tip_rows"] == 3
     assert summary["salary_total"] == 750000
+
+
+def test_payroll_upload_compatibility_installer_reports_canonical_reader_release():
+    install_payroll_timesoft_upload_fix()
+    assert getattr(payroll, "_timesoft_upload_dimension_fix_release") == RELEASE
