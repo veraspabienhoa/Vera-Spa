@@ -10,6 +10,7 @@ from vera_web_v2_attendance_v42 import install_attendance_v42
 from vera_web_v2_attendance_break_window import install_attendance_break_window
 from vera_web_v2_attendance_break_alerts import install_attendance_break_alerts
 from vera_web_v2_attendance_break_dispatch import install_attendance_break_dispatch
+from vera_web_v2_attendance_policy_patch import install_attendance_policy_patch
 from vera_web_v2_break_alert_control import install_break_alert_control
 from vera_web_v2_break_return_penalty import install_break_return_penalty
 from vera_web_v2_auto_check import install_auto_check_routes
@@ -137,6 +138,10 @@ install_attendance_break_alerts(
     identity_type=_api.Identity,
     vn_tz=_api.VN_TZ,
 )
+# Align automatic outside penalties with the current Nội quy labels and use
+# two five-minute FaceID groups to identify a pre-registered 17:00 Về sớm
+# checkout before the same-day restriction wrapper evaluates the event.
+install_attendance_policy_patch()
 # Apply the same-day Đi trễ/Về sớm restriction after TimeSoft + TourVera break
 # reconstruction, so a late-entered Về sớm record can still trigger Auto Check
 # from the employee's already-recorded Giờ ra.
