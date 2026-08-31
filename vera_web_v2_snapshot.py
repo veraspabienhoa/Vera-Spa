@@ -10,7 +10,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from io import BytesIO
 import json
+import re
 from typing import Any, Callable
+import unicodedata
 from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, Query
@@ -62,6 +64,60 @@ def _number(value: Any, default=0) -> int:
         return int(float(value or 0))
     except Exception:
         return int(default)
+
+
+def _norm(value: Any) -> str:
+    raw = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    return " ".join("".join(ch for ch in raw if unicodedata.category(ch) != "Mn").replace("đ", "d").split())
+
+
+def _support_late_allowances(conn, start: date, end: date) -> dict[tuple[date, str], tuple[int, str]]:
+    rows = conn.execute(text("""
+        SELECT leave_date, employee_name, leave_reason
+        FROM leave_records
+        WHERE leave_date BETWEEN :start_date AND :end_date
+    """), {"start_date": start, "end_date": end}).mappings().all()
+    output: dict[tuple[date, str], tuple[int, str]] = {}
+    for row in rows:
+        reason = str(row.get("leave_reason") or "").strip()
+        normalized = _norm(reason)
+        if "ho tro" not in normalized:
+            continue
+        match = re.search(r"di tre\s+(\d+(?:[.,]\d+)?)\s*(?:tieng|gio)", normalized)
+        if not match:
+            continue
+        allowance = int(round(float(match.group(1).replace(",", ".")) * 60))
+        key = (row["leave_date"], _norm(row.get("employee_name")))
+        if key not in output or allowance > output[key][0]:
+            output[key] = (allowance, reason)
+    return output
+
+
+def _apply_support_shift_start(item: dict[str, Any], support_allowances: dict[tuple[date, str], tuple[int, str]]) -> dict[str, Any]:
+    try:
+        work_date = datetime.strptime(str(item.get("date") or ""), "%d/%m/%Y").date()
+    except ValueError:
+        return item
+    support = support_allowances.get((work_date, _norm(item.get("employee_name"))))
+    if not support:
+        return item
+    allowance, reason = support
+    shift_start = _parse_punch(item.get("shift_start"), item["date"])
+    if shift_start is None:
+        return item
+    effective_start = shift_start + timedelta(minutes=allowance)
+    check_in = _parse_punch(item.get("check_in"), item["date"])
+    late_minutes = item.get("late_minutes", 0)
+    if check_in is not None:
+        late_minutes = max(0, int((check_in - effective_start).total_seconds() // 60))
+    return {
+        **item,
+        "shift_start": effective_start.strftime("%H:%M"),
+        "late_minutes": late_minutes,
+        "arrival_status": "Đi trễ" if late_minutes > 0 else "Đúng giờ",
+        "support_reason": reason,
+        "support_late_allowance_minutes": allowance,
+    }
 
 
 def _parse_punch(value: Any, work_day: str) -> datetime | None:
@@ -202,6 +258,7 @@ def _record(item: dict[str, Any], definitions: list[dict[str, Any]], break_confi
 
 def _records(conn, start: date, end: date) -> list[dict[str, Any]]:
     definitions, break_config = _shift_break_settings(conn)
+    support_allowances = _support_late_allowances(conn, start, end)
     rows = conn.execute(text("""
         SELECT dataset_key, payload
         FROM vera_dataset_cache
@@ -215,7 +272,7 @@ def _records(conn, start: date, end: date) -> list[dict[str, Any]]:
         for raw in dataset.get("payload") or []:
             if not isinstance(raw, dict):
                 continue
-            item = _record(raw, definitions, break_config)
+            item = _apply_support_shift_start(_record(raw, definitions, break_config), support_allowances)
             try:
                 item_date = datetime.strptime(item["date"], "%d/%m/%Y").date()
             except ValueError:
