@@ -26,6 +26,7 @@ from email.mime.text import MIMEText
 import pandas as pd
 
 import timesoft_sync_job as ts
+from vera_attendance_rules import late_penalty_eligible, supported_late_minutes
 
 # V93.3: nguồn TourVera hiện hành + Auto vắng mặt sau 20:00.
 ts.BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
@@ -285,12 +286,11 @@ def reverse_supported_timesoft_penalties(client, catalog: dict) -> dict:
         if not reasons:
             continue
 
-        # Hỗ trợ không nhận diện: giữ hành vi cũ, xóa Auto phạt.
-        # Hỗ trợ có ngưỡng: chỉ xóa nếu số phút trễ <= mức được phép.
+        # Trừ thời gian Hỗ trợ trước, sau đó mới áp ngưỡng phạt đi trễ.
         late_minutes = _late_minutes_from_auto_detail(row.get("Chi tiết", ""))
         should_reverse = allowance is None
         if allowance is not None and late_minutes is not None:
-            should_reverse = float(late_minutes) <= float(allowance)
+            should_reverse = not late_penalty_eligible(late_minutes, ts.AUTO_PENALTY_MINUTES, allowance)
         elif allowance is not None and late_minutes is None:
             # Không đủ dữ liệu để chứng minh vượt ngưỡng -> ưu tiên không phạt sai.
             should_reverse = True
@@ -544,20 +544,22 @@ def process_timesoft_today(client, cfg: dict, employee_map: dict, catalog: dict,
                 )
                 continue
 
-            # 3 lý do Hỗ trợ có ngưỡng: chỉ bỏ qua nếu check-in trễ <= mức cho phép.
-            if float(minutes) <= float(allowance):
+            adjusted_minutes = supported_late_minutes(minutes, allowance)
+            if adjusted_minutes is None or adjusted_minutes < threshold:
                 result["skipped"] += 1
                 result["support_skipped"] += 1
                 _log(
                     f"AUTO TIMESOFT SKIP SUPPORT LIMIT: {employee} · {work_date.strftime('%d/%m/%Y')} · "
-                    f"trễ {minutes:.0f}/{allowance} phút · '{support_reason}'"
+                    f"trễ gốc {minutes:.0f} phút · hỗ trợ {allowance} phút · "
+                    f"còn {float(adjusted_minutes or 0):.0f}/{threshold} phút · '{support_reason}'"
                 )
                 continue
 
             _log(
                 f"AUTO TIMESOFT SUPPORT EXCEEDED: {employee} · {work_date.strftime('%d/%m/%Y')} · "
-                f"trễ {minutes:.0f} phút > cho phép {allowance} phút · '{support_reason}'"
+                f"trễ sau hỗ trợ {adjusted_minutes:.0f} phút >= ngưỡng {threshold} phút · '{support_reason}'"
             )
+            minutes = adjusted_minutes
 
         shift_start = ts._timesoft_row_value(row, ["StartWorkTime", "WorkTimeStart", "ShiftStartTime"])
         checkin_time = ts._timesoft_row_value(row, ["MachineTimeCheckInStr", "CheckInTimeStr", "CheckInTime"])
