@@ -2,14 +2,40 @@ import { getCurrentSession } from './supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
-export async function checkAttendanceBreakAlerts() {
-  if (!apiBase) return { alerts: [], alert_count: 0 }
+async function authHeaders() {
   const session = await getCurrentSession()
   const headers = new Headers({ 'Content-Type': 'application/json' })
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  return headers
+}
+
+export async function checkAttendanceBreakAlerts() {
+  if (!apiBase) return { alerts: [], alert_count: 0 }
   const response = await fetch(`${apiBase}/v2/attendance/break-alerts/check`, {
     method: 'POST',
-    headers,
+    headers: await authHeaders(),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
+}
+
+export async function getAttendanceBreakAlertControl() {
+  if (!apiBase) return { disabled: false }
+  const response = await fetch(`${apiBase}/v2/attendance/break-alerts/control`, {
+    headers: await authHeaders(),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
+}
+
+export async function setAttendanceBreakAlertControl(disabled) {
+  if (!apiBase) return { disabled: Boolean(disabled) }
+  const response = await fetch(`${apiBase}/v2/attendance/break-alerts/control`, {
+    method: 'PUT',
+    headers: await authHeaders(),
+    body: JSON.stringify({ disabled: Boolean(disabled) }),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
