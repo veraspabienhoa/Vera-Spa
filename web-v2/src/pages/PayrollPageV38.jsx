@@ -2,6 +2,7 @@ import { RefreshCw, Save, Settings2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
 import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
+import PayrollPersonalTracking from './PayrollPersonalTracking'
 import PayrollSavedAdminPanel from './PayrollSavedAdminPanel'
 import PayrollTimesoftAutoLoader from './PayrollTimesoftAutoLoader'
 import { numberInputDisplayValue } from '../lib/numberInput'
@@ -67,7 +68,6 @@ function PayrollPeriodAutoSelector({ enabled }) {
         return
       }
 
-      // Default follows the calendar period: 01–15 = Kỳ 1, 16–cuối tháng = Kỳ 2.
       const now = new Date()
       setReactControlValue(monthInput, `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
       setReactControlValue(periodSelect, now.getDate() <= 15 ? 1 : 2)
@@ -82,8 +82,6 @@ function PayrollPeriodAutoSelector({ enabled }) {
           setReactControlValue(periodSelect, detected.period_no)
           root.dataset.payrollDetectedPeriod = `${detected.month}-${detected.period_no}`
         } catch (error) {
-          // Automatic PostgreSQL source contains only the canonical payroll sheet;
-          // period remains the already selected month/period in that case.
           console.warn('Không tự nhận được Kỳ lương từ file nguồn:', error.message)
         }
       }
@@ -98,9 +96,20 @@ function PayrollPeriodAutoSelector({ enabled }) {
 }
 
 export default function PayrollPageV38({ user }) {
-  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
+  const role = String(user?.role || '').toLowerCase()
+  const isAdmin = role === 'admin'
   const canEditConfig = isAdmin || Boolean(user?.permissions?.payroll_config_edit)
   const canCalculate = isAdmin || Boolean(user?.permissions?.payroll_calculate)
+  const canFullPayroll = isAdmin || Boolean(
+    user?.permissions?.payroll_calculate
+    || user?.permissions?.payroll_config_edit
+    || user?.permissions?.payroll_penalty_obligation
+    || user?.permissions?.payroll_save
+    || user?.permissions?.payroll_export
+    || user?.permissions?.payroll_email
+    || user?.permissions?.payroll_history_edit
+    || user?.permissions?.payroll_history_delete
+  )
   const [data, setData] = useState({ employees: [], overrides: [], config: {} })
   const [selected, setSelected] = useState([])
   const [living, setLiving] = useState(150000)
@@ -184,12 +193,13 @@ export default function PayrollPageV38({ user }) {
   const configured = data.overrides || []
 
   return <>
-    <PayrollPeriodAutoSelector key={`period-${payrollVersion}`} enabled={canCalculate} />
-    <PayrollTimesoftAutoLoader enabled={canCalculate} />
-    <PayrollPage key={payrollVersion} user={user} />
-    <PayrollSavedAdminPanel user={user} />
-    {isAdmin && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
-    {canEditConfig && <div className="feature-page payroll-page payroll-v38-config">
+    <PayrollPeriodAutoSelector key={`period-${payrollVersion}`} enabled={canCalculate && canFullPayroll} />
+    <PayrollTimesoftAutoLoader enabled={canCalculate && canFullPayroll} />
+    {canFullPayroll && <PayrollPage key={payrollVersion} user={user} />}
+    <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />
+    {canFullPayroll && <PayrollSavedAdminPanel user={user} />}
+    {isAdmin && canFullPayroll && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
+    {canFullPayroll && canEditConfig && <div className="feature-page payroll-page payroll-v38-config">
       <section className="panel">
         <div className="panel-title-row">
           <div>
