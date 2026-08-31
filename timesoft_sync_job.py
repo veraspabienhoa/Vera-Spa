@@ -34,6 +34,7 @@ from sqlalchemy import text
 
 import vera_postgres as vpg
 import vera_auto_check as auto_check
+from vera_attendance_rules import supported_late_minutes
 
 VN_TZ = timezone(timedelta(hours=7))
 
@@ -1066,19 +1067,26 @@ def process_timesoft_penalties(
                 continue
             raw_date = _timesoft_row_value(row, ["WorkDateStr", "WorkDate", "CreateDateStr", "CreateDate"])
             work_date = _parse_date(raw_date) or target_date
+            penalty_minutes = float(minutes)
             with engine.begin() as conn:
                 support_reasons, allowance, support_reason = auto_check.late_support_for_day(conn, work_date, employee)
-                covered = bool(support_reasons) and (allowance is None or float(minutes) <= float(allowance))
+                adjusted_minutes = supported_late_minutes(minutes, allowance) if support_reasons else float(minutes)
+                covered = bool(support_reasons) and (
+                    adjusted_minutes is None or adjusted_minutes < threshold
+                )
                 if covered:
                     revoked = auto_check.revoke_wrong_late_penalty(
                         conn, work_date=work_date, employee=employee, support_reason=support_reason,
                     )
+                elif adjusted_minutes is not None:
+                    penalty_minutes = adjusted_minutes
             if covered:
                 result["skipped"] += 1
                 allowance_text = "không xác định (ưu tiên không phạt)" if allowance is None else f"{allowance} phút"
+                adjusted_text = "không xác định" if adjusted_minutes is None else f"{adjusted_minutes:.0f} phút"
                 _log(
-                    f"AUTO TIMESOFT SKIP SUPPORT: {employee} · trễ {minutes:.0f} phút · "
-                    f"cho phép {allowance_text} · revoked={revoked}"
+                    f"AUTO TIMESOFT SKIP SUPPORT: {employee} · trễ gốc {minutes:.0f} phút · "
+                    f"cho phép {allowance_text} · còn {adjusted_text}/{threshold} phút · revoked={revoked}"
                 )
                 continue
             shift_start = _timesoft_row_value(row, ["StartWorkTime", "WorkTimeStart", "ShiftStartTime"])
@@ -1093,7 +1101,7 @@ def process_timesoft_penalties(
             with engine.begin() as conn:
                 ok, msg = auto_check.save_violation(
                     conn, work_date=work_date, employee=employee, reason_item=reason_item,
-                    detail=detail, source="AUTO UPDATE 24/7 - TIMESOFT", minutes=minutes,
+                    detail=detail, source="AUTO UPDATE 24/7 - TIMESOFT", minutes=penalty_minutes,
                 )
             if ok and msg == "SKIP_DUPLICATE":
                 result["skipped"] += 1
