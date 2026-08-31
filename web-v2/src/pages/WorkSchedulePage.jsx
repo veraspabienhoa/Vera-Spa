@@ -1,6 +1,5 @@
 import { ClipboardPaste, Copy, LoaderCircle, Save } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -109,15 +108,11 @@ export default function WorkSchedulePage({ user }) {
     setNotice('')
     setSelectedCell(null)
     try {
-      const staff = await veraApi.staff()
-      const wanted = (staff.employees || []).filter((item) => (
-        String(item.role || '').toLowerCase() === department
-        && item.employment_status !== 'Đã nghỉ việc'
-      ))
-      setEmployees(wanted)
       const start = isoDate(days[0])
       const end = isoDate(days[days.length - 1])
       const result = await scheduleRequest(`/v2/work-schedule?start=${start}&end=${end}&department=${department}`)
+      const wanted = (result.employees || []).filter((item) => item.employment_status !== 'Đã nghỉ việc')
+      setEmployees(wanted)
       const mapped = Object.fromEntries((result.rows || []).map((row) => [keyFor(row.employee_username, row.work_date), {
         shift_code: row.shift_code || '',
         overtime_shift: row.overtime_shift || '',
