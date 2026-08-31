@@ -22,6 +22,7 @@ def install_purchase_reconcile_alert_check(
     app,
     *,
     engine_instance,
+    api_module,
     current_identity,
     identity_type,
     norm,
@@ -61,7 +62,7 @@ def install_purchase_reconcile_alert_check(
         background_tasks.add_task(
             v2._dispatch_mismatch_alerts,
             engine_instance=engine_instance,
-            api_module=v2._ALERT_API_MODULE,
+            api_module=api_module,
             comparison_rows=comparison_rows,
         )
         return {
