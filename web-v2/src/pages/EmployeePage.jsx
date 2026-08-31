@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 
 const ROLE_LABELS = {
-  admin: 'Admin', quanly: 'Quản lý', letan: 'Lễ tân', leader: 'Leader',
+  admin: 'Admin', giamdoc: 'Giám đốc', quanly: 'Quản lý', letan: 'Lễ tân', leader: 'Leader',
   nhanvien: 'Nhân viên', locker: 'Locker', tapvu: 'Tạp vụ',
 }
 
@@ -51,7 +51,7 @@ function searchKey(value) {
 
 function departmentForRole(role) {
   if (role === 'nhanvien' || role === 'leader') return 'Nhân viên + Leader'
-  return { letan: 'Lễ tân', quanly: 'Quản lý', locker: 'Locker', tapvu: 'Tạp vụ' }[role] || 'Khác'
+  return { giamdoc: 'Giám đốc', letan: 'Lễ tân', quanly: 'Quản lý', locker: 'Locker', tapvu: 'Tạp vụ' }[role] || 'Khác'
 }
 
 function rowDraft(employee) {
@@ -142,7 +142,6 @@ export default function EmployeePage({ user }) {
         && (!shiftFilter || employee.work_shift === shiftFilter)
     })
   }, [data, roleFilter, search, shiftFilter, statusFilter])
-
   const shiftOptions = useMemo(() => Array.from(new Set([
     ...(data?.employees || []).map((employee) => employee.work_shift),
     ...Object.values(data?.shifts_by_department || {}).flat(),
