@@ -4,9 +4,11 @@ Background jobs download TourVera and persist `tourvera_input_today`. Web V2
 must never download/parse the XLSM while a user is opening Chấm công, Đăng ký
 nghỉ, or while the global break-alert poll is running.
 
-Admin can pause this TourVera-backed Web V2 alert source. While paused, Web V2
-returns no TourVera fallback data immediately, even if an older cache row has
-not expired yet. TimeSoft attendance itself continues normally.
+Admin can pause only the frequent Google Drive -> PostgreSQL refresh. Break
+alerts continue. While refresh is paused, Web V2 may use the last cached
+TourVera payload from the same Vietnam business day even after its normal TTL
+expires. TimeSoft remains authoritative whenever it already contains a break
+start/return, so this cache is only a fallback source.
 """
 from __future__ import annotations
 
@@ -19,25 +21,36 @@ import vera_tour_cache_control as cache_control
 import vera_web_v2_attendance_break_alerts as alerts
 
 
-RELEASE = "tourvera-web-postgres-cache-2026-08-31-v2-pausable"
+RELEASE = "tourvera-web-postgres-cache-2026-08-31-v3-alerts-continue"
 DATASET_KEY = cache_control.DATASET_KEY
 
 
 def tour_records(conn) -> list[dict[str, Any]]:
-    """Return only a fresh background-cached TourVera snapshot.
+    """Return PostgreSQL-cached TourVera without ever touching Google Drive.
 
-    Expired/missing/paused cache deliberately returns an empty list. The web
-    request never falls back to Google Drive.
+    Normal mode requires the short-lived fresh cache. When Admin pauses the
+    cache-only refresh, the last cache written today remains readable so break
+    alerts do not disappear merely because Google Drive refresh is paused.
+    Yesterday's payload is never reused on a new business day.
     """
-    if cache_control.disabled(conn):
-        return []
-    row = conn.execute(text("""
-        SELECT payload
-        FROM vera_dataset_cache
-        WHERE dataset_key=:key
-          AND (expires_at IS NULL OR expires_at > NOW())
-        LIMIT 1
-    """), {"key": DATASET_KEY}).scalar_one_or_none()
+    paused = cache_control.disabled(conn)
+    if paused:
+        row = conn.execute(text("""
+            SELECT payload
+            FROM vera_dataset_cache
+            WHERE dataset_key=:key
+              AND (updated_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+                  = (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+            LIMIT 1
+        """), {"key": DATASET_KEY}).scalar_one_or_none()
+    else:
+        row = conn.execute(text("""
+            SELECT payload
+            FROM vera_dataset_cache
+            WHERE dataset_key=:key
+              AND (expires_at IS NULL OR expires_at > NOW())
+            LIMIT 1
+        """), {"key": DATASET_KEY}).scalar_one_or_none()
     if not isinstance(row, list):
         return []
     return [dict(item) for item in row if isinstance(item, dict)]
