@@ -23,6 +23,7 @@ from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_rou
 from vera_web_v2_policy_v39 import install_policy_v39
 from vera_web_v2_policy_v40 import install_policy_v40
 from vera_web_v2_purchase_reconcile import install_purchase_reconcile_routes
+from vera_web_v2_purchase_reconcile_v2 import install_purchase_reconcile_v2
 from vera_web_v2_revenue_leave_list import install_revenue_leave_list_routes
 from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
@@ -96,6 +97,13 @@ install_purchase_reconcile_routes(
     require_feature=_api._require_feature,
     norm=_api._norm,
     google_client=_api._google_client,
+)
+install_purchase_reconcile_v2(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    api_module=_api,
+    current_identity=_api.current_identity,
+    identity_type=_api.Identity,
 )
 
 install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
