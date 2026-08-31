@@ -14,7 +14,7 @@ from sqlalchemy import text
 import vera_web_v2_permissions as permissions
 
 
-RELEASE = "revenue-leave-list-2026-08-29.4-input-current-date"
+RELEASE = "revenue-leave-list-2026-09-01.1-all-stats-visible"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_TIP_SETTING = "current_period_tip"
@@ -269,7 +269,13 @@ def install_revenue_leave_list_routes(
 
     @app.get("/v2/leave/list-enhancements/health")
     def leave_list_enhancements_health():
-        return {"ok": True, "release": RELEASE, "progressive_detail": True, "manager_stats_scope": ["admin", "quanly", "letan"]}
+        return {
+            "ok": True,
+            "release": RELEASE,
+            "progressive_detail": True,
+            "stats_scope": "all_registered_employees",
+            "penalty_visibility": "permission_gated",
+        }
 
     @app.get("/v2/revenue/summary")
     def revenue_summary(ident=Depends(current_identity)):
@@ -343,10 +349,7 @@ def install_revenue_leave_list_routes(
         employee: str = Query(default="", max_length=200),
         ident=Depends(current_identity),
     ):
-        role = str(getattr(ident, "role", "") or "").strip().lower()
         requested_employee = str(employee or "").strip()
-        if role not in {"admin", "quanly", "letan"}:
-            requested_employee = str(getattr(ident, "employee_username", "") or "").strip()
         return original_daily_stats(start_date=start_date, end_date=end_date, employee=requested_employee, ident=ident)
 
     app.state.revenue_leave_list_installed = True
