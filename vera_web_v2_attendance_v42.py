@@ -225,12 +225,34 @@ def _looks_like_final_checkout(value: datetime, work_day: date, item: dict[str, 
         value.date() == work_day + timedelta(days=1) and value.hour < 3
     ):
         return True
-    expected = _expected_end(work_day, item)
-    if expected and punch_count >= 2:
-        delta = (value - expected).total_seconds() / 60
-        if -45 <= delta <= 180:
-            return True
     return False
+
+
+def _pick_break_pair(values: list[datetime], planned: int, cluster_minutes: int):
+    """Choose a 15:00–21:00 break pair after the first (shift check-in) event.
+
+    The first FaceID is always the work check-in, including employees whose
+    permitted/unpermitted late arrival is 17:00.  It must never become a break
+    edge merely because it falls inside the normal mid-shift-break window.
+    """
+    if len(values) < 2:
+        return None
+    if len(values) == 2 and 15 <= values[0].hour <= 21:
+        return values[0], values[1], "Cụm 2 → 3"
+    minimum = max(int(cluster_minutes or 10) + 1, min(30, max(15, round(max(1, planned) * .25))))
+    candidates = []
+    for index, (start, end) in enumerate(zip(values, values[1:])):
+        if not 15 <= start.hour <= 21:
+            continue
+        gap = round((end - start).total_seconds() / 60)
+        if gap < 0:
+            continue
+        penalty = 10000 if gap < minimum else 0
+        candidates.append((abs(gap - max(1, planned)) + penalty, abs(gap - max(1, planned)), index, start, end))
+    if not candidates:
+        return None
+    _, _, index, start, end = min(candidates)
+    return start, end, f"Tự chọn cụm {index + 2} → {index + 3} gần {planned} phút nhất"
 
 
 def _break_from_punches(
@@ -243,13 +265,16 @@ def _break_from_punches(
     clustered = _cluster_punches(punches, int(cfg.get("faceid_cluster_minutes") or 10))
     planned = int(cfg.get("break_planned_minutes") or 0)
     enabled = bool(cfg.get("break_enabled"))
+    restricted_reason = str(cfg.get("break_restricted_reason") or "").strip()
+    restricted = bool(restricted_reason)
     if not clustered:
         return {
             **cfg,
             "break_actual_minutes": 0,
             "break_count": 0,
             "break_detail": "",
-            "break_status": "Chưa ghi nhận FaceID nghỉ" if enabled else "Không áp dụng",
+            "break_status": (f"Không được phép nghỉ giữa ca do {restricted_reason}" if restricted else
+                             "Chưa ghi nhận FaceID nghỉ" if enabled else "Không áp dụng"),
             "punch_times": [],
             "raw_faceid_count": 0,
         }
@@ -262,19 +287,20 @@ def _break_from_punches(
     if middle and _looks_like_final_checkout(middle[-1], work_day, representative, len(clustered)):
         final_checkout = middle.pop()
 
-    intervals: list[tuple[datetime, datetime]] = []
-    for index in range(0, len(middle) - 1, 2):
-        start, end = middle[index], middle[index + 1]
-        if end >= start:
-            intervals.append((start, end))
-    actual = int(sum((end - start).total_seconds() for start, end in intervals) // 60)
-    details = [f"{start.strftime('%H:%M')} → {end.strftime('%H:%M')}" for start, end in intervals]
-    if len(middle) % 2:
-        details.append(f"{middle[-1].strftime('%H:%M')} → chưa chấm vào lại")
+    chosen = _pick_break_pair(middle, planned, int(cfg.get("faceid_cluster_minutes") or 10))
+    break_out, break_in, method = chosen if chosen else (None, None, "Chưa đủ FaceID")
+    actual = int(round((break_in - break_out).total_seconds() / 60)) if break_out and break_in else 0
+    details = [f"{break_out.strftime('%H:%M')} → {break_in.strftime('%H:%M')}"] if break_out else []
+    if not chosen and middle:
+        details.append(f"{middle[0].strftime('%H:%M')} → chưa chấm vào lại")
 
-    if not enabled:
+    if restricted and chosen:
+        status = f"Vi phạm: {restricted_reason} không được nghỉ giữa ca ({actual} phút)"
+    elif restricted:
+        status = f"Không được phép nghỉ giữa ca do {restricted_reason}"
+    elif not enabled:
         status = "Không áp dụng"
-    elif intervals:
+    elif chosen:
         over = actual - planned
         status = f"Quá {over} phút" if planned > 0 and over > 0 else "Trong giới hạn"
     elif middle:
@@ -285,13 +311,19 @@ def _break_from_punches(
     return {
         **cfg,
         "break_actual_minutes": actual,
-        "break_count": len(intervals),
+        "break_over_minutes": max(0, actual - planned),
+        "break_count": 1 if chosen else 0,
         "break_detail": "; ".join(details),
+        "break_out": break_out.strftime("%H:%M:%S") if break_out else "",
+        "break_in": break_in.strftime("%H:%M:%S") if break_in else "",
+        "break_source": "TimeSoft FaceID" if chosen else "",
+        "break_method": method,
         "break_status": status,
         "punch_times": [value.strftime("%H:%M:%S") for value in clustered],
         "raw_faceid_count": len(clustered),
         "faceid_check_in": clustered[0].strftime("%H:%M:%S"),
         "faceid_check_out": final_checkout.strftime("%H:%M:%S") if final_checkout else "",
+        "faceid_last": clustered[-1].strftime("%H:%M:%S"),
     }
 
 
@@ -340,6 +372,20 @@ def _records_v42(conn, start: date, end: date) -> list[dict[str, Any]]:
             continue
         representative = max(rows, key=_representative_score)
         cfg = snapshot._shift_config(representative, definitions, break_config)
+        arrival_status = _norm(representative.get("GoWorkTypeName"))
+        departure_status = _norm(representative.get("LastCheckInTypeName"))
+        restricted_reasons = []
+        if "di tre" in arrival_status:
+            restricted_reasons.append("đi trễ")
+        if "ve som" in departure_status:
+            restricted_reasons.append("về sớm")
+        if restricted_reasons:
+            cfg = {
+                **cfg,
+                "break_enabled": False,
+                "break_planned_minutes": 0,
+                "break_restricted_reason": " và ".join(restricted_reasons),
+            }
         faceid = _break_from_punches(
             bucket["punches"],
             work_day=work_day,
@@ -356,8 +402,9 @@ def _records_v42(conn, start: date, end: date) -> list[dict[str, Any]]:
             base["employee_code"] = str(raw_code).strip()
         if not str(base.get("check_in") or "").strip() and faceid.get("faceid_check_in"):
             base["check_in"] = faceid["faceid_check_in"]
-        if not str(base.get("check_out") or "").strip() and faceid.get("faceid_check_out"):
-            base["check_out"] = faceid["faceid_check_out"]
+        # MachineTimeCheckOutStr is the last FaceID, not always the shift exit.
+        base["check_out"] = faceid.get("faceid_check_out") or ""
+        base["faceid_last"] = faceid.get("faceid_last") or ""
         base["attendance_source"] = "TimeSoft FaceID chi tiết" if faceid.get("raw_faceid_count", 0) >= 2 else "TimeSoft"
         output.append(base)
 
@@ -385,7 +432,7 @@ def install_attendance_v42(app, *, engine_instance: Callable[[], Any]) -> None:
             "legacy_auto_check": True,
             "raw_faceid_clustering": True,
             "cross_midnight_checkout": True,
-            "screen_break_column": False,
+            "screen_break_column": True,
         }
 
     app.state.attendance_v42_installed = True
