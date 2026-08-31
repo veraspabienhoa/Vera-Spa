@@ -1,15 +1,12 @@
 """Daily work-schedule module for VERA Web V2.
 
 Schedules are assigned by individual calendar date, never generated from a recurring
-cycle. Locker and Lễ tân have fixed shift definitions supplied by operations:
-- Locker Ca 1: 09:30-17:30
-- Locker Ca 2: 17:30-01:30 (+1 day)
-- Lễ tân Ca 1: 09:00-17:00
-- Lễ tân Ca 2: 16:30-00:30 (+1 day)
+cycle. The UI may load a whole selected month (up to 63 days per request).
 
-Quản lý is scheduled with a start time and end time for each individual date.
-Overtime remains separate for Locker/Lễ tân so the UI can reproduce the reference
-layout with a main shift and overtime value in each day cell.
+Quản lý is scheduled with a start/end time for each date. Locker and Lễ tân use
+configurable shift definitions stored in PostgreSQL. Locker overtime keeps the
+operational TC Ca 1 / TC Ca 2 markers, while Lễ tân overtime stores an explicit
+start/end time range.
 """
 from __future__ import annotations
 
@@ -22,17 +19,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 
-SHIFT_DEFINITIONS = {
+DEFAULT_SHIFT_DEFINITIONS = {
     "locker": {
-        "Ca 1": {"start": "09:30", "end": "17:30", "end_next_day": False},
-        "Ca 2": {"start": "17:30", "end": "01:30", "end_next_day": True},
+        "Ca 1": {"start": "09:30", "end": "17:30"},
+        "Ca 2": {"start": "17:30", "end": "01:30"},
     },
     "letan": {
-        "Ca 1": {"start": "09:00", "end": "17:00", "end_next_day": False},
-        "Ca 2": {"start": "16:30", "end": "00:30", "end_next_day": True},
-    },
-    "quanly": {
-        "mode": "daily_time_range",
+        "Ca 1": {"start": "09:00", "end": "17:00"},
+        "Ca 2": {"start": "16:30", "end": "00:30"},
     },
 }
 
@@ -50,15 +44,32 @@ class ScheduleRow(BaseModel):
     employee_username: str = Field(min_length=1, max_length=200)
     employee_name: str = Field(default="", max_length=300)
     department: Literal["quanly", "locker", "letan"]
-    shift_code: Literal["Ca 1", "Ca 2", "Nghỉ", "Giờ làm"]
-    overtime_shift: Literal["", "TC Ca 1", "TC Ca 2"] = ""
+    shift_code: str = Field(min_length=1, max_length=100)
+    overtime_shift: str = Field(default="", max_length=100)
     start_time: str = Field(default="", max_length=5)
     end_time: str = Field(default="", max_length=5)
+    overtime_start_time: str = Field(default="", max_length=5)
+    overtime_end_time: str = Field(default="", max_length=5)
     note: str = Field(default="", max_length=500)
 
 
 class ScheduleSave(BaseModel):
     rows: list[ScheduleRow] = Field(default_factory=list, max_length=1000)
+
+
+class ShiftDefinitionRow(BaseModel):
+    shift_code: str = Field(min_length=1, max_length=100)
+    start_time: str = Field(min_length=5, max_length=5)
+    end_time: str = Field(min_length=5, max_length=5)
+
+
+class ShiftDefinitionSave(BaseModel):
+    department: Literal["locker", "letan"]
+    shifts: list[ShiftDefinitionRow] = Field(min_length=1, max_length=20)
+
+
+def _time_is_next_day(start_time: str, end_time: str) -> bool:
+    return end_time <= start_time
 
 
 def _ensure_schema(conn) -> None:
@@ -72,6 +83,8 @@ def _ensure_schema(conn) -> None:
             overtime_shift TEXT NOT NULL DEFAULT '',
             start_time TEXT NOT NULL DEFAULT '',
             end_time TEXT NOT NULL DEFAULT '',
+            overtime_start_time TEXT NOT NULL DEFAULT '',
+            overtime_end_time TEXT NOT NULL DEFAULT '',
             note TEXT NOT NULL DEFAULT '',
             updated_by TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -79,10 +92,48 @@ def _ensure_schema(conn) -> None:
             PRIMARY KEY(work_date, employee_username)
         )
     """))
-    # Safe migration for the first version of the table already in production.
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS start_time TEXT NOT NULL DEFAULT ''"))
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS end_time TEXT NOT NULL DEFAULT ''"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS overtime_start_time TEXT NOT NULL DEFAULT ''"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS overtime_end_time TEXT NOT NULL DEFAULT ''"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vera_work_schedule_department_date ON vera_work_schedule(department, work_date)"))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vera_work_shift_definition (
+            department TEXT NOT NULL,
+            shift_code TEXT NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY(department, shift_code)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vera_work_shift_definition_department ON vera_work_shift_definition(department, sort_order, shift_code)"))
+
+    for department, defaults in DEFAULT_SHIFT_DEFINITIONS.items():
+        existing = conn.execute(text("""
+            SELECT COUNT(*) FROM vera_work_shift_definition WHERE department=:department
+        """), {"department": department}).scalar_one()
+        if int(existing or 0) > 0:
+            continue
+        for sort_order, (shift_code, spec) in enumerate(defaults.items(), start=1):
+            conn.execute(text("""
+                INSERT INTO vera_work_shift_definition(
+                    department, shift_code, start_time, end_time, sort_order, updated_by
+                ) VALUES (
+                    :department, :shift_code, :start_time, :end_time, :sort_order, 'system-default'
+                )
+                ON CONFLICT(department, shift_code) DO NOTHING
+            """), {
+                "department": department,
+                "shift_code": shift_code,
+                "start_time": spec["start"],
+                "end_time": spec["end"],
+                "sort_order": sort_order,
+            })
 
 
 def _role(ident: Any) -> str:
@@ -119,32 +170,96 @@ def _employee_catalog(conn, department: str) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def _validate_row(row: ScheduleRow) -> tuple[str, str]:
-    """Validate and normalize schedule-specific fields."""
+def _load_shift_definitions(conn) -> dict[str, Any]:
+    output: dict[str, Any] = {
+        "quanly": {"mode": "daily_time_range"},
+        "locker": {},
+        "letan": {},
+    }
+    rows = conn.execute(text("""
+        SELECT department, shift_code, start_time, end_time, sort_order
+        FROM vera_work_shift_definition
+        WHERE department IN ('locker','letan')
+        ORDER BY department, sort_order, lower(shift_code)
+    """)).mappings().all()
+    for row in rows:
+        department = str(row.get("department") or "")
+        shift_code = str(row.get("shift_code") or "")
+        start_time = str(row.get("start_time") or "")[:5]
+        end_time = str(row.get("end_time") or "")[:5]
+        if not department or not shift_code:
+            continue
+        output.setdefault(department, {})[shift_code] = {
+            "start": start_time,
+            "end": end_time,
+            "end_next_day": _time_is_next_day(start_time, end_time),
+        }
+    return output
+
+
+def _validate_shift_definition(row: ShiftDefinitionRow) -> tuple[str, str, str]:
+    shift_code = str(row.shift_code or "").strip()
     start_time = str(row.start_time or "").strip()
     end_time = str(row.end_time or "").strip()
+    if not shift_code or shift_code.casefold() in {"nghỉ", "nghi", "giờ làm", "gio lam"}:
+        raise HTTPException(400, "Tên ca không hợp lệ.")
+    if not (_TIME_RE.fullmatch(start_time) and _TIME_RE.fullmatch(end_time)):
+        raise HTTPException(400, f"Ca {shift_code}: giờ bắt đầu/kết thúc phải theo HH:MM.")
+    if start_time == end_time:
+        raise HTTPException(400, f"Ca {shift_code}: giờ bắt đầu và kết thúc không được trùng nhau.")
+    return shift_code, start_time, end_time
+
+
+def _validate_row(row: ScheduleRow, shift_definitions: dict[str, Any]) -> tuple[str, str, str, str, str]:
+    """Validate and normalize schedule-specific fields."""
+    shift_code = str(row.shift_code or "").strip()
+    overtime_shift = str(row.overtime_shift or "").strip()
+    start_time = str(row.start_time or "").strip()
+    end_time = str(row.end_time or "").strip()
+    overtime_start_time = str(row.overtime_start_time or "").strip()
+    overtime_end_time = str(row.overtime_end_time or "").strip()
 
     if row.department == "quanly":
-        if row.shift_code not in {"Giờ làm", "Nghỉ"}:
+        if shift_code not in {"Giờ làm", "Nghỉ"}:
             raise HTTPException(400, "Lịch Quản lý chỉ dùng Giờ làm hoặc Nghỉ.")
-        if row.overtime_shift:
-            raise HTTPException(400, "Lịch Quản lý không dùng TC Ca 1 / TC Ca 2.")
-        if row.shift_code == "Nghỉ":
-            return "", ""
+        if overtime_shift or overtime_start_time or overtime_end_time:
+            raise HTTPException(400, "Lịch Quản lý không dùng tăng ca riêng.")
+        if shift_code == "Nghỉ":
+            return "", "", "", "", ""
         if not (_TIME_RE.fullmatch(start_time) and _TIME_RE.fullmatch(end_time)):
             raise HTTPException(
                 400,
                 f"Quản lý {row.employee_name or row.employee_username} ngày {row.work_date:%d/%m/%Y} cần đủ giờ bắt đầu và giờ kết thúc dạng HH:MM.",
             )
-        return start_time, end_time
+        return start_time, end_time, "", "", ""
 
-    if row.shift_code not in {"Ca 1", "Ca 2", "Nghỉ"}:
-        raise HTTPException(400, "Ca làm việc không hợp lệ.")
-    if row.shift_code != "Nghỉ" and row.shift_code not in SHIFT_DEFINITIONS[row.department]:
-        raise HTTPException(400, "Ca làm việc không hợp lệ.")
-    if row.shift_code == "Nghỉ" and row.overtime_shift:
-        raise HTTPException(400, "Ngày nghỉ không thể đồng thời có tăng ca.")
-    return "", ""
+    if shift_code == "Nghỉ":
+        if overtime_shift or overtime_start_time or overtime_end_time:
+            raise HTTPException(400, "Ngày nghỉ không thể đồng thời có tăng ca.")
+        return "", "", "", "", ""
+
+    if shift_code not in (shift_definitions.get(row.department) or {}):
+        raise HTTPException(400, f"Ca '{shift_code}' không còn trong cấu hình {row.department}.")
+
+    if row.department == "locker":
+        if overtime_shift not in {"", "TC Ca 1", "TC Ca 2"}:
+            raise HTTPException(400, "Locker chỉ dùng TC Ca 1 hoặc TC Ca 2.")
+        if overtime_start_time or overtime_end_time:
+            raise HTTPException(400, "Locker không dùng giờ tăng ca tự do.")
+        return "", "", overtime_shift, "", ""
+
+    # Lễ tân: overtime is an explicit time range, never TC Ca 1/TC Ca 2.
+    if overtime_shift:
+        raise HTTPException(400, "Lễ tân phải nhập giờ tăng ca bắt đầu/kết thúc, không dùng TC Ca 1 / TC Ca 2.")
+    has_overtime = bool(overtime_start_time or overtime_end_time)
+    if has_overtime and not (_TIME_RE.fullmatch(overtime_start_time) and _TIME_RE.fullmatch(overtime_end_time)):
+        raise HTTPException(
+            400,
+            f"Lễ tân {row.employee_name or row.employee_username} ngày {row.work_date:%d/%m/%Y}: tăng ca cần đủ giờ bắt đầu và kết thúc dạng HH:MM.",
+        )
+    if has_overtime and overtime_start_time == overtime_end_time:
+        raise HTTPException(400, "Giờ bắt đầu và kết thúc tăng ca không được trùng nhau.")
+    return "", "", "", overtime_start_time, overtime_end_time
 
 
 def install_work_schedule_routes(
@@ -169,7 +284,7 @@ def install_work_schedule_routes(
         if (end - start).days > 62:
             raise HTTPException(400, "Chỉ xem tối đa 63 ngày mỗi lần.")
         dep = department.strip().lower()
-        if dep and dep not in SHIFT_DEFINITIONS:
+        if dep and dep not in WORK_SCHEDULE_FEATURES:
             raise HTTPException(400, "Bộ phận chỉ hỗ trợ Quản lý, Locker hoặc Lễ tân.")
 
         with engine_instance().begin() as conn:
@@ -185,7 +300,8 @@ def install_work_schedule_routes(
 
             sql = """
                 SELECT work_date, employee_username, employee_name, department,
-                       shift_code, overtime_shift, start_time, end_time, note,
+                       shift_code, overtime_shift, start_time, end_time,
+                       overtime_start_time, overtime_end_time, note,
                        updated_by, updated_at
                 FROM vera_work_schedule
                 WHERE work_date BETWEEN :start AND :end
@@ -200,19 +316,61 @@ def install_work_schedule_routes(
             sql += " ORDER BY department, employee_name, employee_username, work_date"
             rows = conn.execute(text(sql), params).mappings().all()
             employees = _employee_catalog(conn, dep) if dep else []
+            shift_definitions = _load_shift_definitions(conn)
 
         return {
             "ok": True,
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "shift_definitions": SHIFT_DEFINITIONS,
+            "shift_definitions": shift_definitions,
             "rows": [dict(row) for row in rows],
             "employees": employees,
             "can_edit": _role(ident) in {"admin", "quanly"},
             "allowed_departments": allowed_departments,
             "assignment_mode": "daily",
-            "display_mode": "current_and_next_week_14_days",
+            "display_mode": "selected_month_all_days",
+            "overtime_mode": {"locker": "tc_shift", "letan": "time_range", "quanly": "none"},
         }
+
+    @app.put("/v2/work-schedule/shifts")
+    def save_shift_definitions(body: ShiftDefinitionSave, ident=Depends(current_identity)):
+        if _role(ident) not in {"admin", "quanly"}:
+            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được tạo/sửa ca làm việc.")
+        actor = _actor(ident)
+        normalized: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for item in body.shifts:
+            shift_code, start_time, end_time = _validate_shift_definition(item)
+            key = shift_code.casefold()
+            if key in seen:
+                raise HTTPException(400, f"Tên ca bị trùng: {shift_code}.")
+            seen.add(key)
+            normalized.append((shift_code, start_time, end_time))
+
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            if not _allowed_department(conn, ident, body.department, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền cấu hình ca của bộ phận này.")
+            conn.execute(text("DELETE FROM vera_work_shift_definition WHERE department=:department"), {"department": body.department})
+            for sort_order, (shift_code, start_time, end_time) in enumerate(normalized, start=1):
+                conn.execute(text("""
+                    INSERT INTO vera_work_shift_definition(
+                        department, shift_code, start_time, end_time, sort_order,
+                        updated_by, created_at, updated_at
+                    ) VALUES (
+                        :department, :shift_code, :start_time, :end_time, :sort_order,
+                        :updated_by, NOW(), NOW()
+                    )
+                """), {
+                    "department": body.department,
+                    "shift_code": shift_code,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "sort_order": sort_order,
+                    "updated_by": actor,
+                })
+
+        return {"ok": True, "saved": len(normalized), "message": "Đã cập nhật cấu hình ca làm việc."}
 
     @app.put("/v2/work-schedule")
     def save_work_schedule(body: ScheduleSave, ident=Depends(current_identity)):
@@ -221,9 +379,10 @@ def install_work_schedule_routes(
         actor = _actor(ident)
 
         unique_keys: set[tuple[date, str]] = set()
-        normalized_rows: list[tuple[ScheduleRow, str, str]] = []
+        normalized_rows: list[tuple[ScheduleRow, str, str, str, str, str]] = []
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
+            shift_definitions = _load_shift_definitions(conn)
             for row in body.rows:
                 key = (row.work_date, row.employee_username.strip())
                 if key in unique_keys:
@@ -231,18 +390,20 @@ def install_work_schedule_routes(
                 unique_keys.add(key)
                 if not _allowed_department(conn, ident, row.department, feature_allowed):
                     raise HTTPException(403, f"Bạn không có quyền sửa lịch {row.department}.")
-                start_time, end_time = _validate_row(row)
-                normalized_rows.append((row, start_time, end_time))
+                start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time = _validate_row(row, shift_definitions)
+                normalized_rows.append((row, start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time))
 
-            for row, start_time, end_time in normalized_rows:
+            for row, start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time in normalized_rows:
                 conn.execute(text("""
                     INSERT INTO vera_work_schedule(
                         work_date, employee_username, employee_name, department,
-                        shift_code, overtime_shift, start_time, end_time, note,
+                        shift_code, overtime_shift, start_time, end_time,
+                        overtime_start_time, overtime_end_time, note,
                         updated_by, created_at, updated_at
                     ) VALUES (
                         :work_date, :employee_username, :employee_name, :department,
-                        :shift_code, :overtime_shift, :start_time, :end_time, :note,
+                        :shift_code, :overtime_shift, :start_time, :end_time,
+                        :overtime_start_time, :overtime_end_time, :note,
                         :updated_by, NOW(), NOW()
                     )
                     ON CONFLICT(work_date, employee_username) DO UPDATE SET
@@ -252,6 +413,8 @@ def install_work_schedule_routes(
                         overtime_shift=EXCLUDED.overtime_shift,
                         start_time=EXCLUDED.start_time,
                         end_time=EXCLUDED.end_time,
+                        overtime_start_time=EXCLUDED.overtime_start_time,
+                        overtime_end_time=EXCLUDED.overtime_end_time,
                         note=EXCLUDED.note,
                         updated_by=EXCLUDED.updated_by,
                         updated_at=NOW()
@@ -260,10 +423,12 @@ def install_work_schedule_routes(
                     "employee_username": row.employee_username.strip(),
                     "employee_name": row.employee_name.strip(),
                     "department": row.department,
-                    "shift_code": row.shift_code,
-                    "overtime_shift": row.overtime_shift if row.department != "quanly" else "",
+                    "shift_code": str(row.shift_code or "").strip(),
+                    "overtime_shift": overtime_shift,
                     "start_time": start_time,
                     "end_time": end_time,
+                    "overtime_start_time": overtime_start_time,
+                    "overtime_end_time": overtime_end_time,
                     "note": row.note.strip(),
                     "updated_by": actor,
                 })
