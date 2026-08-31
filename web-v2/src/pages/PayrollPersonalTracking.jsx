@@ -1,9 +1,10 @@
-import { AlertTriangle, CheckCircle2, RefreshCw, Search, WalletCards } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, RefreshCw, Search, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`
+const trackedRoles = new Set(['leader', 'nhanvien'])
 
 function searchKey(value) {
   return String(value || '')
@@ -13,6 +14,10 @@ function searchKey(value) {
     .replace(/Đ/g, 'D')
     .toLowerCase()
     .trim()
+}
+
+function roleLabel(value) {
+  return String(value || '').toLowerCase() === 'leader' ? 'Leader' : 'Nhân viên'
 }
 
 async function loadTracking() {
@@ -59,96 +64,126 @@ function ObligationList({ obligations }) {
   </div>
 }
 
-function EmployeeTrackingCard({ item, admin }) {
-  return <article className="payroll-personal-employee-card">
-    <header>
-      <div><strong>{item.employee_name}</strong><small>{item.full_name || '—'}{item.role ? ` · ${item.role}` : ''}</small></div>
-      <span className={item.completed ? 'done' : 'open'}>{item.completed ? 'ĐÃ ĐỦ TÍCH LŨY' : `CÒN ${money(item.remaining)}`}</span>
-    </header>
-    <div className="payroll-personal-mini-grid">
-      <span>Mục tiêu<strong>{money(item.target)}</strong></span>
-      <span>Đã đóng<strong>{money(item.paid_total)}</strong></span>
-      <span>Còn lại<strong>{money(item.remaining)}</strong></span>
-      <span>Nghĩa vụ mở<strong>{money(item.obligation_total)}</strong></span>
-    </div>
-    {admin && <details>
-      <summary>Chi tiết {item.period_count} kỳ có đóng tích lũy · {item.obligation_count} nghĩa vụ chưa hoàn thành</summary>
-      <h4>TÍCH LŨY THEO TỪNG KỲ LƯƠNG</h4>
-      <PeriodTable periods={item.periods} />
-      <h4>NGHĨA VỤ VI PHẠM CHƯA HOÀN THÀNH</h4>
-      <ObligationList obligations={item.obligations} />
-    </details>}
-  </article>
+function AdminTrackingTable({ rows, emptyText }) {
+  return <div className="responsive-data-table payroll-personal-admin-table">
+    <table>
+      <thead><tr><th>Nhân viên</th><th>Chức vụ</th><th>Mục tiêu</th><th>Đã đóng</th><th>Còn lại</th><th>Số kỳ đã đóng</th><th>Nghĩa vụ chưa hoàn thành</th><th>Chi tiết</th></tr></thead>
+      <tbody>{rows.map((item) => <tr key={item.employee_name}>
+        <td><strong>{item.employee_name}</strong><small>{item.full_name || '—'}</small></td>
+        <td>{roleLabel(item.role)}</td>
+        <td className="money-cell">{money(item.target)}</td>
+        <td className="money-cell"><strong>{money(item.paid_total)}</strong></td>
+        <td className="money-cell"><strong>{money(item.remaining)}</strong></td>
+        <td className="center">{Number(item.period_count || 0).toLocaleString('vi-VN')}</td>
+        <td className="money-cell">{money(item.obligation_total)}</td>
+        <td><details className="payroll-personal-row-details"><summary>Xem</summary><h4>TÍCH LŨY THEO TỪNG KỲ LƯƠNG</h4><PeriodTable periods={item.periods} /><h4>NGHĨA VỤ VI PHẠM CHƯA HOÀN THÀNH</h4><ObligationList obligations={item.obligations} /></details></td>
+      </tr>)}</tbody>
+    </table>
+    {!rows.length && <div className="setup-note">{emptyText}</div>}
+  </div>
 }
 
 export default function PayrollPersonalTracking({ user, standalone = false }) {
-  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
+  const role = String(user?.role || '').toLowerCase()
+  const isAdmin = role === 'admin'
+  const canUsePersonalTracking = isAdmin || trackedRoles.has(role)
   const [data, setData] = useState(null)
-  const [busy, setBusy] = useState(true)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [sectionOpen, setSectionOpen] = useState(!isAdmin)
+  const [completedOpen, setCompletedOpen] = useState(false)
 
   const load = async () => {
+    if (!canUsePersonalTracking) return
     setBusy(true); setError('')
     try { setData(await loadTracking()) }
     catch (err) { setError(err.message || 'Không tải được thông tin Tích lũy/Nghĩa vụ Vi phạm.') }
     finally { setBusy(false) }
   }
 
-  useEffect(() => { void load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!canUsePersonalTracking) return
+    if (!isAdmin || sectionOpen) void load()
+  }, [canUsePersonalTracking, isAdmin, sectionOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = useMemo(() => {
-    const rows = data?.employees || []
+    const rows = (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
     const needle = searchKey(search)
     if (!needle) return rows
     return rows.filter((item) => searchKey(`${item.employee_name} ${item.full_name} ${item.role}`).includes(needle))
   }, [data, search])
 
+  const activeRows = useMemo(() => visible.filter((item) => !item.completed && Number(item.remaining || 0) > 0), [visible])
+  const completedRows = useMemo(() => visible.filter((item) => item.completed || Number(item.remaining || 0) <= 0), [visible])
   const mine = (data?.employees || [])[0] || null
-  const totals = data?.totals || {}
+  const totals = useMemo(() => {
+    const rows = (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
+    return {
+      employee_count: rows.length,
+      paid_total: rows.reduce((sum, item) => sum + Number(item.paid_total || 0), 0),
+      remaining_total: rows.reduce((sum, item) => sum + Number(item.remaining || 0), 0),
+      obligation_total: rows.reduce((sum, item) => sum + Number(item.obligation_total || 0), 0),
+    }
+  }, [data])
+
+  if (!canUsePersonalTracking) return null
 
   return <div className={`feature-page payroll-page payroll-personal-tracking${standalone ? ' standalone' : ''}`}>
     <style>{`
       .payroll-personal-tracking{margin-top:${standalone ? '0' : '16px'}}
-      .payroll-personal-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.payroll-personal-heading h1,.payroll-personal-heading h2{margin:4px 0}.payroll-personal-heading p{margin:0;color:#69766f}
+      .payroll-personal-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.payroll-personal-heading h1,.payroll-personal-heading h2{margin:4px 0}.payroll-personal-heading p{margin:0;color:#69766f}.payroll-personal-heading-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
       .payroll-personal-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.payroll-personal-metric{padding:14px;border:1px solid #dfe7e2;border-radius:14px;background:#fff}.payroll-personal-metric span{display:block;font-size:11px;font-weight:900;color:#68736f}.payroll-personal-metric strong{display:block;margin-top:5px;font-size:22px;color:#173329}.payroll-personal-metric.warning strong{color:#a13c2f}
-      .payroll-personal-employee-list{display:grid;gap:10px}.payroll-personal-employee-card{padding:14px;border:1px solid #e0e7e3;border-radius:15px;background:#fff}.payroll-personal-employee-card>header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.payroll-personal-employee-card header strong{font-size:17px;color:#173329}.payroll-personal-employee-card header small{display:block;margin-top:3px;color:#6b7771}.payroll-personal-employee-card header>span{font-size:11px;font-weight:900;border-radius:999px;padding:6px 9px}.payroll-personal-employee-card header>span.done{background:#edf8f1;color:#23623b}.payroll-personal-employee-card header>span.open{background:#fff8e7;color:#805f00}
-      .payroll-personal-mini-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.payroll-personal-mini-grid span{padding:9px 10px;border-radius:10px;background:#f7faf8;color:#68736f;font-size:10px;font-weight:800}.payroll-personal-mini-grid strong{display:block;margin-top:4px;color:#173329;font-size:15px}.payroll-personal-employee-card details{margin-top:12px}.payroll-personal-employee-card summary{cursor:pointer;font-weight:900;color:#315a49}.payroll-personal-employee-card h4{margin:15px 0 7px;color:#405c50}
-      .payroll-personal-table table{min-width:760px}.payroll-personal-open{display:inline-flex;align-items:center;gap:5px;color:#a13c2f;font-weight:900}.payroll-personal-clear{display:flex;align-items:center;gap:7px;padding:12px;border:1px solid #cde0d4;border-radius:12px;background:#f1f9f4;color:#286443;font-weight:800}.payroll-personal-search{display:flex;align-items:center;gap:7px;max-width:420px}.payroll-personal-search input{width:100%}
-      @media(max-width:760px){.payroll-personal-metrics,.payroll-personal-mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-personal-heading{display:grid}.payroll-personal-search{max-width:none;width:100%}.payroll-personal-employee-card>header{display:grid}.payroll-personal-employee-card header>span{justify-self:start}}
+      .payroll-personal-table table{min-width:760px}.payroll-personal-admin-table table{min-width:1040px}.payroll-personal-admin-table td small{display:block;margin-top:3px;color:#6b7771}.payroll-personal-open{display:inline-flex;align-items:center;gap:5px;color:#a13c2f;font-weight:900}.payroll-personal-clear{display:flex;align-items:center;gap:7px;padding:12px;border:1px solid #cde0d4;border-radius:12px;background:#f1f9f4;color:#286443;font-weight:800}.payroll-personal-search{display:flex;align-items:center;gap:7px;max-width:420px}.payroll-personal-search input{width:100%}.payroll-personal-section-title{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:18px 0 8px}.payroll-personal-section-title h3{margin:0;color:#24473a}.payroll-personal-row-details summary{cursor:pointer;font-weight:900;color:#315a49}.payroll-personal-row-details h4{margin:13px 0 7px}.payroll-personal-collapsed-note{margin-top:8px;color:#6b7771;font-size:12px}
+      @media(max-width:760px){.payroll-personal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-personal-heading{display:grid}.payroll-personal-heading-actions{width:100%}.payroll-personal-heading-actions button{flex:1}.payroll-personal-search{max-width:none;width:100%}.payroll-personal-section-title{align-items:flex-start}.payroll-personal-section-title button{white-space:nowrap}}
     `}</style>
 
-    {standalone && <div className="page-heading payroll-personal-heading"><div><span className="eyebrow"><WalletCards size={14} /> Cá nhân</span><h1>BẢNG LƯƠNG</h1><p>Theo dõi Tích lũy đã đóng và Nghĩa vụ Vi phạm chưa hoàn thành của bạn.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button></div>}
+    {standalone && <div className="page-heading payroll-personal-heading"><div><span className="eyebrow"><WalletCards size={14} /> Cá nhân</span><h1>BẢNG LƯƠNG</h1><p>Theo dõi Tích lũy đã đóng và Nghĩa vụ Vi phạm chưa hoàn thành của bạn.</p></div>{!isAdmin && <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button>}</div>}
 
-    <section className="panel">
+    <section className="panel payroll-personal-section">
       <div className="payroll-personal-heading">
-        <div><h2>{isAdmin ? 'THEO DÕI TÍCH LŨY NHÂN VIÊN' : 'TÍCH LŨY & NGHĨA VỤ VI PHẠM CỦA TÔI'}</h2><p>{isAdmin ? 'Admin xem số tiền đã đóng theo từng kỳ lương, số còn lại và nghĩa vụ chưa hoàn thành của từng nhân viên.' : 'Số liệu lấy từ các kỳ lương đã lưu và danh sách Nghĩa vụ Vi phạm đang mở.'}</p></div>
-        {!standalone && <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button>}
+        <div><h2>{isAdmin ? 'THEO DÕI TÍCH LŨY NHÂN VIÊN' : 'TÍCH LŨY & NGHĨA VỤ VI PHẠM CỦA TÔI'}</h2><p>{isAdmin ? 'Chỉ theo dõi Leader và Nhân viên.' : 'Số liệu lấy từ các kỳ lương đã lưu và Nghĩa vụ Vi phạm đang mở.'}</p></div>
+        <div className="payroll-personal-heading-actions">
+          {isAdmin && <button className="secondary-button" type="button" onClick={() => setSectionOpen((value) => !value)}>{sectionOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {sectionOpen ? 'Ẩn' : 'Hiện'}</button>}
+          {sectionOpen && !standalone && <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button>}
+        </div>
       </div>
-      {error && <div className="error-box">{error}</div>}
-      {busy && !data && <div className="setup-note">Đang tải số liệu Tích lũy…</div>}
 
-      {isAdmin ? <>
-        <div className="payroll-personal-metrics">
-          <div className="payroll-personal-metric"><span>NHÂN VIÊN ĐANG THEO DÕI</span><strong>{Number(totals.employee_count || 0).toLocaleString('vi-VN')}</strong></div>
-          <div className="payroll-personal-metric"><span>TỔNG ĐÃ ĐÓNG TÍCH LŨY</span><strong>{money(totals.paid_total)}</strong></div>
-          <div className="payroll-personal-metric"><span>TỔNG CÒN LẠI</span><strong>{money(totals.remaining_total)}</strong></div>
-          <div className="payroll-personal-metric warning"><span>NGHĨA VỤ CHƯA HOÀN THÀNH</span><strong>{money(totals.obligation_total)}</strong></div>
-        </div>
-        <label className="payroll-personal-search"><Search size={16}/><input type="search" value={search} placeholder="Tìm nhân viên" onChange={(event) => setSearch(event.target.value)} /></label>
-        <div className="payroll-personal-employee-list" style={{ marginTop: 12 }}>{visible.map((item) => <EmployeeTrackingCard key={item.employee_name} item={item} admin />)}</div>
-        {!visible.length && data && <div className="setup-note">Không có nhân viên phù hợp.</div>}
-      </> : mine && <>
-        <div className="payroll-personal-metrics">
-          <div className="payroll-personal-metric"><span>MỤC TIÊU TÍCH LŨY</span><strong>{money(mine.target)}</strong></div>
-          <div className="payroll-personal-metric"><span>ĐÃ ĐÓNG</span><strong>{money(mine.paid_total)}</strong></div>
-          <div className="payroll-personal-metric"><span>CÒN LẠI</span><strong>{money(mine.remaining)}</strong></div>
-          <div className="payroll-personal-metric warning"><span>NGHĨA VỤ CHƯA HOÀN THÀNH</span><strong>{money(mine.obligation_total)}</strong></div>
-        </div>
-        <h3>TÍCH LŨY ĐÃ ĐÓNG THEO TỪNG KỲ LƯƠNG</h3>
-        <PeriodTable periods={mine.periods} />
-        <h3 style={{ marginTop: 18 }}>NGHĨA VỤ VI PHẠM CHƯA HOÀN THÀNH</h3>
-        <ObligationList obligations={mine.obligations} />
+      {isAdmin && !sectionOpen && <div className="payroll-personal-collapsed-note">Khu vực này mặc định được ẩn để giao diện Bảng lương gọn hơn.</div>}
+
+      {sectionOpen && <>
+        {error && <div className="error-box">{error}</div>}
+        {busy && !data && <div className="setup-note">Đang tải số liệu Tích lũy…</div>}
+
+        {isAdmin ? <>
+          <div className="payroll-personal-metrics">
+            <div className="payroll-personal-metric"><span>LEADER / NHÂN VIÊN</span><strong>{Number(totals.employee_count || 0).toLocaleString('vi-VN')}</strong></div>
+            <div className="payroll-personal-metric"><span>TỔNG ĐÃ ĐÓNG TÍCH LŨY</span><strong>{money(totals.paid_total)}</strong></div>
+            <div className="payroll-personal-metric"><span>TỔNG CÒN LẠI</span><strong>{money(totals.remaining_total)}</strong></div>
+            <div className="payroll-personal-metric warning"><span>NGHĨA VỤ CHƯA HOÀN THÀNH</span><strong>{money(totals.obligation_total)}</strong></div>
+          </div>
+          <label className="payroll-personal-search"><Search size={16}/><input type="search" value={search} placeholder="Tìm Leader / Nhân viên" onChange={(event) => setSearch(event.target.value)} /></label>
+
+          <div className="payroll-personal-section-title"><h3>ĐANG CÒN ĐÓNG TIỀN TÍCH LŨY ({activeRows.length})</h3></div>
+          <AdminTrackingTable rows={activeRows} emptyText="Không có Leader/Nhân viên đang còn đóng tiền tích lũy." />
+
+          <div className="payroll-personal-section-title">
+            <h3>ĐÃ HOÀN THÀNH ĐÓNG TIỀN TÍCH LŨY ({completedRows.length})</h3>
+            <button className="secondary-button compact" type="button" onClick={() => setCompletedOpen((value) => !value)}>{completedOpen ? <ChevronDown size={15}/> : <ChevronRight size={15}/>} {completedOpen ? 'Ẩn' : 'Hiện'}</button>
+          </div>
+          {completedOpen && <AdminTrackingTable rows={completedRows} emptyText="Chưa có Leader/Nhân viên hoàn thành đóng tiền tích lũy." />}
+        </> : mine && <>
+          <div className="payroll-personal-metrics">
+            <div className="payroll-personal-metric"><span>MỤC TIÊU TÍCH LŨY</span><strong>{money(mine.target)}</strong></div>
+            <div className="payroll-personal-metric"><span>ĐÃ ĐÓNG</span><strong>{money(mine.paid_total)}</strong></div>
+            <div className="payroll-personal-metric"><span>CÒN LẠI</span><strong>{money(mine.remaining)}</strong></div>
+            <div className="payroll-personal-metric warning"><span>NGHĨA VỤ CHƯA HOÀN THÀNH</span><strong>{money(mine.obligation_total)}</strong></div>
+          </div>
+          <h3>TÍCH LŨY ĐÃ ĐÓNG THEO TỪNG KỲ LƯƠNG</h3>
+          <PeriodTable periods={mine.periods} />
+          <h3 style={{ marginTop: 18 }}>NGHĨA VỤ VI PHẠM CHƯA HOÀN THÀNH</h3>
+          <ObligationList obligations={mine.obligations} />
+        </>}
       </>}
     </section>
   </div>
