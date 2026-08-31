@@ -89,6 +89,7 @@ function setNativeSelectValue(select, value) {
   const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
   if (setter) setter.call(select, value)
   else select.value = value
+  select.dispatchEvent(new Event('input', { bubbles: true }))
   select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
@@ -250,8 +251,19 @@ export default function LeaveRegistrationEnhancements({ user }) {
 
   const chooseReason = (value) => {
     setPastSubmitNotice(null)
+    // Update the visible controlled select immediately. Waiting for the DOM
+    // observer made the selection look blank until refresh on slower devices.
+    setSelection((current) => ({ ...current, reason: value }))
     const current = readRegistrationForm()
     setNativeSelectValue(current.reasonSelect, value)
+    // React may replace the hidden original select during the same render.
+    // Verify once on the next frame so every role/device keeps the selection.
+    window.requestAnimationFrame(() => {
+      const latest = readRegistrationForm()
+      if (latest.reasonSelect && latest.reasonSelect.value !== value) {
+        setNativeSelectValue(latest.reasonSelect, value)
+      }
+    })
   }
 
   useEffect(() => {

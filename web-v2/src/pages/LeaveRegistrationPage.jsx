@@ -646,7 +646,7 @@ export default function LeaveRegistrationPage({ user }) {
             <label>Tên nhân viên</label>
             <select
               value={form.employee_name}
-              onChange={(e) => setForm({ ...form, employee_name: e.target.value })}
+              onChange={(e) => setForm((current) => ({ ...current, employee_name: e.target.value }))}
               disabled={!canChooseEmployee}
               required
             >
@@ -659,7 +659,14 @@ export default function LeaveRegistrationPage({ user }) {
             </select>
 
             <label>Lý do nghỉ</label>
-            <select value={form.leave_reason} onChange={(e) => setForm({ ...form, leave_reason: e.target.value, manual_penalty: '' })} required>
+            <select
+              value={form.leave_reason}
+              onChange={(e) => {
+                const leaveReason = e.target.value
+                setForm((current) => ({ ...current, leave_reason: leaveReason, manual_penalty: '' }))
+              }}
+              required
+            >
               <option value="">-- Chọn lý do nghỉ --</option>
               {reasons.map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
             </select>
@@ -681,7 +688,7 @@ export default function LeaveRegistrationPage({ user }) {
                   min="0"
                   step="1000"
                   value={numberInputDisplayValue(form.manual_penalty)}
-                  onChange={(e) => setForm({ ...form, manual_penalty: e.target.value })}
+                  onChange={(e) => setForm((current) => ({ ...current, manual_penalty: e.target.value }))}
                   placeholder="Nhập số tiền"
                   required
                 />
@@ -689,7 +696,7 @@ export default function LeaveRegistrationPage({ user }) {
             )}
 
             <label>Chi tiết</label>
-            <textarea value={form.detail} onChange={(e) => setForm({ ...form, detail: e.target.value })} rows="3" placeholder="Ghi chú nếu cần" />
+            <textarea value={form.detail} onChange={(e) => setForm((current) => ({ ...current, detail: e.target.value }))} rows="3" placeholder="Ghi chú nếu cần" />
 
             {dateIsPast && <div className="warning-box"><strong>Ngày chỉ xem.</strong> Nhân viên không thể đăng ký cho ngày trong quá khứ.</div>}
             {message && <div className="success-box">{message}</div>}
