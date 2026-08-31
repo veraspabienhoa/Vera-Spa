@@ -27,6 +27,7 @@ from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
+from vera_web_v2_violation_unlimited import install_violation_unlimited
 
 _api = _shared._api
 
@@ -50,6 +51,10 @@ install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_i
 # Quản lý/Lễ tân to backfill past rows whose canonical Loại nghỉ is Vi phạm.
 # Install before preview/write wrappers so every Web V2 registration path uses it.
 install_policy_v40(_shared.app, shared_module=_shared)
+
+# Nội quy Loại nghỉ is authoritative for same-day grouping.  Vi phạm rows have
+# no per-employee/day count limit even when their reason text contains KHÔNG phép.
+install_violation_unlimited(_shared.app, shared_module=_shared)
 
 install_leave_day_stats_routes(
     _shared.app,
