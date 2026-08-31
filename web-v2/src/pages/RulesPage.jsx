@@ -45,6 +45,8 @@ export default function RulesPage() {
   const [originalSignature, setOriginalSignature] = useState('')
   const [quotaRows, setQuotaRows] = useState([])
   const [quotaOriginalSignature, setQuotaOriginalSignature] = useState('')
+  const [lateThreshold, setLateThreshold] = useState(5)
+  const [lateThresholdOriginal, setLateThresholdOriginal] = useState(5)
   const [selected, setSelected] = useState([])
   const [expanded, setExpanded] = useState([])
   const [search, setSearch] = useState('')
@@ -67,6 +69,9 @@ export default function RulesPage() {
     const nextQuotaRows = (result.daily_quota?.days || []).map((item) => ({ ...item }))
     setQuotaRows(nextQuotaRows)
     setQuotaOriginalSignature(JSON.stringify(nextQuotaRows))
+    const nextLateThreshold = Number(result.late_threshold?.threshold_minutes || 5)
+    setLateThreshold(nextLateThreshold)
+    setLateThresholdOriginal(nextLateThreshold)
     setSelected([])
     setExpanded([])
     setDeleteColumn('')
@@ -92,8 +97,10 @@ export default function RulesPage() {
   const permissions = data?.permissions || {}
   const canEdit = permissions.official_rules_edit === true
   const canEditDailyQuota = data?.can_edit_daily_quota === true
+  const canEditLateThreshold = data?.can_edit_late_threshold === true
   const dirty = documentSignature(columns, rows) !== originalSignature
   const quotaDirty = JSON.stringify(quotaRows) !== quotaOriginalSignature
+  const lateThresholdDirty = Number(lateThreshold) !== Number(lateThresholdOriginal)
   const requiredColumns = new Set(data?.required_columns || [])
   const deletableColumns = columns.filter((column) => !requiredColumns.has(column))
   const reasonOptions = useMemo(() => uniqueOptions(rows, 'Lý do nghỉ'), [rows])
@@ -205,6 +212,20 @@ export default function RulesPage() {
     setNotice({ type: 'success', message: result.message })
   })
 
+  const saveLateThreshold = () => run('late-threshold', async () => {
+    const threshold = Number.parseInt(lateThreshold, 10)
+    if (!Number.isInteger(threshold) || threshold < 1 || threshold > 180) {
+      throw new Error('Ngưỡng đi trễ phải từ 1 đến 180 phút.')
+    }
+    if (!lateThresholdDirty) throw new Error('Ngưỡng đi trễ chưa có thay đổi cần áp dụng.')
+    const result = await veraApi.saveLateThreshold({
+      threshold_minutes: threshold,
+      expected_revision: Number(data?.late_threshold?.revision || 0),
+    })
+    await load(true)
+    setNotice({ type: 'success', message: result.message })
+  })
+
   const saveDailyQuota = () => run('quota', async () => {
     if (!quotaDirty) throw new Error('Hạn mức nghỉ chưa có thay đổi cần áp dụng.')
     const result = await veraApi.saveDailyQuota({
@@ -231,7 +252,7 @@ export default function RulesPage() {
   }
 
   const discard = () => {
-    if ((dirty || quotaDirty) && !window.confirm('Bỏ toàn bộ thay đổi chưa ghi?')) return
+    if ((dirty || quotaDirty || lateThresholdDirty) && !window.confirm('Bỏ toàn bộ thay đổi chưa ghi?')) return
     load()
   }
 
@@ -275,6 +296,27 @@ export default function RulesPage() {
           <div className="metric-card" key={label}><div className="metric-icon"><Icon size={21} /></div><div><span>{label}</span><strong className={label === 'Cập nhật gần nhất' ? 'metric-small-value' : ''}>{value}</strong></div></div>
         ))}
       </div>
+
+      <section className="panel late-threshold-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>NGƯỠNG TỰ ĐỘNG PHẠT ĐI TRỄ</h2>
+            <p>Hệ thống chỉ tạo phạt khi số phút trễ sau khi trừ Hỗ trợ đạt ngưỡng này.</p>
+          </div>
+          {lateThresholdDirty && <span className="rules-unsaved-chip">Chưa áp dụng</span>}
+        </div>
+        <div className="rules-filter-row" style={{ gridTemplateColumns: 'minmax(220px, 360px) auto' }}>
+          <label>Ngưỡng đi trễ (phút)
+            {canEditLateThreshold
+              ? <input type="number" min="1" max="180" inputMode="numeric" value={numberInputDisplayValue(lateThreshold)} onChange={(event) => setLateThreshold(event.target.value)} />
+              : <strong>{lateThreshold} phút</strong>}
+          </label>
+          {canEditLateThreshold && <button className="primary-button" disabled={!lateThresholdDirty || busy === 'late-threshold'} onClick={saveLateThreshold}>
+            {busy === 'late-threshold' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Áp dụng ngưỡng mới
+          </button>}
+        </div>
+        <p className="page-subtitle" style={{ marginTop: 10 }}>Ví dụ: ngưỡng 5 phút thì trễ 4 phút không phạt; trễ từ 5 phút trở lên mới phạt.</p>
+      </section>
 
       <section className="panel daily-quota-panel">
         <div className="panel-title-row">

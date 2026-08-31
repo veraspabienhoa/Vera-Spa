@@ -50,6 +50,10 @@ RULES_FEATURES = (
 )
 DAILY_QUOTA_CATEGORY = "leave_rules"
 DAILY_QUOTA_KEY = "daily_quota"
+AUTO_CHECK_CATEGORY = "auto_check"
+AUTO_CHECK_KEY = "config"
+DEFAULT_LATE_THRESHOLD_MINUTES = 5
+AUTO_CHECK_STATUS_DEFAULT = "RUNNING"
 DAILY_QUOTA_WEEKDAYS = (
     (1, "Thứ 2", 5, 2),
     (2, "Thứ 3", 5, 2),
@@ -76,6 +80,31 @@ class DailyQuotaDay(BaseModel):
 class DailyQuotaUpdate(BaseModel):
     days: list[DailyQuotaDay] = Field(min_length=7, max_length=7)
     expected_revision: int = Field(ge=0)
+
+
+class LateThresholdUpdate(BaseModel):
+    threshold_minutes: int = Field(ge=1, le=180)
+    expected_revision: int = Field(ge=0)
+
+
+def _load_late_threshold(conn) -> dict[str, Any]:
+    row = conn.execute(text("""
+        SELECT value_json, revision, updated_at, updated_by
+        FROM vera_app_setting
+        WHERE category=:category AND setting_key=:setting_key
+        LIMIT 1
+    """), {"category": AUTO_CHECK_CATEGORY, "setting_key": AUTO_CHECK_KEY}).mappings().first()
+    value = dict(row["value_json"] or {}) if row else {}
+    try:
+        threshold = max(1, min(180, int(value.get("threshold_minutes", DEFAULT_LATE_THRESHOLD_MINUTES))))
+    except (TypeError, ValueError):
+        threshold = DEFAULT_LATE_THRESHOLD_MINUTES
+    return {
+        "threshold_minutes": threshold,
+        "revision": int(row["revision"] or 0) if row else 0,
+        "updated_at": row["updated_at"].isoformat() if row and row["updated_at"] else "",
+        "updated_by": str(row["updated_by"] or "") if row else "",
+    }
 
 
 def _default_daily_quota_days() -> list[dict[str, Any]]:
@@ -477,12 +506,16 @@ def install_rules_routes(
     def response_payload(conn, ident) -> dict:
         document = _load_document(conn)
         daily_quota = _load_daily_quota(conn)
+        late_threshold = _load_late_threshold(conn)
+        is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         return {
             **document,
             "required_columns": list(REQUIRED_COLUMNS),
             "permissions": _permissions(conn, ident, feature_allowed),
             "daily_quota": daily_quota,
-            "can_edit_daily_quota": str(getattr(ident, "role", "") or "").strip().lower() == "admin",
+            "late_threshold": late_threshold,
+            "can_edit_daily_quota": is_admin,
+            "can_edit_late_threshold": is_admin,
         }
 
     @app.get("/v2/rules")
@@ -573,6 +606,81 @@ def install_rules_routes(
             if sheet_changed and worksheet is not None:
                 _restore_legacy_sheet(worksheet, old_sheet_values)
             raise HTTPException(500, f"Không thể áp dụng Bảng nội quy an toàn: {type(exc).__name__}: {exc}") from exc
+        finally:
+            conn.close()
+
+    @app.put("/v2/rules/late-threshold")
+    def save_late_threshold(body: LateThresholdUpdate, ident: identity_type = Depends(current_identity)):
+        conn = engine_instance().connect()
+        tx = conn.begin()
+        try:
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:web-v2:late-threshold'))"))
+            require_feature(conn, ident, "official_rules_edit")
+            if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+                raise HTTPException(403, "Chỉ tài khoản admin được thay đổi ngưỡng tự động phạt đi trễ.")
+            row = conn.execute(text("""
+                SELECT value_json, revision
+                FROM vera_app_setting
+                WHERE category=:category AND setting_key=:setting_key
+                FOR UPDATE
+            """), {"category": AUTO_CHECK_CATEGORY, "setting_key": AUTO_CHECK_KEY}).mappings().first()
+            current_revision = int(row["revision"] or 0) if row else 0
+            if current_revision != body.expected_revision:
+                raise HTTPException(
+                    409,
+                    "Ngưỡng đi trễ đã được người khác cập nhật. Hãy bấm Làm mới trước khi áp dụng lại.",
+                )
+            value = dict(row["value_json"] or {}) if row else {}
+            value.setdefault("status", AUTO_CHECK_STATUS_DEFAULT)
+            value.setdefault("manual_run_requested", False)
+            value["threshold_minutes"] = int(body.threshold_minutes)
+            if row is None:
+                saved = conn.execute(text("""
+                    INSERT INTO vera_app_setting(
+                        category, setting_key, value_json, source, updated_by,
+                        revision, created_at, updated_at
+                    ) VALUES (
+                        :category, :setting_key, CAST(:value_json AS jsonb),
+                        'web_v2_rules', :updated_by, 1, now(), now()
+                    )
+                    RETURNING revision, updated_at
+                """), {
+                    "category": AUTO_CHECK_CATEGORY,
+                    "setting_key": AUTO_CHECK_KEY,
+                    "value_json": json.dumps(value, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+            else:
+                saved = conn.execute(text("""
+                    UPDATE vera_app_setting
+                    SET value_json=CAST(:value_json AS jsonb),
+                        source='web_v2_rules', updated_by=:updated_by,
+                        revision=revision + 1, updated_at=now()
+                    WHERE category=:category AND setting_key=:setting_key
+                    RETURNING revision, updated_at
+                """), {
+                    "category": AUTO_CHECK_CATEGORY,
+                    "setting_key": AUTO_CHECK_KEY,
+                    "value_json": json.dumps(value, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+            tx.commit()
+            return {
+                "ok": True,
+                "message": f"Đã áp dụng ngưỡng tự động phạt đi trễ {body.threshold_minutes} phút.",
+                "threshold_minutes": int(body.threshold_minutes),
+                "revision": int(saved["revision"]),
+                "updated_at": saved["updated_at"].isoformat(),
+                "updated_by": ident.employee_username,
+            }
+        except HTTPException:
+            if tx.is_active:
+                tx.rollback()
+            raise
+        except Exception as exc:
+            if tx.is_active:
+                tx.rollback()
+            raise HTTPException(500, f"Không thể áp dụng ngưỡng đi trễ an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
 

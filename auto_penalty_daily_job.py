@@ -937,7 +937,18 @@ def run_daily() -> int:
         # V84.4 chạy theo Scheduler 20:00; không phụ thuộc job snapshot 5 phút.
         # Admin PAUSED vẫn được tôn trọng để có thể dừng khẩn cấp toàn bộ Auto Update.
         cfg = ts.load_auto_penalty_config(client)
-        _log(f"Config status={cfg.get('status')}; threshold={cfg.get('threshold_minutes', 5)} phút")
+        # Nội quy PostgreSQL là nguồn chuẩn cho ngưỡng phạt; Google Sheets chỉ
+        # còn là fallback an toàn khi PostgreSQL tạm thời không đọc được.
+        try:
+            with ts.vpg.get_engine().connect() as conn:
+                official_cfg = ts.auto_check.load_config(conn)
+            cfg["threshold_minutes"] = official_cfg["threshold_minutes"]
+        except Exception as exc:
+            _log(f"THRESHOLD FALLBACK: dùng cấu hình hiện có vì không đọc được Nội quy: {type(exc).__name__}: {exc}")
+        threshold = max(1, min(180, int(cfg.get("threshold_minutes", 5) or 5)))
+        cfg["threshold_minutes"] = threshold
+        ts.AUTO_PENALTY_MINUTES = threshold
+        _log(f"Config status={cfg.get('status')}; threshold={threshold} phút")
         if cfg.get("paused"):
             _log("Auto Update đang PAUSED bởi Admin -> không ghi phạt, không gửi email.")
             return 0

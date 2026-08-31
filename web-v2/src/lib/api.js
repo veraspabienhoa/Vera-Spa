@@ -208,6 +208,7 @@ export const veraApi = {
   rules: () => request('/v2/rules'),
   saveRules: (body) => request('/v2/rules', { method: 'PUT', body: JSON.stringify(body) }),
   saveDailyQuota: (body) => request('/v2/rules/daily-quota', { method: 'PUT', body: JSON.stringify(body) }),
+  saveLateThreshold: (body) => request('/v2/rules/late-threshold', { method: 'PUT', body: JSON.stringify(body) }),
   exportRulesExcel: () => download('/v2/rules/export.xlsx', 'NoiQuy_VeraSpa.xlsx'),
   importRulesExcel: (file) => upload('/v2/rules/import.xlsx', file),
   longLeaveOverview: () => request('/v2/long-leave/overview'),
