@@ -23,7 +23,7 @@ const items = [
 
 const BREAK_ALERT_DISMISSED_KEY = 'vera-break-alerts-admin-dismissed'
 const BREAK_ALERT_POSITION_KEY = 'vera-break-alert-position-v2'
-const BREAK_ALERT_POLL_MS = 5 * 60 * 1000
+const BREAK_ALERT_POLL_MS = 15 * 1000
 
 const readDismissedBreakAlerts = () => {
   try {
