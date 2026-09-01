@@ -11,11 +11,8 @@ import EmployeeManagementEnhancements from './pages/EmployeeManagementEnhancemen
 import EmployeeExactSearch from './pages/EmployeeExactSearch'
 import TourAdminCustomerCount from './pages/TourAdminCustomerCount'
 import { veraApi } from './lib/api'
-import { claimCurrentDevice, clearFreshLoginClaim, hasFreshLoginClaim, installDeviceSessionGuard } from './lib/deviceSession'
 import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-
-installDeviceSessionGuard()
 
 const lazyPage = (importer) => lazy(async () => {
   try { const module = await importer(); window.sessionStorage.removeItem('vera-v2-chunk-reload'); return module }
@@ -52,28 +49,17 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) return undefined
-    const handleDeviceConflict = async (event) => {
-      setAuthError(event?.detail?.detail || 'Tài khoản này đã đăng nhập trên thiết bị khác.')
-      setProfile(null); setSession(null); clearFreshLoginClaim(); await supabase.auth.signOut().catch(() => {})
-    }
-    window.addEventListener('vera-device-conflict', handleDeviceConflict)
-    return () => window.removeEventListener('vera-device-conflict', handleDeviceConflict)
-  }, [])
-
-  useEffect(() => {
-    if (!supabase) return undefined
     let mounted = true
     const applySession = async (nextSession) => {
       if (!mounted) return
       setSession(nextSession); setAuthError('')
       if (!nextSession) { setProfile(null); setLoading(false); return }
       try {
-        if (hasFreshLoginClaim()) { try { await claimCurrentDevice(nextSession) } finally { clearFreshLoginClaim() } }
         const me = await veraApi.me()
         if (!me?.employee_username || me?.is_active === false) throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
         if (mounted) { setProfile(me); if (me.must_change_password) setPage('profile') }
       } catch (err) {
-        if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await supabase.auth.signOut().catch(() => {}); setSession(null) }
+        if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await supabase.auth.signOut({ scope: 'local' }).catch(() => {}); setSession(null) }
       } finally { if (mounted) setLoading(false) }
     }
     supabase.auth.getSession().then(({ data }) => applySession(data.session))
@@ -114,7 +100,7 @@ export default function App() {
   const user = session?.user
   if (!user) return <LoginPage externalError={authError} />
 
-  const signOut = async () => { clearFreshLoginClaim(); setProfile(null); if (supabase && session) await supabase.auth.signOut() }
+  const signOut = async () => { setProfile(null); if (supabase && session) await supabase.auth.signOut({ scope: 'local' }) }
   const changePage = (nextPage) => { setPage(nextPage); setPageRefreshRevision(0) }
   const refreshCurrentPage = () => setPageRefreshRevision((value) => value + 1)
 

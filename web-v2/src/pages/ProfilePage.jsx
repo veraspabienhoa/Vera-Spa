@@ -110,9 +110,9 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       </form>
     </section>
     <section className="panel android-push-panel">
-      <div><span className="eyebrow"><Smartphone size={14} /> Android · Chrome</span><h2>THÔNG BÁO MÀN HÌNH KHÓA</h2><p>Cho phép Chrome gửi thông báo để nhận tin ngay cả khi không mở website. Chế độ Không làm phiền của điện thoại vẫn có thể chặn âm thanh.</p></div>
-      <button className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo Android')}</button>
-      {!push.supported && !push.loading && <div className="warning-box">{push.reason || 'Trình duyệt này chưa hỗ trợ Web Push. Hãy mở bằng Chrome trên Android.'}</div>}
+      <div><span className="eyebrow"><Smartphone size={14} /> iPhone · Android</span><h2>THÔNG BÁO MÀN HÌNH KHÓA</h2><p>Mỗi điện thoại đăng nhập có thể bật Web Push riêng. Trên iPhone/iPad, hãy thêm VERA SPA vào Màn hình chính rồi mở từ biểu tượng; trên Android, dùng Chrome. Chế độ Không làm phiền vẫn có thể chặn âm thanh.</p></div>
+      <button className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo thiết bị này')}</button>
+      {!push.supported && !push.loading && <div className="warning-box">{push.reason || 'Trình duyệt hoặc thiết bị này chưa hỗ trợ Web Push.'}</div>}
     </section>
   </div>
 }

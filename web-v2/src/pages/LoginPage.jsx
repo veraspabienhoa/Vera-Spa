@@ -1,6 +1,5 @@
 import { Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { clearFreshLoginClaim, markFreshLoginClaim } from '../lib/deviceSession'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { unlockWatchBellAudio } from '../lib/watchBell'
 
@@ -37,22 +36,14 @@ export default function LoginPage({ externalError = '' }) {
       }
       if (!bridge?.email || !bridge?.password) throw new Error(bridge?.message || 'Không xác thực được tài khoản VERA.')
 
-      // A successful password verification is a fresh login. App.jsx consumes
-      // this marker immediately after Supabase creates the session and claims
-      // this browser/device as the account's one active device.
-      markFreshLoginClaim()
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: bridge.email,
         password: bridge.password,
       })
-      if (signInError) {
-        clearFreshLoginClaim()
-        throw signInError
-      }
+      if (signInError) throw signInError
       setPassword('')
       setShowPassword(false)
     } catch (err) {
-      clearFreshLoginClaim()
       setError(err.message || 'Đăng nhập thất bại.')
     } finally {
       setBusy(false)

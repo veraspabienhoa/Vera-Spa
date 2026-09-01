@@ -259,9 +259,17 @@ export const veraApi = {
   createPayrollObligation: (body) => request('/v2/payroll/obligations', { method: 'POST', body: JSON.stringify(body) }),
   deletePayrollObligation: (id) => request(`/v2/payroll/obligations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
-  autoCheck: () => request('/v2/auto-check'),
+  autoCheck: (start = '', end = '') => {
+    const params = new URLSearchParams()
+    if (start && end) {
+      params.set('start', start)
+      params.set('end', end)
+    }
+    return request(`/v2/auto-check${params.size ? `?${params}` : ''}`)
+  },
   updateAutoCheck: (body) => request('/v2/auto-check/config', { method: 'PUT', body: JSON.stringify(body) }),
   runAutoCheck: () => request('/v2/auto-check/run', { method: 'POST' }),
+  exportAutoCheckExcel: (start, end) => download(`/v2/auto-check/export.xlsx?${new URLSearchParams({ start, end })}`, 'VERA_Auto_Check.xlsx'),
   exportSnapshotExcel: (start, end) => download(`/v2/snapshot/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, 'VERA_ChamCong.xlsx'),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),

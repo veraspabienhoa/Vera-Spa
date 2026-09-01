@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text
 
 VN_TZ = timezone(timedelta(hours=7))
-RELEASE = "auto-check-pg-v1"
+RELEASE = "auto-check-pg-v2-date-filter-export"
 DEFAULT_CONFIG = {
     "status": "RUNNING",
     "threshold_minutes": 5,
@@ -214,6 +214,38 @@ def finish_run(conn, run_id: int, status: str, details=None, error="") -> None:
     """), {"id": run_id, "status": status, "details": json.dumps(details or {}, ensure_ascii=False), "error": error or None})
 
 
+def event_rows(conn, *, start: date | None = None, end: date | None = None, limit: int | None = 100) -> list[dict]:
+    """Return non-revoked Auto Check events, optionally bounded by work date."""
+    ensure_schema(conn)
+    conditions = ["status <> 'revoked'"]
+    params: dict[str, object] = {}
+    if start is not None:
+        conditions.append("work_date >= :start")
+        params["start"] = start
+    if end is not None:
+        conditions.append("work_date <= :end")
+        params["end"] = end
+
+    query = """
+        SELECT work_date,employee_name,reason,source,minutes,status,detail,created_at
+        FROM vera_auto_check_event
+        WHERE {conditions}
+        ORDER BY work_date DESC, id DESC
+    """.format(conditions=" AND ".join(conditions))
+    if limit is not None:
+        query += " LIMIT :limit"
+        params["limit"] = max(1, min(50_000, int(limit)))
+
+    rows = [dict(row) for row in conn.execute(text(query), params).mappings()]
+    for row in rows:
+        for key, value in list(row.items()):
+            if isinstance(value, (date, datetime)):
+                row[key] = value.isoformat()
+            elif hasattr(value, "as_tuple"):
+                row[key] = float(value)
+    return rows
+
+
 def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, detail: str, source: str, minutes=0) -> tuple[bool, str]:
     ensure_schema(conn)
     reason = str(reason_item.get("name") or "").strip()
@@ -261,13 +293,21 @@ def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, d
     return True, "ADDED"
 
 
-def dashboard(conn, limit=100) -> dict:
+def dashboard(conn, limit=100, *, start: date | None = None, end: date | None = None) -> dict:
     cfg = load_config(conn)
     runs = [dict(row) for row in conn.execute(text("SELECT id,trigger_type,status,started_at,completed_at,details,error FROM vera_auto_check_run ORDER BY id DESC LIMIT 20")).mappings()]
-    events = [dict(row) for row in conn.execute(text("SELECT work_date,employee_name,reason,source,minutes,status,detail,created_at FROM vera_auto_check_event WHERE status <> 'revoked' ORDER BY id DESC LIMIT :limit"), {"limit": max(1, min(500, int(limit)))}).mappings()]
-    for collection in (runs, events):
-        for row in collection:
-            for key, value in list(row.items()):
-                if isinstance(value, (date, datetime)): row[key] = value.isoformat()
-                elif hasattr(value, "as_tuple"): row[key] = float(value)
-    return {"release": RELEASE, "config": cfg, "runs": runs, "events": events}
+    events = event_rows(conn, start=start, end=end, limit=max(1, min(500, int(limit))))
+    for row in runs:
+        for key, value in list(row.items()):
+            if isinstance(value, (date, datetime)):
+                row[key] = value.isoformat()
+            elif hasattr(value, "as_tuple"):
+                row[key] = float(value)
+    return {
+        "release": RELEASE,
+        "config": cfg,
+        "runs": runs,
+        "events": events,
+        "start": start.isoformat() if start else None,
+        "end": end.isoformat() if end else None,
+    }

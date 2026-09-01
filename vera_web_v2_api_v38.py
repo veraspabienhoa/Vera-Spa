@@ -41,7 +41,6 @@ from vera_web_v2_purchase_reconcile_v2 import install_purchase_reconcile_v2
 from vera_web_v2_revenue_leave_list import install_revenue_leave_list_routes
 from vera_web_v2_revenue_report_target import install_revenue_report_target
 from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
-from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
 from vera_web_v2_support_shift_break import install_support_shift_break
@@ -103,7 +102,6 @@ install_break_return_penalty(_shared.app, engine_instance=_api._engine_instance,
 install_attendance_break_dispatch(_shared.app, engine_instance=_api._engine_instance, api_module=_api, vn_tz=_api.VN_TZ)
 install_operations_v41(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_admin_change_push(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, leave_create_type=_api.LeaveCreate, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
-install_single_device_guard(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_excel_export_style(_shared.app)
 
 app = _shared.app
