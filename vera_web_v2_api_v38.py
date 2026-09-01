@@ -4,6 +4,7 @@ from __future__ import annotations
 import vera_web_v2_api_shared as _shared
 import vera_web_v2_admin_audit_archive as _audit_archive
 import vera_web_v2_staff_status_sort as _staff_sort
+import vera_web_v2_snapshot as _snapshot
 from vera_web_v2_accumulation_permission import install_accumulation_permission
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_admin_change_push import install_admin_change_push
@@ -43,6 +44,7 @@ from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
+from vera_web_v2_support_shift_break import install_support_shift_break
 from vera_web_v2_system_name import install_system_name_routes
 from vera_web_v2_tour_leave_sync import install_tour_leave_sync_routes
 from vera_web_v2_violation_unlimited import install_violation_unlimited
@@ -50,10 +52,8 @@ from vera_web_v2_work_schedule import install_work_schedule_routes
 from vera_web_v2_work_schedule_permissions import install_work_schedule_permissions
 
 _api = _shared._api
-
 install_work_schedule_permissions()
 install_payroll_personal_defaults(api_module=_api)
-
 _audit_archive.identity_type = _api.Identity
 _audit_archive.leave_update_type = _api.LeaveUpdate
 _audit_archive.leave_delete_type = _api.LeaveDelete
@@ -77,27 +77,13 @@ install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, cu
 install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, vn_tz=_api.VN_TZ)
 install_policy_v40(_shared.app, shared_module=_shared)
 install_violation_unlimited(_shared.app, shared_module=_shared)
-
 install_leave_day_stats_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, daily_quota_config=_api._daily_quota_config, employee_name_matches=_api._employee_name_matches, norm=_api._norm, weekday_short_label=_api._weekday_short_label, identity_type=_api.Identity)
 install_leave_violation_split_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, policy_rows=_api._policy_rows, field=_api._field, reason_item=_api._reason_item, role_tokens=_api._role_tokens, day_allowed=_api._day_allowed, norm=_api._norm)
 install_leave_preview_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity)
 install_long_leave_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, validate_and_prepare=_shared._validate_and_prepare, leave_create_type=_api.LeaveCreate, sheet_row_for_record=_api._sheet_row_for_record, insert_record=_api._insert_record)
 install_admin_audit_archive_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
-
-# Replace only the final POST registration write boundary. Validation remains the
-# shared live sequence; PostgreSQL + outbox commit together and Google is async.
-install_leave_sync_queue(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    validate_and_prepare=_shared._validate_and_prepare,
-    identity_type=_api.Identity,
-    api_module=_api,
-)
-# Keep Lễ tân guard outside the queued writer so its current policy still applies.
+install_leave_sync_queue(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity, api_module=_api)
 install_letan_leave_guard(_shared.app, api_module=_api, vn_tz=_api.VN_TZ)
-
 install_revenue_leave_list_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, norm=_api._norm, progressive_key=_api._progressive_key, google_client=_api._google_client)
 install_revenue_report_target(_shared.app, current_identity=_api.current_identity)
 install_purchase_reconcile_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, google_client=_api._google_client)
@@ -109,11 +95,13 @@ install_attendance_break_window(_shared.app)
 install_attendance_break_alerts(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, vn_tz=_api.VN_TZ)
 install_attendance_policy_patch()
 install_outside_leave_rule(_shared.app, engine_instance=_api._engine_instance)
+# Apply recognized Hỗ trợ-ca schedules to every employee after the full attendance
+# chain is installed. This removes only false 'đi trễ' break restrictions.
+install_support_shift_break(_shared.app, engine_instance=_api._engine_instance, snapshot_module=_snapshot)
 install_break_alert_control(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_break_return_penalty(_shared.app, engine_instance=_api._engine_instance, api_module=_api, vn_tz=_api.VN_TZ)
 install_attendance_break_dispatch(_shared.app, engine_instance=_api._engine_instance, api_module=_api, vn_tz=_api.VN_TZ)
 install_operations_v41(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
-
 install_admin_change_push(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, leave_create_type=_api.LeaveCreate, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
 install_single_device_guard(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_excel_export_style(_shared.app)
