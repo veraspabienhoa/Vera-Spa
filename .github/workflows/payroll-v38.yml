@@ -113,7 +113,7 @@ jobs:
               'employee search exists in current payroll': 'Tìm tên nhân viên' in enhanced_page and 'draftSearch' in enhanced_page,
               'complete payroll button exists': 'Hoàn thành bảng lương' in enhanced_page,
               'saved payroll delete controls exist': 'Xóa lịch sử kỳ đang chọn' in enhanced_page and 'deleteHistoryBatch' in enhanced_page,
-              'saved payroll save edit delete controls exist': all(token in saved_admin for token in ('Lưu bảng lương', 'Chỉnh sửa', 'Xóa bảng lương đã lưu')),
+              'saved payroll edit and delete controls exist without duplicate draft save': all(token in saved_admin for token in ('Chỉnh sửa', 'Xóa bảng lương đã lưu')) and '> Lưu bảng lương</button>' not in saved_admin,
               'saved payroll edit calls backend': '/v2/payroll/saved-batches/${encodeURIComponent(batch)}/edit' in saved_admin,
               'payroll debt dates are dd/mm/yyyy': debt_admin.count('placeholder="dd/mm/yyyy"') == 3 and 'dateToIso' in debt_admin,
               'nonpositive take-home rows are highlighted': 'payroll-nonpositive' in enhanced_page and 'payroll-nonpositive' in enhanced_css,
