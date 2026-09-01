@@ -1,4 +1,4 @@
-import { Edit3, Save, Trash2 } from 'lucide-react'
+import { Edit3, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getCurrentSession } from '../lib/supabase'
@@ -106,7 +106,6 @@ export default function PayrollSavedAdminPanel({ user }) {
 
   return <>
     {draftActionsTarget && createPortal(<>
-      <button className="secondary-button" type="button" disabled={Boolean(busy)} onClick={() => clickExistingButton('Lưu bảng lương nháp')}><Save size={16} /> Lưu bảng lương</button>
       <button className="danger-button" type="button" disabled={Boolean(busy)} onClick={() => clickExistingButton('Xóa bảng lương nháp')}><Trash2 size={16} /> Xóa bảng lương đã lưu</button>
     </>, draftActionsTarget, 'payroll-current-save-actions')}
 
