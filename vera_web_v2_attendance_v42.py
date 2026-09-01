@@ -237,21 +237,12 @@ def _departure_status_is_final(
     cluster_minutes: int,
     now: datetime | None = None,
 ) -> bool:
-    """Only trust TimeSoft's early-departure label after the shift is complete.
+    """Không suy luận Về sớm từ nhãn tổng hợp của TimeSoft.
 
-    During an active shift TimeSoft can expose the morning check-in as the
-    current "last check-in" and temporarily label it as an early departure.
-    Requiring a second FaceID cluster also prevents a lone check-in from being
-    treated as a completed departure on historical rows.
+    Ca làm bình thường của Vera không FaceID khi hết ca.
+    Về sớm thật được xác định từ leave_records.
     """
-    clustered = _cluster_punches(punches, cluster_minutes)
-    return departure_status_is_final(
-        clustered_punch_count=len(clustered),
-        work_day=work_day,
-        expected_end=_expected_end(work_day, representative),
-        now=now,
-    )
-
+    return False
 
 def _pick_break_pair(values: list[datetime], planned: int, cluster_minutes: int):
     """Choose a 15:00–21:00 break pair after the first (shift check-in) event.
