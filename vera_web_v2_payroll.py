@@ -423,7 +423,9 @@ def _employee_catalog(conn, norm) -> dict[str, dict[str, Any]]:
             SELECT username,COALESCE(full_name,'') full_name,COALESCE(email,'') email,
                    COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
                    COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status
-            FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+            FROM employees
+            WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+              AND COALESCE(payload->>'__deleted', 'false') <> 'true'
         """)).mappings().all()
     }
 
@@ -1128,7 +1130,9 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 SELECT username,COALESCE(full_name,'') full_name,lower(COALESCE(role,'')) role,
                        COALESCE(email,'') email,COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
                        COALESCE(employment_start_date,'') employment_start_date
-                FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+                FROM employees
+                WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+                  AND COALESCE(payload->>'__deleted', 'false') <> 'true'
                 ORDER BY COALESCE(stt,2147483647),username
             """)).mappings().all()]
             penalties = conn.execute(text("""

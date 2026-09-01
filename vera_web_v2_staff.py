@@ -715,35 +715,17 @@ def install_staff_routes(
                 if str(row.get("role") or "").lower() == "admin" or norm(row.get("username")) == "quan tri vien":
                     raise HTTPException(400, "Không thể xóa tài khoản hệ thống/admin.")
             deleted_count = len(targets)
-            deleted_at = datetime.now(vn_tz).isoformat()
             for row in targets:
-                archived = dict(row)
-                archived["login_locked"] = True
-                archived["remember_token_hash"] = ""
-                archived["remember_token_expiry"] = ""
-                payload = _employee_payload(archived, STATUS_OPTIONS[2])
-                payload.update({
-                    "__deleted": True,
-                    "__deleted_at": deleted_at,
-                    "__deleted_by": str(ident.employee_username or ""),
-                })
-                updated = conn.execute(text("""
-                    UPDATE employees SET
-                        login_locked=true,
-                        remember_token_hash='', remember_token_expiry='',
-                        payload=CAST(:payload AS jsonb), updated_at=NOW()
-                    WHERE username=:username
-                """), {
-                    "username": row["username"],
-                    "payload": json.dumps(payload, ensure_ascii=False),
-                })
-                if updated.rowcount != 1:
-                    raise HTTPException(409, f"Nhân viên {row['username']} đã thay đổi. Hãy Làm mới rồi thử lại.")
                 if conn.execute(text("SELECT to_regclass('public.vera_v2_user_profile')")).scalar():
                     conn.execute(text("""
                         UPDATE vera_v2_user_profile SET is_active=false, updated_at=NOW()
                         WHERE lower(btrim(employee_username))=lower(btrim(:username))
                     """), {"username": row["username"]})
+                deleted = conn.execute(text("""
+                    DELETE FROM employees WHERE username=:username
+                """), {"username": row["username"]})
+                if deleted.rowcount != 1:
+                    raise HTTPException(409, f"Nhân viên {row['username']} đã thay đổi. Hãy Làm mới rồi thử lại.")
             remaining = _select_staff_rows(conn)
             for index, row in enumerate(remaining, start=1):
                 payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
@@ -767,7 +749,7 @@ def install_staff_routes(
             conn.close()
             raise HTTPException(500, "Không xóa được nhân viên trong hệ thống chính. Vui lòng thử lại.") from exc
 
-        message = f"Đã xóa {deleted_count} nhân viên THÀNH CÔNG. Toàn bộ lịch sử được giữ nguyên."
+        message = f"Đã xóa vĩnh viễn {deleted_count} nhân viên THÀNH CÔNG. Toàn bộ lịch sử nghiệp vụ được giữ nguyên."
         conn.close()
         return {
             "ok": True,
