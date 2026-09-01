@@ -4,27 +4,6 @@ import { veraApi } from '../lib/api'
 
 const EMPTY_TOUR = { columns: [], records: [], stats: [] }
 const TOUR_CACHE_MAX_AGE = 10 * 60 * 1000
-const TOUR_SYNC_ACTIONS = [
-  { action: 'sync_all', label: 'Đồng bộ lịch nghỉ hôm nay', note: 'Ghi lý do vào cột C và chuyển đúng nhóm nghỉ sang Nghỉ phép.', primary: true },
-  { action: 'clear_leave_status', label: 'Kiểm tra/Xóa trạng thái Nghỉ phép', note: 'Người không còn lịch nghỉ hợp lệ hôm nay được chuyển về Đi làm.' },
-  { action: 'update_reasons', label: 'Chỉ cập nhật Lịch hẹn (cột C)', note: 'Không đổi trạng thái cột P.' },
-  { action: 'late_to_working', label: 'Đi trễ → Đi làm', note: 'Theo danh sách TourVera/Nghi cột H.' },
-  { action: 'late_to_leave', label: 'Đi trễ → Nghỉ phép', note: 'Theo danh sách TourVera/Nghi cột H.' },
-  { action: 'early_to_leave', label: 'Về sớm → Nghỉ phép', note: 'Theo danh sách TourVera/Nghi cột K.' },
-  { action: 'early_to_working', label: 'Về sớm → Đi làm', note: 'Theo danh sách TourVera/Nghi cột K.' },
-  { action: 'leave_group_to_leave', label: 'Nhóm nghỉ → Nghỉ phép', note: 'Đúng danh sách lý do nghỉ trong VBA.' },
-  { action: 'support_to_working', label: 'Hỗ trợ → Đi làm', note: 'Theo danh sách TourVera/Nghi cột N.' },
-]
-const TOUR_SYNC_STAT_LABELS = {
-  source_total: 'Dòng nguồn hôm nay',
-  source_permit: 'Có phép',
-  source_no_permit: 'Không phép',
-  source_special: 'Lý do đặc biệt',
-  matched: 'Tìm thấy trong Input',
-  reason_updated: 'Đổi cột C',
-  status_updated: 'Đổi trạng thái',
-}
-
 function cacheKey(user) {
   const identity = user?.employee_username || user?.email || 'viewer'
   return `vera-tour-cache:${identity}`
@@ -175,8 +154,6 @@ export default function TourPage({ user }) {
   const initiallyCached = useRef(Boolean(data.records.length))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [syncBusy, setSyncBusy] = useState('')
-  const [syncResult, setSyncResult] = useState(null)
   const [activeFilter, setActiveFilter] = useState('all')
   const [shiftFilter, setShiftFilter] = useState('all')
   const load = useCallback(async (refresh = false, quiet = false) => {
@@ -192,23 +169,6 @@ export default function TourPage({ user }) {
       if (!quiet) setBusy(false)
     }
   }, [tourCacheKey])
-
-  const runTourSync = useCallback(async ({ action, label, note }) => {
-    if (!window.confirm(`${label}?\n\n${note}\n\nHệ thống sẽ cập nhật trực tiếp file TourVera.xlsm.`)) return
-    setSyncBusy(action)
-    setSyncResult(null)
-    setError('')
-    try {
-      const result = await veraApi.syncTourLeave(action)
-      setSyncResult(result)
-      window.sessionStorage.removeItem(tourCacheKey)
-      await load(true, true)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSyncBusy('')
-    }
-  }, [load, tourCacheKey])
 
   useEffect(() => {
     void load(true, initiallyCached.current)
@@ -255,23 +215,9 @@ export default function TourPage({ user }) {
       .tour-shift-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
       .tour-shift-filter button{min-width:82px}
       .tour-heading-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
-      .tour-sync-panel{margin-bottom:16px;border:2px solid #d7e5dc}
-      .tour-sync-panel .panel-title-row{align-items:flex-start}
-      .tour-sync-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
-      .tour-sync-action{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:5px;min-height:88px;text-align:left;white-space:normal}
-      .tour-sync-action small{font-size:11px;line-height:1.35;font-weight:600;opacity:.78}
-      .tour-sync-result{margin-top:14px}
-      .tour-sync-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-      .tour-sync-stats span{background:#eef5f1;border:1px solid #d4e2da;border-radius:999px;padding:6px 9px;font-size:11px;color:#355346}
-      @media(max-width:900px){.tour-sync-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-      @media(max-width:640px){.tour-shift-filter{gap:6px}.tour-shift-filter button{min-width:0;flex:1;padding:9px 10px}.tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}.tour-sync-grid{grid-template-columns:1fr}.tour-sync-action{min-height:0}}
+      @media(max-width:640px){.tour-shift-filter{gap:6px}.tour-shift-filter button{min-width:0;flex:1;padding:9px 10px}.tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}}
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1><p>Cache máy chủ Bảng tua làm mới tối đa mỗi 1 phút; màn hình tự kiểm tra dữ liệu mới mỗi 10 giây.</p></div><div className="tour-heading-actions">{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy || Boolean(syncBusy)}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div></div>
-    {user?.permissions?.tour_leave_sync && <section className="panel tour-sync-panel">
-      <div className="panel-title-row"><div><h2>CẬP NHẬT LỊCH NGHỈ → TOURVERA</h2><p>Dành cho Lễ tân/Quản lý. Mỗi nút chạy đúng một macro VBA tương ứng trên file TourVera hiện tại.</p></div></div>
-      <div className="tour-sync-grid">{TOUR_SYNC_ACTIONS.map((item) => <button type="button" key={item.action} className={`${item.primary ? 'primary-button' : 'secondary-button'} tour-sync-action`} onClick={() => runTourSync(item)} disabled={Boolean(syncBusy)}><span>{syncBusy === item.action ? 'Đang cập nhật…' : item.label}</span><small>{item.note}</small></button>)}</div>
-      {syncResult && <div className="success-box tour-sync-result"><strong>{syncResult.message}</strong><div className="tour-sync-stats">{Object.entries(syncResult.stats || {}).filter(([key]) => TOUR_SYNC_STAT_LABELS[key]).map(([key, value]) => <span key={key}>{TOUR_SYNC_STAT_LABELS[key]}: <strong>{value}</strong></span>)}</div></div>}
-    </section>}
+    <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1><p>Cache máy chủ Bảng tua làm mới tối đa mỗi 1 phút; màn hình tự kiểm tra dữ liệu mới mỗi 10 giây.</p></div><div className="tour-heading-actions">{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div></div>
     {error && <div className="error-box">{error}</div>}
     {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
     <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca" data-tour-customer-count={customerCount}>
