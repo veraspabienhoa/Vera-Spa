@@ -31,6 +31,7 @@ from vera_web_v2_payroll_timesoft_auto import install_payroll_timesoft_auto_rout
 from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_routes
 from vera_web_v2_policy_v39 import install_policy_v39
 from vera_web_v2_policy_v40 import install_policy_v40
+from vera_web_v2_people import invalidate_tour_cache
 from vera_web_v2_purchase_reconcile import install_purchase_reconcile_routes
 from vera_web_v2_purchase_reconcile_alert_check import install_purchase_reconcile_alert_check
 from vera_web_v2_purchase_reconcile_v2 import install_purchase_reconcile_v2
@@ -41,6 +42,7 @@ from vera_web_v2_single_device import install_single_device_guard
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
 from vera_web_v2_system_name import install_system_name_routes
+from vera_web_v2_tour_leave_sync import install_tour_leave_sync_routes
 from vera_web_v2_violation_unlimited import install_violation_unlimited
 from vera_web_v2_work_schedule import install_work_schedule_routes
 from vera_web_v2_work_schedule_permissions import install_work_schedule_permissions
@@ -75,6 +77,17 @@ install_staff_security_routes(_shared.app, engine_instance=_api._engine_instance
 install_staff_status_sort(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+install_tour_leave_sync_routes(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    identity_type=_api.Identity,
+    google_client=_api._google_client,
+    leave_sheet_id=_api.LEAVE_SHEET_ID,
+    vn_tz=_api.VN_TZ,
+    invalidate_tour_cache=invalidate_tour_cache,
+)
 install_work_schedule_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, feature_allowed=_api._feature_allowed)
 install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, vn_tz=_api.VN_TZ)

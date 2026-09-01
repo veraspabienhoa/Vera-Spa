@@ -22,6 +22,7 @@ ROLES = ["quanly", "letan", "leader", "nhanvien", "locker", "tapvu"]
 FEATURE_GROUPS: dict[str, dict[str, str]] = {
     "Bảng tua": {
         "tour": "Xem Bảng tua", "tour_refresh": "Làm mới Bảng tua",
+        "tour_leave_sync": "Cập nhật lịch nghỉ vào TourVera",
     },
     "Lịch nghỉ": {
         "leave": "Xem Đăng ký nghỉ", "leave_manage": "Xem Quản lý lịch nghỉ",
@@ -83,7 +84,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
 FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in group.items()}
 
 FRONTDESK = {
-    "tour", "tour_refresh", "leave", "leave_manage", "leave_create", "leave_export", "leave_email", "leave_detail_edit", "leave_detail_delete",
+    "tour", "tour_refresh", "tour_leave_sync", "leave", "leave_manage", "leave_create", "leave_export", "leave_email", "leave_detail_edit", "leave_detail_delete",
     "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete",
     "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add",
     "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",

@@ -23,6 +23,17 @@ _tour_cache: dict[str, Any] = {"loaded_at": 0.0, "columns": [], "records": [], "
 _tour_lock = threading.Lock()
 
 
+def invalidate_tour_cache() -> None:
+    """Force the next Bảng tua request to read the just-updated XLSM."""
+    with _tour_lock:
+        _tour_cache.update({
+            "loaded_at": 0.0,
+            "columns": [],
+            "records": [],
+            "source_updated_at": "",
+        })
+
+
 def _birthday(value: Any) -> date | None:
     raw = str(value or "").strip()
     if not raw:

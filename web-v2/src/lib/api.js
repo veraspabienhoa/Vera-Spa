@@ -286,6 +286,9 @@ export const veraApi = {
   }),
   birthdays: (month = new Date().getMonth() + 1) => request(`/v2/birthdays?month=${encodeURIComponent(month)}`),
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
+  syncTourLeave: (action) => request('/v2/tour-leave-sync', {
+    method: 'POST', body: JSON.stringify({ action }),
+  }),
   exportLeaveExcel: (start, end, employee = '') => {
     const params = new URLSearchParams({ start, end })
     if (employee.trim()) params.set('employee', employee.trim())
