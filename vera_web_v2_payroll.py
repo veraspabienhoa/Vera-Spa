@@ -430,12 +430,20 @@ def _employee_catalog(conn, norm) -> dict[str, dict[str, Any]]:
     }
 
 
-def _clean_draft_rows(conn, supplied_rows: list[dict[str, Any]], norm) -> list[dict[str, Any]]:
+def _clean_draft_rows(
+    conn,
+    supplied_rows: list[dict[str, Any]],
+    norm,
+    *,
+    skip_missing: bool = False,
+) -> list[dict[str, Any]]:
     employees = _employee_catalog(conn, norm)
     clean_rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     for supplied in supplied_rows:
         key = norm(supplied.get("Tên Hệ thống"))
+        if skip_missing and key and key not in employees:
+            continue
         if not key or key in seen or key not in employees:
             raise HTTPException(400, "Bảng lương có nhân viên trống, trùng tên hoặc không tồn tại.")
         seen.add(key)
@@ -795,7 +803,7 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
     return stream.getvalue()
 
 
-def _saved_draft(conn, start: date, end: date) -> dict[str, Any] | None:
+def _saved_draft(conn, start: date, end: date, norm) -> dict[str, Any] | None:
     stored = conn.execute(text("""
         SELECT value_json,updated_by,updated_at
         FROM vera_app_setting
@@ -805,11 +813,11 @@ def _saved_draft(conn, start: date, end: date) -> dict[str, Any] | None:
     if not stored or not isinstance(stored["value_json"], dict):
         return None
     value = dict(stored["value_json"])
-    rows = [
-        _net({field: item.get(field, "") for field in DRAFT_FIELDS})
-        for item in (value.get("rows") or [])
-        if isinstance(item, dict)
-    ]
+    supplied_rows = [item for item in (value.get("rows") or []) if isinstance(item, dict)]
+    employees = _employee_catalog(conn, norm)
+    valid_rows = [item for item in supplied_rows if norm(item.get("Tên Hệ thống")) in employees]
+    removed_employee_count = len(supplied_rows) - len(valid_rows)
+    rows = _clean_draft_rows(conn, valid_rows, norm) if valid_rows else []
     if not rows:
         return None
     return {
@@ -822,6 +830,7 @@ def _saved_draft(conn, start: date, end: date) -> dict[str, Any] | None:
         "source_name": str(value.get("source_name") or "Bảng lương nháp"),
         "saved_at": stored["updated_at"].isoformat() if stored["updated_at"] else "",
         "saved_by": str(stored["updated_by"] or ""),
+        "removed_employee_count": removed_employee_count,
     }
 
 
@@ -913,7 +922,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         start, end, label = _period(month, period_no)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
-            draft = _saved_draft(conn, start, end)
+            draft = _saved_draft(conn, start, end, norm)
         return {"draft": draft, "period_label": label}
 
     @app.put("/v2/payroll/draft")
@@ -929,7 +938,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 "source_name": body.source_name,
                 "rows": clean_rows,
             }, ident.employee_username)
-            draft = _saved_draft(conn, body.start, body.end)
+            draft = _saved_draft(conn, body.start, body.end, norm)
         return {"ok": True, "draft": draft, "message": f"Đã lưu bảng lương nháp {label} cho {len(clean_rows)} nhân viên."}
 
     @app.delete("/v2/payroll/draft")

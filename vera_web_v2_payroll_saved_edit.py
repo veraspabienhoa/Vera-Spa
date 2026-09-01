@@ -81,14 +81,14 @@ def install_payroll_saved_edit_routes(
             if label != wanted:
                 raise HTTPException(400, "Tên kỳ lương và ngày kỳ lương không khớp nhau.")
 
-            clean_rows = _payroll._clean_draft_rows(conn, batch_rows, norm)
+            clean_rows = _payroll._clean_draft_rows(conn, batch_rows, norm, skip_missing=True)
             _payroll._put_setting(conn, _payroll._draft_key(start, end), {
                 "start": start.isoformat(),
                 "end": end.isoformat(),
                 "source_name": f"Chỉnh sửa từ {wanted}",
                 "rows": clean_rows,
             }, ident.employee_username)
-            draft = _payroll._saved_draft(conn, start, end)
+            draft = _payroll._saved_draft(conn, start, end, norm)
 
         return {
             "ok": True,

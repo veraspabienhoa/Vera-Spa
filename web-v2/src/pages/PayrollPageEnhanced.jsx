@@ -169,6 +169,12 @@ export default function PayrollPageEnhanced({ user }) {
         const saved = result.draft || null
         setDraft(saved)
         setSelected((saved?.rows || []).map((row) => row['Tên Hệ thống']))
+        if (Number(saved?.removed_employee_count || 0) > 0) {
+          setNotice({
+            type: 'warning',
+            message: `Đã loại ${saved.removed_employee_count} nhân viên đã xóa khỏi bảng lương nháp. Bạn có thể chỉnh sửa và lưu lại bình thường.`,
+          })
+        }
       })
       .catch((error) => {
         if (active) setNotice({ type: 'error', message: error.message })
