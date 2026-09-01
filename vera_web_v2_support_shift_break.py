@@ -2,7 +2,7 @@
 
 Recognized support leave rows adjust the effective shift start for every employee:
 - Ca 1 sau 23H đi trễ 2 tiếng: +120 minutes
-- Ca 1 sau 0:0H đi trễ 3 tiếng: +120 minutes (business rule)
+- Ca 1 sau 0:0H đi trễ 3 tiếng: +180 minutes
 - Ca 2 sau 0:0H đi trễ 1 tiếng: +60 minutes
 
 A recognized support row never removes the employee's configured mid-shift break.
@@ -17,7 +17,7 @@ from typing import Any, Callable
 from sqlalchemy import text
 
 
-RELEASE = "support-shift-break-2026-09-01.1"
+RELEASE = "support-shift-break-2026-09-01.2"
 
 
 def _norm(value: Any) -> str:
@@ -30,7 +30,7 @@ def _norm(value: Any) -> str:
 SUPPORT_ALLOWANCES = {
     _norm("Hỗ trợ Ca 1 sau 23H đi trễ 2 tiếng"): 120,
     _norm("Hỗ trợ Ca 1 đi trễ 2 tiếng"): 120,
-    _norm("Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng"): 120,
+    _norm("Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng"): 180,
     _norm("Hỗ trợ Ca 2 sau 0:0H đi trễ 1 tiếng"): 60,
 }
 
@@ -122,9 +122,6 @@ def install_support_shift_break(app, *, engine_instance: Callable[[], Any], snap
                 minute = int(effective % 60)
                 item["effective_shift_start"] = f"{hour:02d}:{minute:02d}:00"
 
-            # The support schedule itself must never consume break eligibility.
-            # If TimeSoft still labels arrival as late, remove only the late
-            # restriction; any independent early-leave restriction remains.
             _remove_late_restriction(item)
             item["arrival_support_applied"] = True
         return rows
@@ -139,7 +136,7 @@ def install_support_shift_break(app, *, engine_instance: Callable[[], Any], snap
             "all_employees": True,
             "allowances": {
                 "Hỗ trợ Ca 1 sau 23H đi trễ 2 tiếng": 120,
-                "Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng": 120,
+                "Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng": 180,
                 "Hỗ trợ Ca 2 sau 0:0H đi trễ 1 tiếng": 60,
             },
             "support_keeps_break": True,
