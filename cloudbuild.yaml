@@ -135,6 +135,33 @@ steps:
         raise SystemExit(f'TourVera leave sync health check failed: {last}')
         PY
 
+        echo "Health checking Web V2 leave source sync: $${API_URL}/v2/leave/source-sync/health"
+        python3 - "$${API_URL}/v2/leave/source-sync/health" <<'PY'
+        import json, sys, time, urllib.request
+        url=sys.argv[1]
+        expected='leave-source-sync-2026-09-01.1'
+        last=None
+        for attempt in range(1,13):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as r:
+                    body=r.read(2048).decode('utf-8','replace')
+                    payload=json.loads(body)
+                    if (200 <= r.status < 300 and payload.get('ok') is True
+                            and payload.get('release') == expected
+                            and payload.get('target') == 'LichNghi_VeraSpa/MainData!A:D'
+                            and payload.get('write_mode') == 'append-missing-only'
+                            and payload.get('violation_rows') == 'excluded'
+                            and payload.get('penalty_fields') == 'never-written'):
+                        print(body)
+                        raise SystemExit(0)
+                    last=RuntimeError(f'Unexpected leave source sync health payload: {body}')
+            except Exception as exc:
+                last=exc
+                print(f'Leave source sync health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
+            time.sleep(5)
+        raise SystemExit(f'Leave source sync health check failed: {last}')
+        PY
+
         echo "Health checking Policy V3.9: $${API_URL}/v2/policy-v39/health"
         python3 - "$${API_URL}/v2/policy-v39/health" <<'PY'
         import json, sys, time, urllib.request

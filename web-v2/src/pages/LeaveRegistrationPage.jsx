@@ -121,7 +121,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushMessage, setPushMessage] = useState('')
   const [exporting, setExporting] = useState(false)
-  const [exportingLeaveSource, setExportingLeaveSource] = useState(false)
+  const [syncingLeaveSource, setSyncingLeaveSource] = useState(false)
   const role = String(user?.role || '').toLowerCase()
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
@@ -419,16 +419,18 @@ export default function LeaveRegistrationPage({ user }) {
     }
   }
 
-  const exportLeaveSource = async () => {
-    if (!['admin', 'quanly', 'letan'].includes(role) || exportingLeaveSource) return
-    setExportingLeaveSource(true)
+  const syncLeaveSource = async () => {
+    if (!['admin', 'quanly', 'letan'].includes(role) || syncingLeaveSource) return
+    if (!window.confirm('Đồng bộ các lịch nghỉ còn thiếu từ Web V2 vào LichNghi_VeraSpa?\n\nDòng đã có và dòng Vi phạm sẽ được bỏ qua.')) return
+    setSyncingLeaveSource(true)
     setError('')
     try {
-      await veraApi.exportLeaveSourceExcel()
+      const result = await veraApi.syncLeaveSource()
+      setMessage(result.message || 'Đã đồng bộ LichNghi_VeraSpa.')
     } catch (err) {
-      setError(err.message || 'Không tải được LichNghi_VeraSpa.')
+      setError(err.message || 'Không đồng bộ được LichNghi_VeraSpa.')
     } finally {
-      setExportingLeaveSource(false)
+      setSyncingLeaveSource(false)
     }
   }
 
@@ -839,7 +841,7 @@ export default function LeaveRegistrationPage({ user }) {
             </button>
           </div>
           <div className="list-actions">
-              {['admin', 'quanly', 'letan'].includes(role) && user?.permissions?.leave_export !== false && <button type="button" className="secondary-button compact export-button" onClick={exportLeaveSource} disabled={exportingLeaveSource}><Download size={15} /> {exportingLeaveSource ? 'Đang tải…' : 'Tải LichNghi_VeraSpa'}</button>}
+              {['admin', 'quanly', 'letan'].includes(role) && user?.permissions?.leave_export !== false && <button type="button" className="secondary-button compact export-button" onClick={syncLeaveSource} disabled={syncingLeaveSource}><RefreshCw size={15} className={syncingLeaveSource ? 'spin' : ''} /> {syncingLeaveSource ? 'Đang đồng bộ…' : 'Đồng bộ Web V2 → LichNghi_VeraSpa'}</button>}
               {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}

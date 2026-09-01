@@ -1,32 +1,27 @@
-from io import BytesIO
+from datetime import date
 
-from openpyxl import load_workbook
-
-from vera_web_v2_leave_source_export import build_leave_source_workbook
+from vera_web_v2_leave_source_export import missing_leave_rows
 
 
 def _norm(value):
-    return str(value or "").strip().casefold().replace("ạ", "a")
+    return str(value or "").strip().casefold()
 
 
-def test_export_has_legacy_sheets_and_excludes_violation_rows_and_penalty_fields():
-    payload = build_leave_source_workbook([
-        ["Ngày", "Thứ ngày", "Tên nhân viên", "Lý do nghỉ", "Phạt"],
-        ["01/09/2026", "Thứ Ba", "Cẩm Vân", "Nghỉ CÓ phép", 0],
-        ["01/09/2026", "Thứ Ba", "Cẩm Vân", "Nghỉ CÓ phép", 0],
-        ["01/09/2026", "Thứ Ba", "Cẩm Vân", "Đi trễ", 50_000],
-    ], [
-        ["STT", "Lý do nghỉ", "Loại nghỉ"],
-        [1, "Nghỉ CÓ phép", "Có phép"],
-        [2, "Đi trễ", "Vi phạm"],
-    ], norm=_norm)
+def test_sync_appends_only_missing_leave_rows_and_excludes_violations():
+    sheet_values = [
+        ["Ngày", "Thứ ngày", "Tên nhân viên", "Lý do nghỉ"],
+        ["01/09/2026", "Thứ Ba", "Cẩm Vân", "Nghỉ CÓ phép"],
+    ]
+    records = [
+        {"leave_date": date(2026, 9, 1), "employee_name": "Cẩm Vân", "leave_reason": "Nghỉ CÓ phép", "leave_type": "Có phép"},
+        {"leave_date": date(2026, 9, 2), "employee_name": "Cẩm Vân", "leave_reason": "Nghỉ CÓ phép", "leave_type": "Có phép"},
+        {"leave_date": date(2026, 9, 2), "employee_name": "Cẩm Vân", "leave_reason": "Nghỉ CÓ phép", "leave_type": "Có phép"},
+        {"leave_date": date(2026, 9, 2), "employee_name": "Cẩm Vân", "leave_reason": "Đi trễ", "leave_type": "Vi phạm"},
+    ]
 
-    workbook = load_workbook(BytesIO(payload), data_only=False)
-    assert workbook.sheetnames == ["MainData", "LoaiNghi"]
-    main = workbook["MainData"]
-    assert [cell.value for cell in main[1]] == ["Ngày", "Thứ ngày", "Tên nhân viên", "Lý do nghỉ"]
-    assert main.max_row == 2
-    assert main["C2"].value == "Cẩm Vân"
-    assert main["D2"].value == "Nghỉ CÓ phép"
-    assert "Phạt" not in [cell.value for cell in main[1]]
-    assert workbook["LoaiNghi"]["B2"].value == "Nghỉ CÓ phép"
+    rows, existing, excluded = missing_leave_rows(records, sheet_values, norm=_norm)
+
+    assert rows == [["02/09/2026", "Thứ Tư", "Cẩm Vân", "Nghỉ CÓ phép"]]
+    assert existing == 2
+    assert excluded == 1
+    assert all(len(row) == 4 for row in rows)
