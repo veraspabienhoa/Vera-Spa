@@ -1,20 +1,12 @@
-"""Durable PostgreSQL outbox for Web V2 leave -> Google Sheets mirroring.
-
-Registration commits PostgreSQL + a tiny queue row in one transaction and returns
-immediately. A daemon worker mirrors A:M later, retries with backoff, and writes to
-a deterministic source_row so retry after a partial success cannot append a duplicate.
-"""
+"""Durable PostgreSQL outbox for Web V2 leave -> Google Sheets mirroring."""
 from __future__ import annotations
 
-from datetime import datetime
-import json
 import threading
 import time
 from typing import Any, Callable
 
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
-
 
 RELEASE = "leave-sync-queue-2026-09-01.1"
 QUEUE_TABLE = "vera_leave_sheet_sync_queue"
@@ -25,8 +17,7 @@ _worker_lock = threading.Lock()
 def _remove_route(app, path: str, method: str):
     wanted = method.upper()
     for route in list(app.router.routes):
-        methods = set(getattr(route, "methods", set()) or set())
-        if getattr(route, "path", "") == path and wanted in methods:
+        if getattr(route, "path", "") == path and wanted in set(getattr(route, "methods", set()) or set()):
             app.router.routes.remove(route)
             return getattr(route, "endpoint", None)
     return None
@@ -50,19 +41,15 @@ def _ensure_schema(engine_instance: Callable[[], Any]) -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """))
-        conn.execute(text(f"""
-            CREATE INDEX IF NOT EXISTS idx_{QUEUE_TABLE}_pending
-            ON {QUEUE_TABLE}(status, next_attempt_at, id)
-        """))
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{QUEUE_TABLE}_pending ON {QUEUE_TABLE}(status, next_attempt_at, id)"))
 
 
 def _allocate_source_row(conn, leave_sheet_id: str) -> int:
-    row = conn.execute(text("""
-        SELECT COALESCE(MAX(source_row), 1) + 1
-        FROM leave_records
+    value = conn.execute(text("""
+        SELECT COALESCE(MAX(source_row), 1) + 1 FROM leave_records
         WHERE source_sheet_id=:sid AND source_row IS NOT NULL
     """), {"sid": leave_sheet_id}).scalar() or 2
-    return max(2, int(row))
+    return max(2, int(value))
 
 
 def _insert_leave_and_queue(conn, *, api_module, record: dict, source_row: int) -> None:
@@ -79,25 +66,12 @@ def _insert_leave_and_queue(conn, *, api_module, record: dict, source_row: int) 
             :update_date, :update_time, :updated_by, :weekday_label, CAST(:payload AS jsonb), :record_uid,
             NOW(), NOW()
         )
-    """), {
-        **record,
-        "sid": api_module.LEAVE_SHEET_ID,
-        "srow": source_row,
-        "payload": api_module.json_text(payload),
-    })
+    """), {**record, "sid": api_module.LEAVE_SHEET_ID, "srow": source_row, "payload": api_module.json_text(payload)})
     conn.execute(text(f"""
-        INSERT INTO {QUEUE_TABLE}(
-            idempotency_key, record_uid, source_row, status, attempts,
-            next_attempt_at, created_at, updated_at
-        ) VALUES (
-            :key, :uid, :source_row, 'pending', 0, NOW(), NOW(), NOW()
-        )
+        INSERT INTO {QUEUE_TABLE}(idempotency_key,record_uid,source_row,status,attempts,next_attempt_at,created_at,updated_at)
+        VALUES (:key,:uid,:source_row,'pending',0,NOW(),NOW(),NOW())
         ON CONFLICT (idempotency_key) DO NOTHING
-    """), {
-        "key": f"leave:create:{record['record_uid']}",
-        "uid": record["record_uid"],
-        "source_row": source_row,
-    })
+    """), {"key": f"leave:create:{record['record_uid']}", "uid": record["record_uid"], "source_row": source_row})
     try:
         with conn.begin_nested():
             conn.execute(text("""
@@ -108,69 +82,50 @@ def _insert_leave_and_queue(conn, *, api_module, record: dict, source_row: int) 
         pass
 
 
-def _claim_one(engine_instance: Callable[[], Any]) -> dict[str, Any] | None:
+def _claim_one(engine_instance):
     with engine_instance().begin() as conn:
         row = conn.execute(text(f"""
-            SELECT id, record_uid, source_row, attempts
-            FROM {QUEUE_TABLE}
-            WHERE status IN ('pending','retry')
-              AND next_attempt_at <= NOW()
-            ORDER BY id
-            FOR UPDATE SKIP LOCKED
-            LIMIT 1
+            SELECT id,record_uid,source_row,attempts FROM {QUEUE_TABLE}
+            WHERE status IN ('pending','retry') AND next_attempt_at<=NOW()
+            ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1
         """)).mappings().first()
         if not row:
             return None
-        conn.execute(text(f"""
-            UPDATE {QUEUE_TABLE}
-            SET status='processing', locked_at=NOW(), updated_at=NOW()
-            WHERE id=:id
-        """), {"id": row["id"]})
+        conn.execute(text(f"UPDATE {QUEUE_TABLE} SET status='processing',locked_at=NOW(),updated_at=NOW() WHERE id=:id"), {"id": row["id"]})
         return dict(row)
 
 
-def _record_for_uid(engine_instance: Callable[[], Any], uid: str) -> dict[str, Any] | None:
+def _record_for_uid(engine_instance, uid: str):
     with engine_instance().connect() as conn:
         row = conn.execute(text("""
-            SELECT record_uid, source_row, leave_date, employee_name, leave_reason,
-                   leave_type, detail, calculated_days, accumulated_leave, penalty,
-                   update_date, update_time, updated_by, weekday_label
+            SELECT record_uid,source_row,leave_date,employee_name,leave_reason,leave_type,detail,
+                   calculated_days,accumulated_leave,penalty,update_date,update_time,updated_by,weekday_label
             FROM leave_records WHERE record_uid=:uid
         """), {"uid": uid}).mappings().first()
         return dict(row) if row else None
 
 
-def _mark_done(engine_instance: Callable[[], Any], item_id: int) -> None:
+def _mark_done(engine_instance, item_id: int) -> None:
     with engine_instance().begin() as conn:
         conn.execute(text(f"""
-            UPDATE {QUEUE_TABLE}
-            SET status='done', completed_at=NOW(), last_error=NULL,
-                locked_at=NULL, updated_at=NOW()
+            UPDATE {QUEUE_TABLE} SET status='done',completed_at=NOW(),last_error=NULL,locked_at=NULL,updated_at=NOW()
             WHERE id=:id
         """), {"id": item_id})
 
 
-def _mark_retry(engine_instance: Callable[[], Any], item: dict[str, Any], exc: Exception) -> None:
+def _mark_retry(engine_instance, item, exc: Exception) -> None:
     attempts = int(item.get("attempts") or 0) + 1
-    delay_seconds = min(3600, 15 * (2 ** min(attempts - 1, 8)))
+    delay = min(3600, 15 * (2 ** min(attempts - 1, 8)))
     status = "failed" if attempts >= 12 else "retry"
     with engine_instance().begin() as conn:
         conn.execute(text(f"""
             UPDATE {QUEUE_TABLE}
-            SET status=:status, attempts=:attempts,
-                next_attempt_at=NOW() + (:delay * INTERVAL '1 second'),
-                last_error=:error, locked_at=NULL, updated_at=NOW()
-            WHERE id=:id
-        """), {
-            "id": item["id"],
-            "status": status,
-            "attempts": attempts,
-            "delay": delay_seconds,
-            "error": f"{type(exc).__name__}: {exc}"[:2000],
-        })
+            SET status=:status,attempts=:attempts,next_attempt_at=NOW()+(:delay*INTERVAL '1 second'),
+                last_error=:error,locked_at=NULL,updated_at=NOW() WHERE id=:id
+        """), {"id": item["id"], "status": status, "attempts": attempts, "delay": delay, "error": f"{type(exc).__name__}: {exc}"[:2000]})
 
 
-def _process_one(*, engine_instance: Callable[[], Any], api_module) -> bool:
+def _process_one(*, engine_instance, api_module) -> bool:
     item = _claim_one(engine_instance)
     if not item:
         return False
@@ -185,13 +140,7 @@ def _process_one(*, engine_instance: Callable[[], Any], api_module) -> bool:
         headers = values[0][:13] if values else []
         if not headers:
             raise RuntimeError("MainData chưa có header A:M")
-        row_values = api_module._sheet_values_for_record(headers, record, source_row)
-        # Deterministic row update is idempotent: retries overwrite the same A:M.
-        ws.update(
-            range_name=f"A{source_row}:M{source_row}",
-            values=[row_values],
-            value_input_option="USER_ENTERED",
-        )
+        ws.update(range_name=f"A{source_row}:M{source_row}", values=[api_module._sheet_values_for_record(headers, record, source_row)], value_input_option="USER_ENTERED")
         _mark_done(engine_instance, int(item["id"]))
         return True
     except Exception as exc:
@@ -199,54 +148,36 @@ def _process_one(*, engine_instance: Callable[[], Any], api_module) -> bool:
         return True
 
 
-def _worker_loop(*, engine_instance: Callable[[], Any], api_module) -> None:
+def _worker_loop(*, engine_instance, api_module) -> None:
     while True:
         try:
-            worked = _process_one(engine_instance=engine_instance, api_module=api_module)
-            if not worked:
+            if not _process_one(engine_instance=engine_instance, api_module=api_module):
                 time.sleep(3)
         except Exception:
             time.sleep(5)
 
 
-def _start_worker(*, engine_instance: Callable[[], Any], api_module) -> None:
+def _start_worker(*, engine_instance, api_module) -> None:
     global _worker_started
     with _worker_lock:
         if _worker_started:
             return
-        thread = threading.Thread(
-            target=_worker_loop,
-            kwargs={"engine_instance": engine_instance, "api_module": api_module},
-            name="vera-leave-sheet-sync",
-            daemon=True,
-        )
-        thread.start()
+        threading.Thread(target=_worker_loop, kwargs={"engine_instance": engine_instance, "api_module": api_module}, name="vera-leave-sheet-sync", daemon=True).start()
         _worker_started = True
 
 
-def install_leave_sync_queue(
-    app,
-    *,
-    engine_instance: Callable[[], Any],
-    current_identity,
-    require_feature,
-    validate_and_prepare,
-    identity_type,
-    api_module,
-) -> None:
+def install_leave_sync_queue(app, *, engine_instance, current_identity, require_feature, validate_and_prepare, identity_type, api_module) -> None:
     if getattr(app.state, "leave_sync_queue_installed", False):
         return
-    globals()["identity_type"] = identity_type
+    globals().update({"identity_type": identity_type, "leave_create_type": api_module.LeaveCreate})
     _ensure_schema(engine_instance)
-
     original = _remove_route(app, "/v2/leave/records", "POST")
     if not callable(original):
         raise RuntimeError("Không tìm thấy route đăng ký lịch nghỉ để cài hàng đợi đồng bộ.")
 
     @app.post("/v2/leave/records")
-    def create_leave_queued(body: api_module.LeaveCreate, ident: identity_type = Depends(current_identity)):
-        engine = engine_instance()
-        conn = engine.connect()
+    def create_leave_queued(body: leave_create_type, ident: identity_type = Depends(current_identity)):
+        conn = engine_instance().connect()
         tx = conn.begin()
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
@@ -258,21 +189,12 @@ def install_leave_sync_queue(
             record["source_row"] = source_row
             _insert_leave_and_queue(conn, api_module=api_module, record=record, source_row=source_row)
             tx.commit()
-            return {
-                "ok": True,
-                "record_uid": record["record_uid"],
-                "record": record,
-                "warnings": warnings,
-                "mirror_pending": True,
-                "message": "Đã ghi lịch nghỉ THÀNH CÔNG",
-            }
+            return {"ok": True, "record_uid": record["record_uid"], "record": record, "warnings": warnings, "mirror_pending": True, "message": "Đã ghi lịch nghỉ THÀNH CÔNG"}
         except HTTPException:
-            if tx.is_active:
-                tx.rollback()
+            if tx.is_active: tx.rollback()
             raise
         except Exception as exc:
-            if tx.is_active:
-                tx.rollback()
+            if tx.is_active: tx.rollback()
             raise HTTPException(500, f"Không ghi được lịch nghỉ: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
@@ -283,32 +205,18 @@ def install_leave_sync_queue(
             raise HTTPException(403, "Chỉ Admin được đồng bộ MainData thủ công.")
         processed = 0
         for _ in range(200):
-            if not _process_one(engine_instance=engine_instance, api_module=api_module):
-                break
+            if not _process_one(engine_instance=engine_instance, api_module=api_module): break
             processed += 1
         with engine_instance().connect() as conn:
-            pending = conn.execute(text(f"""
-                SELECT COUNT(*) FROM {QUEUE_TABLE}
-                WHERE status IN ('pending','retry','processing')
-            """)).scalar() or 0
-            failed = conn.execute(text(f"""
-                SELECT COUNT(*) FROM {QUEUE_TABLE} WHERE status='failed'
-            """)).scalar() or 0
+            pending = conn.execute(text(f"SELECT COUNT(*) FROM {QUEUE_TABLE} WHERE status IN ('pending','retry','processing')")).scalar() or 0
+            failed = conn.execute(text(f"SELECT COUNT(*) FROM {QUEUE_TABLE} WHERE status='failed'")).scalar() or 0
         return {"ok": True, "processed": processed, "pending": int(pending), "failed": int(failed)}
 
     @app.get("/v2/leave/sync-queue/health")
     def sync_queue_health():
         with engine_instance().connect() as conn:
-            counts = conn.execute(text(f"""
-                SELECT status, COUNT(*) AS n FROM {QUEUE_TABLE} GROUP BY status
-            """)).mappings().all()
-        return {
-            "ok": True,
-            "release": RELEASE,
-            "durable": True,
-            "idempotency": "record_uid+source_row",
-            "counts": {str(row["status"]): int(row["n"]) for row in counts},
-        }
+            counts = conn.execute(text(f"SELECT status,COUNT(*) AS n FROM {QUEUE_TABLE} GROUP BY status")).mappings().all()
+        return {"ok": True, "release": RELEASE, "durable": True, "idempotency": "record_uid+source_row", "counts": {str(row["status"]): int(row["n"]) for row in counts}}
 
     _start_worker(engine_instance=engine_instance, api_module=api_module)
     app.state.leave_sync_queue_installed = True
