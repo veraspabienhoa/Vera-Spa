@@ -294,5 +294,6 @@ export const veraApi = {
     if (employee.trim()) params.set('employee', employee.trim())
     return download(`/v2/leave/export.xlsx?${params}`, `vera-lich-nghi-${start}-${end}.xlsx`)
   },
+  exportLeaveSourceExcel: () => download('/v2/leave/source-export.xlsx', 'LichNghi_VeraSpa.xlsx'),
   importLeaveExcel: (file) => upload('/v2/leave/import.xlsx', file),
 }

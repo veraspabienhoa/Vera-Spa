@@ -17,6 +17,7 @@ from vera_web_v2_break_return_penalty import install_break_return_penalty
 from vera_web_v2_auto_check import install_auto_check_routes
 from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
+from vera_web_v2_leave_source_export import install_leave_source_export_routes
 from vera_web_v2_leave_day_stats import install_leave_day_stats_routes
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
 from vera_web_v2_letan_leave_guard import install_letan_leave_guard
@@ -87,6 +88,16 @@ install_tour_leave_sync_routes(
     leave_sheet_id=_api.LEAVE_SHEET_ID,
     vn_tz=_api.VN_TZ,
     invalidate_tour_cache=invalidate_tour_cache,
+)
+install_leave_source_export_routes(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    identity_type=_api.Identity,
+    norm=_api._norm,
+    google_client=_api._google_client,
+    leave_sheet_id=_api.LEAVE_SHEET_ID,
 )
 install_work_schedule_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, feature_allowed=_api._feature_allowed)
 install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)

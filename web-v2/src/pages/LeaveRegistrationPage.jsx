@@ -121,6 +121,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushMessage, setPushMessage] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [exportingLeaveSource, setExportingLeaveSource] = useState(false)
   const role = String(user?.role || '').toLowerCase()
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
@@ -415,6 +416,19 @@ export default function LeaveRegistrationPage({ user }) {
       setError(err.message || 'Không xuất được danh sách Excel.')
     } finally {
       setExporting(false)
+    }
+  }
+
+  const exportLeaveSource = async () => {
+    if (!['admin', 'quanly', 'letan'].includes(role) || exportingLeaveSource) return
+    setExportingLeaveSource(true)
+    setError('')
+    try {
+      await veraApi.exportLeaveSourceExcel()
+    } catch (err) {
+      setError(err.message || 'Không tải được LichNghi_VeraSpa.')
+    } finally {
+      setExportingLeaveSource(false)
     }
   }
 
@@ -825,6 +839,7 @@ export default function LeaveRegistrationPage({ user }) {
             </button>
           </div>
           <div className="list-actions">
+              {['admin', 'quanly', 'letan'].includes(role) && user?.permissions?.leave_export !== false && <button type="button" className="secondary-button compact export-button" onClick={exportLeaveSource} disabled={exportingLeaveSource}><Download size={15} /> {exportingLeaveSource ? 'Đang tải…' : 'Tải LichNghi_VeraSpa'}</button>}
               {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
