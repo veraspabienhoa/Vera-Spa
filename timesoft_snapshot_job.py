@@ -1,10 +1,10 @@
-"""V84.7 - Cloud Run Job đồng bộ snapshot TimeSoft chính xác + fast check-in tail.
+"""V84.8 - Cloud Run Job đồng bộ snapshot TimeSoft + raw FaceID fast tail.
 
 Cloud Scheduler hiện gọi job nền theo chu kỳ khoảng 5 phút. Sau lần snapshot đầy
-đủ (có Tính lại ngày công), tiến trình giữ sống thêm một cửa sổ ngắn và chỉ đọc
-SearchElastic check-in của hôm nay mỗi 30 giây để đẩy FaceID mới vào PostgreSQL.
-Nhờ vậy Web V2 có thể xóa cảnh báo nghỉ giữa ca ngay sau khi nhân viên FaceID vào
-lại, thay vì phải chờ tới lần Scheduler kế tiếp.
+đủ (có Tính lại ngày công), tiến trình giữ sống thêm một cửa sổ ngắn và đọc cả
+SearchElastic lẫn ExportCheckinLogElastic của hôm nay mỗi 30 giây để đẩy đầy đủ
+FaceID vào PostgreSQL. Nhờ vậy Web V2 có thể xác định đúng cặp nghỉ giữa ca và
+xóa cảnh báo ngay sau khi nhân viên FaceID vào lại, thay vì chỉ thấy mốc đầu/cuối.
 
 Fast tail chỉ cập nhật dataset `timesoft_employee_checkin_today`; không tải hóa
 đơn, không chạy Auto Check, không ghi phạt và không đụng dữ liệu lịch sử.
@@ -17,17 +17,20 @@ import time
 from datetime import datetime
 
 import timesoft_sync_job as ts
+from timesoft_detailed_checkin import install as install_detailed_checkin
 from timesoft_recalculate_checkin import install as install_recalculate_checkin
 from timesoft_tour_snapshot_cache import install as install_tour_snapshot_cache
 
 
-RELEASE = "timesoft-snapshot-fast-tail-2026-09-01.1"
+RELEASE = "timesoft-snapshot-fast-tail-2026-09-02-v2-detailed-faceid"
 FAST_INTERVAL_SECONDS = max(15, min(120, int(os.getenv("TIMESOFT_FAST_CHECKIN_SECONDS", "30") or 30)))
 FAST_WINDOW_SECONDS = max(60, min(360, int(os.getenv("TIMESOFT_FAST_CHECKIN_WINDOW_SECONDS", "240") or 240)))
 
 # Accuracy first: click TimeSoft "Tính lại ngày công" before the initial login
-# session is converted to requests cookies.
+# session is converted to requests cookies, and preserve every raw FaceID event
+# from TimeSoft's own detailed check-in export.
 install_recalculate_checkin(ts)
+install_detailed_checkin(ts)
 # Performance: persist TourVera Input for Web V2 reads, unless Admin pauses it.
 install_tour_snapshot_cache(ts)
 
@@ -70,8 +73,10 @@ def _fast_checkin_tail() -> None:
             _write_today_checkin(checkin_df)
             success += 1
             ts._log(
-                f"FAST CHECKIN {RELEASE}: rows={len(checkin_df)}; "
-                f"total={int(meta.get('Total') or len(checkin_df))}; "
+                f"FAST CHECKIN {RELEASE}: combined={len(checkin_df)}; "
+                f"summary={int(meta.get('SummaryRows') or 0)}; "
+                f"raw={int(meta.get('RawLogRows') or 0)}; "
+                f"total={int(meta.get('Total') or 0)}; "
                 f"interval={FAST_INTERVAL_SECONDS}s"
             )
         except Exception as exc:
@@ -92,7 +97,7 @@ def main() -> int:
     # TourVera / write penalties. The dedicated Auto Check job remains unchanged.
     ts.auto_check.load_config = _snapshot_only_auto_config
     ts._log(
-        f"V84.7 SNAPSHOT-ONLY: Tính lại ngày công -> TimeSoft/PostgreSQL; "
+        f"V84.8 SNAPSHOT-ONLY: Tính lại ngày công -> SearchElastic + raw FaceID -> PostgreSQL; "
         f"fast check-in mỗi {FAST_INTERVAL_SECONDS}s trong {FAST_WINDOW_SECONDS}s; "
         "không chạy Auto Check; TourVera cache theo công tắc Admin."
     )
