@@ -60,10 +60,11 @@ jobs:
           source = open('vera_web_v2_api_v38.py', encoding='utf-8').read()
           audit = source.index('install_admin_audit_archive_routes(')
           letan = source.index('install_letan_leave_guard(')
-          device = source.index('install_single_device_guard(')
-          assert audit < letan < device
+          excel_style = source.index('install_excel_export_style(')
+          assert audit < letan < excel_style
+          assert 'install_single_device_guard(' not in source
           assert 'api_module=_api' in source
-          print('Installer order: audit -> letan guard -> device guard')
+          print('Installer order: audit -> letan guard -> Excel style; single-device guard removed')
           PY
       - name: Verify Nội quy table and frontend lock
         run: |

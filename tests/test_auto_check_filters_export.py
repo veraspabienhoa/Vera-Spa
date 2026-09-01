@@ -92,11 +92,13 @@ def test_single_device_logout_guard_is_removed_from_web_v2():
     app_source = (root / "web-v2/src/App.jsx").read_text(encoding="utf-8")
     login_source = (root / "web-v2/src/pages/LoginPage.jsx").read_text(encoding="utf-8")
     api_source = (root / "vera_web_v2_api_v38.py").read_text(encoding="utf-8")
+    workflow_source = (root / ".github/workflows/letan-leave-guard.yml").read_text(encoding="utf-8")
 
     combined = "\n".join((app_source, login_source, api_source))
     assert "vera-device-conflict" not in combined
     assert "claimCurrentDevice" not in combined
     assert "install_single_device_guard" not in combined
+    assert "assert 'install_single_device_guard(' not in source" in workflow_source
     assert "signOut({ scope: 'local' })" in app_source
     assert not (root / "web-v2/src/lib/deviceSession.js").exists()
     assert not (root / "vera_web_v2_single_device.py").exists()
