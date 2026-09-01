@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 
-RELEASE = "tour-leave-sync-2026-09-01.1"
+RELEASE = "tour-leave-sync-2026-09-02.2-cp-only"
 TOUR_FILE_ID = os.getenv(
     "VERA_TOUR_FILE_ID", "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
 ).strip()
@@ -354,6 +354,13 @@ class _TourWorkbook:
         return last
 
     def set_input_text(self, row: int, column: int, value: str) -> bool:
+        # Web V2 is only allowed to write TourVera/Input:
+        # C = Ly do nghi, P = Di lam / Nghi phep.
+        if column not in {3, 16}:
+            raise HTTPException(
+                503,
+                f"Tu choi ghi TourVera cot {_column_letter(column)}; Web V2 chi duoc ghi cot C va P.",
+            )
         if _clean(self.input_value(row, column)) == _clean(value):
             return False
         cell = self._cell(self.input_root, row, column, create=True)
@@ -667,12 +674,8 @@ def _apply_action(
                 if current_status.lower() != "nghi phep" and editor.set_input_text(row, 16, "Nghi phep"):
                     stats["status_updated"] += 1
 
-        editor.sort_like_vba(
-            preliminary_status_descending=(
-                action in {"sync_all", "clear_leave_status"}
-                and stats["status_updated"] > 0
-            )
-        )
+        # Không sort/move dữ liệu TourVera.
+        # Web V2 chỉ được thay đổi trực tiếp cột C và P.
         return stats
 
     mapping = {

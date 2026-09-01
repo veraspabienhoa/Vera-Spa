@@ -166,3 +166,40 @@ def test_date_and_reason_aliases_match_vba():
     assert sync._convert_reason("Về sớm CÓ phép") == "Ve som CP"
     assert sync._should_use_leave_status("Nghỉ phép quay video") is True
     assert sync._should_use_leave_status("Hỗ trợ Ca 1 đi trễ 2 tiếng") is False
+
+def test_sync_changes_only_columns_c_and_p():
+    original = _workbook_bytes()
+
+    before_wb = load_workbook(BytesIO(original), read_only=True, data_only=False)
+    before_ws = before_wb["Input"]
+    before = {
+        (r, c): before_ws.cell(r, c).value
+        for r in range(21, 25)
+        for c in range(1, 25)
+    }
+    before_wb.close()
+
+    editor = sync._TourWorkbook(original)
+    sync._apply_action(
+        editor,
+        "sync_all",
+        date(2026, 8, 31),
+        SOURCE_ROWS,
+        CATALOG,
+    )
+
+    after_wb = load_workbook(
+        BytesIO(editor.to_bytes()),
+        read_only=True,
+        data_only=False,
+    )
+    after_ws = after_wb["Input"]
+
+    for r in range(21, 25):
+        for c in range(1, 25):
+            if c in {3, 16}:
+                continue
+            assert after_ws.cell(r, c).value == before[(r, c)], \
+                f"TourVera changed outside C/P: row={r}, col={c}"
+
+    after_wb.close()
