@@ -42,13 +42,14 @@ begin
     raise exception 'UNAUTHORIZED';
   end if;
 
-  if caller_role = 'admin' then
+  if caller_role in ('admin', 'quanly', 'letan') then
     return query
       select e.username, coalesce(e.full_name, ''), coalesce(e.role, '')
       from public.employees e
       where coalesce(e.login_locked, false) = false
         and coalesce(e.source_sheet_id, 'credentials') = 'credentials'
-        and lower(coalesce(e.role, '')) not in ('admin', 'letan', 'locker', 'tapvu')
+        and lower(btrim(coalesce(e.role, ''))) in ('leader', 'nhanvien')
+        and coalesce(e.payload->>'Trạng thái làm việc', e.payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
       order by e.username;
   else
     return query

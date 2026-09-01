@@ -219,6 +219,7 @@ jobs:
           shared_api = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
           login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
           leave_page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
+          tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
           leave_day_stats_api = Path('vera_web_v2_leave_day_stats.py').read_text(encoding='utf-8')
           api_entrypoint = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
           auto_check_api = Path('vera_web_v2_auto_check.py').read_text(encoding='utf-8')
@@ -279,7 +280,8 @@ jobs:
               'Web V2 legacy login copy removed': 'Trải nghiệm mới' not in login_page and 'Web V2 · React + Supabase' not in login_page,
               'Web V2 topbar uses VERA wellbeing message': 'Suối nguồn thư giãn, trọn vẹn an yên.' in shell,
               'Web V2 uses concise VERA SPA brand name': '<div className="topbar-kicker">VERA SPA</div>' in shell and '<title>VERA SPA</title>' in Path('web-v2/index.html').read_text(encoding='utf-8') and 'VERA SPA ĐỒNG NAI' not in shell,
-              'Web V2 excludes system roles from coverage': "NOT IN ('admin','letan','locker','tapvu')" in api,
+              'Web V2 registration only offers active Leader and Nhanvien': "IN ('leader','nhanvien')" in api and 'registrationEmployees' in leave_page and "['leader', 'nhanvien'].includes(employeeRole)" in leave_page and "= 'Đang làm việc'" in api,
+              'Web V2 Tour mobile keeps the seven requested columns': all(token in tour_page for token in ('tour-col-stt', 'tour-col-employee', 'tour-col-status', 'tour-col-room', 'tour-col-remaining', 'tour-col-request', 'tour-col-appointment', 'tour-col-mobile-hidden')) and '.responsive-data-table.tour-table table { width: 100%; min-width: 0; table-layout: fixed;' in web_styles,
               'Web V2 RPC penalty follows feature permission': "employee_penalty_view" in hardening and 'case when can_view_penalty' in hardening,
               'Web V2 resets current non-admin penalty grants': "employee_penalty_view" in penalty_default and "'false'::jsonb" in penalty_default,
               'Web V2 RPCs revoke anonymous execution': 'from public, anon' in hardening.lower(),

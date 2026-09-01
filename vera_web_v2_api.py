@@ -1506,7 +1506,7 @@ def employees(ident: Identity = Depends(current_identity)):
                 WHERE COALESCE(login_locked,false)=false
                   AND COALESCE(payload->>'__deleted','false') <> 'true'
                   AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
-                  AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
+                  AND lower(btrim(COALESCE(role,''))) IN ('leader','nhanvien')
                 ORDER BY username
             """)).mappings().all()
         else:

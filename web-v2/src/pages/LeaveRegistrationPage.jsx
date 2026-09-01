@@ -138,6 +138,12 @@ export default function LeaveRegistrationPage({ user }) {
     && user?.permissions?.leave_create !== false
     && !user?.registration_locked
     && !dateIsPast
+  const registrationEmployees = useMemo(() => employees.filter((employee) => {
+    const employeeRole = String(employee?.role || '').trim().toLowerCase()
+    const employmentStatus = employee?.employment_status ?? employee?.['Trạng thái làm việc']
+    const isWorking = !employmentStatus || normalizeSearch(employmentStatus) === 'dang lam viec'
+    return ['leader', 'nhanvien'].includes(employeeRole) && isWorking
+  }), [employees])
 
   const maxEmployeeDate = useMemo(() => {
     const now = new Date()
@@ -637,7 +643,7 @@ export default function LeaveRegistrationPage({ user }) {
               required
             >
               <option value="">-- Chọn nhân viên --</option>
-              {employees.map((employee) => (
+              {registrationEmployees.map((employee) => (
                 <option key={employee.username} value={employee.username}>
                   {shortEmployeeName(employee.username)}
                 </option>

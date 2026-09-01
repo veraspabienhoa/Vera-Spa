@@ -61,11 +61,14 @@ function sttValue(record, columns) {
 
 function columnClass(column) {
   const key = normalizedColumn(column)
+  if (key === 'STT' || key === 'SO THU TU') return 'tour-col-stt center'
+  if (['TEN NHAN VIEN', 'NHAN VIEN', 'HO VA TEN', 'HO TEN'].includes(key)) return 'tour-col-employee'
+  if (key === 'TRANG THAI') return 'tour-col-status center'
   if (key === 'TG CON LAI' || key === 'THOI GIAN CON LAI') return 'tour-col-remaining center'
   if (key === 'PHONG' || key.startsWith('PHONG (')) return 'tour-col-room center'
   if (key === 'YEU CAU' || key.startsWith('YEU CAU (')) return 'tour-col-request center'
   if (key.includes('LICH HEN')) return 'tour-col-appointment'
-  return ''
+  return 'tour-col-mobile-hidden'
 }
 
 function rowClass(record) {
