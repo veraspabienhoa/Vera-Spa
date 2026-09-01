@@ -1,18 +1,21 @@
 """Attendance policy compatibility patch for current VERA Nội quy.
 
-This module keeps four business rules in one place:
+This module keeps five business rules in one place:
 1. Current official policy names use "nhỏ hơn hoặc bằng" thresholds for
    Ra ngoài vào muộn, while the legacy helper searched older "dưới" labels.
-2. A pre-registered Về sớm day with only two FaceID groups is shift check-in
-   + final early checkout, not a mid-shift break. Five-minute FaceID grouping
-   means a checkout group beginning a few minutes before 17:00 is still the
-   17:00 checkout event.
-3. If an employee first goes outside and only afterwards receives/enters a
+2. A normal shift has only the initial FaceID check-in. Employees do NOT FaceID
+   when the scheduled shift ends, so TimeSoft CheckOut summary fields and any
+   generic "final checkout" inference must never be used as normal shift exit.
+3. A pre-registered Về sớm day with only two FaceID groups can still represent
+   shift check-in + the special early-leave event. Five-minute FaceID grouping
+   means a registered early-leave event beginning a few minutes before 17:00 is
+   still the 17:00 event; this is separate from normal end-of-shift checkout.
+4. If an employee first goes outside and only afterwards receives/enters a
    same-day Đi trễ/Về sớm restriction, the outside event is a violation. The
    violation duration is measured from the first FaceID of the outside group
    through exactly 17:00:00 and rounded up to the next whole minute for the
    official Ra ngoài vào muộn penalty tier.
-4. TimeSoft summary-only checkout values must not keep a false open-break alert
+5. TimeSoft summary-only checkout values must not keep a false open-break alert
    when TourVera already has a completed S=Giờ ra / U=Giờ vào pair. R=Break is
    still authoritative while the employee is actively out; after return R may
    be blank while S/U retain the completed pair, which must clear the alert.
@@ -31,13 +34,15 @@ from typing import Any
 
 import vera_auto_check as auto_check
 import vera_web_v2_attendance_break_alerts as break_alerts
+import vera_web_v2_attendance_v42 as attendance_v42
 import vera_web_v2_outside_leave_rule as outside_rule
 import vera_web_v2_tour_cache_perf as tour_cache_perf
 from vera_web_v2_attendance_query_perf import install as install_attendance_query_perf
 from vera_web_v2_tour_cache_perf import install as install_tour_cache_perf
 
 
-RELEASE = "attendance-policy-faceid-5m-tour-pg-fast-2026-08-31-v4"
+RELEASE = "attendance-policy-no-normal-checkout-2026-09-02-v5"
+ATTENDANCE_RELEASE = "4.2.2-no-normal-shift-checkout"
 EARLY_CHECKOUT_GROUP_START = time(16, 55, 0)
 TOUR_MATCH_PADDING = timedelta(minutes=5)
 
@@ -122,6 +127,35 @@ def _parse_group_times(item: dict[str, Any], work_day) -> list[datetime]:
     return sorted(output)
 
 
+def _timesoft_checkins_only(item: dict[str, Any], work_day) -> list[datetime]:
+    """Read FaceID event fields but never use TimeSoft *CheckOut* summaries.
+
+    Vera's normal workday has no end-of-shift FaceID checkout. TimeSoft can fill
+    MachineTimeCheckOutStr/LocalTimeCheckOutStr with its own summary notion of a
+    last event; treating those fields as a Vera checkout can swallow a real
+    mid-shift return scan or manufacture a false shift exit. Detailed CheckInN
+    fields and raw lich-su-checkin rows remain valid FaceID events.
+    """
+    values = []
+    for prefix in ("MachineTimeCheckIn", "LocalTimeCheckIn"):
+        first = item.get(f"{prefix}Str")
+        if first:
+            values.append(first)
+        for index in range(2, 21):
+            value = item.get(f"{prefix}{index}Str")
+            if value:
+                values.append(value)
+    return [
+        dt for value in values
+        if (dt := attendance_v42._parse_datetime(value, work_day)) is not None
+    ]
+
+
+def _never_normal_shift_checkout(value, work_day, item, punch_count) -> bool:
+    """Normal scheduled shift completion never consumes a FaceID as checkout."""
+    return False
+
+
 def _tour_completed_pairs(conn, work_day) -> dict[str, dict[str, Any]]:
     """Read completed S/U pairs from the fresh PostgreSQL TourVera cache."""
     return tour_cache_perf.completed_pairs(conn, work_day)
@@ -146,6 +180,14 @@ def install_attendance_policy_patch() -> None:
     if getattr(outside_rule, "_attendance_policy_patch_release", "") == RELEASE:
         return
 
+    # Global attendance rule for every employee/leader:
+    # - first FaceID is the shift check-in;
+    # - scheduled end of shift is determined from EndWorkTime, not FaceID;
+    # - TimeSoft checkout summary fields are never accepted as Vera checkout.
+    attendance_v42._sequential_punches = _timesoft_checkins_only
+    attendance_v42._looks_like_final_checkout = _never_normal_shift_checkout
+    attendance_v42.RELEASE = ATTENDANCE_RELEASE
+
     # Current official Nội quy names and exact 17:00 cutoff logic are both used
     # by the same-day restriction wrapper on every attendance refresh/poll.
     auto_check.outside_reason = _outside_reason_current_policy
@@ -164,10 +206,11 @@ def install_attendance_policy_patch() -> None:
         break_out: datetime,
     ) -> datetime | None:
         # Preserve the critical distinction:
-        # - Về sớm entered before the checkout event => final checkout.
+        # - Về sớm entered before the special early-leave event => early leave.
         # - employee went outside first, Về sớm entered afterwards => NOT a
-        #   normal break and NOT a final checkout; keep the outside event so the
-        #   17:00-cutoff automatic penalty is written by outside_leave_rule.
+        #   normal break and NOT an early-leave event; keep the outside event so
+        #   the 17:00-cutoff automatic penalty is written by outside_leave_rule.
+        # Normal scheduled shift completion never comes through this path.
         if not any(outside_rule._early_leave_reason(reason) for reason in reasons):
             return None
         if early_leave_registered_at is None or early_leave_registered_at > break_out:
@@ -185,8 +228,8 @@ def install_attendance_policy_patch() -> None:
 
         groups = _parse_group_times(item, work_day)
         # The canonical pre-registered Về sớm shape is exactly two groups:
-        # group 1 = shift check-in; group 2 = final checkout around/from 17:00.
-        # Because a group is anchored by its first scan, tolerate 16:55..17:00.
+        # group 1 = shift check-in; group 2 = special early-leave event around
+        # 17:00. Because a group is anchored by its first scan, tolerate 16:55.
         if len(groups) == 2:
             checkout = groups[1]
             if checkout.time() >= EARLY_CHECKOUT_GROUP_START and outside_rule._same_event(checkout, break_out, 5 * 60):
