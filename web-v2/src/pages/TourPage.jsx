@@ -1,4 +1,4 @@
-import { Compass, RefreshCw } from 'lucide-react'
+import { Compass, DoorOpen, RefreshCw, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 
@@ -156,6 +156,8 @@ export default function TourPage({ user }) {
   const [error, setError] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [shiftFilter, setShiftFilter] = useState('all')
+  const [employeeSearch, setEmployeeSearch] = useState('')
+  const [showAvailableRooms, setShowAvailableRooms] = useState(false)
   const load = useCallback(async (refresh = false, quiet = false) => {
     if (!quiet) setBusy(true)
     setError('')
@@ -185,10 +187,17 @@ export default function TourPage({ user }) {
     () => validRecords.filter((record) => matchesShift(record, columns, shiftFilter)),
     [columns, shiftFilter, validRecords],
   )
+  const searchedRecords = useMemo(() => {
+    const needle = normalizedColumn(employeeSearch)
+    if (!needle) return shiftRecords
+    const nameColumn = employeeNameColumn(columns)
+    return shiftRecords.filter((record) => normalizedColumn(cellValue(record, nameColumn)).includes(needle))
+  }, [columns, employeeSearch, shiftRecords])
   const displayedRecords = useMemo(
-    () => prioritizeRecords(shiftRecords, columns, activeFilter),
-    [activeFilter, columns, shiftRecords],
+    () => prioritizeRecords(searchedRecords, columns, activeFilter),
+    [activeFilter, columns, searchedRecords],
   )
+  const availableRooms = Array.isArray(data.available_rooms) ? data.available_rooms : []
   const retainedMetric = data.metric_snapshots?.[shiftFilter] || null
   const customerCount = useMemo(() => {
     if (retainedMetric && Number.isFinite(Number(retainedMetric.customer_count))) return Number(retainedMetric.customer_count)
@@ -215,11 +224,17 @@ export default function TourPage({ user }) {
       .tour-shift-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
       .tour-shift-filter button{min-width:82px}
       .tour-heading-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
-      @media(max-width:640px){.tour-shift-filter{gap:6px}.tour-shift-filter button{min-width:0;flex:1;padding:9px 10px}.tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}}
+      .tour-quick-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}.tour-employee-search{position:relative;flex:1 1 260px;max-width:430px}.tour-employee-search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.tour-employee-search input{width:100%;padding-left:36px;box-sizing:border-box}.tour-room-button{display:inline-flex;align-items:center;gap:7px}.tour-room-panel{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 14px;padding:11px 12px;border:1px solid #cfe1d8;border-radius:12px;background:#f3faf6}.tour-room-panel span{padding:6px 10px;border-radius:999px;background:#d9f1e4;color:#17573d;font-weight:900}.tour-room-panel small{color:#5d7168}
+      @media(max-width:640px){.tour-shift-filter{gap:6px}.tour-shift-filter button{min-width:0;flex:1;padding:9px 10px}.tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}.tour-quick-tools{display:grid;grid-template-columns:1fr}.tour-employee-search{max-width:none}.tour-room-button{justify-content:center}}
     `}</style>
     <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1><p>Cache máy chủ Bảng tua làm mới tối đa mỗi 1 phút; màn hình tự kiểm tra dữ liệu mới mỗi 10 giây.</p></div><div className="tour-heading-actions">{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div></div>
     {error && <div className="error-box">{error}</div>}
     {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
+    <div className="tour-quick-tools">
+      <label className="tour-employee-search" aria-label="Tìm nhanh tên nhân viên"><Search size={16}/><input type="search" value={employeeSearch} placeholder="Tìm nhanh tên nhân viên…" onChange={(event) => setEmployeeSearch(event.target.value)} /></label>
+      <button type="button" className={showAvailableRooms ? 'primary-button tour-room-button' : 'secondary-button tour-room-button'} onClick={() => setShowAvailableRooms((value) => !value)} aria-expanded={showAvailableRooms}><DoorOpen size={16}/> Phòng đang trống ({availableRooms.length})</button>
+    </div>
+    {showAvailableRooms && <div className="tour-room-panel">{availableRooms.length ? availableRooms.map((room) => <span key={room}>Phòng {room}</span>) : <small>Hiện không có phòng trống hoàn toàn theo sheet Room.</small>}</div>}
     <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca" data-tour-customer-count={customerCount}>
       <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
       <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>

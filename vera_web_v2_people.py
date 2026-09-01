@@ -19,7 +19,7 @@ from sqlalchemy import text
 
 BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
 TOUR_CACHE_SECONDS = 60
-_tour_cache: dict[str, Any] = {"loaded_at": 0.0, "columns": [], "records": [], "source_updated_at": ""}
+_tour_cache: dict[str, Any] = {"loaded_at": 0.0, "columns": [], "records": [], "rooms": {}, "source_updated_at": ""}
 _tour_lock = threading.Lock()
 
 
@@ -30,6 +30,7 @@ def invalidate_tour_cache() -> None:
             "loaded_at": 0.0,
             "columns": [],
             "records": [],
+            "rooms": {},
             "source_updated_at": "",
         })
 
@@ -56,6 +57,32 @@ def _clean_cell(value: Any) -> Any:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return str(value).strip() if not isinstance(value, (int, float, bool)) else value
+
+
+def _room_value_present(value: Any) -> bool:
+    return str(value or "").strip().upper() not in {"", "#N/A", "N/A", "NONE", "NAN"}
+
+
+def _room_snapshot(sheet) -> dict[str, Any]:
+    occupancy: dict[str, bool] = {}
+    for values in sheet.iter_rows(min_row=3, max_col=7, values_only=True):
+        room_value = _clean_cell(values[2] if len(values) > 2 else "")
+        room = str(room_value).strip()
+        if not room or room.upper() in {"#N/A", "N/A"}:
+            continue
+        occupied = any(_room_value_present(value) for value in values[3:6])
+        occupancy[room] = occupancy.get(room, False) or occupied
+    available = [room for room, occupied in occupancy.items() if not occupied]
+    occupied = [room for room, is_occupied in occupancy.items() if is_occupied]
+    return {
+        "all": list(occupancy),
+        "available": available,
+        "occupied": occupied,
+        "total_count": len(occupancy),
+        "available_count": len(available),
+        "occupied_count": len(occupied),
+        "source_sheet": "Room",
+    }
 
 
 def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
@@ -87,6 +114,15 @@ def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
                 records.append({columns[index]: _clean_cell(value) for index, value in enumerate(values)})
                 if len(records) >= 500:
                     break
+            rooms = _room_snapshot(workbook["Room"]) if "Room" in workbook.sheetnames else {
+                "all": [], "available": [], "occupied": [],
+                "total_count": 0, "available_count": 0, "occupied_count": 0,
+                "source_sheet": "Room",
+            }
+            # Preserve the existing three-value return contract used by the
+            # attendance module while making the Room snapshot available to
+            # the Tour API through the shared cache.
+            _tour_cache["rooms"] = rooms
             workbook.close()
             return columns, records, str(response.headers.get("Last-Modified") or "")
         except Exception as exc:
@@ -446,6 +482,7 @@ def install_people_routes(
                     _tour_cache.update({"loaded_at": time.monotonic(), "columns": columns, "records": records, "source_updated_at": source_updated_at})
             records = list(_tour_cache["records"])
             columns = list(_tour_cache["columns"])
+            rooms = dict(_tour_cache["rooms"])
             source_updated_at = str(_tour_cache["source_updated_at"])
         prepared = _prepare_tour(columns, records, datetime.now(vn_tz))
         now = datetime.now(vn_tz)
@@ -458,6 +495,8 @@ def install_people_routes(
             **prepared,
             "count": len(records),
             "source_updated_at": source_updated_at,
+            "rooms": rooms,
+            "available_rooms": list(rooms.get("available") or []),
             "viewer_can_see_stats": str(ident.role or "").lower() in {"admin", "quanly", "letan"},
             "metric_snapshots": retained_metrics,
             "metrics_business_date": metrics_date,
