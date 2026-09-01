@@ -19,6 +19,7 @@ from vera_web_v2_excel_export_style import install_excel_export_style
 from vera_web_v2_leave_preview import install_leave_preview_routes
 from vera_web_v2_leave_source_export import install_leave_source_export_routes
 from vera_web_v2_leave_day_stats import install_leave_day_stats_routes
+from vera_web_v2_leave_sync_queue import install_leave_sync_queue
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
 from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
@@ -50,8 +51,6 @@ from vera_web_v2_work_schedule_permissions import install_work_schedule_permissi
 
 _api = _shared._api
 
-# Extend the canonical permission dictionaries in place before any Web V2 request
-# is served. Existing role/account overrides and permission cache keep working.
 install_work_schedule_permissions()
 install_payroll_personal_defaults(api_module=_api)
 
@@ -65,180 +64,57 @@ install_payroll_timesoft_auto_routes(_shared.app, engine_instance=_api._engine_i
 install_payroll_debt_sync_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, google_client=_api._google_client)
 install_payroll_enhancement_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
 install_payroll_personal_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm)
-install_accumulation_permission(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    identity_type=_api.Identity,
-    api_module=_api,
-)
+install_accumulation_permission(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, api_module=_api)
 install_payroll_saved_edit_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
 install_staff_security_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
 install_staff_status_sort(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
-install_tour_leave_sync_routes(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    identity_type=_api.Identity,
-    google_client=_api._google_client,
-    leave_sheet_id=_api.LEAVE_SHEET_ID,
-    vn_tz=_api.VN_TZ,
-    invalidate_tour_cache=invalidate_tour_cache,
-)
-install_leave_source_export_routes(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    identity_type=_api.Identity,
-    norm=_api._norm,
-    google_client=_api._google_client,
-    leave_sheet_id=_api.LEAVE_SHEET_ID,
-)
+install_tour_leave_sync_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, invalidate_tour_cache=invalidate_tour_cache)
+install_leave_source_export_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID)
 install_work_schedule_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, feature_allowed=_api._feature_allowed)
 install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_policy_v39(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, vn_tz=_api.VN_TZ)
-
-# Policy 4.0 narrows the monthly weekend cap to Group 3 and permits only
-# Quản lý/Lễ tân to backfill past rows whose canonical Loại nghỉ is Vi phạm.
-# Install before preview/write wrappers so every Web V2 registration path uses it.
 install_policy_v40(_shared.app, shared_module=_shared)
-
-# Nội quy Loại nghỉ is authoritative for same-day grouping. Vi phạm rows have
-# no per-employee/day count limit even when their reason text contains KHÔNG phép.
 install_violation_unlimited(_shared.app, shared_module=_shared)
 
-install_leave_day_stats_routes(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    feature_allowed=_api._feature_allowed,
-    daily_quota_config=_api._daily_quota_config,
-    employee_name_matches=_api._employee_name_matches,
-    norm=_api._norm,
-    weekday_short_label=_api._weekday_short_label,
-    identity_type=_api.Identity,
-)
-
+install_leave_day_stats_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, daily_quota_config=_api._daily_quota_config, employee_name_matches=_api._employee_name_matches, norm=_api._norm, weekday_short_label=_api._weekday_short_label, identity_type=_api.Identity)
 install_leave_violation_split_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, policy_rows=_api._policy_rows, field=_api._field, reason_item=_api._reason_item, role_tokens=_api._role_tokens, day_allowed=_api._day_allowed, norm=_api._norm)
 install_leave_preview_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity)
 install_long_leave_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, validate_and_prepare=_shared._validate_and_prepare, leave_create_type=_api.LeaveCreate, sheet_row_for_record=_api._sheet_row_for_record, insert_record=_api._insert_record)
 install_admin_audit_archive_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
+
+# Replace only the final POST registration write boundary. Validation remains the
+# shared live sequence; PostgreSQL + outbox commit together and Google is async.
+install_leave_sync_queue(
+    _shared.app,
+    engine_instance=_api._engine_instance,
+    current_identity=_api.current_identity,
+    require_feature=_api._require_feature,
+    validate_and_prepare=_shared._validate_and_prepare,
+    identity_type=_api.Identity,
+    api_module=_api,
+)
+# Keep Lễ tân guard outside the queued writer so its current policy still applies.
 install_letan_leave_guard(_shared.app, api_module=_api, vn_tz=_api.VN_TZ)
 
-install_revenue_leave_list_routes(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    feature_allowed=_api._feature_allowed,
-    norm=_api._norm,
-    progressive_key=_api._progressive_key,
-    google_client=_api._google_client,
-)
-# "Xem báo cáo" always opens the Input tab and focuses its latest transaction row.
-install_revenue_report_target(
-    _shared.app,
-    current_identity=_api.current_identity,
-)
-
-install_purchase_reconcile_routes(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    norm=_api._norm,
-    google_client=_api._google_client,
-)
-install_purchase_reconcile_v2(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    api_module=_api,
-    current_identity=_api.current_identity,
-    identity_type=_api.Identity,
-)
-install_purchase_reconcile_alert_check(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    api_module=_api,
-    current_identity=_api.current_identity,
-    identity_type=_api.Identity,
-    norm=_api._norm,
-    google_client=_api._google_client,
-)
+install_revenue_leave_list_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, norm=_api._norm, progressive_key=_api._progressive_key, google_client=_api._google_client)
+install_revenue_report_target(_shared.app, current_identity=_api.current_identity)
+install_purchase_reconcile_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, google_client=_api._google_client)
+install_purchase_reconcile_v2(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity)
+install_purchase_reconcile_alert_check(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client)
 
 install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
 install_attendance_break_window(_shared.app)
-install_attendance_break_alerts(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    api_module=_api,
-    current_identity=_api.current_identity,
-    identity_type=_api.Identity,
-    vn_tz=_api.VN_TZ,
-)
-# Align automatic outside penalties with the current Nội quy labels and use
-# two five-minute FaceID groups to identify a pre-registered 17:00 Về sớm
-# checkout before the same-day restriction wrapper evaluates the event.
+install_attendance_break_alerts(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, vn_tz=_api.VN_TZ)
 install_attendance_policy_patch()
-# Apply the same-day Đi trễ/Về sớm restriction after TimeSoft + TourVera break
-# reconstruction, so a late-entered Về sớm record can still trigger Auto Check
-# from the employee's already-recorded Giờ ra.
 install_outside_leave_rule(_shared.app, engine_instance=_api._engine_instance)
+install_break_alert_control(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity)
+install_break_return_penalty(_shared.app, engine_instance=_api._engine_instance, api_module=_api, vn_tz=_api.VN_TZ)
+install_attendance_break_dispatch(_shared.app, engine_instance=_api._engine_instance, api_module=_api, vn_tz=_api.VN_TZ)
+install_operations_v41(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 
-# Admin can pause/resume break notifications for every account. The control is
-# installed before return-penalty notifications so the same global switch also
-# suppresses those employee pushes while leaving the automatic penalty intact.
-install_break_alert_control(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    api_module=_api,
-    current_identity=_api.current_identity,
-    identity_type=_api.Identity,
-)
-
-# Once FaceID confirms a late return, record the official Ra ngoài vào muộn
-# violation and notify the affected employee. Open breaks are never penalized.
-install_break_return_penalty(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    api_module=_api,
-    vn_tz=_api.VN_TZ,
-)
-
-# Background dispatcher uses the final snapshot chain and allows lock-screen
-# push even when the PWA is closed.
-install_attendance_break_dispatch(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    api_module=_api,
-    vn_tz=_api.VN_TZ,
-)
-
-install_operations_v41(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    current_identity=_api.current_identity,
-    require_feature=_api._require_feature,
-    identity_type=_api.Identity,
-)
-
-install_admin_change_push(
-    _shared.app,
-    engine_instance=_api._engine_instance,
-    api_module=_api,
-    current_identity=_api.current_identity,
-    identity_type=_api.Identity,
-    leave_create_type=_api.LeaveCreate,
-    leave_update_type=_api.LeaveUpdate,
-    leave_delete_type=_api.LeaveDelete,
-)
-
+install_admin_change_push(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, leave_create_type=_api.LeaveCreate, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
 install_single_device_guard(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_excel_export_style(_shared.app)
 
