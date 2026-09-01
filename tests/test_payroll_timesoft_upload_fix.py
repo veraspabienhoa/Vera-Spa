@@ -8,6 +8,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from openpyxl import Workbook
 
 import vera_web_v2_payroll as payroll
+import vera_web_v2_policy_v39 as policy_v39
 from vera_web_v2_payroll_timesoft_upload_fix import (
     RELEASE,
     install_payroll_timesoft_upload_fix,
@@ -56,6 +57,24 @@ def _timesoft_workbook_with_stale_dimension() -> bytes:
     return output.getvalue()
 
 
+def _timesoft_workbook_with_named_report_outside_sheet2() -> bytes:
+    workbook = Workbook()
+    workbook.active.title = "Thông tin"
+    workbook.create_sheet("Sheet2").append(["Không dùng để tính lương"])
+    worksheet = workbook.create_sheet(payroll.PAYROLL_SOURCE_WORKSHEET)
+    worksheet.append([""] * 11)
+    worksheet.append([""] * 11)
+    worksheet.append(HEADERS)
+    worksheet.append([
+        1, "31/08/2026 23:52", "HDS1", "", "", "Tip_250", 250000, 0,
+        "Quỳnh Phương", "", "",
+    ])
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
 def test_canonical_payroll_reader_uses_revenue_invoice_sheet_and_ignores_stale_dimension():
     assert payroll.PAYROLL_SOURCE_WORKSHEET == "Báo cáo doanh thu hóa đơn"
     assert payroll.PAYROLL_SOURCE_READER_RELEASE == RELEASE
@@ -78,3 +97,12 @@ def test_canonical_payroll_reader_uses_revenue_invoice_sheet_and_ignores_stale_d
 def test_payroll_upload_compatibility_installer_reports_canonical_reader_release():
     install_payroll_timesoft_upload_fix()
     assert getattr(payroll, "_timesoft_upload_dimension_fix_release") == RELEASE
+
+
+def test_policy_v39_detects_period_from_named_report_even_when_it_is_not_sheet2():
+    source = policy_v39._read_payroll_source(_timesoft_workbook_with_named_report_outside_sheet2())
+
+    assert len(source) == 1
+    assert source.iloc[0]["item"] == "Tip_250"
+    assert source.iloc[0]["amount"] == 250000
+    assert source.iloc[0]["employee"] == "Quỳnh Phương"

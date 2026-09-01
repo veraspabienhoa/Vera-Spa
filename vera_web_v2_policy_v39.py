@@ -4,29 +4,26 @@
   days for that calendar month.
 - Re-activation is stamped in PostgreSQL so the cap also applies to staff who
   were temporarily away during days 1-15.
-- Payroll TimeSoft input always reads physical Sheet2.
+- Payroll TimeSoft input always reads the worksheet named
+  ``Báo cáo doanh thu hóa đơn``.
 - A small authenticated detector lets the browser select month/period from the
-  actual dates contained in Sheet2 before payroll calculation.
+  actual dates contained in that worksheet before payroll calculation.
 """
 from __future__ import annotations
 
 from collections import Counter
 from datetime import date, datetime
-from io import BytesIO
-import numbers
 from typing import Any, Callable
 
 import pandas as pd
 from fastapi import Body, Depends, HTTPException
-from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
 from sqlalchemy import text
 
 import vera_web_v2_api_shared as _shared
 import vera_web_v2_payroll as _payroll
 import vera_web_v2_staff as _staff
 
-RELEASE = "3.9-policy-payroll-period"
+RELEASE = "3.9-policy-payroll-named-report-sheet"
 LATE_MONTH_PAID_LIMIT = 3.0
 ACTIVE_STATUS = "Đang làm việc"
 
@@ -62,75 +59,19 @@ def _effective_start_or_resume(row: dict[str, Any]) -> date | None:
     return resume or _parse_date(row.get("employment_start_date"))
 
 
-def _read_source_sheet2(content: bytes) -> pd.DataFrame:
-    """Read the physical second worksheet only, regardless of workbook active tab."""
-    if not content:
-        raise HTTPException(400, "File Excel đang trống.")
-    if len(content) > 15 * 1024 * 1024:
-        raise HTTPException(413, "File Excel vượt quá 15 MB.")
-    if not content.startswith(b"PK"):
-        raise HTTPException(400, "File không đúng định dạng Excel .xlsx. Vui lòng xuất lại từ TimeSoft.")
-
-    workbook = None
-    try:
-        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
-        if len(workbook.worksheets) < 2:
-            raise HTTPException(400, "File TimeSoft phải có Sheet2. Bảng lương chỉ đọc dữ liệu từ Sheet2.")
-        worksheet = workbook.worksheets[1]
-        if worksheet.max_row < 4 or worksheet.max_column < len(_payroll.TIMESOFT_PAYROLL_HEADERS):
-            raise HTTPException(400, "Sheet2 TimeSoft phải có header dòng 3 và đủ 11 cột A:K.")
-        header_row = next(worksheet.iter_rows(
-            min_row=3, max_row=3, min_col=1,
-            max_col=len(_payroll.TIMESOFT_PAYROLL_HEADERS), values_only=True,
-        ), ())
-        actual_headers = [str(value or "").strip() for value in header_row]
-        if actual_headers != _payroll.TIMESOFT_PAYROLL_HEADERS:
-            mismatches = [
-                f"{get_column_letter(index + 1)}: '{actual}' ≠ '{expected}'"
-                for index, (actual, expected) in enumerate(zip(actual_headers, _payroll.TIMESOFT_PAYROLL_HEADERS))
-                if actual != expected
-            ]
-            raise HTTPException(
-                400,
-                f"Sheet2 ({worksheet.title}) không đúng header TimeSoft chuẩn ở dòng 3. "
-                + " | ".join(mismatches[:6]),
-            )
-
-        selected_rows: list[tuple[Any, Any, Any, Any]] = []
-        for row in worksheet.iter_rows(min_row=4, min_col=1, max_col=9, values_only=True):
-            padded = tuple(row) + (None,) * max(0, 9 - len(row))
-            time_value, item_value, amount_value, employee_value = padded[1], padded[5], padded[6], padded[8]
-            if any(value not in (None, "") for value in (time_value, item_value, amount_value, employee_value)):
-                selected_rows.append((time_value, item_value, amount_value, employee_value))
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(400, f"Không đọc được Sheet2 của file TimeSoft: {exc}") from exc
-    finally:
-        if workbook is not None:
-            workbook.close()
-
-    output = pd.DataFrame(selected_rows, columns=["time", "item", "amount", "employee"])
-    numeric_input = output["time"].apply(
-        lambda value: isinstance(value, numbers.Number) and not isinstance(value, bool)
-    )
-    numeric_time = pd.to_numeric(output["time"], errors="coerce")
-    output["time"] = pd.to_datetime(output["time"], dayfirst=True, errors="coerce", format="mixed")
-    numeric_mask = numeric_input & numeric_time.between(1, 100_000, inclusive="both")
-    if numeric_mask.any():
-        output.loc[numeric_mask, "time"] = (
-            pd.Timestamp("1899-12-30") + pd.to_timedelta(numeric_time[numeric_mask], unit="D")
-        )
-    output["amount"] = output["amount"].apply(_payroll._number)
-    output["item"] = output["item"].fillna("").astype(str).str.strip()
-    output["employee"] = output["employee"].fillna("").astype(str).str.strip()
-    return output
+def _read_payroll_source(content: bytes) -> pd.DataFrame:
+    """Use the canonical reader so policy installers cannot change the sheet."""
+    return _payroll._read_source(content)
 
 
 def _period_from_source(source: pd.DataFrame) -> tuple[str, int, date, date]:
     dated = source.dropna(subset=["time"]).copy()
     if dated.empty:
-        raise HTTPException(400, "Sheet2 không có ngày hợp lệ ở cột B để tự nhận Kỳ lương.")
+        raise HTTPException(
+            400,
+            f"Sheet '{_payroll.PAYROLL_SOURCE_WORKSHEET}' không có ngày hợp lệ ở cột B "
+            "để tự nhận Kỳ lương.",
+        )
     item_norm = dated["item"].astype(str).str.strip().str.casefold()
     tips = dated[item_norm.str.match(_payroll.TIP_ITEM_PATTERN, na=False)].copy()
     sample = tips if not tips.empty else dated
@@ -142,7 +83,10 @@ def _period_from_source(source: pd.DataFrame) -> tuple[str, int, date, date]:
         groups[key] += 1
         latest[key] = max(latest.get(key, d), d)
     if not groups:
-        raise HTTPException(400, "Không xác định được Kỳ lương từ Sheet2.")
+        raise HTTPException(
+            400,
+            f"Không xác định được Kỳ lương từ sheet '{_payroll.PAYROLL_SOURCE_WORKSHEET}'.",
+        )
     year, month, period_no = max(groups, key=lambda key: (groups[key], latest[key]))
     month_text = f"{year:04d}-{month:02d}"
     start, end, _ = _payroll._period(month_text, period_no)
@@ -159,9 +103,6 @@ def install_policy_v39(
 ) -> None:
     if getattr(app.state, "policy_v39_installed", False):
         return
-
-    # All payroll upload/calculation paths now consume physical Sheet2.
-    _payroll._read_source = _read_source_sheet2
 
     original_validate = _shared._validate_and_prepare
 
@@ -272,7 +213,7 @@ def install_policy_v39(
     ):
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
-        source = _read_source_sheet2(payload)
+        source = _read_payroll_source(payload)
         month, period_no, start, end = _period_from_source(source)
         return {
             "ok": True,
@@ -280,13 +221,20 @@ def install_policy_v39(
             "period_no": period_no,
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "sheet_index": 2,
-            "sheet_name": "Sheet2",
-            "message": f"Đã nhận Kỳ {period_no} - Tháng {int(month[-2:])}/{month[:4]} từ Sheet2.",
+            "sheet_name": _payroll.PAYROLL_SOURCE_WORKSHEET,
+            "message": (
+                f"Đã nhận Kỳ {period_no} - Tháng {int(month[-2:])}/{month[:4]} "
+                f"từ sheet '{_payroll.PAYROLL_SOURCE_WORKSHEET}'."
+            ),
         }
 
     @app.get("/v2/policy-v39/health")
     def policy_v39_health():
-        return {"ok": True, "release": RELEASE, "payroll_sheet": "Sheet2", "auto_penalty_minutes": 5}
+        return {
+            "ok": True,
+            "release": RELEASE,
+            "payroll_sheet": _payroll.PAYROLL_SOURCE_WORKSHEET,
+            "auto_penalty_minutes": 5,
+        }
 
     app.state.policy_v39_installed = True

@@ -239,7 +239,11 @@ export const veraApi = {
   exportPayrollDraft: (body) => download('/v2/payroll/draft/export.xlsx', 'VERA_BangLuong_BanMoi.xlsx', {
     method: 'POST', body: JSON.stringify(body),
   }),
-  payrollDraft: (month, periodNo) => request(`/v2/payroll/draft?${new URLSearchParams({ month, period_no: periodNo })}`),
+  payrollDraft: (month, periodNo, latestIfMissing = false) => request(`/v2/payroll/draft?${new URLSearchParams({
+    month,
+    period_no: periodNo,
+    ...(latestIfMissing ? { latest_if_missing: 'true' } : {}),
+  })}`),
   savePayrollDraft: (body) => request('/v2/payroll/draft', { method: 'PUT', body: JSON.stringify(body) }),
   deletePayrollDraft: (month, periodNo) => request(`/v2/payroll/draft?${new URLSearchParams({ month, period_no: periodNo })}`, { method: 'DELETE' }),
   importPayrollDraft: (file, month, periodNo) => upload('/v2/payroll/draft/import.xlsx', file, { month, period_no: periodNo }),

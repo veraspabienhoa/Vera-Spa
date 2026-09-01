@@ -59,10 +59,6 @@ def _clean_cell(value: Any) -> Any:
     return str(value).strip() if not isinstance(value, (int, float, bool)) else value
 
 
-def _room_value_present(value: Any) -> bool:
-    return str(value or "").strip().upper() not in {"", "#N/A", "N/A", "NONE", "NAN"}
-
-
 def _room_snapshot(sheet) -> dict[str, Any]:
     occupancy: dict[str, bool] = {}
     for values in sheet.iter_rows(min_row=3, max_col=7, values_only=True):
@@ -70,7 +66,8 @@ def _room_snapshot(sheet) -> dict[str, Any]:
         room = str(room_value).strip()
         if not room or room.upper() in {"#N/A", "N/A"}:
             continue
-        occupied = any(_room_value_present(value) for value in values[3:6])
+        status = _token(values[5] if len(values) > 5 else "")
+        occupied = status in {"dang thuc hien", "dang cho"}
         occupancy[room] = occupancy.get(room, False) or occupied
     available = [room for room, occupied in occupancy.items() if not occupied]
     occupied = [room for room, is_occupied in occupancy.items() if is_occupied]
@@ -83,6 +80,27 @@ def _room_snapshot(sheet) -> dict[str, Any]:
         "occupied_count": len(occupied),
         "source_sheet": "Room",
     }
+
+
+def _room_key(value: Any) -> str:
+    token = _token(value)
+    return re.sub(r"^phong\s*", "", token).strip()
+
+
+def _available_rooms_for_tour(rooms: dict[str, Any], prepared: dict[str, Any]) -> list[str]:
+    """Exclude rooms already displayed in the Web Tour PHÒNG column."""
+    columns = list(prepared.get("columns") or [])
+    room_column = _find_column_any(columns, ("Phòng", "Phong"))
+    used_on_tour = {
+        _room_key(record.get(room_column))
+        for record in (prepared.get("records") or [])
+        if room_column and _room_key(record.get(room_column))
+    }
+    return [
+        str(room)
+        for room in (rooms.get("available") or [])
+        if _room_key(room) not in used_on_tour
+    ]
 
 
 def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
@@ -485,6 +503,7 @@ def install_people_routes(
             rooms = dict(_tour_cache["rooms"])
             source_updated_at = str(_tour_cache["source_updated_at"])
         prepared = _prepare_tour(columns, records, datetime.now(vn_tz))
+        available_rooms = _available_rooms_for_tour(rooms, prepared)
         now = datetime.now(vn_tz)
         current_metrics = _tour_metric_snapshots(prepared)
         with engine_instance().begin() as conn:
@@ -496,7 +515,7 @@ def install_people_routes(
             "count": len(records),
             "source_updated_at": source_updated_at,
             "rooms": rooms,
-            "available_rooms": list(rooms.get("available") or []),
+            "available_rooms": available_rooms,
             "viewer_can_see_stats": str(ident.role or "").lower() in {"admin", "quanly", "letan"},
             "metric_snapshots": retained_metrics,
             "metrics_business_date": metrics_date,

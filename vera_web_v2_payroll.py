@@ -834,6 +834,30 @@ def _saved_draft(conn, start: date, end: date, norm) -> dict[str, Any] | None:
     }
 
 
+def _latest_saved_draft(conn, norm) -> dict[str, Any] | None:
+    """Return the newest usable payroll draft, skipping stale/invalid entries."""
+    candidates = conn.execute(text("""
+        SELECT value_json
+        FROM vera_app_setting
+        WHERE category='payroll' AND setting_key LIKE 'draft:%'
+        ORDER BY updated_at DESC, setting_key DESC
+    """)).scalars().all()
+    for value in candidates:
+        if not isinstance(value, dict):
+            continue
+        start = _parse_date(value.get("start"))
+        end = _parse_date(value.get("end"))
+        if not start or not end:
+            continue
+        try:
+            draft = _saved_draft(conn, start, end, norm)
+        except HTTPException:
+            continue
+        if draft:
+            return draft
+    return None
+
+
 def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str], set[tuple[date, date]]]:
     if not content:
         raise HTTPException(400, "File Excel đang trống.")
@@ -918,12 +942,28 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         return StreamingResponse(BytesIO(_workbook(records, fields, "Bảng lương bản cũ")), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
     @app.get("/v2/payroll/draft")
-    def payroll_draft(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), ident: identity_type = Depends(current_identity)):
+    def payroll_draft(
+        month: str = Query(...),
+        period_no: int = Query(..., ge=1, le=2),
+        latest_if_missing: bool = Query(default=False),
+        ident: identity_type = Depends(current_identity),
+    ):
         start, end, label = _period(month, period_no)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
             draft = _saved_draft(conn, start, end, norm)
-        return {"draft": draft, "period_label": label}
+            fallback_used = False
+            if draft is None and latest_if_missing:
+                draft = _latest_saved_draft(conn, norm)
+                fallback_used = draft is not None
+        selected_start = _parse_date(draft.get("start")) if draft else None
+        return {
+            "draft": draft,
+            "period_label": label,
+            "fallback_used": fallback_used,
+            "selected_month": selected_start.strftime("%Y-%m") if selected_start else month,
+            "selected_period_no": 1 if selected_start and selected_start.day <= 15 else 2 if selected_start else period_no,
+        }
 
     @app.put("/v2/payroll/draft")
     def save_payroll_draft(body: PayrollSave, ident: identity_type = Depends(current_identity)):

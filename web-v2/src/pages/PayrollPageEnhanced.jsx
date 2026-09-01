@@ -11,6 +11,7 @@ const currentMonth = () => {
   const date = new Date()
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
+const currentPeriodNo = () => new Date().getDate() <= 15 ? 1 : 2
 const periodDates = (month, periodNo) => {
   const [year, monthNumber] = month.split('-').map(Number)
   const startDay = periodNo === 1 ? 1 : 16
@@ -99,7 +100,7 @@ export default function PayrollPageEnhanced({ user }) {
   const [history, setHistory] = useState({ records: [], batches: [], employees: [] })
   const [savedBatches, setSavedBatches] = useState([])
   const [month, setMonth] = useState(currentMonth())
-  const [periodNo, setPeriodNo] = useState(1)
+  const [periodNo, setPeriodNo] = useState(currentPeriodNo())
   const [file, setFile] = useState(null)
   const [draft, setDraft] = useState(null)
   const [draftSearch, setDraftSearch] = useState('')
@@ -115,6 +116,7 @@ export default function PayrollPageEnhanced({ user }) {
   const [notice, setNotice] = useState(null)
   const historyRequest = useRef(0)
   const draftImportRef = useRef(null)
+  const [autoOpenLatestDraft, setAutoOpenLatestDraft] = useState(true)
 
   const run = async (key, callback) => {
     setBusy(key); setNotice(null)
@@ -163,10 +165,19 @@ export default function PayrollPageEnhanced({ user }) {
     setDraft(null)
     setDraftSearch('')
     setSelected([])
-    veraApi.payrollDraft(month, periodNo)
+    veraApi.payrollDraft(month, periodNo, autoOpenLatestDraft)
       .then((result) => {
         if (!active) return
         const saved = result.draft || null
+        if (result.fallback_used && saved) {
+          setMonth(result.selected_month)
+          setPeriodNo(Number(result.selected_period_no))
+          setNotice({
+            type: 'success',
+            message: `Kỳ hiện tại chưa có dữ liệu. Đã tự mở bản nháp gần nhất: ${saved.period_label}.`,
+          })
+        }
+        setAutoOpenLatestDraft(false)
         setDraft(saved)
         setSelected((saved?.rows || []).map((row) => row['Tên Hệ thống']))
         if (Number(saved?.removed_employee_count || 0) > 0) {
@@ -180,7 +191,7 @@ export default function PayrollPageEnhanced({ user }) {
         if (active) setNotice({ type: 'error', message: error.message })
       })
     return () => { active = false }
-  }, [canCalculate, month, periodNo])
+  }, [autoOpenLatestDraft, canCalculate, month, periodNo])
 
   const historyTotal = useMemo(() => history.records.reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [history.records])
   const draftTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [draft])
@@ -421,8 +432,8 @@ export default function PayrollPageEnhanced({ user }) {
     {canCalculate && <section className="panel payroll-calculate-panel">
       <div className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Nợ vi phạm đủ ngày bắt đầu trừ sẽ tự cộng vào “Nợ vi phạm kỳ trước”.</p></div></div>
       <div className="data-toolbar">
-        <label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={(event) => setMonth(event.target.value)} /></label>
-        <label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={(event) => setPeriodNo(Number(event.target.value))}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label>
+        <label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={(event) => { setAutoOpenLatestDraft(false); setMonth(event.target.value) }} /></label>
+        <label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={(event) => { setAutoOpenLatestDraft(false); setPeriodNo(Number(event.target.value)) }}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label>
         <label className="payroll-file">File TimeSoft<input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={isBusy} onChange={(event) => setFile(event.target.files?.[0] || null)} /><small>{file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : 'Định dạng .xlsx · tối đa 15 MB'}</small></label>
         <button className="primary-button" onClick={calculate} disabled={isBusy}><Upload size={16} /> {busy === 'calculate' ? 'Đang tính…' : 'Upload & tính lương'}</button>
       </div>
