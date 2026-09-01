@@ -10,6 +10,8 @@ Rules:
 - When overdue and still missing the return FaceID, notify admin/quanly/letan.
 - Once a return FaceID appears, send a silent clear event for the persistent
   management notification.
+- Never accuse an employee of being late from stale TimeSoft cache. Active
+  reminders/overdue alerts are emitted only while today's FaceID dataset is fresh.
 """
 from __future__ import annotations
 
@@ -28,9 +30,10 @@ import vera_web_v2_people as people
 import vera_web_v2_snapshot as snapshot
 
 
-RELEASE = "attendance-break-alerts-2026-08-31-v1"
+RELEASE = "attendance-break-alerts-2026-09-01-v2-fresh-timesoft"
 REMINDER_SECONDS = 15 * 60
 DEFAULT_BREAK_MINUTES = 90
+TIMESOFT_MAX_STALE_SECONDS = 90
 MANAGEMENT_ROLES = {"admin", "quanly", "letan"}
 EMPLOYEE_ROLES = {"nhanvien", "leader"}
 APP_URL = "https://veraspabienhoa.github.io/Vera-Spa/"
@@ -81,6 +84,35 @@ def _parse_clock(value: Any, work_day: date) -> datetime | None:
     return None
 
 
+def _timesoft_freshness(conn) -> dict[str, Any]:
+    """Return authoritative freshness of today's TimeSoft FaceID cache.
+
+    The alert layer must not turn an old PostgreSQL snapshot into a live claim
+    that someone is currently late. The fast TimeSoft tail normally updates this
+    dataset every 30 seconds, so 90 seconds allows two missed refreshes while
+    still failing safe during TimeSoft/network/job interruptions.
+    """
+    row = conn.execute(text("""
+        SELECT updated_at,
+               GREATEST(0, EXTRACT(EPOCH FROM (NOW() - updated_at))) AS age_seconds
+        FROM vera_dataset_cache
+        WHERE dataset_key='timesoft_employee_checkin_today'
+        LIMIT 1
+    """)).mappings().first()
+    if not row:
+        return {"fresh": False, "age_seconds": None, "updated_at": ""}
+    try:
+        age = max(0, int(float(row.get("age_seconds") or 0)))
+    except Exception:
+        age = TIMESOFT_MAX_STALE_SECONDS + 1
+    updated_at = row.get("updated_at")
+    return {
+        "fresh": age <= TIMESOFT_MAX_STALE_SECONDS,
+        "age_seconds": age,
+        "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at or ""),
+    }
+
+
 def _tour_snapshot() -> tuple[list[str], list[dict[str, Any]]]:
     """Use the same 60-second TourVera cache as the Bảng tua screen."""
     with people._tour_lock:
@@ -127,10 +159,9 @@ def _tour_break_map(conn, work_day: date) -> dict[str, dict[str, Any]]:
     name_column = people._find_column(columns, "Tên nhân viên")
     if not name_column:
         return {}
-    # User-defined canonical positions in TourVera Input.
-    break_column = columns[17]   # R
-    break_out_column = columns[18]  # S
-    break_in_column = columns[20]   # U
+    break_column = columns[17]
+    break_out_column = columns[18]
+    break_in_column = columns[20]
     aliases = _employee_aliases(conn)
     output: dict[str, dict[str, Any]] = {}
     for row in records:
@@ -153,28 +184,15 @@ def _tour_break_map(conn, work_day: date) -> dict[str, dict[str, Any]]:
     return output
 
 
-def _deadline_payload(
-    *,
-    work_day: date,
-    break_out: datetime,
-    break_in: datetime | None,
-    planned_minutes: int,
-    source: str,
-) -> dict[str, Any]:
+def _deadline_payload(*, work_day: date, break_out: datetime, break_in: datetime | None, planned_minutes: int, source: str) -> dict[str, Any]:
     planned = max(1, int(planned_minutes or DEFAULT_BREAK_MINUTES))
     deadline = break_out + timedelta(minutes=planned)
     actual = int(round((break_in - break_out).total_seconds() / 60)) if break_in else 0
     late = max(0, int((break_in - deadline).total_seconds() // 60)) if break_in else 0
     remaining = int((deadline - datetime.now()).total_seconds()) if not break_in else 0
     if break_in:
-        status = (
-            f"Vào lại trễ {late} phút · phải vào lại lúc {deadline.strftime('%H:%M:%S')}"
-            if late > 0 else f"Đã vào lại đúng giờ · hạn {deadline.strftime('%H:%M:%S')}"
-        )
-        detail = (
-            f"Nghỉ giữa ca {break_out.strftime('%d/%m/%Y %H:%M:%S')} → "
-            f"{break_in.strftime('%d/%m/%Y %H:%M:%S')}"
-        )
+        status = f"Vào lại trễ {late} phút · phải vào lại lúc {deadline.strftime('%H:%M:%S')}" if late > 0 else f"Đã vào lại đúng giờ · hạn {deadline.strftime('%H:%M:%S')}"
+        detail = f"Nghỉ giữa ca {break_out.strftime('%d/%m/%Y %H:%M:%S')} → {break_in.strftime('%d/%m/%Y %H:%M:%S')}"
     else:
         status = f"Đang nghỉ giữa ca · phải vào lại lúc {deadline.strftime('%H:%M:%S')}"
         detail = f"Bắt đầu nghỉ giữa ca {break_out.strftime('%d/%m/%Y %H:%M:%S')}"
@@ -211,7 +229,6 @@ def _apply_tour_fallback(conn, records: list[dict[str, Any]], start: date, end: 
             output.append(item)
             continue
         if work_day != today or str(item.get("break_out") or "").strip():
-            # TimeSoft is authoritative as soon as it has a break start.
             output.append(item)
             continue
         tour = tour_map.get(_norm(item.get("employee_name")))
@@ -232,11 +249,7 @@ def _apply_tour_fallback(conn, records: list[dict[str, Any]], start: date, end: 
 
 
 def _event_key(item: dict[str, Any]) -> str:
-    raw = "|".join((
-        str(item.get("date") or ""),
-        _norm(item.get("employee_name")),
-        str(item.get("break_out") or ""),
-    ))
+    raw = "|".join((str(item.get("date") or ""), _norm(item.get("employee_name")), str(item.get("break_out") or "")))
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
 
 
@@ -284,8 +297,7 @@ def _ensure_state(conn, key: str) -> dict[str, Any]:
 def _save_state(conn, key: str, state: dict[str, Any]) -> None:
     conn.execute(text("""
         UPDATE vera_app_setting
-        SET value_json=CAST(:value AS jsonb), source='web_v2', updated_by='system',
-            revision=revision+1, updated_at=NOW()
+        SET value_json=CAST(:value AS jsonb), source='web_v2', updated_by='system', revision=revision+1, updated_at=NOW()
         WHERE category='attendance_break_alert' AND setting_key=:key
     """), {"key": key, "value": json.dumps(state, ensure_ascii=False)})
 
@@ -337,10 +349,8 @@ def _send_payloads(api_module, engine_instance, deliveries: list[dict[str, Any]]
         sent += int(ok)
         failed += int(not ok)
         _update_delivery(engine_instance, {
-            "subscription_id": delivery["subscription_id"],
-            "ok": ok,
-            "inactive": (not ok and status in {404, 410}),
-            "error": error_text,
+            "subscription_id": delivery["subscription_id"], "ok": ok,
+            "inactive": (not ok and status in {404, 410}), "error": error_text,
         })
     return {"sent": sent, "failed": failed}
 
@@ -352,35 +362,16 @@ def _payload(fact: dict[str, Any], kind: str) -> dict[str, Any]:
     tag = f"vera-break-{fact['date'].isoformat()}-{fact['key']}"
     if kind == "reminder":
         remaining_minutes = max(1, (max(0, fact["remaining_seconds"]) + 59) // 60)
-        return {
-            "kind": "attendance-break-reminder",
-            "title": "VERA SPA · Sắp hết giờ nghỉ giữa ca",
-            "body": f"{employee}: còn {remaining_minutes} phút. Nghỉ từ {start}, phải FaceID vào lại lúc {deadline}.",
-            "url": APP_URL,
-            "tag": tag,
-            "employee": employee,
-            "deadline": fact["deadline"].isoformat(),
-        }
+        return {"kind": "attendance-break-reminder", "title": "VERA SPA · Sắp hết giờ nghỉ giữa ca", "body": f"{employee}: còn {remaining_minutes} phút. Nghỉ từ {start}, phải FaceID vào lại lúc {deadline}.", "url": APP_URL, "tag": tag, "employee": employee, "deadline": fact["deadline"].isoformat()}
     if kind == "clear":
-        return {
-            "kind": "attendance-break-cleared",
-            "tag": tag,
-            "employee": employee,
-            "url": APP_URL,
-        }
+        return {"kind": "attendance-break-cleared", "tag": tag, "employee": employee, "url": APP_URL}
     late_minutes = max(1, (max(0, fact["late_seconds"]) + 59) // 60)
-    return {
-        "kind": "attendance-break-overdue",
-        "title": "VERA SPA · NHÂN VIÊN VÀO LẠI TRỄ",
-        "body": f"{employee}: nghỉ từ {start}, phải vào lại {deadline}, hiện đã trễ {late_minutes} phút. Nguồn: {fact['source']}.",
-        "url": APP_URL,
-        "tag": tag,
-        "employee": employee,
-        "deadline": fact["deadline"].isoformat(),
-    }
+    return {"kind": "attendance-break-overdue", "title": "VERA SPA · NHÂN VIÊN VÀO LẠI TRỄ", "body": f"{employee}: nghỉ từ {start}, phải vào lại {deadline}, hiện đã trễ {late_minutes} phút. Nguồn: {fact['source']}.", "url": APP_URL, "tag": tag, "employee": employee, "deadline": fact["deadline"].isoformat()}
 
 
-def _viewer_alerts(facts: list[dict[str, Any]], ident, now: datetime) -> list[dict[str, Any]]:
+def _viewer_alerts(facts: list[dict[str, Any]], ident, now: datetime, source_fresh: bool) -> list[dict[str, Any]]:
+    if not source_fresh:
+        return []
     role = str(getattr(ident, "role", "") or "").strip().lower()
     username = str(getattr(ident, "employee_username", "") or "").strip()
     alerts = []
@@ -397,40 +388,23 @@ def _viewer_alerts(facts: list[dict[str, Any]], ident, now: datetime) -> list[di
         if not audience:
             continue
         alerts.append({
-            "key": fact["key"],
-            "tag": f"vera-break-{fact['date'].isoformat()}-{fact['key']}",
-            "audience": audience,
-            "level": level,
-            "employee": fact["employee"],
-            "date": fact["date"].strftime("%d/%m/%Y"),
-            "break_out": fact["break_out"].strftime("%H:%M:%S"),
-            "deadline": fact["deadline"].strftime("%H:%M:%S"),
-            "deadline_iso": fact["deadline"].isoformat(),
-            "planned_minutes": fact["planned_minutes"],
-            "remaining_seconds": remaining,
-            "late_seconds": fact["late_seconds"],
-            "source": fact["source"],
+            "key": fact["key"], "tag": f"vera-break-{fact['date'].isoformat()}-{fact['key']}",
+            "audience": audience, "level": level, "employee": fact["employee"],
+            "date": fact["date"].strftime("%d/%m/%Y"), "break_out": fact["break_out"].strftime("%H:%M:%S"),
+            "deadline": fact["deadline"].strftime("%H:%M:%S"), "deadline_iso": fact["deadline"].isoformat(),
+            "planned_minutes": fact["planned_minutes"], "remaining_seconds": remaining,
+            "late_seconds": fact["late_seconds"], "source": fact["source"],
         })
     return sorted(alerts, key=lambda row: (row["deadline_iso"], _norm(row["employee"])))
 
 
-def install_attendance_break_alerts(
-    app,
-    *,
-    engine_instance: Callable[[], Any],
-    api_module,
-    current_identity,
-    identity_type,
-    vn_tz,
-) -> None:
+def install_attendance_break_alerts(app, *, engine_instance: Callable[[], Any], api_module, current_identity, identity_type, vn_tz) -> None:
     if getattr(app.state, "attendance_break_alerts_installed", False):
         return
-
     original_records = snapshot._records
 
     def records_with_tour_fallback(conn, start: date, end: date):
-        records = original_records(conn, start, end)
-        return _apply_tour_fallback(conn, records, start, end)
+        return _apply_tour_fallback(conn, original_records(conn, start, end), start, end)
 
     snapshot._records = records_with_tour_fallback
 
@@ -441,19 +415,20 @@ def install_attendance_break_alerts(
         today = now.date()
         deliveries: list[dict[str, Any]] = []
         with engine_instance().begin() as conn:
+            freshness = _timesoft_freshness(conn)
             records = snapshot._records(conn, today, today)
             facts = [fact for item in records if (fact := _fact(item, now)) is not None]
             management_cache: list[dict[str, Any]] | None = None
             for fact in facts:
                 state = _ensure_state(conn, fact["key"])
                 remaining = fact["remaining_seconds"]
-                if fact["break_in"] is None and 0 < remaining <= REMINDER_SECONDS and not state.get("reminder_sent_at"):
+                if freshness["fresh"] and fact["break_in"] is None and 0 < remaining <= REMINDER_SECONDS and not state.get("reminder_sent_at"):
                     subscriptions = _employee_subscriptions(conn, fact["employee"])
                     if subscriptions:
                         payload = _payload(fact, "reminder")
                         deliveries.extend({**row, "payload": payload} for row in subscriptions)
                         state["reminder_sent_at"] = now_aware.isoformat()
-                if fact["break_in"] is None and remaining <= 0 and not state.get("overdue_sent_at"):
+                if freshness["fresh"] and fact["break_in"] is None and remaining <= 0 and not state.get("overdue_sent_at"):
                     if management_cache is None:
                         management_cache = _management_subscriptions(conn)
                     if management_cache:
@@ -468,37 +443,32 @@ def install_attendance_break_alerts(
                         deliveries.extend({**row, "payload": payload} for row in management_cache)
                     state["cleared_at"] = now_aware.isoformat()
                 state.update({
-                    "employee": fact["employee"],
-                    "work_date": fact["date"].isoformat(),
-                    "break_out": fact["break_out"].isoformat(),
-                    "deadline": fact["deadline"].isoformat(),
-                    "break_in": fact["break_in"].isoformat() if fact["break_in"] else "",
-                    "source": fact["source"],
+                    "employee": fact["employee"], "work_date": fact["date"].isoformat(),
+                    "break_out": fact["break_out"].isoformat(), "deadline": fact["deadline"].isoformat(),
+                    "break_in": fact["break_in"].isoformat() if fact["break_in"] else "", "source": fact["source"],
+                    "timesoft_fresh": bool(freshness["fresh"]), "timesoft_age_seconds": freshness["age_seconds"],
                     "last_checked_at": now_aware.isoformat(),
                 })
                 _save_state(conn, fact["key"], state)
-            viewer_alerts = _viewer_alerts(facts, ident, now)
+            viewer_alerts = _viewer_alerts(facts, ident, now, bool(freshness["fresh"]))
 
         delivery_result = _send_payloads(api_module, engine_instance, deliveries)
         return {
-            "ok": True,
-            "release": RELEASE,
-            "alerts": viewer_alerts,
-            "alert_count": len(viewer_alerts),
-            "checked_at": now_aware.isoformat(),
-            "reminder_before_minutes": 15,
-            "source_priority": ["TimeSoft", "TourVera R/S/U"],
-            "push": delivery_result,
+            "ok": True, "release": RELEASE, "alerts": viewer_alerts, "alert_count": len(viewer_alerts),
+            "checked_at": now_aware.isoformat(), "reminder_before_minutes": 15,
+            "source_priority": ["TimeSoft", "TourVera R/S/U"], "timesoft_freshness": freshness,
+            "alerts_suppressed_for_stale_timesoft": not bool(freshness["fresh"]), "push": delivery_result,
         }
 
     @app.get("/v2/attendance/break-alerts/health")
     def break_alerts_health():
         return {
-            "ok": True,
-            "release": RELEASE,
+            "ok": True, "release": RELEASE,
             "deadline_rule": "break_out + configured break minutes",
             "default_break_minutes": DEFAULT_BREAK_MINUTES,
             "reminder_before_minutes": 15,
+            "timesoft_max_stale_seconds": TIMESOFT_MAX_STALE_SECONDS,
+            "stale_policy": "suppress active reminder/overdue alerts until FaceID cache is fresh",
             "management_roles": sorted(MANAGEMENT_ROLES),
             "source_priority": ["TimeSoft", "TourVera R=Break S=Giờ ra U=Giờ vào"],
         }
