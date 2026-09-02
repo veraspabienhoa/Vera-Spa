@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text
 
 VN_TZ = timezone(timedelta(hours=7))
-RELEASE = "auto-check-pg-v2-date-filter-export"
+RELEASE = "auto-check-pg-v3-employee-notification"
 DEFAULT_CONFIG = {
     "status": "RUNNING",
     "threshold_minutes": 5,
@@ -70,6 +70,18 @@ def ensure_schema(conn) -> None:
         )
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_auto_check_event_date ON vera_auto_check_event(work_date DESC, created_at DESC)"))
+    conn.execute(text("""
+        ALTER TABLE vera_auto_check_event
+          ADD COLUMN IF NOT EXISTS employee_notify_claimed_at timestamptz,
+          ADD COLUMN IF NOT EXISTS employee_notify_attempted_at timestamptz,
+          ADD COLUMN IF NOT EXISTS employee_notified_at timestamptz DEFAULT NOW(),
+          ADD COLUMN IF NOT EXISTS employee_notify_error text
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_auto_check_event_pending_notify
+        ON vera_auto_check_event(created_at)
+        WHERE status='added' AND employee_notified_at IS NULL
+    """))
 
 
 def load_config(conn) -> dict:
@@ -149,19 +161,10 @@ def catalog_item(catalog: dict, name: str):
 
 
 def outside_reason(catalog: dict, minutes: float):
-    candidates = ([
-        "Ra ngoài vào muộn nhỏ hơn hoặc bằng 30 phút",
-        "Ra ngoài vào muộn dưới 30 phút",
-    ] if minutes <= 30 else [
-        "Ra ngoài vào muộn nhỏ hơn hoặc bằng 60 phút",
-        "Ra ngoài vào muộn dưới 60 phút",
-    ] if minutes <= 60 else [
-        "Ra ngoài vào muộn nhỏ hơn hoặc bằng 120 phút",
-        "Ra ngoài vào muộn dưới 120 phút",
-    ] if minutes <= 120 else [
-        "Ra ngoài vào muộn trên 120 phút",
-        "Ra ngoài vào muộn từ 120 phút trở lên",
-    ])
+    candidates = (["Ra ngoài vào muộn dưới 30 phút"] if minutes < 30 else
+                  ["Ra ngoài vào muộn dưới 60 phút"] if minutes < 60 else
+                  ["Ra ngoài vào muộn dưới 120 phút"] if minutes < 120 else
+                  ["Ra ngoài vào muộn từ 120 phút trở lên", "Ra ngoài vào muộn trên 120 phút", "Ra ngoài vào muộn dưới 120 phút"])
     return next((catalog_item(catalog, name) for name in candidates if catalog_item(catalog, name)), None)
 
 
@@ -306,11 +309,13 @@ def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, d
     reason = str(reason_item.get("name") or "").strip()
     event_key = f"{work_date.isoformat()}|{_norm(employee)}|{_norm(reason)}"
     inserted = conn.execute(text("""
-        INSERT INTO vera_auto_check_event(event_key,work_date,employee_name,reason,source,minutes,status,detail)
-        VALUES (:key,:day,:employee,:reason,:source,:minutes,'processing',:detail)
+        INSERT INTO vera_auto_check_event(event_key,work_date,employee_name,reason,source,minutes,status,detail,employee_notified_at)
+        VALUES (:key,:day,:employee,:reason,:source,:minutes,'processing',:detail,NULL)
         ON CONFLICT(event_key) DO UPDATE SET
           status='processing', source=EXCLUDED.source, minutes=EXCLUDED.minutes,
-          detail=EXCLUDED.detail, created_at=NOW()
+          detail=EXCLUDED.detail, created_at=NOW(), employee_notify_claimed_at=NULL,
+          employee_notify_attempted_at=NULL, employee_notified_at=NULL,
+          employee_notify_error=NULL
         WHERE vera_auto_check_event.status='revoked'
         RETURNING id
     """), {"key": event_key, "day": work_date, "employee": employee, "reason": reason, "source": source, "minutes": float(minutes or 0), "detail": detail}).scalar()

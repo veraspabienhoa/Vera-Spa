@@ -27,11 +27,12 @@ from typing import Any, Callable
 from sqlalchemy import text
 
 import vera_auto_check as auto_check
+import vera_auto_penalty_notifications as penalty_notifications
 import vera_web_v2_attendance_break_alerts as break_alerts
 import vera_web_v2_snapshot as snapshot
 
 
-RELEASE = "outside-leave-restriction-2026-08-31-v2"
+RELEASE = "outside-leave-restriction-2026-09-02-v3-notify"
 VN_TZ = timezone(timedelta(hours=7))
 CUTOFF = time(17, 0, 0)
 
@@ -320,6 +321,7 @@ def _apply_restrictions_and_penalties(
 
         output.append(item)
 
+    penalty_notifications.notify_pending(engine_instance())
     return output
 
 
