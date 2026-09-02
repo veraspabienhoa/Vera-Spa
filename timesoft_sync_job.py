@@ -1,4 +1,4 @@
-"""V93.5 - Đồng bộ TimeSoft và ghi phạt đi trễ trực tiếp vào PostgreSQL.
+"""V93.6 - Đồng bộ TimeSoft và ghi phạt trực tiếp vào PostgreSQL.
 
 Mỗi lần Cloud Scheduler gọi:
 1) Đồng bộ TimeSoft -> PostgreSQL (giữ nguyên chức năng V82/V83).
@@ -6,6 +6,7 @@ Mỗi lần Cloud Scheduler gọi:
 3) Nếu PAUSED: không ghi phạt.
 4) Nếu RUNNING:
    - TimeSoft: Đi trễ không phép khi trễ >= 5 phút.
+   - Nghỉ giữa ca: Ra ngoài vào muộn ngay khi có FaceID vào lại trễ.
    - Bảng tour: Ra ngoài vào muộn khi cột Vào trễ >= 5 phút.
    - Cẩm Nhung * được đối chiếu như Cẩm Nhung.
    - Chống trùng Ngày + Nhân viên + Lý do.
@@ -1031,6 +1032,135 @@ def _parse_minutes_late(row) -> float | None:
     return max(0.0, float(diff))
 
 
+def _confirmed_break_return_records(engine, work_date: date) -> list[dict]:
+    """Build today's break facts from the same FaceID rules used by Web V2."""
+    import vera_web_v2_attendance_break_window as break_window
+    import vera_web_v2_attendance_v42 as attendance
+    import vera_web_v2_support_shift_break as support_shift
+
+    original_cluster = attendance._cluster_punches
+    original_picker = attendance._pick_break_pair
+    original_break = attendance._break_from_punches
+
+    def cluster_in_five_minutes(values, _minutes=break_window.FACEID_GROUP_MINUTES):
+        return original_cluster(values, break_window.FACEID_GROUP_MINUTES)
+
+    def break_with_current_window(punches, *, work_day, representative, cfg):
+        return break_window._enhance_break_payload(
+            original_break,
+            punches,
+            work_day=work_day,
+            representative=representative,
+            cfg=cfg,
+        )
+
+    # _records_v42 resolves these functions at runtime. Temporarily install the
+    # production five-minute grouping/window rules while this background worker
+    # reconstructs confirmed break pairs from the just-written snapshot.
+    attendance._cluster_punches = cluster_in_five_minutes
+    attendance._pick_break_pair = break_window._pick_break_pair
+    attendance._break_from_punches = break_with_current_window
+    try:
+        with engine.connect() as conn:
+            records = attendance._records_v42(conn, work_date, work_date)
+            support_map = support_shift._support_map(conn, work_date, work_date)
+            leave_rows = conn.execute(text("""
+                SELECT employee_name, leave_reason
+                FROM leave_records
+                WHERE leave_date=:work_date
+            """), {"work_date": work_date}).mappings().all()
+    finally:
+        attendance._cluster_punches = original_cluster
+        attendance._pick_break_pair = original_picker
+        attendance._break_from_punches = original_break
+
+    restricted: dict[str, list[str]] = {}
+    for row in leave_rows:
+        reason = str(row.get("leave_reason") or "").strip()
+        reason_key = _reason_key(reason)
+        if reason_key in support_shift.SUPPORT_ALLOWANCES:
+            continue
+        if not any(token in reason_key for token in ("di tre", "ve som", "ra som")):
+            continue
+        employee_key = _employee_key(row.get("employee_name"))
+        if employee_key:
+            restricted.setdefault(employee_key, []).append(reason)
+
+    for item in records:
+        employee_key = _employee_key(item.get("employee_name"))
+        support = support_map.get((work_date.strftime("%d/%m/%Y"), support_shift._norm(item.get("employee_name"))))
+        if support:
+            allowance, reason = support
+            item["support_shift_reason"] = reason
+            item["support_shift_allowance_minutes"] = allowance
+            item["support_break_allowed"] = True
+            support_shift._remove_late_restriction(item)
+        restriction_reasons = list(dict.fromkeys(restricted.get(employee_key, [])))
+        if restriction_reasons:
+            item["break_restricted_reason"] = " / ".join(restriction_reasons)
+    return records
+
+
+def process_break_return_penalties(engine, catalog: dict) -> dict:
+    """Write confirmed mid-shift late-return penalties during TimeSoft sync."""
+    from vera_web_v2_break_return_penalty import confirmed_break_return_fact
+
+    result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
+    today = datetime.now(VN_TZ).date()
+    try:
+        records = _confirmed_break_return_records(engine, today)
+    except Exception as exc:
+        result["errors"] += 1
+        _log(f"DIRECT BREAK RETURN ERROR: không dựng được dữ liệu nghỉ giữa ca: {type(exc).__name__}: {exc}")
+        return result
+
+    for item in records:
+        fact = confirmed_break_return_fact(item, today)
+        if fact is None:
+            continue
+        result["eligible"] += 1
+        late_minutes = int(fact["late_minutes"])
+        reason_item = auto_check.outside_reason(catalog, late_minutes)
+        if not reason_item:
+            result["errors"] += 1
+            _log(f"DIRECT BREAK RETURN ERROR: Nội quy thiếu mức Ra ngoài vào muộn cho {late_minutes} phút.")
+            continue
+
+        employee = str(fact["employee"] or "").strip()
+        detail = (
+            f"Đồng bộ TimeSoft trực tiếp · nghỉ giữa ca vào lại trễ {late_minutes} phút"
+            f" · Giờ ra {fact['break_out'].strftime('%H:%M:%S')}"
+            f" · Hạn vào lại {fact['deadline'].strftime('%H:%M:%S')}"
+            f" · FaceID vào lại {fact['break_in'].strftime('%H:%M:%S')}"
+        )
+        try:
+            with engine.begin() as conn:
+                ok, message = auto_check.save_violation(
+                    conn,
+                    work_date=fact["work_day"],
+                    employee=employee,
+                    reason_item=reason_item,
+                    detail=detail,
+                    source="ĐỒNG BỘ TIMESOFT - NGHỈ GIỮA CA",
+                    minutes=late_minutes,
+                )
+            if ok and message == "SKIP_DUPLICATE":
+                result["skipped"] += 1
+            elif ok:
+                result["added"] += 1
+                _log(
+                    f"DIRECT BREAK RETURN ADDED: {employee} · {reason_item['name']} · "
+                    f"{late_minutes} phút · {fact['work_day']}"
+                )
+            else:
+                result["errors"] += 1
+                _log(f"DIRECT BREAK RETURN ERROR: {employee}: {message}")
+        except Exception as exc:
+            result["errors"] += 1
+            _log(f"DIRECT BREAK RETURN ERROR: {employee}: {type(exc).__name__}: {exc}")
+    return result
+
+
 def process_timesoft_penalties(
     engine,
     cfg: dict,
@@ -1265,11 +1395,12 @@ def backfill_missing_payroll_snapshots(session: requests.Session, conn, today: d
 
 def write_status(status: str, started_at: datetime, details: list[dict], error: str = "",
                  auto_status: str = "", tour_result: dict | None = None, timesoft_result: dict | None = None,
-                 payroll_backfill_result: dict | None = None) -> None:
+                 break_return_result: dict | None = None, payroll_backfill_result: dict | None = None) -> None:
     now = datetime.now(VN_TZ)
     today_detail = next((x for x in details if x.get("date") == now.date().isoformat()), {})
     tour_result = tour_result or {}
     timesoft_result = timesoft_result or {}
+    break_return_result = break_return_result or {}
     payroll_backfill_result = payroll_backfill_result or {}
     row = {
         "status": status,
@@ -1286,8 +1417,10 @@ def write_status(status: str, started_at: datetime, details: list[dict], error: 
         "auto_penalty_status": str(auto_status or ""),
         "auto_tour_added": int(tour_result.get("added", 0) or 0),
         "auto_timesoft_added": int(timesoft_result.get("added", 0) or 0),
+        "auto_break_return_added": int(break_return_result.get("added", 0) or 0),
         "auto_tour_errors": int(tour_result.get("errors", 0) or 0),
         "auto_timesoft_errors": int(timesoft_result.get("errors", 0) or 0),
+        "auto_break_return_errors": int(break_return_result.get("errors", 0) or 0),
         "payroll_backfill_missing_before": int(payroll_backfill_result.get("missing_before", 0) or 0),
         "payroll_backfill_attempted": int(payroll_backfill_result.get("attempted", 0) or 0),
         "payroll_backfill_added": int(payroll_backfill_result.get("added", 0) or 0),
@@ -1318,7 +1451,7 @@ def write_status(status: str, started_at: datetime, details: list[dict], error: 
 # ==========================================================
 def run_sync() -> int:
     started_at = datetime.now(VN_TZ)
-    _log(f"Bắt đầu TimeSoft background sync V93.5; days={SYNC_DAYS}")
+    _log(f"Bắt đầu TimeSoft background sync V93.6; days={SYNC_DAYS}")
     if not vpg.is_enabled():
         _log("ERROR: PostgreSQL chưa được bật.")
         return 2
@@ -1330,6 +1463,7 @@ def run_sync() -> int:
     checkin_by_date: list[tuple[date, pd.DataFrame]] = []
     tour_result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
     timesoft_result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
+    break_return_result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
     payroll_backfill_result = {"missing_before": 0, "attempted": 0, "added": 0, "errors": 0}
     auto_status = "UNKNOWN"
     notification_result = {"claimed": 0, "notified": 0, "pending": 0, "sent": 0, "failed": 0}
@@ -1392,10 +1526,12 @@ def run_sync() -> int:
                     catalog = auto_check.load_catalog(conn)
                 _log(f"Đã tải danh mục: employees={len(employee_map)}; leave_types={len(catalog)}")
                 timesoft_result = process_timesoft_penalties(engine, cfg, employee_map, catalog, checkin_by_date)
+                break_return_result = process_break_return_penalties(engine, catalog)
                 tour_result = process_tour_penalties(engine, cfg, employee_map, catalog)
                 _log(
                     "Auto penalty hoàn tất: "
                     f"TimeSoft eligible={timesoft_result['eligible']} added={timesoft_result['added']} skipped={timesoft_result['skipped']} errors={timesoft_result['errors']}; "
+                    f"Nghỉ giữa ca eligible={break_return_result['eligible']} added={break_return_result['added']} skipped={break_return_result['skipped']} errors={break_return_result['errors']}; "
                     f"Tour eligible={tour_result['eligible']} added={tour_result['added']} skipped={tour_result['skipped']} errors={tour_result['errors']}"
                 )
             # Dispatch is independent of RUNNING/PAUSED: a penalty committed by
@@ -1404,7 +1540,7 @@ def run_sync() -> int:
             _log(f"Auto penalty notifications: {notification_result}")
             if run_id is not None:
                 with engine.begin() as conn:
-                    auto_check.finish_run(conn, run_id, "success", {"timesoft": timesoft_result, "tour": tour_result, "auto_status": auto_status})
+                    auto_check.finish_run(conn, run_id, "success", {"timesoft": timesoft_result, "break_return": break_return_result, "tour": tour_result, "auto_status": auto_status})
         except Exception as auto_exc:
             # Do not lose the TimeSoft snapshot if Auto Check alone fails.
             auto_status = "ERROR"
@@ -1413,7 +1549,7 @@ def run_sync() -> int:
             if run_id is not None:
                 try:
                     with engine.begin() as conn:
-                        auto_check.finish_run(conn, run_id, "error", {"timesoft": timesoft_result, "tour": tour_result}, str(auto_exc))
+                        auto_check.finish_run(conn, run_id, "error", {"timesoft": timesoft_result, "break_return": break_return_result, "tour": tour_result}, str(auto_exc))
                 except Exception:
                     pass
 
@@ -1422,9 +1558,10 @@ def run_sync() -> int:
             auto_status=auto_status,
             tour_result=tour_result,
             timesoft_result=timesoft_result,
+            break_return_result=break_return_result,
             payroll_backfill_result=payroll_backfill_result,
         )
-        _log(f"Hoàn tất Job V93.5 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
+        _log(f"Hoàn tất Job V93.6 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
         return 0
     except Exception as exc:
         safe_error = f"{type(exc).__name__}: {exc}"
@@ -1435,6 +1572,7 @@ def run_sync() -> int:
                 auto_status=auto_status,
                 tour_result=tour_result,
                 timesoft_result=timesoft_result,
+                break_return_result=break_return_result,
                 payroll_backfill_result=payroll_backfill_result,
             )
         except Exception as status_exc:
