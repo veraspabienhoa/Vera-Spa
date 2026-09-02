@@ -1,8 +1,9 @@
 """Idempotent Web V2 -> LichNghi_VeraSpa synchronization.
 
-Only leave scheduling data is appended to MainData A:D. Existing rows are
-never overwritten, violation records are excluded, and no penalty field is
-written to Google Sheets.
+Only leave scheduling data is appended to MainData A:E. Existing scheduling
+fields are never overwritten, a blank ``Loại nghỉ`` cell is backfilled from
+PostgreSQL, violation records are excluded, and no penalty field is written to
+Google Sheets.
 """
 from __future__ import annotations
 
@@ -13,9 +14,9 @@ from fastapi import Depends, HTTPException
 from sqlalchemy import text
 
 
-RELEASE = "leave-source-sync-2026-09-01.1"
+RELEASE = "leave-source-sync-2026-09-02.1"
 ALLOWED_ROLES = {"admin", "quanly", "letan"}
-EXPECTED_HEADERS = ["Ngày", "Thứ ngày", "Tên nhân viên", "Lý do nghỉ"]
+EXPECTED_HEADERS = ["Ngày", "Thứ ngày", "Tên nhân viên", "Lý do nghỉ", "Loại nghỉ"]
 
 
 def _date_key(value: Any) -> str:
@@ -46,15 +47,25 @@ def missing_leave_rows(
     sheet_values: list[list[Any]],
     *,
     norm: Callable[[Any], str],
-) -> tuple[list[list[Any]], int, int]:
-    """Return append-only A:D rows, existing count, and excluded violations."""
-    existing: set[tuple[str, str, str]] = set()
-    for source_row in sheet_values[1:]:
-        row = list(source_row[:4]) + [""] * max(0, 4 - len(source_row))
+) -> tuple[list[list[Any]], list[tuple[int, str]], int, int]:
+    """Plan appended A:E rows and safe ``Loại nghỉ`` backfills.
+
+    Existing A:D values are treated as immutable.  A matching row whose E cell
+    is blank receives only an E-cell update, so a repeat sync also repairs rows
+    created by the previous A:D-only implementation.
+    """
+    existing: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row_number, source_row in enumerate(sheet_values[1:], start=2):
+        row = list(source_row[:5]) + [""] * max(0, 5 - len(source_row))
         if any(str(value or "").strip() for value in row):
-            existing.add(_record_key(row[0], row[2], row[3], norm=norm))
+            key = _record_key(row[0], row[2], row[3], norm=norm)
+            existing.setdefault(key, []).append({
+                "row_number": row_number,
+                "leave_type": str(row[4] or "").strip(),
+            })
 
     pending: list[list[Any]] = []
+    leave_type_backfills: list[tuple[int, str]] = []
     already_exists = 0
     excluded_violations = 0
     for record in records:
@@ -64,20 +75,32 @@ def missing_leave_rows(
         leave_date = record.get("leave_date")
         employee = str(record.get("employee_name") or "").strip()
         reason = str(record.get("leave_reason") or "").strip()
+        leave_type = str(record.get("leave_type") or "").strip()
         if not isinstance(leave_date, date) or not employee or not reason:
             continue
+        if not leave_type:
+            raise ValueError(
+                f"Bản ghi {employee} ngày {leave_date.strftime('%d/%m/%Y')} "
+                "chưa có Loại nghỉ trong PostgreSQL"
+            )
         key = _record_key(leave_date, employee, reason, norm=norm)
         if key in existing:
             already_exists += 1
+            if leave_type:
+                for matching_row in existing[key]:
+                    if int(matching_row["row_number"]) >= 2 and not matching_row["leave_type"]:
+                        leave_type_backfills.append((int(matching_row["row_number"]), leave_type))
+                        matching_row["leave_type"] = leave_type
             continue
-        existing.add(key)
+        existing[key] = [{"row_number": 0, "leave_type": leave_type}]
         pending.append([
             leave_date.strftime("%d/%m/%Y"),
             ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"][leave_date.weekday()],
             employee,
             reason,
+            leave_type,
         ])
-    return pending, already_exists, excluded_violations
+    return pending, leave_type_backfills, already_exists, excluded_violations
 
 
 def install_leave_source_export_routes(
@@ -99,8 +122,9 @@ def install_leave_source_export_routes(
         return {
             "ok": True,
             "release": RELEASE,
-            "target": "LichNghi_VeraSpa/MainData!A:D",
-            "write_mode": "append-missing-only",
+            "target": "LichNghi_VeraSpa/MainData!A:E",
+            "write_mode": "append-missing-and-backfill-type",
+            "leave_type_column": "E",
             "violation_rows": "excluded",
             "penalty_fields": "never-written",
         }
@@ -123,17 +147,28 @@ def install_leave_source_export_routes(
             try:
                 worksheet = google_client().open_by_key(leave_sheet_id).worksheet("MainData")
                 # Read through M only to find the true populated edge. This
-                # prevents an A:D write from overwriting a row whose A:D is
-                # blank but whose legacy metadata columns E:M still contain data.
+                # prevents an A:E write from overwriting a row whose A:E is
+                # blank but whose legacy metadata columns F:M still contain data.
                 sheet_values = worksheet.get("A:M", value_render_option="FORMATTED_VALUE")
                 if isinstance(sheet_values, dict):
                     sheet_values = sheet_values.get("values", [])
                 sheet_values = [list(row) for row in (sheet_values or [])]
-                headers = (sheet_values[0] if sheet_values else [])[:4]
+                headers = (sheet_values[0] if sheet_values else [])[:5]
                 if [norm(value) for value in headers] != [norm(value) for value in EXPECTED_HEADERS]:
-                    raise RuntimeError("MainData phải có A=Ngày, B=Thứ ngày, C=Tên nhân viên, D=Lý do nghỉ")
+                    raise RuntimeError(
+                        "MainData phải có A=Ngày, B=Thứ ngày, C=Tên nhân viên, "
+                        "D=Lý do nghỉ, E=Loại nghỉ"
+                    )
 
-                rows, already_exists, excluded = missing_leave_rows(records, sheet_values, norm=norm)
+                rows, leave_type_backfills, already_exists, excluded = missing_leave_rows(
+                    records, sheet_values, norm=norm
+                )
+                for row_number, leave_type in leave_type_backfills:
+                    worksheet.update(
+                        range_name=f"E{row_number}:E{row_number}",
+                        values=[[leave_type]],
+                        value_input_option="USER_ENTERED",
+                    )
                 if rows:
                     last_used_row = max(
                         (index for index, row in enumerate(sheet_values, start=1) if any(str(value or "").strip() for value in row[:13])),
@@ -142,7 +177,7 @@ def install_leave_source_export_routes(
                     start_row = last_used_row + 1
                     end_row = start_row + len(rows) - 1
                     worksheet.update(
-                        range_name=f"A{start_row}:D{end_row}",
+                        range_name=f"A{start_row}:E{end_row}",
                         values=rows,
                         value_input_option="USER_ENTERED",
                     )
@@ -153,10 +188,12 @@ def install_leave_source_export_routes(
             "ok": True,
             "release": RELEASE,
             "added": len(rows),
+            "leave_type_backfilled": len(leave_type_backfills),
             "already_exists": already_exists,
             "excluded_violations": excluded,
             "message": (
-                f"Đã thêm {len(rows)} dòng lịch nghỉ mới vào LichNghi_VeraSpa; "
+                f"Đã thêm {len(rows)} dòng lịch nghỉ mới và điền Loại nghỉ cho "
+                f"{len(leave_type_backfills)} dòng cũ trong LichNghi_VeraSpa; "
                 f"bỏ qua {already_exists} dòng đã có và {excluded} dòng Vi phạm."
             ),
         }

@@ -139,7 +139,7 @@ steps:
         python3 - "$${API_URL}/v2/leave/source-sync/health" <<'PY'
         import json, sys, time, urllib.request
         url=sys.argv[1]
-        expected='leave-source-sync-2026-09-01.1'
+        expected='leave-source-sync-2026-09-02.1'
         last=None
         for attempt in range(1,13):
             try:
@@ -148,8 +148,9 @@ steps:
                     payload=json.loads(body)
                     if (200 <= r.status < 300 and payload.get('ok') is True
                             and payload.get('release') == expected
-                            and payload.get('target') == 'LichNghi_VeraSpa/MainData!A:D'
-                            and payload.get('write_mode') == 'append-missing-only'
+                            and payload.get('target') == 'LichNghi_VeraSpa/MainData!A:E'
+                            and payload.get('write_mode') == 'append-missing-and-backfill-type'
+                            and payload.get('leave_type_column') == 'E'
                             and payload.get('violation_rows') == 'excluded'
                             and payload.get('penalty_fields') == 'never-written'):
                         print(body)

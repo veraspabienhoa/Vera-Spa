@@ -8,10 +8,32 @@ from typing import Any, Callable
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
 
-RELEASE = "leave-sync-queue-2026-09-01.1"
+RELEASE = "leave-sync-queue-2026-09-02.1"
 QUEUE_TABLE = "vera_leave_sheet_sync_queue"
 _worker_started = False
 _worker_lock = threading.Lock()
+
+
+def _required_leave_type(record: dict[str, Any]) -> str:
+    leave_type = str(record.get("leave_type") or "").strip()
+    if not leave_type:
+        raise HTTPException(
+            400,
+            "Lý do nghỉ chưa được cấu hình Loại nghỉ trong Nội quy/LoaiNghi.",
+        )
+    return leave_type
+
+
+def _sheet_values_with_required_leave_type(*, api_module, headers: list[str], record: dict, source_row: int) -> list[Any]:
+    normalized_headers = [api_module._norm(header) for header in headers]
+    leave_type_header = api_module._norm("Loại nghỉ")
+    if leave_type_header not in normalized_headers:
+        raise RuntimeError("MainData chưa có cột Loại nghỉ trong A:M")
+    row_values = api_module._sheet_values_for_record(headers, record, source_row)
+    leave_type_index = normalized_headers.index(leave_type_header)
+    if not str(row_values[leave_type_index] or "").strip():
+        raise RuntimeError("Bản ghi lịch nghỉ chưa có Loại nghỉ nên chưa thể ghi MainData")
+    return row_values
 
 
 def _remove_route(app, path: str, method: str):
@@ -135,12 +157,22 @@ def _process_one(*, engine_instance, api_module) -> bool:
             _mark_done(engine_instance, int(item["id"]))
             return True
         source_row = int(record.get("source_row") or item["source_row"])
-        ws = api_module._google_client().open_by_key(api_module.LEAVE_SHEET_ID).get_worksheet(0)
+        ws = api_module._google_client().open_by_key(api_module.LEAVE_SHEET_ID).worksheet("MainData")
         values = ws.get_all_values()
         headers = values[0][:13] if values else []
         if not headers:
             raise RuntimeError("MainData chưa có header A:M")
-        ws.update(range_name=f"A{source_row}:M{source_row}", values=[api_module._sheet_values_for_record(headers, record, source_row)], value_input_option="USER_ENTERED")
+        row_values = _sheet_values_with_required_leave_type(
+            api_module=api_module,
+            headers=headers,
+            record=record,
+            source_row=source_row,
+        )
+        ws.update(
+            range_name=f"A{source_row}:M{source_row}",
+            values=[row_values],
+            value_input_option="USER_ENTERED",
+        )
         _mark_done(engine_instance, int(item["id"]))
         return True
     except Exception as exc:
@@ -185,6 +217,7 @@ def install_leave_sync_queue(app, *, engine_instance, current_identity, require_
             if api_module._registration_role_locked(conn, ident.role):
                 raise HTTPException(403, "Quyền đăng ký nghỉ của vai trò này đang bị Admin tạm khóa.")
             record, warnings = validate_and_prepare(conn, body, ident)
+            record["leave_type"] = _required_leave_type(record)
             source_row = _allocate_source_row(conn, api_module.LEAVE_SHEET_ID)
             record["source_row"] = source_row
             _insert_leave_and_queue(conn, api_module=api_module, record=record, source_row=source_row)
