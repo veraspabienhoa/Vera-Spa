@@ -3,8 +3,8 @@
 Keeps the hardened V93.4 runtime/login/run-log wrapper and changes business
 policy only:
 - Auto late threshold comes from the Nội quy configuration.
-- Registered Đi trễ phát sinh / CÓ phép / KHÔNG phép uses 17:00:00 as the
-  standard check-in for that employee/date.
+- TimeSoft late penalties are delegated to the frequent PostgreSQL sync, so
+  this legacy 20:00 Sheet job cannot charge the same violation twice.
 - Support reasons retain their legacy grace allowances (120/180/60 minutes),
   but are evaluated by the same five-minute engine.
 - Bảng tour uses the current LoaiNghi names <=30/<=60/<=120/>120.
@@ -13,7 +13,6 @@ policy only:
 from __future__ import annotations
 
 import sys
-from datetime import datetime
 
 import auto_penalty_runtime_wrapper as base
 from timesoft_recalculate_checkin import install as install_recalculate_checkin
@@ -37,12 +36,6 @@ def _configured_threshold(cfg) -> int:
     except (TypeError, ValueError):
         return DEFAULT_AUTO_THRESHOLD_MINUTES
 
-
-STANDARD_1700_REASONS = {
-    ts._reason_key("Đi trễ phát sinh"),
-    ts._reason_key("Đi trễ CÓ phép"),
-    ts._reason_key("Đi trễ KHÔNG phép"),
-}
 
 # Exact current catalog label plus backward-compatible alias.
 daily.SUPPORT_LATE_ALLOWANCES.update({
@@ -94,68 +87,19 @@ ts.OUTSIDE_LATE_EXCLUDED.update({
 })
 
 
-def _date_employee_1700_index(client):
-    index = set()
-    try:
-        rows = daily._load_all_leave_rows_new(client)
-    except Exception as exc:
-        daily._log(f"V3.9 STANDARD 17:00 WARN: không đọc được lịch nghỉ: {type(exc).__name__}: {exc}")
-        return index
-    for row in rows or []:
-        reason = ts._reason_key(row.get("Lý do nghỉ", ""))
-        if reason not in STANDARD_1700_REASONS:
-            continue
-        dkey = ts._date_key(row.get("Ngày"))
-        ekey = ts._employee_key(row.get("Tên nhân viên"))
-        if dkey and ekey:
-            index.add((dkey, ekey))
-    return index
-
-
-_ORIGINAL_PROCESS_TIMESOFT = daily.process_timesoft_today
-
-
 def _process_timesoft_v39(client, cfg, employee_map, catalog, supports, checkin_df):
-    cfg_v39 = dict(cfg or {})
-    threshold = _configured_threshold(cfg_v39)
-    cfg_v39["threshold_minutes"] = threshold
-    ts.AUTO_PENALTY_MINUTES = threshold
-
-    if checkin_df is None or getattr(checkin_df, "empty", True):
-        return _ORIGINAL_PROCESS_TIMESOFT(client, cfg_v39, employee_map, catalog, supports, checkin_df)
-
-    adjusted = checkin_df.copy()
-    standard_index = _date_employee_1700_index(client)
-    today = datetime.now(ts.VN_TZ).date()
-    adjusted_count = 0
-
-    for idx, row in adjusted.iterrows():
-        raw_name = ts._timesoft_row_value(row, [
-            "employeeInfo.Name", "EmployeeName", "employeeName", "Name", "FullName",
-        ])
-        employee = ts.canonical_employee(raw_name, employee_map)
-        if not employee:
-            continue
-        raw_date = ts._timesoft_row_value(row, [
-            "WorkDateStr", "WorkDate", "CreateDateStr", "CreateDate",
-        ])
-        work_date = ts._parse_date(raw_date) or today
-        key = (work_date.strftime("%d/%m/%Y"), ts._employee_key(employee))
-        if key not in standard_index:
-            continue
-        adjusted.at[idx, "StartWorkTime"] = "17:00:00"
-        # If alternative start columns already exist, keep every parser aligned.
-        for column in ("WorkTimeStart", "ShiftStartTime"):
-            if column in adjusted.columns:
-                adjusted.at[idx, column] = "17:00:00"
-        adjusted_count += 1
-
-    if adjusted_count:
-        daily._log(
-            f"V3.9 STANDARD 17:00: áp dụng {adjusted_count} dòng TimeSoft có "
-            "Đi trễ phát sinh/CÓ phép/KHÔNG phép."
-        )
-    return _ORIGINAL_PROCESS_TIMESOFT(client, cfg_v39, employee_map, catalog, supports, adjusted)
+    daily._log(
+        "V3.9 TIMESOFT DELEGATED: phạt đi trễ đã được ghi trực tiếp vào "
+        "PostgreSQL bởi job đồng bộ thường xuyên; bỏ qua writer Sheet 20:00."
+    )
+    return {
+        "eligible": 0,
+        "added": 0,
+        "skipped": 0,
+        "errors": 0,
+        "support_skipped": 0,
+        "delegated_to_postgres_sync": True,
+    }, []
 
 
 daily.process_timesoft_today = _process_timesoft_v39

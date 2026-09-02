@@ -1,17 +1,18 @@
-"""V93.3 - Cloud Run Job TimeSoft + lịch nghỉ Single Source A:M.
+"""V93.5 - Đồng bộ TimeSoft và ghi phạt đi trễ trực tiếp vào PostgreSQL.
 
 Mỗi lần Cloud Scheduler gọi:
 1) Đồng bộ TimeSoft -> PostgreSQL (giữ nguyên chức năng V82/V83).
-2) Đọc trạng thái CauHinhAutoPhat trên Google Sheet.
+2) Đọc trạng thái Auto Check và Nội quy từ PostgreSQL.
 3) Nếu PAUSED: không ghi phạt.
 4) Nếu RUNNING:
    - TimeSoft: Đi trễ không phép khi trễ >= 5 phút.
    - Bảng tour: Ra ngoài vào muộn khi cột Vào trễ >= 5 phút.
    - Cẩm Nhung * được đối chiếu như Cẩm Nhung.
    - Chống trùng Ngày + Nhân viên + Lý do.
-   - Ghi đúng Sheet1 A:M tại last row; cột theo header thực tế.
+   - Ghi trực tiếp `leave_records` và `vera_auto_check_event` trong PostgreSQL.
 
-Google Sheets dùng Application Default Credentials của service account gắn với Cloud Run Job.
+Job snapshot thường xuyên có thể giới hạn phạm vi chỉ còn TimeSoft; job 20:00
+không được ghi lại cùng vi phạm vào Google Sheet.
 """
 from __future__ import annotations
 
@@ -1053,10 +1054,9 @@ def process_timesoft_penalties(
         if not isinstance(df, pd.DataFrame) or df.empty:
             continue
         for _, row in df.iterrows():
-            minutes = _parse_minutes_late(row)
-            if minutes is None or minutes < threshold:
+            raw_minutes = _parse_minutes_late(row)
+            if raw_minutes is None or raw_minutes < threshold:
                 continue
-            result["eligible"] += 1
             raw_name = _timesoft_row_value(row, [
                 "employeeInfo.Name", "EmployeeName", "employeeName", "Name", "FullName"
             ])
@@ -1067,9 +1067,41 @@ def process_timesoft_penalties(
                 continue
             raw_date = _timesoft_row_value(row, ["WorkDateStr", "WorkDate", "CreateDateStr", "CreateDate"])
             work_date = _parse_date(raw_date) or target_date
-            penalty_minutes = float(minutes)
+            checkin_time = _timesoft_row_value(row, ["MachineTimeCheckInStr", "CheckInTimeStr", "CheckInTime"])
+            minutes = float(raw_minutes)
+            registered_reasons: list[str] = []
+            registered_reason = ""
+            registered_covered = False
+            registered_revoked = 0
             with engine.begin() as conn:
-                support_reasons, allowance, support_reason = auto_check.late_support_for_day(conn, work_date, employee)
+                registered_reasons, registered_baseline, registered_reason = auto_check.registered_late_for_day(
+                    conn, work_date, employee,
+                )
+                if registered_reasons:
+                    checkin_minutes = _time_minutes(checkin_time)
+                    if checkin_minutes is None:
+                        # The registration grants a later baseline. Without an
+                        # authoritative check-in clock, never guess a violation.
+                        registered_covered = True
+                    else:
+                        minutes = max(0.0, float(checkin_minutes) - float(registered_baseline))
+                        registered_covered = minutes < threshold
+                    if registered_covered:
+                        registered_revoked = auto_check.revoke_auto_late_penalty(
+                            conn,
+                            work_date=work_date,
+                            employee=employee,
+                            basis=registered_reason,
+                        )
+
+                # A registered late baseline is already the applicable rule;
+                # do not stack a separate support allowance on top of 17:00.
+                if registered_reasons:
+                    support_reasons, allowance, support_reason = [], 0, ""
+                else:
+                    support_reasons, allowance, support_reason = auto_check.late_support_for_day(
+                        conn, work_date, employee,
+                    )
                 adjusted_minutes = supported_late_minutes(minutes, allowance) if support_reasons else float(minutes)
                 covered = bool(support_reasons) and (
                     adjusted_minutes is None or adjusted_minutes < threshold
@@ -1080,6 +1112,16 @@ def process_timesoft_penalties(
                     )
                 elif adjusted_minutes is not None:
                     penalty_minutes = adjusted_minutes
+                else:
+                    penalty_minutes = float(minutes)
+            if registered_covered:
+                result["skipped"] += 1
+                checkin_text = str(checkin_time or "không xác định")
+                _log(
+                    f"AUTO TIMESOFT SKIP REGISTERED: {employee} · {registered_reason} · "
+                    f"check-in {checkin_text} · chuẩn 17:00/{threshold} phút · revoked={registered_revoked}"
+                )
+                continue
             if covered:
                 result["skipped"] += 1
                 allowance_text = "không xác định (ưu tiên không phạt)" if allowance is None else f"{allowance} phút"
@@ -1089,11 +1131,13 @@ def process_timesoft_penalties(
                     f"cho phép {allowance_text} · còn {adjusted_text}/{threshold} phút · revoked={revoked}"
                 )
                 continue
+            result["eligible"] += 1
             shift_start = _timesoft_row_value(row, ["StartWorkTime", "WorkTimeStart", "ShiftStartTime"])
-            checkin_time = _timesoft_row_value(row, ["MachineTimeCheckInStr", "CheckInTimeStr", "CheckInTime"])
-            detail = f"Auto Update TimeSoft · check-in muộn {int(round(minutes))} phút"
+            detail = f"Đồng bộ TimeSoft trực tiếp · check-in muộn {int(round(minutes))} phút"
+            if registered_reasons:
+                detail += f" sau chuẩn 17:00 của {registered_reason}"
             if support_reasons and allowance is not None:
-                detail += f" · Hỗ trợ cho phép {allowance} phút nhưng vượt {int(round(minutes - allowance))} phút"
+                detail += f" · Hỗ trợ cho phép {allowance} phút nhưng vượt {int(round(penalty_minutes))} phút"
             if shift_start:
                 detail += f" · Ca bắt đầu {shift_start}"
             if checkin_time:
@@ -1101,7 +1145,7 @@ def process_timesoft_penalties(
             with engine.begin() as conn:
                 ok, msg = auto_check.save_violation(
                     conn, work_date=work_date, employee=employee, reason_item=reason_item,
-                    detail=detail, source="AUTO UPDATE 24/7 - TIMESOFT", minutes=penalty_minutes,
+                    detail=detail, source="ĐỒNG BỘ TIMESOFT - PHẠT TRỰC TIẾP", minutes=penalty_minutes,
                 )
             if ok and msg == "SKIP_DUPLICATE":
                 result["skipped"] += 1
@@ -1273,7 +1317,7 @@ def write_status(status: str, started_at: datetime, details: list[dict], error: 
 # ==========================================================
 def run_sync() -> int:
     started_at = datetime.now(VN_TZ)
-    _log(f"Bắt đầu TimeSoft background sync V93.3; days={SYNC_DAYS}")
+    _log(f"Bắt đầu TimeSoft background sync V93.5; days={SYNC_DAYS}")
     if not vpg.is_enabled():
         _log("ERROR: PostgreSQL chưa được bật.")
         return 2
@@ -1374,7 +1418,7 @@ def run_sync() -> int:
             timesoft_result=timesoft_result,
             payroll_backfill_result=payroll_backfill_result,
         )
-        _log(f"Hoàn tất Job V93.3 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
+        _log(f"Hoàn tất Job V93.5 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
         return 0
     except Exception as exc:
         safe_error = f"{type(exc).__name__}: {exc}"

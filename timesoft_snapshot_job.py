@@ -1,4 +1,4 @@
-"""V84.8 - Cloud Run Job đồng bộ snapshot TimeSoft + raw FaceID fast tail.
+"""V84.9 - Đồng bộ TimeSoft và phạt đi trễ trực tiếp trong PostgreSQL.
 
 Cloud Scheduler hiện gọi job nền theo chu kỳ khoảng 5 phút. Sau lần snapshot đầy
 đủ (có Tính lại ngày công), tiến trình giữ sống thêm một cửa sổ ngắn và đọc cả
@@ -6,8 +6,10 @@ SearchElastic lẫn ExportCheckinLogElastic của hôm nay mỗi 30 giây để 
 FaceID vào PostgreSQL. Nhờ vậy Web V2 có thể xác định đúng cặp nghỉ giữa ca và
 xóa cảnh báo ngay sau khi nhân viên FaceID vào lại, thay vì chỉ thấy mốc đầu/cuối.
 
-Fast tail chỉ cập nhật dataset `timesoft_employee_checkin_today`; không tải hóa
-đơn, không chạy Auto Check, không ghi phạt và không đụng dữ liệu lịch sử.
+Ngay sau snapshot đầy đủ, job đối chiếu đi trễ và ghi phạt trực tiếp vào
+PostgreSQL. Không cần chờ job Auto Check 20:00. Fast tail sau đó chỉ cập nhật
+dataset `timesoft_employee_checkin_today`; không tải hóa đơn, không ghi thêm
+phạt và không đụng dữ liệu lịch sử.
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from timesoft_recalculate_checkin import install as install_recalculate_checkin
 from timesoft_tour_snapshot_cache import install as install_tour_snapshot_cache
 
 
-RELEASE = "timesoft-snapshot-fast-tail-2026-09-02-v2-detailed-faceid"
+RELEASE = "timesoft-direct-late-penalty-2026-09-02-v1"
 FAST_INTERVAL_SECONDS = max(15, min(120, int(os.getenv("TIMESOFT_FAST_CHECKIN_SECONDS", "30") or 30)))
 FAST_WINDOW_SECONDS = max(60, min(360, int(os.getenv("TIMESOFT_FAST_CHECKIN_WINDOW_SECONDS", "240") or 240)))
 
@@ -35,15 +37,9 @@ install_detailed_checkin(ts)
 install_tour_snapshot_cache(ts)
 
 
-_original_auto_load_config = ts.auto_check.load_config
-
-
-def _snapshot_only_auto_config(conn):
-    """Preserve policy values but never execute/consume Auto Check in this job."""
-    cfg = dict(_original_auto_load_config(conn) or {})
-    cfg["status"] = ts.AUTO_PENALTY_PAUSED
-    cfg["manual_run_requested"] = False
-    return cfg
+def _skip_tour_penalties(*_args, **_kwargs):
+    """The frequent job owns direct TimeSoft late penalties, not Tour penalties."""
+    return {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
 
 
 def _write_today_checkin(checkin_df) -> None:
@@ -92,14 +88,14 @@ def _fast_checkin_tail() -> None:
 
 
 def main() -> int:
-    # run_sync() now reads PostgreSQL Auto Check config directly. Override that
-    # reader for this process so the frequent snapshot job cannot also download
-    # TourVera / write penalties. The dedicated Auto Check job remains unchanged.
-    ts.auto_check.load_config = _snapshot_only_auto_config
+    # Every scheduled snapshot now writes eligible TimeSoft late penalties
+    # directly to PostgreSQL. Keep Tour penalty evaluation in its dedicated job;
+    # the installed cache wrapper still refreshes TourVera after this run.
+    ts.process_tour_penalties = _skip_tour_penalties
     ts._log(
-        f"V84.8 SNAPSHOT-ONLY: Tính lại ngày công -> SearchElastic + raw FaceID -> PostgreSQL; "
+        f"V84.9 DIRECT LATE PENALTY: Tính lại ngày công -> TimeSoft -> PostgreSQL -> phạt đi trễ; "
         f"fast check-in mỗi {FAST_INTERVAL_SECONDS}s trong {FAST_WINDOW_SECONDS}s; "
-        "không chạy Auto Check; TourVera cache theo công tắc Admin."
+        "không đợi Auto Check 20:00; TourVera cache theo công tắc Admin."
     )
     result = int(ts.run_sync())
     if result != 0:

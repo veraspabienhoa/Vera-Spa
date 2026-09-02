@@ -19,6 +19,13 @@ DEFAULT_CONFIG = {
     "manual_run_requested": False,
 }
 
+REGISTERED_LATE_REASONS = {
+    "di tre phat sinh",
+    "di tre co phep",
+    "di tre khong phep",
+}
+REGISTERED_LATE_BASELINE_MINUTES = 17 * 60
+
 
 def _norm(value) -> str:
     value = unicodedata.normalize("NFD", str(value or ""))
@@ -180,8 +187,37 @@ def late_support_for_day(conn, work_date: date, employee: str) -> tuple[list[str
     return reasons, allowance, reason
 
 
-def revoke_wrong_late_penalty(conn, *, work_date: date, employee: str, support_reason: str) -> int:
-    """Remove only a PostgreSQL Auto Check late penalty covered by support."""
+def registered_late_for_day(conn, work_date: date, employee: str) -> tuple[list[str], int, str]:
+    """Return a same-day registered late reason and its 17:00 baseline.
+
+    These three registrations have historically moved the employee's standard
+    check-in to 17:00 for that day. The frequent PostgreSQL penalty path must
+    preserve the same rule instead of charging against the employee's normal
+    shift start.
+    """
+    rows = conn.execute(text("""
+        SELECT employee_name, leave_reason, source_sheet_id, updated_by
+        FROM leave_records
+        WHERE leave_date=:day
+          AND COALESCE(source_sheet_id, '') <> 'postgres:auto_check'
+    """), {"day": work_date}).mappings().all()
+    reasons = [
+        str(row["leave_reason"] or "").strip()
+        for row in rows
+        if _norm(row["employee_name"]) == _norm(employee)
+        and _norm(row["leave_reason"]) in REGISTERED_LATE_REASONS
+        and str(row.get("source_sheet_id", "") or "") != "postgres:auto_check"
+        and not _norm(row.get("updated_by", "")).startswith("auto update")
+    ]
+    return (
+        reasons,
+        REGISTERED_LATE_BASELINE_MINUTES,
+        reasons[0] if reasons else "",
+    )
+
+
+def revoke_auto_late_penalty(conn, *, work_date: date, employee: str, basis: str) -> int:
+    """Remove only the direct PostgreSQL late penalty covered by a later rule."""
     deleted = conn.execute(text("""
         DELETE FROM leave_records
         WHERE source_sheet_id='postgres:auto_check'
@@ -194,11 +230,21 @@ def revoke_wrong_late_penalty(conn, *, work_date: date, employee: str, support_r
         conn.execute(text("""
             UPDATE vera_auto_check_event
             SET status='revoked', leave_record_uid=NULL,
-                detail=CONCAT(COALESCE(detail,''),' · Thu hồi vì có ',:support)
+                detail=CONCAT(COALESCE(detail,''),' · Thu hồi vì có ',:basis)
             WHERE work_date=:day AND lower(employee_name)=lower(:employee)
               AND lower(reason)=lower(:reason) AND status='added'
-        """), {"day": work_date, "employee": employee, "reason": "Đi trễ không phép", "support": support_reason})
+        """), {"day": work_date, "employee": employee, "reason": "Đi trễ không phép", "basis": basis})
     return len(deleted)
+
+
+def revoke_wrong_late_penalty(conn, *, work_date: date, employee: str, support_reason: str) -> int:
+    """Remove only a PostgreSQL Auto Check late penalty covered by support."""
+    return revoke_auto_late_penalty(
+        conn,
+        work_date=work_date,
+        employee=employee,
+        basis=support_reason,
+    )
 
 
 def start_run(conn, trigger_type="scheduled") -> int:

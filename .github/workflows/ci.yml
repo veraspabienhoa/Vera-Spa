@@ -673,6 +673,9 @@ jobs:
           payroll_v38 = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
           payroll_timesoft = Path('vera_web_v2_payroll_timesoft_auto.py').read_text(encoding='utf-8')
           timesoft_job = Path('timesoft_sync_job.py').read_text(encoding='utf-8')
+          timesoft_snapshot_job = Path('timesoft_snapshot_job.py').read_text(encoding='utf-8')
+          auto_check_core = Path('vera_auto_check.py').read_text(encoding='utf-8')
+          legacy_auto_wrapper = Path('auto_penalty_runtime_wrapper_v39.py').read_text(encoding='utf-8')
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
           payroll_v38_page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
           snapshot_page = Path('web-v2/src/pages/SnapshotPage.jsx').read_text(encoding='utf-8')
@@ -703,6 +706,9 @@ jobs:
               'payroll new Excel has title period and safe columns': all(token in payroll for token in ('BẢNG LƯƠNG NHÂN VIÊN', 'KỲ LƯƠNG', "Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}", '_new_payroll_sheet_title', 'field not in {"Email", "Số dòng Tip"}', 'field == "TT"', 'period_ranges')),
               'Payroll 3.8 keeps employee-specific deductions': all(token in payroll_v38 for token in ('PAYROLL_V38_RELEASE', 'PG_OVERRIDE_KEY = "employee_overrides"', '_apply_overrides_to_calculation', '/v2/payroll-v38/employee-overrides')) and all(token in payroll_v38_page for token in ('MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8', 'Áp dụng mức riêng', 'Dùng lại mặc định')),
               'TimeSoft payroll snapshots self-heal missing historical days': all(token in timesoft_job for token in ('TIMESOFT_PAYROLL_BACKFILL_DAYS', 'TIMESOFT_PAYROLL_BACKFILL_BATCH_DAYS', 'def _missing_payroll_invoice_dates', 'def backfill_missing_payroll_snapshots', 'write_invoice_snapshot(target_date, invoice_df, invoice_meta)')) and 'payroll-timesoft-auto-2026-08-29.2' in payroll_timesoft and all(token in build for token in ('TIMESOFT_PAYROLL_BACKFILL_DAYS=45', 'TIMESOFT_PAYROLL_BACKFILL_BATCH_DAYS=12')),
+              'frequent TimeSoft sync writes direct PostgreSQL late penalties': '_snapshot_only_auto_config' not in timesoft_snapshot_job and 'ts.process_tour_penalties = _skip_tour_penalties' in timesoft_snapshot_job and 'ĐỒNG BỘ TIMESOFT - PHẠT TRỰC TIẾP' in timesoft_job,
+              'direct late penalties preserve registered 17:00 baseline': all(token in auto_check_core for token in ('REGISTERED_LATE_REASONS', 'REGISTERED_LATE_BASELINE_MINUTES = 17 * 60', 'def registered_late_for_day', "source_sheet_id, '') <> 'postgres:auto_check'")) and 'auto_check.registered_late_for_day' in timesoft_job,
+              'legacy 20:00 job cannot duplicate TimeSoft late penalties': 'delegated_to_postgres_sync' in legacy_auto_wrapper and 'return _ORIGINAL_PROCESS_TIMESOFT' not in legacy_auto_wrapper,
               'Admin can configure former employee accumulation refunds': all(token in payroll for token in ('AccumulationRefundCreate', '/v2/payroll/accumulation-refunds', '_accumulation_refund_map', 'Chỉ Admin được cài đặt hoàn trả tiền tích lũy', 'Tạm thời nghỉ việc hoặc Đã nghỉ việc')) and all(token in payroll_enhanced_page for token in ('HOÀN TRẢ TIỀN TÍCH LŨY – NHÂN VIÊN NGHỈ VIỆC', 'addAccumulationRefund', 'removeAccumulationRefund')) and all(token in api_client for token in ('payrollAccumulationRefunds', 'createPayrollAccumulationRefund', 'deletePayrollAccumulationRefund')),
               'payroll employee filtering is exact': 'needle in {norm(item.get("Tên Hệ thống")), norm(item.get("Họ và tên"))}' in payroll,
               'payroll legacy history and obligation sync are wired': all(token in payroll for token in ('/v2/payroll/history/sync-legacy', 'LEGACY_PAYROLL_WORKSHEET', 'LEGACY_OBLIGATION_WORKSHEET', '_obligation_group')) and 'syncLegacyPayroll' in api_client and 'Tải dữ liệu hệ thống cũ' in payroll_page,
