@@ -203,6 +203,8 @@ export default function TourPage({ user }) {
   )
   const availableRooms = Array.isArray(data.available_rooms) ? data.available_rooms : []
   const retainedMetric = data.metric_snapshots?.[shiftFilter] || null
+  const breakTotal = retainedMetric?.break_total_count ?? retainedMetric?.break_count ?? groupCount(shiftRecords, 'break')
+  const breakActive = retainedMetric?.break_active_count ?? groupCount(shiftRecords, 'break')
   const customerCount = useMemo(() => {
     if (retainedMetric && Number.isFinite(Number(retainedMetric.customer_count))) return Number(retainedMetric.customer_count)
     const totalColumn = findColumn(columns, ['TONG SL', 'TONG SO LUONG'])
@@ -217,8 +219,8 @@ export default function TourPage({ user }) {
     { key: 'waiting', label: 'Đang chờ', value: groupCount(shiftRecords, 'waiting'), className: '' },
     { key: 'leave', label: 'Nghỉ phép', value: groupCount(shiftRecords, 'leave'), className: '' },
     { key: 'doing', label: 'Đang thực hiện', value: groupCount(shiftRecords, 'doing'), className: '' },
-    { key: 'break', label: 'Nghỉ giữa Ca', value: retainedMetric?.break_count ?? groupCount(shiftRecords, 'break'), className: 'tour-break-metric' },
-  ], [columns, retainedMetric, shiftRecords])
+    { key: 'break', label: 'Nghỉ giữa Ca', value: `${breakTotal}-${breakActive}`, className: 'tour-break-metric' },
+  ], [breakActive, breakTotal, columns, retainedMetric, shiftRecords])
   const chooseFilter = (key) => setActiveFilter((current) => key === 'all' || current === key ? 'all' : key)
 
   return <div className="feature-page">
@@ -255,7 +257,7 @@ export default function TourPage({ user }) {
       <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
       <small>Đang hiển thị {displayedRecords.length}/{validRecords.length} nhân viên</small>
     </div>
-    {data.metrics_retained_until_10 && <div className="setup-note">Số khách và Nghỉ giữa ca đang giữ số chốt ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng.</div>}
+    {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
     <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
     <section className="panel tour-table-panel">
       <div className="tour-quick-tools">

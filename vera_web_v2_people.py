@@ -16,6 +16,9 @@ from fastapi import Depends, HTTPException, Query
 from openpyxl import load_workbook
 from sqlalchemy import text
 
+from vera_tour_break_counter import next_break_event_state, tour_business_date
+import vera_web_v2_snapshot as attendance_snapshot
+
 
 BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
 TOUR_CACHE_SECONDS = 60
@@ -273,7 +276,6 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
     room_column = _find_column_any(columns, ("Phòng", "Phong"))
     work_column = _find_column(columns, "Đi làm")
     shift_column = _find_column(columns, "Vào ca") or next((column for column in columns if _token(column) == "ca"), "")
-    break_column = _find_column(columns, "Break") or _find_column(columns, "Breaktime")
 
     moved = [column for column in (status_column, room_column, remaining_column, request_column) if column]
     ordered_columns = [column for column in output_columns if column not in moved]
@@ -301,7 +303,6 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
         status_token = _token(source.get(status_column, "")) if status_column else ""
         work_token = _token(source.get(work_column, "")) if work_column else ""
         shift_token = _token(source.get(shift_column, "")) if shift_column else ""
-        break_token = _token(source.get(break_column, "")) if break_column else ""
         expired = remaining is not None and remaining <= -15
         status_number = _tour_number(source.get(status_column)) if status_column else None
         finishing = bool(
@@ -321,7 +322,6 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
         counters["waiting"] += int(status_token == "dang cho")
         counters["finishing"] += int(finishing)
         counters["idle"] += int(idle)
-        counters["break"] += int(break_token == "break")
         counters["working"] += int(work_token == "di lam")
         counters["leave"] += int(work_token == "nghi phep")
 
@@ -335,8 +335,6 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
                 row_style = "red"
         if idle:
             row_style = "idle"
-        if break_token == "break":
-            row_style = "break"
 
         values = {column: _display_value(source.get(column, "")) for column in ordered_columns}
         values[remaining_column] = "" if expired or remaining is None else remaining
@@ -360,8 +358,6 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
             tour_groups.append("doing")
         if status_token == "dang cho":
             tour_groups.append("waiting")
-        if break_token == "break":
-            tour_groups.append("break")
         prepared.append({**values, "_row_style": row_style, "_tour_groups": tour_groups})
 
     available = counters["finishing"] + counters["idle"]
@@ -415,6 +411,76 @@ def _tour_metric_snapshots(prepared: dict[str, Any]) -> dict[str, dict[str, int]
             "break_count": breaks,
         }
     return output
+
+
+def _attendance_shift_bucket(record: dict[str, Any]) -> str:
+    token = _token(record.get("shift"))
+    return "ca1" if token == "ca 1" else "ca2" if token == "ca 2" else ""
+
+
+def _tracked_break_metrics(
+    conn, attendance_records: list[dict[str, Any]], now: datetime, actor: str,
+) -> tuple[dict[str, dict[str, int]], str, set[str]]:
+    """Persist Chấm công break events in a workday rolling over at 10:00 VN."""
+    business_date = tour_business_date(now)
+    setting_key = business_date.isoformat()
+    observed_events: dict[str, str] = {}
+    active_employees: dict[str, str] = {}
+    active_names: set[str] = set()
+    for row in attendance_records:
+        break_out = str(row.get("break_out") or "").strip()
+        if not break_out:
+            continue
+        employee = _token(row.get("employee_name"))
+        employee_key = _token(row.get("employee_code")) or employee
+        if not employee_key:
+            continue
+        bucket = _attendance_shift_bucket(row)
+        event_key = f"{setting_key}|{employee_key}|{break_out}"
+        observed_events[event_key] = bucket
+        if not str(row.get("break_in") or "").strip():
+            active_employees[employee_key] = bucket
+            if employee:
+                active_names.add(employee)
+
+    conn.execute(text("""
+        INSERT INTO vera_app_setting(
+          category,setting_key,value_json,source,updated_by,revision,created_at,updated_at
+        ) VALUES (
+          'tour_break_event_counter',:key,'{}'::jsonb,'web_v2',:actor,1,NOW(),NOW()
+        )
+        ON CONFLICT(category,setting_key) DO NOTHING
+    """), {"key": setting_key, "actor": actor})
+    previous = conn.execute(text("""
+        SELECT value_json FROM vera_app_setting
+        WHERE category='tour_break_event_counter' AND setting_key=:key
+        FOR UPDATE
+    """), {"key": setting_key}).scalar_one_or_none()
+    previous = previous if isinstance(previous, dict) else {}
+    state, metrics = next_break_event_state(previous, observed_events, active_employees)
+    state.update({"date": setting_key, "rollover_hour": 10, "updated_at": now.isoformat()})
+    conn.execute(text("""
+        UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb),source='web_v2',
+          updated_by=:actor,revision=revision+1,updated_at=NOW()
+        WHERE category='tour_break_event_counter' AND setting_key=:key
+    """), {
+        "key": setting_key,
+        "actor": actor,
+        "value": json.dumps(state, ensure_ascii=False),
+    })
+    return metrics, setting_key, active_names
+
+
+def _apply_attendance_break_groups(prepared: dict[str, Any], active_names: set[str]) -> None:
+    """Drive the Tour orange rows/filter from current Chấm công open breaks."""
+    columns = list(prepared.get("columns") or [])
+    name_column = _find_column(columns, "Tên nhân viên")
+    for row in prepared.get("records") or []:
+        groups = [group for group in (row.get("_tour_groups") or []) if group != "break"]
+        if name_column and _token(row.get(name_column)) in active_names:
+            groups.append("break")
+            row["_row_style"] = "break"
+        row["_tour_groups"] = groups
 
 
 def _retained_tour_metrics(conn, current: dict[str, Any], now: datetime, actor: str) -> tuple[dict[str, Any], str, bool]:
@@ -505,11 +571,23 @@ def install_people_routes(
         prepared = _prepare_tour(columns, records, datetime.now(vn_tz))
         available_rooms = _available_rooms_for_tour(rooms, prepared)
         now = datetime.now(vn_tz)
-        current_metrics = _tour_metric_snapshots(prepared)
         with engine_instance().begin() as conn:
+            attendance_date = tour_business_date(now)
+            attendance_records = attendance_snapshot._records(conn, attendance_date, attendance_date)
+            break_metrics, break_metrics_date, active_break_names = _tracked_break_metrics(
+                conn, attendance_records, now, str(ident.employee_username or "web_v2"),
+            )
+            _apply_attendance_break_groups(prepared, active_break_names)
+            current_metrics = _tour_metric_snapshots(prepared)
             retained_metrics, metrics_date, metrics_retained = _retained_tour_metrics(
                 conn, current_metrics, now, str(ident.employee_username or "web_v2"),
             )
+        for bucket in ("all", "ca1", "ca2"):
+            retained_metrics.setdefault(bucket, {}).update(break_metrics[bucket])
+            # Compatibility: existing clients see the cumulative first number.
+            retained_metrics[bucket]["break_count"] = break_metrics[bucket]["break_total_count"]
+        prepared["break_count"] = break_metrics["all"]["break_active_count"]
+        prepared["break_total_count"] = break_metrics["all"]["break_total_count"]
         return {
             **prepared,
             "count": len(records),
@@ -521,4 +599,7 @@ def install_people_routes(
             "metrics_business_date": metrics_date,
             "metrics_retained_until_10": metrics_retained,
             "metrics_rollover_hour": 10,
+            "break_metrics_business_date": break_metrics_date,
+            "break_metrics_format": "cumulative-active",
+            "break_metrics_source": "attendance_faceid",
         }
