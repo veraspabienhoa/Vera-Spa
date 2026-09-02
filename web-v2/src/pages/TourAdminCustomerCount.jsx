@@ -92,7 +92,7 @@ export default function TourAdminCustomerCount({ user }) {
     .tour-customer-count-host{display:flex;align-items:center}
     .tour-customer-count{display:flex;align-items:center;gap:6px;padding:9px 13px;border:1px solid #d9e1dc;border-radius:10px;background:#fff;color:#2d4539;font-weight:800;white-space:nowrap}
     .tour-customer-count strong{font-size:17px;color:#0f5137}
-    @media(max-width:640px){.tour-customer-count-host{flex:1 0 100%}.tour-customer-count{width:100%;justify-content:center;padding:8px 10px}}
+    @media(max-width:640px){.tour-customer-count-host{min-width:0}.tour-customer-count{width:100%;height:100%;justify-content:center;gap:3px;padding:7px 3px;font-size:9px;box-sizing:border-box}.tour-customer-count strong{font-size:14px}}
   `}</style>
 
   if (!host || !isAdmin) return style

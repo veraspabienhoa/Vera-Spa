@@ -228,7 +228,22 @@ export default function TourPage({ user }) {
       .tour-shift-filter button{min-width:82px}
       .tour-heading-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
       .tour-quick-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}.tour-employee-search{position:relative;flex:1 1 260px;max-width:430px}.tour-employee-search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.tour-employee-search input{width:100%;padding-left:36px;box-sizing:border-box}.tour-room-button{display:inline-flex;align-items:center;gap:7px}.tour-room-panel{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 14px;padding:11px 12px;border:1px solid #cfe1d8;border-radius:12px;background:#f3faf6}.tour-room-panel span{padding:6px 10px;border-radius:999px;background:#d9f1e4;color:#17573d;font-weight:900}.tour-room-panel small{color:#5d7168}
-      @media(max-width:640px){.tour-shift-filter{gap:6px}.tour-shift-filter button{min-width:0;flex:1;padding:9px 10px}.tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}.tour-quick-tools{display:grid;grid-template-columns:1fr}.tour-employee-search{max-width:none}.tour-room-button{justify-content:center}}
+      @media(max-width:640px){
+        .tour-shift-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-bottom:7px}
+        .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
+        .tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}
+        .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+        .metric-grid.small .metric-card.tour-metric-card{min-height:48px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:4px 3px;text-align:center}
+        .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;line-height:1.05}
+        .metric-grid.small .metric-card.tour-metric-card strong{font-size:20px}
+        .tour-table-panel{padding:8px}
+        .tour-quick-tools{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:5px;margin-bottom:7px}
+        .tour-employee-search{min-width:0;max-width:none}
+        .tour-employee-search input{min-width:0;height:38px;padding:7px 7px 7px 30px;font-size:10px}
+        .tour-employee-search svg{left:8px;width:14px}
+        .tour-room-button{min-width:0;justify-content:center;gap:4px;padding:7px 5px;font-size:9px;white-space:nowrap}
+        .tour-room-button svg{width:14px}
+      }
     `}</style>
     <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1><p>Cache máy chủ Bảng tua làm mới tối đa mỗi 1 phút; màn hình tự kiểm tra dữ liệu mới mỗi 10 giây.</p></div><div className="tour-heading-actions">{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div></div>
     {error && <div className="error-box">{error}</div>}
