@@ -1,0 +1,100 @@
+name: Auto Penalty Employee Notification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "timesoft_sync_job.py"
+      - "vera_auto_check.py"
+      - "vera_auto_penalty_notifications.py"
+      - "vera_web_v2_break_return_penalty.py"
+      - "vera_web_v2_outside_leave_rule.py"
+      - "tests/test_auto_penalty_employee_notifications.py"
+      - ".github/workflows/auto-penalty-notification.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "timesoft_sync_job.py"
+      - "vera_auto_check.py"
+      - "vera_auto_penalty_notifications.py"
+      - "vera_web_v2_break_return_penalty.py"
+      - "vera_web_v2_outside_leave_rule.py"
+      - "tests/test_auto_penalty_employee_notifications.py"
+      - ".github/workflows/auto-penalty-notification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-penalty-notification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify penalty notification outbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Compile affected Python modules
+        run: |
+          python -m py_compile \
+            vera_auto_check.py \
+            vera_auto_penalty_notifications.py \
+            timesoft_sync_job.py \
+            vera_web_v2_break_return_penalty.py \
+            vera_web_v2_outside_leave_rule.py
+
+      - name: Verify notification and direct-penalty invariants
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          sources = {
+              name: (root / name).read_text(encoding='utf-8')
+              for name in (
+                  'timesoft_sync_job.py',
+                  'vera_auto_check.py',
+                  'vera_auto_penalty_notifications.py',
+                  'vera_web_v2_break_return_penalty.py',
+                  'vera_web_v2_outside_leave_rule.py',
+              )
+          }
+
+          checks = {
+              'direct start-late penalty remains enabled':
+                  'process_timesoft_penalties' in sources['timesoft_sync_job.py'],
+              'direct confirmed break-return penalty remains enabled':
+                  'process_break_return_penalties' in sources['timesoft_sync_job.py']
+                  and 'confirmed_break_return_fact' in sources['vera_web_v2_break_return_penalty.py'],
+              'successful employee notification is deduplicated':
+                  'employee_notified_at' in sources['vera_auto_check.py']
+                  and 'employee_notified_at IS NULL' in sources['vera_auto_penalty_notifications.py'],
+              'notification failures remain retryable':
+                  'employee_notify_claimed_at' in sources['vera_auto_penalty_notifications.py']
+                  and "INTERVAL '5 minutes'" in sources['vera_auto_penalty_notifications.py'],
+              'background sync dispatches pending notifications':
+                  'penalty_notifications.notify_pending(engine)' in sources['timesoft_sync_job.py'],
+              'attendance penalty paths dispatch immediately':
+                  'penalty_notifications.notify_pending(engine_instance())'
+                  in sources['vera_web_v2_break_return_penalty.py']
+                  and 'penalty_notifications.notify_pending(engine_instance())'
+                  in sources['vera_web_v2_outside_leave_rule.py'],
+          }
+          failed = [name for name, passed in checks.items() if not passed]
+          for name, passed in checks.items():
+              print(('PASS' if passed else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Invariant failures: ' + ', '.join(failed))
+          PY
+
