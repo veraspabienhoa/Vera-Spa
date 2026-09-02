@@ -79,6 +79,7 @@ function rowClass(record) {
 
 function prioritizeRecords(records, columns, activeFilter) {
   if (activeFilter === 'all') return records
+  const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
   const remainingColumn = columns.find((column) => {
     const key = normalizedColumn(column)
     return key === 'TG CON LAI' || key === 'THOI GIAN CON LAI'
@@ -90,8 +91,8 @@ function prioritizeRecords(records, columns, activeFilter) {
     return Number.isFinite(value) ? [1, value] : [2, 0]
   }
   return records.map((record, index) => ({ record, index })).sort((left, right) => {
-    const leftMatches = Array.isArray(left.record._tour_groups) && left.record._tour_groups.includes(activeFilter)
-    const rightMatches = Array.isArray(right.record._tour_groups) && right.record._tour_groups.includes(activeFilter)
+    const leftMatches = Array.isArray(left.record._tour_groups) && left.record._tour_groups.includes(priorityGroup)
+    const rightMatches = Array.isArray(right.record._tour_groups) && right.record._tour_groups.includes(priorityGroup)
     if (leftMatches !== rightMatches) return leftMatches ? -1 : 1
     if (leftMatches && rightMatches) {
       const [leftRank, leftTime] = remainingOrder(left.record)
@@ -255,7 +256,7 @@ export default function TourPage({ user }) {
       <small>Đang hiển thị {displayedRecords.length}/{validRecords.length} nhân viên</small>
     </div>
     {data.metrics_retained_until_10 && <div className="setup-note">Số khách và Nghỉ giữa ca đang giữ số chốt ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng.</div>}
-    <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
+    <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
     <section className="panel tour-table-panel">
       <div className="tour-quick-tools">
         <label className="tour-employee-search" aria-label="Tìm nhanh tên nhân viên"><Search size={16}/><input type="search" value={employeeSearch} placeholder="Tìm nhanh tên nhân viên…" onChange={(event) => setEmployeeSearch(event.target.value)} /></label>
