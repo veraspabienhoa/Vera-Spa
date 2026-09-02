@@ -40,6 +40,18 @@ def test_open_on_time_disabled_or_restricted_break_is_not_penalized():
     assert confirmed_break_return_fact(_item(break_restricted_reason="Đi trễ không phép"), today) is None
 
 
+def test_canonical_penalty_deadline_never_exceeds_2000():
+    fact = confirmed_break_return_fact(_item(
+        break_out="18:41:02",
+        break_in="21:04:41",
+        break_return_deadline="20:11:02",
+    ), date(2026, 9, 2))
+
+    assert fact is not None
+    assert fact["deadline"].strftime("%H:%M:%S") == "20:00:00"
+    assert fact["late_minutes"] == 65
+
+
 def test_current_outside_policy_names_use_inclusive_boundaries():
     names = (
         "Ra ngoài vào muộn nhỏ hơn hoặc bằng 30 phút",

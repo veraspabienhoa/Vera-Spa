@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 
 VERA_TIMEZONE = timezone(timedelta(hours=7))
+BREAK_RETURN_LATEST = time(20, 0, 0)
+
+
+def break_return_deadline(work_day: date, break_out: datetime, planned_minutes: int) -> datetime:
+    """Return the earned break deadline, capped at the mandatory 20:00 return."""
+    earned_deadline = break_out + timedelta(minutes=max(1, int(planned_minutes or 0)))
+    latest_deadline = datetime.combine(work_day, BREAK_RETURN_LATEST)
+    return min(earned_deadline, latest_deadline)
 
 
 def supported_late_minutes(raw_minutes: float, allowance_minutes: int | None) -> float | None:

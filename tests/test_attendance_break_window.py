@@ -40,7 +40,7 @@ def test_duplicate_faceid_at_1553_is_visible_as_break_start_before_return_scan()
     assert result["break_planned_minutes"] == 90
     assert result["break_detail"] == "Bắt đầu nghỉ giữa ca 31/08/2026 15:53:31"
     assert result["break_window_start"] == "15:00:00"
-    assert result["break_return_deadline"] == "20:00:00"
+    assert result["break_return_deadline"] == "17:23:31"
     assert result["break_started"] is True
 
 
@@ -54,3 +54,17 @@ def test_break_pair_must_start_from_1500_and_return_after_2000_is_kept_for_late_
     assert chosen is not None
     assert chosen[0].strftime("%H:%M:%S") == "15:53:31"
     assert chosen[1].strftime("%H:%M:%S") == "20:02:00"
+
+
+def test_break_deadline_is_capped_at_2000_for_late_break_start():
+    work_day = date(2026, 9, 2)
+
+    def original(*args, **kwargs):
+        return {"break_out": "18:41:02", "break_in": "21:04:41", "break_actual_minutes": 144}
+
+    result = _enhance_break_payload(
+        original, [], work_day=work_day, representative={}, cfg=_cfg(),
+    )
+
+    assert result["break_return_deadline"] == "20:00:00"
+    assert result["break_return_late_minutes"] == 64

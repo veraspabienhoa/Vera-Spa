@@ -51,6 +51,19 @@ def test_completed_break_late_time_is_measured_from_dynamic_deadline():
     assert payload["break_actual_minutes"] == 97
 
 
+def test_completed_late_break_is_measured_from_2000_latest_return():
+    payload = _deadline_payload(
+        work_day=date(2026, 9, 2),
+        break_out=datetime(2026, 9, 2, 18, 41, 2),
+        break_in=datetime(2026, 9, 2, 21, 4, 41),
+        planned_minutes=90,
+        source="TimeSoft FaceID",
+    )
+
+    assert payload["break_return_deadline"] == "20:00:00"
+    assert payload["break_return_late_minutes"] == 64
+
+
 def test_tourvera_clock_parser_accepts_excel_time_fraction_and_clock_text():
     work_day = date(2026, 8, 31)
     assert _parse_clock("15:53:31", work_day) == datetime(2026, 8, 31, 15, 53, 31)

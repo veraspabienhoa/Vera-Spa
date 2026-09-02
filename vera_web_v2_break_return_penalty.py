@@ -18,9 +18,10 @@ import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
 import vera_web_v2_attendance_break_alerts as alerts
 import vera_web_v2_snapshot as snapshot
+from vera_attendance_rules import break_return_deadline
 
 
-RELEASE = "attendance-break-return-penalty-2026-09-02-v3-notify"
+RELEASE = "attendance-break-return-penalty-2026-09-02-v4-cutoff-2000"
 
 
 def _work_day(item: dict[str, Any]) -> date | None:
@@ -52,11 +53,9 @@ def confirmed_break_return_fact(item: dict[str, Any], today: date) -> dict[str, 
         break_in += timedelta(days=1)
 
     planned = max(1, int(item.get("break_planned_minutes") or alerts.DEFAULT_BREAK_MINUTES))
-    deadline = alerts._parse_clock(item.get("break_return_deadline"), work_day) or (
-        break_out + timedelta(minutes=planned)
-    )
-    if deadline < break_out:
-        deadline += timedelta(days=1)
+    calculated_deadline = break_return_deadline(work_day, break_out, planned)
+    stored_deadline = alerts._parse_clock(item.get("break_return_deadline"), work_day)
+    deadline = min(stored_deadline, calculated_deadline) if stored_deadline else calculated_deadline
     late_seconds = int((break_in - deadline).total_seconds())
     if late_seconds <= 0:
         return None

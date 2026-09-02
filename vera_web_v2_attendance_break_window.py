@@ -4,18 +4,19 @@ A FaceID event from 15:00 onward is the start of the employee's mid-shift
 break even when the matching return FaceID has not happened yet. Repeated
 FaceID scans inside the same 5-minute window are one attendance event and the
 first scan in that group is authoritative. The return deadline is the exact
-break-start time plus the configured break length (normally 90 minutes); there
-is no fixed 20:00 deadline.
+break-start time plus the configured break length (normally 90 minutes), but
+all employees must return no later than 20:00.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from typing import Any, Callable
 
 import vera_web_v2_attendance_v42 as attendance
+from vera_attendance_rules import BREAK_RETURN_LATEST, break_return_deadline
 
 
-RELEASE = "break-start-1500-faceid-groups-5m-2026-08-31-v3"
+RELEASE = "break-return-latest-2000-2026-09-02-v4"
 BREAK_START = time(15, 0, 0)
 BREAK_START_LATEST = time(23, 0, 0)
 DEFAULT_BREAK_MINUTES = 90
@@ -111,7 +112,7 @@ def _enhance_break_payload(
                 "break_detail": f"Bắt đầu nghỉ giữa ca {break_out.strftime('%d/%m/%Y %H:%M:%S')}",
             })
 
-    deadline = break_out + timedelta(minutes=planned) if break_out else None
+    deadline = break_return_deadline(work_day, break_out, planned) if break_out else None
     return_late_minutes = 0
     if break_in is not None and deadline is not None and break_in > deadline:
         return_late_minutes = max(1, int((break_in - deadline).total_seconds() // 60))
@@ -190,7 +191,8 @@ def install_attendance_break_window(app) -> None:
             "ok": True,
             "release": RELEASE,
             "break_start_from": "15:00:00",
-            "deadline_rule": "break_out + configured break minutes",
+            "deadline_rule": "min(break_out + configured break minutes, 20:00:00)",
+            "return_latest": BREAK_RETURN_LATEST.strftime("%H:%M:%S"),
             "default_break_minutes": DEFAULT_BREAK_MINUTES,
             "faceid_group_minutes": FACEID_GROUP_MINUTES,
             "group_rule": "first FaceID in each <=5 minute group",

@@ -5,9 +5,12 @@ on:
     branches: [main]
     paths:
       - "timesoft_sync_job.py"
+      - "vera_attendance_rules.py"
       - "vera_auto_check.py"
       - "vera_auto_penalty_notifications.py"
       - "vera_web_v2_break_return_penalty.py"
+      - "vera_web_v2_attendance_break_alerts.py"
+      - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
       - ".github/workflows/auto-penalty-notification.yml"
@@ -15,9 +18,12 @@ on:
     branches: [main]
     paths:
       - "timesoft_sync_job.py"
+      - "vera_attendance_rules.py"
       - "vera_auto_check.py"
       - "vera_auto_penalty_notifications.py"
       - "vera_web_v2_break_return_penalty.py"
+      - "vera_web_v2_attendance_break_alerts.py"
+      - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
       - ".github/workflows/auto-penalty-notification.yml"
@@ -48,10 +54,13 @@ jobs:
       - name: Compile affected Python modules
         run: |
           python -m py_compile \
+            vera_attendance_rules.py \
             vera_auto_check.py \
             vera_auto_penalty_notifications.py \
             timesoft_sync_job.py \
             vera_web_v2_break_return_penalty.py \
+            vera_web_v2_attendance_break_alerts.py \
+            vera_web_v2_attendance_break_window.py \
             vera_web_v2_outside_leave_rule.py
 
       - name: Verify notification and direct-penalty invariants
@@ -64,9 +73,12 @@ jobs:
               name: (root / name).read_text(encoding='utf-8')
               for name in (
                   'timesoft_sync_job.py',
+                  'vera_attendance_rules.py',
                   'vera_auto_check.py',
                   'vera_auto_penalty_notifications.py',
                   'vera_web_v2_break_return_penalty.py',
+                  'vera_web_v2_attendance_break_alerts.py',
+                  'vera_web_v2_attendance_break_window.py',
                   'vera_web_v2_outside_leave_rule.py',
               )
           }
@@ -90,6 +102,14 @@ jobs:
                   in sources['vera_web_v2_break_return_penalty.py']
                   and 'penalty_notifications.notify_pending(engine_instance())'
                   in sources['vera_web_v2_outside_leave_rule.py'],
+              'all break deadlines are capped at 20:00':
+                  'BREAK_RETURN_LATEST = time(20, 0, 0)' in sources['vera_attendance_rules.py']
+                  and 'break_return_deadline(work_day, break_out, planned)'
+                  in sources['vera_web_v2_attendance_break_window.py']
+                  and 'break_return_deadline(work_day, break_out, planned)'
+                  in sources['vera_web_v2_attendance_break_alerts.py']
+                  and 'min(stored_deadline, calculated_deadline)'
+                  in sources['vera_web_v2_break_return_penalty.py'],
           }
           failed = [name for name, passed in checks.items() if not passed]
           for name, passed in checks.items():
@@ -97,4 +117,3 @@ jobs:
           if failed:
               raise SystemExit('Invariant failures: ' + ', '.join(failed))
           PY
-

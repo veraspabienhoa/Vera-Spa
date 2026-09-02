@@ -20,9 +20,10 @@ from sqlalchemy import text
 import vera_web_v2_people as people
 import vera_web_v2_snapshot as snapshot
 import vera_web_v2_timesoft_live_refresh as timesoft_live
+from vera_attendance_rules import break_return_deadline
 
 
-RELEASE = "attendance-break-alerts-2026-09-01-v3-live-timesoft"
+RELEASE = "attendance-break-alerts-2026-09-02-v4-return-by-2000"
 REMINDER_SECONDS = 15 * 60
 DEFAULT_BREAK_MINUTES = 90
 TIMESOFT_MAX_STALE_SECONDS = 90
@@ -162,7 +163,7 @@ def _tour_break_map(conn, work_day: date) -> dict[str, dict[str, Any]]:
 
 def _deadline_payload(*, work_day: date, break_out: datetime, break_in: datetime | None, planned_minutes: int, source: str) -> dict[str, Any]:
     planned = max(1, int(planned_minutes or DEFAULT_BREAK_MINUTES))
-    deadline = break_out + timedelta(minutes=planned)
+    deadline = break_return_deadline(work_day, break_out, planned)
     actual = int(round((break_in - break_out).total_seconds() / 60)) if break_in else 0
     late = max(0, int((break_in - deadline).total_seconds() // 60)) if break_in else 0
     remaining = int((deadline - datetime.now()).total_seconds()) if not break_in else 0
@@ -230,7 +231,9 @@ def _fact(item: dict[str, Any], now: datetime) -> dict[str, Any] | None:
         return None
     break_in = _parse_clock(item.get("break_in"), work_day)
     planned = max(1, int(item.get("break_planned_minutes") or DEFAULT_BREAK_MINUTES))
-    deadline = _parse_clock(item.get("break_return_deadline"), work_day) or (break_out + timedelta(minutes=planned))
+    calculated_deadline = break_return_deadline(work_day, break_out, planned)
+    stored_deadline = _parse_clock(item.get("break_return_deadline"), work_day)
+    deadline = min(stored_deadline, calculated_deadline) if stored_deadline else calculated_deadline
     remaining = int((deadline - now).total_seconds()) if break_in is None else 0
     late = max(0, int((now - deadline).total_seconds())) if break_in is None else max(0, int((break_in - deadline).total_seconds()))
     return {
