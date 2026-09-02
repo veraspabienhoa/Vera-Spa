@@ -37,6 +37,7 @@ const TourPage = lazyPage(() => import('./pages/TourPage'))
 const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
 const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
 const WorkSchedulePage = lazyPage(() => import('./pages/WorkSchedulePage'))
+const TOUR_DEFAULT_ROLES = new Set(['admin', 'locker', 'quanly'])
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -57,7 +58,11 @@ export default function App() {
       try {
         const me = await veraApi.me()
         if (!me?.employee_username || me?.is_active === false) throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
-        if (mounted) { setProfile(me); if (me.must_change_password) setPage('profile') }
+        if (mounted) {
+          setProfile(me)
+          const role = String(me.role || '').trim().toLowerCase()
+          setPage(me.must_change_password ? 'profile' : TOUR_DEFAULT_ROLES.has(role) ? 'tour' : 'leave')
+        }
       } catch (err) {
         if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await supabase.auth.signOut({ scope: 'local' }).catch(() => {}); setSession(null) }
       } finally { if (mounted) setLoading(false) }
