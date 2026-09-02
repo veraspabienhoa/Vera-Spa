@@ -149,10 +149,19 @@ def catalog_item(catalog: dict, name: str):
 
 
 def outside_reason(catalog: dict, minutes: float):
-    candidates = (["Ra ngoài vào muộn dưới 30 phút"] if minutes < 30 else
-                  ["Ra ngoài vào muộn dưới 60 phút"] if minutes < 60 else
-                  ["Ra ngoài vào muộn dưới 120 phút"] if minutes < 120 else
-                  ["Ra ngoài vào muộn từ 120 phút trở lên", "Ra ngoài vào muộn trên 120 phút", "Ra ngoài vào muộn dưới 120 phút"])
+    candidates = ([
+        "Ra ngoài vào muộn nhỏ hơn hoặc bằng 30 phút",
+        "Ra ngoài vào muộn dưới 30 phút",
+    ] if minutes <= 30 else [
+        "Ra ngoài vào muộn nhỏ hơn hoặc bằng 60 phút",
+        "Ra ngoài vào muộn dưới 60 phút",
+    ] if minutes <= 60 else [
+        "Ra ngoài vào muộn nhỏ hơn hoặc bằng 120 phút",
+        "Ra ngoài vào muộn dưới 120 phút",
+    ] if minutes <= 120 else [
+        "Ra ngoài vào muộn trên 120 phút",
+        "Ra ngoài vào muộn từ 120 phút trở lên",
+    ])
     return next((catalog_item(catalog, name) for name in candidates if catalog_item(catalog, name)), None)
 
 

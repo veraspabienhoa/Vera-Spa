@@ -1,4 +1,4 @@
-"""V84.9 - Đồng bộ TimeSoft và phạt đi trễ trực tiếp trong PostgreSQL.
+"""V85.0 - Đồng bộ TimeSoft và phạt chấm công trực tiếp trong PostgreSQL.
 
 Cloud Scheduler hiện gọi job nền theo chu kỳ khoảng 5 phút. Sau lần snapshot đầy
 đủ (có Tính lại ngày công), tiến trình giữ sống thêm một cửa sổ ngắn và đọc cả
@@ -6,10 +6,11 @@ SearchElastic lẫn ExportCheckinLogElastic của hôm nay mỗi 30 giây để 
 FaceID vào PostgreSQL. Nhờ vậy Web V2 có thể xác định đúng cặp nghỉ giữa ca và
 xóa cảnh báo ngay sau khi nhân viên FaceID vào lại, thay vì chỉ thấy mốc đầu/cuối.
 
-Ngay sau snapshot đầy đủ, job đối chiếu đi trễ và ghi phạt trực tiếp vào
-PostgreSQL. Không cần chờ job Auto Check 20:00. Fast tail sau đó chỉ cập nhật
-dataset `timesoft_employee_checkin_today`; không tải hóa đơn, không ghi thêm
-phạt và không đụng dữ liệu lịch sử.
+Ngay sau snapshot đầy đủ, job đối chiếu đi trễ đầu ca và vào lại trễ sau nghỉ
+giữa ca, rồi ghi phạt trực tiếp vào PostgreSQL. Không cần chờ job Auto Check
+20:00. Fast tail sau đó chỉ cập nhật dataset
+`timesoft_employee_checkin_today`; không tải hóa đơn, không ghi thêm phạt và
+không đụng dữ liệu lịch sử.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ from timesoft_recalculate_checkin import install as install_recalculate_checkin
 from timesoft_tour_snapshot_cache import install as install_tour_snapshot_cache
 
 
-RELEASE = "timesoft-direct-late-penalty-2026-09-02-v1"
+RELEASE = "timesoft-direct-attendance-penalty-2026-09-02-v2"
 FAST_INTERVAL_SECONDS = max(15, min(120, int(os.getenv("TIMESOFT_FAST_CHECKIN_SECONDS", "30") or 30)))
 FAST_WINDOW_SECONDS = max(60, min(360, int(os.getenv("TIMESOFT_FAST_CHECKIN_WINDOW_SECONDS", "240") or 240)))
 
@@ -93,7 +94,8 @@ def main() -> int:
     # the installed cache wrapper still refreshes TourVera after this run.
     ts.process_tour_penalties = _skip_tour_penalties
     ts._log(
-        f"V84.9 DIRECT LATE PENALTY: Tính lại ngày công -> TimeSoft -> PostgreSQL -> phạt đi trễ; "
+        f"V85.0 DIRECT ATTENDANCE PENALTY: Tính lại ngày công -> TimeSoft -> PostgreSQL -> "
+        "phạt đi trễ đầu ca/vào lại trễ sau nghỉ giữa ca; "
         f"fast check-in mỗi {FAST_INTERVAL_SECONDS}s trong {FAST_WINDOW_SECONDS}s; "
         "không đợi Auto Check 20:00; TourVera cache theo công tắc Admin."
     )

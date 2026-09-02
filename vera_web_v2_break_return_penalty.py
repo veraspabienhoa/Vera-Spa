@@ -3,8 +3,10 @@
 A penalty is created only after the return FaceID is known. This prevents an
 open/incomplete break from being penalized before the employee actually comes
 back. The official Nội quy catalog determines the matching "Ra ngoài vào muộn"
-reason and amount. The affected employee receives Web Push after the violation
-has been recorded.
+reason and amount. The same confirmed-return fact is used by the frequent
+TimeSoft background sync, so the penalty no longer depends on opening the
+attendance screen or waiting for Auto Check. The affected employee receives
+Web Push after the violation has been recorded.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ import vera_web_v2_attendance_break_alerts as alerts
 import vera_web_v2_snapshot as snapshot
 
 
-RELEASE = "attendance-break-return-penalty-2026-08-31-v1"
+RELEASE = "attendance-break-return-penalty-2026-09-02-v2-direct-sync"
 STATE_CATEGORY = "attendance_break_penalty_alert"
 
 
@@ -40,6 +42,44 @@ def _money(value: Any) -> str:
     except Exception:
         amount = 0
     return f"{amount:,}".replace(",", ".") + "đ"
+
+
+def confirmed_break_return_fact(item: dict[str, Any], today: date) -> dict[str, Any] | None:
+    """Return a confirmed, eligible late-return fact for UI and background jobs."""
+    work_day = _work_day(item)
+    if (
+        work_day != today
+        or not bool(item.get("break_enabled"))
+        or item.get("break_restricted_reason")
+        or item.get("break_final_early_checkout")
+    ):
+        return None
+
+    break_out = alerts._parse_clock(item.get("break_out"), work_day)
+    break_in = alerts._parse_clock(item.get("break_in"), work_day)
+    if break_out is None or break_in is None:
+        return None
+    if break_in < break_out:
+        break_in += timedelta(days=1)
+
+    planned = max(1, int(item.get("break_planned_minutes") or alerts.DEFAULT_BREAK_MINUTES))
+    deadline = alerts._parse_clock(item.get("break_return_deadline"), work_day) or (
+        break_out + timedelta(minutes=planned)
+    )
+    if deadline < break_out:
+        deadline += timedelta(days=1)
+    late_seconds = int((break_in - deadline).total_seconds())
+    if late_seconds <= 0:
+        return None
+    return {
+        "work_day": work_day,
+        "employee": str(item.get("employee_name") or "").strip(),
+        "break_out": break_out,
+        "break_in": break_in,
+        "deadline": deadline,
+        "planned_minutes": planned,
+        "late_minutes": max(1, int(math.ceil(late_seconds / 60))),
+    }
 
 
 def _penalty_state(conn, key: str) -> dict[str, Any]:
@@ -97,25 +137,16 @@ def install_break_return_penalty(
 
         for raw in records:
             item = dict(raw)
-            work_day = _work_day(item)
-            if work_day != today or item.get("break_restricted_reason") or item.get("break_final_early_checkout"):
+            fact = confirmed_break_return_fact(item, today)
+            if fact is None:
                 output.append(item)
                 continue
 
-            break_out = alerts._parse_clock(item.get("break_out"), work_day)
-            break_in = alerts._parse_clock(item.get("break_in"), work_day)
-            if break_out is None or break_in is None:
-                output.append(item)
-                continue
-
-            planned = max(1, int(item.get("break_planned_minutes") or alerts.DEFAULT_BREAK_MINUTES))
-            deadline = alerts._parse_clock(item.get("break_return_deadline"), work_day) or (break_out + timedelta(minutes=planned))
-            late_seconds = int((break_in - deadline).total_seconds())
-            if late_seconds <= 0:
-                output.append(item)
-                continue
-
-            late_minutes = max(1, int(math.ceil(late_seconds / 60)))
+            work_day = fact["work_day"]
+            break_out = fact["break_out"]
+            break_in = fact["break_in"]
+            deadline = fact["deadline"]
+            late_minutes = fact["late_minutes"]
             if catalog is None:
                 with engine_instance().connect() as catalog_conn:
                     catalog = auto_check.load_catalog(catalog_conn)
@@ -125,7 +156,7 @@ def install_break_return_penalty(
                 output.append(item)
                 continue
 
-            employee = str(item.get("employee_name") or "").strip()
+            employee = fact["employee"]
             detail = (
                 f"Tự động phạt nghỉ giữa ca vào lại trễ {late_minutes} phút"
                 f" · Giờ ra {break_out.strftime('%H:%M:%S')}"
