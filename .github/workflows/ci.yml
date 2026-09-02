@@ -683,6 +683,7 @@ jobs:
           snapshot_page = Path('web-v2/src/pages/SnapshotPage.jsx').read_text(encoding='utf-8')
           api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
+          tour_break_counter = Path('vera_tour_break_counter.py').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           for source in (api, permissions, profile, payroll, payroll_v38, people, security, staff_security, snapshot, storage): ast.parse(source)
           checks = {
