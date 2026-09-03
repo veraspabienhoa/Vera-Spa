@@ -70,6 +70,19 @@ const sharedConfigFields = [
   ['default_seniority', 'Thâm niên mặc định'], ['default_combo_sales', 'Bán combo mặc định'],
 ]
 
+const operationsEmployeeFields = [
+  ['rate_ca1', 'Lương giờ Ca 1'], ['rate_ca2_before_22', 'Ca 2 trước 22h'],
+  ['rate_ca2_after_22', 'Ca 2 sau 22h'], ['full_day_allowance', 'Phụ cấp Full/ngày'],
+  ['default_attendance_bonus', 'Chuyên cần'], ['default_responsibility', 'Trách nhiệm'],
+  ['default_seniority', 'Thâm niên'], ['default_combo_sales', 'Bán combo'],
+]
+
+const tapvuEmployeeFields = [
+  ['default_base_salary', 'Lương cơ bản/tháng'], ['default_attendance_bonus', 'Chuyên cần'],
+  ['default_responsibility', 'Trách nhiệm'], ['default_seniority', 'Thâm niên'],
+  ['default_combo_sales', 'Khoản cộng mặc định'],
+]
+
 function sampleEmail(template, department, month, row) {
   const sample = row || { employee_name: 'Nguyễn Văn A', total_salary: 10000000, violation_penalty: 0, late_penalty: 50000, net_salary: 9950000 }
   const values = {
@@ -95,6 +108,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [department, setDepartment] = useState('locker')
   const [month, setMonth] = useState(monthNow())
   const [settings, setSettings] = useState({})
+  const [salaryConfigTables, setSalaryConfigTables] = useState({ operations: [], tapvu: [] })
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState('')
@@ -115,6 +129,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const loadSettings = async () => run('settings-load', async () => {
     const result = await request('/v2/department-payroll/settings')
     setSettings(result.departments || {})
+    setSalaryConfigTables(result.salary_config_tables || { operations: [], tapvu: [] })
   })
 
   useEffect(() => { void loadSettings() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -171,6 +186,37 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     setNotice({ type: result.ok ? 'success' : 'error', message: result.message })
   })
 
+  const editEmployeeConfig = (group, username, key, value) => setSalaryConfigTables((currentTables) => ({
+    ...currentTables,
+    [group]: (currentTables[group] || []).map((row) => row.employee_username === username ? { ...row, [key]: Number(value) } : row),
+  }))
+
+  const saveEmployeeConfigs = () => run('employee-settings-save', async () => {
+    const result = await request('/v2/department-payroll/settings/employees', {
+      method: 'PUT',
+      body: JSON.stringify({ rows: [...(salaryConfigTables.operations || []), ...(salaryConfigTables.tapvu || [])] }),
+    })
+    setSalaryConfigTables(result.salary_config_tables || salaryConfigTables)
+    setNotice({ type: 'success', message: result.message })
+  })
+
+  const employeeConfigTable = (group, title, fields) => {
+    const items = salaryConfigTables[group] || []
+    return <section className="department-config-table-section">
+      <div className="panel-title-row"><div><h3>{title}</h3><p>Mỗi nhân viên là một dòng; mức đã lưu được dùng trực tiếp khi tính bảng lương tháng.</p></div></div>
+      <div className="responsive-data-table department-config-table"><table>
+        <thead><tr><th>TT</th><th>Nhân viên</th><th>Bộ phận</th>{fields.map(([, label]) => <th key={label}>{label}</th>)}</tr></thead>
+        <tbody>{items.map((row, index) => <tr key={row.employee_username}>
+          <td>{index + 1}</td>
+          <td><strong>{row.employee_name}</strong><small>{row.employee_username}</small></td>
+          <td><strong>{row.department_label}</strong></td>
+          {fields.map(([key]) => <td key={key}><input className="payroll-money-input" type="number" min="0" inputMode="numeric" disabled={Boolean(busy)} value={numberInputDisplayValue(row[key])} onChange={(event) => editEmployeeConfig(group, row.employee_username, key, event.target.value)} /></td>)}
+        </tr>)}</tbody>
+      </table></div>
+      {!items.length && <div className="setup-note">Chưa có nhân viên đang làm việc trong nhóm này.</div>}
+    </section>
+  }
+
   const settingsPanel = canConfig ? <div className="department-payroll-settings department-payroll-settings-standalone">
     <div className="payroll-calculation-mode">
       <strong>{current.config.calculation_mode === 'monthly' ? 'Lương cơ bản theo 26 ngày công' : 'Lương theo số giờ chấm công'}</strong>
@@ -190,10 +236,12 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 
   if (settingsOnly) return <div className="feature-page department-payroll-page department-payroll-config-page">
     <section className="panel department-payroll-panel">
-      <div className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG & PHỤ CẤP</h2><p>Quản lý, Locker và Lễ tân tính theo giờ. Tạp vụ tính lương cơ bản theo 26 ngày công.</p></div></div>
+      <div className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Quản lý, Lễ tân và Locker dùng chung bảng thứ nhất. Tạp vụ nằm ở bảng thứ hai bên dưới.</p></div><button className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /> Làm mới</button></div>
       {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
-      <div className="department-payroll-toolbar"><div className="department-payroll-tabs">{Object.entries(labels).map(([key, label]) => <button key={key} className={department === key ? 'primary-button' : 'secondary-button'} onClick={() => setDepartment(key)}>{label}</button>)}</div></div>
-      {settingsPanel}
+      {employeeConfigTable('operations', 'BẢNG 1 · QUẢN LÝ / LỄ TÂN / LOCKER', operationsEmployeeFields)}
+      {employeeConfigTable('tapvu', 'BẢNG 2 · TẠP VỤ', tapvuEmployeeFields)}
+      <div className="setup-note">Email bảng lương của bốn bộ phận dùng cùng mẫu chuẩn đang áp dụng cho Leader/Nhân viên.</div>
+      {canConfig ? <div className="list-actions department-payroll-actions"><button className="primary-button" type="button" disabled={Boolean(busy)} onClick={saveEmployeeConfigs}><Save size={16} /> {busy === 'employee-settings-save' ? 'Đang lưu…' : 'Lưu toàn bộ cấu hình'}</button></div> : <div className="error-box">Chỉ Admin được thay đổi cấu hình lương và phụ cấp.</div>}
     </section>
   </div>
 
