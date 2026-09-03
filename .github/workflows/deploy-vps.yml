@@ -53,3 +53,13 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
             "SCRIPT=\$(find /opt/vera-spa -maxdepth 4 -name vera_vps_data_check.py -type f -print -quit); test -n \"\$SCRIPT\"; /opt/vera-spa/.venv/bin/python \"\$SCRIPT\""
+
+      - name: Report recent API errors
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            'PID=$(pgrep -o -f "vera_web_v2_api_v38:app" || true); [ -n "$PID" ] || exit 0; UNIT=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/$PID/cgroup" | head -n 1); [ -n "$UNIT" ] || exit 0; journalctl -u "$UNIT" --since "45 minutes ago" --priority err --no-pager -n 250 || true'
