@@ -52,10 +52,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nunxfjhrszmlyyrvphuq.supabase.
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 CORS_ORIGINS = [
     x.strip()
-    for x in os.getenv(
+    for x in re.split(r"[,;\n]", os.getenv(
         "VERA_V2_CORS_ORIGINS",
-        "https://veraspabienhoa.github.io,http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
+        "https://app.veraspa.vn;https://veraspabienhoa.github.io;http://localhost:5173;http://127.0.0.1:5173",
+    ))
     if x.strip()
 ]
 
