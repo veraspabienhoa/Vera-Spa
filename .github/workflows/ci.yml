@@ -419,6 +419,7 @@ jobs:
               'React rules page is routed': "page === 'rules'" in app and 'RulesPage' in app,
               'rules menu is permission gated': "permission: 'official_rules_view'" in shell and 'ready: true' in shell,
               'rules page covers dynamic grid operations': all(label in page for label in ('BẢNG NỘI QUY', 'Thêm cột', 'Xóa cột', 'Thêm dòng', 'Xóa dòng đã chọn', 'Ghi thay đổi & áp dụng')),
+              'Locker and Lễ tân rules are editable by Admin and shared with department payroll': all(token in rules_api for token in ('DEPARTMENT_RULES = {"locker": "Locker", "letan": "Lễ tân"}', 'DEPARTMENT_RULES_CATEGORY = "payroll"', '@app.put("/v2/rules/department/{department}")', 'Chỉ Admin được thay đổi nội quy Locker/Lễ tân')) and all(token in page for token in ('NỘI QUY LOCKER / LỄ TÂN', 'Chưa có nội dung phạt. Admin sẽ nhập sau.', 'Thêm nội quy', 'Áp dụng {label}')) and 'saveDepartmentRules' in client,
               'rules page supports Excel round trip': 'Export Excel' in page and 'Import Excel' in page and 'importRulesExcel' in client,
               'mobile rules use cards instead of overflowing table': 'rules-mobile-list' in page and '.rules-desktop-table { display: none; }' in styles and '.rules-mobile-fields' in styles,
           }

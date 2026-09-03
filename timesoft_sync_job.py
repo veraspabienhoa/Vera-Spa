@@ -37,6 +37,7 @@ from sqlalchemy import text
 import vera_postgres as vpg
 import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
+import vera_missing_checkin_notifications as missing_checkin_notifications
 import vera_web_v2_department_attendance as department_attendance
 from vera_attendance_rules import supported_late_minutes
 
@@ -1487,6 +1488,7 @@ def run_sync() -> int:
     payroll_backfill_result = {"missing_before": 0, "attempted": 0, "added": 0, "errors": 0}
     auto_status = "UNKNOWN"
     notification_result = {"claimed": 0, "notified": 0, "pending": 0, "sent": 0, "failed": 0}
+    missing_checkin_result = {"scheduled": 0, "eligible": 0, "notified": 0, "sent": 0, "failed": 0, "skipped": 0}
     grace_period_revoked = 0
 
     try:
@@ -1497,12 +1499,20 @@ def run_sync() -> int:
 
         session = create_authenticated_session()
         today = datetime.now(VN_TZ).date()
+        employee_map = load_employee_name_map()
         dates = [today - timedelta(days=i) for i in range(SYNC_DAYS)]
         for target_date in dates:
             invoice_df, invoice_meta = fetch_summary(session, target_date)
             checkin_df, checkin_meta = fetch_checkin(session, target_date)
             write_snapshot(target_date, invoice_df, invoice_meta, checkin_df, checkin_meta)
             checkin_by_date.append((target_date, checkin_df))
+            if target_date == today:
+                # Attendance alert: dispatch immediately after today's FaceID
+                # snapshot, before and independently from Auto Check below.
+                missing_checkin_result = missing_checkin_notifications.notify_missing_scheduled_checkins(
+                    engine, checkin_df, today, employee_map, datetime.now(VN_TZ),
+                )
+                _log(f"Missing scheduled check-in notifications: {missing_checkin_result}")
             detail = {
                 "date": target_date.isoformat(),
                 "invoice_rows": len(invoice_df),
@@ -1545,7 +1555,6 @@ def run_sync() -> int:
             if auto_status == AUTO_PENALTY_PAUSED:
                 _log("Auto penalty PAUSED bởi Admin -> chỉ đồng bộ snapshot, KHÔNG ghi phạt.")
             else:
-                employee_map = load_employee_name_map()
                 with engine.connect() as conn:
                     catalog = auto_check.load_catalog(conn)
                 _log(f"Đã tải danh mục: employees={len(employee_map)}; leave_types={len(catalog)}")

@@ -92,7 +92,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const canSave = isAdmin || permissions.payroll_save
   const canExport = isAdmin || permissions.payroll_export
   const canEmail = isAdmin || permissions.payroll_email
-  const [department, setDepartment] = useState('quanly')
+  const [department, setDepartment] = useState('locker')
   const [month, setMonth] = useState(monthNow())
   const [settings, setSettings] = useState({})
   const [rows, setRows] = useState([])
@@ -199,7 +199,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 
   return <div className="feature-page department-payroll-page">
     <section className="panel department-payroll-panel">
-      <div className="panel-title-row"><div><h2>BẢNG LƯƠNG THEO BỘ PHẬN</h2><p>Quản lý, Locker và Lễ tân tính theo giờ; Tạp vụ tính lương cơ bản theo 26 ngày công.</p></div></div>
+      <div className="panel-title-row"><div><h2>BẢNG LƯƠNG THÁNG THEO BỘ PHẬN</h2><p>Quản lý, Locker và Lễ tân tính theo giờ; Tạp vụ tính lương cơ bản theo 26 ngày công. Mỗi bộ phận có một bảng chính thức mỗi tháng; lưu lại cùng tháng sẽ cập nhật bảng tháng đó.</p></div></div>
       {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
       <div className="department-payroll-toolbar">
         <div className="department-payroll-tabs">{Object.entries(labels).map(([key, label]) => <button key={key} className={department === key ? 'primary-button' : 'secondary-button'} onClick={() => { setDepartment(key); setRows([]); setSelected([]) }}>{label}</button>)}</div>
@@ -210,6 +210,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 
       {!!rows.length && <>
         <div className="department-payroll-summary"><span>Nhân viên<strong>{rows.length}</strong></span><span>Tổng thực nhận<strong>{money(totalNet)}</strong></span><span>Đã chọn gửi email<strong>{selected.length}</strong></span></div>
+        {canEmail && <div className="list-actions"><button className="secondary-button" type="button" onClick={() => setSelected(rows.filter((row) => String(row.email || '').includes('@')).map((row) => row.employee_username))}><Mail size={15} /> Chọn tất cả có email</button><button className="secondary-button" type="button" onClick={() => setSelected([])}>Bỏ chọn</button></div>}
         <div className="responsive-data-table department-payroll-table"><table><thead><tr><th>Gửi</th><th>TT</th><th>Nhân viên</th><th>Ngày công</th><th>Giờ Ca 1</th><th>Ca 2 trước 22h</th><th>Ca 2 sau 22h</th><th>Tiền lương</th>{editableFields.map(([, label]) => <th key={label}>{label}</th>)}<th>Tổng lương</th><th>Thực nhận</th></tr></thead><tbody>{rows.map((row) => <tr key={row.employee_username}><td><input type="checkbox" checked={selected.includes(row.employee_username)} onChange={() => setSelected((items) => items.includes(row.employee_username) ? items.filter((item) => item !== row.employee_username) : [...items, row.employee_username])} /></td><td>{row.tt}</td><td><strong>{row.employee_name}</strong><small>{row.employee_username} · {row.email || 'Chưa có email'}</small>{row.incomplete_days > 0 && <small className="attendance-warning">{row.incomplete_days} ngày thiếu đủ FaceID</small>}</td><td>{row.work_days}</td><td>{row.hours_ca1}</td><td>{row.hours_ca2_before_22}</td><td>{row.hours_ca2_after_22}</td><td className="money-cell">{money(row.salary)}</td>{editableFields.map(([key]) => <td key={key}><input className="payroll-money-input" type="number" min="0" value={numberInputDisplayValue(row[key])} onChange={(event) => editRow(row.employee_username, key, event.target.value)} /></td>)}<td className="money-cell"><strong>{money(row.total_salary)}</strong></td><td className="money-cell"><strong>{money(row.net_salary)}</strong></td></tr>)}</tbody></table></div>
         <div className="list-actions department-payroll-actions">{canSave && <button className="secondary-button" disabled={Boolean(busy)} onClick={saveDraft}><Save size={16} /> Lưu bảng nháp</button>}{canSave && <button className="primary-button" disabled={Boolean(busy)} onClick={saveOfficial}><Save size={16} /> Lưu chính thức</button>}{canExport && <button className="secondary-button" disabled={Boolean(busy)} onClick={exportExcel}><Download size={16} /> Export Excel</button>}{canEmail && <button className="secondary-button" disabled={Boolean(busy) || !selected.length} onClick={sendEmail}><Send size={16} /> <Mail size={14} /> Gửi email ({selected.length})</button>}</div>
       </>}

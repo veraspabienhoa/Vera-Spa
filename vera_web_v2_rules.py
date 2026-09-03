@@ -13,6 +13,7 @@ import json
 import re
 from typing import Any, Callable
 from urllib.parse import quote
+import uuid
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -54,6 +55,8 @@ AUTO_CHECK_CATEGORY = "auto_check"
 AUTO_CHECK_KEY = "config"
 DEFAULT_LATE_THRESHOLD_MINUTES = 5
 AUTO_CHECK_STATUS_DEFAULT = "RUNNING"
+DEPARTMENT_RULES = {"locker": "Locker", "letan": "Lễ tân"}
+DEPARTMENT_RULES_CATEGORY = "payroll"
 DAILY_QUOTA_WEEKDAYS = (
     (1, "Thứ 2", 5, 2),
     (2, "Thứ 3", 5, 2),
@@ -85,6 +88,45 @@ class DailyQuotaUpdate(BaseModel):
 class LateThresholdUpdate(BaseModel):
     threshold_minutes: int = Field(ge=5, le=180)
     expected_revision: int = Field(ge=0)
+
+
+class DepartmentPenaltyRule(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), max_length=80)
+    name: str = Field(min_length=1, max_length=300)
+    amount: float = Field(default=0, ge=0, le=1_000_000_000)
+    note: str = Field(default="", max_length=1000)
+    enabled: bool = True
+
+
+class DepartmentPenaltyRulesUpdate(BaseModel):
+    rules: list[DepartmentPenaltyRule] = Field(default_factory=list, max_length=300)
+    expected_revision: int = Field(ge=0)
+
+
+def _department_rules_key(department: str) -> str:
+    return f"department_{department}_penalty_rules"
+
+
+def _load_department_rules(conn, department: str) -> dict[str, Any]:
+    row = conn.execute(text("""
+        SELECT value_json, revision, updated_at, updated_by
+        FROM vera_app_setting
+        WHERE category=:category AND setting_key=:setting_key
+        LIMIT 1
+    """), {
+        "category": DEPARTMENT_RULES_CATEGORY,
+        "setting_key": _department_rules_key(department),
+    }).mappings().first()
+    raw_rules = row["value_json"] if row else []
+    rules = [dict(item) for item in raw_rules if isinstance(item, dict)] if isinstance(raw_rules, list) else []
+    return {
+        "department": department,
+        "department_label": DEPARTMENT_RULES[department],
+        "rules": rules,
+        "revision": int(row["revision"] or 0) if row else 0,
+        "updated_at": row["updated_at"].isoformat() if row and row["updated_at"] else "",
+        "updated_by": str(row["updated_by"] or "") if row else "",
+    }
 
 
 def _load_late_threshold(conn) -> dict[str, Any]:
@@ -514,8 +556,13 @@ def install_rules_routes(
             "permissions": _permissions(conn, ident, feature_allowed),
             "daily_quota": daily_quota,
             "late_threshold": late_threshold,
+            "department_rules": {
+                department: _load_department_rules(conn, department)
+                for department in DEPARTMENT_RULES
+            },
             "can_edit_daily_quota": is_admin,
             "can_edit_late_threshold": is_admin,
+            "can_edit_department_rules": is_admin,
         }
 
     @app.get("/v2/rules")
@@ -606,6 +653,89 @@ def install_rules_routes(
             if sheet_changed and worksheet is not None:
                 _restore_legacy_sheet(worksheet, old_sheet_values)
             raise HTTPException(500, f"Không thể áp dụng Bảng nội quy an toàn: {type(exc).__name__}: {exc}") from exc
+        finally:
+            conn.close()
+
+    @app.put("/v2/rules/department/{department}")
+    def save_department_rules(
+        department: str,
+        body: DepartmentPenaltyRulesUpdate,
+        ident: identity_type = Depends(current_identity),
+    ):
+        department = str(department or "").strip().lower()
+        if department not in DEPARTMENT_RULES:
+            raise HTTPException(404, "Nội quy bộ phận chỉ áp dụng cho Locker hoặc Lễ tân.")
+        if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được thay đổi nội quy Locker/Lễ tân.")
+        rules = [item.model_dump() for item in body.rules]
+        conn = engine_instance().connect()
+        tx = conn.begin()
+        try:
+            lock_key = f"vera:web-v2:department-rules:{department}"
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"), {"lock_key": lock_key})
+            require_feature(conn, ident, "official_rules_edit")
+            setting_key = _department_rules_key(department)
+            current = conn.execute(text("""
+                SELECT revision FROM vera_app_setting
+                WHERE category=:category AND setting_key=:setting_key
+                FOR UPDATE
+            """), {
+                "category": DEPARTMENT_RULES_CATEGORY,
+                "setting_key": setting_key,
+            }).scalar_one_or_none()
+            current_revision = int(current or 0)
+            if current_revision != body.expected_revision:
+                raise HTTPException(
+                    409,
+                    f"Nội quy {DEPARTMENT_RULES[department]} đã được cập nhật. Hãy bấm Làm mới trước khi áp dụng lại.",
+                )
+            if current is None:
+                saved = conn.execute(text("""
+                    INSERT INTO vera_app_setting(
+                        category, setting_key, value_json, source, updated_by,
+                        revision, created_at, updated_at
+                    ) VALUES (
+                        :category, :setting_key, CAST(:value_json AS jsonb),
+                        'web_v2_rules', :updated_by, 1, now(), now()
+                    ) RETURNING revision, updated_at
+                """), {
+                    "category": DEPARTMENT_RULES_CATEGORY,
+                    "setting_key": setting_key,
+                    "value_json": json.dumps(rules, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+            else:
+                saved = conn.execute(text("""
+                    UPDATE vera_app_setting
+                    SET value_json=CAST(:value_json AS jsonb), source='web_v2_rules',
+                        updated_by=:updated_by, revision=revision + 1, updated_at=now()
+                    WHERE category=:category AND setting_key=:setting_key
+                    RETURNING revision, updated_at
+                """), {
+                    "category": DEPARTMENT_RULES_CATEGORY,
+                    "setting_key": setting_key,
+                    "value_json": json.dumps(rules, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+            tx.commit()
+            return {
+                "ok": True,
+                "message": f"Đã áp dụng nội quy {DEPARTMENT_RULES[department]} cho hệ thống.",
+                "department": department,
+                "department_label": DEPARTMENT_RULES[department],
+                "rules": rules,
+                "revision": int(saved["revision"]),
+                "updated_at": saved["updated_at"].isoformat(),
+                "updated_by": ident.employee_username,
+            }
+        except HTTPException:
+            if tx.is_active:
+                tx.rollback()
+            raise
+        except Exception as exc:
+            if tx.is_active:
+                tx.rollback()
+            raise HTTPException(500, f"Không thể áp dụng nội quy bộ phận: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
 

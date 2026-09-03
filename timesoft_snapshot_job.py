@@ -68,12 +68,17 @@ def _fast_checkin_tail() -> None:
             today = datetime.now(ts.VN_TZ).date()
             checkin_df, meta = ts.fetch_checkin(session, today)
             _write_today_checkin(checkin_df)
+            employee_map = ts.load_employee_name_map()
+            missing_result = ts.missing_checkin_notifications.notify_missing_scheduled_checkins(
+                ts.vpg.get_engine(), checkin_df, today, employee_map, datetime.now(ts.VN_TZ),
+            )
             success += 1
             ts._log(
                 f"FAST CHECKIN {RELEASE}: combined={len(checkin_df)}; "
                 f"summary={int(meta.get('SummaryRows') or 0)}; "
                 f"raw={int(meta.get('RawLogRows') or 0)}; "
                 f"total={int(meta.get('Total') or 0)}; "
+                f"missing_alerts={missing_result.get('notified', 0)}; "
                 f"interval={FAST_INTERVAL_SECONDS}s"
             )
         except Exception as exc:

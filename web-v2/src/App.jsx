@@ -15,7 +15,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'rules', 'profile', 'permissions', 'payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -57,6 +57,7 @@ const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
 const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
 const WorkSchedulePage = lazyPage(() => import('./pages/WorkSchedulePage'))
 const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentPayrollSettingsPage'))
+const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollPanel'))
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -158,6 +159,7 @@ export default function App() {
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}
         {page === 'payroll' && <PayrollPage user={shellUser} />}
+        {page === 'department-payroll' && <DepartmentPayrollPanel user={shellUser} />}
         {page === 'payroll-config' && <DepartmentPayrollSettingsPage user={shellUser} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
