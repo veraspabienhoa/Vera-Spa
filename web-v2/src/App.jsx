@@ -37,6 +37,7 @@ const TourPage = lazyPage(() => import('./pages/TourPage'))
 const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
 const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
 const WorkSchedulePage = lazyPage(() => import('./pages/WorkSchedulePage'))
+const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentPayrollSettingsPage'))
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -134,6 +135,7 @@ export default function App() {
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}
         {page === 'payroll' && <PayrollPage user={shellUser} />}
+        {page === 'payroll-config' && <DepartmentPayrollSettingsPage user={shellUser} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
         {page === 'birthday' && <BirthdayPage />}

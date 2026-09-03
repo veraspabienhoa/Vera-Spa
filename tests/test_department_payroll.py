@@ -1,9 +1,11 @@
 from datetime import date
 
 from vera_web_v2_department_payroll import (
+    CALCULATION_MODES,
     DEFAULT_CONFIG,
     DEFAULT_EMAIL_TEMPLATE,
     _attendance_totals,
+    _clean_config,
     _recalculate,
     _render_template,
 )
@@ -44,6 +46,26 @@ def test_letan_is_hourly_with_30000_before_22_and_33000_after_22():
 
     assert DEFAULT_CONFIG["letan"]["calculation_mode"] == "hourly"
     assert row["salary"] == 8 * 27000 + 4.5 * 30000 + 3.5 * 33000
+
+
+def test_quanly_locker_and_letan_are_locked_to_hourly_calculation():
+    assert CALCULATION_MODES["quanly"] == "hourly"
+    assert CALCULATION_MODES["locker"] == "hourly"
+    assert CALCULATION_MODES["letan"] == "hourly"
+    assert _clean_config("quanly", {"calculation_mode": "monthly"})["calculation_mode"] == "hourly"
+
+
+def test_tapvu_uses_base_salary_prorated_over_26_work_days():
+    config = _clean_config("tapvu", {
+        "calculation_mode": "hourly",
+        "default_base_salary": 7_800_000,
+        "standard_month_days": 20,
+    })
+    row = _recalculate({"base_salary": 7_800_000, "work_days": 13}, config)
+
+    assert config["calculation_mode"] == "monthly"
+    assert config["standard_month_days"] == 26
+    assert row["salary"] == 3_900_000
 
 
 def test_ca2_is_split_at_2200_and_overnight_is_supported():

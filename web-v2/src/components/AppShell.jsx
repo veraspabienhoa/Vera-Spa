@@ -1,4 +1,4 @@
-import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
@@ -10,6 +10,7 @@ const items = [
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Bảng lương', icon: WalletCards, ready: true, permission: 'payroll_history' },
+  { id: 'payroll-config', label: 'Cấu hình lương', icon: Settings2, ready: true, permission: 'payroll_config_edit', adminOnly: true },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
@@ -286,9 +287,10 @@ export default function AppShell({ user, currentPage, onPageChange, onRefreshCur
 
         <div className="menu-caption">MENU</div>
         <nav className="nav-list">
-          {items.filter(({ id, permission, anyPermission }) => {
+          {items.filter(({ id, permission, anyPermission, adminOnly }) => {
             if (user?.must_change_password && id !== 'profile') return false
             if (user?.role === 'admin') return true
+            if (adminOnly) return false
             if (permission && user?.permissions?.[permission] !== true) return false
             if (anyPermission && !anyPermission.some((key) => user?.permissions?.[key] === true)) return false
             return true

@@ -1,4 +1,4 @@
-"""Editable penalty policies and monthly payroll for Locker and Lễ tân."""
+"""Editable monthly payroll for Quản lý, Locker, Lễ tân and Tạp vụ."""
 from __future__ import annotations
 
 import calendar
@@ -25,11 +25,37 @@ import vera_web_v2_payroll as payroll
 import vera_web_v2_snapshot as attendance
 
 
-RELEASE = "department-payroll-locker-letan-2026-09-03-v1"
-DEPARTMENTS = {"locker": "Locker", "letan": "Lễ tân"}
+RELEASE = "department-payroll-four-departments-2026-09-03-v2"
+DEPARTMENTS = {
+    "quanly": "Quản lý",
+    "locker": "Locker",
+    "letan": "Lễ tân",
+    "tapvu": "Tạp vụ",
+}
+CALCULATION_MODES = {
+    "quanly": "hourly",
+    "locker": "hourly",
+    "letan": "hourly",
+    "tapvu": "monthly",
+}
 VN_TZ = timezone(timedelta(hours=7))
 
 DEFAULT_CONFIG = {
+    "quanly": {
+        "calculation_mode": "hourly",
+        "rate_ca1": 0,
+        "rate_ca2_before_22": 0,
+        "rate_ca2_after_22": 0,
+        "standard_day_hours": 8,
+        "standard_month_days": 26,
+        "full_day_hours": 12,
+        "full_day_allowance": 0,
+        "default_base_salary": 0,
+        "default_attendance_bonus": 0,
+        "default_responsibility": 0,
+        "default_seniority": 0,
+        "default_combo_sales": 0,
+    },
     "locker": {
         "calculation_mode": "hourly",
         "rate_ca1": 27000,
@@ -56,6 +82,21 @@ DEFAULT_CONFIG = {
         "full_day_allowance": 30000,
         "default_base_salary": 0,
         "default_attendance_bonus": 500000,
+        "default_responsibility": 0,
+        "default_seniority": 0,
+        "default_combo_sales": 0,
+    },
+    "tapvu": {
+        "calculation_mode": "monthly",
+        "rate_ca1": 0,
+        "rate_ca2_before_22": 0,
+        "rate_ca2_after_22": 0,
+        "standard_day_hours": 8,
+        "standard_month_days": 26,
+        "full_day_hours": 12,
+        "full_day_allowance": 0,
+        "default_base_salary": 0,
+        "default_attendance_bonus": 0,
         "default_responsibility": 0,
         "default_seniority": 0,
         "default_combo_sales": 0,
@@ -110,7 +151,7 @@ class DepartmentSettingsUpdate(BaseModel):
 
 
 class DepartmentDraft(BaseModel):
-    department: Literal["locker", "letan"]
+    department: Literal["quanly", "locker", "letan", "tapvu"]
     month: str = Field(pattern=r"^\d{4}-\d{2}$")
     rows: list[dict[str, Any]] = Field(min_length=1, max_length=300)
 
@@ -144,10 +185,7 @@ def _setting_key(department: str, suffix: str) -> str:
 def _clean_config(department: str, raw: Any) -> dict[str, Any]:
     defaults = DEFAULT_CONFIG[department]
     source = raw if isinstance(raw, dict) else {}
-    mode = str(source.get("calculation_mode") or defaults["calculation_mode"]).lower()
-    if mode not in {"hourly", "monthly"}:
-        mode = defaults["calculation_mode"]
-    result = {"calculation_mode": mode}
+    result = {"calculation_mode": CALCULATION_MODES[department]}
     for key, value in defaults.items():
         if key == "calculation_mode":
             continue
@@ -155,6 +193,8 @@ def _clean_config(department: str, raw: Any) -> dict[str, Any]:
     result["standard_day_hours"] = max(1, result["standard_day_hours"])
     result["standard_month_days"] = max(1, result["standard_month_days"])
     result["full_day_hours"] = max(1, result["full_day_hours"])
+    if department == "tapvu":
+        result["standard_month_days"] = 26
     return result
 
 
@@ -405,7 +445,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
     def valid_department(department: str) -> str:
         value = str(department or "").lower().strip()
         if value not in DEPARTMENTS:
-            raise HTTPException(404, "Bộ phận chỉ nhận Locker hoặc Lễ tân.")
+            raise HTTPException(404, "Bộ phận không hỗ trợ bảng lương này.")
         return value
 
     @app.get("/v2/department-payroll/settings")
