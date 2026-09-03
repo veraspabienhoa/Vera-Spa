@@ -1,5 +1,5 @@
-import { Download, Mail, Plus, RefreshCw, Save, Send, Settings2, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Download, Mail, RefreshCw, Save, Send, Settings2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { numberInputDisplayValue } from '../lib/numberInput'
 
@@ -54,22 +54,6 @@ const editableFields = [
   ['violation_penalty', 'Phạt vi phạm'], ['late_penalty', 'Phạt đi trễ'], ['advance', 'Tiền đã ứng'],
 ]
 
-const hourlyConfigFields = [
-  ['rate_ca1', 'Lương giờ Ca 1'], ['rate_ca2_before_22', 'Ca 2 trước 22h'],
-  ['rate_ca2_after_22', 'Ca 2 sau 22h'],
-]
-
-const monthlyConfigFields = [
-  ['default_base_salary', 'Lương cơ bản mặc định'],
-]
-
-const sharedConfigFields = [
-  ['standard_day_hours', 'Số giờ quy đổi 1 ngày'], ['full_day_hours', 'Số giờ đạt Full'],
-  ['full_day_allowance', 'Phụ cấp mỗi ngày Full'],
-  ['default_attendance_bonus', 'Chuyên cần mặc định'], ['default_responsibility', 'Trách nhiệm mặc định'],
-  ['default_seniority', 'Thâm niên mặc định'], ['default_combo_sales', 'Bán combo mặc định'],
-]
-
 const operationsEmployeeFields = [
   ['rate_ca1', 'Lương giờ Ca 1'], ['rate_ca2_before_22', 'Ca 2 trước 22h'],
   ['rate_ca2_after_22', 'Ca 2 sau 22h'], ['full_day_allowance', 'Phụ cấp Full/ngày'],
@@ -82,20 +66,6 @@ const tapvuEmployeeFields = [
   ['default_responsibility', 'Trách nhiệm'], ['default_seniority', 'Thâm niên'],
   ['default_combo_sales', 'Khoản cộng mặc định'],
 ]
-
-function sampleEmail(template, department, month, row) {
-  const sample = row || { employee_name: 'Nguyễn Văn A', total_salary: 10000000, violation_penalty: 0, late_penalty: 50000, net_salary: 9950000 }
-  const values = {
-    ten_nhan_vien: sample.employee_name || sample.employee_username,
-    bo_phan: labels[department], thang: month.split('-').reverse().join('/'),
-    tong_luong: money(sample.total_salary),
-    tong_phat: money(Number(sample.violation_penalty || 0) + Number(sample.late_penalty || 0)),
-    thuc_nhan: money(sample.net_salary),
-    bang_chi_tiet: 'Chi tiết các khoản lương và khấu trừ được đính kèm trong file Excel.',
-  }
-  const apply = (value) => Object.entries(values).reduce((text, [key, replacement]) => text.replaceAll(`{${key}}`, replacement), String(value || ''))
-  return { subject: apply(template.subject), body: apply(template.body) }
-}
 
 export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const role = String(user?.role || '').toLowerCase()
@@ -115,11 +85,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [notice, setNotice] = useState(null)
 
   const current = settings[department] || { config: {}, penalty_rules: [], email_template: { subject: '', body: '' } }
-  const preview = useMemo(() => sampleEmail(current.email_template || {}, department, month, rows[0]), [current.email_template, department, month, rows])
   const totalNet = rows.reduce((sum, row) => sum + Number(row.net_salary || 0), 0)
-  const visibleConfigFields = current.config.calculation_mode === 'monthly'
-    ? [...monthlyConfigFields, ...sharedConfigFields]
-    : [...hourlyConfigFields, ...sharedConfigFields]
 
   const run = async (key, callback) => {
     setBusy(key); setNotice(null)
@@ -133,19 +99,6 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   })
 
   useEffect(() => { void loadSettings() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const updateCurrent = (patch) => setSettings((value) => ({ ...value, [department]: { ...current, ...patch } }))
-  const updateConfig = (key, value) => updateCurrent({ config: { ...current.config, [key]: value } })
-  const updateTemplate = (key, value) => updateCurrent({ email_template: { ...current.email_template, [key]: value } })
-  const updateRule = (index, key, value) => updateCurrent({ penalty_rules: current.penalty_rules.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) })
-
-  const saveSettings = () => run('settings-save', async () => {
-    const result = await request(`/v2/department-payroll/settings/${department}`, {
-      method: 'PUT', body: JSON.stringify({ config: current.config, penalty_rules: current.penalty_rules, email_template: current.email_template }),
-    })
-    setSettings((value) => ({ ...value, [department]: result }))
-    setNotice({ type: 'success', message: result.message })
-  })
 
   const calculate = () => run('calculate', async () => {
     const result = await request(`/v2/department-payroll/calculate?department=${department}&month=${month}`)
@@ -216,23 +169,6 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
       {!items.length && <div className="setup-note">Chưa có nhân viên đang làm việc trong nhóm này.</div>}
     </section>
   }
-
-  const settingsPanel = canConfig ? <div className="department-payroll-settings department-payroll-settings-standalone">
-    <div className="payroll-calculation-mode">
-      <strong>{current.config.calculation_mode === 'monthly' ? 'Lương cơ bản theo 26 ngày công' : 'Lương theo số giờ chấm công'}</strong>
-      <span>{current.config.calculation_mode === 'monthly' ? 'Tiền lương = lương cơ bản × ngày công thực tế / ngày công chuẩn.' : 'Tiền lương = tổng số giờ từng ca × mức lương giờ tương ứng.'}</span>
-    </div>
-    <h3>CÔNG THỨC LƯƠNG {labels[department].toUpperCase()}</h3>
-    <div className="payroll-config-grid">{visibleConfigFields.map(([key, label]) => <label key={key}>{label}<input type="number" min="0" value={numberInputDisplayValue(current.config[key])} onChange={(event) => updateConfig(key, Number(event.target.value))} /></label>)}</div>
-
-    <div className="panel-title-row department-rule-title"><div><h3>BẢNG QUY ĐỊNH PHẠT RIÊNG</h3><p>Đang để trống để Admin nhập quy định sau. Chỉ các quy định bật mới được sử dụng.</p></div><button className="secondary-button" onClick={() => updateCurrent({ penalty_rules: [...current.penalty_rules, { id: crypto.randomUUID(), name: 'Quy định mới', amount: 0, note: '', enabled: true }] })}><Plus size={15} /> Thêm quy định</button></div>
-    <div className="responsive-data-table"><table><thead><tr><th>Áp dụng</th><th>Tên quy định</th><th>Mức phạt</th><th>Ghi chú</th><th /></tr></thead><tbody>{current.penalty_rules.map((rule, index) => <tr key={rule.id}><td><input type="checkbox" checked={rule.enabled !== false} onChange={(event) => updateRule(index, 'enabled', event.target.checked)} /></td><td><input value={rule.name} onChange={(event) => updateRule(index, 'name', event.target.value)} /></td><td><input type="number" min="0" value={numberInputDisplayValue(rule.amount)} onChange={(event) => updateRule(index, 'amount', Number(event.target.value))} /></td><td><input value={rule.note || ''} onChange={(event) => updateRule(index, 'note', event.target.value)} /></td><td><button className="icon-button danger" onClick={() => updateCurrent({ penalty_rules: current.penalty_rules.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>
-    {!current.penalty_rules.length && <div className="setup-note">Chưa nhập quy định phạt cho {labels[department]}.</div>}
-
-    <h3>MẪU EMAIL BẢNG LƯƠNG</h3>
-    <div className="department-email-grid"><div><label>Tiêu đề<input value={current.email_template.subject || ''} onChange={(event) => updateTemplate('subject', event.target.value)} /></label><label>Nội dung<textarea rows="12" value={current.email_template.body || ''} onChange={(event) => updateTemplate('body', event.target.value)} /></label><small>Biến dùng được: {'{ten_nhan_vien}'}, {'{bo_phan}'}, {'{thang}'}, {'{tong_luong}'}, {'{tong_phat}'}, {'{thuc_nhan}'}, {'{bang_chi_tiet}'}</small></div><div className="department-email-preview"><strong>{preview.subject}</strong><pre>{preview.body}</pre></div></div>
-    <button className="primary-button" disabled={Boolean(busy)} onClick={saveSettings}><Save size={16} /> Lưu mức lương, phụ cấp và mẫu email</button>
-  </div> : <div className="error-box">Chỉ Admin được thay đổi cấu hình lương và phụ cấp.</div>
 
   if (settingsOnly) return <div className="feature-page department-payroll-page department-payroll-config-page">
     <section className="panel department-payroll-panel">
