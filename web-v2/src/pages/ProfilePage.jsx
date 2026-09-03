@@ -21,12 +21,15 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   const [notice, setNotice] = useState(null)
   const [push, setPush] = useState({ loading: true, supported: false, subscribed: false })
   const [pushBusy, setPushBusy] = useState(false)
+  const [adminUsername, setAdminUsername] = useState(user?.employee_username || '')
+  const [renamingUsername, setRenamingUsername] = useState(false)
 
   const load = async () => {
     setLoading(true)
     try {
       const [result, catalogs] = await Promise.all([veraApi.profile(), veraApi.profileReferenceData()])
       setForm((current) => ({ ...current, ...result.profile, birth_date: toInputDate(result.profile.birth_date), current_password: '', new_password: '' }))
+      setAdminUsername(result.profile.username || '')
       let wards = []
       const province = (catalogs.provinces || []).find((item) => item.name === result.profile.province)
       if (province) wards = (await veraApi.profileReferenceData(province.code)).wards || []
@@ -69,6 +72,33 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
     finally { setPushBusy(false) }
   }
 
+  const renameAdminUsername = async () => {
+    const currentUsername = String(user?.employee_username || '').trim()
+    const nextUsername = String(adminUsername || '').trim().replace(/\s+/g, ' ')
+    setNotice(null)
+    if (!currentUsername || user?.role !== 'admin') return
+    if (!nextUsername) {
+      setNotice({ status: 'error', message: 'Tên đăng nhập Admin không được để trống.' })
+      return
+    }
+    if (nextUsername === currentUsername) {
+      setNotice({ status: 'error', message: 'Tên đăng nhập mới phải khác tên hiện tại.' })
+      return
+    }
+    if (!window.confirm(`Đổi tên đăng nhập Admin:\n${currentUsername} → ${nextUsername}\n\nSau khi đổi, hệ thống sẽ đăng xuất. Hãy đăng nhập lại bằng tên mới.`)) return
+    setRenamingUsername(true)
+    try {
+      const result = await veraApi.renameSystemName(currentUsername, nextUsername)
+      setNotice({ status: 'success', message: `${result.message} Hệ thống đang đăng xuất để cập nhật tài khoản.` })
+      window.dispatchEvent(new CustomEvent('vera-profile-updated'))
+      window.setTimeout(onPasswordChanged, 1500)
+    } catch (error) {
+      setNotice({ status: 'error', message: `KHÔNG THÀNH CÔNG (${error.message})` })
+    } finally {
+      setRenamingUsername(false)
+    }
+  }
+
   const changeProvince = async (provinceName) => {
     setForm((current) => ({ ...current, province: provinceName, ward: '' }))
     const province = references.provinces.find((item) => item.name === provinceName)
@@ -109,6 +139,17 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <button className="primary-button wide-field" disabled={saving}><Save size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>
       </form>
     </section>
+    {user?.role === 'admin' && !forcePasswordChange && <section className="panel android-push-panel admin-username-panel">
+      <div>
+        <span className="eyebrow"><ShieldCheck size={14} /> Chỉ Admin</span>
+        <h2>ĐỔI TÊN ĐĂNG NHẬP ADMIN</h2>
+        <p>Tên mới sẽ trở thành tên đăng nhập chính. Dữ liệu, quyền Admin, lịch sử và thông báo vẫn được giữ nguyên.</p>
+        <label>Tên đăng nhập mới<input value={adminUsername} onChange={(event) => setAdminUsername(event.target.value)} maxLength="120" autoComplete="username" /></label>
+      </div>
+      <button className="primary-button" type="button" onClick={renameAdminUsername} disabled={renamingUsername || loading}>
+        <Save size={16} /> {renamingUsername ? 'Đang đổi…' : 'Đổi tên đăng nhập'}
+      </button>
+    </section>}
     <section className="panel android-push-panel">
       <div><span className="eyebrow"><Smartphone size={14} /> iPhone · Android</span><h2>THÔNG BÁO MÀN HÌNH KHÓA</h2><p>Mỗi điện thoại đăng nhập có thể bật Web Push riêng. Trên iPhone/iPad, hãy thêm VERA SPA vào Màn hình chính rồi mở từ biểu tượng; trên Android, dùng Chrome. Chế độ Không làm phiền vẫn có thể chặn âm thanh.</p></div>
       <button className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo thiết bị này')}</button>
