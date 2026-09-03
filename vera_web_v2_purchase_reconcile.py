@@ -24,6 +24,7 @@ from vera_web_v2_revenue_leave_list import (
     _dates_in_text,
     _money,
     _parse_date,
+    _read_revenue_values,
 )
 
 
@@ -329,13 +330,7 @@ def install_purchase_reconcile_routes(
         start, end = _resolve_range(preset, start_date, end_date)
         purchase_content = _drive_download_purchase_report()
         purchase_all = _parse_purchase_report(purchase_content, norm)
-        try:
-            revenue_values = google_client().open_by_key(REVENUE_SPREADSHEET_ID).worksheet(REVENUE_WORKSHEET).get_all_values()
-        except Exception as exc:
-            raise HTTPException(
-                503,
-                f"Không đọc được Quản lý Thu Chi · sheet {REVENUE_WORKSHEET}: {type(exc).__name__}.",
-            ) from exc
+        revenue_values = _read_revenue_values(google_client)
         ledger_all = _parse_revenue_input(revenue_values, norm)
 
         purchase_rows = _filtered(purchase_all, start, end)

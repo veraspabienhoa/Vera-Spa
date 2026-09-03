@@ -1,6 +1,7 @@
 """Revenue summary and leave-list read enhancements for VERA SPA Web V2."""
 from __future__ import annotations
 
+import csv
 from datetime import date, datetime, timedelta, timezone
 import json
 import os
@@ -9,6 +10,7 @@ from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+import requests
 from sqlalchemy import text
 
 import vera_web_v2_permissions as permissions
@@ -199,15 +201,39 @@ def _save_period_tip(conn, start_date_text: str, amount: float, actor: str) -> N
     })
 
 
+def _read_public_revenue_values() -> list[list[str]]:
+    response = requests.get(
+        f"https://docs.google.com/spreadsheets/d/{REVENUE_SPREADSHEET_ID}/gviz/tq",
+        params={"tqx": "out:csv", "sheet": REVENUE_WORKSHEET},
+        timeout=30,
+    )
+    response.raise_for_status()
+    response.encoding = "utf-8"
+    values = list(csv.reader(response.text.splitlines()))
+    if not values:
+        raise RuntimeError("Public Google Sheets response is empty")
+    return values
+
+
 def _read_revenue_values(google_client) -> list[list[Any]]:
+    credential_error: Exception | None = None
     try:
         worksheet = google_client().open_by_key(REVENUE_SPREADSHEET_ID).worksheet(REVENUE_WORKSHEET)
         return worksheet.get_all_values()
     except Exception as exc:
+        credential_error = exc
+
+    # Quản lý Thu Chi is intentionally shared read-only. VPS deployments do
+    # not have Google Application Default Credentials, so use the official
+    # Google Visualization CSV endpoint as a credential-free read fallback.
+    try:
+        return _read_public_revenue_values()
+    except Exception as public_exc:
         raise HTTPException(
             503,
-            f"Không đọc được Quản lý Thu Chi · sheet {REVENUE_WORKSHEET}: {type(exc).__name__}.",
-        ) from exc
+            f"Không đọc được Quản lý Thu Chi · sheet {REVENUE_WORKSHEET}: "
+            f"{type(credential_error).__name__} / {type(public_exc).__name__}.",
+        ) from public_exc
 
 
 def _progressive_detail_map(conn, start_date: date, end_date: date, progressive_key) -> dict[str, str]:
