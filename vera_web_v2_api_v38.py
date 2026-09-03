@@ -8,6 +8,7 @@ import vera_web_v2_snapshot as _snapshot
 from vera_web_v2_accumulation_permission import install_accumulation_permission
 from vera_web_v2_admin_audit_archive import install_admin_audit_archive_routes
 from vera_web_v2_admin_change_push import install_admin_change_push
+from vera_web_v2_auth_gateway import install_auth_gateway
 from vera_web_v2_attendance_v42 import install_attendance_v42
 from vera_web_v2_attendance_break_window import install_attendance_break_window
 from vera_web_v2_attendance_break_alerts import install_attendance_break_alerts
@@ -59,6 +60,12 @@ _audit_archive.identity_type = _api.Identity
 _audit_archive.leave_update_type = _api.LeaveUpdate
 _audit_archive.leave_delete_type = _api.LeaveDelete
 _staff_sort.identity_type = _api.Identity
+
+install_auth_gateway(
+    _shared.app,
+    supabase_url=_api.SUPABASE_URL,
+    supabase_anon_key=_api.SUPABASE_ANON_KEY,
+)
 
 install_payroll_v38_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity, google_client=_api._google_client)
 install_department_payroll_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm)

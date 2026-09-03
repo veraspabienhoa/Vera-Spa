@@ -1,6 +1,6 @@
 import { Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { isAuthConfigured, signInWithVeraPassword } from '../lib/supabase'
 import { unlockWatchBellAudio } from '../lib/watchBell'
 
 export default function LoginPage({ externalError = '' }) {
@@ -15,32 +15,13 @@ export default function LoginPage({ externalError = '' }) {
     event.preventDefault()
     void unlockWatchBellAudio()
     setError('')
-    if (!isSupabaseConfigured || !supabase) {
-      setError('Chưa cấu hình Supabase cho hệ thống.')
+    if (!isAuthConfigured) {
+      setError('Chưa cấu hình máy chủ đăng nhập cho hệ thống.')
       return
     }
     setBusy(true)
     try {
-      const { data: bridge, error: bridgeError } = await supabase.functions.invoke('vera-v2-login', {
-        body: { username: username.trim(), password },
-      })
-      if (bridgeError) {
-        let detail = bridgeError.message
-        try {
-          const responseBody = await bridgeError.context?.json?.()
-          detail = responseBody?.message || detail
-        } catch {
-          // Keep the SDK error message when the Edge Function response has no JSON body.
-        }
-        throw new Error(detail || 'Không xác thực được tài khoản VERA.')
-      }
-      if (!bridge?.email || !bridge?.password) throw new Error(bridge?.message || 'Không xác thực được tài khoản VERA.')
-
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: bridge.email,
-        password: bridge.password,
-      })
-      if (signInError) throw signInError
+      await signInWithVeraPassword(username, password)
       setPassword('')
       setShowPassword(false)
     } catch (err) {
@@ -121,7 +102,7 @@ export default function LoginPage({ externalError = '' }) {
           {error && <div className="error-box">{error}</div>}
           <button className="primary-button full" type="submit" disabled={busy}>{busy ? 'Đang xác thực…' : 'Đăng nhập'}</button>
 
-          {!isSupabaseConfigured && <div className="setup-note">Supabase chưa được cấu hình cho bản deploy này.</div>}
+          {!isAuthConfigured && <div className="setup-note">Máy chủ đăng nhập chưa được cấu hình cho bản deploy này.</div>}
         </form>
       </section>
     </div>

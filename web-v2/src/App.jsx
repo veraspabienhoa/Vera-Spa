@@ -12,7 +12,7 @@ import EmployeeExactSearch from './pages/EmployeeExactSearch'
 import TourAdminCustomerCount from './pages/TourAdminCustomerCount'
 import { veraApi } from './lib/api'
 import { ensureGrantedPushSubscription } from './lib/pushNotifications'
-import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
 const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'auto-check', 'changes', 'storage'])
@@ -61,14 +61,14 @@ const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollP
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(isSupabaseConfigured)
+  const [loading, setLoading] = useState(isAuthConfigured)
   const [authError, setAuthError] = useState('')
   const [page, setPage] = useState('leave')
   const [pageRefreshRevision, setPageRefreshRevision] = useState(0)
   const [longLeaveRevision, setLongLeaveRevision] = useState(0)
 
   useEffect(() => {
-    if (!supabase) return undefined
+    if (!isAuthConfigured) return undefined
     let mounted = true
     const applySession = async (nextSession) => {
       if (!mounted) return
@@ -82,12 +82,14 @@ export default function App() {
           setPage(me.must_change_password ? 'profile' : readActivePage(nextSession.user))
         }
       } catch (err) {
-        if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await supabase.auth.signOut({ scope: 'local' }).catch(() => {}); setSession(null) }
+        if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await signOutVera(); setSession(null) }
       } finally { if (mounted) setLoading(false) }
     }
-    supabase.auth.getSession().then(({ data }) => applySession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => applySession(nextSession))
-    return () => { mounted = false; listener.subscription.unsubscribe() }
+    getCurrentSession().then(applySession).catch((err) => {
+      if (mounted) { setAuthError(err.message || 'Không mở được phiên đăng nhập VERA.'); setLoading(false) }
+    })
+    const unsubscribe = onVeraAuthStateChange((_event, nextSession) => applySession(nextSession))
+    return () => { mounted = false; unsubscribe() }
   }, [])
 
   // Every authenticated account keeps an already-approved Web Push endpoint
@@ -123,7 +125,8 @@ export default function App() {
   const user = session?.user
   if (!user) return <LoginPage externalError={authError} />
 
-  const signOut = async () => { setProfile(null); if (supabase && session) await supabase.auth.signOut({ scope: 'local' }) }
+  // signOutVera keeps the Supabase fallback local-only: signOut({ scope: 'local' }).
+  const signOut = async () => { setProfile(null); if (session) await signOutVera() }
   const changePage = (nextPage) => {
     rememberActivePage(user, nextPage)
     setPage(nextPage)

@@ -5,9 +5,9 @@ Frontend mới chạy **song song** với Streamlit hiện tại. Các module đ
 ## Kiến trúc
 
 - React + Vite: giao diện web/mobile.
-- Supabase Auth: phiên đăng nhập Web V2.
+- Python API tại `https://api.veraspa.vn`: cổng đăng nhập chính và mọi thao tác nghiệp vụ nhạy cảm.
+- Supabase Auth: phát hành phiên đăng nhập ở phía máy chủ; trình duyệt chỉ gọi trực tiếp như đường dự phòng khi API không kết nối được.
 - Supabase/PostgreSQL: database canonical hiện có.
-- Python API: mọi thao tác nghiệp vụ nhạy cảm (đăng ký/sửa/xóa nghỉ, tính phép/phạt, record_uid, log, mirror Google Sheets).
 - GitHub Pages: frontend hosting miễn phí.
 
 **Không** đưa service-role key, mật khẩu PostgreSQL, TimeSoft credential hoặc Google credential vào `VITE_*` vì mọi biến Vite đều xuất hiện trong browser bundle.
@@ -57,7 +57,7 @@ Các config public của frontend có thể đặt bằng GitHub repository Vari
 
 Không dùng GitHub Pages để chứa secret server-side.
 
-Web V2 không có đường đăng nhập Demo hoặc chế độ bỏ qua xác thực. Mọi trang nghiệp vụ chỉ hiển thị sau khi Supabase xác thực và Python API xác minh hồ sơ VERA đang hoạt động.
+Web V2 không có đường đăng nhập Demo hoặc chế độ bỏ qua xác thực. Đăng nhập ưu tiên `api.veraspa.vn`; mọi trang nghiệp vụ chỉ hiển thị sau khi API xác minh phiên Supabase và hồ sơ VERA đang hoạt động.
 
 ## Kích hoạt bản pilot trên `main`
 
@@ -66,7 +66,7 @@ Web V2 không có đường đăng nhập Demo hoặc chế độ bỏ qua xác 
 3. Có thể mở **Settings → Secrets and variables → Actions → Variables** để ghi đè các giá trị public mặc định:
    - `VITE_SUPABASE_URL`: URL project Supabase.
    - `VITE_SUPABASE_ANON_KEY`: publishable/anon key dùng cho browser.
-   - `VITE_VERA_API_BASE_URL`: URL của Cloud Run service `vera-spa-api`.
+   - `VITE_VERA_API_BASE_URL`: `https://api.veraspa.vn`.
 4. Mở **Settings → Pages → Build and deployment** và chọn **GitHub Actions**.
 5. Commit các file Web V2 vào `main`. Workflow `Deploy VERA SPA Web V2` sẽ tự lint, build và deploy.
 

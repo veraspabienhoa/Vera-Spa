@@ -42,7 +42,7 @@ jobs:
           # Repository variables can still override the known VERA production defaults.
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://nunxfjhrszmlyyrvphuq.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_idnn4HeEozpAonmSqM4Tgw_bB8HW4FX' }}
-          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL || 'https://vera-spa-api-589916994342.asia-southeast1.run.app' }}
+          VITE_VERA_API_BASE_URL: https://api.veraspa.vn
         shell: bash
         run: |
           test -n "$VITE_SUPABASE_URL" || { echo "Missing repository variable: VITE_SUPABASE_URL"; exit 1; }
@@ -62,7 +62,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://nunxfjhrszmlyyrvphuq.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_idnn4HeEozpAonmSqM4Tgw_bB8HW4FX' }}
-          VITE_VERA_API_BASE_URL: ${{ vars.VITE_VERA_API_BASE_URL || 'https://vera-spa-api-589916994342.asia-southeast1.run.app' }}
+          VITE_VERA_API_BASE_URL: https://api.veraspa.vn
           VITE_VERA_DEMO_MODE: "0"
         run: npm run build
 

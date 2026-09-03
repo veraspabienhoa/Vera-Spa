@@ -53,6 +53,38 @@ jobs:
           print(f"Compiled {len(files)} Python files successfully.")
           PY
 
+      - name: Verify API-primary authentication gateway
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          gateway = Path('vera_web_v2_auth_gateway.py').read_text(encoding='utf-8')
+          entrypoint = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
+          auth_client = Path('web-v2/src/lib/supabase.js').read_text(encoding='utf-8')
+          login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
+          pages_workflow = Path('.github/workflows/vera-web-v2-pages.yml').read_text(encoding='utf-8')
+          public_session = gateway.split('def _public_session', 1)[1].split('def install_auth_gateway', 1)[0]
+          ast.parse(gateway)
+          checks = {
+              'API login route exists': '@app.post("/v2/auth/login")' in gateway,
+              'API refresh route exists': '@app.post("/v2/auth/refresh")' in gateway,
+              'bridge password is not returned': '"password"' not in public_session,
+              'auth responses are never cached': '"Cache-Control": "no-store, max-age=0"' in gateway,
+              'gateway is installed in production entrypoint': 'install_auth_gateway(' in entrypoint,
+              'browser uses API login first': "apiAuthRequest('/v2/auth/login'" in auth_client,
+              'API authentication remains refreshable': "apiAuthRequest('/v2/auth/refresh'" in auth_client,
+              'login page delegates to central auth': 'signInWithVeraPassword(username, password)' in login_page,
+              'public build uses api.veraspa.vn': pages_workflow.count('VITE_VERA_API_BASE_URL: https://api.veraspa.vn') == 2,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed API-primary auth invariants: ' + ', '.join(failed))
+          PY
+
       - name: Verify runtime patch chain compiles
         shell: bash
         run: |
