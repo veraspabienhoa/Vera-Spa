@@ -54,7 +54,7 @@ CORS_ORIGINS = [
     x.strip()
     for x in os.getenv(
         "VERA_V2_CORS_ORIGINS",
-        "https://app.veraspa.vn,https://veraspabienhoa.github.io,http://localhost:5173,http://127.0.0.1:5173",
+        "https://veraspabienhoa.github.io,http://localhost:5173,http://127.0.0.1:5173",
     ).split(",")
     if x.strip()
 ]

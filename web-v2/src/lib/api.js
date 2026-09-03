@@ -20,9 +20,7 @@ async function request(path, options = {}) {
   // Cloud Run can need a few seconds to wake or switch revisions. Three GET
   // attempts prevent a transient rollout/cold-start from becoming a false
   // "Failed to fetch" screen while keeping writes single-shot.
-  const attempts = method === 'GET' || path === '/v2/payroll/history/sync-legacy'
-    ? 3
-    : path === '/v2/payroll/save' ? 2 : 1
+  const attempts = method === 'GET' || path === '/v2/payroll/history/sync-legacy' ? 3 : 1
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       response = await fetch(`${apiBase}${path}`, { ...options, headers })
