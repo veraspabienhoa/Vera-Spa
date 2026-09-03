@@ -13,6 +13,7 @@ from vera_web_v2_attendance_break_window import install_attendance_break_window
 from vera_web_v2_attendance_break_alerts import install_attendance_break_alerts
 from vera_web_v2_attendance_break_dispatch import install_attendance_break_dispatch
 from vera_web_v2_attendance_policy_patch import install_attendance_policy_patch
+from vera_web_v2_department_attendance import install_department_attendance_routes
 from vera_web_v2_break_alert_control import install_break_alert_control
 from vera_web_v2_break_return_penalty import install_break_return_penalty
 from vera_web_v2_auto_check import install_auto_check_routes
@@ -90,6 +91,7 @@ install_purchase_reconcile_v2(_shared.app, engine_instance=_api._engine_instance
 install_purchase_reconcile_alert_check(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client)
 
 install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
+install_department_attendance_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_attendance_break_window(_shared.app)
 install_attendance_break_alerts(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, vn_tz=_api.VN_TZ)
 install_attendance_policy_patch()

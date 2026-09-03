@@ -1,4 +1,4 @@
-import { CalendarDays, Download, RefreshCw, ScanLine, X } from 'lucide-react'
+import { BellRing, CalendarDays, Download, Power, RefreshCw, ScanLine, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 
@@ -124,9 +124,11 @@ async function authHeaders() {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
 }
 
-async function requestJson(path) {
+async function requestJson(path, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const response = await fetch(`${apiBase}${path}`, { headers: await authHeaders() })
+  const headers = new Headers(await authHeaders())
+  if (options.body) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${apiBase}${path}`, { ...options, headers })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -163,7 +165,13 @@ export default function SnapshotPage({ user }) {
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [clockMs, setClockMs] = useState(Date.now())
+  const [departmentControls, setDepartmentControls] = useState({
+    locker: { attendance_enabled: true, notifications_enabled: true },
+    letan: { attendance_enabled: true, notifications_enabled: true },
+  })
+  const [controlBusy, setControlBusy] = useState('')
   const requestRevisionRef = useRef(0)
+  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
 
   const summary = useMemo(() => ({
     employees: records.length,
@@ -216,6 +224,12 @@ export default function SnapshotPage({ user }) {
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
+    if (!isAdmin) return
+    requestJson('/v2/attendance/department-controls')
+      .then((result) => setDepartmentControls(result.departments || {}))
+      .catch((e) => setError(e.message || 'Không tải được cấu hình chấm công bộ phận.'))
+  }, [isAdmin])
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       const next = normalizedFilters(filters)
       setApplied((current) => (
@@ -241,6 +255,24 @@ export default function SnapshotPage({ user }) {
 
   const clearFilters = () => { setFilters(emptyFilters); setApplied(emptyFilters) }
 
+  const toggleDepartmentControl = async (department, key) => {
+    const current = departmentControls[department] || {}
+    const busyKey = `${department}-${key}`
+    setControlBusy(busyKey); setError('')
+    try {
+      const result = await requestJson(`/v2/attendance/department-controls/${department}`, {
+        method: 'PUT', body: JSON.stringify({ [key]: !current[key] }),
+      })
+      setDepartmentControls((value) => ({ ...value, [department]: {
+        attendance_enabled: result.attendance_enabled,
+        notifications_enabled: result.notifications_enabled,
+      }}))
+      if (key === 'attendance_enabled') await load()
+    } catch (e) {
+      setError(e.message || 'Không cập nhật được cấu hình chấm công bộ phận.')
+    } finally { setControlBusy('') }
+  }
+
   const exportExcel = async () => {
     setExporting(true); setError('')
     try { await downloadExcel(`/v2/snapshot/export.xlsx?${queryString(normalizedFilters(filters))}`, 'VERA_ChamCong.xlsx') }
@@ -253,11 +285,23 @@ export default function SnapshotPage({ user }) {
       .attendance-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end}.attendance-filter-content{min-width:0}.attendance-filter-buttons{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}.attendance-filter-buttons button{padding:8px 11px}.attendance-search-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:10px;width:100%}.attendance-search-grid label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:800}.attendance-search-grid input{width:100%}.attendance-toolbar-actions{display:flex;gap:8px;align-items:center}.attendance-toolbar-actions button{white-space:nowrap}.attendance-date-custom{display:grid;grid-template-columns:repeat(2,minmax(180px,260px));gap:10px;margin-bottom:12px}.attendance-date-custom label{min-width:0}.attendance-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.attendance-kpi{padding:14px;border:1px solid var(--line,#dfe8e2);border-radius:14px;background:#f8fbf9}.attendance-kpi strong{display:block;font-size:24px;color:#173d31}.attendance-kpi span{font-size:12px;color:#63736d}
       .attendance-page .responsive-data-table{overflow-x:hidden}.attendance-page .responsive-data-table table{width:100%;min-width:0;table-layout:fixed}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{overflow-wrap:anywhere;word-break:break-word;vertical-align:top}.attendance-page .responsive-data-table th:nth-child(1),.attendance-page .responsive-data-table td:nth-child(1){width:11%}.attendance-page .responsive-data-table th:nth-child(2),.attendance-page .responsive-data-table td:nth-child(2){width:16%}.attendance-page .responsive-data-table th:nth-child(3),.attendance-page .responsive-data-table td:nth-child(3){width:14%}.attendance-page .responsive-data-table th:nth-child(4),.attendance-page .responsive-data-table td:nth-child(4){width:17%}.attendance-page .responsive-data-table th:nth-child(5),.attendance-page .responsive-data-table td:nth-child(5){width:23%}.attendance-page .responsive-data-table th:nth-child(6),.attendance-page .responsive-data-table td:nth-child(6){width:19%}
       .attendance-break{min-width:0}.attendance-break strong{display:block}.attendance-break small{display:block;margin-top:4px}.attendance-source{color:#6d7d77}.attendance-warning{color:#a33b32;font-weight:800}.attendance-ok{color:#28705a;font-weight:800}.attendance-default{color:inherit;font-weight:400}.attendance-break-active{color:#b91c1c;font-weight:900}.attendance-break-detail{font-weight:800;color:#324a40}.attendance-break-live{font-weight:900;color:#9b2b22}.attendance-break-live.ok{color:#1664a7}.attendance-break-late,.attendance-break-late strong,.attendance-break-late small{color:#b91c1c!important;font-weight:900}.attendance-restricted,.attendance-restricted-status{color:#b45309;font-weight:900}.attendance-restricted-detail{color:#92400e;font-weight:800}.attendance-status-cell{min-width:0}.attendance-status-cell strong,.attendance-status-cell small{display:block}.attendance-status-cell small{margin-top:4px}
-      @media(max-width:820px){.attendance-toolbar{display:block;padding:12px}.attendance-filter-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:10px}.attendance-filter-buttons button{min-height:44px;padding:8px 5px;font-size:13px}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-date-custom{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}.attendance-date-custom label{font-size:12px}.attendance-date-custom input{min-width:0;padding:9px 6px}.attendance-search-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.attendance-search-grid label:first-child{grid-column:1/-1}.attendance-search-grid label{gap:4px;font-size:12px}.attendance-search-grid input{min-height:46px;padding:10px 12px;font-size:15px}.attendance-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px}.attendance-toolbar-actions button{width:100%;min-height:44px}.attendance-toolbar-actions button:only-child{grid-column:1/-1}.attendance-kpis{grid-template-columns:repeat(2,1fr)}.attendance-page .responsive-data-table{margin-left:-10px;margin-right:-10px;width:calc(100% + 20px)}.attendance-page .responsive-data-table table{font-size:9px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:5px 3px;line-height:1.15}.attendance-page .responsive-data-table th{font-size:8px;letter-spacing:-.1px}.attendance-page .responsive-data-table td strong{font-size:9px;line-height:1.15}.attendance-page .responsive-data-table td small{font-size:8px;line-height:1.15;margin-top:2px}.attendance-page .attendance-break{min-width:0}.attendance-page .attendance-status-cell{min-width:0}}
+      .attendance-department-controls{margin-bottom:12px}.attendance-department-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.attendance-department-card{padding:14px;border:1px solid var(--line,#dfe8e2);border-radius:14px;background:#f8fbf9}.attendance-department-card h3{margin:0 0 4px}.attendance-department-card p{margin:0 0 12px;color:#63736d;font-size:13px}.attendance-control-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.attendance-control-actions button{justify-content:center}.attendance-control-off{border-color:#efb1ad!important;color:#a33b32!important;background:#fff4f3!important}
+      @media(max-width:820px){.attendance-toolbar{display:block;padding:12px}.attendance-department-grid{grid-template-columns:1fr}.attendance-control-actions{grid-template-columns:1fr}.attendance-filter-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:10px}.attendance-filter-buttons button{min-height:44px;padding:8px 5px;font-size:13px}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-date-custom{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}.attendance-date-custom label{font-size:12px}.attendance-date-custom input{min-width:0;padding:9px 6px}.attendance-search-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.attendance-search-grid label:first-child{grid-column:1/-1}.attendance-search-grid label{gap:4px;font-size:12px}.attendance-search-grid input{min-height:46px;padding:10px 12px;font-size:15px}.attendance-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px}.attendance-toolbar-actions button{width:100%;min-height:44px}.attendance-toolbar-actions button:only-child{grid-column:1/-1}.attendance-kpis{grid-template-columns:repeat(2,1fr)}.attendance-page .responsive-data-table{margin-left:-10px;margin-right:-10px;width:calc(100% + 20px)}.attendance-page .responsive-data-table table{font-size:9px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:5px 3px;line-height:1.15}.attendance-page .responsive-data-table th{font-size:8px;letter-spacing:-.1px}.attendance-page .responsive-data-table td strong{font-size:9px;line-height:1.15}.attendance-page .responsive-data-table td small{font-size:8px;line-height:1.15;margin-top:2px}.attendance-page .attendance-break{min-width:0}.attendance-page .attendance-status-cell{min-width:0}}
       @media(max-width:390px){.attendance-filter-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-page .responsive-data-table table{font-size:8px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:4px 2px}.attendance-page .responsive-data-table td strong{font-size:8px}.attendance-page .responsive-data-table td small{font-size:7px}}
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>Dữ liệu chấm công TimeSoft được đồng bộ vào PostgreSQL. Khi TimeSoft chưa có dữ liệu nghỉ giữa ca, hệ thống mới dùng TourVera R/S/U.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
+    <div className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>FaceID lấy từ TimeSoft. Ca Locker/Lễ tân chỉ lấy từ Lịch làm việc Web V2 và không áp dụng nghỉ giữa ca; Nhân viên/Leader giữ nguyên quy định hiện tại.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
     {error && <div className="error-box">{error}</div>}
+
+    {isAdmin && <section className="panel attendance-department-controls">
+      <div className="panel-title-row"><div><h2>CHẤM CÔNG THEO BỘ PHẬN</h2><p>Ca làm của Locker và Lễ tân lấy từ Lịch làm việc; hai bộ phận này không áp dụng nghỉ giữa ca.</p></div></div>
+      <div className="attendance-department-grid">{[['locker', 'Locker'], ['letan', 'Lễ tân']].map(([key, label]) => {
+        const control = departmentControls[key] || {}
+        return <div className="attendance-department-card" key={key}><h3>{label}</h3><p>Thông báo đi trễ gửi tới nhân viên, Quản lý và Admin.</p><div className="attendance-control-actions">
+          <button type="button" className={control.attendance_enabled ? 'primary-button' : 'secondary-button attendance-control-off'} disabled={Boolean(controlBusy)} onClick={() => toggleDepartmentControl(key, 'attendance_enabled')}><Power size={16}/> Chấm công: {control.attendance_enabled ? 'Đang bật' : 'Đang tắt'}</button>
+          <button type="button" className={control.notifications_enabled ? 'primary-button' : 'secondary-button attendance-control-off'} disabled={Boolean(controlBusy)} onClick={() => toggleDepartmentControl(key, 'notifications_enabled')}><BellRing size={16}/> Thông báo: {control.notifications_enabled ? 'Đang bật' : 'Đang tắt'}</button>
+        </div></div>
+      })}</div>
+    </section>}
 
     <section className="panel data-toolbar attendance-toolbar">
       <div className="attendance-filter-content">

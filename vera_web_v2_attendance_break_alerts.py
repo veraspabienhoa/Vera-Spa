@@ -199,7 +199,7 @@ def _apply_tour_fallback(conn, records: list[dict[str, Any]], start: date, end: 
         except ValueError:
             output.append(item)
             continue
-        if work_day != today or str(item.get("break_out") or "").strip():
+        if work_day != today or not bool(item.get("break_enabled")) or str(item.get("break_out") or "").strip():
             output.append(item)
             continue
         tour = tour_map.get(_norm(item.get("employee_name")))

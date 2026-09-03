@@ -7,8 +7,9 @@ summary fields on each cached row, which loses raw history such as repeated
 
 This patch keeps PostgreSQL as the only screen data source, but reconstructs one
 attendance row per employee/workday from every cached TimeSoft check-in row.
-Repeated FaceID scans are clustered, detailed punches win over summary fields,
-and only nhanvien/leader are returned to the attendance screen/export.
+Repeated FaceID scans are clustered and detailed punches win over summary fields.
+Locker/Lễ tân are included only when their Web V2 daily work schedule enables
+attendance; their shift never comes from TimeSoft and they have no break policy.
 """
 from __future__ import annotations
 
@@ -22,10 +23,11 @@ from sqlalchemy import text
 
 from vera_attendance_rules import apply_break_restriction, departure_status_is_final
 import vera_web_v2_snapshot as snapshot
+import vera_web_v2_department_attendance as department_attendance
 
 
-RELEASE = "4.2.1-preserve-configured-break"
-ALLOWED_ROLES = {"nhanvien", "leader"}
+RELEASE = "4.2.2-locker-letan-work-schedule"
+ALLOWED_ROLES = {"nhanvien", "leader", "locker", "letan"}
 RAW_TIME_ALIASES = {
     "thoi gian", "thoigian", "time", "timestr", "datetime", "datetimestr",
     "checktime", "checktimestr", "checkindatetime", "checkindatetimestr",
@@ -111,7 +113,9 @@ def _eligible_aliases(conn) -> tuple[dict[str, str], dict[str, str]]:
     rows = conn.execute(text("""
         SELECT username, COALESCE(full_name,'') AS full_name, lower(COALESCE(role,'')) AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+        WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader','locker','letan')
+          AND COALESCE(payload->>'__deleted','false') <> 'true'
+          AND lower(COALESCE(payload->>'Trạng thái làm việc','đang làm việc')) = 'đang làm việc'
     """)).mappings().all()
     aliases: dict[str, str] = {}
     roles: dict[str, str] = {}
@@ -421,6 +425,11 @@ def _records_v42(conn, start: date, end: date) -> list[dict[str, Any]]:
         base["check_out"] = faceid.get("faceid_check_out") or ""
         base["faceid_last"] = faceid.get("faceid_last") or ""
         base["attendance_source"] = "TimeSoft FaceID chi tiết" if faceid.get("raw_faceid_count", 0) >= 2 else "TimeSoft"
+        base = department_attendance.apply_schedule_to_record(
+            conn, base, work_day, employee, base["employee_role"],
+        )
+        if base is None:
+            continue
         output.append(base)
 
     return sorted(output, key=lambda item: (
@@ -448,6 +457,8 @@ def install_attendance_v42(app, *, engine_instance: Callable[[], Any]) -> None:
             "raw_faceid_clustering": True,
             "cross_midnight_checkout": True,
             "screen_break_column": True,
+            "locker_letan_schedule_attendance": True,
+            "locker_letan_midshift_break": False,
         }
 
     app.state.attendance_v42_installed = True

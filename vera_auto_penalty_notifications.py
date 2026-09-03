@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import text
 
 import vera_auto_check as auto_check
+import vera_web_v2_department_attendance as department_attendance
 
 
 RELEASE = "auto-penalty-employee-push-2026-09-02-v1"
@@ -52,14 +53,32 @@ def _claim(engine, limit: int) -> list[dict[str, Any]]:
         """), {"limit": max(1, min(200, int(limit)))}).mappings()]
 
 
-def _subscriptions(conn, employee: str) -> list[dict[str, Any]]:
-    return [dict(row) for row in conn.execute(text("""
+def _notification_audience(conn, employee: str) -> tuple[list[dict[str, Any]], bool, str]:
+    department = department_attendance.employee_role(conn, employee)
+    if department in department_attendance.DEPARTMENTS:
+        enabled = department_attendance.control_for(conn, department)["notifications_enabled"]
+        if not enabled:
+            return [], True, department
+        rows = conn.execute(text("""
+            SELECT DISTINCT ON (s.subscription_id)
+                   s.subscription_id::text AS subscription_id,s.endpoint,s.p256dh,s.auth_secret
+            FROM vera_v2_push_subscription s
+            LEFT JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id
+            WHERE s.is_active=true AND (
+              lower(btrim(s.employee_username))=lower(btrim(:employee))
+              OR (p.is_active=true AND lower(COALESCE(p.role,'')) IN ('admin','quanly'))
+            )
+            ORDER BY s.subscription_id,s.updated_at DESC
+        """), {"employee": employee}).mappings().all()
+        return [dict(row) for row in rows], False, department
+    rows = conn.execute(text("""
         SELECT subscription_id::text AS subscription_id,endpoint,p256dh,auth_secret
         FROM vera_v2_push_subscription
         WHERE is_active=true
           AND lower(btrim(employee_username))=lower(btrim(:employee))
         ORDER BY updated_at DESC
-    """), {"employee": employee}).mappings()]
+    """), {"employee": employee}).mappings().all()
+    return [dict(row) for row in rows], False, department
 
 
 def _penalty(conn, uid: str | None) -> float:
@@ -92,7 +111,7 @@ def _send(subscription: dict[str, Any], payload: dict[str, Any], private_key: st
 
 def notify_pending(engine, limit: int = 100) -> dict[str, int]:
     """Send each recorded auto penalty once; failed/no-subscription items retry."""
-    result = {"claimed": 0, "notified": 0, "pending": 0, "sent": 0, "failed": 0}
+    result = {"claimed": 0, "notified": 0, "suppressed": 0, "pending": 0, "sent": 0, "failed": 0}
     try:
         events = _claim(engine, limit)
     except Exception:
@@ -103,13 +122,17 @@ def notify_pending(engine, limit: int = 100) -> dict[str, int]:
     for event in events:
         error = ""
         sent = 0
+        suppressed = False
+        department = ""
         try:
             with engine.connect() as conn:
-                subscriptions = _subscriptions(conn, event["employee_name"])
+                subscriptions, suppressed, department = _notification_audience(conn, event["employee_name"])
                 penalty = _penalty(conn, event.get("leave_record_uid"))
                 private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
                 subject = _vault_secret(conn, "vera_v2_vapid_subject") or APP_URL
-            if not subscriptions:
+            if suppressed:
+                error = "Thông báo chấm công của bộ phận đang tắt."
+            elif not subscriptions:
                 error = "Nhân viên chưa bật thông báo Web Push."
             elif not private_key:
                 error = "Thiếu khóa VAPID để gửi Web Push."
@@ -127,6 +150,7 @@ def notify_pending(engine, limit: int = 100) -> dict[str, int]:
                     "tag": f"vera-auto-penalty-{event['id']}",
                     "employee": event["employee_name"],
                     "event_id": event["id"],
+                    "department": department,
                 }
                 errors = []
                 for subscription in subscriptions:
@@ -154,13 +178,16 @@ def notify_pending(engine, limit: int = 100) -> dict[str, int]:
         with engine.begin() as conn:
             conn.execute(text("""
                 UPDATE vera_auto_check_event SET
-                  employee_notified_at=CASE WHEN :sent > 0 THEN NOW() ELSE employee_notified_at END,
+                  employee_notified_at=CASE WHEN :sent > 0 OR :suppressed THEN NOW() ELSE employee_notified_at END,
                   employee_notify_claimed_at=NULL,
-                  employee_notify_error=CASE WHEN :sent > 0 THEN NULL ELSE :error END
+                  employee_notify_error=CASE WHEN :sent > 0 OR :suppressed THEN NULL ELSE :error END
                 WHERE id=:id
-            """), {"id": event["id"], "sent": sent, "error": error or "Không gửi được thông báo."})
+            """), {"id": event["id"], "sent": sent, "suppressed": suppressed,
+                     "error": error or "Không gửi được thông báo."})
         if sent > 0:
             result["notified"] += 1
+        elif suppressed:
+            result["suppressed"] += 1
         else:
             result["pending"] += 1
     return result

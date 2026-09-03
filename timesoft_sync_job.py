@@ -37,6 +37,7 @@ from sqlalchemy import text
 import vera_postgres as vpg
 import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
+import vera_web_v2_department_attendance as department_attendance
 from vera_attendance_rules import supported_late_minutes
 
 VN_TZ = timezone(timedelta(hours=7))
@@ -396,18 +397,19 @@ def load_employee_name_map() -> dict[str, str]:
     """Load canonical employee names from PostgreSQL, never credential Sheet1."""
     with vpg.get_engine().connect() as conn:
         values = conn.execute(text("""
-            SELECT username
+            SELECT username,COALESCE(full_name,'') AS full_name
             FROM employees
             WHERE btrim(COALESCE(username, '')) <> ''
               AND COALESCE(payload->>'__deleted', 'false') <> 'true'
             ORDER BY COALESCE(stt, 2147483647), username
-        """)).scalars().all()
+        """)).mappings().all()
     out: dict[str, str] = {}
-    for value in values:
-        name = str(value or "").strip()
-        key = _employee_key(name)
-        if key and key not in out:
-            out[key] = name
+    for row in values:
+        name = str(row.get("username") or "").strip()
+        for value in (name, row.get("full_name")):
+            key = _employee_key(value)
+            if key and key not in out:
+                out[key] = name
     return out
 
 
@@ -1185,9 +1187,6 @@ def process_timesoft_penalties(
         if not isinstance(df, pd.DataFrame) or df.empty:
             continue
         for _, row in df.iterrows():
-            raw_minutes = _parse_minutes_late(row)
-            if raw_minutes is None or raw_minutes < threshold:
-                continue
             raw_name = _timesoft_row_value(row, [
                 "employeeInfo.Name", "EmployeeName", "employeeName", "Name", "FullName"
             ])
@@ -1199,12 +1198,30 @@ def process_timesoft_penalties(
             raw_date = _timesoft_row_value(row, ["WorkDateStr", "WorkDate", "CreateDateStr", "CreateDate"])
             work_date = _parse_date(raw_date) or target_date
             checkin_time = _timesoft_row_value(row, ["MachineTimeCheckInStr", "CheckInTimeStr", "CheckInTime"])
-            minutes = float(raw_minutes)
+            shift_start = _timesoft_row_value(row, ["StartWorkTime", "WorkTimeStart", "ShiftStartTime"])
+            department = ""
+            schedule = None
             registered_reasons: list[str] = []
             registered_reason = ""
             registered_covered = False
             registered_revoked = 0
             with engine.begin() as conn:
+                department = department_attendance.employee_role(conn, employee)
+                if department in department_attendance.DEPARTMENTS:
+                    if not department_attendance.control_for(conn, department)["attendance_enabled"]:
+                        result["skipped"] += 1
+                        continue
+                    schedule = department_attendance.scheduled_shift(conn, work_date, employee, department)
+                    if not schedule or schedule.get("is_off"):
+                        result["skipped"] += 1
+                        continue
+                    shift_start = str(schedule.get("start_time") or "")
+                    raw_minutes = department_attendance.schedule_late_minutes(checkin_time, shift_start)
+                else:
+                    raw_minutes = _parse_minutes_late(row)
+                if raw_minutes is None or raw_minutes < threshold:
+                    continue
+                minutes = float(raw_minutes)
                 registered_reasons, registered_baseline, registered_reason = auto_check.registered_late_for_day(
                     conn, work_date, employee,
                 )
@@ -1263,8 +1280,9 @@ def process_timesoft_penalties(
                 )
                 continue
             result["eligible"] += 1
-            shift_start = _timesoft_row_value(row, ["StartWorkTime", "WorkTimeStart", "ShiftStartTime"])
             detail = f"Đồng bộ TimeSoft trực tiếp · check-in muộn {int(round(minutes))} phút"
+            if department in department_attendance.DEPARTMENTS:
+                detail += f" · Bộ phận {department_attendance.LABELS[department]} · ca theo Lịch làm việc"
             if registered_reasons:
                 detail += f" sau chuẩn 17:00 của {registered_reason}"
             if support_reasons and allowance is not None:
@@ -1276,7 +1294,9 @@ def process_timesoft_penalties(
             with engine.begin() as conn:
                 ok, msg = auto_check.save_violation(
                     conn, work_date=work_date, employee=employee, reason_item=reason_item,
-                    detail=detail, source="ĐỒNG BỘ TIMESOFT - PHẠT TRỰC TIẾP", minutes=penalty_minutes,
+                    detail=detail,
+                    source=("ĐỒNG BỘ TIMESOFT - CHẤM CÔNG BỘ PHẬN" if department in department_attendance.DEPARTMENTS else "ĐỒNG BỘ TIMESOFT - PHẠT TRỰC TIẾP"),
+                    minutes=penalty_minutes,
                 )
             if ok and msg == "SKIP_DUPLICATE":
                 result["skipped"] += 1
