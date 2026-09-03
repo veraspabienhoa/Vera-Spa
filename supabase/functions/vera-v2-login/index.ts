@@ -8,6 +8,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 });
 
 const ALLOWED_ORIGINS = new Set([
+  "https://app.veraspa.vn",
   "https://veraspabienhoa.github.io",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
@@ -15,7 +16,7 @@ const ALLOWED_ORIGINS = new Set([
 
 function cors(req: Request) {
   const origin = req.headers.get("origin") || "";
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://veraspabienhoa.github.io";
+  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : "https://app.veraspa.vn";
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
