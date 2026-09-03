@@ -14,6 +14,25 @@ import { veraApi } from './lib/api'
 import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 
+const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
+const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'rules', 'profile', 'permissions', 'payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'auto-check', 'changes', 'storage'])
+
+const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
+
+const readActivePage = (user) => {
+  try {
+    const stored = window.localStorage.getItem(activePageStorageKey(user))
+    return VALID_PAGES.has(stored) ? stored : 'leave'
+  } catch {
+    return 'leave'
+  }
+}
+
+const rememberActivePage = (user, page) => {
+  if (!user?.id || !VALID_PAGES.has(page)) return
+  try { window.localStorage.setItem(activePageStorageKey(user), page) } catch { /* storage may be unavailable in private mode */ }
+}
+
 const lazyPage = (importer) => lazy(async () => {
   try { const module = await importer(); window.sessionStorage.removeItem('vera-v2-chunk-reload'); return module }
   catch (error) {
@@ -59,7 +78,7 @@ export default function App() {
         if (!me?.employee_username || me?.is_active === false) throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
         if (mounted) {
           setProfile(me)
-          setPage(me.must_change_password ? 'profile' : 'leave')
+          setPage(me.must_change_password ? 'profile' : readActivePage(nextSession.user))
         }
       } catch (err) {
         if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await supabase.auth.signOut({ scope: 'local' }).catch(() => {}); setSession(null) }
@@ -104,7 +123,11 @@ export default function App() {
   if (!user) return <LoginPage externalError={authError} />
 
   const signOut = async () => { setProfile(null); if (supabase && session) await supabase.auth.signOut({ scope: 'local' }) }
-  const changePage = (nextPage) => { setPage(nextPage); setPageRefreshRevision(0) }
+  const changePage = (nextPage) => {
+    rememberActivePage(user, nextPage)
+    setPage(nextPage)
+    setPageRefreshRevision(0)
+  }
   const refreshCurrentPage = () => setPageRefreshRevision((value) => value + 1)
 
   const shellUser = profile ? {
