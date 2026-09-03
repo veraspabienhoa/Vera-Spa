@@ -18,7 +18,7 @@ from typing import Any, Callable
 from sqlalchemy import text
 
 
-RELEASE = "support-shift-break-2026-09-01.2"
+RELEASE = "support-shift-break-2026-09-03.3"
 
 
 def _norm(value: Any) -> str:
@@ -69,6 +69,34 @@ def _clock_minutes(value: Any) -> float | None:
         except ValueError:
             continue
     return None
+
+
+def _apply_arrival_allowance(item: dict[str, Any], allowance: int) -> None:
+    """Recalculate lateness against the approved, effective shift start."""
+    start_minutes = _clock_minutes(
+        item.get("shift_start") or item.get("start_work_time") or item.get("StartWorkTime")
+    )
+    if start_minutes is None:
+        return
+    effective = (start_minutes + allowance) % (24 * 60)
+    hour = int(effective // 60)
+    minute = int(effective % 60)
+    item["effective_shift_start"] = f"{hour:02d}:{minute:02d}:00"
+
+    raw_check_in = str(item.get("check_in") or "").strip()
+    if " " in raw_check_in:
+        raw_check_in = raw_check_in.rsplit(" ", 1)[-1]
+    check_in_minutes = _clock_minutes(raw_check_in)
+    if check_in_minutes is None:
+        return
+    # Attendance rows belong to one work day. A smaller clock value after an
+    # evening shift start is a punch after midnight on the following day.
+    if check_in_minutes < start_minutes and start_minutes >= 12 * 60:
+        check_in_minutes += 24 * 60
+    effective_minutes = start_minutes + allowance
+    late_minutes = max(0, int((check_in_minutes - effective_minutes) // 1))
+    item["late_minutes"] = late_minutes
+    item["arrival_status"] = "Đi trễ" if late_minutes > 0 else "Đúng giờ"
 
 
 def _remove_late_restriction(item: dict[str, Any]) -> None:
@@ -126,13 +154,7 @@ def install_support_shift_break(app, *, engine_instance: Callable[[], Any], snap
             item["support_shift_allowance_minutes"] = allowance
             item["support_break_allowed"] = True
 
-            start_minutes = _clock_minutes(item.get("shift_start") or item.get("start_work_time") or item.get("StartWorkTime"))
-            if start_minutes is not None:
-                effective = (start_minutes + allowance) % (24 * 60)
-                hour = int(effective // 60)
-                minute = int(effective % 60)
-                item["effective_shift_start"] = f"{hour:02d}:{minute:02d}:00"
-
+            _apply_arrival_allowance(item, allowance)
             _remove_late_restriction(item)
             item["arrival_support_applied"] = True
         return rows
