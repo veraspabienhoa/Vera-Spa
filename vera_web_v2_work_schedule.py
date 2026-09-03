@@ -4,9 +4,8 @@ Schedules are assigned by individual calendar date, never generated from a recur
 cycle. The UI may load a whole selected month (up to 63 days per request).
 
 Quản lý is scheduled with a start/end time for each date. Locker and Lễ tân use
-configurable shift definitions stored in PostgreSQL. Locker overtime keeps the
-operational TC Ca 1 / TC Ca 2 markers, while Lễ tân overtime stores an explicit
-start/end time range.
+configurable shift definitions stored in PostgreSQL. All three departments share
+the same overtime choices: TC Ca 1, TC Ca 2, or an explicit time range.
 """
 from __future__ import annotations
 
@@ -37,6 +36,7 @@ WORK_SCHEDULE_FEATURES = {
 }
 
 _TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+OVERTIME_SHIFT_CHOICES = {"", "TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"}
 
 
 class ScheduleRow(BaseModel):
@@ -222,44 +222,44 @@ def _validate_row(row: ScheduleRow, shift_definitions: dict[str, Any]) -> tuple[
     if row.department == "quanly":
         if shift_code not in {"Giờ làm", "Nghỉ"}:
             raise HTTPException(400, "Lịch Quản lý chỉ dùng Giờ làm hoặc Nghỉ.")
-        if overtime_shift or overtime_start_time or overtime_end_time:
-            raise HTTPException(400, "Lịch Quản lý không dùng tăng ca riêng.")
         if shift_code == "Nghỉ":
+            if overtime_shift or overtime_start_time or overtime_end_time:
+                raise HTTPException(400, "Ngày nghỉ không thể đồng thời có tăng ca.")
             return "", "", "", "", ""
         if not (_TIME_RE.fullmatch(start_time) and _TIME_RE.fullmatch(end_time)):
             raise HTTPException(
                 400,
                 f"Quản lý {row.employee_name or row.employee_username} ngày {row.work_date:%d/%m/%Y} cần đủ giờ bắt đầu và giờ kết thúc dạng HH:MM.",
             )
-        return start_time, end_time, "", "", ""
-
-    if shift_code == "Nghỉ":
+    elif shift_code == "Nghỉ":
         if overtime_shift or overtime_start_time or overtime_end_time:
             raise HTTPException(400, "Ngày nghỉ không thể đồng thời có tăng ca.")
         return "", "", "", "", ""
-
-    if shift_code not in (shift_definitions.get(row.department) or {}):
+    elif shift_code not in (shift_definitions.get(row.department) or {}):
         raise HTTPException(400, f"Ca '{shift_code}' không còn trong cấu hình {row.department}.")
 
-    if row.department == "locker":
-        if overtime_shift not in {"", "TC Ca 1", "TC Ca 2"}:
-            raise HTTPException(400, "Locker chỉ dùng TC Ca 1 hoặc TC Ca 2.")
+    if overtime_shift not in OVERTIME_SHIFT_CHOICES:
+        raise HTTPException(400, "Tăng ca chỉ dùng TC Ca 1, TC Ca 2 hoặc Từ giờ tới giờ.")
+    has_overtime_times = bool(overtime_start_time or overtime_end_time)
+    custom_overtime = overtime_shift == "Từ giờ tới giờ" or (not overtime_shift and has_overtime_times)
+    if overtime_shift in {"TC Ca 1", "TC Ca 2"}:
         if overtime_start_time or overtime_end_time:
-            raise HTTPException(400, "Locker không dùng giờ tăng ca tự do.")
-        return "", "", overtime_shift, "", ""
-
-    # Lễ tân: overtime is an explicit time range, never TC Ca 1/TC Ca 2.
-    if overtime_shift:
-        raise HTTPException(400, "Lễ tân phải nhập giờ tăng ca bắt đầu/kết thúc, không dùng TC Ca 1 / TC Ca 2.")
-    has_overtime = bool(overtime_start_time or overtime_end_time)
-    if has_overtime and not (_TIME_RE.fullmatch(overtime_start_time) and _TIME_RE.fullmatch(overtime_end_time)):
+            raise HTTPException(400, "TC Ca 1/TC Ca 2 không nhập thêm khoảng giờ tùy chỉnh.")
+        return start_time if row.department == "quanly" else "", end_time if row.department == "quanly" else "", overtime_shift, "", ""
+    if custom_overtime and not (_TIME_RE.fullmatch(overtime_start_time) and _TIME_RE.fullmatch(overtime_end_time)):
         raise HTTPException(
             400,
-            f"Lễ tân {row.employee_name or row.employee_username} ngày {row.work_date:%d/%m/%Y}: tăng ca cần đủ giờ bắt đầu và kết thúc dạng HH:MM.",
+            f"{row.employee_name or row.employee_username} ngày {row.work_date:%d/%m/%Y}: tăng ca cần đủ giờ bắt đầu và kết thúc dạng HH:MM.",
         )
-    if has_overtime and overtime_start_time == overtime_end_time:
+    if custom_overtime and overtime_start_time == overtime_end_time:
         raise HTTPException(400, "Giờ bắt đầu và kết thúc tăng ca không được trùng nhau.")
-    return "", "", "", overtime_start_time, overtime_end_time
+    return (
+        start_time if row.department == "quanly" else "",
+        end_time if row.department == "quanly" else "",
+        "Từ giờ tới giờ" if custom_overtime else "",
+        overtime_start_time if custom_overtime else "",
+        overtime_end_time if custom_overtime else "",
+    )
 
 
 def install_work_schedule_routes(
@@ -329,7 +329,8 @@ def install_work_schedule_routes(
             "allowed_departments": allowed_departments,
             "assignment_mode": "daily",
             "display_mode": "selected_month_all_days",
-            "overtime_mode": {"locker": "tc_shift", "letan": "time_range", "quanly": "none"},
+            "overtime_mode": {"locker": "shared", "letan": "shared", "quanly": "shared"},
+            "overtime_choices": ["TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"],
         }
 
     @app.put("/v2/work-schedule/shifts")

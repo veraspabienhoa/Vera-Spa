@@ -69,6 +69,11 @@ function monthDays(monthValue) {
   return Array.from({ length: count }, (_, index) => new Date(year, month, index + 1, 12, 0, 0, 0))
 }
 
+function monthRange(monthValue) {
+  const values = monthDays(monthValue)
+  return { start: isoDate(values[0]), end: isoDate(values[values.length - 1]) }
+}
+
 function moveMonth(monthValue, amount) {
   const [year, month] = monthValue.split('-').map(Number)
   const next = new Date(year, month - 1 + amount, 1, 12, 0, 0, 0)
@@ -143,13 +148,44 @@ function timeRangesOverlap(startA, endA, startB, endB) {
   })
 }
 
+function durationHours(start, end) {
+  const startMinutes = timeMinutes(start)
+  const endRaw = timeMinutes(end)
+  if (startMinutes === null || endRaw === null || startMinutes === endRaw) return 0
+  const endMinutes = endRaw <= startMinutes ? endRaw + 1440 : endRaw
+  return (endMinutes - startMinutes) / 60
+}
+
+function overtimeMode(value) {
+  if (value?.overtime_shift === 'TC Ca 1' || value?.overtime_shift === 'TC Ca 2') return value.overtime_shift
+  if (value?.overtime_shift === 'Từ giờ tới giờ' || value?.overtime_start_time || value?.overtime_end_time) return 'Từ giờ tới giờ'
+  return ''
+}
+
+function workShiftBucket(value) {
+  if (value?.shift_code === 'Ca 1' || value?.shift_code === 'Ca 2') return value.shift_code
+  if (value?.shift_code !== 'Giờ làm') return ''
+  const start = timeMinutes(value.start_time)
+  return start === null ? '' : start < 12 * 60 ? 'Ca 1' : 'Ca 2'
+}
+
+function overtimeHours(value, definitions) {
+  const mode = overtimeMode(value)
+  if (mode === 'Từ giờ tới giờ') return durationHours(value.overtime_start_time, value.overtime_end_time)
+  if (mode === 'TC Ca 1' || mode === 'TC Ca 2') {
+    const spec = definitions?.[mode.replace(/^TC\s+/, '')]
+    return spec ? durationHours(spec.start, spec.end) : 8
+  }
+  return 0
+}
+
 function compactCellLabel(value, department) {
   if (!value?.shift_code) return '—'
   if (value.shift_code === 'Nghỉ') return 'Nghỉ'
-  if (department === 'quanly') return `${value.start_time || '—'}→${value.end_time || '—'}`
-  let label = value.shift_code.replace(/^Ca\s+/i, 'C')
-  if (department === 'locker' && value.overtime_shift) label += ` +${value.overtime_shift.replace(/^TC\s+Ca\s+/i, 'TC')}`
-  if (department === 'letan' && value.overtime_start_time && value.overtime_end_time) label += ' +TC'
+  let label = department === 'quanly' ? `${value.start_time || '—'}→${value.end_time || '—'}` : value.shift_code.replace(/^Ca\s+/i, 'C')
+  const overtime = overtimeMode(value)
+  if (overtime === 'TC Ca 1' || overtime === 'TC Ca 2') label += ` +${overtime.replace(/^TC\s+Ca\s+/i, 'TC')}`
+  if (overtime === 'Từ giờ tới giờ') label += ' +TC'
   return label
 }
 
@@ -201,6 +237,7 @@ export default function WorkSchedulePage({ user }) {
   const [employees, setEmployees] = useState([])
   const [saved, setSaved] = useState({})
   const [drafts, setDrafts] = useState({})
+  const [monthlyRows, setMonthlyRows] = useState([])
   const [shiftDefinitions, setShiftDefinitions] = useState({ quanly: {}, letan: {}, locker: {} })
   const [shiftDrafts, setShiftDrafts] = useState([])
   const [shiftEditorOpen, setShiftEditorOpen] = useState(false)
@@ -209,6 +246,7 @@ export default function WorkSchedulePage({ user }) {
   const [notice, setNotice] = useState('')
   const [selectedCell, setSelectedCell] = useState(null)
   const [highlightedEmployee, setHighlightedEmployee] = useState('')
+  const [highlightedTotal, setHighlightedTotal] = useState(null)
   const [clipboardCell, setClipboardCell] = useState(null)
   const [pastePanelOpen, setPastePanelOpen] = useState(false)
   const [pasteEndDay, setPasteEndDay] = useState('')
@@ -255,7 +293,14 @@ export default function WorkSchedulePage({ user }) {
     setNotice('')
     setPastePanelOpen(false)
     try {
-      const result = await scheduleRequest(`/v2/work-schedule?start=${rangeStart}&end=${rangeEnd}&department=${department}`)
+      const statisticsRange = monthRange(month)
+      const currentPath = `/v2/work-schedule?start=${rangeStart}&end=${rangeEnd}&department=${department}`
+      const statisticsPath = `/v2/work-schedule?start=${statisticsRange.start}&end=${statisticsRange.end}&department=${department}`
+      const [result, statisticsResult] = await Promise.all([
+        scheduleRequest(currentPath),
+        statisticsPath === currentPath ? Promise.resolve(null) : scheduleRequest(statisticsPath),
+      ])
+      const monthlyResult = statisticsResult || result
       const wanted = (result.employees || [])
         .filter((item) => item.employment_status !== 'Đã nghỉ việc')
         .sort((left, right) => {
@@ -265,7 +310,9 @@ export default function WorkSchedulePage({ user }) {
           return systemName(left).localeCompare(systemName(right), 'vi')
         })
       setEmployees(wanted)
+      setMonthlyRows(monthlyResult.rows || [])
       setHighlightedEmployee((current) => wanted.some((item) => item.username === current) ? current : '')
+      setHighlightedTotal(null)
       const mapped = Object.fromEntries((result.rows || []).map((row) => [keyFor(row.employee_username, row.work_date), {
         shift_code: row.shift_code || '',
         overtime_shift: row.overtime_shift || '',
@@ -299,7 +346,7 @@ export default function WorkSchedulePage({ user }) {
     }
   }
 
-  useEffect(() => { void load() }, [department, rangeKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load() }, [department, month, rangeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const renameSystemName = async (employee) => {
     if (!isAdmin) return
@@ -336,19 +383,14 @@ export default function WorkSchedulePage({ user }) {
         next.overtime_start_time = ''
         next.overtime_end_time = ''
       }
-      if (department === 'quanly') {
-        next.overtime_shift = ''
-        next.overtime_start_time = ''
-        next.overtime_end_time = ''
-      } else {
+      if (department !== 'quanly') {
         next.start_time = ''
         next.end_time = ''
       }
-      if (department === 'locker') {
+      if (field === 'overtime_shift' && value !== 'Từ giờ tới giờ') {
         next.overtime_start_time = ''
         next.overtime_end_time = ''
       }
-      if (department === 'letan') next.overtime_shift = ''
       return { ...current, [key]: next }
     })
   }
@@ -444,8 +486,8 @@ export default function WorkSchedulePage({ user }) {
           if (department === 'quanly' && after.shift_code === 'Giờ làm' && (!after.start_time || !after.end_time)) {
             throw new Error(`${systemName(employee)} · ${day}: cần đủ giờ bắt đầu và giờ kết thúc.`)
           }
-          if (department === 'letan' && Boolean(after.overtime_start_time) !== Boolean(after.overtime_end_time)) {
-            throw new Error(`${systemName(employee)} · ${day}: tăng ca Lễ tân cần đủ giờ bắt đầu và giờ kết thúc.`)
+          if (overtimeMode(after) === 'Từ giờ tới giờ' && (!after.overtime_start_time || !after.overtime_end_time)) {
+            throw new Error(`${systemName(employee)} · ${day}: tăng ca cần đủ giờ bắt đầu và giờ kết thúc.`)
           }
           rows.push({
             work_date: day,
@@ -453,11 +495,11 @@ export default function WorkSchedulePage({ user }) {
             employee_name: systemName(employee),
             department,
             shift_code: after.shift_code,
-            overtime_shift: department === 'locker' ? (after.overtime_shift || '') : '',
+            overtime_shift: overtimeMode(after),
             start_time: department === 'quanly' ? (after.start_time || '') : '',
             end_time: department === 'quanly' ? (after.end_time || '') : '',
-            overtime_start_time: department === 'letan' ? (after.overtime_start_time || '') : '',
-            overtime_end_time: department === 'letan' ? (after.overtime_end_time || '') : '',
+            overtime_start_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_start_time || '') : '',
+            overtime_end_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_end_time || '') : '',
             note: after.note || '',
           })
         }
@@ -526,10 +568,10 @@ export default function WorkSchedulePage({ user }) {
       employees.forEach((employee) => {
         const value = { ...emptyCell(), ...(drafts[keyFor(employee.username, day)] || {}) }
         if (counts[value.shift_code]) counts[value.shift_code].regular += 1
-        if (department === 'locker') {
-          const overtimeTarget = String(value.overtime_shift || '').replace(/^TC\s+/i, '')
-          if (overtimeTarget && counts[overtimeTarget]) counts[overtimeTarget].overtime += 1
-        } else if (value.overtime_start_time && value.overtime_end_time) {
+        const overtimeTarget = String(value.overtime_shift || '').replace(/^TC\s+/i, '')
+        if (['Ca 1', 'Ca 2'].includes(overtimeTarget) && counts[overtimeTarget]) {
+          counts[overtimeTarget].overtime += 1
+        } else if (overtimeMode(value) === 'Từ giờ tới giờ') {
           shiftNames.forEach((shift) => {
             const spec = definitions[shift] || {}
             if (timeRangesOverlap(spec.start, spec.end, value.overtime_start_time, value.overtime_end_time)) counts[shift].overtime += 1
@@ -541,10 +583,53 @@ export default function WorkSchedulePage({ user }) {
     }))
   }, [days, department, drafts, employees, shiftDefinitions])
 
+  const monthlyStatistics = useMemo(() => {
+    const definitions = shiftDefinitions?.[department] || {}
+    const byEmployee = Object.fromEntries(employees.map((employee) => [employee.username, {
+      username: employee.username, name: systemName(employee), workDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0,
+    }]))
+    monthlyRows.forEach((row) => {
+      const item = byEmployee[row.employee_username]
+      if (!item || !row.shift_code || row.shift_code === 'Nghỉ') return
+      item.workDays += 1
+      const bucket = workShiftBucket(row)
+      if (bucket === 'Ca 1') item.ca1Days += 1
+      if (bucket === 'Ca 2') item.ca2Days += 1
+      item.overtimeHours += overtimeHours(row, definitions)
+    })
+    const rows = Object.values(byEmployee)
+    const departmentTotal = rows.reduce((total, item) => ({
+      workDays: total.workDays + item.workDays,
+      ca1Days: total.ca1Days + item.ca1Days,
+      ca2Days: total.ca2Days + item.ca2Days,
+      overtimeHours: total.overtimeHours + item.overtimeHours,
+    }), { workDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0 })
+    return { rows, departmentTotal }
+  }, [department, employees, monthlyRows, shiftDefinitions])
+
+  const employeeMatchesTotal = (employee, day, shift) => {
+    const value = { ...emptyCell(), ...(drafts[keyFor(employee.username, day)] || {}) }
+    if (value.shift_code === shift || value.overtime_shift === `TC ${shift}`) return true
+    const spec = shiftDefinitions?.[department]?.[shift] || {}
+    return overtimeMode(value) === 'Từ giờ tới giờ'
+      && timeRangesOverlap(spec.start, spec.end, value.overtime_start_time, value.overtime_end_time)
+  }
+
   const editorFor = (employee, day, value) => {
     const shiftClass = value.shift_code === 'Ca 1' ? 'ca1' : value.shift_code === 'Ca 2' ? 'ca2' : value.shift_code === 'Nghỉ' ? 'off' : ''
     const shiftNames = value.shift_code && !['Nghỉ', 'Giờ làm'].includes(value.shift_code) && !configuredShiftNames.includes(value.shift_code)
       ? [value.shift_code, ...configuredShiftNames] : configuredShiftNames
+    const currentOvertimeMode = overtimeMode(value)
+    const overtimeEditor = <div className="shared-overtime">
+      <select className={`ot-select ${currentOvertimeMode ? 'active' : ''}`} value={currentOvertimeMode} disabled={!canEdit || !value.shift_code || value.shift_code === 'Nghỉ'} onChange={(event) => setCell(employee.username, day, 'overtime_shift', event.target.value)}>
+        <option value="">Không TC</option><option>TC Ca 1</option><option>TC Ca 2</option><option>Từ giờ tới giờ</option>
+      </select>
+      {currentOvertimeMode === 'Từ giờ tới giờ' && <div className="overtime-time-row">
+        <input className="letan-ot-time" aria-label="Tăng ca từ giờ" type="time" value={value.overtime_start_time || ''} disabled={!canEdit} onChange={(event) => setCell(employee.username, day, 'overtime_start_time', event.target.value)} />
+        <span>–</span>
+        <input className="letan-ot-time" aria-label="Tăng ca tới giờ" type="time" value={value.overtime_end_time || ''} disabled={!canEdit} onChange={(event) => setCell(employee.username, day, 'overtime_end_time', event.target.value)} />
+      </div>}
+    </div>
 
     if (department === 'quanly') {
       return <div className="manager-cell">
@@ -555,6 +640,7 @@ export default function WorkSchedulePage({ user }) {
           <input className="manager-time" type="time" value={value.start_time || ''} disabled={!canEdit} onChange={(event) => setCell(employee.username, day, 'start_time', event.target.value)} />
           <input className="manager-time" type="time" value={value.end_time || ''} disabled={!canEdit} onChange={(event) => setCell(employee.username, day, 'end_time', event.target.value)} />
         </div>}
+        {overtimeEditor}
       </div>
     }
 
@@ -564,14 +650,7 @@ export default function WorkSchedulePage({ user }) {
         {shiftNames.map((shift) => <option key={shift} value={shift}>{shift}{!configuredShiftNames.includes(shift) ? ' (cũ)' : ''}</option>)}
         <option value="Nghỉ">Nghỉ</option>
       </select>
-      {department === 'locker'
-        ? <select className={`ot-select ${value.overtime_shift ? 'active' : ''}`} value={value.overtime_shift || ''} disabled={!canEdit || !value.shift_code || value.shift_code === 'Nghỉ'} onChange={(event) => setCell(employee.username, day, 'overtime_shift', event.target.value)}>
-            <option value="">Không TC</option><option>TC Ca 1</option><option>TC Ca 2</option>
-          </select>
-        : <div className="letan-overtime"><span>TC</span>
-            <input className="letan-ot-time" type="time" value={value.overtime_start_time || ''} disabled={!canEdit || !value.shift_code || value.shift_code === 'Nghỉ'} onChange={(event) => setCell(employee.username, day, 'overtime_start_time', event.target.value)} />
-            <input className="letan-ot-time" type="time" value={value.overtime_end_time || ''} disabled={!canEdit || !value.shift_code || value.shift_code === 'Nghỉ'} onChange={(event) => setCell(employee.username, day, 'overtime_end_time', event.target.value)} />
-          </div>}
+      {overtimeEditor}
     </div>
   }
 
@@ -582,7 +661,7 @@ export default function WorkSchedulePage({ user }) {
 
   return <section className="work-schedule-page">
     <style>{`
-      .work-schedule-page{display:grid;gap:14px}.schedule-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.schedule-title h2{margin:0}.schedule-range{margin-top:7px;font-size:13px;font-weight:800;color:#1f513f}.schedule-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.schedule-month-picker{display:flex;align-items:center;gap:6px;border:1px solid #d7e2dd;border-radius:12px;padding:5px 7px;background:#fff}.schedule-month-picker input{border:0;background:transparent;font:inherit;font-weight:800;color:#25483b;min-width:142px}.schedule-icon-button{border:0;background:#eef5f2;color:#244a3a;border-radius:8px;width:34px;height:34px;display:grid;place-items:center}.schedule-filter-bar{display:flex;gap:6px;flex-wrap:wrap}.schedule-filter-bar button{border:1px solid #d6e2dd;background:#fff;border-radius:999px;padding:7px 11px;font-weight:800;color:#466057}.schedule-filter-bar button.active{background:#173329;border-color:#173329;color:#fff}.schedule-custom-range{display:inline-flex;gap:7px;align-items:center;width:max-content;max-width:100%}.schedule-custom-range input{border:1px solid #d6e2dd;border-radius:9px;padding:7px;width:170px;min-width:0}.schedule-department-tabs{display:flex;gap:6px;flex-wrap:wrap}.schedule-department-tabs button{border:1px solid #d7e2dd;background:#fff;border-radius:10px;padding:8px 11px;font-weight:800;color:#4a5d55}.schedule-department-tabs button.active{background:#173329;color:#fff;border-color:#173329}.schedule-legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #dfe8e5;border-radius:12px;background:#f8fbfa;font-size:13px}.schedule-scroll{overflow-x:auto;border:1px solid #dfe8e5;border-radius:14px;background:#fff;max-width:100%}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%}.schedule-grid th,.schedule-grid td{border-right:1px solid #e6ecea;border-bottom:1px solid #e6ecea;padding:6px;text-align:center;vertical-align:middle}.schedule-grid thead th{position:sticky;top:0;background:#eef6f3;z-index:4;min-width:116px}.schedule-grid thead tr:nth-child(2) th{top:35px}.schedule-grid thead th.employee-head{left:0;z-index:8;min-width:170px}.schedule-grid td.employee-cell,.schedule-grid tfoot td.summary-label{position:sticky;left:0;background:#fff;z-index:3;text-align:left;min-width:170px}.schedule-grid .month-head{height:35px;background:#dfeee8;font-weight:900;color:#244a3a}.schedule-grid .sunday{background:#fff6f2}.schedule-grid .today{box-shadow:inset 0 0 0 2px #bb8b34}.schedule-grid td.selected{box-shadow:inset 0 0 0 3px #245b47;background:#eff8f4}.schedule-grid tr.own-row td.employee-cell{background:#eef8f3}.schedule-grid tr.own-row td.employee-cell strong:after{content:' · Lịch của bạn';font-size:11px;color:#267051}.employee-name-line{display:flex;gap:5px;align-items:center}.employee-highlight-button{border:0;background:transparent;color:inherit;padding:4px 5px;margin:-4px -5px;border-radius:7px;text-align:left;cursor:pointer}.employee-highlight-button.active{background:#1f6b4d;color:#fff}.schedule-grid th.employee-work-day{background:#ccebdc;color:#155b3e;box-shadow:inset 0 -3px 0 #1f7a54}.schedule-grid td.employee-work-day{background:#e2f6eb!important;outline:3px solid #2b8a61;outline-offset:-3px}.system-name-edit{border:0;background:transparent;color:#5b7168;padding:2px;display:grid;place-items:center}.employee-role{display:block;color:#708079;font-size:11px;margin-top:2px}.schedule-cell{display:grid;gap:5px}.shift-select,.ot-select,.manager-status,.manager-time,.letan-ot-time{border:1px solid #d9e2df;border-radius:8px;background:#fff}.shift-select,.ot-select{width:108px;padding:5px;font-size:12px}.shift-select.ca1{background:#dff3cc}.shift-select.ca2{background:#fff8a8}.shift-select.off,.manager-status.off{background:#ffe0b8}.manager-cell{display:grid;gap:5px;min-width:136px}.manager-status{width:126px;padding:5px;font-size:12px}.manager-time-row{display:grid;grid-template-columns:1fr 1fr;gap:4px}.manager-time{width:61px;padding:5px 3px;font-size:11px}.letan-overtime{display:grid;grid-template-columns:auto 1fr 1fr;gap:3px;align-items:center}.letan-overtime span{font-size:10px;font-weight:900;color:#80591c}.letan-ot-time{width:48px;padding:4px 1px;font-size:10px}.schedule-save,.schedule-copy-button,.schedule-config-button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:9px 13px;font-weight:700}.schedule-save{background:#173329;color:white}.schedule-copy-button,.schedule-config-button{background:#eef5f2;color:#214538;border:1px solid #ccddd5}.schedule-save:disabled,.schedule-copy-button:disabled,.schedule-config-button:disabled{opacity:.5}.schedule-notice{padding:10px 12px;border-radius:10px;background:#edf7f3}.paste-range-panel,.shift-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#fbfdfc}.paste-range-panel{grid-template-columns:auto auto auto auto;align-items:end}.paste-range-panel label,.shift-editor label{display:grid;gap:4px;font-size:12px;font-weight:800}.paste-range-panel input,.shift-editor input{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff}.shift-editor-rows{display:grid;gap:8px}.shift-editor-row{display:grid;grid-template-columns:minmax(140px,1fr) 110px 110px 42px;gap:8px;align-items:end}.shift-editor-row button{height:36px;border:1px solid #efd3d3;background:#fff4f4;color:#9b3636;border-radius:8px}.shift-editor-actions,.shift-editor-head{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}.schedule-grid tfoot td{background:#f4f8f6;font-size:11px;font-weight:700}.schedule-grid tfoot td.summary-label{background:#e7f1ed;font-weight:900}.shift-total-cell{display:grid;gap:2px;min-width:100px}.shift-total-cell b{font-size:15px;color:#173329}.shift-total-cell small{color:#6a7a73}.weekday-short,.mobile-cell-summary,.mobile-week-editor{display:none}
+      .work-schedule-page{display:grid;gap:14px}.schedule-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.schedule-title h2{margin:0}.schedule-range{margin-top:7px;font-size:13px;font-weight:800;color:#1f513f}.schedule-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.schedule-month-picker{display:flex;align-items:center;gap:6px;border:1px solid #d7e2dd;border-radius:12px;padding:5px 7px;background:#fff}.schedule-month-picker input{border:0;background:transparent;font:inherit;font-weight:800;color:#25483b;min-width:142px}.schedule-icon-button{border:0;background:#eef5f2;color:#244a3a;border-radius:8px;width:34px;height:34px;display:grid;place-items:center}.schedule-filter-bar{display:flex;gap:6px;flex-wrap:wrap}.schedule-filter-bar button{border:1px solid #d6e2dd;background:#fff;border-radius:999px;padding:7px 11px;font-weight:800;color:#466057}.schedule-filter-bar button.active{background:#173329;border-color:#173329;color:#fff}.schedule-custom-range{display:inline-flex;gap:7px;align-items:center;width:max-content;max-width:100%}.schedule-custom-range input{border:1px solid #d6e2dd;border-radius:9px;padding:7px;width:170px;min-width:0}.schedule-department-tabs{display:flex;gap:6px;flex-wrap:wrap}.schedule-department-tabs button{border:1px solid #d7e2dd;background:#fff;border-radius:10px;padding:8px 11px;font-weight:800;color:#4a5d55}.schedule-department-tabs button.active{background:#173329;color:#fff;border-color:#173329}.schedule-legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #dfe8e5;border-radius:12px;background:#f8fbfa;font-size:13px}.schedule-scroll{overflow-x:auto;border:1px solid #dfe8e5;border-radius:14px;background:#fff;max-width:100%}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%}.schedule-grid th,.schedule-grid td{border-right:1px solid #e6ecea;border-bottom:1px solid #e6ecea;padding:6px;text-align:center;vertical-align:middle}.schedule-grid thead th{position:sticky;top:0;background:#eef6f3;z-index:4;min-width:116px}.schedule-grid thead tr:nth-child(2) th{top:35px}.schedule-grid thead th.employee-head{left:0;z-index:8;min-width:170px}.schedule-grid td.employee-cell,.schedule-grid tfoot td.summary-label{position:sticky;left:0;background:#fff;z-index:3;text-align:left;min-width:170px}.schedule-grid .month-head{height:35px;background:#dfeee8;font-weight:900;color:#244a3a}.schedule-grid .sunday{background:#fff6f2}.schedule-grid .today{box-shadow:inset 0 0 0 2px #bb8b34}.schedule-grid td.selected{box-shadow:inset 0 0 0 3px #245b47;background:#eff8f4}.schedule-grid tr.own-row td.employee-cell{background:#eef8f3}.schedule-grid tr.own-row td.employee-cell strong:after{content:' · Lịch của bạn';font-size:11px;color:#267051}.employee-name-line{display:flex;gap:5px;align-items:center}.employee-highlight-button{border:0;background:transparent;color:inherit;padding:4px 5px;margin:-4px -5px;border-radius:7px;text-align:left;cursor:pointer}.employee-highlight-button.active{background:#1f6b4d;color:#fff}.schedule-grid th.employee-work-day{background:#ccebdc;color:#155b3e;box-shadow:inset 0 -3px 0 #1f7a54}.schedule-grid td.employee-work-day{background:#e2f6eb!important;outline:3px solid #2b8a61;outline-offset:-3px}.system-name-edit{border:0;background:transparent;color:#5b7168;padding:2px;display:grid;place-items:center}.employee-role{display:block;color:#708079;font-size:11px;margin-top:2px}.schedule-cell{display:grid;gap:5px}.shift-select,.ot-select,.manager-status,.manager-time,.letan-ot-time{border:1px solid #d9e2df;border-radius:8px;background:#fff}.shift-select,.ot-select{width:108px;padding:5px;font-size:12px}.shift-select.ca1{background:#dff3cc}.shift-select.ca2{background:#fff8a8}.shift-select.off,.manager-status.off{background:#ffe0b8}.manager-cell{display:grid;gap:5px;min-width:136px}.manager-status{width:126px;padding:5px;font-size:12px}.manager-time-row{display:grid;grid-template-columns:1fr 1fr;gap:4px}.manager-time{width:61px;padding:5px 3px;font-size:11px}.shared-overtime{display:grid;gap:4px}.overtime-time-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:2px}.letan-ot-time{width:48px;padding:4px 1px;font-size:10px}.schedule-save,.schedule-copy-button,.schedule-config-button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:9px 13px;font-weight:700}.schedule-save{background:#173329;color:white}.schedule-copy-button,.schedule-config-button{background:#eef5f2;color:#214538;border:1px solid #ccddd5}.schedule-save:disabled,.schedule-copy-button:disabled,.schedule-config-button:disabled{opacity:.5}.schedule-notice{padding:10px 12px;border-radius:10px;background:#edf7f3}.paste-range-panel,.shift-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#fbfdfc}.paste-range-panel{grid-template-columns:auto auto auto auto;align-items:end}.paste-range-panel label,.shift-editor label{display:grid;gap:4px;font-size:12px;font-weight:800}.paste-range-panel input,.shift-editor input{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff}.shift-editor-rows{display:grid;gap:8px}.shift-editor-row{display:grid;grid-template-columns:minmax(140px,1fr) 110px 110px 42px;gap:8px;align-items:end}.shift-editor-row button{height:36px;border:1px solid #efd3d3;background:#fff4f4;color:#9b3636;border-radius:8px}.shift-editor-actions,.shift-editor-head{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}.schedule-grid tfoot td{background:#f4f8f6;font-size:11px;font-weight:700}.schedule-grid tfoot td.summary-label{background:#e7f1ed;font-weight:900}.shift-total-cell{display:grid;gap:2px;min-width:100px;width:100%;border:0;background:transparent;border-radius:8px;padding:4px;cursor:pointer}.shift-total-cell.active{background:#1f6b4d}.shift-total-cell b{font-size:15px;color:#173329}.shift-total-cell small{color:#6a7a73}.shift-total-cell.active b,.shift-total-cell.active small{color:#fff}.monthly-statistics{display:grid;gap:8px}.monthly-statistics h3{margin:0;color:#173329}.monthly-statistics table{width:100%;border-collapse:collapse;background:#fff}.monthly-statistics th,.monthly-statistics td{border:1px solid #dfe8e5;padding:8px;text-align:center}.monthly-statistics th:first-child,.monthly-statistics td:first-child{text-align:left}.monthly-statistics tfoot td{background:#e7f1ed;font-weight:900}.weekday-short,.mobile-cell-summary,.mobile-week-editor{display:none}
       @media(max-width:700px){.schedule-tools{width:100%}.schedule-copy-button,.schedule-save,.schedule-config-button{flex:1;justify-content:center}.schedule-month-picker{width:100%;justify-content:space-between}.schedule-filter-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.schedule-filter-bar button{padding:7px 2px;font-size:10px}.schedule-custom-range{display:grid;grid-template-columns:1fr 1fr;width:100%;max-width:100%}.schedule-custom-range input{min-width:0;width:100%}.paste-range-panel{grid-template-columns:1fr 1fr}.shift-editor-row{grid-template-columns:1fr 1fr}.shift-editor-row label:first-child{grid-column:1/-1}.schedule-scroll.week-view{overflow-x:hidden}.schedule-scroll.week-view .schedule-grid{min-width:0;width:100%;table-layout:fixed}.schedule-scroll.week-view .schedule-grid thead th{min-width:0;padding:3px 1px;font-size:9px}.schedule-scroll.week-view .weekday-full{display:none}.schedule-scroll.week-view .weekday-short{display:block}.schedule-scroll.week-view .schedule-grid thead th.employee-head,.schedule-scroll.week-view .schedule-grid td.employee-cell,.schedule-scroll.week-view .schedule-grid tfoot td.summary-label{width:72px;min-width:72px;max-width:72px;padding:3px;white-space:normal;word-break:break-word}.schedule-scroll.week-view .schedule-grid td{padding:2px 1px;min-width:0}.schedule-scroll.week-view .employee-cell strong{font-size:9px;line-height:1.1}.schedule-scroll.week-view .employee-role,.schedule-scroll.week-view tr.own-row td.employee-cell strong:after,.schedule-scroll.week-view .system-name-edit{display:none}.schedule-scroll.week-view .schedule-cell-editor{display:none}.schedule-scroll.week-view .mobile-cell-summary{display:block;font-size:9px;font-weight:900;line-height:1.1;color:#244a3a}.schedule-scroll.week-view .month-head{font-size:10px;height:28px}.schedule-scroll.week-view .schedule-grid thead tr:nth-child(2) th{top:28px}.schedule-scroll.week-view .shift-total-cell{min-width:0;font-size:8px}.schedule-scroll.week-view .shift-total-cell b{font-size:11px}.schedule-scroll.week-view .shift-total-cell small{font-size:7px}.mobile-week-editor{display:grid;gap:8px;padding:10px;border:1px solid #d5e3dd;border-radius:12px;background:#f8fbfa}.mobile-week-editor .shift-select,.mobile-week-editor .ot-select,.mobile-week-editor .manager-status,.mobile-week-editor .manager-time,.mobile-week-editor .letan-ot-time{width:100%}}
     `}</style>
 
@@ -644,7 +723,8 @@ export default function WorkSchedulePage({ user }) {
         <tbody>{employees.map((employee) => {
           const isOwn = String(employee.username || '').toLowerCase() === ownUsername
           const isHighlightedEmployee = highlightedEmployee === employee.username
-          return <tr key={employee.username} className={isOwn ? 'own-row' : ''}><td className="employee-cell"><div className="employee-name-line"><button type="button" className={`employee-highlight-button ${isHighlightedEmployee ? 'active' : ''}`.trim()} aria-pressed={isHighlightedEmployee} title="Highlight các ngày nhân viên làm việc" onClick={() => setHighlightedEmployee((current) => current === employee.username ? '' : employee.username)}><strong>{systemName(employee)}</strong></button>{isAdmin && <button type="button" className="system-name-edit" title="Đổi tên hệ thống" onClick={() => void renameSystemName(employee)}><PencilLine size={13}/></button>}</div><span className="employee-role">{DEPARTMENT_INFO[department].label}</span></td>{days.map((date) => {
+          const isHighlightedByTotal = Boolean(highlightedTotal && employeeMatchesTotal(employee, highlightedTotal.day, highlightedTotal.shift))
+          return <tr key={employee.username} className={isOwn ? 'own-row' : ''}><td className="employee-cell"><div className="employee-name-line"><button type="button" className={`employee-highlight-button ${isHighlightedEmployee || isHighlightedByTotal ? 'active' : ''}`.trim()} aria-pressed={isHighlightedEmployee || isHighlightedByTotal} title="Highlight các ngày nhân viên làm việc" onClick={() => { setHighlightedTotal(null); setHighlightedEmployee((current) => current === employee.username ? '' : employee.username) }}><strong>{systemName(employee)}</strong></button>{isAdmin && <button type="button" className="system-name-edit" title="Đổi tên hệ thống" onClick={() => void renameSystemName(employee)}><PencilLine size={13}/></button>}</div><span className="employee-role">{DEPARTMENT_INFO[department].label}</span></td>{days.map((date) => {
             const day = isoDate(date)
             const value = { ...emptyCell(), ...(drafts[keyFor(employee.username, day)] || {}) }
             const isSelected = selectedCell?.username === employee.username && selectedCell?.day === day
@@ -656,10 +736,19 @@ export default function WorkSchedulePage({ user }) {
         {department !== 'quanly' && configuredShiftNames.length > 0 && <tfoot>{configuredShiftNames.map((shift) => <tr key={`summary-${shift}`}><td className="summary-label">Tổng NV · {shift}</td>{days.map((date) => {
           const day = isoDate(date)
           const counts = shiftSummary?.[day]?.[shift] || { regular: 0, overtime: 0, total: 0 }
-          return <td key={`${shift}-${day}`}><div className="shift-total-cell"><b>{counts.total}</b><small>{counts.regular} chính + {counts.overtime} TC</small></div></td>
+          const active = highlightedTotal?.day === day && highlightedTotal?.shift === shift
+          return <td key={`${shift}-${day}`}><button type="button" className={`shift-total-cell ${active ? 'active' : ''}`} title={`Highlight nhân viên ${shift} ngày ${displayFullDate(date)}`} onClick={() => { setHighlightedEmployee(''); setHighlightedTotal((current) => current?.day === day && current?.shift === shift ? null : { day, shift }) }}><b>{counts.total}</b><small>{counts.regular} chính + {counts.overtime} TC</small></button></td>
         })}</tr>)}</tfoot>}
       </table>
       {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {DEPARTMENT_INFO[department].label}.</div>}
+    </div>}
+    {!loading && <div className="schedule-scroll monthly-statistics">
+      <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · {DEPARTMENT_INFO[department].label}</h3>
+      <table>
+        <thead><tr><th>Nhân viên</th><th>Ngày làm việc</th><th>Ngày Ca 1</th><th>Ngày Ca 2</th><th>Giờ tăng ca</th></tr></thead>
+        <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr>)}</tbody>
+        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr></tfoot>
+      </table>
     </div>}
   </section>
 }

@@ -2,6 +2,7 @@ from datetime import date, datetime
 import unittest
 
 import vera_auto_check as auto_check
+from vera_web_v2_attendance_v42 import _looks_like_final_checkout, _work_day_for_row
 
 from vera_attendance_rules import (
     apply_break_restriction,
@@ -96,6 +97,31 @@ class SupportedShiftStartTests(unittest.TestCase):
         self.assertEqual(adjusted["shift_start"], "12:00")
         self.assertEqual(adjusted["late_minutes"], 2)
         self.assertEqual(adjusted["arrival_status"], "Đi trễ")
+
+
+class OvernightCheckoutBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        self.work_day = date(2026, 9, 3)
+
+    def test_23_to_03_is_always_checkout(self):
+        item = {}
+        for value in (
+            datetime(2026, 9, 3, 23, 0),
+            datetime(2026, 9, 4, 0, 30),
+            datetime(2026, 9, 4, 3, 0),
+        ):
+            self.assertTrue(_looks_like_final_checkout(value, self.work_day, item, 2))
+
+    def test_after_03_is_not_forced_to_previous_day_checkout(self):
+        value = datetime(2026, 9, 4, 3, 1)
+        self.assertFalse(_looks_like_final_checkout(value, self.work_day, {}, 2))
+        self.assertEqual(_work_day_for_row({}, [value]), date(2026, 9, 4))
+
+    def test_03_exactly_belongs_to_previous_workday(self):
+        self.assertEqual(
+            _work_day_for_row({}, [datetime(2026, 9, 4, 3, 0)]),
+            date(2026, 9, 3),
+        )
 
 
 class SupportedLatePenaltyThresholdTests(unittest.TestCase):

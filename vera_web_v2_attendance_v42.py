@@ -27,7 +27,7 @@ import vera_web_v2_department_attendance as department_attendance
 
 
 RELEASE = "4.2.2-locker-letan-work-schedule"
-ALLOWED_ROLES = {"nhanvien", "leader", "locker", "letan"}
+ALLOWED_ROLES = {"admin", "quanly", "nhanvien", "leader", "locker", "letan", "tapvu"}
 RAW_TIME_ALIASES = {
     "thoi gian", "thoigian", "time", "timestr", "datetime", "datetimestr",
     "checktime", "checktimestr", "checkindatetime", "checkindatetimestr",
@@ -113,7 +113,7 @@ def _eligible_aliases(conn) -> tuple[dict[str, str], dict[str, str]]:
     rows = conn.execute(text("""
         SELECT username, COALESCE(full_name,'') AS full_name, lower(COALESCE(role,'')) AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader','locker','letan')
+        WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu')
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc','đang làm việc')) = 'đang làm việc'
     """)).mappings().all()
@@ -183,9 +183,9 @@ def _work_day_for_row(item: dict[str, Any], punches: list[datetime]) -> date | N
     if not punches:
         return None
     first = min(punches)
-    # Legacy Auto Check convention: 00:00–01:59 belongs to the previous
+    # VERA convention: 00:00–03:00 belongs to the previous
     # operational workday (late final checkout after midnight).
-    return first.date() - timedelta(days=1) if first.hour < 2 else first.date()
+    return first.date() - timedelta(days=1) if first.time() <= time(3, 0) else first.date()
 
 
 def _cluster_punches(values: list[datetime], minutes: int) -> list[datetime]:
@@ -224,10 +224,10 @@ def _expected_end(work_day: date, item: dict[str, Any]) -> datetime | None:
 
 
 def _looks_like_final_checkout(value: datetime, work_day: date, item: dict[str, Any], punch_count: int) -> bool:
-    # Preserve old-system hard boundary: 23:00 of the workday through 02:59 the
+    # Hard boundary for every department: 23:00 of the workday through 03:00 the
     # next day is final checkout and must never become a break edge.
     if (value.date() == work_day and value.hour >= 23) or (
-        value.date() == work_day + timedelta(days=1) and value.hour < 3
+        value.date() == work_day + timedelta(days=1) and value.time() <= time(3, 0)
     ):
         return True
     return False
