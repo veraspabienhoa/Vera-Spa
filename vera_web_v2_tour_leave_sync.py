@@ -19,13 +19,14 @@ import unicodedata
 from typing import Any, Callable, Literal
 from zipfile import ZIP_DEFLATED, ZipFile
 
-import google.auth
 from google.auth.transport.requests import AuthorizedSession
 from fastapi import Depends, HTTPException
 from lxml import etree
 from openpyxl.formula.translate import Translator
 from pydantic import BaseModel
 from sqlalchemy import text
+
+from vera_google_credentials import google_credentials
 
 
 RELEASE = "tour-leave-sync-2026-09-02.2-cp-only"
@@ -707,8 +708,7 @@ def _apply_action(
 
 
 def _drive_session() -> AuthorizedSession:
-    credentials, _ = google.auth.default(scopes=[DRIVE_SCOPE])
-    return AuthorizedSession(credentials)
+    return AuthorizedSession(google_credentials([DRIVE_SCOPE]))
 
 
 def _download_tour(session: AuthorizedSession) -> tuple[bytes, str]:

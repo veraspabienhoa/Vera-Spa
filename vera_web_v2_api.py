@@ -27,7 +27,6 @@ import uuid
 from typing import Any
 from urllib.parse import quote
 
-import google.auth
 import gspread
 import requests
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -41,6 +40,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import URL
 
+from vera_google_credentials import google_credentials
 from vera_leave_registration_shared import summarize_leave_day
 from vera_json import json_safe, json_text
 from vera_web_v2_token_cache import VerifiedTokenCache
@@ -113,8 +113,7 @@ def _google_client():
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
         ]
-        creds, _ = google.auth.default(scopes=scopes)
-        _gspread = gspread.authorize(creds)
+        _gspread = gspread.authorize(google_credentials(scopes))
     return _gspread
 
 

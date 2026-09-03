@@ -12,11 +12,11 @@ import os
 import re
 from typing import Any
 
-import google.auth
 from google.auth.transport.requests import AuthorizedSession
 from fastapi import Depends, HTTPException, Query
 from pyxlsb import open_workbook
 
+from vera_google_credentials import google_credentials
 from vera_web_v2_revenue_leave_list import (
     REVENUE_FEATURE,
     REVENUE_SPREADSHEET_ID,
@@ -110,8 +110,7 @@ def _drive_download_purchase_report() -> bytes:
     if not PURCHASE_REPORT_FILE_ID:
         raise HTTPException(503, "Chưa cấu hình file BaoCaoMuaHang trên Google Drive.")
     try:
-        credentials, _ = google.auth.default(scopes=[DRIVE_SCOPE])
-        session = AuthorizedSession(credentials)
+        session = AuthorizedSession(google_credentials([DRIVE_SCOPE]))
         response = session.get(
             f"https://www.googleapis.com/drive/v3/files/{PURCHASE_REPORT_FILE_ID}?alt=media",
             timeout=30,
