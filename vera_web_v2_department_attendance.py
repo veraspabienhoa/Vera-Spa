@@ -12,7 +12,7 @@ from sqlalchemy import text
 from vera_department_attendance_rules import schedule_late_minutes
 
 
-RELEASE = "department-attendance-2026-09-03-v1"
+RELEASE = "department-attendance-2026-09-03-v2"
 DEPARTMENTS = ("locker", "letan")
 LABELS = {"locker": "Locker", "letan": "Lễ tân"}
 DEFAULT_CONTROL = {"attendance_enabled": True, "notifications_enabled": True}
@@ -92,20 +92,20 @@ def employee_role(conn, employee: str) -> str:
     return str((row or {}).get("role") or "").strip().lower()
 
 
-def scheduled_shift(conn, work_day: date, employee: str, department: str) -> dict[str, Any] | None:
+def scheduled_assignment(conn, work_day: date, employee: str) -> dict[str, Any] | None:
     row = conn.execute(text("""
-        SELECT ws.shift_code,
+        SELECT lower(ws.department) AS department, ws.shift_code,
                COALESCE(NULLIF(ws.start_time,''),d.start_time,'') AS start_time,
                COALESCE(NULLIF(ws.end_time,''),d.end_time,'') AS end_time,
                ws.overtime_shift,ws.overtime_start_time,ws.overtime_end_time
         FROM vera_work_schedule ws
         LEFT JOIN vera_work_shift_definition d
           ON d.department=ws.department AND lower(d.shift_code)=lower(ws.shift_code)
-        WHERE ws.work_date=:work_day AND lower(ws.department)=:department
+        WHERE ws.work_date=:work_day
           AND (lower(btrim(ws.employee_username))=lower(btrim(:employee))
                OR lower(btrim(ws.employee_name))=lower(btrim(:employee)))
         LIMIT 1
-    """), {"work_day": work_day, "employee": employee, "department": department}).mappings().first()
+    """), {"work_day": work_day, "employee": employee}).mappings().first()
     if not row:
         return None
     result = dict(row)
@@ -114,13 +114,21 @@ def scheduled_shift(conn, work_day: date, employee: str, department: str) -> dic
     return result
 
 
+def scheduled_shift(conn, work_day: date, employee: str, department: str) -> dict[str, Any] | None:
+    assignment = scheduled_assignment(conn, work_day, employee)
+    if not assignment or str(assignment.get("department") or "").lower() != str(department or "").lower():
+        return None
+    return assignment
+
+
 def apply_schedule_to_record(conn, item: dict[str, Any], work_day: date, employee: str, role: str) -> dict[str, Any] | None:
     role = str(role or "").lower()
-    if role not in DEPARTMENTS:
+    schedule = scheduled_assignment(conn, work_day, employee)
+    department = str((schedule or {}).get("department") or role).lower()
+    if department not in DEPARTMENTS:
         return item
-    if not control_for(conn, role)["attendance_enabled"]:
+    if not control_for(conn, department)["attendance_enabled"]:
         return None
-    schedule = scheduled_shift(conn, work_day, employee, role)
     if not schedule or schedule.get("is_off"):
         return None
     result = dict(item)
@@ -128,7 +136,7 @@ def apply_schedule_to_record(conn, item: dict[str, Any], work_day: date, employe
         "shift": str(schedule.get("shift_code") or ""),
         "shift_start": str(schedule.get("start_time") or ""),
         "shift_end": str(schedule.get("end_time") or ""),
-        "break_department": LABELS[role],
+        "break_department": LABELS[department],
         "break_enabled": False,
         "break_planned_minutes": 0,
         "break_actual_minutes": 0,
@@ -139,7 +147,7 @@ def apply_schedule_to_record(conn, item: dict[str, Any], work_day: date, employe
         "break_detail": "",
         "break_source": "",
         "break_method": "Không áp dụng cho bộ phận",
-        "break_status": f"{LABELS[role]} không áp dụng chính sách nghỉ giữa ca",
+        "break_status": f"{LABELS[department]} không áp dụng chính sách nghỉ giữa ca",
         "break_restricted_reason": "",
         "break_return_late_minutes": 0,
         "break_return_deadline": "",
