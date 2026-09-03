@@ -229,6 +229,9 @@ export const veraApi = {
   profile: () => request('/v2/profile'),
   profileReferenceData: (provinceCode = '') => request(`/v2/profile/reference-data${provinceCode === '' ? '' : `?province_code=${encodeURIComponent(provinceCode)}`}`),
   updateProfile: (body) => request('/v2/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  renameSystemName: (username, systemName) => request(`/v2/staff/${encodeURIComponent(username)}/system-name`, {
+    method: 'PATCH', body: JSON.stringify({ system_name: systemName }),
+  }),
   permissions: () => request('/v2/permissions'),
   savePermissions: (scope, target, body) => request(`/v2/permissions/${encodeURIComponent(scope)}/${encodeURIComponent(target)}`, {
     method: 'PUT', body: JSON.stringify(body),
