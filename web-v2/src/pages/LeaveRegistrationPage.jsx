@@ -161,9 +161,10 @@ export default function LeaveRegistrationPage({ user }) {
     }
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options = {}) => {
+    const afterSuccessfulCreate = options?.afterSuccessfulCreate === true
     setBusy(true)
-    setError('')
+    if (!afterSuccessfulCreate) setError('')
     try {
       if (isApiConfigured) {
         const [dailyData, recordData, reasonData, employeeData] = await Promise.all([
@@ -193,8 +194,18 @@ export default function LeaveRegistrationPage({ user }) {
         setReasons(reasonData.map((name) => ({ name, requires_manual_penalty: false })))
         setEmployees(employeeData)
       }
+      return true
     } catch (err) {
-      setError(err.message || 'Không tải được dữ liệu từ PostgreSQL/Supabase.')
+      const detail = err.message || 'Không tải được dữ liệu từ PostgreSQL/Supabase.'
+      if (afterSuccessfulCreate) {
+        setWarnings((current) => [
+          ...current,
+          `Lịch nghỉ đã được lưu, nhưng chưa thể làm mới dữ liệu hiển thị (${detail}). Vui lòng bấm Làm mới.`,
+        ])
+      } else {
+        setError(detail)
+      }
+      return false
     } finally {
       setBusy(false)
     }
@@ -532,7 +543,7 @@ export default function LeaveRegistrationPage({ user }) {
       })
       setWarnings(result.warnings || [])
       setMessage('Đã ghi lịch nghỉ THÀNH CÔNG')
-      await load()
+      await load({ afterSuccessfulCreate: true })
       await refreshWatchDates()
     } catch (err) {
       setError(`KHÔNG THÀNH CÔNG (${err.message || 'Không ghi được lịch nghỉ.'})`)
