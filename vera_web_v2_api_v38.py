@@ -111,6 +111,7 @@ install_auth_gateway(
     supabase_url=_api.SUPABASE_URL,
     supabase_anon_key=_api.SUPABASE_ANON_KEY,
     profile_loader=_login_profile,
+    verified_token_callback=_api.remember_verified_token,
 )
 
 install_payroll_v38_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity, google_client=_api._google_client)

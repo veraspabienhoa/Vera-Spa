@@ -94,6 +94,7 @@ def install_auth_gateway(
     supabase_url: str,
     supabase_anon_key: str,
     profile_loader: Callable[[str], dict[str, Any]] | None = None,
+    verified_token_callback: Callable[[str, str], None] | None = None,
 ) -> None:
     if any(getattr(route, "path", "") == "/v2/auth/login" for route in app.routes):
         return
@@ -141,12 +142,15 @@ def install_auth_gateway(
                 default_message="Chưa tạo được phiên đăng nhập VERA.",
             )
         session = _public_session(_response_json(token_response))
+        auth_user_id = str(session["user"].get("id") or "").strip()
+        if verified_token_callback and auth_user_id:
+            verified_token_callback(session["access_token"], auth_user_id)
         if profile_loader:
             employee_username = str(bridge.get("employee_username") or "").strip()
             if not employee_username:
                 raise HTTPException(503, "Dịch vụ xác thực VERA chưa trả về tài khoản nhân viên.")
             profile = profile_loader(employee_username)
-            profile["auth_user_id"] = str(session["user"].get("id") or profile.get("auth_user_id") or "")
+            profile["auth_user_id"] = auth_user_id or str(profile.get("auth_user_id") or "")
             session["vera_profile"] = profile
         return JSONResponse(session, headers=_NO_STORE_HEADERS)
 
@@ -162,4 +166,8 @@ def install_auth_gateway(
                 token_response,
                 default_message="Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
             )
-        return JSONResponse(_public_session(_response_json(token_response)), headers=_NO_STORE_HEADERS)
+        session = _public_session(_response_json(token_response))
+        auth_user_id = str(session["user"].get("id") or "").strip()
+        if verified_token_callback and auth_user_id:
+            verified_token_callback(session["access_token"], auth_user_id)
+        return JSONResponse(session, headers=_NO_STORE_HEADERS)

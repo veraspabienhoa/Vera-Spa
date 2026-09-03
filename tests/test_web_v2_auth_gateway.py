@@ -117,3 +117,38 @@ def test_login_can_include_the_already_verified_vera_profile(monkeypatch):
     assert response.status_code == 200
     assert response.json()["vera_profile"]["employee_username"] == "admin"
     assert response.json()["vera_profile"]["auth_user_id"] == "auth-user-id"
+
+
+def test_login_and_refresh_seed_the_verified_token_cache(monkeypatch):
+    verified = []
+
+    def fake_post(url, *, headers, json, timeout):
+        if "/functions/v1/vera-v2-login" in url:
+            return _Response(200, {
+                "email": "internal@example.test",
+                "password": "ephemeral-secret",
+            })
+        access_token = "refreshed-access" if "refresh_token" in json else "login-access"
+        return _Response(200, {
+            "access_token": access_token,
+            "refresh_token": "refresh-token",
+            "expires_in": 3600,
+            "user": {"id": "auth-user-id"},
+        })
+
+    monkeypatch.setattr(gateway._HTTP, "post", fake_post)
+    app = FastAPI()
+    gateway.install_auth_gateway(
+        app,
+        supabase_url="https://project.supabase.co",
+        supabase_anon_key="public-anon-key",
+        verified_token_callback=lambda token, uid: verified.append((token, uid)),
+    )
+    client = TestClient(app)
+
+    assert client.post("/v2/auth/login", json={"username": "admin", "password": "secret"}).status_code == 200
+    assert client.post("/v2/auth/refresh", json={"refresh_token": "refresh-token"}).status_code == 200
+    assert verified == [
+        ("login-access", "auth-user-id"),
+        ("refreshed-access", "auth-user-id"),
+    ]

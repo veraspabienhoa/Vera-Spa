@@ -43,6 +43,7 @@ from sqlalchemy.engine import URL
 
 from vera_leave_registration_shared import summarize_leave_day
 from vera_json import json_safe, json_text
+from vera_web_v2_token_cache import VerifiedTokenCache
 
 VN_TZ = timezone(timedelta(hours=7))
 LEAVE_SHEET_ID = os.getenv(
@@ -71,6 +72,12 @@ app.add_middleware(
 
 _engine = None
 _gspread = None
+_AUTH_HTTP = requests.Session()
+_AUTH_HTTP.mount("https://", requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=20))
+_VERIFIED_TOKENS = VerifiedTokenCache(
+    ttl_seconds=float(os.getenv("VERA_AUTH_CACHE_TTL_SECONDS", "30")),
+    max_entries=int(os.getenv("VERA_AUTH_CACHE_MAX_ENTRIES", "1024")),
+)
 
 
 def _engine_instance():
@@ -508,26 +515,35 @@ def _require_feature(conn, ident: Identity, feature: str):
         raise HTTPException(403, "Tài khoản hiện tại chưa được cấp quyền dùng chức năng này.")
 
 
-async def current_identity(authorization: str | None = Header(default=None)) -> Identity:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "Thiếu phiên đăng nhập Supabase.")
-    token = authorization.split(" ", 1)[1].strip()
-    if not token or not SUPABASE_ANON_KEY:
-        raise HTTPException(503, "API Auth chưa được cấu hình.")
+def remember_verified_token(token: str, auth_uid: str) -> None:
+    """Seed the verification cache from a successful API login/refresh."""
+    _VERIFIED_TOKENS.remember(token, auth_uid)
+
+
+def _verify_supabase_token(token: str) -> str:
     try:
-        resp = requests.get(
+        resp = _AUTH_HTTP.get(
             f"{SUPABASE_URL}/auth/v1/user",
             headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_ANON_KEY},
-            timeout=10,
+            timeout=(4, 8),
         )
     except requests.RequestException as exc:
         raise HTTPException(503, f"Không xác minh được phiên đăng nhập: {exc}") from exc
     if resp.status_code != 200:
         raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
-    user = resp.json()
-    auth_uid = str(user.get("id") or "")
+    auth_uid = str(resp.json().get("id") or "")
     if not auth_uid:
         raise HTTPException(401, "Không xác định được tài khoản Supabase.")
+    return auth_uid
+
+
+def current_identity(authorization: str | None = Header(default=None)) -> Identity:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "Thiếu phiên đăng nhập Supabase.")
+    token = authorization.split(" ", 1)[1].strip()
+    if not token or not SUPABASE_ANON_KEY:
+        raise HTTPException(503, "API Auth chưa được cấu hình.")
+    auth_uid = _VERIFIED_TOKENS.get_or_load(token, lambda: _verify_supabase_token(token))
 
     with _engine_instance().connect() as conn:
         row = conn.execute(text("""

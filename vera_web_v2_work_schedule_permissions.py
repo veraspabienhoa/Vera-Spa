@@ -24,6 +24,7 @@ import re
 import unicodedata
 from typing import Any
 
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import Response
 
 import vera_leave_registration_shared as leave_rules
@@ -170,8 +171,9 @@ def _install_directory_visibility_middleware() -> None:
             if _payload_contains_hidden_directory_account(payload):
                 is_admin = False
                 try:
-                    ident = await shared._api.current_identity(
-                        authorization=request.headers.get("authorization")
+                    ident = await run_in_threadpool(
+                        shared._api.current_identity,
+                        authorization=request.headers.get("authorization"),
                     )
                     is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
                 except Exception:
