@@ -172,8 +172,6 @@ def install_permission_routes(
 
         conn = engine_instance().connect()
         tx = conn.begin()
-        ws = None
-        backup: list[list[Any]] | None = None
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:feature_permissions'))"))
             row = conn.execute(text("""
@@ -198,12 +196,6 @@ def install_permission_routes(
             payload[key] = keep
             payload.setdefault("roles" if key == "accounts" else "accounts", [])
 
-            sheet = google_client().open_by_key(CREDENTIAL_SHEET_ID)
-            try:
-                ws = sheet.worksheet(WORKSHEET)
-            except gspread.WorksheetNotFound:
-                ws = sheet.add_worksheet(title=WORKSHEET, rows=1000, cols=len(HEADERS))
-            backup = ws.get_all_values()
             mirror = [HEADERS]
             for mirror_scope, items in (("Vai trò", payload.get("roles", [])), ("Tài khoản", payload.get("accounts", []))):
                 for item in items or []:
@@ -212,9 +204,6 @@ def install_permission_routes(
                         "TRUE" if item.get("allowed") else "FALSE", now.strftime("%d/%m/%Y"),
                         now.strftime("%H:%M:%S"), ident.employee_username,
                     ])
-            ws.clear()
-            ws.update(range_name=f"A1:G{len(mirror)}", values=mirror, value_input_option="USER_ENTERED")
-
             conn.execute(text("""
                 INSERT INTO vera_app_setting(category, setting_key, value_json, source, updated_by, revision, created_at, updated_at)
                 VALUES ('authorization','feature_permissions',CAST(:payload AS jsonb),'web_v2',:updated_by,1,NOW(),NOW())
@@ -225,19 +214,37 @@ def install_permission_routes(
             tx.commit()
             if permissions_changed is not None:
                 permissions_changed()
-            return {"ok": True, "message": "Đã lưu phân quyền THÀNH CÔNG", "revision": revision + 1}
+
+            # PostgreSQL is the canonical permission store. The legacy Google
+            # worksheet is only a compatibility mirror and must never make a
+            # valid permission change fail (for example, when VPS credentials
+            # are temporarily missing or malformed).
+            mirror_warning = ""
+            try:
+                sheet = google_client().open_by_key(CREDENTIAL_SHEET_ID)
+                try:
+                    ws = sheet.worksheet(WORKSHEET)
+                except gspread.WorksheetNotFound:
+                    ws = sheet.add_worksheet(title=WORKSHEET, rows=1000, cols=len(HEADERS))
+                ws.clear()
+                ws.update(range_name=f"A1:G{len(mirror)}", values=mirror, value_input_option="USER_ENTERED")
+            except Exception as mirror_exc:
+                mirror_warning = (
+                    "Đã lưu PostgreSQL; chưa đồng bộ được bản sao Google Sheets "
+                    f"({type(mirror_exc).__name__})."
+                )
+            return {
+                "ok": True,
+                "message": "Đã lưu phân quyền THÀNH CÔNG",
+                "revision": revision + 1,
+                "mirror_pending": bool(mirror_warning),
+                "warnings": [mirror_warning] if mirror_warning else [],
+            }
         except HTTPException:
             if tx.is_active: tx.rollback()
             raise
         except Exception as exc:
             if tx.is_active: tx.rollback()
-            if ws is not None and backup is not None:
-                try:
-                    ws.clear()
-                    if backup:
-                        ws.update(range_name=f"A1:G{len(backup)}", values=backup, value_input_option="USER_ENTERED")
-                except Exception:
-                    pass
             raise HTTPException(500, f"Không lưu được phân quyền an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
