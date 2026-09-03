@@ -129,6 +129,17 @@ const refreshApiSession = async (session) => {
   return refreshPromise
 }
 
+export async function refreshCurrentSession(session = readApiSession()) {
+  if (!session?.refresh_token) return null
+  try {
+    return await refreshApiSession(session)
+  } catch (error) {
+    clearApiSession()
+    notifyApiAuth('SIGNED_OUT', null)
+    throw error
+  }
+}
+
 export async function getCurrentSession() {
   const apiSession = readApiSession()
   if (apiSession) {

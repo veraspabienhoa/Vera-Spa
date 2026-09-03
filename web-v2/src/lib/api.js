@@ -1,4 +1,4 @@
-import { getCurrentSession, isSupabaseConfigured, supabase } from './supabase'
+import { getCurrentSession, isSupabaseConfigured, refreshCurrentSession, supabase } from './supabase'
 import { apiErrorMessage } from './apiError'
 import { summarizeLeaveRecordDays } from './leaveStats'
 
@@ -9,7 +9,7 @@ export const isReadConfigured = Boolean(apiBase || isSupabaseConfigured)
 async function request(path, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
 
-  const session = await getCurrentSession()
+  let session = await getCurrentSession()
   const headers = new Headers(options.headers || {})
   headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
@@ -26,6 +26,13 @@ async function request(path, options = {}) {
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       response = await fetch(`${apiBase}${path}`, { ...options, headers })
+      if (response.status === 401 && session?.refresh_token) {
+        session = await refreshCurrentSession(session)
+        if (session?.access_token) {
+          headers.set('Authorization', `Bearer ${session.access_token}`)
+          response = await fetch(`${apiBase}${path}`, { ...options, headers })
+        }
+      }
       break
     } catch (error) {
       lastError = error
