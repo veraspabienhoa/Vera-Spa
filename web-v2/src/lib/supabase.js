@@ -47,6 +47,7 @@ const saveApiSession = (payload, event = 'SIGNED_IN') => {
     expires_in: expiresIn,
     expires_at: Number(payload.expires_at || Math.floor(Date.now() / 1000) + expiresIn),
     user: payload.user,
+    vera_profile: payload.vera_profile || null,
   }
   volatileApiSession = session
   try { window.localStorage.setItem(API_SESSION_KEY, JSON.stringify(session)) } catch { /* keep the in-memory session */ }

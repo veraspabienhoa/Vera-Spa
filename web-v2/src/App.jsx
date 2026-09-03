@@ -75,7 +75,9 @@ export default function App() {
       setSession(nextSession); setAuthError('')
       if (!nextSession) { setProfile(null); setLoading(false); return }
       try {
-        const me = await veraApi.me()
+        // API-primary login already verified this profile server-side. Reusing
+        // it removes a redundant Supabase token check and one visible wait.
+        const me = nextSession.vera_profile || await veraApi.me()
         if (!me?.employee_username || me?.is_active === false) throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
         if (mounted) {
           setProfile(me)

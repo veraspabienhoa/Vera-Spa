@@ -8,7 +8,7 @@ Supabase Edge Function directly.
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -21,6 +21,8 @@ _NO_STORE_HEADERS = {
     "Cache-Control": "no-store, max-age=0",
     "Pragma": "no-cache",
 }
+_HTTP = requests.Session()
+_HTTP.mount("https://", requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=20))
 
 
 class VeraLoginRequest(BaseModel):
@@ -36,7 +38,7 @@ def _post_with_retry(url: str, *, headers: dict[str, str], payload: dict[str, An
     last_error: requests.RequestException | None = None
     for attempt in range(2):
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=(5, 15))
+            response = _HTTP.post(url, headers=headers, json=payload, timeout=(4, 12))
         except requests.RequestException as exc:
             last_error = exc
             if attempt == 0:
@@ -91,6 +93,7 @@ def install_auth_gateway(
     *,
     supabase_url: str,
     supabase_anon_key: str,
+    profile_loader: Callable[[str], dict[str, Any]] | None = None,
 ) -> None:
     if any(getattr(route, "path", "") == "/v2/auth/login" for route in app.routes):
         return
@@ -137,7 +140,15 @@ def install_auth_gateway(
                 token_response,
                 default_message="Chưa tạo được phiên đăng nhập VERA.",
             )
-        return JSONResponse(_public_session(_response_json(token_response)), headers=_NO_STORE_HEADERS)
+        session = _public_session(_response_json(token_response))
+        if profile_loader:
+            employee_username = str(bridge.get("employee_username") or "").strip()
+            if not employee_username:
+                raise HTTPException(503, "Dịch vụ xác thực VERA chưa trả về tài khoản nhân viên.")
+            profile = profile_loader(employee_username)
+            profile["auth_user_id"] = str(session["user"].get("id") or profile.get("auth_user_id") or "")
+            session["vera_profile"] = profile
+        return JSONResponse(session, headers=_NO_STORE_HEADERS)
 
     @app.post("/v2/auth/refresh")
     def refresh(body: VeraRefreshRequest):

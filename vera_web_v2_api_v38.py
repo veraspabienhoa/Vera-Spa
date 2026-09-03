@@ -1,6 +1,9 @@
 """Web V2 shared API entrypoint + Payroll 3.8 installers."""
 from __future__ import annotations
 
+from fastapi import HTTPException
+from sqlalchemy import text
+
 import vera_web_v2_api_shared as _shared
 import vera_web_v2_admin_audit_archive as _audit_archive
 import vera_web_v2_staff_status_sort as _staff_sort
@@ -61,10 +64,53 @@ _audit_archive.leave_update_type = _api.LeaveUpdate
 _audit_archive.leave_delete_type = _api.LeaveDelete
 _staff_sort.identity_type = _api.Identity
 
+
+def _login_profile(employee_username: str) -> dict:
+    """Build the verified UI profile without a second Supabase /auth/user hop."""
+    with _api._engine_instance().connect() as conn:
+        row = conn.execute(text("""
+            SELECT username, COALESCE(role,'nhanvien'), COALESCE(full_name,''),
+                   COALESCE(email,''),
+                   lower(COALESCE(payload->>'must_change_password','')) IN ('1','true','yes','y')
+            FROM employees
+            WHERE username=:username
+              AND COALESCE(login_locked,false)=false
+              AND COALESCE(
+                    payload->>'Trạng thái làm việc',
+                    payload->>'employment_status',
+                    'Đang làm việc'
+                  ) = 'Đang làm việc'
+            LIMIT 1
+        """), {"username": employee_username}).first()
+        if not row:
+            raise HTTPException(403, "Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.")
+        ident = _api.Identity(
+            auth_user_id="",
+            employee_username=row[0],
+            role=str(row[1] or "nhanvien").lower(),
+            full_name=row[2],
+            email=row[3],
+            must_change_password=bool(row[4]),
+        )
+        permission_payload = _api._permission_payload(conn)
+        permissions = {
+            feature: _api._feature_allowed(conn, ident, feature, permission_payload)
+            for feature in _api.WEB_V2_FEATURES
+        }
+        registration_locked = _api._registration_role_locked(conn, ident.role)
+    return {
+        **ident.model_dump(),
+        "permissions": permissions,
+        "registration_locked": registration_locked,
+        "is_active": True,
+    }
+
+
 install_auth_gateway(
     _shared.app,
     supabase_url=_api.SUPABASE_URL,
     supabase_anon_key=_api.SUPABASE_ANON_KEY,
+    profile_loader=_login_profile,
 )
 
 install_payroll_v38_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity, google_client=_api._google_client)
