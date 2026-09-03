@@ -25,7 +25,7 @@ import vera_web_v2_payroll as payroll
 import vera_web_v2_snapshot as attendance
 
 
-RELEASE = "department-payroll-employee-config-tables-2026-09-03-v3"
+RELEASE = "department-payroll-config-add-search-2026-09-03-v4"
 DEPARTMENTS = {
     "quanly": "Quản lý",
     "locker": "Locker",
@@ -225,9 +225,7 @@ def _settings(conn, department: str) -> dict[str, Any]:
     }
 
 
-def _employee_config_rows(conn) -> list[dict[str, Any]]:
-    stored = payroll._setting(conn, "department_employee_salary_configs", {})
-    stored = stored if isinstance(stored, dict) else {}
+def _salary_employee_catalog(conn) -> list[dict[str, Any]]:
     employees = conn.execute(text("""
         SELECT username,COALESCE(full_name,'') AS full_name,lower(COALESCE(role,'')) AS role
         FROM employees
@@ -238,17 +236,31 @@ def _employee_config_rows(conn) -> list[dict[str, Any]]:
           WHEN 'quanly' THEN 0 WHEN 'letan' THEN 1 WHEN 'locker' THEN 2 ELSE 3 END,
           COALESCE(stt,2147483647),username
     """)).mappings().all()
+    return [{
+        "employee_username": str(employee.get("username") or "").strip(),
+        "employee_name": str(employee.get("full_name") or employee.get("username") or "").strip(),
+        "department": str(employee.get("role") or "").strip().lower(),
+        "department_label": DEPARTMENTS[str(employee.get("role") or "").strip().lower()],
+    } for employee in employees]
+
+
+def _employee_config_rows(conn) -> list[dict[str, Any]]:
+    stored = payroll._setting(conn, "department_employee_salary_configs", {})
+    stored = stored if isinstance(stored, dict) else {}
+    catalog = _salary_employee_catalog(conn)
     rows = []
-    for employee in employees:
-        username = str(employee.get("username") or "").strip()
-        role = str(employee.get("role") or "").strip().lower()
+    for employee in catalog:
+        username = employee["employee_username"]
+        role = employee["department"]
         saved = stored.get(username)
         if not isinstance(saved, dict):
-            saved = stored.get(username.casefold(), {})
-        config = _clean_config(role, {**DEFAULT_CONFIG[role], **(saved if isinstance(saved, dict) else {})})
+            saved = stored.get(username.casefold())
+        if not isinstance(saved, dict):
+            continue
+        config = _clean_config(role, {**DEFAULT_CONFIG[role], **saved})
         rows.append({
             "employee_username": username,
-            "employee_name": str(employee.get("full_name") or username),
+            "employee_name": employee["employee_name"],
             "department": role,
             "department_label": DEPARTMENTS[role],
             **config,
@@ -506,6 +518,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
                 "ok": True, "release": RELEASE,
                 "departments": {key: _settings(conn, key) for key in DEPARTMENTS},
                 "salary_config_tables": _salary_config_tables(conn),
+                "salary_employee_catalog": _salary_employee_catalog(conn),
                 "email_layout": payroll.PAYROLL_EMAIL_TEMPLATE_RELEASE,
             }
 
@@ -515,7 +528,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             raise HTTPException(403, "Chỉ Admin được sửa cấu hình lương theo nhân viên.")
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_config_edit")
-            catalog = {row["employee_username"]: row for row in _employee_config_rows(conn)}
+            catalog = {row["employee_username"]: row for row in _salary_employee_catalog(conn)}
             supplied = {}
             for row in body.rows:
                 username = str(row.get("employee_username") or "").strip()
@@ -523,8 +536,6 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
                 if not employee or username in supplied:
                     raise HTTPException(400, "Cấu hình có nhân viên trống, trùng hoặc không thuộc đúng bộ phận.")
                 supplied[username] = _clean_config(employee["department"], row)
-            if set(supplied) != set(catalog):
-                raise HTTPException(400, "Cần lưu đầy đủ mỗi nhân viên đang làm việc đúng một dòng.")
             payroll._put_setting(conn, "department_employee_salary_configs", supplied, ident.employee_username)
             tables = _salary_config_tables(conn)
         return {"ok": True, "salary_config_tables": tables, "message": "Đã lưu cấu hình lương theo từng nhân viên."}
