@@ -1,7 +1,26 @@
 from vera_web_v2_support_shift_break import (
+    _apply_arrival_allowance,
     _remove_late_restriction,
     is_break_preserving_support,
 )
+
+
+def test_support_allowance_recalculates_arrival_status_from_effective_start():
+    item = {
+        "shift_start": "10:00",
+        "check_in": "03/09/2026 11:52:44",
+        "late_minutes": 112,
+        "arrival_status": "Đi trễ",
+    }
+    _apply_arrival_allowance(item, 120)
+    assert item["effective_shift_start"] == "12:00:00"
+    assert item["late_minutes"] == 0
+    assert item["arrival_status"] == "Đúng giờ"
+
+    item["check_in"] = "03/09/2026 12:02:44"
+    _apply_arrival_allowance(item, 120)
+    assert item["late_minutes"] == 2
+    assert item["arrival_status"] == "Đi trễ"
 
 
 def test_exact_support_reasons_are_break_preserving():
