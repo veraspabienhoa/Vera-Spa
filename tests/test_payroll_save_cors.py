@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_production_domain_is_allowed_by_python_api_and_cloud_build():
     api = (ROOT / "vera_web_v2_api.py").read_text(encoding="utf-8")
     build = (ROOT / "cloudbuild.yaml").read_text(encoding="utf-8")
-    assert "https://app.veraspa.vn;https://veraspabienhoa.github.io" in api
-    assert "VERA_V2_CORS_ORIGINS=https://app.veraspa.vn;https://veraspabienhoa.github.io" in build
-    assert 're.split(r"[,;\\n]"' in api
+    assert "https://app.veraspa.vn,https://veraspabienhoa.github.io" in api
+    assert "VERA_V2_CORS_ORIGINS=https://app.veraspa.vn,https://veraspabienhoa.github.io" in build
+    assert ').split(",")' in api
 
 
 def test_idempotent_payroll_save_retries_once_on_transport_failure():
