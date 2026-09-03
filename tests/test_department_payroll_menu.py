@@ -37,3 +37,17 @@ def test_department_email_uses_the_standard_employee_layout():
     assert "payroll._payroll_email_text" in backend
     assert "payroll._payroll_email_html" in backend
     assert '"email_layout": payroll.PAYROLL_EMAIL_TEMPLATE_RELEASE' in backend
+
+
+def test_employee_config_supports_department_search_and_explicit_rows():
+    panel = (ROOT / "web-v2/src/pages/DepartmentPayrollPanel.jsx").read_text(encoding="utf-8")
+    backend = (ROOT / "vera_web_v2_department_payroll.py").read_text(encoding="utf-8")
+    styles = (ROOT / "web-v2/src/styles.css").read_text(encoding="utf-8")
+    assert "salary_employee_catalog" in backend
+    assert "employeeCandidates" in panel
+    assert "Tìm nhân viên" in panel
+    assert "-- Chọn nhân viên --" in panel
+    assert "Thêm dòng" in panel
+    assert "removeEmployeeRow" in panel
+    assert ".department-config-table{display:block;width:100%;max-width:100%;overflow-x:auto" in styles
+    assert ".department-payroll-page{order:880;min-width:0;max-width:100%;overflow:hidden}" in styles
