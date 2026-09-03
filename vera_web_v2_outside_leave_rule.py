@@ -30,9 +30,10 @@ import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
 import vera_web_v2_attendance_break_alerts as break_alerts
 import vera_web_v2_snapshot as snapshot
+from vera_web_v2_support_shift_break import is_break_preserving_support
 
 
-RELEASE = "outside-leave-restriction-2026-09-02-v3-notify"
+RELEASE = "outside-leave-restriction-2026-09-03-v4-support-keeps-break"
 VN_TZ = timezone(timedelta(hours=7))
 CUTOFF = time(17, 0, 0)
 
@@ -44,6 +45,8 @@ def _norm(value: Any) -> str:
 
 
 def _restricted_leave_reason(value: Any) -> bool:
+    if is_break_preserving_support(value):
+        return False
     key = _norm(value)
     return "di tre" in key or "ve som" in key or "ra som" in key
 

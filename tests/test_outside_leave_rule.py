@@ -34,6 +34,18 @@ def test_all_late_and_early_leave_variants_block_outside_break():
     assert not _restricted_leave_reason("Nghỉ CÓ phép")
 
 
+def test_recognized_support_shift_reasons_keep_mid_shift_break():
+    for reason in (
+        "Hỗ trợ Ca 1 sau 23H đi trễ 2 tiếng",
+        "Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng",
+        "Hỗ trợ Ca 2 sau 0:0H đi trễ 1 tiếng",
+    ):
+        assert not _restricted_leave_reason(reason), reason
+
+    # The exception is exact; unrelated late registrations remain restricted.
+    assert _restricted_leave_reason("Hỗ trợ đi trễ không xác định")
+
+
 def test_outside_before_1700_is_penalized_from_break_out_to_1700():
     item, minutes, calculation = _violation_for(
         catalog=_catalog(),

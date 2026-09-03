@@ -11,6 +11,7 @@ Only lateness remaining after the allowance may restrict the break.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import re
 import unicodedata
 from typing import Any, Callable
 
@@ -33,6 +34,11 @@ SUPPORT_ALLOWANCES = {
     _norm("Hỗ trợ Ca 1 sau 0:0H đi trễ 3 tiếng"): 180,
     _norm("Hỗ trợ Ca 2 sau 0:0H đi trễ 1 tiếng"): 60,
 }
+
+
+def is_break_preserving_support(value: Any) -> bool:
+    """Only recognized Hỗ trợ-ca reasons preserve the normal mid-shift break."""
+    return _norm(value) in SUPPORT_ALLOWANCES
 
 
 def _support_map(conn, start, end) -> dict[tuple[str, str], tuple[int, str]]:
@@ -69,11 +75,16 @@ def _remove_late_restriction(item: dict[str, Any]) -> None:
     reason = str(item.get("break_restricted_reason") or "").strip()
     if not reason:
         return
-    parts = [part.strip() for part in reason.split(" và ") if part.strip()]
-    parts = [part for part in parts if _norm(part) != "di tre"]
+    parts = [part.strip() for part in re.split(r"\s+(?:và|/)\s+", reason, flags=re.IGNORECASE) if part.strip()]
+    parts = [
+        part for part in parts
+        if _norm(part) != "di tre" and not is_break_preserving_support(part)
+    ]
     item["break_restricted_reason"] = " và ".join(parts)
     if parts:
         return
+
+    item["break_alert_suppressed"] = False
 
     enabled = bool(item.get("break_enabled"))
     planned = int(item.get("break_planned_minutes") or 0)
@@ -140,6 +151,7 @@ def install_support_shift_break(app, *, engine_instance: Callable[[], Any], snap
                 "Hỗ trợ Ca 2 sau 0:0H đi trễ 1 tiếng": 60,
             },
             "support_keeps_break": True,
+            "support_never_creates_outside_penalty": True,
         }
 
     app.state.support_shift_break_installed = True
