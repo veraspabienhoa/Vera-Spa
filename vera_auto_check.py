@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     "midshift_hour": 21,
     "manual_run_requested": False,
 }
+MIN_AUTOMATIC_LATE_PENALTY_MINUTES = 5
 
 REGISTERED_LATE_REASONS = {
     "di tre phat sinh",
@@ -94,7 +95,10 @@ def load_config(conn) -> dict:
     cfg = dict(DEFAULT_CONFIG)
     cfg.update(_json(row, {}))
     cfg["status"] = "PAUSED" if str(cfg.get("status", "")).upper() == "PAUSED" else "RUNNING"
-    cfg["threshold_minutes"] = max(1, min(180, int(cfg.get("threshold_minutes", 5) or 5)))
+    cfg["threshold_minutes"] = max(
+        MIN_AUTOMATIC_LATE_PENALTY_MINUTES,
+        min(180, int(cfg.get("threshold_minutes", MIN_AUTOMATIC_LATE_PENALTY_MINUTES) or MIN_AUTOMATIC_LATE_PENALTY_MINUTES)),
+    )
     return cfg
 
 
@@ -104,7 +108,10 @@ def save_config(conn, updates: dict, actor: str) -> dict:
         if key in updates:
             cfg[key] = updates[key]
     cfg["status"] = "PAUSED" if str(cfg.get("status", "")).upper() == "PAUSED" else "RUNNING"
-    cfg["threshold_minutes"] = max(1, min(180, int(cfg.get("threshold_minutes", 5) or 5)))
+    cfg["threshold_minutes"] = max(
+        MIN_AUTOMATIC_LATE_PENALTY_MINUTES,
+        min(180, int(cfg.get("threshold_minutes", MIN_AUTOMATIC_LATE_PENALTY_MINUTES) or MIN_AUTOMATIC_LATE_PENALTY_MINUTES)),
+    )
     conn.execute(text("""
         INSERT INTO vera_app_setting(category,setting_key,value_json,source,updated_by,revision,created_at,updated_at)
         VALUES ('auto_check','config',CAST(:value AS jsonb),'web_v2',:actor,1,NOW(),NOW())
@@ -175,6 +182,22 @@ def outside_reason(catalog: dict, minutes: float):
         "Ra ngoài vào muộn từ 120 phút trở lên",
     ])
     return next((catalog_item(catalog, name) for name in candidates if catalog_item(catalog, name)), None)
+
+
+def is_automatic_late_reason(reason: str) -> bool:
+    """Return whether an automatic reason is governed by the 5-minute grace."""
+    key = _norm(reason)
+    return "di tre" in key or "ra ngoai vao muon" in key or "vao lai tre" in key
+
+
+def automatic_late_penalty_eligible(reason: str, minutes) -> bool:
+    """Never penalize a timed late event during minutes 1 through 4."""
+    if not is_automatic_late_reason(reason):
+        return True
+    try:
+        return float(minutes or 0) >= MIN_AUTOMATIC_LATE_PENALTY_MINUTES
+    except (TypeError, ValueError):
+        return False
 
 
 def late_support_for_day(conn, work_date: date, employee: str) -> tuple[list[str], int | None, str]:
@@ -268,6 +291,35 @@ def revoke_wrong_late_penalty(conn, *, work_date: date, employee: str, support_r
     )
 
 
+def revoke_grace_period_penalties(conn) -> int:
+    """Remove old system-created 1-4 minute late penalties, never manual rows."""
+    ensure_schema(conn)
+    rows = conn.execute(text("""
+        SELECT id,reason,minutes,leave_record_uid
+        FROM vera_auto_check_event
+        WHERE status='added' AND minutes > 0 AND minutes < :minimum
+        FOR UPDATE
+    """), {"minimum": MIN_AUTOMATIC_LATE_PENALTY_MINUTES}).mappings().all()
+    revoked = 0
+    for row in rows:
+        if not is_automatic_late_reason(str(row.get("reason") or "")):
+            continue
+        uid = str(row.get("leave_record_uid") or "").strip()
+        if uid:
+            conn.execute(text("""
+                DELETE FROM leave_records
+                WHERE source_sheet_id='postgres:auto_check' AND record_uid=:uid
+            """), {"uid": uid})
+        conn.execute(text("""
+            UPDATE vera_auto_check_event
+            SET status='revoked',leave_record_uid=NULL,employee_notify_claimed_at=NULL,
+                detail=CONCAT(COALESCE(detail,''),' · Thu hồi: trễ 1-4 phút thuộc thời gian ân hạn')
+            WHERE id=:id
+        """), {"id": row["id"]})
+        revoked += 1
+    return revoked
+
+
 def start_run(conn, trigger_type="scheduled") -> int:
     ensure_schema(conn)
     return int(conn.execute(text("""
@@ -314,8 +366,10 @@ def event_rows(conn, *, start: date | None = None, end: date | None = None, limi
 
 
 def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, detail: str, source: str, minutes=0) -> tuple[bool, str]:
-    ensure_schema(conn)
     reason = str(reason_item.get("name") or "").strip()
+    if not automatic_late_penalty_eligible(reason, minutes):
+        return True, "SKIP_GRACE_PERIOD"
+    ensure_schema(conn)
     event_key = f"{work_date.isoformat()}|{_norm(employee)}|{_norm(reason)}"
     inserted = conn.execute(text("""
         INSERT INTO vera_auto_check_event(event_key,work_date,employee_name,reason,source,minutes,status,detail,employee_notified_at)

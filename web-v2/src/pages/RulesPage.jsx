@@ -214,8 +214,8 @@ export default function RulesPage() {
 
   const saveLateThreshold = () => run('late-threshold', async () => {
     const threshold = Number.parseInt(lateThreshold, 10)
-    if (!Number.isInteger(threshold) || threshold < 1 || threshold > 180) {
-      throw new Error('Ngưỡng đi trễ phải từ 1 đến 180 phút.')
+    if (!Number.isInteger(threshold) || threshold < 5 || threshold > 180) {
+      throw new Error('Ngưỡng đi trễ phải từ 5 đến 180 phút.')
     }
     if (!lateThresholdDirty) throw new Error('Ngưỡng đi trễ chưa có thay đổi cần áp dụng.')
     const result = await veraApi.saveLateThreshold({
@@ -308,7 +308,7 @@ export default function RulesPage() {
         <div className="rules-filter-row" style={{ gridTemplateColumns: 'minmax(220px, 360px) auto' }}>
           <label>Ngưỡng đi trễ (phút)
             {canEditLateThreshold
-              ? <input type="number" min="1" max="180" inputMode="numeric" value={numberInputDisplayValue(lateThreshold)} onChange={(event) => setLateThreshold(event.target.value)} />
+              ? <input type="number" min="5" max="180" inputMode="numeric" value={numberInputDisplayValue(lateThreshold)} onChange={(event) => setLateThreshold(event.target.value)} />
               : <strong>{lateThreshold} phút</strong>}
           </label>
           {canEditLateThreshold && <button className="primary-button" disabled={!lateThresholdDirty || busy === 'late-threshold'} onClick={saveLateThreshold}>

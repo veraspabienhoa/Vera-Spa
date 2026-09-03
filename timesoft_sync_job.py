@@ -1487,6 +1487,7 @@ def run_sync() -> int:
     payroll_backfill_result = {"missing_before": 0, "attempted": 0, "added": 0, "errors": 0}
     auto_status = "UNKNOWN"
     notification_result = {"claimed": 0, "notified": 0, "pending": 0, "sent": 0, "failed": 0}
+    grace_period_revoked = 0
 
     try:
         got_lock = bool(lock_conn.execute(text("SELECT pg_try_advisory_lock(hashtext(:k))"), {"k": LOCK_NAME}).scalar())
@@ -1532,12 +1533,15 @@ def run_sync() -> int:
         try:
             with engine.begin() as conn:
                 cfg = auto_check.load_config(conn)
+                grace_period_revoked = auto_check.revoke_grace_period_penalties(conn)
                 trigger_type = "manual" if cfg.get("manual_run_requested") else "scheduled"
                 run_id = auto_check.start_run(conn, trigger_type)
                 if cfg.get("manual_run_requested"):
                     cfg = auto_check.save_config(conn, {"manual_run_requested": False}, "AUTO CHECK JOB")
             auto_status = str(cfg.get("status", "UNKNOWN"))
             _log(f"Auto penalty status={auto_status}; threshold={cfg.get('threshold_minutes', AUTO_PENALTY_MINUTES)} phút")
+            if grace_period_revoked:
+                _log(f"Đã thu hồi {grace_period_revoked} khoản phạt tự động trễ 1-4 phút thuộc thời gian ân hạn.")
             if auto_status == AUTO_PENALTY_PAUSED:
                 _log("Auto penalty PAUSED bởi Admin -> chỉ đồng bộ snapshot, KHÔNG ghi phạt.")
             else:
@@ -1560,7 +1564,7 @@ def run_sync() -> int:
             _log(f"Auto penalty notifications: {notification_result}")
             if run_id is not None:
                 with engine.begin() as conn:
-                    auto_check.finish_run(conn, run_id, "success", {"timesoft": timesoft_result, "break_return": break_return_result, "tour": tour_result, "auto_status": auto_status})
+                    auto_check.finish_run(conn, run_id, "success", {"timesoft": timesoft_result, "break_return": break_return_result, "tour": tour_result, "auto_status": auto_status, "grace_period_revoked": grace_period_revoked})
         except Exception as auto_exc:
             # Do not lose the TimeSoft snapshot if Auto Check alone fails.
             auto_status = "ERROR"

@@ -59,6 +59,9 @@ def confirmed_break_return_fact(item: dict[str, Any], today: date) -> dict[str, 
     late_seconds = int((break_in - deadline).total_seconds())
     if late_seconds <= 0:
         return None
+    late_minutes = max(1, int(math.ceil(late_seconds / 60)))
+    if late_minutes < auto_check.MIN_AUTOMATIC_LATE_PENALTY_MINUTES:
+        return None
     return {
         "work_day": work_day,
         "employee": str(item.get("employee_name") or "").strip(),
@@ -66,7 +69,7 @@ def confirmed_break_return_fact(item: dict[str, Any], today: date) -> dict[str, 
         "break_in": break_in,
         "deadline": deadline,
         "planned_minutes": planned,
-        "late_minutes": max(1, int(math.ceil(late_seconds / 60))),
+        "late_minutes": late_minutes,
     }
 
 
@@ -155,6 +158,7 @@ def install_break_return_penalty(
             "penalty_only_after_return_faceid": True,
             "policy_source": "official Nội quy",
             "employee_push_after_penalty": True,
+            "minimum_penalty_minutes": auto_check.MIN_AUTOMATIC_LATE_PENALTY_MINUTES,
         }
 
     app.state.break_return_penalty_installed = True

@@ -311,9 +311,13 @@ def _apply_restrictions_and_penalties(
                     source="AUTO UPDATE 24/7 - QUY TẮC RA NGOÀI",
                     minutes=minutes,
                 )
-            item["break_auto_penalty_reason"] = str(reason_item.get("name") or "")
-            item["break_auto_penalty_minutes"] = minutes
-            item["break_auto_penalty_status"] = message if ok else f"ERROR: {message}"
+            if message == "SKIP_GRACE_PERIOD":
+                item["break_auto_penalty_grace"] = True
+                item["break_auto_penalty_status"] = message
+            else:
+                item["break_auto_penalty_reason"] = str(reason_item.get("name") or "")
+                item["break_auto_penalty_minutes"] = minutes
+                item["break_auto_penalty_status"] = message if ok else f"ERROR: {message}"
         except Exception as exc:
             # Never make the attendance page unavailable because a background
             # penalty write failed; surface the error for operational diagnosis.

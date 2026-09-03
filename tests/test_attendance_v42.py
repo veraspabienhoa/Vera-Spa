@@ -1,6 +1,8 @@
 from datetime import date, datetime
 import unittest
 
+import vera_auto_check as auto_check
+
 from vera_attendance_rules import (
     apply_break_restriction,
     departure_status_is_final,
@@ -108,6 +110,32 @@ class SupportedLatePenaltyThresholdTests(unittest.TestCase):
     def test_unknown_support_is_fail_closed(self):
         self.assertIsNone(supported_late_minutes(200, None))
         self.assertFalse(late_penalty_eligible(200, 5, None))
+
+    def test_every_automatic_late_reason_has_four_minute_grace(self):
+        reasons = (
+            "Đi trễ không phép",
+            "Đi trễ nhỏ hơn hoặc bằng 30 phút",
+            "Ra ngoài vào muộn nhỏ hơn hoặc bằng 30 phút",
+            "Vào lại trễ",
+        )
+        for reason in reasons:
+            for minute in range(1, 5):
+                self.assertFalse(auto_check.automatic_late_penalty_eligible(reason, minute))
+            self.assertTrue(auto_check.automatic_late_penalty_eligible(reason, 5))
+
+    def test_shared_writer_refuses_four_minute_penalty_before_database_write(self):
+        ok, message = auto_check.save_violation(
+            None,
+            work_date=date(2026, 9, 3),
+            employee="Minh Anh",
+            reason_item={"name": "Ra ngoài vào muộn nhỏ hơn hoặc bằng 30 phút"},
+            detail="Vào lại trễ 3 phút",
+            source="test",
+            minutes=3,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(message, "SKIP_GRACE_PERIOD")
 
 
 if __name__ == "__main__":

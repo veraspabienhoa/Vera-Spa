@@ -40,6 +40,16 @@ def test_open_on_time_disabled_or_restricted_break_is_not_penalized():
     assert confirmed_break_return_fact(_item(break_restricted_reason="Đi trễ không phép"), today) is None
 
 
+def test_return_late_one_through_four_minutes_is_grace_not_penalty():
+    today = date(2026, 9, 2)
+
+    assert confirmed_break_return_fact(_item(break_in="20:02:59"), today) is None
+    fact = confirmed_break_return_fact(_item(break_in="20:03:01"), today)
+
+    assert fact is not None
+    assert fact["late_minutes"] == 5
+
+
 def test_canonical_penalty_deadline_never_exceeds_2000():
     fact = confirmed_break_return_fact(_item(
         break_out="18:41:02",

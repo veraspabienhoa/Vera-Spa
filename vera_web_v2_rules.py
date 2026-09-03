@@ -83,7 +83,7 @@ class DailyQuotaUpdate(BaseModel):
 
 
 class LateThresholdUpdate(BaseModel):
-    threshold_minutes: int = Field(ge=1, le=180)
+    threshold_minutes: int = Field(ge=5, le=180)
     expected_revision: int = Field(ge=0)
 
 
@@ -96,7 +96,7 @@ def _load_late_threshold(conn) -> dict[str, Any]:
     """), {"category": AUTO_CHECK_CATEGORY, "setting_key": AUTO_CHECK_KEY}).mappings().first()
     value = dict(row["value_json"] or {}) if row else {}
     try:
-        threshold = max(1, min(180, int(value.get("threshold_minutes", DEFAULT_LATE_THRESHOLD_MINUTES))))
+        threshold = max(5, min(180, int(value.get("threshold_minutes", DEFAULT_LATE_THRESHOLD_MINUTES))))
     except (TypeError, ValueError):
         threshold = DEFAULT_LATE_THRESHOLD_MINUTES
     return {

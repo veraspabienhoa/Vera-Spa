@@ -5,6 +5,7 @@ import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
 import PayrollPersonalTracking from './PayrollPersonalTracking'
 import PayrollSavedAdminPanel from './PayrollSavedAdminPanel'
 import PayrollTimesoftAutoLoader from './PayrollTimesoftAutoLoader'
+import DepartmentPayrollPanel from './DepartmentPayrollPanel'
 import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
 
@@ -252,6 +253,7 @@ export default function PayrollPageV38({ user }) {
     {showPersonalTracking && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
     {canFullPayroll && <PayrollSavedAdminPanel user={user} />}
     {isAdmin && canFullPayroll && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
+    {canFullPayroll && <DepartmentPayrollPanel user={user} />}
     {canFullPayroll && canEditConfig && <div className="feature-page payroll-page payroll-v38-config">
       <section className="panel">
         <div className="panel-title-row">
