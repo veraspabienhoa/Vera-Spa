@@ -1,4 +1,4 @@
-import { Download, Mail, RefreshCw, Save, Send, Settings2 } from 'lucide-react'
+import { Download, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { numberInputDisplayValue } from '../lib/numberInput'
@@ -10,6 +10,7 @@ const monthNow = () => {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
+const normalizeSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd').toLowerCase().trim()
 
 async function request(path, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
@@ -79,6 +80,10 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [month, setMonth] = useState(monthNow())
   const [settings, setSettings] = useState({})
   const [salaryConfigTables, setSalaryConfigTables] = useState({ operations: [], tapvu: [] })
+  const [employeeCatalog, setEmployeeCatalog] = useState([])
+  const [addDepartment, setAddDepartment] = useState('quanly')
+  const [employeeSearch, setEmployeeSearch] = useState({ operations: '', tapvu: '' })
+  const [pendingEmployee, setPendingEmployee] = useState({ operations: '', tapvu: '' })
   const [rows, setRows] = useState([])
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState('')
@@ -96,6 +101,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     const result = await request('/v2/department-payroll/settings')
     setSettings(result.departments || {})
     setSalaryConfigTables(result.salary_config_tables || { operations: [], tapvu: [] })
+    setEmployeeCatalog(result.salary_employee_catalog || [])
   })
 
   useEffect(() => { void loadSettings() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -153,17 +159,52 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     setNotice({ type: 'success', message: result.message })
   })
 
+  const employeeCandidates = (group) => {
+    const departments = group === 'tapvu' ? new Set(['tapvu']) : new Set([addDepartment])
+    const configured = new Set([...(salaryConfigTables.operations || []), ...(salaryConfigTables.tapvu || [])].map((row) => row.employee_username))
+    const search = normalizeSearch(employeeSearch[group])
+    return employeeCatalog.filter((item) => departments.has(item.department)
+      && !configured.has(item.employee_username)
+      && (!search || normalizeSearch(`${item.employee_name} ${item.employee_username}`).includes(search)))
+  }
+
+  const addEmployeeRow = (group) => {
+    const username = pendingEmployee[group]
+    const candidate = employeeCatalog.find((item) => item.employee_username === username)
+    if (!candidate) {
+      setNotice({ type: 'error', message: 'Vui lòng tìm và chọn một nhân viên trong đúng bộ phận.' })
+      return
+    }
+    const config = settings[candidate.department]?.config || {}
+    setSalaryConfigTables((tables) => ({ ...tables, [group]: [...(tables[group] || []), { ...config, ...candidate }] }))
+    setPendingEmployee((value) => ({ ...value, [group]: '' }))
+    setEmployeeSearch((value) => ({ ...value, [group]: '' }))
+    setNotice(null)
+  }
+
+  const removeEmployeeRow = (group, username) => setSalaryConfigTables((tables) => ({
+    ...tables, [group]: (tables[group] || []).filter((row) => row.employee_username !== username),
+  }))
+
   const employeeConfigTable = (group, title, fields) => {
     const items = salaryConfigTables[group] || []
+    const candidates = employeeCandidates(group)
     return <section className="department-config-table-section">
       <div className="panel-title-row"><div><h3>{title}</h3><p>Mỗi nhân viên là một dòng; mức đã lưu được dùng trực tiếp khi tính bảng lương tháng.</p></div></div>
+      <div className="department-config-add-row">
+        {group === 'operations' && <label>Bộ phận<select value={addDepartment} onChange={(event) => { setAddDepartment(event.target.value); setPendingEmployee((value) => ({ ...value, operations: '' })) }}><option value="quanly">Quản lý</option><option value="letan">Lễ tân</option><option value="locker">Locker</option></select></label>}
+        <label className="department-config-search"><span>Tìm nhân viên</span><div><Search size={16} /><input value={employeeSearch[group]} placeholder="Nhập tên hoặc tên đăng nhập…" onChange={(event) => { setEmployeeSearch((value) => ({ ...value, [group]: event.target.value })); setPendingEmployee((value) => ({ ...value, [group]: '' })) }} /></div></label>
+        <label>Chọn nhân viên<select value={pendingEmployee[group]} onChange={(event) => setPendingEmployee((value) => ({ ...value, [group]: event.target.value }))}><option value="">-- Chọn nhân viên --</option>{candidates.map((item) => <option key={item.employee_username} value={item.employee_username}>{item.employee_name} · {item.employee_username}</option>)}</select></label>
+        <button className="secondary-button" type="button" disabled={Boolean(busy) || !pendingEmployee[group]} onClick={() => addEmployeeRow(group)}><Plus size={16} /> Thêm dòng</button>
+      </div>
       <div className="responsive-data-table department-config-table"><table>
-        <thead><tr><th>TT</th><th>Nhân viên</th><th>Bộ phận</th>{fields.map(([, label]) => <th key={label}>{label}</th>)}</tr></thead>
+        <thead><tr><th>TT</th><th>Nhân viên</th><th>Bộ phận</th>{fields.map(([, label]) => <th key={label}>{label}</th>)}<th /></tr></thead>
         <tbody>{items.map((row, index) => <tr key={row.employee_username}>
           <td>{index + 1}</td>
           <td><strong>{row.employee_name}</strong><small>{row.employee_username}</small></td>
           <td><strong>{row.department_label}</strong></td>
           {fields.map(([key]) => <td key={key}><input className="payroll-money-input" type="number" min="0" inputMode="numeric" disabled={Boolean(busy)} value={numberInputDisplayValue(row[key])} onChange={(event) => editEmployeeConfig(group, row.employee_username, key, event.target.value)} /></td>)}
+          <td><button className="icon-button danger" type="button" title="Xóa dòng cấu hình" disabled={Boolean(busy)} onClick={() => removeEmployeeRow(group, row.employee_username)}><Trash2 size={15} /></button></td>
         </tr>)}</tbody>
       </table></div>
       {!items.length && <div className="setup-note">Chưa có nhân viên đang làm việc trong nhóm này.</div>}
