@@ -15,6 +15,7 @@ from typing import Any
 from google.auth.transport.requests import AuthorizedSession
 from fastapi import Depends, HTTPException, Query
 from pyxlsb import open_workbook
+import requests
 
 from vera_google_credentials import google_credentials
 from vera_web_v2_revenue_leave_list import (
@@ -39,6 +40,26 @@ DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DATE_RANGE_PRESETS = {
     "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "custom"
 }
+PUBLIC_DRIVE_DOWNLOAD_URL = "https://drive.usercontent.google.com/download"
+
+
+def _is_xlsb_content(content: bytes) -> bool:
+    # XLSB workbooks are ZIP containers, just like XLSX files.
+    return len(content) > 4 and content.startswith(b"PK\x03\x04")
+
+
+def _public_drive_download(file_id: str) -> bytes:
+    response = requests.get(
+        PUBLIC_DRIVE_DOWNLOAD_URL,
+        params={"id": file_id, "export": "download", "confirm": "t"},
+        timeout=60,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    content = bytes(response.content or b"")
+    if not _is_xlsb_content(content):
+        raise RuntimeError("Public Google Drive response is not an XLSB workbook")
+    return content
 
 
 def _excel_serial_date(value: Any) -> date | None:
@@ -110,6 +131,7 @@ def _resolve_range(
 def _drive_download_purchase_report() -> bytes:
     if not PURCHASE_REPORT_FILE_ID:
         raise HTTPException(503, "Chưa cấu hình file BaoCaoMuaHang trên Google Drive.")
+    credential_error: Exception | None = None
     try:
         session = AuthorizedSession(google_credentials([DRIVE_SCOPE]))
         response = session.get(
@@ -117,18 +139,26 @@ def _drive_download_purchase_report() -> bytes:
             timeout=30,
         )
         if response.status_code != 200:
-            raise HTTPException(
-                503,
-                f"Không đọc được BaoCaoMuaHang từ Google Drive (HTTP {response.status_code}).",
-            )
+            raise RuntimeError(f"Google Drive API returned HTTP {response.status_code}")
         content = bytes(response.content or b"")
-        if not content:
-            raise HTTPException(503, "File BaoCaoMuaHang trên Google Drive đang trống.")
+        if not _is_xlsb_content(content):
+            raise RuntimeError("Google Drive API response is not an XLSB workbook")
         return content
-    except HTTPException:
-        raise
     except Exception as exc:
-        raise HTTPException(503, f"Không đọc được BaoCaoMuaHang: {type(exc).__name__}.") from exc
+        credential_error = exc
+
+    # BaoCaoMuaHang is shared read-only. VPS does not have Application Default
+    # Credentials, so download the shared binary directly when Drive API auth
+    # is unavailable. The XLSB signature check prevents parsing an HTML/login
+    # response as a workbook.
+    try:
+        return _public_drive_download(PURCHASE_REPORT_FILE_ID)
+    except Exception as public_exc:
+        raise HTTPException(
+            503,
+            "Không đọc được BaoCaoMuaHang: "
+            f"{type(credential_error).__name__} / {type(public_exc).__name__}.",
+        ) from public_exc
 
 
 def _header_index(keys: list[str], wanted: str, fallback: int | None = None) -> int | None:

@@ -1,5 +1,6 @@
 from datetime import date
 
+import vera_web_v2_purchase_reconcile as reconcile
 from vera_web_v2_purchase_reconcile import _comparison, _parse_revenue_input, _resolve_range
 
 
@@ -41,3 +42,37 @@ def test_daily_comparison_detects_two_thousand_difference():
         "difference": 2_000.0,
         "matched": False,
     }]
+
+
+def test_purchase_report_falls_back_to_public_drive_without_credentials(monkeypatch):
+    expected = b"PK\x03\x04xlsb-content"
+
+    monkeypatch.setattr(
+        reconcile,
+        "google_credentials",
+        lambda _scopes: (_ for _ in ()).throw(RuntimeError("no application default credentials")),
+    )
+    monkeypatch.setattr(
+        reconcile,
+        "_public_drive_download",
+        lambda file_id: expected if file_id == reconcile.PURCHASE_REPORT_FILE_ID else b"",
+    )
+
+    assert reconcile._drive_download_purchase_report() == expected
+
+
+def test_public_drive_download_rejects_login_or_preview_html(monkeypatch):
+    class Response:
+        content = b"<html>Google Drive login</html>"
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(reconcile.requests, "get", lambda *_args, **_kwargs: Response())
+
+    try:
+        reconcile._public_drive_download("file-id")
+    except RuntimeError as exc:
+        assert "not an XLSB" in str(exc)
+    else:
+        raise AssertionError("HTML response must not be accepted as XLSB")
