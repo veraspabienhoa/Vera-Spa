@@ -75,6 +75,8 @@ jobs:
           grep -q 'recordDate === todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
           grep -q 'recordDate < todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
           grep -q 'isTodaySpecialGroup' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'setReactSelectValue' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'window.HTMLSelectElement.prototype' web-v2/src/pages/LeaveListTypeColumn.jsx
           grep -q 'isLetanTodayGroupReason' web-v2/src/pages/LeaveRegistrationPage.jsx
           grep -q 'canEditRecord(item)' web-v2/src/pages/LeaveRegistrationPage.jsx
           grep -q 'if (changedRecords.length === 0) return' web-v2/src/pages/LeaveRegistrationPage.jsx

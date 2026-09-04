@@ -135,6 +135,21 @@ export default function LeaveListTypeColumn({ user }) {
       return option
     }
 
+    const setReactSelectValue = (select, value) => {
+      // React tracks controlled form values separately from the DOM. Assigning
+      // select.value directly updates that tracker too early, so the synthetic
+      // onChange can be ignored and the Lưu sửa button remains disabled. Use
+      // the native prototype setter to make React observe the real change.
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLSelectElement.prototype,
+        'value',
+      )?.set
+      if (nativeSetter) nativeSetter.call(select, value)
+      else select.value = value
+      select.dispatchEvent(new Event('input', { bubbles: true }))
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+
     const ensureLetanThreeChoiceProxy = (select, row, groupKey, selectedReason) => {
       const choices = LETAN_GROUP_CHOICES[groupKey] || []
       if (choices.length !== 3) return false
@@ -153,10 +168,9 @@ export default function LeaveListTypeColumn({ user }) {
           const nextReason = String(proxy.value || '').trim()
           if (!nextReason) return
           const nativeOption = ensureNativeOption(select, nextReason)
-          select.value = nativeOption.value
           // React owns reasonDrafts. Dispatching on the original select keeps
           // Save edits on the canonical React/API path instead of bypassing it.
-          select.dispatchEvent(new Event('change', { bubbles: true }))
+          setReactSelectValue(select, nativeOption.value)
         })
       }
 

@@ -19,7 +19,7 @@ jobs:
   deploy:
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (vars.AUTO_DEPLOY_VPS == 'true' &&
+      ((vars.AUTO_DEPLOY_VPS == 'true' || contains(github.event.workflow_run.head_commit.message, '[deploy-production]')) &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main')
