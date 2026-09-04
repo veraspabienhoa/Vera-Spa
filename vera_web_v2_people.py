@@ -266,7 +266,7 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
     request_column = _find_column_any(columns, ("Yêu cầu", "Yeu cau"))
     duration_column = _find_column_any(columns, ("Thời lượng", "Thoi luong", "Thời lượng (phút)", "Thời lượng phút"))
     start_column = _find_column_any(columns, ("TG bắt đầu thực hiện", "TG bat dau thuc hien", "BĐ thực hiện", "BD thuc hien", "Bắt đầu thực hiện"))
-    start_yc_column = _find_column_any(columns, ("TG bắt đầu thực hiện YC", "TG bat dau thuc hien YC", "BĐ thực hiện YC", "BD thuc hien YC", "BĐ YC", "BD YC", "Bắt đầu thực hiện YC"))
+    start_yc_column = _find_column_any(columns, ("TG bắt đầu thực hiện YC", "TG bat dau thuc hien YC", "BĐ thực hiện YC", "BD thực hiện YC", "BĐ YC", "BD YC", "Bắt đầu YC"))
     source_remaining_column = _find_column_any(columns, ("Thời gian còn lại", "TG còn lại"))
     remaining_column = "TG CÒN LẠI"
     output_columns = [column for column in columns if column not in {source_remaining_column, remaining_column}]
@@ -440,8 +440,11 @@ def _tracked_break_metrics(
         observed_events[event_key] = bucket
         if not str(row.get("break_in") or "").strip():
             active_employees[employee_key] = bucket
+            # Thêm cả token tên lẫn token mã nhân viên để tăng khả năng match với Bảng tua
             if employee:
                 active_names.add(employee)
+            # luôn thêm employee_key để có thể đối chiếu khi Bảng tua chứa mã nhân viên
+            active_names.add(employee_key)
 
     conn.execute(text("""
         INSERT INTO vera_app_setting(
@@ -537,7 +540,7 @@ def install_people_routes(
                   AND lower(COALESCE(role,'')) IN ('nhanvien','leader','letan','locker')
                   AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc')='Đang làm việc'
                 ORDER BY lower(COALESCE(full_name,username))
-            """)).mappings().all()
+            """")).mappings().all()
         output = []
         for row in rows:
             dob = _birthday(row["birth_date"])
