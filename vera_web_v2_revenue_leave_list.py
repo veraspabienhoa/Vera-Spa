@@ -16,7 +16,7 @@ from sqlalchemy import text
 import vera_web_v2_permissions as permissions
 
 
-RELEASE = "revenue-leave-list-2026-09-04.2-full-input-from-period-start"
+RELEASE = "revenue-leave-list-2026-09-04.3-report-summary-cells"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_TIP_SETTING = "current_period_tip"
@@ -25,6 +25,7 @@ REVENUE_SPREADSHEET_ID = os.getenv(
     "1KLYz2iQSfNU0xOfrl8V9iz9-dQKMkwyUicuuiGsqC4U",
 )
 REVENUE_WORKSHEET = os.getenv("VERA_REVENUE_SHEET_NAME", "Input")
+REVENUE_REPORT_WORKSHEET = os.getenv("VERA_REVENUE_REPORT_SHEET_NAME", "Report").strip() or "Report"
 REVENUE_INPUT_GID = os.getenv("VERA_REVENUE_INPUT_GID", "2058724516").strip() or "2058724516"
 REVENUE_REPORT_URL = os.getenv(
     "VERA_REVENUE_REPORT_URL",
@@ -35,6 +36,7 @@ REVENUE_ENTRY_FORM_URL = os.getenv(
     "https://docs.google.com/forms/d/e/1FAIpQLSeJp1bLrl8zSyESu_K0eo6NxdKsm85p4fxGXPXigPlmgkAs7w/viewform",
 )
 VN_TZ = timezone(timedelta(hours=7))
+REVENUE_PERIOD_START = date(2025, 9, 5)
 REVENUE_CURRENT_DATE_COLUMN_INDEX = 4  # Sheet Input, column E.
 DATE_IN_TEXT_RE = re.compile(
     r"(?<!\d)(\d{1,2})\s*([./-])\s*(\d{1,2})\s*\2\s*(\d{4})(?!\d)"
@@ -114,16 +116,18 @@ def _transaction_date_index(values: list[list[Any]], norm: Callable[[Any], str])
         return -1
 
 
-def _minimum_transaction_date(values: list[list[Any]], norm: Callable[[Any], str]) -> date | None:
-    date_index = _transaction_date_index(values, norm)
-    if date_index < 0:
-        return None
-    dates = [
-        parsed
-        for row in values[1:]
-        if (parsed := _parse_date(row[date_index] if date_index < len(row) else "")) is not None
-    ]
-    return min(dates) if dates else None
+def _report_totals(values: list[list[Any]]) -> dict[str, float]:
+    numeric_values: list[Any] = []
+    for row in values:
+        for value in row:
+            if re.search(r"\d", str(value or "")):
+                numeric_values.append(value)
+    if len(numeric_values) < 2:
+        raise HTTPException(503, "Sheet Report phải có Tổng thu tại B2 và Tổng chi tại B3.")
+    return {
+        "total_income": round(_money(numeric_values[0]), 2),
+        "total_expense": round(_money(numeric_values[1]), 2),
+    }
 
 
 def _revenue_summary(
@@ -242,18 +246,22 @@ def _read_public_revenue_values() -> list[list[str]]:
     return values
 
 
-def _read_visible_revenue_values() -> list[list[str]]:
-    """Read the filtered view solely to resolve the business period start."""
+def _read_public_report_values() -> list[list[str]]:
+    """Read the two official summary cells without depending on Sheet filters."""
     response = requests.get(
         f"https://docs.google.com/spreadsheets/d/{REVENUE_SPREADSHEET_ID}/gviz/tq",
-        params={"tqx": "out:csv", "sheet": REVENUE_WORKSHEET},
+        params={
+            "tqx": "out:csv",
+            "sheet": REVENUE_REPORT_WORKSHEET,
+            "range": "B2:B3",
+            "headers": "0",
+        },
         timeout=30,
     )
     response.raise_for_status()
     response.encoding = "utf-8"
     values = list(csv.reader(response.text.splitlines()))
-    if not values:
-        raise RuntimeError("Public Google Sheets response is empty")
+    _report_totals(values)
     return values
 
 
@@ -261,14 +269,8 @@ def _revenue_period_start(
     norm: Callable[[Any], str],
     full_values: list[list[Any]],
 ) -> date | None:
-    try:
-        visible_values = _read_visible_revenue_values()
-        visible_start = _minimum_transaction_date(visible_values, norm)
-        if visible_start is not None:
-            return visible_start
-    except Exception:
-        pass
-    return _minimum_transaction_date(full_values, norm)
+    del norm, full_values
+    return REVENUE_PERIOD_START
 
 
 def _read_revenue_values(google_client) -> list[list[Any]]:
@@ -288,6 +290,26 @@ def _read_revenue_values(google_client) -> list[list[Any]]:
         raise HTTPException(
             503,
             f"Không đọc được Quản lý Thu Chi · sheet {REVENUE_WORKSHEET}: "
+            f"{type(credential_error).__name__} / {type(public_exc).__name__}.",
+        ) from public_exc
+
+
+def _read_revenue_report_values(google_client) -> list[list[Any]]:
+    credential_error: Exception | None = None
+    try:
+        worksheet = google_client().open_by_key(REVENUE_SPREADSHEET_ID).worksheet(REVENUE_REPORT_WORKSHEET)
+        values = worksheet.get("B2:B3")
+        _report_totals(values)
+        return values
+    except Exception as exc:
+        credential_error = exc
+
+    try:
+        return _read_public_report_values()
+    except Exception as public_exc:
+        raise HTTPException(
+            503,
+            f"Không đọc được Tổng thu/Tổng chi tại {REVENUE_REPORT_WORKSHEET}!B2:B3: "
             f"{type(credential_error).__name__} / {type(public_exc).__name__}.",
         ) from public_exc
 
@@ -340,11 +362,12 @@ def install_revenue_leave_list_routes(
         return {
             "ok": True,
             "release": RELEASE,
-            "worksheet": REVENUE_WORKSHEET,
+            "worksheet": REVENUE_REPORT_WORKSHEET,
+            "transaction_worksheet": REVENUE_WORKSHEET,
             "period_metadata": True,
-            "source_range": "Input!A:G, all rows including filtered/hidden rows",
-            "period_start_source": "filtered Input view earliest Ngày giao dịch",
-            "summary_scope": "all Input rows with Ngày giao dịch >= period start",
+            "source_range": "Report!B2:B3",
+            "period_start_source": "fixed 2025-09-05",
+            "summary_scope": "Report!B2 total income and Report!B3 total expense",
             "current_date_source": "Input!E:E latest parsed date in period",
             "period_tip": True,
             "balance_formula": "total_income-total_expense-period_tip",
@@ -367,6 +390,7 @@ def install_revenue_leave_list_routes(
         values = _read_revenue_values(google_client)
         period_start = _revenue_period_start(norm, values)
         summary = _revenue_summary(values, norm, period_start=period_start)
+        summary.update(_report_totals(_read_revenue_report_values(google_client)))
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             tip = _period_tip(conn, summary.get("start_date", ""))
@@ -377,7 +401,10 @@ def install_revenue_leave_list_routes(
             "ok": True,
             "release": RELEASE,
             "source": "Quản lý Thu Chi",
-            "worksheet": REVENUE_WORKSHEET,
+            "worksheet": REVENUE_REPORT_WORKSHEET,
+            "transaction_worksheet": REVENUE_WORKSHEET,
+            "total_income_cell": f"{REVENUE_REPORT_WORKSHEET}!B2",
+            "total_expense_cell": f"{REVENUE_REPORT_WORKSHEET}!B3",
             "entry_form_url": REVENUE_ENTRY_FORM_URL,
             "report_url": REVENUE_REPORT_URL,
             "can_edit_tip": can_edit_tip,
@@ -389,6 +416,7 @@ def install_revenue_leave_list_routes(
         values = _read_revenue_values(google_client)
         period_start = _revenue_period_start(norm, values)
         summary = _revenue_summary(values, norm, period_start=period_start)
+        summary.update(_report_totals(_read_revenue_report_values(google_client)))
         period_start = str(summary.get("start_date") or "")
         if not period_start:
             raise HTTPException(409, "Chưa xác định được ngày bắt đầu kỳ Doanh thu để lưu Tiền TIP.")
