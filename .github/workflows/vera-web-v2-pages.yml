@@ -1,10 +1,6 @@
 name: Deploy VERA SPA Web V2
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/vera-web-v2-pages.yml"
   workflow_dispatch:
 
 permissions:
