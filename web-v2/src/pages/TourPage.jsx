@@ -77,6 +77,15 @@ function rowClass(record) {
   return `${base}${waiting ? ' tour-row-waiting' : ''}`
 }
 
+function isCurrentlyOnBreak(record) {
+  return record?._attendance_break_active === true
+}
+
+function matchesPriority(record, priorityGroup) {
+  if (priorityGroup === 'break') return isCurrentlyOnBreak(record)
+  return Array.isArray(record?._tour_groups) && record._tour_groups.includes(priorityGroup)
+}
+
 function prioritizeRecords(records, columns, activeFilter) {
   if (activeFilter === 'all') return records
   const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
@@ -91,8 +100,8 @@ function prioritizeRecords(records, columns, activeFilter) {
     return Number.isFinite(value) ? [1, value] : [2, 0]
   }
   return records.map((record, index) => ({ record, index })).sort((left, right) => {
-    const leftMatches = Array.isArray(left.record._tour_groups) && left.record._tour_groups.includes(priorityGroup)
-    const rightMatches = Array.isArray(right.record._tour_groups) && right.record._tour_groups.includes(priorityGroup)
+    const leftMatches = matchesPriority(left.record, priorityGroup)
+    const rightMatches = matchesPriority(right.record, priorityGroup)
     if (leftMatches !== rightMatches) return leftMatches ? -1 : 1
     if (leftMatches && rightMatches) {
       const [leftRank, leftTime] = remainingOrder(left.record)
@@ -135,6 +144,7 @@ function matchesShift(record, columns, shiftFilter) {
 }
 
 function hasGroup(record, key) {
+  if (key === 'break') return isCurrentlyOnBreak(record)
   return Array.isArray(record?._tour_groups) && record._tour_groups.includes(key)
 }
 
