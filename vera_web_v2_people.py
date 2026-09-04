@@ -477,7 +477,9 @@ def _apply_attendance_break_groups(prepared: dict[str, Any], active_names: set[s
     name_column = _find_column(columns, "Tên nhân viên")
     for row in prepared.get("records") or []:
         groups = [group for group in (row.get("_tour_groups") or []) if group != "break"]
-        if name_column and _token(row.get(name_column)) in active_names:
+        attendance_break_active = bool(name_column and _token(row.get(name_column)) in active_names)
+        row["_attendance_break_active"] = attendance_break_active
+        if attendance_break_active:
             groups.append("break")
             row["_row_style"] = "break"
         row["_tour_groups"] = groups
