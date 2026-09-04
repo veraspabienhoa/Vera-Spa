@@ -1,3 +1,5 @@
+from datetime import date
+
 import vera_web_v2_revenue_leave_list as revenue
 
 
@@ -26,7 +28,8 @@ def test_revenue_reader_falls_back_to_public_csv_without_google_credentials(monk
 
     assert values[0][1:] == ["Loại giao dịch", "Số tiền"]
     assert values[1][1:] == ["Thu", "1.000 đ"]
-    assert captured["params"] == {"tqx": "out:csv", "sheet": "Input"}
+    assert captured["url"].endswith("/export")
+    assert captured["params"] == {"format": "csv", "gid": revenue.REVENUE_INPUT_GID}
     assert captured["timeout"] == 30
 
 
@@ -54,3 +57,37 @@ def test_revenue_reader_keeps_authenticated_google_sheets_as_primary(monkeypatch
     )
 
     assert revenue._read_revenue_values(lambda: Client()) == expected
+
+
+def test_summary_uses_every_full_input_row_from_visible_period_start():
+    values = [
+        ["Dấu thời gian", "Loại giao dịch", "Số tiền", "Ngày giao dịch", "Ghi chú"],
+        ["", "Chi", "20", "02/07/2026", "Chi phí nhập trước dòng bắt đầu hiển thị"],
+        ["", "Thu", "999", "30/06/2026", "Ngoài kỳ"],
+        ["", "Thu", "100", "01/07/2026", "Doanh thu ngày 01/07/2026"],
+        ["", "Chi", "30", "03/07/2026", "Mua đồ ngày 03/07/2026"],
+    ]
+
+    result = revenue._revenue_summary(values, lambda value: str(value or "").strip().lower(), period_start=date(2026, 7, 1))
+
+    assert result["start_date"] == "2026-07-01"
+    assert result["transaction_count"] == 3
+    assert result["total_income"] == 100
+    assert result["total_expense"] == 50
+
+
+def test_filtered_view_defines_period_but_not_the_rows_being_summed(monkeypatch):
+    visible = [
+        ["Loại giao dịch", "Số tiền", "Ngày giao dịch"],
+        ["Thu", "100", "01/07/2026"],
+        ["Chi", "20", "02/07/2026"],
+    ]
+    full = [
+        ["Loại giao dịch", "Số tiền", "Ngày giao dịch"],
+        ["Thu", "999", "01/01/2026"],
+        *visible[1:],
+    ]
+    norm = lambda value: str(value or "").strip().lower()
+    monkeypatch.setattr(revenue, "_read_visible_revenue_values", lambda: visible)
+
+    assert revenue._revenue_period_start(norm, full) == date(2026, 7, 1)

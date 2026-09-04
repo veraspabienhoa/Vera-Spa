@@ -715,6 +715,7 @@ jobs:
           break_return_penalty = Path('vera_web_v2_break_return_penalty.py').read_text(encoding='utf-8')
           department_attendance = Path('vera_web_v2_department_attendance.py').read_text(encoding='utf-8')
           department_payroll = Path('vera_web_v2_department_payroll.py').read_text(encoding='utf-8')
+          revenue = Path('vera_web_v2_revenue_leave_list.py').read_text(encoding='utf-8')
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
           payroll_v38_page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
           snapshot_page = Path('web-v2/src/pages/SnapshotPage.jsx').read_text(encoding='utf-8')
@@ -724,7 +725,7 @@ jobs:
           tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
           tour_break_counter = Path('vera_tour_break_counter.py').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
-          for source in (api, permissions, profile, payroll, payroll_v38, people, security, staff_security, snapshot, storage): ast.parse(source)
+          for source in (api, permissions, profile, payroll, payroll_v38, people, security, staff_security, snapshot, storage, revenue): ast.parse(source)
           checks = {
               'statistics and list have local refresh controls': leave.count('onClick={load}') >= 3 and leave.count('Làm mới') >= 3,
               'profile requires current password and updates PostgreSQL credentials only': 'hmac.compare_digest' in profile and 'UPDATE employees SET' in profile and 'open_by_key' not in profile and 'google_client' not in profile,
@@ -761,6 +762,7 @@ jobs:
               'Locker and Lễ tân never use mid-shift break policy': all(token in department_attendance for token in ('"break_enabled": False', '"break_out": ""', '"break_in": ""', 'không áp dụng chính sách nghỉ giữa ca')) and 'not bool(item.get("break_enabled"))' in Path('vera_web_v2_attendance_break_alerts.py').read_text(encoding='utf-8'),
               'Department attendance and notifications have independent Admin switches': all(token in department_attendance for token in ('attendance_enabled', 'notifications_enabled', '/v2/attendance/department-controls/{department}')) and all(token in snapshot_page for token in ('Chấm công: {control.attendance_enabled', 'Thông báo: {control.notifications_enabled', 'CHẤM CÔNG THEO BỘ PHẬN')),
               'Break alert control preserves TimeSoft freshness guard': all(token in Path('vera_web_v2_break_alert_control.py').read_text(encoding='utf-8') for token in ('def viewer_alerts_guarded(facts, ident, now, source_fresh):', 'original_viewer_alerts(facts, ident, now, source_fresh)')),
+              'Revenue reads every Input row from the visible period start': all(token in revenue for token in ('/export', '"format": "csv"', '"gid": REVENUE_INPUT_GID', 'period_start=period_start', 'parsed < period_start', 'all rows including filtered/hidden rows')),
               'Locker and Lễ tân late alerts target employee management and Admin': all(token in Path('vera_auto_penalty_notifications.py').read_text(encoding='utf-8') for token in ("IN ('admin','quanly')", '_notification_audience', 'notifications_enabled')),
               'four departments use employee salary rows and the standard payroll email': all(token in department_payroll for token in ('"quanly": "Quản lý"', '"locker": "Locker"', '"letan": "Lễ tân"', '"tapvu": "Tạp vụ"', 'department-payroll/settings/employees', 'department_employee_salary_configs', 'department-payroll/calculate', 'department-payroll/draft', 'department-payroll/save', 'department-payroll/export.xlsx', 'department-payroll/email', 'payroll._payroll_email_subject', 'payroll._payroll_email_text', 'payroll._payroll_email_html')) and all(token in department_payroll_page for token in ('BẢNG 1 · QUẢN LÝ / LỄ TÂN / LOCKER', 'BẢNG 2 · TẠP VỤ', 'Mỗi nhân viên là một dòng', 'Tính từ chấm công', 'Lưu bảng nháp', 'Gửi email')),
               'department hourly rates match attached Locker and Lễ tân formulas': all(token in department_payroll for token in ('"locker": {', '"letan": {', '"calculation_mode": "hourly"', '"rate_ca1": 27000', '"rate_ca2_before_22": 30000', '"rate_ca2_after_22": 33000', '"full_day_allowance": 30000')),

@@ -16,7 +16,7 @@ from sqlalchemy import text
 import vera_web_v2_permissions as permissions
 
 
-RELEASE = "revenue-leave-list-2026-09-01.1-all-stats-visible"
+RELEASE = "revenue-leave-list-2026-09-04.2-full-input-from-period-start"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_TIP_SETTING = "current_period_tip"
@@ -25,6 +25,7 @@ REVENUE_SPREADSHEET_ID = os.getenv(
     "1KLYz2iQSfNU0xOfrl8V9iz9-dQKMkwyUicuuiGsqC4U",
 )
 REVENUE_WORKSHEET = os.getenv("VERA_REVENUE_SHEET_NAME", "Input")
+REVENUE_INPUT_GID = os.getenv("VERA_REVENUE_INPUT_GID", "2058724516").strip() or "2058724516"
 REVENUE_REPORT_URL = os.getenv(
     "VERA_REVENUE_REPORT_URL",
     "https://docs.google.com/spreadsheets/d/1KLYz2iQSfNU0xOfrl8V9iz9-dQKMkwyUicuuiGsqC4U/edit?usp=drivesdk",
@@ -103,7 +104,34 @@ def _parse_date(value: Any) -> date | None:
         return parsed_dates[0] if parsed_dates else None
 
 
-def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dict[str, Any]:
+def _transaction_date_index(values: list[list[Any]], norm: Callable[[Any], str]) -> int:
+    if not values:
+        return -1
+    headers = [norm(value) for value in values[0]]
+    try:
+        return headers.index(norm("Ngày giao dịch"))
+    except ValueError:
+        return -1
+
+
+def _minimum_transaction_date(values: list[list[Any]], norm: Callable[[Any], str]) -> date | None:
+    date_index = _transaction_date_index(values, norm)
+    if date_index < 0:
+        return None
+    dates = [
+        parsed
+        for row in values[1:]
+        if (parsed := _parse_date(row[date_index] if date_index < len(row) else "")) is not None
+    ]
+    return min(dates) if dates else None
+
+
+def _revenue_summary(
+    values: list[list[Any]],
+    norm: Callable[[Any], str],
+    *,
+    period_start: date | None = None,
+) -> dict[str, Any]:
     if not values:
         raise HTTPException(503, "Sheet Input chưa có dữ liệu.")
     headers = [norm(value) for value in values[0]]
@@ -113,33 +141,31 @@ def _revenue_summary(values: list[list[Any]], norm: Callable[[Any], str]) -> dic
     except ValueError as exc:
         raise HTTPException(503, "Sheet Input phải có cột 'Loại giao dịch' và 'Số tiền'.") from exc
 
-    try:
-        date_index = headers.index(norm("Ngày giao dịch"))
-    except ValueError:
-        date_index = -1
+    date_index = _transaction_date_index(values, norm)
 
     income = expense = 0.0
     transaction_count = 0
     transaction_dates: list[date] = []
     input_column_e_dates: list[date] = []
     for row in values[1:]:
-        if REVENUE_CURRENT_DATE_COLUMN_INDEX < len(row):
-            input_column_e_dates.extend(_dates_in_text(row[REVENUE_CURRENT_DATE_COLUMN_INDEX]))
         tx_type = norm(row[type_index] if type_index < len(row) else "")
         if tx_type not in {"thu", "chi"}:
             continue
+        parsed = _parse_date(row[date_index] if 0 <= date_index < len(row) else "")
+        if period_start is not None and (parsed is None or parsed < period_start):
+            continue
+        if REVENUE_CURRENT_DATE_COLUMN_INDEX < len(row):
+            input_column_e_dates.extend(_dates_in_text(row[REVENUE_CURRENT_DATE_COLUMN_INDEX]))
         amount = _money(row[amount_index] if amount_index < len(row) else 0)
         if tx_type == "thu":
             income += amount
         else:
             expense += amount
         transaction_count += 1
-        if date_index >= 0:
-            parsed = _parse_date(row[date_index] if date_index < len(row) else "")
-            if parsed:
-                transaction_dates.append(parsed)
+        if parsed:
+            transaction_dates.append(parsed)
 
-    start_date = min(transaction_dates) if transaction_dates else None
+    start_date = period_start or (min(transaction_dates) if transaction_dates else None)
     if input_column_e_dates:
         current_date = max(input_column_e_dates)
         current_date_source = "input_column_e"
@@ -202,6 +228,22 @@ def _save_period_tip(conn, start_date_text: str, amount: float, actor: str) -> N
 
 
 def _read_public_revenue_values() -> list[list[str]]:
+    """Download every Input row, including rows hidden by a Sheet filter."""
+    response = requests.get(
+        f"https://docs.google.com/spreadsheets/d/{REVENUE_SPREADSHEET_ID}/export",
+        params={"format": "csv", "gid": REVENUE_INPUT_GID},
+        timeout=30,
+    )
+    response.raise_for_status()
+    response.encoding = "utf-8"
+    values = list(csv.reader(response.text.splitlines()))
+    if not values:
+        raise RuntimeError("Full Google Sheets CSV response is empty")
+    return values
+
+
+def _read_visible_revenue_values() -> list[list[str]]:
+    """Read the filtered view solely to resolve the business period start."""
     response = requests.get(
         f"https://docs.google.com/spreadsheets/d/{REVENUE_SPREADSHEET_ID}/gviz/tq",
         params={"tqx": "out:csv", "sheet": REVENUE_WORKSHEET},
@@ -215,6 +257,20 @@ def _read_public_revenue_values() -> list[list[str]]:
     return values
 
 
+def _revenue_period_start(
+    norm: Callable[[Any], str],
+    full_values: list[list[Any]],
+) -> date | None:
+    try:
+        visible_values = _read_visible_revenue_values()
+        visible_start = _minimum_transaction_date(visible_values, norm)
+        if visible_start is not None:
+            return visible_start
+    except Exception:
+        pass
+    return _minimum_transaction_date(full_values, norm)
+
+
 def _read_revenue_values(google_client) -> list[list[Any]]:
     credential_error: Exception | None = None
     try:
@@ -223,9 +279,9 @@ def _read_revenue_values(google_client) -> list[list[Any]]:
     except Exception as exc:
         credential_error = exc
 
-    # Quản lý Thu Chi is intentionally shared read-only. VPS deployments do
-    # not have Google Application Default Credentials, so use the official
-    # Google Visualization CSV endpoint as a credential-free read fallback.
+    # Quản lý Thu Chi is intentionally shared read-only. The Visualization
+    # endpoint omits rows hidden by the active Sheet filter, so the production
+    # fallback must use the full-workbook CSV export instead.
     try:
         return _read_public_revenue_values()
     except Exception as public_exc:
@@ -286,7 +342,10 @@ def install_revenue_leave_list_routes(
             "release": RELEASE,
             "worksheet": REVENUE_WORKSHEET,
             "period_metadata": True,
-            "current_date_source": "Input!E:E latest parsed date",
+            "source_range": "Input!A:G, all rows including filtered/hidden rows",
+            "period_start_source": "filtered Input view earliest Ngày giao dịch",
+            "summary_scope": "all Input rows with Ngày giao dịch >= period start",
+            "current_date_source": "Input!E:E latest parsed date in period",
             "period_tip": True,
             "balance_formula": "total_income-total_expense-period_tip",
             "entry_form": True,
@@ -306,7 +365,8 @@ def install_revenue_leave_list_routes(
     @app.get("/v2/revenue/summary")
     def revenue_summary(ident=Depends(current_identity)):
         values = _read_revenue_values(google_client)
-        summary = _revenue_summary(values, norm)
+        period_start = _revenue_period_start(norm, values)
+        summary = _revenue_summary(values, norm, period_start=period_start)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             tip = _period_tip(conn, summary.get("start_date", ""))
@@ -327,7 +387,8 @@ def install_revenue_leave_list_routes(
     @app.put("/v2/revenue/tip")
     def save_revenue_tip(body: RevenueTipUpdate, ident=Depends(current_identity)):
         values = _read_revenue_values(google_client)
-        summary = _revenue_summary(values, norm)
+        period_start = _revenue_period_start(norm, values)
+        summary = _revenue_summary(values, norm, period_start=period_start)
         period_start = str(summary.get("start_date") or "")
         if not period_start:
             raise HTTPException(409, "Chưa xác định được ngày bắt đầu kỳ Doanh thu để lưu Tiền TIP.")
