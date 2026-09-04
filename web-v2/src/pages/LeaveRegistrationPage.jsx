@@ -87,6 +87,16 @@ const matchesEmployeeName = (employeeName, searchValue) => {
   return [employeeName, shortEmployeeName(employeeName)].some((name) => normalizeSearch(name) === needle)
 }
 
+const LETAN_TODAY_REASON_GROUPS = [
+  ['Nghỉ CÓ phép', 'Đi trễ CÓ phép', 'Về sớm CÓ phép'],
+  ['Nghỉ KHÔNG phép', 'Đi trễ KHÔNG phép', 'Về sớm KHÔNG phép'],
+  ['Nghỉ CUỐI TUẦN CÓ phép', 'Đi trễ CUỐI TUẦN CÓ phép', 'Về sớm CUỐI TUẦN CÓ phép'],
+  ['Nghỉ CUỐI TUẦN KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép', 'Về sớm CUỐI TUẦN KHÔNG phép'],
+  ['Leader nghỉ phép theo chính sách', 'Leader đi trễ sớm theo chính sách', 'Leader về sớm về sớm theo chính sách', 'Leader về sớm theo chính sách'],
+]
+const isLetanTodayGroupReason = (reason) => LETAN_TODAY_REASON_GROUPS
+  .some((group) => group.some((item) => normalizeSearch(item) === normalizeSearch(reason)))
+
 export default function LeaveRegistrationPage({ user }) {
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
   const [date, setDate] = useState(today())
@@ -133,6 +143,11 @@ export default function LeaveRegistrationPage({ user }) {
     || user?.permissions?.leave_manage_delete === true
     || user?.permissions?.leave_detail_delete === true
     || user?.permissions?.leave_today_khong_phep_edit_delete === true
+  const canEditRecord = (item) => canEdit || (
+    role === 'letan'
+    && item?.leave_date === today()
+    && isLetanTodayGroupReason(item?.leave_reason)
+  )
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
     && user?.permissions?.leave_create !== false
@@ -275,10 +290,12 @@ export default function LeaveRegistrationPage({ user }) {
     [dailyStats],
   )
   const selectedReason = useMemo(() => reasons.find((item) => item.name === form.leave_reason), [reasons, form.leave_reason])
-  const changedRecords = useMemo(
-    () => records.filter((item) => reasonDrafts[item.record_uid] && reasonDrafts[item.record_uid] !== item.leave_reason),
-    [reasonDrafts, records],
-  )
+  const changedRecords = records.filter((item) => (
+    canEditRecord(item)
+    && reasonDrafts[item.record_uid]
+    && reasonDrafts[item.record_uid] !== item.leave_reason
+  ))
+  const canEditVisibleRecord = filteredRecords.some((item) => canEditRecord(item))
 
   const ringWatchBell = useCallback(async () => {
     const played = await playWatchBellSound()
@@ -340,7 +357,7 @@ export default function LeaveRegistrationPage({ user }) {
   }
 
   const saveEdits = async () => {
-    if (!canEdit || changedRecords.length === 0) return
+    if (changedRecords.length === 0) return
     const updatedCount = changedRecords.length
     setManaging(true)
     setListActionNotice(null)
@@ -866,7 +883,7 @@ export default function LeaveRegistrationPage({ user }) {
           <div className="list-actions">
               {['admin', 'quanly', 'letan'].includes(role) && user?.permissions?.leave_export !== false && <button type="button" className="secondary-button compact export-button" onClick={syncLeaveSource} disabled={syncingLeaveSource}><RefreshCw size={15} className={syncingLeaveSource ? 'spin' : ''} /> {syncingLeaveSource ? 'Đang đồng bộ…' : 'Đồng bộ Web V2 → LichNghi_VeraSpa'}</button>}
               {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
-              {canEdit && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
+              {canEditVisibleRecord && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDelete && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || selectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
           </div>
@@ -951,12 +968,12 @@ export default function LeaveRegistrationPage({ user }) {
                     <td className="weekday-cell">{item.weekday_label || weekdayForDate(item.leave_date)}</td>
                     <td><strong>{shortEmployeeName(item.employee_name)}</strong></td>
                     <td className="reason-edit-cell">
-                      {canEdit && item.leave_date === date ? (
+                      {canEditRecord(item) && item.leave_date === date ? (
                         <select value={reasonDrafts[item.record_uid] || item.leave_reason} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing}>
                           {!reasons.some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
                           {reasons.map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
                         </select>
-                      ) : <span title={canEdit ? 'Chọn ngày ở cột Ngày để sửa lý do.' : undefined}>{item.leave_reason}</span>}
+                      ) : <span title={canEditRecord(item) ? 'Chọn ngày ở cột Ngày để sửa lý do.' : undefined}>{item.leave_reason}</span>}
                     </td>
                     <td className="detail-cell">{item.detail || '—'}</td>
                     {canViewPenalty && <td className="right">{Number(item.penalty || 0).toLocaleString('vi-VN')}đ</td>}
