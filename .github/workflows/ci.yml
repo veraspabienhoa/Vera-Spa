@@ -324,7 +324,7 @@ jobs:
               'Web V2 list supports range queries': 'start_date: date | None = Query(default=None, alias="start")' in api and 'WHERE leave_date BETWEEN :start_date AND :end_date' in api and 'Khoảng danh sách tối đa là 366 ngày' in api,
               'Web V2 list has time and employee filters': 'aria-label="Lọc thời gian danh sách"' in leave_page and 'employeeSearch' in leave_page and 'aria-label="Tìm kiếm tên nhân viên"' in leave_page,
               'Web V2 list checkbox date and weekday stay first': '<th className="select-column">Chọn</th><th>Ngày</th><th>Thứ</th><th>Nhân viên</th>' in leave_page,
-              'Web V2 range edit keeps selected-date reasons': 'canEdit && item.leave_date === date' in leave_page,
+              'Web V2 range edit keeps selected-date reasons': 'canEditRecord(item) && item.leave_date === date' in leave_page,
               'Web V2 registration uses requested result messages': 'Đã ghi lịch nghỉ THÀNH CÔNG' in leave_page and 'KHÔNG THÀNH CÔNG (' in leave_page and 'PostgreSQL và MainData mirror' not in api,
               'Web V2 watches only the six requested paid reasons': '_WATCHED_PAID_REASON_KEYS' in api and all(reason in api for reason in ('Nghỉ CÓ phép', 'Nghỉ CUỐI TUẦN CÓ phép', 'Đi trễ CÓ phép', 'Đi trễ CUỐI TUẦN CÓ phép', 'Về sớm CÓ phép', 'Về sớm CUỐI TUẦN CÓ phép')),
               'Web V2 watch endpoints are identity scoped': '@app.get("/v2/leave/watch-dates")' in api and '@app.post("/v2/leave/watch-dates/acknowledge")' in api and 'auth_user_id=CAST(:auth_user_id AS uuid)' in api,
