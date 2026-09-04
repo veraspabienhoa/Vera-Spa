@@ -162,17 +162,24 @@ export default function LeaveRegistrationPage({ user }) {
   }, [])
 
   const load = useCallback(async (options = {}) => {
-    const afterSuccessfulCreate = options?.afterSuccessfulCreate === true
+    const afterSave = options?.afterSave === true
     setBusy(true)
-    if (!afterSuccessfulCreate) setError('')
+    if (!afterSave) setError('')
+    let loadSource = 'dữ liệu đăng ký nghỉ'
     try {
       if (isApiConfigured) {
-        const [dailyData, recordData, reasonData, employeeData] = await Promise.all([
-          veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter),
-          veraApi.leaveRecords(listRangeStart, listRangeEnd),
-          veraApi.leaveReasons(date),
-          veraApi.employees(),
-        ])
+        // Keep the four reads sequential. The VPS intentionally uses a small
+        // PostgreSQL pool; firing all requests together immediately after an
+        // insert could exhaust it and show HTTP 500 even though the record was
+        // already committed successfully.
+        loadSource = 'thống kê lịch nghỉ'
+        const dailyData = await veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
+        loadSource = 'danh sách lịch nghỉ'
+        const recordData = await veraApi.leaveRecords(listRangeStart, listRangeEnd)
+        loadSource = 'danh sách lý do nghỉ'
+        const reasonData = await veraApi.leaveReasons(date)
+        loadSource = 'danh sách nhân viên'
+        const employeeData = await veraApi.employees()
         setDailyStats(dailyData.days || [])
         const loadedRecords = recordData.records || []
         setRecords(loadedRecords)
@@ -181,12 +188,10 @@ export default function LeaveRegistrationPage({ user }) {
         setReasons(reasonData.reasons || [])
         setEmployees(employeeData.employees || [])
       } else {
-        const [dailyData, recordData, reasonData, employeeData] = await Promise.all([
-          loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter),
-          loadLeaveRecords(listRangeStart, listRangeEnd),
-          loadLeaveReasons(date),
-          loadEmployees(),
-        ])
+        const dailyData = await loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
+        const recordData = await loadLeaveRecords(listRangeStart, listRangeEnd)
+        const reasonData = await loadLeaveReasons(date)
+        const employeeData = await loadEmployees()
         setDailyStats(dailyData)
         setRecords(recordData)
         setReasonDrafts(Object.fromEntries(recordData.map((item) => [item.record_uid, item.leave_reason])))
@@ -194,16 +199,11 @@ export default function LeaveRegistrationPage({ user }) {
         setReasons(reasonData.map((name) => ({ name, requires_manual_penalty: false })))
         setEmployees(employeeData)
       }
+      setError('')
       return true
     } catch (err) {
-      const detail = err.message || 'Không tải được dữ liệu từ PostgreSQL/Supabase.'
-      if (afterSuccessfulCreate) {
-        setWarnings((current) => [
-          ...current,
-          `Lịch nghỉ đã được lưu, nhưng chưa thể làm mới dữ liệu hiển thị (${detail}). Vui lòng bấm Làm mới.`,
-        ])
-      } else {
-        setError(detail)
+      if (!afterSave) {
+        setError(`Không tải được ${loadSource}: ${err.message || 'Lỗi PostgreSQL/Supabase.'}`)
       }
       return false
     } finally {
@@ -357,7 +357,13 @@ export default function LeaveRegistrationPage({ user }) {
         }
         await veraApi.updateLeave(item.record_uid, payload)
       }
-      await load()
+      const refreshed = await load({ afterSave: true })
+      if (!refreshed) {
+        setWarnings((current) => [
+          ...current,
+          'Lịch nghỉ đã được lưu. Dữ liệu màn hình chưa tải lại được; không bấm Ghi lần nữa, hãy bấm Làm mới.',
+        ])
+      }
       await refreshWatchDates()
       setListActionNotice({
         action: 'edit',
@@ -543,7 +549,7 @@ export default function LeaveRegistrationPage({ user }) {
       })
       setWarnings(result.warnings || [])
       setMessage('Đã ghi lịch nghỉ THÀNH CÔNG')
-      await load({ afterSuccessfulCreate: true })
+      await load()
       await refreshWatchDates()
     } catch (err) {
       setError(`KHÔNG THÀNH CÔNG (${err.message || 'Không ghi được lịch nghỉ.'})`)
