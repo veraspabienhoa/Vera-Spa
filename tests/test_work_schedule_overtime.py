@@ -72,3 +72,8 @@ def test_staff_status_update_survives_google_credentials_failure():
     source = (ROOT / "vera_web_v2_staff.py").read_text(encoding="utf-8")
     assert '"sync_warning": f"{type(sync_exc).__name__}: {sync_exc}"' in source
     assert "Trạng thái đã lưu; chưa dọn lịch nghỉ tương lai" in source
+
+
+def test_combo_sales_table_is_rendered_after_monthly_statistics():
+    source = (ROOT / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
+    assert source.index('className="schedule-scroll monthly-statistics"') < source.index("{!loading && comboEditor}")

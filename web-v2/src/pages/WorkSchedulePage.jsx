@@ -782,8 +782,6 @@ export default function WorkSchedulePage({ user }) {
     </div>}
     {notice && <div className="schedule-notice">{notice}</div>}
 
-    {comboEditor}
-
     {isWeekView && selectedCell && selectedEmployee && selectedValue && canEdit && <div className="mobile-week-editor"><strong>{systemName(selectedEmployee)} · {selectedCell.day}</strong>{editorFor(selectedEmployee, selectedCell.day, selectedValue)}</div>}
 
     {loading ? <div className="page-loading"><LoaderCircle size={18} className="spin" /> Đang tải lịch…</div> : <div className={`schedule-scroll ${isWeekView ? 'week-view' : ''}`}>
@@ -826,5 +824,6 @@ export default function WorkSchedulePage({ user }) {
         <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr></tfoot>
       </table>
     </div>}
+    {!loading && comboEditor}
   </section>
 }
