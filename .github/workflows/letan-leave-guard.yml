@@ -8,6 +8,7 @@ on:
       - 'vera_web_v2_api_v38.py'
       - 'web-v2/src/App.jsx'
       - 'web-v2/src/pages/LeaveListTypeColumn.jsx'
+      - 'web-v2/src/pages/LeaveRegistrationPage.jsx'
       - 'web-v2/src/pages/LetanLeavePolicyRules.jsx'
       - '.github/workflows/letan-leave-guard.yml'
   pull_request:
@@ -16,6 +17,7 @@ on:
       - 'vera_web_v2_api_v38.py'
       - 'web-v2/src/App.jsx'
       - 'web-v2/src/pages/LeaveListTypeColumn.jsx'
+      - 'web-v2/src/pages/LeaveRegistrationPage.jsx'
       - 'web-v2/src/pages/LetanLeavePolicyRules.jsx'
       - '.github/workflows/letan-leave-guard.yml'
 
@@ -73,6 +75,9 @@ jobs:
           grep -q 'recordDate === todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
           grep -q 'recordDate < todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
           grep -q 'isTodaySpecialGroup' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'isLetanTodayGroupReason' web-v2/src/pages/LeaveRegistrationPage.jsx
+          grep -q 'canEditRecord(item)' web-v2/src/pages/LeaveRegistrationPage.jsx
+          grep -q 'if (changedRecords.length === 0) return' web-v2/src/pages/LeaveRegistrationPage.jsx
           grep -q 'if not old_group:' vera_web_v2_letan_leave_guard.py
           grep -q 'groups_1_to_5_only' vera_web_v2_letan_leave_guard.py
           grep -q '<LetanLeavePolicyRules />' web-v2/src/App.jsx
