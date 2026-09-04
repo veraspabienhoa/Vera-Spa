@@ -1,9 +1,10 @@
 """Granular permissions and directory-list visibility for VERA Web V2.
 
-Adds exactly three schedule permissions to the existing Phân quyền system:
+Adds four schedule permissions to the existing Phân quyền system:
 - work_schedule_quanly: lịch Quản lý
 - work_schedule_letan: lịch Lễ tân
 - work_schedule_locker: lịch Locker
+- work_schedule_tapvu: lịch Tạp vụ
 
 Also registers the ``giamdoc`` (Giám đốc) role across Web V2 employee management,
 permission defaults, employee ordering, department labels, and Nội quy role-token
@@ -37,6 +38,7 @@ WORK_SCHEDULE_PERMISSION_GROUP = {
     "work_schedule_quanly": "Lịch làm việc · Quản lý",
     "work_schedule_letan": "Lịch làm việc · Lễ tân",
     "work_schedule_locker": "Lịch làm việc · Locker",
+    "work_schedule_tapvu": "Lịch làm việc · Tạp vụ",
 }
 
 GIAMDOC_ROLE = "giamdoc"
@@ -283,12 +285,13 @@ def install_work_schedule_permissions() -> None:
     group.update(WORK_SCHEDULE_PERMISSION_GROUP)
     permissions.FEATURES.update(WORK_SCHEDULE_PERMISSION_GROUP)
 
-    # Defaults: Quản lý can arrange all three groups; Lễ tân and Locker can see
+    # Defaults: Quản lý can arrange all four groups; other departments can see
     # their own group. Admin already receives set(FEATURES) dynamically through
     # the permission resolver and remains unrestricted.
     permissions.DEFAULT_ROLE_FEATURES.setdefault("quanly", set()).update(WORK_SCHEDULE_PERMISSION_GROUP)
     permissions.DEFAULT_ROLE_FEATURES.setdefault("letan", set()).add("work_schedule_letan")
     permissions.DEFAULT_ROLE_FEATURES.setdefault("locker", set()).add("work_schedule_locker")
+    permissions.DEFAULT_ROLE_FEATURES.setdefault("tapvu", set()).add("work_schedule_tapvu")
 
     _install_giamdoc_role()
 

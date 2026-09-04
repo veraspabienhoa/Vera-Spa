@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFINITIONS = {
     "locker": {"Ca 1": {}, "Ca 2": {}},
     "letan": {"Ca 1": {}, "Ca 2": {}},
+    "tapvu": {"Ca 1": {}, "Ca 2": {}},
 }
 
 
@@ -25,14 +26,14 @@ def row(department, **updates):
     return ScheduleRow(**values)
 
 
-def test_all_three_departments_accept_shift_overtime():
-    for department in ("quanly", "locker", "letan"):
+def test_all_four_departments_accept_shift_overtime():
+    for department in ("quanly", "locker", "letan", "tapvu"):
         normalized = _validate_row(row(department, overtime_shift="TC Ca 2"), DEFINITIONS)
         assert normalized[2] == "TC Ca 2"
 
 
-def test_all_three_departments_accept_custom_overtime_range():
-    for department in ("quanly", "locker", "letan"):
+def test_all_four_departments_accept_custom_overtime_range():
+    for department in ("quanly", "locker", "letan", "tapvu"):
         normalized = _validate_row(row(
             department,
             overtime_shift="Từ giờ tới giờ",
@@ -48,3 +49,5 @@ def test_schedule_page_has_monthly_statistics_and_clickable_total_highlight():
     assert "employeeMatchesTotal" in source
     assert "Từ giờ tới giờ" in source
     assert "Tổng bộ phận" in source
+    assert "row.work_date <= yesterdayIso" in source
+    assert "mobile-cell-summary ${mobileShiftClass}" in source

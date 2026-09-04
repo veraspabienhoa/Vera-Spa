@@ -3,8 +3,8 @@
 Schedules are assigned by individual calendar date, never generated from a recurring
 cycle. The UI may load a whole selected month (up to 63 days per request).
 
-Quản lý is scheduled with a start/end time for each date. Locker and Lễ tân use
-configurable shift definitions stored in PostgreSQL. All three departments share
+Quản lý is scheduled with a start/end time for each date. Locker, Lễ tân and Tạp vụ use
+configurable shift definitions stored in PostgreSQL. All four departments share
 the same overtime choices: TC Ca 1, TC Ca 2, or an explicit time range.
 """
 from __future__ import annotations
@@ -27,12 +27,17 @@ DEFAULT_SHIFT_DEFINITIONS = {
         "Ca 1": {"start": "09:00", "end": "17:00"},
         "Ca 2": {"start": "16:30", "end": "00:30"},
     },
+    "tapvu": {
+        "Ca 1": {"start": "09:00", "end": "17:00"},
+        "Ca 2": {"start": "16:30", "end": "00:30"},
+    },
 }
 
 WORK_SCHEDULE_FEATURES = {
     "quanly": "work_schedule_quanly",
     "letan": "work_schedule_letan",
     "locker": "work_schedule_locker",
+    "tapvu": "work_schedule_tapvu",
 }
 
 _TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
@@ -43,7 +48,7 @@ class ScheduleRow(BaseModel):
     work_date: date
     employee_username: str = Field(min_length=1, max_length=200)
     employee_name: str = Field(default="", max_length=300)
-    department: Literal["quanly", "locker", "letan"]
+    department: Literal["quanly", "locker", "letan", "tapvu"]
     shift_code: str = Field(min_length=1, max_length=100)
     overtime_shift: str = Field(default="", max_length=100)
     start_time: str = Field(default="", max_length=5)
@@ -64,7 +69,7 @@ class ShiftDefinitionRow(BaseModel):
 
 
 class ShiftDefinitionSave(BaseModel):
-    department: Literal["locker", "letan"]
+    department: Literal["locker", "letan", "tapvu"]
     shifts: list[ShiftDefinitionRow] = Field(min_length=1, max_length=20)
 
 
@@ -148,7 +153,7 @@ def _feature_for_department(department: str) -> str:
     try:
         return WORK_SCHEDULE_FEATURES[department]
     except KeyError as exc:
-        raise HTTPException(400, "Bộ phận chỉ hỗ trợ Quản lý, Lễ tân hoặc Locker.") from exc
+        raise HTTPException(400, "Bộ phận chỉ hỗ trợ Quản lý, Lễ tân, Locker hoặc Tạp vụ.") from exc
 
 
 def _allowed_department(conn, ident, department: str, feature_allowed) -> bool:
@@ -175,11 +180,12 @@ def _load_shift_definitions(conn) -> dict[str, Any]:
         "quanly": {"mode": "daily_time_range"},
         "locker": {},
         "letan": {},
+        "tapvu": {},
     }
     rows = conn.execute(text("""
         SELECT department, shift_code, start_time, end_time, sort_order
         FROM vera_work_shift_definition
-        WHERE department IN ('locker','letan')
+        WHERE department IN ('locker','letan','tapvu')
         ORDER BY department, sort_order, lower(shift_code)
     """)).mappings().all()
     for row in rows:
@@ -285,12 +291,12 @@ def install_work_schedule_routes(
             raise HTTPException(400, "Chỉ xem tối đa 63 ngày mỗi lần.")
         dep = department.strip().lower()
         if dep and dep not in WORK_SCHEDULE_FEATURES:
-            raise HTTPException(400, "Bộ phận chỉ hỗ trợ Quản lý, Locker hoặc Lễ tân.")
+            raise HTTPException(400, "Bộ phận chỉ hỗ trợ Quản lý, Locker, Lễ tân hoặc Tạp vụ.")
 
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             allowed_departments = [
-                item for item in ("quanly", "letan", "locker")
+                item for item in ("quanly", "letan", "tapvu", "locker")
                 if _allowed_department(conn, ident, item, feature_allowed)
             ]
             if dep and dep not in allowed_departments:
@@ -329,7 +335,7 @@ def install_work_schedule_routes(
             "allowed_departments": allowed_departments,
             "assignment_mode": "daily",
             "display_mode": "selected_month_all_days",
-            "overtime_mode": {"locker": "shared", "letan": "shared", "quanly": "shared"},
+            "overtime_mode": {"locker": "shared", "letan": "shared", "tapvu": "shared", "quanly": "shared"},
             "overtime_choices": ["TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"],
         }
 
