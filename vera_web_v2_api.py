@@ -964,9 +964,14 @@ def _validate_edit_permission(conn, row: dict, new_reason: str, ident: Identity)
     role = ident.role
     target = row["leave_date"]
     old_reason = row["leave_reason"]
-    item = _catalog_rule_for_edit(conn, new_reason, target, role)
     if role == "admin":
-        return item, False
+        # Admin may change any historical/current/future record.  The reason
+        # must still exist so its calculated values remain canonical, but
+        # allowed-role, allowed-day, cancellation and timing rules do not
+        # restrict Admin.
+        return _reason_item(conn, new_reason), True
+
+    item = _catalog_rule_for_edit(conn, new_reason, target, role)
 
     today = datetime.now(VN_TZ).date()
     next_month_end = (date(today.year + (1 if today.month == 12 else 0), 1 if today.month == 12 else today.month + 1, 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
@@ -1233,7 +1238,7 @@ def _insert_record(conn, record: dict, source_row: int):
         pass
 
 
-def _record_payload(record: dict, source_row: int) -> dict:
+def _record_payload(record: dict, source_row: int, source_sheet_id: str = LEAVE_SHEET_ID) -> dict:
     return {
         "Ngày": record["leave_date"].strftime("%d/%m/%Y"),
         "Thứ ngày": record["weekday_label"],
@@ -1249,7 +1254,7 @@ def _record_payload(record: dict, source_row: int) -> dict:
         "Người cập nhật": record["updated_by"],
         "record_uid": record["record_uid"],
         "__record_uid": record["record_uid"],
-        "__source_sheet_id": LEAVE_SHEET_ID,
+        "__source_sheet_id": source_sheet_id,
         "__source_row": int(source_row),
     }
 
@@ -1274,8 +1279,13 @@ def _sheet_values_for_record(headers: list[str], record: dict, source_row: int) 
     return [mapping.get(_norm(header), "") for header in headers[:13]]
 
 
-def _update_record(conn, record: dict, source_row: int) -> None:
-    payload = _record_payload(record, source_row)
+def _update_record(
+    conn,
+    record: dict,
+    source_row: int,
+    source_sheet_id: str = LEAVE_SHEET_ID,
+) -> None:
+    payload = _record_payload(record, source_row, source_sheet_id)
     result = conn.execute(text("""
         UPDATE leave_records SET
             leave_date=:leave_date, employee_name=:employee_name, leave_reason=:leave_reason,
@@ -2353,8 +2363,11 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
         if not old:
             raise HTTPException(404, "Không tìm thấy lịch nghỉ cần sửa.")
         old = dict(old)
-        if str(old.get("source_sheet_id") or "") != LEAVE_SHEET_ID or int(old.get("source_row") or 0) < 2:
-            raise HTTPException(409, "Bản ghi không có vị trí MainData hợp lệ; từ chối sửa để tránh lệch dữ liệu.")
+        source_row = int(old.get("source_row") or 0)
+        has_main_mirror = (
+            str(old.get("source_sheet_id") or "") == LEAVE_SHEET_ID
+            and source_row >= 2
+        )
 
         item, future_conversion = _validate_edit_permission(conn, old, body.leave_reason, ident)
         manual_penalty = body.manual_penalty
@@ -2378,9 +2391,9 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
             skip_registration_timing=future_conversion,
             record_uid=old["record_uid"],
             existing_ordinal=existing_ordinal,
+            allow_inactive_employee=(ident.role == "admin"),
         )
-        source_row = int(old["source_row"])
-        _update_record(conn, record, source_row)
+        _update_record(conn, record, source_row, str(old.get("source_sheet_id") or ""))
         rebalanced = _rebalance_progressive_rows(conn, old["leave_date"], {old_key, new_key})
 
         # PostgreSQL is canonical. Commit the validated edit before attempting
@@ -2399,25 +2412,30 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
         conn.close()
 
     mirror_pending = False
-    try:
-        ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
-        all_values = ws.get_all_values()
-        headers = all_values[0][:13] if all_values else []
-        if not headers:
-            raise RuntimeError("MainData chưa có header A:M")
-        sheet_updates: dict[int, dict] = {source_row: record}
-        sheet_updates.update({row_number: changed for row_number, changed in rebalanced})
-        for row_number, changed in sorted(sheet_updates.items()):
-            values = _sheet_values_for_record(headers, changed, row_number)
-            ws.update(range_name=f"A{row_number}:M{row_number}", values=[values], value_input_option="USER_ENTERED")
-    except Exception:
-        mirror_pending = True
+    if has_main_mirror or rebalanced:
+        try:
+            ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
+            all_values = ws.get_all_values()
+            headers = all_values[0][:13] if all_values else []
+            if not headers:
+                raise RuntimeError("MainData chưa có header A:M")
+            sheet_updates: dict[int, dict] = {}
+            if has_main_mirror:
+                sheet_updates[source_row] = record
+            sheet_updates.update({row_number: changed for row_number, changed in rebalanced})
+            for row_number, changed in sorted(sheet_updates.items()):
+                values = _sheet_values_for_record(headers, changed, row_number)
+                ws.update(range_name=f"A{row_number}:M{row_number}", values=[values], value_input_option="USER_ENTERED")
+        except Exception:
+            mirror_pending = True
 
     message = "Đã sửa lịch nghỉ THÀNH CÔNG."
     if mirror_pending:
         message += " PostgreSQL đã cập nhật; MainData đang chờ đồng bộ lại."
-    else:
+    elif has_main_mirror:
         message += " Đã đồng bộ MainData."
+    else:
+        message += " Bản ghi PostgreSQL không có dòng MainData cần đồng bộ."
     return {
         "ok": True,
         "record_uid": old_uid,

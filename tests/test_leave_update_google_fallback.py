@@ -13,3 +13,5 @@ def test_leave_update_commits_postgres_before_optional_google_mirror():
     assert '"mirror_pending": mirror_pending' in route
     assert "PostgreSQL đã cập nhật; MainData đang chờ đồng bộ lại." in route
     assert "Không sửa được lịch nghỉ an toàn" in route[:google_at]
+    assert "if has_main_mirror or rebalanced:" in route
+    assert "Bản ghi không có vị trí MainData hợp lệ" not in route

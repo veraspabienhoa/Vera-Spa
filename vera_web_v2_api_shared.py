@@ -243,6 +243,7 @@ def _validate_and_prepare(
     skip_registration_timing=False,
     record_uid="",
     existing_ordinal=None,
+    allow_inactive_employee=False,
 ):
     employee = body.employee_name.strip()
     role = str(ident.role or "").strip().lower()
@@ -254,10 +255,15 @@ def _validate_and_prepare(
         SELECT username, monthly_generated, monthly_leave, annual_leave
         FROM employees
         WHERE lower(btrim(username))=lower(btrim(:u))
-          AND COALESCE(login_locked,false)=false
-          AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
+          AND (
+            CAST(:allow_inactive AS boolean)
+            OR (
+              COALESCE(login_locked,false)=false
+              AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
+            )
+          )
         LIMIT 1
-    """), {"u": employee}).mappings().first()
+    """), {"u": employee, "allow_inactive": bool(allow_inactive_employee)}).mappings().first()
     if not emp:
         raise HTTPException(400, "Không tìm thấy nhân viên đang hoạt động.")
     employee = emp["username"]

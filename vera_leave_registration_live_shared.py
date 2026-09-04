@@ -395,7 +395,7 @@ def validate_leave_registration_request_live(payload, live_df, credentials_df, r
     source_df = live_df.copy() if isinstance(live_df, pd.DataFrame) else pd.DataFrame()
     norm_reason = normalize_leave(reason)
 
-    if not (is_annual_range_reason or is_long_sick_range_reason):
+    if not is_admin and not (is_annual_range_reason or is_long_sick_range_reason):
         weekend_ok, weekend_msg = validate_weekend(source_df, employee, start_date, end_date, reason=reason, max_weekend_dates=2)
         if not weekend_ok:
             result["errors"].append(weekend_msg)

@@ -5,8 +5,13 @@ on:
     branches: [main]
     paths:
       - 'vera_web_v2_letan_leave_guard.py'
+      - 'vera_web_v2_api.py'
+      - 'vera_web_v2_api_shared.py'
       - 'vera_web_v2_api_v38.py'
+      - 'vera_leave_registration_live_shared.py'
       - 'web-v2/src/App.jsx'
+      - 'web-v2/src/lib/leaveRecordPermissions.js'
+      - 'web-v2/tests/leaveRecordPermissions.test.mjs'
       - 'web-v2/src/pages/LeaveListTypeColumn.jsx'
       - 'web-v2/src/pages/LeaveRegistrationPage.jsx'
       - 'web-v2/src/pages/LetanLeavePolicyRules.jsx'
@@ -14,8 +19,13 @@ on:
   pull_request:
     paths:
       - 'vera_web_v2_letan_leave_guard.py'
+      - 'vera_web_v2_api.py'
+      - 'vera_web_v2_api_shared.py'
       - 'vera_web_v2_api_v38.py'
+      - 'vera_leave_registration_live_shared.py'
       - 'web-v2/src/App.jsx'
+      - 'web-v2/src/lib/leaveRecordPermissions.js'
+      - 'web-v2/tests/leaveRecordPermissions.test.mjs'
       - 'web-v2/src/pages/LeaveListTypeColumn.jsx'
       - 'web-v2/src/pages/LeaveRegistrationPage.jsx'
       - 'web-v2/src/pages/LetanLeavePolicyRules.jsx'
@@ -29,6 +39,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Compile guard
         run: python -m py_compile vera_web_v2_letan_leave_guard.py vera_web_v2_api_v38.py
       - name: Verify five exact groups
@@ -68,16 +81,16 @@ jobs:
           assert 'api_module=_api' in source
           print('Installer order: audit -> letan guard -> Excel style; single-device guard removed')
           PY
-      - name: Verify Nội quy table and frontend lock
+      - name: Verify React row policy
+        run: node --test web-v2/tests/leaveRecordPermissions.test.mjs
+      - name: Verify Nội quy table and frontend policy
         run: |
           grep -q 'QUYỀN SỬA / XÓA ĐĂNG KÝ – TÀI KHOẢN LỄ TÂN' web-v2/src/pages/LetanLeavePolicyRules.jsx
           grep -q 'Ngày hiện tại – Lý do/Loại nghỉ khác' web-v2/src/pages/LetanLeavePolicyRules.jsx
-          grep -q 'recordDate === todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
-          grep -q 'recordDate < todayKey' web-v2/src/pages/LeaveListTypeColumn.jsx
-          grep -q 'isTodaySpecialGroup' web-v2/src/pages/LeaveListTypeColumn.jsx
-          grep -q 'setReactSelectValue' web-v2/src/pages/LeaveListTypeColumn.jsx
-          grep -q 'window.HTMLSelectElement.prototype' web-v2/src/pages/LeaveListTypeColumn.jsx
-          grep -q 'isLetanTodayGroupReason' web-v2/src/pages/LeaveRegistrationPage.jsx
+          grep -q 'Display-only enhancement' web-v2/src/pages/LeaveListTypeColumn.jsx
+          grep -q 'canEditLeaveRecord' web-v2/src/pages/LeaveRegistrationPage.jsx
+          grep -q 'canDeleteLeaveRecord' web-v2/src/pages/LeaveRegistrationPage.jsx
+          grep -q 'letanReasonChoices' web-v2/src/pages/LeaveRegistrationPage.jsx
           grep -q 'canEditRecord(item)' web-v2/src/pages/LeaveRegistrationPage.jsx
           grep -q 'if (changedRecords.length === 0) return' web-v2/src/pages/LeaveRegistrationPage.jsx
           grep -q 'if not old_group:' vera_web_v2_letan_leave_guard.py
