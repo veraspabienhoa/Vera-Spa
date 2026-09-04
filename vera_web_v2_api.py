@@ -2337,9 +2337,11 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
     engine = _engine_instance()
     conn = engine.connect()
     tx = conn.begin()
-    ws = None
-    backups: dict[int, list[Any]] = {}
-    wrote_sheet = False
+    record = None
+    rebalanced: list[tuple[int, dict]] = []
+    warnings: list[str] = []
+    old_uid = str(record_uid or "").strip()
+    source_row = 0
     try:
         conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
         old = conn.execute(text("""
@@ -2381,6 +2383,23 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
         _update_record(conn, record, source_row)
         rebalanced = _rebalance_progressive_rows(conn, old["leave_date"], {old_key, new_key})
 
+        # PostgreSQL is canonical. Commit the validated edit before attempting
+        # the legacy Google Sheet mirror so broken credentials cannot reject a
+        # legitimate edit or leave the browser showing a false failure.
+        tx.commit()
+    except HTTPException:
+        if tx.is_active:
+            tx.rollback()
+        raise
+    except Exception as exc:
+        if tx.is_active:
+            tx.rollback()
+        raise HTTPException(500, f"Không sửa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
+    finally:
+        conn.close()
+
+    mirror_pending = False
+    try:
         ws = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
         all_values = ws.get_all_values()
         headers = all_values[0][:13] if all_values else []
@@ -2388,33 +2407,24 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
             raise RuntimeError("MainData chưa có header A:M")
         sheet_updates: dict[int, dict] = {source_row: record}
         sheet_updates.update({row_number: changed for row_number, changed in rebalanced})
-        for row_number in sheet_updates:
-            backups[row_number] = list(all_values[row_number - 1][:13]) if row_number <= len(all_values) else []
         for row_number, changed in sorted(sheet_updates.items()):
             values = _sheet_values_for_record(headers, changed, row_number)
             ws.update(range_name=f"A{row_number}:M{row_number}", values=[values], value_input_option="USER_ENTERED")
-            wrote_sheet = True
-        tx.commit()
-        return {
-            "ok": True,
-            "record_uid": old["record_uid"],
-            "warnings": warnings,
-            "message": "Đã sửa lịch nghỉ và đồng bộ PostgreSQL/MainData.",
-        }
-    except HTTPException:
-        if tx.is_active:
-            tx.rollback()
-        if wrote_sheet and ws is not None:
-            _restore_sheet_updates(ws, backups)
-        raise
-    except Exception as exc:
-        if tx.is_active:
-            tx.rollback()
-        if wrote_sheet and ws is not None:
-            _restore_sheet_updates(ws, backups)
-        raise HTTPException(500, f"Không sửa được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
-    finally:
-        conn.close()
+    except Exception:
+        mirror_pending = True
+
+    message = "Đã sửa lịch nghỉ THÀNH CÔNG."
+    if mirror_pending:
+        message += " PostgreSQL đã cập nhật; MainData đang chờ đồng bộ lại."
+    else:
+        message += " Đã đồng bộ MainData."
+    return {
+        "ok": True,
+        "record_uid": old_uid,
+        "warnings": warnings,
+        "mirror_pending": mirror_pending,
+        "message": message,
+    }
 
 
 def _delete_leave_uids(record_uids: list[str], ident: Identity):
