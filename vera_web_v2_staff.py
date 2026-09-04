@@ -662,11 +662,25 @@ def install_staff_routes(
             updated = update_database_row(conn, ident, row, values)
             if updated["_status_changed"]:
                 if updated["_status"] in {STATUS_OPTIONS[1], STATUS_OPTIONS[2]}:
-                    leave_prune = prune_registered_leave(
-                        conn,
-                        updated["username"],
-                        datetime.now(vn_tz).date(),
-                    )
+                    try:
+                        leave_prune = prune_registered_leave(
+                            conn,
+                            updated["username"],
+                            datetime.now(vn_tz).date(),
+                        )
+                    except HTTPException:
+                        raise
+                    except Exception as sync_exc:
+                        # PostgreSQL is the production source of truth for employee status.
+                        # A broken/unavailable legacy Google credential must not roll back
+                        # the requested status change. Leave rows remain untouched so there
+                        # is no partial deletion while Google Sheets is unavailable.
+                        leave_prune = {
+                            "count": 0,
+                            "effective_date": datetime.now(vn_tz).date(),
+                            "employee": updated["username"],
+                            "sync_warning": f"{type(sync_exc).__name__}: {sync_exc}",
+                        }
             tx.commit()
             deleted_leave = int((leave_prune or {}).get("count") or 0)
             suffix = (
@@ -674,6 +688,8 @@ def install_staff_routes(
                 f"{leave_prune['effective_date'].strftime('%d/%m/%Y')} trở về sau; lịch sử trước ngày này được giữ nguyên."
                 if deleted_leave else ""
             )
+            if (leave_prune or {}).get("sync_warning"):
+                suffix += " Trạng thái đã lưu; chưa dọn lịch nghỉ tương lai trên Google Sheets vì kết nối Google đang lỗi."
             return {
                 "ok": True,
                 "message": f"Đã cập nhật {updated['username']} THÀNH CÔNG.{suffix}",

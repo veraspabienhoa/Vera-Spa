@@ -51,3 +51,24 @@ def test_schedule_page_has_monthly_statistics_and_clickable_total_highlight():
     assert "Tổng bộ phận" in source
     assert "row.work_date <= yesterdayIso" in source
     assert "mobile-cell-summary ${mobileShiftClass}" in source
+    assert "BÁN COMBO" in source
+    assert "combo_customer_phone" in source
+
+
+def test_schedule_persists_combo_sale_details_for_management_and_reception():
+    source = (ROOT / "vera_web_v2_work_schedule.py").read_text(encoding="utf-8")
+    for field in (
+        "combo_sold", "combo_sale_date", "combo_customer_name",
+        "combo_customer_phone", "combo_ticket", "combo_note",
+    ):
+        assert field in source
+    assert 'row.department in {"quanly", "letan"}' in source
+    assert 'vera_work_schedule_combo_sale' in source
+    assert '@app.get("/v2/work-schedule/combo-sales")' in source
+    assert '@app.post("/v2/work-schedule/combo-sales")' in source
+
+
+def test_staff_status_update_survives_google_credentials_failure():
+    source = (ROOT / "vera_web_v2_staff.py").read_text(encoding="utf-8")
+    assert '"sync_warning": f"{type(sync_exc).__name__}: {sync_exc}"' in source
+    assert "Trạng thái đã lưu; chưa dọn lịch nghỉ tương lai" in source

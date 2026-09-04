@@ -121,6 +121,8 @@ function emptyCell() {
   return {
     shift_code: '', overtime_shift: '', start_time: '', end_time: '',
     overtime_start_time: '', overtime_end_time: '', note: '',
+    combo_sold: false, combo_sale_date: '', combo_customer_name: '',
+    combo_customer_phone: '', combo_ticket: '', combo_note: '',
   }
 }
 
@@ -243,6 +245,8 @@ export default function WorkSchedulePage({ user }) {
   const [saved, setSaved] = useState({})
   const [drafts, setDrafts] = useState({})
   const [monthlyRows, setMonthlyRows] = useState([])
+  const [comboSales, setComboSales] = useState([])
+  const [comboForm, setComboForm] = useState({ employee_username: '', sale_date: todayIso, customer_name: '', customer_phone: '', combo_ticket: '', note: '' })
   const [shiftDefinitions, setShiftDefinitions] = useState({ quanly: {}, letan: {}, locker: {}, tapvu: {} })
   const [shiftDrafts, setShiftDrafts] = useState([])
   const [shiftEditorOpen, setShiftEditorOpen] = useState(false)
@@ -316,6 +320,13 @@ export default function WorkSchedulePage({ user }) {
         })
       setEmployees(wanted)
       setMonthlyRows(monthlyResult.rows || [])
+      if (['quanly', 'letan'].includes(department)) {
+        const comboResult = await scheduleRequest(`/v2/work-schedule/combo-sales?start=${statisticsRange.start}&end=${statisticsRange.end}&department=${department}`)
+        setComboSales(comboResult.rows || [])
+        setComboForm((current) => ({ ...current, employee_username: wanted.some((item) => item.username === current.employee_username) ? current.employee_username : (wanted[0]?.username || '') }))
+      } else {
+        setComboSales([])
+      }
       setHighlightedEmployee((current) => wanted.some((item) => item.username === current) ? current : '')
       setHighlightedTotal(null)
       const mapped = Object.fromEntries((result.rows || []).map((row) => [keyFor(row.employee_username, row.work_date), {
@@ -326,6 +337,12 @@ export default function WorkSchedulePage({ user }) {
         overtime_start_time: String(row.overtime_start_time || '').slice(0, 5),
         overtime_end_time: String(row.overtime_end_time || '').slice(0, 5),
         note: row.note || '',
+        combo_sold: Boolean(row.combo_sold),
+        combo_sale_date: row.combo_sale_date || '',
+        combo_customer_name: row.combo_customer_name || '',
+        combo_customer_phone: row.combo_customer_phone || '',
+        combo_ticket: row.combo_ticket || '',
+        combo_note: row.combo_note || '',
       }]))
       const definitions = result.shift_definitions || { quanly: {}, letan: {}, locker: {}, tapvu: {} }
       setShiftDefinitions(definitions)
@@ -506,6 +523,12 @@ export default function WorkSchedulePage({ user }) {
             overtime_start_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_start_time || '') : '',
             overtime_end_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_end_time || '') : '',
             note: after.note || '',
+            combo_sold: ['quanly', 'letan'].includes(department) && Boolean(after.combo_sold),
+            combo_sale_date: after.combo_sold ? (after.combo_sale_date || day) : null,
+            combo_customer_name: after.combo_sold ? (after.combo_customer_name || '') : '',
+            combo_customer_phone: after.combo_sold ? (after.combo_customer_phone || '') : '',
+            combo_ticket: after.combo_sold ? (after.combo_ticket || '') : '',
+            combo_note: after.combo_sold ? (after.combo_note || '') : '',
           })
         }
       }
@@ -662,12 +685,57 @@ export default function WorkSchedulePage({ user }) {
   const selectedEmployee = employees.find((item) => item.username === selectedCell?.username)
   const selectedValue = selectedCell ? { ...emptyCell(), ...(drafts[keyFor(selectedCell.username, selectedCell.day)] || {}) } : null
 
+  const addComboSale = async () => {
+    const employee = employees.find((item) => item.username === comboForm.employee_username)
+    if (!employee || !comboForm.sale_date || !comboForm.customer_name.trim() || !comboForm.combo_ticket.trim()) return setNotice('Bán combo cần đủ Nhân viên, Ngày bán, Tên khách hàng và Vé combo.')
+    setBusy(true)
+    try {
+      const result = await scheduleRequest('/v2/work-schedule/combo-sales', { method: 'POST', body: JSON.stringify({ ...comboForm, employee_name: systemName(employee), department }) })
+      setComboForm((current) => ({ ...current, customer_name: '', customer_phone: '', combo_ticket: '', note: '' }))
+      await load()
+      setNotice(result.message || 'Đã thêm lượt bán combo.')
+    } catch (error) { setNotice(error.message || 'Không lưu được dữ liệu bán combo.') } finally { setBusy(false) }
+  }
+
+  const deleteComboSale = async (sale) => {
+    if (!window.confirm(`Xóa lượt bán combo của ${sale.employee_name} ngày ${sale.sale_date}?`)) return
+    setBusy(true)
+    try { await scheduleRequest(`/v2/work-schedule/combo-sales/${encodeURIComponent(sale.id)}`, { method: 'DELETE' }); await load(); setNotice('Đã xóa lượt bán combo.') }
+    catch (error) { setNotice(error.message || 'Không xóa được dữ liệu bán combo.') } finally { setBusy(false) }
+  }
+
+  const comboEditor = ['quanly', 'letan'].includes(department)
+    ? <div className="combo-sale-editor">
+      <div className="combo-sale-head"><strong>BẢNG BÁN COMBO · {DEPARTMENT_INFO[department].label}</strong></div>
+      {canEdit && <div className="combo-sale-fields">
+        <label>Nhân viên<select value={comboForm.employee_username} onChange={(event) => setComboForm({ ...comboForm, employee_username: event.target.value })}>{employees.map((item) => <option key={item.username} value={item.username}>{systemName(item)}</option>)}</select></label>
+        <label>Ngày bán<input type="date" value={comboForm.sale_date} onChange={(event) => setComboForm({ ...comboForm, sale_date: event.target.value })} /></label>
+        <label>Tên khách hàng<input value={comboForm.customer_name} onChange={(event) => setComboForm({ ...comboForm, customer_name: event.target.value })} /></label>
+        <label>Số điện thoại<input type="tel" inputMode="tel" value={comboForm.customer_phone} onChange={(event) => setComboForm({ ...comboForm, customer_phone: event.target.value })} /></label>
+        <label>Vé combo<input value={comboForm.combo_ticket} onChange={(event) => setComboForm({ ...comboForm, combo_ticket: event.target.value })} /></label>
+        <label>Ghi chú<input value={comboForm.note} onChange={(event) => setComboForm({ ...comboForm, note: event.target.value })} /></label>
+        <button type="button" className="schedule-save" disabled={busy} onClick={() => void addComboSale()}><Plus size={15}/> Thêm</button>
+      </div>}
+      <div className="schedule-scroll"><table className="combo-sale-table"><thead><tr><th>Nhân viên</th><th>Ngày bán</th><th>Tên khách hàng</th><th>Số điện thoại</th><th>Vé combo</th><th>Ghi chú</th>{canEdit && <th></th>}</tr></thead><tbody>{comboSales.map((sale) => <tr key={sale.id}><td>{sale.employee_name}</td><td>{sale.sale_date}</td><td>{sale.customer_name}</td><td>{sale.customer_phone}</td><td>{sale.combo_ticket}</td><td>{sale.note}</td>{canEdit && <td><button type="button" className="combo-delete" onClick={() => void deleteComboSale(sale)}><Trash2 size={14}/></button></td>}</tr>)}</tbody></table>{!comboSales.length && <div className="revenue-meta">Chưa có dữ liệu bán combo trong tháng.</div>}</div>
+    </div> : null
+
   if (!availableDepartments.length) return <section className="work-schedule-page"><div className="warning-box">Tài khoản chưa được cấp quyền Lịch làm việc.</div></section>
 
   return <section className="work-schedule-page">
     <style>{`
       .work-schedule-page{display:grid;gap:14px}.schedule-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.schedule-title h2{margin:0}.schedule-range{margin-top:7px;font-size:13px;font-weight:800;color:#1f513f}.schedule-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.schedule-month-picker{display:flex;align-items:center;gap:6px;border:1px solid #d7e2dd;border-radius:12px;padding:5px 7px;background:#fff}.schedule-month-picker input{border:0;background:transparent;font:inherit;font-weight:800;color:#25483b;min-width:142px}.schedule-icon-button{border:0;background:#eef5f2;color:#244a3a;border-radius:8px;width:34px;height:34px;display:grid;place-items:center}.schedule-filter-bar{display:flex;gap:6px;flex-wrap:wrap}.schedule-filter-bar button{border:1px solid #d6e2dd;background:#fff;border-radius:999px;padding:7px 11px;font-weight:800;color:#466057}.schedule-filter-bar button.active{background:#173329;border-color:#173329;color:#fff}.schedule-custom-range{display:inline-flex;gap:7px;align-items:center;width:max-content;max-width:100%}.schedule-custom-range input{border:1px solid #d6e2dd;border-radius:9px;padding:7px;width:170px;min-width:0}.schedule-department-tabs{display:flex;gap:6px;flex-wrap:wrap}.schedule-department-tabs button{border:1px solid #d7e2dd;background:#fff;border-radius:10px;padding:8px 11px;font-weight:800;color:#4a5d55}.schedule-department-tabs button.active{background:#173329;color:#fff;border-color:#173329}.schedule-legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #dfe8e5;border-radius:12px;background:#f8fbfa;font-size:13px}.schedule-scroll{overflow-x:auto;border:1px solid #dfe8e5;border-radius:14px;background:#fff;max-width:100%}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%}.schedule-grid th,.schedule-grid td{border-right:1px solid #e6ecea;border-bottom:1px solid #e6ecea;padding:6px;text-align:center;vertical-align:middle}.schedule-grid thead th{position:sticky;top:0;background:#eef6f3;z-index:4;min-width:116px}.schedule-grid thead tr:nth-child(2) th{top:35px}.schedule-grid thead th.employee-head{left:0;z-index:8;min-width:170px}.schedule-grid td.employee-cell,.schedule-grid tfoot td.summary-label{position:sticky;left:0;background:#fff;z-index:3;text-align:left;min-width:170px}.schedule-grid .month-head{height:35px;background:#dfeee8;font-weight:900;color:#244a3a}.schedule-grid .sunday{background:#fff6f2}.schedule-grid .today{box-shadow:inset 0 0 0 2px #bb8b34}.schedule-grid td.selected{box-shadow:inset 0 0 0 3px #245b47;background:#eff8f4}.schedule-grid tr.own-row td.employee-cell{background:#eef8f3}.schedule-grid tr.own-row td.employee-cell strong:after{content:' · Lịch của bạn';font-size:11px;color:#267051}.employee-name-line{display:flex;gap:5px;align-items:center}.employee-highlight-button{border:0;background:transparent;color:inherit;padding:4px 5px;margin:-4px -5px;border-radius:7px;text-align:left;cursor:pointer}.employee-highlight-button.active{background:#1f6b4d;color:#fff}.schedule-grid th.employee-work-day{background:#ccebdc;color:#155b3e;box-shadow:inset 0 -3px 0 #1f7a54}.schedule-grid td.employee-work-day{background:#e2f6eb!important;outline:3px solid #2b8a61;outline-offset:-3px}.system-name-edit{border:0;background:transparent;color:#5b7168;padding:2px;display:grid;place-items:center}.employee-role{display:block;color:#708079;font-size:11px;margin-top:2px}.schedule-cell{display:grid;gap:5px}.shift-select,.ot-select,.manager-status,.manager-time,.letan-ot-time{border:1px solid #d9e2df;border-radius:8px;background:#fff}.shift-select,.ot-select{width:108px;padding:5px;font-size:12px}.shift-select.ca1{background:#dff3cc}.shift-select.ca2{background:#fff8a8}.shift-select.off,.manager-status.off{background:#ffe0b8}.ot-select.no-overtime{color:#d5dfdb;border-color:#edf2f0;background:#fbfcfc}.ot-select.active{color:#244a3a}.manager-cell{display:grid;gap:5px;min-width:136px}.manager-status{width:126px;padding:5px;font-size:12px}.manager-time-row{display:grid;grid-template-columns:1fr 1fr;gap:4px}.manager-time{width:61px;padding:5px 3px;font-size:11px}.shared-overtime{display:grid;gap:4px}.overtime-time-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:2px}.letan-ot-time{width:48px;padding:4px 1px;font-size:10px}.schedule-save,.schedule-copy-button,.schedule-config-button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:9px 13px;font-weight:700}.schedule-save{background:#173329;color:white}.schedule-copy-button,.schedule-config-button{background:#eef5f2;color:#214538;border:1px solid #ccddd5}.schedule-save:disabled,.schedule-copy-button:disabled,.schedule-config-button:disabled{opacity:.5}.schedule-notice{padding:10px 12px;border-radius:10px;background:#edf7f3}.paste-range-panel,.shift-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#fbfdfc}.paste-range-panel{grid-template-columns:auto auto auto auto;align-items:end}.paste-range-panel label,.shift-editor label{display:grid;gap:4px;font-size:12px;font-weight:800}.paste-range-panel input,.shift-editor input{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff}.shift-editor-rows{display:grid;gap:8px}.shift-editor-row{display:grid;grid-template-columns:minmax(140px,1fr) 110px 110px 42px;gap:8px;align-items:end}.shift-editor-row button{height:36px;border:1px solid #efd3d3;background:#fff4f4;color:#9b3636;border-radius:8px}.shift-editor-actions,.shift-editor-head{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}.schedule-grid tfoot td{background:#f4f8f6;font-size:11px;font-weight:700}.schedule-grid tfoot td.summary-label{background:#e7f1ed;font-weight:900}.shift-total-cell{display:grid;gap:2px;min-width:100px;width:100%;border:0;background:transparent;border-radius:8px;padding:4px;cursor:pointer}.shift-total-cell.active{background:#1f6b4d}.shift-total-cell b{font-size:15px;color:#173329}.shift-total-cell small{color:#6a7a73}.shift-total-cell.active b,.shift-total-cell.active small{color:#fff}.monthly-statistics{display:grid;gap:8px}.monthly-statistics h3{margin:0;color:#173329}.monthly-statistics table{width:100%;border-collapse:collapse;background:#fff}.monthly-statistics th,.monthly-statistics td{border:1px solid #dfe8e5;padding:8px;text-align:center}.monthly-statistics th:first-child,.monthly-statistics td:first-child{text-align:left}.monthly-statistics tfoot td{background:#e7f1ed;font-weight:900}.weekday-short,.mobile-cell-summary,.mobile-week-editor{display:none}
       @media(max-width:700px){.schedule-tools{width:100%}.schedule-copy-button,.schedule-save,.schedule-config-button{flex:1;justify-content:center}.schedule-month-picker{width:100%;justify-content:space-between}.schedule-filter-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.schedule-filter-bar button{padding:7px 2px;font-size:10px}.schedule-custom-range{display:grid;grid-template-columns:1fr 1fr;width:100%;max-width:100%}.schedule-custom-range input{min-width:0;width:100%}.paste-range-panel{grid-template-columns:1fr 1fr}.shift-editor-row{grid-template-columns:1fr 1fr}.shift-editor-row label:first-child{grid-column:1/-1}.schedule-scroll.week-view{overflow-x:hidden}.schedule-scroll.week-view .schedule-grid{min-width:0;width:100%;table-layout:fixed}.schedule-scroll.week-view .schedule-grid thead th{min-width:0;padding:3px 1px;font-size:9px}.schedule-scroll.week-view .weekday-full{display:none}.schedule-scroll.week-view .weekday-short{display:block}.schedule-scroll.week-view .schedule-grid thead th.employee-head,.schedule-scroll.week-view .schedule-grid td.employee-cell,.schedule-scroll.week-view .schedule-grid tfoot td.summary-label{width:72px;min-width:72px;max-width:72px;padding:3px;white-space:normal;word-break:break-word}.schedule-scroll.week-view .schedule-grid td{padding:2px 1px;min-width:0}.schedule-scroll.week-view .employee-cell strong{font-size:9px;line-height:1.1}.schedule-scroll.week-view .employee-role,.schedule-scroll.week-view tr.own-row td.employee-cell strong:after,.schedule-scroll.week-view .system-name-edit{display:none}.schedule-scroll.week-view .schedule-cell-editor{display:none}.schedule-scroll.week-view .mobile-cell-summary{display:block;padding:5px 1px;border-radius:6px;font-size:9px;font-weight:900;line-height:1.1;color:#244a3a}.schedule-scroll.week-view .mobile-cell-summary.ca1{background:#dff3cc}.schedule-scroll.week-view .mobile-cell-summary.ca2{background:#fff8a8}.schedule-scroll.week-view .mobile-cell-summary.off{background:#ffe0b8}.schedule-scroll.week-view .month-head{font-size:10px;height:28px}.schedule-scroll.week-view .schedule-grid thead tr:nth-child(2) th{top:28px}.schedule-scroll.week-view .shift-total-cell{min-width:0;font-size:8px}.schedule-scroll.week-view .shift-total-cell b{font-size:11px}.schedule-scroll.week-view .shift-total-cell small{font-size:7px}.mobile-week-editor{display:grid;gap:8px;padding:10px;border:1px solid #d5e3dd;border-radius:12px;background:#f8fbfa}.mobile-week-editor .shift-select,.mobile-week-editor .ot-select,.mobile-week-editor .manager-status,.mobile-week-editor .manager-time,.mobile-week-editor .letan-ot-time{width:100%}}
+    `}</style>
+    <style>{`
+      .combo-sale-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#f8fbfa}
+      .combo-sale-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+      .combo-sale-head label{display:flex;align-items:center;gap:7px;font-weight:800;color:#1f6047}
+      .combo-sale-fields{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:9px}
+      .combo-sale-fields label{display:grid;gap:4px;font-size:12px;font-weight:800;color:#365348}
+      .combo-sale-fields input,.combo-sale-fields select,.combo-sale-fields textarea{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff;font:inherit}
+      .combo-sale-fields .combo-note{grid-column:1/-1}
+      .combo-sale-table{width:100%;border-collapse:collapse;min-width:760px}.combo-sale-table th,.combo-sale-table td{border:1px solid #dfe8e5;padding:8px;text-align:left}.combo-sale-table th{background:#e7f1ed}.combo-delete{border:0;border-radius:7px;padding:6px;color:#a33;background:#fff0f0}
+      @media(max-width:700px){.combo-sale-fields{grid-template-columns:1fr}}
     `}</style>
 
     <div className="schedule-head">
@@ -713,6 +781,8 @@ export default function WorkSchedulePage({ user }) {
       <button type="button" className="schedule-save" onClick={applyPasteRange}><ClipboardPaste size={15}/> Áp dụng</button>
     </div>}
     {notice && <div className="schedule-notice">{notice}</div>}
+
+    {comboEditor}
 
     {isWeekView && selectedCell && selectedEmployee && selectedValue && canEdit && <div className="mobile-week-editor"><strong>{systemName(selectedEmployee)} · {selectedCell.day}</strong>{editorFor(selectedEmployee, selectedCell.day, selectedValue)}</div>}
 

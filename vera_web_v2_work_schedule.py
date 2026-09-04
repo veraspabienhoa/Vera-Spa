@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import date
 import re
 from typing import Any, Callable, Literal
+import uuid
 
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -56,6 +57,12 @@ class ScheduleRow(BaseModel):
     overtime_start_time: str = Field(default="", max_length=5)
     overtime_end_time: str = Field(default="", max_length=5)
     note: str = Field(default="", max_length=500)
+    combo_sold: bool = False
+    combo_sale_date: date | None = None
+    combo_customer_name: str = Field(default="", max_length=300)
+    combo_customer_phone: str = Field(default="", max_length=50)
+    combo_ticket: str = Field(default="", max_length=300)
+    combo_note: str = Field(default="", max_length=500)
 
 
 class ScheduleSave(BaseModel):
@@ -71,6 +78,17 @@ class ShiftDefinitionRow(BaseModel):
 class ShiftDefinitionSave(BaseModel):
     department: Literal["locker", "letan", "tapvu"]
     shifts: list[ShiftDefinitionRow] = Field(min_length=1, max_length=20)
+
+
+class ComboSaleSave(BaseModel):
+    sale_date: date
+    employee_username: str = Field(min_length=1, max_length=200)
+    employee_name: str = Field(default="", max_length=300)
+    department: Literal["quanly", "letan"]
+    customer_name: str = Field(min_length=1, max_length=300)
+    customer_phone: str = Field(default="", max_length=50)
+    combo_ticket: str = Field(min_length=1, max_length=300)
+    note: str = Field(default="", max_length=500)
 
 
 def _time_is_next_day(start_time: str, end_time: str) -> bool:
@@ -91,6 +109,12 @@ def _ensure_schema(conn) -> None:
             overtime_start_time TEXT NOT NULL DEFAULT '',
             overtime_end_time TEXT NOT NULL DEFAULT '',
             note TEXT NOT NULL DEFAULT '',
+            combo_sold BOOLEAN NOT NULL DEFAULT FALSE,
+            combo_sale_date DATE,
+            combo_customer_name TEXT NOT NULL DEFAULT '',
+            combo_customer_phone TEXT NOT NULL DEFAULT '',
+            combo_ticket TEXT NOT NULL DEFAULT '',
+            combo_note TEXT NOT NULL DEFAULT '',
             updated_by TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -101,6 +125,12 @@ def _ensure_schema(conn) -> None:
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS end_time TEXT NOT NULL DEFAULT ''"))
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS overtime_start_time TEXT NOT NULL DEFAULT ''"))
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS overtime_end_time TEXT NOT NULL DEFAULT ''"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS combo_sold BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS combo_sale_date DATE"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS combo_customer_name TEXT NOT NULL DEFAULT ''"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS combo_customer_phone TEXT NOT NULL DEFAULT ''"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS combo_ticket TEXT NOT NULL DEFAULT ''"))
+    conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS combo_note TEXT NOT NULL DEFAULT ''"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vera_work_schedule_department_date ON vera_work_schedule(department, work_date)"))
 
     conn.execute(text("""
@@ -117,6 +147,23 @@ def _ensure_schema(conn) -> None:
         )
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vera_work_shift_definition_department ON vera_work_shift_definition(department, sort_order, shift_code)"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vera_work_schedule_combo_sale (
+            id TEXT PRIMARY KEY,
+            sale_date DATE NOT NULL,
+            employee_username TEXT NOT NULL,
+            employee_name TEXT NOT NULL DEFAULT '',
+            department TEXT NOT NULL,
+            customer_name TEXT NOT NULL,
+            customer_phone TEXT NOT NULL DEFAULT '',
+            combo_ticket TEXT NOT NULL,
+            note TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vera_combo_sale_department_date ON vera_work_schedule_combo_sale(department, sale_date)"))
 
     for department, defaults in DEFAULT_SHIFT_DEFINITIONS.items():
         existing = conn.execute(text("""
@@ -308,6 +355,8 @@ def install_work_schedule_routes(
                 SELECT work_date, employee_username, employee_name, department,
                        shift_code, overtime_shift, start_time, end_time,
                        overtime_start_time, overtime_end_time, note,
+                       combo_sold, combo_sale_date, combo_customer_name,
+                       combo_customer_phone, combo_ticket, combo_note,
                        updated_by, updated_at
                 FROM vera_work_schedule
                 WHERE work_date BETWEEN :start AND :end
@@ -379,6 +428,65 @@ def install_work_schedule_routes(
 
         return {"ok": True, "saved": len(normalized), "message": "Đã cập nhật cấu hình ca làm việc."}
 
+    @app.get("/v2/work-schedule/combo-sales")
+    def get_combo_sales(
+        start: date = Query(...), end: date = Query(...), department: str = Query(...),
+        ident=Depends(current_identity),
+    ):
+        dep = department.strip().lower()
+        if dep not in {"quanly", "letan"}:
+            raise HTTPException(400, "Bảng bán combo chỉ áp dụng cho Quản lý và Lễ tân.")
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            if not _allowed_department(conn, ident, dep, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền xem bảng bán combo của bộ phận này.")
+            rows = conn.execute(text("""
+                SELECT id, sale_date, employee_username, employee_name, department,
+                       customer_name, customer_phone, combo_ticket, note, updated_by, updated_at
+                FROM vera_work_schedule_combo_sale
+                WHERE department=:department AND sale_date BETWEEN :start AND :end
+                ORDER BY sale_date DESC, lower(employee_name), created_at DESC
+            """), {"department": dep, "start": start, "end": end}).mappings().all()
+        return {"ok": True, "rows": [dict(row) for row in rows]}
+
+    @app.post("/v2/work-schedule/combo-sales")
+    def save_combo_sale(body: ComboSaleSave, ident=Depends(current_identity)):
+        if _role(ident) not in {"admin", "quanly"}:
+            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được cập nhật bảng bán combo.")
+        sale_id = str(uuid.uuid4())
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            if not _allowed_department(conn, ident, body.department, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền cập nhật bảng bán combo của bộ phận này.")
+            conn.execute(text("""
+                INSERT INTO vera_work_schedule_combo_sale(
+                    id, sale_date, employee_username, employee_name, department,
+                    customer_name, customer_phone, combo_ticket, note, updated_by
+                ) VALUES (
+                    :id, :sale_date, :employee_username, :employee_name, :department,
+                    :customer_name, :customer_phone, :combo_ticket, :note, :updated_by
+                )
+            """), {
+                "id": sale_id, "sale_date": body.sale_date,
+                "employee_username": body.employee_username.strip(), "employee_name": body.employee_name.strip(),
+                "department": body.department, "customer_name": body.customer_name.strip(),
+                "customer_phone": body.customer_phone.strip(), "combo_ticket": body.combo_ticket.strip(),
+                "note": body.note.strip(), "updated_by": _actor(ident),
+            })
+        return {"ok": True, "id": sale_id, "message": "Đã thêm lượt bán combo."}
+
+    @app.delete("/v2/work-schedule/combo-sales/{sale_id}")
+    def delete_combo_sale(sale_id: str, ident=Depends(current_identity)):
+        if _role(ident) not in {"admin", "quanly"}:
+            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được xóa dữ liệu bán combo.")
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            existing = conn.execute(text("SELECT department FROM vera_work_schedule_combo_sale WHERE id=:id"), {"id": sale_id}).mappings().first()
+            if existing and not _allowed_department(conn, ident, str(existing["department"]), feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền xóa dữ liệu này.")
+            result = conn.execute(text("DELETE FROM vera_work_schedule_combo_sale WHERE id=:id"), {"id": sale_id})
+        return {"ok": True, "deleted": int(result.rowcount or 0)}
+
     @app.put("/v2/work-schedule")
     def save_work_schedule(body: ScheduleSave, ident=Depends(current_identity)):
         if _role(ident) not in {"admin", "quanly"}:
@@ -406,11 +514,15 @@ def install_work_schedule_routes(
                         work_date, employee_username, employee_name, department,
                         shift_code, overtime_shift, start_time, end_time,
                         overtime_start_time, overtime_end_time, note,
+                        combo_sold, combo_sale_date, combo_customer_name,
+                        combo_customer_phone, combo_ticket, combo_note,
                         updated_by, created_at, updated_at
                     ) VALUES (
                         :work_date, :employee_username, :employee_name, :department,
                         :shift_code, :overtime_shift, :start_time, :end_time,
                         :overtime_start_time, :overtime_end_time, :note,
+                        :combo_sold, :combo_sale_date, :combo_customer_name,
+                        :combo_customer_phone, :combo_ticket, :combo_note,
                         :updated_by, NOW(), NOW()
                     )
                     ON CONFLICT(work_date, employee_username) DO UPDATE SET
@@ -423,6 +535,12 @@ def install_work_schedule_routes(
                         overtime_start_time=EXCLUDED.overtime_start_time,
                         overtime_end_time=EXCLUDED.overtime_end_time,
                         note=EXCLUDED.note,
+                        combo_sold=EXCLUDED.combo_sold,
+                        combo_sale_date=EXCLUDED.combo_sale_date,
+                        combo_customer_name=EXCLUDED.combo_customer_name,
+                        combo_customer_phone=EXCLUDED.combo_customer_phone,
+                        combo_ticket=EXCLUDED.combo_ticket,
+                        combo_note=EXCLUDED.combo_note,
                         updated_by=EXCLUDED.updated_by,
                         updated_at=NOW()
                 """), {
@@ -437,6 +555,12 @@ def install_work_schedule_routes(
                     "overtime_start_time": overtime_start_time,
                     "overtime_end_time": overtime_end_time,
                     "note": row.note.strip(),
+                    "combo_sold": bool(row.combo_sold) if row.department in {"quanly", "letan"} else False,
+                    "combo_sale_date": row.combo_sale_date if row.combo_sold and row.department in {"quanly", "letan"} else None,
+                    "combo_customer_name": row.combo_customer_name.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
+                    "combo_customer_phone": row.combo_customer_phone.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
+                    "combo_ticket": row.combo_ticket.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
+                    "combo_note": row.combo_note.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
                     "updated_by": actor,
                 })
 
