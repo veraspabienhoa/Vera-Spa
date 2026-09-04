@@ -113,7 +113,7 @@ def install_break_alert_control(
             return []
         return original_management_subscriptions(conn)
 
-    def viewer_alerts_guarded(facts, ident, now):
+    def viewer_alerts_guarded(facts, ident, now, source_fresh):
         try:
             with engine_instance().connect() as conn:
                 if _disabled(conn):
@@ -122,7 +122,7 @@ def install_break_alert_control(
             # A control read failure must not disable safety alerts implicitly.
             pass
 
-        visible = original_viewer_alerts(facts, ident, now)
+        visible = original_viewer_alerts(facts, ident, now, source_fresh)
         if not visible:
             return visible
         try:
