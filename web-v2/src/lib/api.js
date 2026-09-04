@@ -284,6 +284,11 @@ export const veraApi = {
   runAutoCheck: () => request('/v2/auto-check/run', { method: 'POST' }),
   exportAutoCheckExcel: (start, end) => download(`/v2/auto-check/export.xlsx?${new URLSearchParams({ start, end })}`, 'VERA_Auto_Check.xlsx'),
   exportSnapshotExcel: (start, end) => download(`/v2/snapshot/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, 'VERA_ChamCong.xlsx'),
+  exportComboSalesExcel: (start, end, department) => download(
+    `/v2/work-schedule/combo-sales/export.xlsx?${new URLSearchParams({ start, end, department })}`,
+    `VERA_Ban_Combo_${department}_${start}_${end}.xlsx`,
+  ),
+  importComboSalesExcel: (file, department) => upload('/v2/work-schedule/combo-sales/import.xlsx', file, { department }),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),

@@ -1,7 +1,10 @@
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 
-from vera_web_v2_work_schedule import ScheduleRow, _validate_row
+from openpyxl import Workbook
+
+from vera_web_v2_work_schedule import ScheduleRow, _combo_import_rows, _validate_row
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +69,51 @@ def test_schedule_persists_combo_sale_details_for_management_and_reception():
     assert 'vera_work_schedule_combo_sale' in source
     assert '@app.get("/v2/work-schedule/combo-sales")' in source
     assert '@app.post("/v2/work-schedule/combo-sales")' in source
+    assert '@app.put("/v2/work-schedule/combo-sales/{sale_id}")' in source
+    assert '@app.delete("/v2/work-schedule/combo-sales/{sale_id}")' in source
+    assert '@app.get("/v2/work-schedule/combo-sales/export.xlsx")' in source
+    assert '@app.post("/v2/work-schedule/combo-sales/import.xlsx")' in source
+    assert 'COMBO_EDITOR_ROLES = {"admin", "quanly", "letan"}' in source
+
+
+def test_combo_excel_import_reads_each_employee_sheet():
+    workbook = Workbook()
+    first = workbook.active
+    first.title = "Anh Nguyễn"
+    first.append(["ID", "Ngày bán", "Tên hệ thống", "Nhân viên", "Tên khách hàng", "Số điện thoại", "Vé combo", "Ghi chú"])
+    first.append(["sale-1", date(2026, 4, 9), "Anh Nguyễn", "Anh Nguyễn", "Khách A", "0901000001", "Combo 10", "Đã cọc"])
+    second = workbook.create_sheet("Bình")
+    second.append(["ID", "Ngày bán", "Tên hệ thống", "Nhân viên", "Tên khách hàng", "Số điện thoại", "Vé combo", "Ghi chú"])
+    second.append(["", "10/04/2026", "Bình", "Bình", "Khách B", "0901000002", "Combo 20", ""])
+    stream = BytesIO()
+    workbook.save(stream)
+    workbook.close()
+
+    rows = _combo_import_rows(stream.getvalue(), "letan")
+
+    assert len(rows) == 2
+    assert rows[0]["id"] == "sale-1"
+    assert rows[0]["sale_date"] == date(2026, 4, 9)
+    assert rows[1]["employee_username"] == "Bình"
+    assert rows[1]["sale_date"] == date(2026, 4, 10)
+    assert all(row["department"] == "letan" for row in rows)
+
+
+def test_combo_excel_import_infers_employee_from_export_metadata():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Anh Nguyễn"
+    sheet.append(["ID", "Ngày bán", "Tên hệ thống", "Nhân viên", "Tên khách hàng", "Số điện thoại", "Vé combo", "Ghi chú", "", "__VERA_EMPLOYEE_USERNAME__"])
+    sheet.cell(row=2, column=10, value="anh.nguyen")
+    sheet.append(["", "11/04/2026", "", "", "Khách C", 901000003, "Combo 30", ""])
+    stream = BytesIO()
+    workbook.save(stream)
+    workbook.close()
+
+    rows = _combo_import_rows(stream.getvalue(), "letan")
+
+    assert rows[0]["employee_username"] == "anh.nguyen"
+    assert rows[0]["customer_phone"] == "901000003"
 
 
 def test_staff_status_update_survives_google_credentials_failure():
@@ -77,3 +125,9 @@ def test_staff_status_update_survives_google_credentials_failure():
 def test_combo_sales_table_is_rendered_after_monthly_statistics():
     source = (ROOT / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
     assert source.index('className="schedule-scroll monthly-statistics"') < source.index("{!loading && comboEditor}")
+    assert "comboEmployees.map" in source
+    assert "BẢNG CỦA" in source
+    assert "canEditCombo = ['admin', 'quanly', 'letan'].includes(role)" in source
+    assert "Import Excel" in source
+    assert "Export Excel" in source
+    assert "Lưu sửa" in source

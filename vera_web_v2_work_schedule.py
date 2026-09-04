@@ -9,12 +9,18 @@ the same overtime choices: TC Ca 1, TC Ca 2, or an explicit time range.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
 import re
 from typing import Any, Callable, Literal
+import unicodedata
+from urllib.parse import quote
 import uuid
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -43,6 +49,12 @@ WORK_SCHEDULE_FEATURES = {
 
 _TIME_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 OVERTIME_SHIFT_CHOICES = {"", "TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"}
+COMBO_EDITOR_ROLES = {"admin", "quanly", "letan"}
+COMBO_EXCEL_HEADERS = (
+    "ID", "Ngày bán", "Tên hệ thống", "Nhân viên",
+    "Tên khách hàng", "Số điện thoại", "Vé combo", "Ghi chú",
+)
+COMBO_EXCEL_USERNAME_MARKER = "__VERA_EMPLOYEE_USERNAME__"
 
 
 class ScheduleRow(BaseModel):
@@ -196,6 +208,151 @@ def _actor(ident: Any) -> str:
     return str(getattr(ident, "employee_username", "") or getattr(ident, "email", "") or "web_v2")
 
 
+def _require_combo_editor(ident: Any) -> None:
+    if _role(ident) not in COMBO_EDITOR_ROLES:
+        raise HTTPException(403, "Chỉ Admin, Lễ tân hoặc Quản lý được cập nhật bảng bán combo.")
+
+
+def _normalize_excel_header(value: Any) -> str:
+    raw = unicodedata.normalize("NFD", str(value or "").strip().lower())
+    raw = "".join(char for char in raw if unicodedata.category(char) != "Mn").replace("đ", "d")
+    return re.sub(r"[^a-z0-9]+", " ", raw).strip()
+
+
+def _combo_excel_date(value: Any, *, location: str) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = str(value or "").strip()
+    for pattern in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(raw, pattern).date()
+        except ValueError:
+            pass
+    raise HTTPException(400, f"{location}: Ngày bán không hợp lệ; dùng DD/MM/YYYY hoặc YYYY-MM-DD.")
+
+
+def _combo_excel_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _combo_import_rows(payload: bytes, department: str) -> list[dict[str, Any]]:
+    if not payload:
+        raise HTTPException(400, "File Excel đang trống.")
+    if len(payload) > 10 * 1024 * 1024:
+        raise HTTPException(413, "File Excel bán combo vượt quá 10 MB.")
+    if not payload.startswith(b"PK"):
+        raise HTTPException(400, "File bán combo phải là Excel .xlsx hợp lệ.")
+    try:
+        workbook = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(400, "Không đọc được file Excel bán combo.") from exc
+
+    aliases = {
+        "id": "id",
+        "ngay ban": "sale_date",
+        "ten he thong": "employee_username",
+        "nhan vien": "employee_name",
+        "ten khach hang": "customer_name",
+        "so dien thoai": "customer_phone",
+        "ve combo": "combo_ticket",
+        "ghi chu": "note",
+    }
+    required = {"sale_date", "employee_username", "customer_name", "combo_ticket"}
+    result: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    try:
+        for worksheet in workbook.worksheets:
+            headers = list(next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), ()))
+            marker = _normalize_excel_header(worksheet.cell(row=1, column=10).value)
+            sheet_username = (
+                _combo_excel_text(worksheet.cell(row=2, column=10).value)
+                if marker == _normalize_excel_header(COMBO_EXCEL_USERNAME_MARKER)
+                else ""
+            )
+            indexes = {
+                aliases[normalized]: index
+                for index, header in enumerate(headers)
+                if (normalized := _normalize_excel_header(header)) in aliases
+            }
+            if not any(str(value or "").strip() for value in headers):
+                continue
+            missing = required - set(indexes)
+            if missing:
+                raise HTTPException(
+                    400,
+                    f"Sheet {worksheet.title}: thiếu cột Ngày bán, Tên hệ thống, Tên khách hàng hoặc Vé combo.",
+                )
+            for row_number, values in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+                def cell(field: str) -> Any:
+                    index = indexes.get(field, -1)
+                    return values[index] if 0 <= index < len(values) else ""
+
+                raw_date = cell("sale_date")
+                raw_username = _combo_excel_text(cell("employee_username"))
+                employee_name = _combo_excel_text(cell("employee_name"))
+                customer_name = _combo_excel_text(cell("customer_name"))
+                customer_phone = _combo_excel_text(cell("customer_phone"))
+                combo_ticket = _combo_excel_text(cell("combo_ticket"))
+                note = _combo_excel_text(cell("note"))
+                if not any((raw_date, raw_username, employee_name, customer_name, customer_phone, combo_ticket, note)):
+                    continue
+                username = raw_username or sheet_username or worksheet.title.strip()
+                location = f"Sheet {worksheet.title}, dòng {row_number}"
+                if not username or not customer_name or not combo_ticket:
+                    raise HTTPException(400, f"{location}: cần đủ Tên hệ thống, Tên khách hàng và Vé combo.")
+                sale_id = _combo_excel_text(cell("id"))
+                if len(sale_id) > 100:
+                    raise HTTPException(400, f"{location}: ID quá dài.")
+                if sale_id and sale_id in seen_ids:
+                    raise HTTPException(400, f"{location}: ID bị trùng trong file.")
+                if sale_id:
+                    seen_ids.add(sale_id)
+                item = {
+                    "id": sale_id,
+                    "sale_date": _combo_excel_date(raw_date, location=location),
+                    "employee_username": username,
+                    "employee_name": employee_name,
+                    "department": department,
+                    "customer_name": customer_name,
+                    "customer_phone": customer_phone,
+                    "combo_ticket": combo_ticket,
+                    "note": note,
+                }
+                limits = {
+                    "employee_username": 200, "employee_name": 300, "customer_name": 300,
+                    "customer_phone": 50, "combo_ticket": 300, "note": 500,
+                }
+                for field, limit in limits.items():
+                    if len(item[field]) > limit:
+                        raise HTTPException(400, f"{location}: {field} vượt quá {limit} ký tự.")
+                result.append(item)
+                if len(result) > 2000:
+                    raise HTTPException(413, "Mỗi lần chỉ Import tối đa 2.000 dòng bán combo.")
+    finally:
+        workbook.close()
+    if not result:
+        raise HTTPException(400, "File Excel không có dòng bán combo hợp lệ.")
+    return result
+
+
+def _safe_combo_sheet_title(value: Any, used: set[str]) -> str:
+    base = re.sub(r"[\\/*?:\[\]]", " ", str(value or "Bán combo")).strip()[:31] or "Bán combo"
+    candidate = base
+    suffix = 2
+    while candidate.casefold() in used:
+        tail = f" {suffix}"
+        candidate = f"{base[:31 - len(tail)]}{tail}"
+        suffix += 1
+    used.add(candidate.casefold())
+    return candidate
+
+
 def _feature_for_department(department: str) -> str:
     try:
         return WORK_SCHEDULE_FEATURES[department]
@@ -220,6 +377,23 @@ def _employee_catalog(conn, department: str) -> list[dict[str, Any]]:
         ORDER BY lower(COALESCE(NULLIF(full_name,''), username)), lower(username)
     """), {"department": department}).mappings().all()
     return [dict(row) for row in rows]
+
+
+def _combo_employee(conn, department: str, username: str) -> dict[str, Any]:
+    wanted = str(username or "").strip().casefold()
+    employee = next(
+        (item for item in _employee_catalog(conn, department) if str(item.get("username") or "").strip().casefold() == wanted),
+        None,
+    )
+    if not employee:
+        raise HTTPException(400, f"Nhân viên '{username}' không thuộc bộ phận {department}.")
+    return employee
+
+
+def _combo_employee_name(employee: dict[str, Any], fallback: str) -> str:
+    return str(
+        employee.get("system_name") or employee.get("full_name") or fallback
+    ).strip()
 
 
 def _load_shift_definitions(conn) -> dict[str, Any]:
@@ -447,17 +621,22 @@ def install_work_schedule_routes(
                 WHERE department=:department AND sale_date BETWEEN :start AND :end
                 ORDER BY sale_date DESC, lower(employee_name), created_at DESC
             """), {"department": dep, "start": start, "end": end}).mappings().all()
-        return {"ok": True, "rows": [dict(row) for row in rows]}
+        return {
+            "ok": True,
+            "rows": [dict(row) for row in rows],
+            "can_edit": _role(ident) in COMBO_EDITOR_ROLES,
+            "layout": "one_table_per_employee",
+        }
 
     @app.post("/v2/work-schedule/combo-sales")
     def save_combo_sale(body: ComboSaleSave, ident=Depends(current_identity)):
-        if _role(ident) not in {"admin", "quanly"}:
-            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được cập nhật bảng bán combo.")
+        _require_combo_editor(ident)
         sale_id = str(uuid.uuid4())
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             if not _allowed_department(conn, ident, body.department, feature_allowed):
                 raise HTTPException(403, "Bạn không có quyền cập nhật bảng bán combo của bộ phận này.")
+            employee = _combo_employee(conn, body.department, body.employee_username)
             conn.execute(text("""
                 INSERT INTO vera_work_schedule_combo_sale(
                     id, sale_date, employee_username, employee_name, department,
@@ -468,17 +647,57 @@ def install_work_schedule_routes(
                 )
             """), {
                 "id": sale_id, "sale_date": body.sale_date,
-                "employee_username": body.employee_username.strip(), "employee_name": body.employee_name.strip(),
+                "employee_username": body.employee_username.strip(),
+                "employee_name": _combo_employee_name(employee, body.employee_username),
                 "department": body.department, "customer_name": body.customer_name.strip(),
                 "customer_phone": body.customer_phone.strip(), "combo_ticket": body.combo_ticket.strip(),
                 "note": body.note.strip(), "updated_by": _actor(ident),
             })
         return {"ok": True, "id": sale_id, "message": "Đã thêm lượt bán combo."}
 
+    @app.put("/v2/work-schedule/combo-sales/{sale_id}")
+    def update_combo_sale(sale_id: str, body: ComboSaleSave, ident=Depends(current_identity)):
+        _require_combo_editor(ident)
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            existing = conn.execute(text("""
+                SELECT id, department FROM vera_work_schedule_combo_sale WHERE id=:id
+            """), {"id": sale_id}).mappings().first()
+            if not existing:
+                raise HTTPException(404, "Không tìm thấy dữ liệu bán combo cần sửa.")
+            existing_department = str(existing.get("department") or "")
+            if not _allowed_department(conn, ident, existing_department, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền sửa dữ liệu này.")
+            if body.department != existing_department:
+                raise HTTPException(400, "Không được chuyển dữ liệu bán combo sang bộ phận khác.")
+            employee = _combo_employee(conn, body.department, body.employee_username)
+            conn.execute(text("""
+                UPDATE vera_work_schedule_combo_sale
+                SET sale_date=:sale_date,
+                    employee_username=:employee_username,
+                    employee_name=:employee_name,
+                    customer_name=:customer_name,
+                    customer_phone=:customer_phone,
+                    combo_ticket=:combo_ticket,
+                    note=:note,
+                    updated_by=:updated_by,
+                    updated_at=NOW()
+                WHERE id=:id
+            """), {
+                "id": sale_id, "sale_date": body.sale_date,
+                "employee_username": body.employee_username.strip(),
+                "employee_name": _combo_employee_name(employee, body.employee_username),
+                "customer_name": body.customer_name.strip(),
+                "customer_phone": body.customer_phone.strip(),
+                "combo_ticket": body.combo_ticket.strip(),
+                "note": body.note.strip(),
+                "updated_by": _actor(ident),
+            })
+        return {"ok": True, "id": sale_id, "message": "Đã cập nhật lượt bán combo."}
+
     @app.delete("/v2/work-schedule/combo-sales/{sale_id}")
     def delete_combo_sale(sale_id: str, ident=Depends(current_identity)):
-        if _role(ident) not in {"admin", "quanly"}:
-            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được xóa dữ liệu bán combo.")
+        _require_combo_editor(ident)
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             existing = conn.execute(text("SELECT department FROM vera_work_schedule_combo_sale WHERE id=:id"), {"id": sale_id}).mappings().first()
@@ -486,6 +705,168 @@ def install_work_schedule_routes(
                 raise HTTPException(403, "Bạn không có quyền xóa dữ liệu này.")
             result = conn.execute(text("DELETE FROM vera_work_schedule_combo_sale WHERE id=:id"), {"id": sale_id})
         return {"ok": True, "deleted": int(result.rowcount or 0)}
+
+    @app.get("/v2/work-schedule/combo-sales/export.xlsx")
+    def export_combo_sales(
+        start: date = Query(...), end: date = Query(...), department: str = Query(...),
+        ident=Depends(current_identity),
+    ):
+        _require_combo_editor(ident)
+        dep = department.strip().lower()
+        if dep not in {"quanly", "letan"}:
+            raise HTTPException(400, "Bảng bán combo chỉ áp dụng cho Quản lý và Lễ tân.")
+        if end < start or (end - start).days > 366:
+            raise HTTPException(400, "Khoảng ngày Export bán combo không hợp lệ.")
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            if not _allowed_department(conn, ident, dep, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền Export bảng bán combo của bộ phận này.")
+            employees = _employee_catalog(conn, dep)
+            rows = conn.execute(text("""
+                SELECT id, sale_date, employee_username, employee_name,
+                       customer_name, customer_phone, combo_ticket, note
+                FROM vera_work_schedule_combo_sale
+                WHERE department=:department AND sale_date BETWEEN :start AND :end
+                ORDER BY lower(employee_name), sale_date, created_at
+            """), {"department": dep, "start": start, "end": end}).mappings().all()
+
+        groups: dict[str, dict[str, Any]] = {}
+        for employee in employees:
+            username = str(employee.get("username") or "").strip()
+            groups[username.casefold()] = {
+                "username": username,
+                "name": _combo_employee_name(employee, username),
+                "rows": [],
+            }
+        for row in rows:
+            username = str(row.get("employee_username") or "").strip()
+            group = groups.setdefault(username.casefold(), {
+                "username": username,
+                "name": str(row.get("employee_name") or username).strip(),
+                "rows": [],
+            })
+            group["rows"].append(dict(row))
+
+        workbook = Workbook()
+        workbook.remove(workbook.active)
+        used_titles: set[str] = set()
+        for group in groups.values():
+            worksheet = workbook.create_sheet(_safe_combo_sheet_title(group["name"] or group["username"], used_titles))
+            worksheet.append(COMBO_EXCEL_HEADERS)
+            worksheet.cell(row=1, column=10, value=COMBO_EXCEL_USERNAME_MARKER)
+            worksheet.cell(row=2, column=10, value=group["username"])
+            worksheet.column_dimensions["J"].hidden = True
+            for row in group["rows"]:
+                worksheet.append([
+                    row.get("id"), row.get("sale_date"), group["username"],
+                    row.get("employee_name") or group["name"], row.get("customer_name"),
+                    row.get("customer_phone"), row.get("combo_ticket"), row.get("note"),
+                ])
+                for cell in worksheet[worksheet.max_row]:
+                    if cell.column != 2 and cell.value is not None:
+                        cell.data_type = "s"
+            worksheet.freeze_panes = "A2"
+            worksheet.auto_filter.ref = f"A1:H{max(1, worksheet.max_row)}"
+            worksheet.column_dimensions["A"].hidden = True
+            worksheet.column_dimensions["B"].width = 14
+            worksheet.column_dimensions["C"].width = 24
+            worksheet.column_dimensions["D"].width = 24
+            worksheet.column_dimensions["E"].width = 30
+            worksheet.column_dimensions["F"].width = 18
+            worksheet.column_dimensions["G"].width = 25
+            worksheet.column_dimensions["H"].width = 36
+            for cell in worksheet[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor="1F513F")
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            for cell in worksheet["B"][1:]:
+                cell.number_format = "DD/MM/YYYY"
+        if not workbook.worksheets:
+            worksheet = workbook.create_sheet("Bán combo")
+            worksheet.append(COMBO_EXCEL_HEADERS)
+        stream = BytesIO()
+        workbook.save(stream)
+        workbook.close()
+        stream.seek(0)
+        filename = f"VERA_Ban_Combo_{dep}_{start:%Y-%m-%d}_{end:%Y-%m-%d}.xlsx"
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        )
+
+    @app.post("/v2/work-schedule/combo-sales/import.xlsx")
+    async def import_combo_sales(
+        request: Request, department: str = Query(...), ident=Depends(current_identity),
+    ):
+        _require_combo_editor(ident)
+        dep = department.strip().lower()
+        if dep not in {"quanly", "letan"}:
+            raise HTTPException(400, "Bảng bán combo chỉ áp dụng cho Quản lý và Lễ tân.")
+        imported = _combo_import_rows(await request.body(), dep)
+        inserted = updated = 0
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            if not _allowed_department(conn, ident, dep, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền Import bảng bán combo của bộ phận này.")
+            catalog = {
+                str(item.get("username") or "").strip().casefold(): item
+                for item in _employee_catalog(conn, dep)
+            }
+            ids = [str(item["id"]) for item in imported if item.get("id")]
+            existing = {}
+            if ids:
+                existing = {
+                    str(row["id"]): str(row["department"])
+                    for row in conn.execute(text("""
+                        SELECT id, department FROM vera_work_schedule_combo_sale WHERE id = ANY(:ids)
+                    """), {"ids": ids}).mappings().all()
+                }
+            for item in imported:
+                key = str(item["employee_username"]).casefold()
+                employee = catalog.get(key)
+                if not employee:
+                    raise HTTPException(400, f"Tên hệ thống '{item['employee_username']}' không thuộc bộ phận {dep}.")
+                sale_id = str(item.get("id") or uuid.uuid4())
+                if sale_id in existing and existing[sale_id] != dep:
+                    raise HTTPException(400, f"ID {sale_id} đang thuộc bộ phận khác.")
+                was_existing = sale_id in existing
+                conn.execute(text("""
+                    INSERT INTO vera_work_schedule_combo_sale(
+                        id, sale_date, employee_username, employee_name, department,
+                        customer_name, customer_phone, combo_ticket, note, updated_by,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :sale_date, :employee_username, :employee_name, :department,
+                        :customer_name, :customer_phone, :combo_ticket, :note, :updated_by,
+                        NOW(), NOW()
+                    )
+                    ON CONFLICT(id) DO UPDATE SET
+                        sale_date=EXCLUDED.sale_date,
+                        employee_username=EXCLUDED.employee_username,
+                        employee_name=EXCLUDED.employee_name,
+                        customer_name=EXCLUDED.customer_name,
+                        customer_phone=EXCLUDED.customer_phone,
+                        combo_ticket=EXCLUDED.combo_ticket,
+                        note=EXCLUDED.note,
+                        updated_by=EXCLUDED.updated_by,
+                        updated_at=NOW()
+                """), {
+                    **item,
+                    "id": sale_id,
+                    "employee_name": _combo_employee_name(employee, item["employee_username"]),
+                    "updated_by": _actor(ident),
+                })
+                if was_existing:
+                    updated += 1
+                else:
+                    inserted += 1
+        return {
+            "ok": True,
+            "inserted": inserted,
+            "updated": updated,
+            "message": f"Đã Import {inserted} dòng mới và cập nhật {updated} dòng bán combo.",
+        }
 
     @app.put("/v2/work-schedule")
     def save_work_schedule(body: ScheduleSave, ident=Depends(current_identity)):

@@ -716,6 +716,8 @@ jobs:
           department_attendance = Path('vera_web_v2_department_attendance.py').read_text(encoding='utf-8')
           department_payroll = Path('vera_web_v2_department_payroll.py').read_text(encoding='utf-8')
           revenue = Path('vera_web_v2_revenue_leave_list.py').read_text(encoding='utf-8')
+          work_schedule = Path('vera_web_v2_work_schedule.py').read_text(encoding='utf-8')
+          work_schedule_page = Path('web-v2/src/pages/WorkSchedulePage.jsx').read_text(encoding='utf-8')
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
           payroll_v38_page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
           snapshot_page = Path('web-v2/src/pages/SnapshotPage.jsx').read_text(encoding='utf-8')
@@ -725,7 +727,7 @@ jobs:
           tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
           tour_break_counter = Path('vera_tour_break_counter.py').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
-          for source in (api, permissions, profile, payroll, payroll_v38, people, security, staff_security, snapshot, storage, revenue): ast.parse(source)
+          for source in (api, permissions, profile, payroll, payroll_v38, people, security, staff_security, snapshot, storage, revenue, work_schedule): ast.parse(source)
           checks = {
               'statistics and list have local refresh controls': leave.count('onClick={load}') >= 3 and leave.count('Làm mới') >= 3,
               'profile requires current password and updates PostgreSQL credentials only': 'hmac.compare_digest' in profile and 'UPDATE employees SET' in profile and 'open_by_key' not in profile and 'google_client' not in profile,
@@ -763,6 +765,7 @@ jobs:
               'Department attendance and notifications have independent Admin switches': all(token in department_attendance for token in ('attendance_enabled', 'notifications_enabled', '/v2/attendance/department-controls/{department}')) and all(token in snapshot_page for token in ('Chấm công: {control.attendance_enabled', 'Thông báo: {control.notifications_enabled', 'CHẤM CÔNG THEO BỘ PHẬN')),
               'Break alert control preserves TimeSoft freshness guard': all(token in Path('vera_web_v2_break_alert_control.py').read_text(encoding='utf-8') for token in ('def viewer_alerts_guarded(facts, ident, now, source_fresh):', 'original_viewer_alerts(facts, ident, now, source_fresh)')),
               'Revenue uses fixed period and official Report summary cells': all(token in revenue for token in ('REVENUE_PERIOD_START = date(2025, 9, 5)', 'REVENUE_REPORT_WORKSHEET', 'worksheet.get("B2:B3")', '"range": "B2:B3"', 'summary.update(_report_totals(_read_revenue_report_values(google_client)))', '"total_income_cell": f"{REVENUE_REPORT_WORKSHEET}!B2"', '"total_expense_cell": f"{REVENUE_REPORT_WORKSHEET}!B3"')),
+              'Combo sales are employee-separated and editable/importable/exportable by Admin Reception and Management': all(token in work_schedule for token in ('COMBO_EDITOR_ROLES = {"admin", "quanly", "letan"}', '@app.put("/v2/work-schedule/combo-sales/{sale_id}")', '@app.delete("/v2/work-schedule/combo-sales/{sale_id}")', '@app.get("/v2/work-schedule/combo-sales/export.xlsx")', '@app.post("/v2/work-schedule/combo-sales/import.xlsx")')) and all(token in work_schedule_page for token in ('comboEmployees.map', 'BẢNG CỦA', "canEditCombo = ['admin', 'quanly', 'letan'].includes(role)", 'Import Excel', 'Export Excel', 'Lưu sửa')),
               'Locker and Lễ tân late alerts target employee management and Admin': all(token in Path('vera_auto_penalty_notifications.py').read_text(encoding='utf-8') for token in ("IN ('admin','quanly')", '_notification_audience', 'notifications_enabled')),
               'four departments use employee salary rows and the standard payroll email': all(token in department_payroll for token in ('"quanly": "Quản lý"', '"locker": "Locker"', '"letan": "Lễ tân"', '"tapvu": "Tạp vụ"', 'department-payroll/settings/employees', 'department_employee_salary_configs', 'department-payroll/calculate', 'department-payroll/draft', 'department-payroll/save', 'department-payroll/export.xlsx', 'department-payroll/email', 'payroll._payroll_email_subject', 'payroll._payroll_email_text', 'payroll._payroll_email_html')) and all(token in department_payroll_page for token in ('BẢNG 1 · QUẢN LÝ / LỄ TÂN / LOCKER', 'BẢNG 2 · TẠP VỤ', 'Mỗi nhân viên là một dòng', 'Tính từ chấm công', 'Lưu bảng nháp', 'Gửi email')),
               'department hourly rates match attached Locker and Lễ tân formulas': all(token in department_payroll for token in ('"locker": {', '"letan": {', '"calculation_mode": "hourly"', '"rate_ca1": 27000', '"rate_ca2_before_22": 30000', '"rate_ca2_after_22": 33000', '"full_day_allowance": 30000')),

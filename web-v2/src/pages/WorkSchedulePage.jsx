@@ -1,8 +1,9 @@
 import {
-  CalendarDays, ChevronLeft, ChevronRight, ClipboardPaste, Copy, LoaderCircle,
-  PencilLine, Plus, Save, Settings2, Trash2,
+  CalendarDays, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Download, LoaderCircle,
+  PencilLine, Plus, Save, Settings2, Trash2, Upload,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -205,6 +206,66 @@ async function scheduleRequest(path, options = {}) {
   return payload
 }
 
+function saleDateLabel(value) {
+  const parsed = parseIsoDate(value)
+  return parsed ? displayFullDate(parsed) : (value || '—')
+}
+
+function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave, onDelete }) {
+  const emptyDraft = () => ({ sale_date: defaultDate, customer_name: '', customer_phone: '', combo_ticket: '', note: '' })
+  const [draft, setDraft] = useState(emptyDraft)
+  const [editingId, setEditingId] = useState('')
+
+  const reset = () => {
+    setDraft(emptyDraft())
+    setEditingId('')
+  }
+
+  const beginEdit = (sale) => {
+    setDraft({
+      sale_date: sale.sale_date || defaultDate,
+      customer_name: sale.customer_name || '',
+      customer_phone: sale.customer_phone || '',
+      combo_ticket: sale.combo_ticket || '',
+      note: sale.note || '',
+    })
+    setEditingId(sale.id)
+  }
+
+  const submit = async () => {
+    const saved = await onSave(employee, draft, editingId)
+    if (saved) reset()
+  }
+
+  return <section className="combo-employee-card">
+    <div className="combo-employee-title">
+      <strong>BẢNG CỦA {systemName(employee).toUpperCase()}</strong>
+      <span>{rows.length.toLocaleString('vi-VN')} lượt trong tháng</span>
+    </div>
+    {canEdit && <div className="combo-sale-fields">
+      <label>Ngày bán<input type="date" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
+      <label>Tên khách hàng<input value={draft.customer_name} onChange={(event) => setDraft({ ...draft, customer_name: event.target.value })} /></label>
+      <label>Số điện thoại<input type="tel" inputMode="tel" value={draft.customer_phone} onChange={(event) => setDraft({ ...draft, customer_phone: event.target.value })} /></label>
+      <label>Vé combo<input value={draft.combo_ticket} onChange={(event) => setDraft({ ...draft, combo_ticket: event.target.value })} /></label>
+      <label>Ghi chú<input value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></label>
+      <div className="combo-form-actions">
+        {editingId && <button type="button" className="schedule-copy-button" disabled={busy} onClick={reset}>Hủy sửa</button>}
+        <button type="button" className="schedule-save" disabled={busy} onClick={() => void submit()}>{editingId ? <Save size={15}/> : <Plus size={15}/>} {editingId ? 'Lưu sửa' : 'Thêm'}</button>
+      </div>
+    </div>}
+    <div className="schedule-scroll">
+      <table className="combo-sale-table">
+        <thead><tr><th>Ngày bán</th><th>Tên khách hàng</th><th>Số điện thoại</th><th>Vé combo</th><th>Ghi chú</th>{canEdit && <th>Thao tác</th>}</tr></thead>
+        <tbody>{rows.map((sale) => <tr key={sale.id}>
+          <td>{saleDateLabel(sale.sale_date)}</td><td>{sale.customer_name}</td><td>{sale.customer_phone}</td><td>{sale.combo_ticket}</td><td>{sale.note}</td>
+          {canEdit && <td><div className="combo-row-actions"><button type="button" className="combo-edit" title="Sửa" aria-label={`Sửa combo ${sale.customer_name}`} onClick={() => beginEdit(sale)}><PencilLine size={14}/></button><button type="button" className="combo-delete" title="Xóa" aria-label={`Xóa combo ${sale.customer_name}`} onClick={() => void onDelete(sale)}><Trash2 size={14}/></button></div></td>}
+        </tr>)}</tbody>
+      </table>
+      {!rows.length && <div className="revenue-meta">Chưa có dữ liệu bán combo của nhân viên này trong tháng.</div>}
+    </div>
+  </section>
+}
+
 export default function WorkSchedulePage({ user }) {
   const today = atNoon()
   const todayIso = isoDate(today)
@@ -246,7 +307,7 @@ export default function WorkSchedulePage({ user }) {
   const [drafts, setDrafts] = useState({})
   const [monthlyRows, setMonthlyRows] = useState([])
   const [comboSales, setComboSales] = useState([])
-  const [comboForm, setComboForm] = useState({ employee_username: '', sale_date: todayIso, customer_name: '', customer_phone: '', combo_ticket: '', note: '' })
+  const comboFileInputRef = useRef(null)
   const [shiftDefinitions, setShiftDefinitions] = useState({ quanly: {}, letan: {}, locker: {}, tapvu: {} })
   const [shiftDrafts, setShiftDrafts] = useState([])
   const [shiftEditorOpen, setShiftEditorOpen] = useState(false)
@@ -264,7 +325,9 @@ export default function WorkSchedulePage({ user }) {
   const isAdmin = role === 'admin'
   const roleCanEdit = ['admin', 'quanly'].includes(role)
   const canEdit = roleCanEdit && availableDepartments.includes(department)
+  const canEditCombo = ['admin', 'quanly', 'letan'].includes(role) && availableDepartments.includes(department)
   const ownUsername = String(user?.employee_username || '').trim().toLowerCase()
+  const comboDefaultDate = month === currentMonthValue() ? todayIso : `${month}-01`
   const rangeLabel = `${displayFullDate(days[0])} – ${displayFullDate(days[days.length - 1])} · ${days.length} ngày`
   const rangeTitle = days.length > 1 && days[0].getMonth() === days[days.length - 1].getMonth() && days[0].getFullYear() === days[days.length - 1].getFullYear()
     ? `THÁNG ${String(days[0].getMonth() + 1).padStart(2, '0')}/${days[0].getFullYear()}`
@@ -323,7 +386,6 @@ export default function WorkSchedulePage({ user }) {
       if (['quanly', 'letan'].includes(department)) {
         const comboResult = await scheduleRequest(`/v2/work-schedule/combo-sales?start=${statisticsRange.start}&end=${statisticsRange.end}&department=${department}`)
         setComboSales(comboResult.rows || [])
-        setComboForm((current) => ({ ...current, employee_username: wanted.some((item) => item.username === current.employee_username) ? current.employee_username : (wanted[0]?.username || '') }))
       } else {
         setComboSales([])
       }
@@ -685,16 +747,39 @@ export default function WorkSchedulePage({ user }) {
   const selectedEmployee = employees.find((item) => item.username === selectedCell?.username)
   const selectedValue = selectedCell ? { ...emptyCell(), ...(drafts[keyFor(selectedCell.username, selectedCell.day)] || {}) } : null
 
-  const addComboSale = async () => {
-    const employee = employees.find((item) => item.username === comboForm.employee_username)
-    if (!employee || !comboForm.sale_date || !comboForm.customer_name.trim() || !comboForm.combo_ticket.trim()) return setNotice('Bán combo cần đủ Nhân viên, Ngày bán, Tên khách hàng và Vé combo.')
+  const comboEmployees = useMemo(() => {
+    const mapped = new Map(employees.map((employee) => [String(employee.username || '').toLowerCase(), employee]))
+    comboSales.forEach((sale) => {
+      const key = String(sale.employee_username || '').toLowerCase()
+      if (key && !mapped.has(key)) mapped.set(key, { username: sale.employee_username, full_name: sale.employee_name })
+    })
+    return [...mapped.values()]
+  }, [comboSales, employees])
+
+  const saveComboSale = async (employee, draft, saleId = '') => {
+    if (!employee || !draft.sale_date || !draft.customer_name.trim() || !draft.combo_ticket.trim()) {
+      setNotice('Bán combo cần đủ Ngày bán, Tên khách hàng và Vé combo.')
+      return false
+    }
     setBusy(true)
     try {
-      const result = await scheduleRequest('/v2/work-schedule/combo-sales', { method: 'POST', body: JSON.stringify({ ...comboForm, employee_name: systemName(employee), department }) })
-      setComboForm((current) => ({ ...current, customer_name: '', customer_phone: '', combo_ticket: '', note: '' }))
+      const path = saleId ? `/v2/work-schedule/combo-sales/${encodeURIComponent(saleId)}` : '/v2/work-schedule/combo-sales'
+      const result = await scheduleRequest(path, {
+        method: saleId ? 'PUT' : 'POST',
+        body: JSON.stringify({
+          ...draft,
+          employee_username: employee.username,
+          employee_name: systemName(employee),
+          department,
+        }),
+      })
       await load()
-      setNotice(result.message || 'Đã thêm lượt bán combo.')
-    } catch (error) { setNotice(error.message || 'Không lưu được dữ liệu bán combo.') } finally { setBusy(false) }
+      setNotice(result.message || (saleId ? 'Đã cập nhật lượt bán combo.' : 'Đã thêm lượt bán combo.'))
+      return true
+    } catch (error) {
+      setNotice(error.message || 'Không lưu được dữ liệu bán combo.')
+      return false
+    } finally { setBusy(false) }
   }
 
   const deleteComboSale = async (sale) => {
@@ -704,19 +789,36 @@ export default function WorkSchedulePage({ user }) {
     catch (error) { setNotice(error.message || 'Không xóa được dữ liệu bán combo.') } finally { setBusy(false) }
   }
 
+  const exportComboSales = async () => {
+    const statisticsRange = monthRange(month)
+    setBusy(true)
+    try {
+      await veraApi.exportComboSalesExcel(statisticsRange.start, statisticsRange.end, department)
+      setNotice('Đã Export Excel bán combo theo từng nhân viên.')
+    } catch (error) { setNotice(error.message || 'Không Export được Excel bán combo.') } finally { setBusy(false) }
+  }
+
+  const importComboSales = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.xlsx')) return setNotice('Vui lòng chọn file Excel .xlsx.')
+    setBusy(true)
+    try {
+      const result = await veraApi.importComboSalesExcel(file, department)
+      await load()
+      setNotice(result.message || 'Đã Import Excel bán combo.')
+    } catch (error) { setNotice(error.message || 'Không Import được Excel bán combo.') } finally { setBusy(false) }
+  }
+
   const comboEditor = ['quanly', 'letan'].includes(department)
     ? <div className="combo-sale-editor">
-      <div className="combo-sale-head"><strong>BẢNG BÁN COMBO · {DEPARTMENT_INFO[department].label}</strong></div>
-      {canEdit && <div className="combo-sale-fields">
-        <label>Nhân viên<select value={comboForm.employee_username} onChange={(event) => setComboForm({ ...comboForm, employee_username: event.target.value })}>{employees.map((item) => <option key={item.username} value={item.username}>{systemName(item)}</option>)}</select></label>
-        <label>Ngày bán<input type="date" value={comboForm.sale_date} onChange={(event) => setComboForm({ ...comboForm, sale_date: event.target.value })} /></label>
-        <label>Tên khách hàng<input value={comboForm.customer_name} onChange={(event) => setComboForm({ ...comboForm, customer_name: event.target.value })} /></label>
-        <label>Số điện thoại<input type="tel" inputMode="tel" value={comboForm.customer_phone} onChange={(event) => setComboForm({ ...comboForm, customer_phone: event.target.value })} /></label>
-        <label>Vé combo<input value={comboForm.combo_ticket} onChange={(event) => setComboForm({ ...comboForm, combo_ticket: event.target.value })} /></label>
-        <label>Ghi chú<input value={comboForm.note} onChange={(event) => setComboForm({ ...comboForm, note: event.target.value })} /></label>
-        <button type="button" className="schedule-save" disabled={busy} onClick={() => void addComboSale()}><Plus size={15}/> Thêm</button>
-      </div>}
-      <div className="schedule-scroll"><table className="combo-sale-table"><thead><tr><th>Nhân viên</th><th>Ngày bán</th><th>Tên khách hàng</th><th>Số điện thoại</th><th>Vé combo</th><th>Ghi chú</th>{canEdit && <th></th>}</tr></thead><tbody>{comboSales.map((sale) => <tr key={sale.id}><td>{sale.employee_name}</td><td>{sale.sale_date}</td><td>{sale.customer_name}</td><td>{sale.customer_phone}</td><td>{sale.combo_ticket}</td><td>{sale.note}</td>{canEdit && <td><button type="button" className="combo-delete" onClick={() => void deleteComboSale(sale)}><Trash2 size={14}/></button></td>}</tr>)}</tbody></table>{!comboSales.length && <div className="revenue-meta">Chưa có dữ liệu bán combo trong tháng.</div>}</div>
+      <div className="combo-sale-head"><strong>BẢNG BÁN COMBO · {DEPARTMENT_INFO[department].label}</strong>{canEditCombo && <div className="combo-excel-actions"><input ref={comboFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importComboSales(event)} /><button type="button" className="schedule-copy-button" disabled={busy} onClick={() => comboFileInputRef.current?.click()}><Upload size={15}/> Import Excel</button><button type="button" className="schedule-copy-button" disabled={busy} onClick={() => void exportComboSales()}><Download size={15}/> Export Excel</button></div>}</div>
+      <div className="combo-employee-sections">{comboEmployees.map((employee) => {
+        const employeeRows = comboSales.filter((sale) => String(sale.employee_username || '').toLowerCase() === String(employee.username || '').toLowerCase())
+        return <ComboEmployeeTable key={`${department}-${month}-${employee.username}`} employee={employee} rows={employeeRows} defaultDate={comboDefaultDate} canEdit={canEditCombo} busy={busy} onSave={saveComboSale} onDelete={deleteComboSale} />
+      })}</div>
+      {!comboEmployees.length && <div className="revenue-meta">Chưa có nhân viên {DEPARTMENT_INFO[department].label} để tạo bảng bán combo.</div>}
     </div> : null
 
   if (!availableDepartments.length) return <section className="work-schedule-page"><div className="warning-box">Tài khoản chưa được cấp quyền Lịch làm việc.</div></section>
@@ -730,12 +832,17 @@ export default function WorkSchedulePage({ user }) {
       .combo-sale-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#f8fbfa}
       .combo-sale-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
       .combo-sale-head label{display:flex;align-items:center;gap:7px;font-weight:800;color:#1f6047}
+      .combo-excel-actions,.combo-form-actions,.combo-row-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+      .combo-employee-sections{display:grid;gap:14px}
+      .combo-employee-card{display:grid;gap:10px;padding:12px;border:1px solid #ccddd5;border-radius:12px;background:#fff}
+      .combo-employee-title{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;color:#173329}
+      .combo-employee-title span{font-size:12px;color:#66776f;font-weight:700}
       .combo-sale-fields{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:9px}
       .combo-sale-fields label{display:grid;gap:4px;font-size:12px;font-weight:800;color:#365348}
       .combo-sale-fields input,.combo-sale-fields select,.combo-sale-fields textarea{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff;font:inherit}
-      .combo-sale-fields .combo-note{grid-column:1/-1}
-      .combo-sale-table{width:100%;border-collapse:collapse;min-width:760px}.combo-sale-table th,.combo-sale-table td{border:1px solid #dfe8e5;padding:8px;text-align:left}.combo-sale-table th{background:#e7f1ed}.combo-delete{border:0;border-radius:7px;padding:6px;color:#a33;background:#fff0f0}
-      @media(max-width:700px){.combo-sale-fields{grid-template-columns:1fr}}
+      .combo-form-actions{align-self:end}
+      .combo-sale-table{width:100%;border-collapse:collapse;min-width:700px}.combo-sale-table th,.combo-sale-table td{border:1px solid #dfe8e5;padding:8px;text-align:left}.combo-sale-table th{background:#e7f1ed}.combo-edit,.combo-delete{border:0;border-radius:7px;padding:6px}.combo-edit{color:#1f6047;background:#eaf5f0}.combo-delete{color:#a33;background:#fff0f0}
+      @media(max-width:700px){.combo-sale-fields{grid-template-columns:1fr}.combo-excel-actions{width:100%}.combo-excel-actions button{flex:1;justify-content:center}}
     `}</style>
 
     <div className="schedule-head">
