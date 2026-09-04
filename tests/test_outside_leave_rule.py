@@ -1,7 +1,11 @@
 from datetime import date, datetime
 
 import vera_auto_check as auto_check
-from vera_web_v2_outside_leave_rule import _restricted_leave_reason, _violation_for
+from vera_web_v2_outside_leave_rule import (
+    RESTRICTED_LEAVE_REASONS,
+    _restricted_leave_reason,
+    _violation_for,
+)
 
 
 def _catalog():
@@ -23,14 +27,16 @@ def _catalog():
     }
 
 
-def test_all_late_and_early_leave_variants_block_outside_break():
-    for reason in (
-        "Đi trễ CÓ phép",
-        "Đi trễ KHÔNG phép",
-        "Về sớm CÓ phép",
-        "Về sớm KHÔNG phép",
-    ):
+def test_only_the_twelve_registered_reasons_block_outside_break():
+    assert len(RESTRICTED_LEAVE_REASONS) == 12
+    for reason in RESTRICTED_LEAVE_REASONS:
         assert _restricted_leave_reason(reason), reason
+
+
+def test_linh_dan_automatic_lateness_keeps_mid_shift_break():
+    assert not _restricted_leave_reason("Đi trễ nhỏ hơn hoặc bằng 30 phút")
+    assert not _restricted_leave_reason("Đi trễ nhỏ hơn hoặc bằng 60 phút")
+    assert not _restricted_leave_reason("Đi trễ nhỏ hơn hoặc bằng 120 phút")
     assert not _restricted_leave_reason("Nghỉ CÓ phép")
 
 
@@ -42,8 +48,9 @@ def test_recognized_support_shift_reasons_keep_mid_shift_break():
     ):
         assert not _restricted_leave_reason(reason), reason
 
-    # The exception is exact; unrelated late registrations remain restricted.
-    assert _restricted_leave_reason("Hỗ trợ đi trễ không xác định")
+    # Unlisted support labels also keep the break: restriction is an exact
+    # allow-list of the twelve business reasons above.
+    assert not _restricted_leave_reason("Hỗ trợ đi trễ không xác định")
 
 
 def test_outside_before_1700_is_penalized_from_break_out_to_1700():

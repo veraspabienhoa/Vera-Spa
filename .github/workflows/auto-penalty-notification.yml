@@ -13,6 +13,7 @@ on:
       - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
+      - "tests/test_outside_leave_rule.py"
       - ".github/workflows/auto-penalty-notification.yml"
   pull_request:
     branches: [main]
@@ -26,6 +27,7 @@ on:
       - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
+      - "tests/test_outside_leave_rule.py"
       - ".github/workflows/auto-penalty-notification.yml"
   workflow_dispatch:
 
@@ -110,6 +112,15 @@ jobs:
                   in sources['vera_web_v2_attendance_break_alerts.py']
                   and 'min(stored_deadline, calculated_deadline)'
                   in sources['vera_web_v2_break_return_penalty.py'],
+              'only the twelve registered reasons remove the mid-shift break':
+                  'RESTRICTED_LEAVE_REASON_KEYS = frozenset'
+                  in sources['vera_web_v2_outside_leave_rule.py']
+                  and 'return _norm(value) in RESTRICTED_LEAVE_REASON_KEYS'
+                  in sources['vera_web_v2_outside_leave_rule.py']
+                  and '"Đi trễ nhỏ hơn hoặc bằng 30 phút"'
+                  not in sources['vera_web_v2_outside_leave_rule.py'].split(
+                      'RESTRICTED_LEAVE_REASONS = {', 1
+                  )[1].split('}', 1)[0],
           }
           failed = [name for name, passed in checks.items() if not passed]
           for name, passed in checks.items():

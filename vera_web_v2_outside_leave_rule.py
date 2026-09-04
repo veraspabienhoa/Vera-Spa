@@ -1,8 +1,9 @@
 """Same-day outside-break restriction for late/early leave records.
 
 Business rule:
-- If an employee has any same-day Đi trễ or Về sớm record (CÓ phép or
-  KHÔNG phép), that employee cannot use the normal outside/mid-shift break.
+- Only the explicitly configured same-day Đi trễ/Về sớm registration reasons
+  restrict the normal outside/mid-shift break. Automatic attendance violations
+  such as "Đi trễ nhỏ hơn hoặc bằng 30 phút" do not remove that entitlement.
 - TimeSoft remains the first source of the actual outside time; the attendance
   break stack may then fall back to TourVera R=Break, S=Giờ ra, U=Giờ vào.
 - A Về sớm record that already existed before a TimeSoft checkout at/after
@@ -30,12 +31,27 @@ import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
 import vera_web_v2_attendance_break_alerts as break_alerts
 import vera_web_v2_snapshot as snapshot
-from vera_web_v2_support_shift_break import is_break_preserving_support
 
 
-RELEASE = "outside-leave-restriction-2026-09-03-v4-support-keeps-break"
+RELEASE = "outside-leave-restriction-2026-09-04-v5-exact-reasons"
 VN_TZ = timezone(timedelta(hours=7))
 CUTOFF = time(17, 0, 0)
+
+
+RESTRICTED_LEAVE_REASONS = {
+    "Đi trễ CÓ phép",
+    "Đi trễ KHÔNG phép",
+    "Đi trễ CUỐI TUẦN CÓ phép",
+    "Đi trễ CUỐI TUẦN KHÔNG phép",
+    "Đi trễ phát sinh",
+    "Leader đi trễ sớm theo chính sách",
+    "Về sớm CÓ phép",
+    "Về sớm KHÔNG phép",
+    "Về sớm CUỐI TUẦN CÓ phép",
+    "Về sớm CUỐI TUẦN KHÔNG phép",
+    "Về sớm phát sinh",
+    "Leader về sớm về sớm theo chính sách",
+}
 
 
 def _norm(value: Any) -> str:
@@ -44,16 +60,18 @@ def _norm(value: Any) -> str:
     return " ".join(raw.replace("đ", "d").split())
 
 
+RESTRICTED_LEAVE_REASON_KEYS = frozenset(_norm(reason) for reason in RESTRICTED_LEAVE_REASONS)
+EARLY_LEAVE_REASON_KEYS = frozenset(
+    _norm(reason) for reason in RESTRICTED_LEAVE_REASONS if "Về sớm" in reason
+)
+
+
 def _restricted_leave_reason(value: Any) -> bool:
-    if is_break_preserving_support(value):
-        return False
-    key = _norm(value)
-    return "di tre" in key or "ve som" in key or "ra som" in key
+    return _norm(value) in RESTRICTED_LEAVE_REASON_KEYS
 
 
 def _early_leave_reason(value: Any) -> bool:
-    key = _norm(value)
-    return "ve som" in key or "ra som" in key
+    return _norm(value) in EARLY_LEAVE_REASON_KEYS
 
 
 def _local_naive(value: Any) -> datetime | None:
@@ -368,7 +386,8 @@ def install_outside_leave_rule(
         return {
             "ok": True,
             "release": RELEASE,
-            "restricted_when_same_day_reason_contains": ["Đi trễ", "Về sớm"],
+            "restricted_same_day_reasons": sorted(RESTRICTED_LEAVE_REASONS),
+            "exact_reason_match": True,
             "permission_independent": True,
             "scheduled_early_checkout_rule": "Về sớm registered before >=17:00 TimeSoft checkout is final checkout, not break",
             "late_entered_early_leave_rule": "outside first, Về sớm entered later keeps outside penalty",
