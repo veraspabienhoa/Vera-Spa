@@ -177,6 +177,12 @@ jobs:
                   'systemctl --user import-environment' not in deploy
                   and 'API and deployment account ownership do not match' in deploy
               ),
+              'deploy prefers the API system service EnvironmentFile': all(item in deploy for item in (
+                  '--property=EnvironmentFiles',
+                  'write_database_environment',
+                  '>> "$service_environment_path"',
+                  'service-environment.previous',
+              )),
               'deploy selects scripts from active release': all(item in workflow for item in (
                   'readlink -f',
                   '${release_dir}/configure_vps_database.sh',
