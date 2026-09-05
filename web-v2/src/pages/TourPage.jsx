@@ -368,6 +368,15 @@ export default function TourPage({ user }) {
   const availableRoomKeys = useMemo(() => new Set(availableRooms.map(roomKey)), [availableRooms])
   const occupiedRoomKeys = useMemo(() => new Set((data.rooms?.occupied || []).map(roomKey)), [data.rooms?.occupied])
   const employeeColumn = employeeNameColumn(columns)
+  const searchedRoomKeys = useMemo(() => {
+    const needle = normalizedColumn(employeeSearch)
+    if (!needle || !employeeColumn || !roomColumn) return new Set()
+    return new Set(shiftRecords.flatMap((record) => {
+      const employee = normalizedColumn(cellValue(record, employeeColumn))
+      const key = roomKey(cellValue(record, roomColumn))
+      return employee.includes(needle) && key ? [key] : []
+    }))
+  }, [employeeColumn, employeeSearch, roomColumn, shiftRecords])
   const statusColumn = findColumn(columns, ['TRANG THAI'])
   const serviceColumn = columns.find((column) => {
     const key = normalizedColumn(column)
@@ -398,33 +407,41 @@ export default function TourPage({ user }) {
 
   return <div className="feature-page tour-page">
     <style>{`
-      .tour-page{gap:8px}
+      .tour-page{gap:5px}
       .tour-page>.setup-note{padding:6px 9px;font-size:9px}
+      .tour-sticky-top{display:grid;gap:4px;background:var(--paper,#f7faf8)}
+      .tour-topbar{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(330px,1fr) auto;align-items:center;gap:10px}
+      .tour-heading-title{min-width:0}.tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:36px;line-height:.95}.tour-heading-title .eyebrow{font-size:9px}
       .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}
       .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
-      .tour-shift-filter{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:0 0 4px}
-      .tour-shift-filter button{min-width:66px;padding:6px 9px;border-radius:8px;font-size:10px}
-      .tour-heading-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+      .tour-shift-filter{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;margin:0}
+      .tour-shift-filter button{min-width:66px;padding:5px 9px;border-radius:8px;font-size:10px}
+      .tour-customer-count{display:inline-flex;align-items:center;gap:4px;min-height:29px;padding:0 9px;border:1px solid #dfe8e3;border-radius:8px;background:#fff;color:#455d53;font-size:10px;font-weight:850;white-space:nowrap}.tour-customer-count strong{color:#126147;font-size:17px}
+      .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.tour-heading-actions button{min-height:34px;padding:6px 10px;font-size:10px}
       .tour-control-layout{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);gap:4px;align-items:stretch}
       .tour-control-layout .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
-      .metric-grid.small .metric-card.tour-metric-card{min-height:31px;gap:4px;border-radius:8px;padding:3px 7px}
-      .metric-grid.small .metric-card.tour-metric-card span{font-size:8px}.metric-grid.small .metric-card.tour-metric-card strong{font-size:16px}
+      .metric-grid.small .metric-card.tour-metric-card{min-height:27px;gap:3px;border-radius:7px;padding:2px 6px}
+      .metric-grid.small .metric-card.tour-metric-card span{font-size:7px}.metric-grid.small .metric-card.tour-metric-card strong{font-size:15px}
       .tour-room-segment-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
       .tour-room-segment-button{min-width:0;min-height:100%;border:1px solid transparent;border-radius:8px;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#fff;font-weight:900;text-align:center;letter-spacing:.02em}
       .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}
       .tour-room-segment-button svg{width:15px;height:15px}.tour-room-segment-button span{font-size:9px;line-height:1}.tour-room-segment-button small{color:inherit;font-size:7px;opacity:.88}
       .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
-      .tour-table-panel{padding:8px}.tour-table th{padding-top:7px;padding-bottom:7px}.tour-table td{padding-top:8px;padding-bottom:8px}
-      .tour-quick-tools{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:5px 0}.tour-employee-search{position:relative;flex:1 1 260px;max-width:380px}.tour-employee-search svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.tour-employee-search input{width:100%;height:31px;padding:5px 8px 5px 29px;box-sizing:border-box;font-size:10px}
-      .tour-room-panel{margin:0;padding:6px;border:1px solid #cfe1d8;border-radius:10px;background:#f3faf6}.tour-room-panel-head{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:5px}.tour-room-panel-title{display:flex;align-items:center;gap:4px;color:#173c30;font-size:12px;font-weight:900}.tour-room-panel-head small{min-width:160px;color:#3f574c;font-size:16px;font-weight:950;line-height:1;text-align:center}.tour-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:4px}
-      .tour-room-card{--room-segment:#155b78;width:100%;min-width:0;min-height:62px;display:grid;align-content:space-between;gap:2px;border:1px solid rgba(0,0,0,.13);border-radius:8px;padding:5px;color:inherit;background:#fff;text-align:left;appearance:none;box-shadow:inset 0 2px 0 var(--room-segment),0 2px 6px rgba(28,52,42,.06);transition:transform .16s ease,box-shadow .16s ease}.tour-room-card.vip{--room-segment:#b58a31;border:3px solid #c59a3d;padding:3px;box-shadow:inset 0 2px 0 #f3cf72,0 2px 7px rgba(130,92,19,.16)}.tour-room-card:hover{transform:translateY(-1px);box-shadow:inset 0 2px 0 var(--room-segment),0 5px 10px rgba(28,52,42,.11)}.tour-room-card.vip:hover{box-shadow:inset 0 2px 0 #f3cf72,0 5px 11px rgba(130,92,19,.24)}.tour-room-card.selected{outline:2px solid #173c30;outline-offset:1px}.tour-room-card.vip.selected{outline-color:#9b6e16}
+      .tour-table-panel{padding:5px}.tour-table th{padding-top:5px;padding-bottom:5px}.tour-table td{padding-top:5px;padding-bottom:5px}.tour-records-panel{min-height:0}.tour-records-panel .tour-table{max-height:calc(100vh - 315px);overflow:auto}
+      .tour-quick-tools{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:3px 0 0}.tour-employee-search{position:relative;flex:1 1 260px;max-width:360px}.tour-employee-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.tour-employee-search input{width:100%;height:27px;padding:4px 7px 4px 27px;box-sizing:border-box;font-size:9px}
+      .tour-room-panel{margin:0;padding:5px;border:1px solid #cfe1d8;border-radius:9px;background:#f3faf6}.tour-room-panel-head{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:3px}.tour-room-panel-title{display:flex;align-items:center;gap:4px;color:#173c30;font-size:11px;font-weight:900}.tour-room-panel-head small{min-width:160px;color:#3f574c;font-size:15px;font-weight:950;line-height:1;text-align:center}.tour-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px}
+      .tour-room-card{--room-segment:#155b78;width:100%;min-width:0;min-height:53px;display:grid;align-content:space-between;gap:1px;border:1px solid rgba(0,0,0,.13);border-radius:7px;padding:4px;color:inherit;background:#fff;text-align:left;appearance:none;box-shadow:inset 0 2px 0 var(--room-segment),0 2px 5px rgba(28,52,42,.06);transition:transform .16s ease,box-shadow .16s ease}.tour-room-card.vip{--room-segment:#b58a31;border:3px solid #c59a3d;padding:2px;box-shadow:inset 0 2px 0 #f3cf72,0 2px 7px rgba(130,92,19,.16)}.tour-room-card:hover{transform:translateY(-1px);box-shadow:inset 0 2px 0 var(--room-segment),0 5px 10px rgba(28,52,42,.11)}.tour-room-card.vip:hover{box-shadow:inset 0 2px 0 #f3cf72,0 5px 11px rgba(130,92,19,.24)}.tour-room-card.selected{outline:2px solid #173c30;outline-offset:1px}.tour-room-card.vip.selected{outline-color:#9b6e16}
+      @keyframes tour-room-search-pulse{0%,100%{filter:brightness(1);transform:scale(1);box-shadow:0 0 0 2px #ee3f62,0 2px 6px rgba(28,52,42,.08)}50%{filter:brightness(1.13);transform:scale(1.025);background:#55f0cf;box-shadow:0 0 0 4px #ffd54a,0 7px 15px rgba(238,63,98,.34)}}.tour-room-card.search-match{position:relative;z-index:3;animation:tour-room-search-pulse .8s ease-in-out infinite}
       .tour-room-card.state-green{background:var(--tour-row-green)}.tour-room-card.state-yellow{background:var(--tour-row-yellow)}.tour-room-card.state-red{background:var(--tour-row-red)}.tour-room-card.state-break{background:var(--tour-row-break)}.tour-room-card.state-waiting{color:#3f245d;background:var(--tour-row-waiting)}.tour-room-card.state-idle{background:var(--tour-row-idle)}.tour-room-card.state-leave,.tour-room-card.state-work,.tour-room-card.state-default,.tour-room-card.state-blank{background:#fff}.tour-room-card.state-leave{color:#a6a6a6}
-      .tour-room-card-head{display:flex;align-items:center;justify-content:space-between;gap:3px}.tour-room-card-head strong{min-width:0;font-size:10px;font-weight:950}.tour-room-type{border-radius:999px;padding:2px 4px;color:#fff;background:var(--room-segment);font-size:5px;font-weight:950;letter-spacing:.04em}.tour-room-countdown{display:flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums;font-size:11px;font-weight:950;white-space:nowrap}.tour-room-countdown svg{width:12px;height:12px;flex:0 0 auto}.tour-room-meta{min-height:9px;overflow:hidden;font-size:7px;font-weight:800;text-overflow:ellipsis;white-space:nowrap;opacity:.8}
+      .tour-room-card-head{display:flex;align-items:center;justify-content:space-between;gap:3px}.tour-room-card-head strong{min-width:0;font-size:9px;font-weight:950}.tour-room-type{border-radius:999px;padding:1px 4px;color:#fff;background:var(--room-segment);font-size:5px;font-weight:950;letter-spacing:.04em}.tour-room-countdown{display:flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums;font-size:10px;font-weight:950;white-space:nowrap}.tour-room-countdown svg{width:11px;height:11px;flex:0 0 auto}.tour-room-meta{min-height:8px;overflow:hidden;font-size:6px;font-weight:800;text-overflow:ellipsis;white-space:nowrap;opacity:.8}
       .tour-room-empty{grid-column:1/-1;padding:6px;color:#5d7168;font-size:9px;text-align:center}
       .tour-room-detail{margin-top:5px;padding:6px;border:1px solid #d9e2dd;border-radius:8px;background:#fff}.tour-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.tour-room-detail-head strong{font-size:10px}.tour-room-detail-head small{color:#68776f;font-size:7px;font-weight:800}.tour-room-detail-list{display:grid;gap:3px}.tour-room-detail-row{min-width:0;display:grid;grid-template-columns:minmax(90px,.55fr) minmax(120px,1fr);gap:8px;padding:4px 6px;border-radius:6px;background:#f3f6f4;font-size:8px}.tour-room-detail-row strong,.tour-room-detail-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tour-room-detail-row span{color:#55665e}.tour-room-detail-empty{padding:4px;color:#68776f;font-size:8px}
       .tour-legend{padding:9px}.tour-legend .panel-title-row{margin-bottom:5px}.tour-legend .panel-title-row h2{font-size:14px}.tour-legend .panel-title-row p{font-size:9px}.tour-legend-grid{gap:4px}.tour-legend-grid span{padding:4px 7px;font-size:8px}
       .tour-source-panel{padding:8px}.tour-source-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}.tour-source-head strong{display:flex;align-items:center;gap:5px;font-size:11px}.tour-source-head small{color:#65756e;font-size:8px}.tour-source-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}.tour-source-form input{min-width:0;height:32px;padding:5px 9px;font-size:10px}.tour-source-form button{min-height:32px;padding:5px 10px}.tour-source-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:5px;color:#65756e;font-size:8px}.tour-source-meta a{color:#155b78;font-weight:850}.tour-source-notice{font-weight:800;color:#247146}.tour-source-notice.error{color:#a52a22}
+      @media(min-width:641px){.tour-sticky-top{position:sticky;top:74px;z-index:18;padding:3px 0 2px;box-shadow:0 6px 12px rgba(25,58,46,.04)}.tour-records-panel .tour-table th{top:0}.tour-room-detail{max-height:100px;overflow:auto}}
+      @media(prefers-reduced-motion:reduce){.tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
       @media(max-width:640px){
+        .tour-sticky-top{position:static}.tour-topbar{grid-template-columns:1fr;gap:6px}.tour-heading-title h1{font-size:29px}.tour-shift-filter{order:3}.tour-records-panel .tour-table{max-height:none;overflow-x:hidden;overflow-y:visible}
         .tour-shift-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-bottom:7px}
         .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
         .tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}
@@ -445,25 +462,29 @@ export default function TourPage({ user }) {
         .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       }
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1></div><div className="tour-heading-actions"><button type="button" className="secondary-button" onClick={openStandaloneTour}><ExternalLink size={16} /> Mở tab riêng</button>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div></div>
-    {error && <div className="error-box">{error}</div>}
-    {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
-    <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca" data-tour-customer-count={customerCount}>
-      <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
-      <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
-      <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
-      <small>Đang hiển thị {displayedRecords.length}/{validRecords.length} nhân viên</small>
-    </div>
-    {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
-    <div className="tour-control-layout">
-      <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
-      <div className="tour-room-segment-buttons" aria-label="Chọn phân khúc phòng">
-        <button type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ<br/>PHÒNG</span><small>{roomCatalog.length} phòng</small></button>
-        <button type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>STANDARD<br/>ROOM</span><small>{standardRooms.length} phòng</small></button>
-        <button type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP ROOM</span><small>{vipRooms.length} phòng</small></button>
+    <div className="tour-sticky-top">
+      <div className="tour-topbar">
+        <div className="tour-heading-title"><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1></div>
+        <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca">
+          <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
+          <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
+          <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
+          {isAdmin && <span className="tour-customer-count">Số khách: <strong>{customerCount}</strong></span>}
+        </div>
+        <div className="tour-heading-actions"><button type="button" className="secondary-button" onClick={openStandaloneTour}><ExternalLink size={16} /> Mở tab riêng</button>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div>
       </div>
-    </div>
-    <section className="panel tour-table-panel">
+      {error && <div className="error-box">{error}</div>}
+      {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
+      {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
+      <div className="tour-control-layout">
+        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
+        <div className="tour-room-segment-buttons" aria-label="Chọn phân khúc phòng">
+          <button type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ<br/>PHÒNG</span><small>{roomCatalog.length} phòng</small></button>
+          <button type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>STANDARD<br/>ROOM</span><small>{standardRooms.length} phòng</small></button>
+          <button type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP ROOM</span><small>{vipRooms.length} phòng</small></button>
+        </div>
+      </div>
+      <section className="panel tour-table-panel tour-room-table-panel">
       <div className={`tour-room-panel ${roomSegment}`}>
         <div className="tour-room-panel-head"><div className="tour-room-panel-title">{roomSegment === 'vip' ? <Crown size={16}/> : roomSegment === 'standard' ? <DoorOpen size={16}/> : <LayoutGrid size={16}/>} {roomSegment === 'vip' ? 'Phòng VIP' : roomSegment === 'standard' ? 'Phòng Standard' : 'Tất cả phòng'}</div><small>{displayedRooms.filter((room) => availableRoomKeys.has(roomKey(room))).length}/{displayedRooms.length} phòng đang trống</small></div>
         <div className="tour-room-grid">
@@ -475,7 +496,7 @@ export default function TourPage({ user }) {
             const state = roomState(record, available, clockMs)
             const employee = cellValue(record, employeeColumn)
             const status = cellValue(record, statusColumn)
-            return <button type="button" className={`tour-room-card ${isVipRoom(room) ? 'vip' : 'standard'} state-${state} ${selectedRoomKey === key ? 'selected' : ''}`} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
+            return <button type="button" className={`tour-room-card ${isVipRoom(room) ? 'vip' : 'standard'} state-${state} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
               <div className="tour-room-card-head"><strong>{roomLabel(room)}</strong><span className="tour-room-type">{isVipRoom(room) ? 'VIP' : 'STANDARD'}</span></div>
               <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
               <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
@@ -495,6 +516,9 @@ export default function TourPage({ user }) {
       <div className="tour-quick-tools">
         <label className="tour-employee-search" aria-label="Tìm nhanh tên nhân viên"><Search size={16}/><input type="search" value={employeeSearch} placeholder="Tìm nhanh tên nhân viên…" onChange={(event) => setEmployeeSearch(event.target.value)} /></label>
       </div>
+      </section>
+    </div>
+    <section className="panel tour-table-panel tour-records-panel">
       <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
