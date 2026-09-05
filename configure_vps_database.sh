@@ -105,8 +105,8 @@ systemd_quote() {
   printf '"%s"' "$value"
 }
 
-# Phase 1: prove the additive PostgreSQL session schema is usable before the
-# service manager is switched away from Supabase Auth.  A failure here leaves
+# Phase 1: prove the existing PostgreSQL runtime store supports Auth CRUD before
+# the service manager is switched away from Supabase Auth. A failure here leaves
 # the currently running provider untouched and triggers the rollback handler.
 test -f "$local_auth_migrator"
 export VERA_DB_ENABLED=1
@@ -140,7 +140,7 @@ systemctl --user import-environment "${db_keys[@]}" >/dev/null 2>&1 || true
 /opt/vera-spa/deploy.sh "$deploy_sha"
 
 # Phase 2: verify the restarted API inherited the cutover flag, then recheck
-# the schema through the exact code shipped in this release.
+# the Auth store through the exact code shipped in this release.
 test "$(git -C "$script_dir" rev-parse HEAD)" = "$deploy_sha"
 new_pid=$(pgrep -n -f "vera_web_v2_api_v38:app" || true)
 test -n "$new_pid"

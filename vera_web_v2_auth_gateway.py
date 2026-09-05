@@ -11,6 +11,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import time
@@ -27,8 +28,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from vera_web_v2_local_auth import (
-    ATTEMPT_TABLE,
-    SESSION_TABLE,
+    ATTEMPT_CATEGORY,
+    ATTEMPT_RECORD_KIND,
+    SESSION_CATEGORY,
+    SESSION_RECORD_KIND,
+    SESSION_STORE_TABLE,
+    STORE_VERSION,
     access_ttl_seconds,
     credential_fingerprint,
     ensure_local_auth_schema,
@@ -37,6 +42,7 @@ from vera_web_v2_local_auth import (
     new_access_token,
     new_refresh_token,
     refresh_ttl_seconds,
+    revoke_local_session_row,
     token_digest,
     valid_local_token,
 )
@@ -323,11 +329,35 @@ def _attempt_state(attempt_key: str) -> tuple[bool, int]:
         with _engine_instance().connect() as conn:
             row = conn.execute(text(f"""
                 SELECT failures,
-                       COALESCE(window_started_at >= NOW() - INTERVAL '15 minutes', false) AS active
-                FROM {ATTEMPT_TABLE}
-                WHERE attempt_key=:attempt_key
+                       COALESCE(
+                         window_started_at >= EXTRACT(EPOCH FROM clock_timestamp()) - 900,
+                         false
+                       ) AS active
+                FROM (
+                    SELECT CASE
+                             WHEN jsonb_typeof(value_json->'failures')='number'
+                              AND value_json->>'failures' ~ '^[0-9]{{1,7}}$'
+                               THEN LEAST((value_json->>'failures')::integer, 1000000)
+                             ELSE 0
+                           END AS failures,
+                           CASE
+                             WHEN jsonb_typeof(value_json->'window_started_at')='number'
+                               THEN (value_json->>'window_started_at')::numeric
+                             ELSE NULL
+                           END AS window_started_at
+                    FROM {SESSION_STORE_TABLE}
+                    WHERE category=:category
+                      AND setting_key=:attempt_key
+                      AND value_json->>'kind'=:kind
+                      AND value_json->>'version'=:version
+                ) AS attempt
                 LIMIT 1
-            """), {"attempt_key": attempt_key}).mappings().first()
+            """), {
+                "category": ATTEMPT_CATEGORY,
+                "attempt_key": attempt_key,
+                "kind": ATTEMPT_RECORD_KIND,
+                "version": str(STORE_VERSION),
+            }).mappings().first()
         if not row:
             return False, 0
         return bool(row.get("active")), int(row.get("failures") or 0)
@@ -340,26 +370,91 @@ def _record_failed_attempt(attempt_key: str) -> int:
     try:
         with _engine_instance().begin() as conn:
             conn.execute(text(f"""
-                DELETE FROM {ATTEMPT_TABLE}
-                WHERE updated_at < NOW() - INTERVAL '7 days'
-            """))
-            row = conn.execute(text(f"""
-                INSERT INTO {ATTEMPT_TABLE} AS attempts(
-                    attempt_key, window_started_at, failures, updated_at
+                WITH expired AS (
+                    SELECT category, setting_key
+                    FROM {SESSION_STORE_TABLE}
+                    WHERE category=:category
+                      AND value_json->>'kind'=:kind
+                      AND value_json->>'version'=:version
+                      AND updated_at < NOW() - INTERVAL '7 days'
+                    ORDER BY updated_at
+                    LIMIT 100
+                    FOR UPDATE SKIP LOCKED
                 )
-                VALUES (:attempt_key, NOW(), 1, NOW())
-                ON CONFLICT (attempt_key) DO UPDATE SET
-                  failures = CASE
-                    WHEN attempts.window_started_at < NOW() - INTERVAL '15 minutes' THEN 1
-                    ELSE attempts.failures + 1
-                  END,
-                  window_started_at = CASE
-                    WHEN attempts.window_started_at < NOW() - INTERVAL '15 minutes' THEN NOW()
-                    ELSE attempts.window_started_at
-                  END,
-                  updated_at = NOW()
-                RETURNING failures
-            """), {"attempt_key": attempt_key}).first()
+                DELETE FROM {SESSION_STORE_TABLE} AS target
+                USING expired
+                WHERE target.category=expired.category
+                  AND target.setting_key=expired.setting_key
+            """), {
+                "category": ATTEMPT_CATEGORY,
+                "kind": ATTEMPT_RECORD_KIND,
+                "version": str(STORE_VERSION),
+            })
+            row = conn.execute(text(f"""
+                INSERT INTO {SESSION_STORE_TABLE} AS attempts(
+                    category, setting_key, value_json, source, updated_by,
+                    revision, created_at, updated_at
+                )
+                VALUES (
+                    :category, :attempt_key,
+                    jsonb_build_object(
+                      'kind', CAST(:kind AS text),
+                      'version', :version,
+                      'window_started_at', EXTRACT(EPOCH FROM clock_timestamp()),
+                      'failures', 1
+                    ),
+                    'local_auth', 'system', 1, NOW(), NOW()
+                )
+                ON CONFLICT (category, setting_key) DO UPDATE SET
+                  value_json = jsonb_build_object(
+                    'kind', CAST(:kind AS text),
+                    'version', :version,
+                    'failures', CASE
+                      WHEN CASE
+                             WHEN jsonb_typeof(attempts.value_json->'window_started_at')='number'
+                               THEN (attempts.value_json->>'window_started_at')::numeric
+                             ELSE NULL
+                           END IS NULL
+                        OR CASE
+                             WHEN jsonb_typeof(attempts.value_json->'window_started_at')='number'
+                               THEN (attempts.value_json->>'window_started_at')::numeric
+                             ELSE NULL
+                           END < EXTRACT(EPOCH FROM clock_timestamp()) - 900 THEN 1
+                      WHEN jsonb_typeof(attempts.value_json->'failures')='number'
+                       AND attempts.value_json->>'failures' ~ '^[0-9]{{1,7}}$'
+                        THEN LEAST((attempts.value_json->>'failures')::integer + 1, 1000000)
+                      ELSE 1
+                    END,
+                    'window_started_at', CASE
+                      WHEN CASE
+                             WHEN jsonb_typeof(attempts.value_json->'window_started_at')='number'
+                               THEN (attempts.value_json->>'window_started_at')::numeric
+                             ELSE NULL
+                           END IS NULL
+                        OR CASE
+                             WHEN jsonb_typeof(attempts.value_json->'window_started_at')='number'
+                               THEN (attempts.value_json->>'window_started_at')::numeric
+                             ELSE NULL
+                           END < EXTRACT(EPOCH FROM clock_timestamp()) - 900
+                        THEN EXTRACT(EPOCH FROM clock_timestamp())
+                      ELSE CASE
+                             WHEN jsonb_typeof(attempts.value_json->'window_started_at')='number'
+                               THEN (attempts.value_json->>'window_started_at')::numeric
+                             ELSE EXTRACT(EPOCH FROM clock_timestamp())
+                           END
+                    END
+                  ),
+                  source='local_auth',
+                  updated_by='system',
+                  revision=attempts.revision + 1,
+                  updated_at=NOW()
+                RETURNING (value_json->>'failures')::integer
+            """), {
+                "category": ATTEMPT_CATEGORY,
+                "attempt_key": attempt_key,
+                "kind": ATTEMPT_RECORD_KIND,
+                "version": STORE_VERSION,
+            }).first()
         return int(row[0] if row else 1)
     except Exception as exc:
         print(f"Web V2 auth: failed-attempt tracking unavailable: {type(exc).__name__}")
@@ -370,8 +465,18 @@ def _clear_attempt(attempt_key: str) -> None:
     try:
         with _engine_instance().begin() as conn:
             conn.execute(
-                text(f"DELETE FROM {ATTEMPT_TABLE} WHERE attempt_key=:attempt_key"),
-                {"attempt_key": attempt_key},
+                text(f"""
+                    DELETE FROM {SESSION_STORE_TABLE}
+                    WHERE category=:category AND setting_key=:attempt_key
+                      AND value_json->>'kind'=:kind
+                      AND value_json->>'version'=:version
+                """),
+                {
+                    "category": ATTEMPT_CATEGORY,
+                    "attempt_key": attempt_key,
+                    "kind": ATTEMPT_RECORD_KIND,
+                    "version": str(STORE_VERSION),
+                },
             )
     except Exception as exc:
         print(f"Web V2 auth: attempt cleanup unavailable: {type(exc).__name__}")
@@ -499,46 +604,101 @@ def _create_local_session(employee: dict[str, Any]) -> dict[str, Any]:
             except (TypeError, ValueError, AttributeError) as exc:
                 raise HTTPException(503, "Liên kết tài khoản Web V2 không hợp lệ.") from exc
 
+            access_hash = token_digest(access_token)
+            refresh_hash = token_digest(refresh_token)
+            session_payload = json.dumps({
+                "kind": SESSION_RECORD_KIND,
+                "version": STORE_VERSION,
+                "auth_user_id": auth_user_id,
+                "employee_username": username,
+                "access_token_hash": access_hash,
+                "refresh_token_hash": refresh_hash,
+                "credential_fingerprint": fingerprint,
+                "refresh_generation": 0,
+                "access_expires_at": int(access_expires_at.timestamp()),
+                "refresh_expires_at": int(refresh_expires_at.timestamp()),
+                "created_at": int(now.timestamp()),
+            }, ensure_ascii=False)
             conn.execute(text(f"""
-                DELETE FROM {SESSION_TABLE}
-                WHERE refresh_expires_at < NOW() - INTERVAL '7 days'
-                   OR revoked_at < NOW() - INTERVAL '7 days'
-            """))
+                WITH expired AS (
+                    SELECT category, setting_key
+                    FROM {SESSION_STORE_TABLE}
+                    WHERE category=:category
+                      AND value_json->>'kind'=:kind
+                      AND value_json->>'version'=:version
+                      AND (
+                        (
+                          jsonb_typeof(value_json->'refresh_expires_at')='number'
+                          AND value_json->'refresh_expires_at'
+                            < to_jsonb(EXTRACT(EPOCH FROM clock_timestamp()) - 604800)
+                        )
+                        OR (
+                          jsonb_typeof(value_json->'revoked_at')='number'
+                          AND value_json->'revoked_at'
+                            < to_jsonb(EXTRACT(EPOCH FROM clock_timestamp()) - 604800)
+                        )
+                      )
+                    ORDER BY updated_at
+                    LIMIT 100
+                    FOR UPDATE SKIP LOCKED
+                )
+                DELETE FROM {SESSION_STORE_TABLE} AS target
+                USING expired
+                WHERE target.category=expired.category
+                  AND target.setting_key=expired.setting_key
+            """), {
+                "category": SESSION_CATEGORY,
+                "kind": SESSION_RECORD_KIND,
+                "version": str(STORE_VERSION),
+            })
             conn.execute(text(f"""
-                INSERT INTO {SESSION_TABLE}(
-                    session_id, auth_user_id, employee_username,
-                    access_token_hash, refresh_token_hash,
-                    credential_fingerprint, access_expires_at,
-                    refresh_expires_at, created_at
+                INSERT INTO {SESSION_STORE_TABLE}(
+                    category, setting_key, value_json, source, updated_by,
+                    revision, created_at, updated_at
                 ) VALUES (
-                    CAST(:session_id AS uuid), CAST(:auth_user_id AS uuid), :username,
-                    :access_hash, :refresh_hash,
-                    :credential_fingerprint, :access_expires_at,
-                    :refresh_expires_at, NOW()
+                    :category, :session_id, CAST(:payload AS jsonb),
+                    'local_auth', :username, 1, NOW(), NOW()
                 )
             """), {
+                "category": SESSION_CATEGORY,
                 "session_id": session_id,
-                "auth_user_id": auth_user_id,
                 "username": username,
-                "access_hash": token_digest(access_token),
-                "refresh_hash": token_digest(refresh_token),
-                "credential_fingerprint": fingerprint,
-                "access_expires_at": access_expires_at,
-                "refresh_expires_at": refresh_expires_at,
+                "payload": session_payload,
             })
             conn.execute(text(f"""
                 WITH stale AS (
-                    SELECT session_id
-                    FROM {SESSION_TABLE}
-                    WHERE employee_username=:username AND revoked_at IS NULL
-                    ORDER BY created_at DESC
+                    SELECT category, setting_key
+                    FROM {SESSION_STORE_TABLE}
+                    WHERE category=:category
+                      AND value_json->>'kind'=:kind
+                      AND value_json->>'version'=:version
+                      AND value_json->>'employee_username'=:username
+                      AND value_json->>'revoked_at' IS NULL
+                    ORDER BY CASE
+                      WHEN jsonb_typeof(value_json->'created_at')='number'
+                        THEN value_json->'created_at'
+                      ELSE '0'::jsonb
+                    END DESC, setting_key DESC
                     OFFSET 10
                 )
-                UPDATE {SESSION_TABLE} AS target
-                SET revoked_at=NOW(), revoke_reason='session_limit'
+                UPDATE {SESSION_STORE_TABLE} AS target
+                SET value_json=target.value_json || jsonb_build_object(
+                      'revoked_at', EXTRACT(EPOCH FROM clock_timestamp()),
+                      'revoke_reason', 'session_limit'
+                    ),
+                    source='local_auth',
+                    updated_by=:username,
+                    revision=target.revision + 1,
+                    updated_at=clock_timestamp()
                 FROM stale
-                WHERE target.session_id=stale.session_id
-            """), {"username": username})
+                WHERE target.category=stale.category
+                  AND target.setting_key=stale.setting_key
+            """), {
+                "category": SESSION_CATEGORY,
+                "kind": SESSION_RECORD_KIND,
+                "version": str(STORE_VERSION),
+                "username": username,
+            })
     except HTTPException:
         raise
     except Exception as exc:
@@ -558,37 +718,55 @@ def _rotate_local_session(refresh_token: str) -> dict[str, Any]:
     if not valid_local_token(refresh_token, refresh=True):
         raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
     _ensure_local_auth_ready()
-    new_access_token_value = new_access_token()
-    new_refresh_token_value = new_refresh_token()
-    now = datetime.now(timezone.utc)
-    access_expires_at = now + timedelta(seconds=access_ttl_seconds())
+    old_refresh_hash = token_digest(refresh_token)
+    new_access_token_value = ""
+    new_refresh_token_value = ""
+    access_expires_at: datetime | None = None
+    auth_user_id = ""
+    employee: dict[str, Any] = {}
     credential_changed = False
 
     try:
         with _engine_instance().begin() as conn:
-            row = conn.execute(text(f"""
-                SELECT s.session_id::text AS session_id,
-                       s.auth_user_id::text AS auth_user_id,
-                       s.employee_username,
-                       s.credential_fingerprint,
-                       s.refresh_generation,
+            rows = conn.execute(text(f"""
+                SELECT s.setting_key AS session_id,
+                       s.value_json->>'auth_user_id' AS auth_user_id,
+                       s.value_json->>'employee_username' AS employee_username,
+                       s.value_json->>'credential_fingerprint' AS credential_fingerprint,
+                       CASE
+                         WHEN jsonb_typeof(s.value_json->'refresh_generation')='number'
+                          AND s.value_json->>'refresh_generation' ~ '^[0-9]{{1,9}}$'
+                           THEN (s.value_json->>'refresh_generation')::integer
+                         ELSE 0
+                       END AS refresh_generation,
                        p.is_active AS profile_active,
                        e.password_value, e.role, e.full_name, e.email,
                        e.login_locked, e.payload
-                FROM {SESSION_TABLE} s
+                FROM {SESSION_STORE_TABLE} s
                 JOIN vera_v2_user_profile p
-                  ON p.auth_user_id=s.auth_user_id
-                 AND p.employee_username=s.employee_username
-                JOIN employees e ON e.username=s.employee_username
-                WHERE s.refresh_token_hash=:refresh_hash
-                  AND s.revoked_at IS NULL
-                  AND s.refresh_expires_at > NOW()
+                  ON p.auth_user_id::text=s.value_json->>'auth_user_id'
+                 AND p.employee_username=s.value_json->>'employee_username'
+                JOIN employees e ON e.username=s.value_json->>'employee_username'
+                WHERE s.category=:category
+                  AND s.value_json->>'kind'=:kind
+                  AND s.value_json->>'version'=:version
+                  AND s.value_json->>'refresh_token_hash'=:refresh_hash
+                  AND s.value_json->>'revoked_at' IS NULL
+                  AND jsonb_typeof(s.value_json->'refresh_expires_at')='number'
+                  AND s.value_json->'refresh_expires_at'
+                        > to_jsonb(EXTRACT(EPOCH FROM clock_timestamp()))
                   AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
-                LIMIT 1
+                LIMIT 2
                 FOR UPDATE OF s
-            """), {"refresh_hash": token_digest(refresh_token)}).mappings().first()
-            if not row:
+            """), {
+                "category": SESSION_CATEGORY,
+                "kind": SESSION_RECORD_KIND,
+                "version": str(STORE_VERSION),
+                "refresh_hash": old_refresh_hash,
+            }).mappings().all()
+            if len(rows) != 1:
                 raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+            row = rows[0]
             employee = dict(row)
             if not bool(row.get("profile_active")):
                 raise HTTPException(403, "Tài khoản Web V2 đang bị vô hiệu hóa.")
@@ -604,27 +782,59 @@ def _rotate_local_session(refresh_token: str) -> dict[str, Any]:
                 str(row.get("credential_fingerprint") or ""),
                 expected_fingerprint,
             ):
-                conn.execute(text(f"""
-                    UPDATE {SESSION_TABLE}
-                    SET revoked_at=NOW(), revoke_reason='credential_changed'
-                    WHERE session_id=CAST(:session_id AS uuid)
-                """), {"session_id": row["session_id"]})
+                revoke_local_session_row(conn, str(row["session_id"]), "credential_changed")
                 credential_changed = True
             else:
-                conn.execute(text(f"""
-                    UPDATE {SESSION_TABLE}
-                    SET access_token_hash=:access_hash,
-                        refresh_token_hash=:refresh_hash,
-                        access_expires_at=:access_expires_at,
-                        refresh_generation=refresh_generation + 1,
-                        last_refreshed_at=NOW()
-                    WHERE session_id=CAST(:session_id AS uuid)
+                new_access_token_value = new_access_token()
+                new_refresh_token_value = new_refresh_token()
+                access_expires_at = datetime.now(timezone.utc) + timedelta(
+                    seconds=access_ttl_seconds()
+                )
+                old_generation = int(row.get("refresh_generation") or 0)
+                updated = conn.execute(text(f"""
+                    UPDATE {SESSION_STORE_TABLE} AS session_store
+                    SET value_json=session_store.value_json || jsonb_build_object(
+                          'access_token_hash', CAST(:new_access_hash AS text),
+                          'refresh_token_hash', CAST(:new_refresh_hash AS text),
+                          'access_expires_at', CAST(:access_expires_at AS bigint),
+                          'refresh_generation', :new_generation,
+                          'last_refreshed_at', EXTRACT(EPOCH FROM clock_timestamp())
+                        ),
+                        source='local_auth',
+                        updated_by=:username,
+                        revision=session_store.revision + 1,
+                        updated_at=clock_timestamp()
+                    WHERE category=:category
+                      AND setting_key=:session_id
+                      AND session_store.value_json->>'kind'=:kind
+                      AND session_store.value_json->>'version'=:version
+                      AND session_store.value_json->>'refresh_token_hash'=:old_refresh_hash
+                      AND session_store.value_json->>'revoked_at' IS NULL
+                      AND jsonb_typeof(session_store.value_json->'refresh_expires_at')='number'
+                      AND session_store.value_json->'refresh_expires_at'
+                            > to_jsonb(EXTRACT(EPOCH FROM clock_timestamp()))
+                      AND CASE
+                            WHEN jsonb_typeof(session_store.value_json->'refresh_generation')='number'
+                             AND session_store.value_json->>'refresh_generation' ~ '^[0-9]{{1,9}}$'
+                              THEN (session_store.value_json->>'refresh_generation')::integer
+                            ELSE 0
+                          END=:old_generation
+                    RETURNING setting_key
                 """), {
+                    "category": SESSION_CATEGORY,
                     "session_id": row["session_id"],
-                    "access_hash": token_digest(new_access_token_value),
-                    "refresh_hash": token_digest(new_refresh_token_value),
-                    "access_expires_at": access_expires_at,
-                })
+                    "username": str(row.get("employee_username") or ""),
+                    "kind": SESSION_RECORD_KIND,
+                    "version": str(STORE_VERSION),
+                    "old_refresh_hash": old_refresh_hash,
+                    "old_generation": old_generation,
+                    "new_access_hash": token_digest(new_access_token_value),
+                    "new_refresh_hash": token_digest(new_refresh_token_value),
+                    "access_expires_at": int(access_expires_at.timestamp()),
+                    "new_generation": old_generation + 1,
+                }).first()
+                if not updated:
+                    raise HTTPException(401, "Phiên đăng nhập đã được làm mới hoặc thu hồi.")
                 auth_user_id = str(row.get("auth_user_id") or "")
                 employee["username"] = str(row.get("employee_username") or "")
     except HTTPException:
@@ -635,6 +845,8 @@ def _rotate_local_session(refresh_token: str) -> dict[str, Any]:
 
     if credential_changed:
         raise HTTPException(401, "Phiên đăng nhập đã bị thu hồi sau khi đổi mật khẩu.")
+    if not access_expires_at or not new_access_token_value or not new_refresh_token_value:
+        raise HTTPException(503, "Không làm mới được phiên đăng nhập PostgreSQL.")
 
     return _local_session_response(
         access_token=new_access_token_value,
@@ -652,10 +864,26 @@ def _revoke_local_session(refresh_token: str) -> None:
     try:
         with _engine_instance().begin() as conn:
             conn.execute(text(f"""
-                UPDATE {SESSION_TABLE}
-                SET revoked_at=COALESCE(revoked_at, NOW()), revoke_reason='logout'
-                WHERE refresh_token_hash=:refresh_hash
-            """), {"refresh_hash": token_digest(refresh_token)})
+                UPDATE {SESSION_STORE_TABLE}
+                SET value_json=value_json || jsonb_build_object(
+                      'revoked_at', EXTRACT(EPOCH FROM clock_timestamp()),
+                      'revoke_reason', 'logout'
+                    ),
+                    source='local_auth',
+                    updated_by='system',
+                    revision=revision + 1,
+                    updated_at=clock_timestamp()
+                WHERE category=:category
+                  AND value_json->>'kind'=:kind
+                  AND value_json->>'version'=:version
+                  AND value_json->>'refresh_token_hash'=:refresh_hash
+                  AND value_json->>'revoked_at' IS NULL
+            """), {
+                "category": SESSION_CATEGORY,
+                "kind": SESSION_RECORD_KIND,
+                "version": str(STORE_VERSION),
+                "refresh_hash": token_digest(refresh_token),
+            })
     except Exception as exc:
         print(f"Web V2 local auth: logout revocation unavailable: {type(exc).__name__}")
         raise HTTPException(503, "Chưa thu hồi được phiên đăng nhập PostgreSQL.") from exc
@@ -695,7 +923,17 @@ def install_auth_gateway(
                             'Đang làm việc'
                           ) = 'Đang làm việc'
                 """)).scalar_one())
-                conn.execute(text(f"SELECT 1 FROM {SESSION_TABLE} LIMIT 1"))
+                conn.execute(text(f"""
+                    SELECT 1 FROM {SESSION_STORE_TABLE}
+                    WHERE category=:category
+                      AND value_json->>'kind'=:kind
+                      AND value_json->>'version'=:version
+                    LIMIT 1
+                """), {
+                    "category": SESSION_CATEGORY,
+                    "kind": SESSION_RECORD_KIND,
+                    "version": str(STORE_VERSION),
+                })
             if linked_profiles < 1:
                 raise HTTPException(503, "Chưa có tài khoản Web V2 hoạt động trong PostgreSQL.")
             return {

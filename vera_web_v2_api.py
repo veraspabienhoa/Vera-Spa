@@ -44,11 +44,15 @@ from vera_google_credentials import google_credentials
 from vera_leave_registration_shared import summarize_leave_day
 from vera_json import json_safe, json_text
 from vera_web_v2_local_auth import (
-    SESSION_TABLE,
+    SESSION_CATEGORY,
+    SESSION_RECORD_KIND,
+    SESSION_STORE_TABLE,
+    STORE_VERSION,
     credential_fingerprint,
     ensure_local_auth_schema,
     is_local_access_token,
     local_auth_enabled,
+    revoke_local_session_row,
     token_digest,
     valid_local_token,
 )
@@ -565,26 +569,39 @@ def _current_local_identity(token: str) -> Identity:
         engine = _engine_instance()
         ensure_local_auth_schema(engine)
         with engine.begin() as conn:
-            row = conn.execute(text(f"""
-                SELECT s.session_id::text, s.auth_user_id::text,
-                       s.employee_username, s.credential_fingerprint,
+            rows = conn.execute(text(f"""
+                SELECT s.setting_key AS session_id,
+                       s.value_json->>'auth_user_id' AS auth_user_id,
+                       s.value_json->>'employee_username' AS employee_username,
+                       s.value_json->>'credential_fingerprint' AS credential_fingerprint,
                        p.role, p.is_active,
                        COALESCE(e.full_name,'') AS full_name,
                        COALESCE(e.email,'') AS email,
                        e.password_value, e.login_locked, e.payload
-                FROM {SESSION_TABLE} s
+                FROM {SESSION_STORE_TABLE} s
                 JOIN vera_v2_user_profile p
-                  ON p.auth_user_id=s.auth_user_id
-                 AND p.employee_username=s.employee_username
-                JOIN employees e ON e.username=s.employee_username
-                WHERE s.access_token_hash=:access_hash
-                  AND s.revoked_at IS NULL
-                  AND s.access_expires_at > NOW()
+                  ON p.auth_user_id::text=s.value_json->>'auth_user_id'
+                 AND p.employee_username=s.value_json->>'employee_username'
+                JOIN employees e ON e.username=s.value_json->>'employee_username'
+                WHERE s.category=:category
+                  AND s.value_json->>'kind'=:kind
+                  AND s.value_json->>'version'=:version
+                  AND s.value_json->>'access_token_hash'=:access_hash
+                  AND s.value_json->>'revoked_at' IS NULL
+                  AND jsonb_typeof(s.value_json->'access_expires_at')='number'
+                  AND s.value_json->'access_expires_at'
+                        > to_jsonb(EXTRACT(EPOCH FROM clock_timestamp()))
                   AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
-                LIMIT 1
-            """), {"access_hash": token_digest(token)}).mappings().first()
-            if not row:
+                LIMIT 2
+            """), {
+                "category": SESSION_CATEGORY,
+                "kind": SESSION_RECORD_KIND,
+                "version": str(STORE_VERSION),
+                "access_hash": token_digest(token),
+            }).mappings().all()
+            if len(rows) != 1:
                 raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+            row = rows[0]
             expected_fingerprint = credential_fingerprint(
                 row.get("employee_username"),
                 row.get("password_value"),
@@ -593,11 +610,7 @@ def _current_local_identity(token: str) -> Identity:
                 str(row.get("credential_fingerprint") or ""),
                 expected_fingerprint,
             ):
-                conn.execute(text(f"""
-                    UPDATE {SESSION_TABLE}
-                    SET revoked_at=NOW(), revoke_reason='credential_changed'
-                    WHERE session_id=CAST(:session_id AS uuid)
-                """), {"session_id": row["session_id"]})
+                revoke_local_session_row(conn, str(row["session_id"]), "credential_changed")
                 credential_changed = True
             elif not bool(row.get("is_active")):
                 raise HTTPException(403, "Tài khoản Web V2 đang bị vô hiệu hóa.")

@@ -10,8 +10,9 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
 const apiBase = (import.meta.env.VITE_VERA_API_BASE_URL?.trim() || 'https://api.veraspa.vn').replace(/\/$/, '')
 const API_SESSION_KEY = 'vera-v2-api-auth-session'
 const apiAuthListeners = new Set()
-let refreshPromise = null
+let refreshState = null
 let volatileApiSession = null
+let authEpoch = 0
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 export const isAuthConfigured = Boolean(apiBase)
@@ -29,16 +30,20 @@ export const supabase = isSupabaseConfigured
     })
   : null
 
-const readApiSession = () => {
-  if (volatileApiSession) return volatileApiSession
+const parseApiSession = (raw) => {
   try {
-    const raw = window.localStorage.getItem(API_SESSION_KEY)
     const session = raw ? JSON.parse(raw) : null
     return session?.access_token && session?.refresh_token && session?.user ? session : null
   } catch {
     return null
   }
 }
+
+const readStoredApiSession = () => {
+  try { return parseApiSession(window.localStorage.getItem(API_SESSION_KEY)) } catch { return null }
+}
+
+const readApiSession = () => readStoredApiSession() || volatileApiSession
 
 const notifyApiAuth = (event, session) => {
   apiAuthListeners.forEach((listener) => {
@@ -63,9 +68,17 @@ const saveApiSession = (payload, event = 'SIGNED_IN') => {
   return session
 }
 
-const clearApiSession = () => {
+const clearApiSession = (expectedRefreshToken = '') => {
+  const stored = readStoredApiSession()
+  const currentToken = stored?.refresh_token || volatileApiSession?.refresh_token || ''
+  if (expectedRefreshToken && currentToken && currentToken !== expectedRefreshToken) {
+    volatileApiSession = stored || volatileApiSession
+    return false
+  }
+  authEpoch += 1
   volatileApiSession = null
   try { window.localStorage.removeItem(API_SESSION_KEY) } catch { /* private browsing may block storage */ }
+  return true
 }
 
 const apiAuthRequest = async (path, body) => {
@@ -89,6 +102,7 @@ export async function signInWithVeraPassword(username, password) {
 
   try {
     const payload = await apiAuthRequest('/v2/auth/login', { username: cleanUsername, password })
+    authEpoch += 1
     return saveApiSession(payload)
   } catch (error) {
     // Authentication is owned by api.veraspa.vn. Do not retry through the
@@ -102,21 +116,33 @@ export async function signInWithVeraPassword(username, password) {
 }
 
 const refreshApiSession = async (session) => {
-  if (!refreshPromise) {
-    refreshPromise = apiAuthRequest('/v2/auth/refresh', { refresh_token: session.refresh_token })
-      .then((payload) => saveApiSession(payload, 'TOKEN_REFRESHED'))
-      .finally(() => { refreshPromise = null })
-  }
-  return refreshPromise
+  const attemptedToken = session.refresh_token
+  if (refreshState?.token === attemptedToken) return refreshState.promise
+
+  const epoch = authEpoch
+  const state = { token: attemptedToken, epoch, promise: null }
+  state.promise = apiAuthRequest('/v2/auth/refresh', { refresh_token: attemptedToken })
+    .then((payload) => {
+      const current = readStoredApiSession() || readApiSession()
+      if (authEpoch !== epoch || current?.refresh_token !== attemptedToken) return current
+      return saveApiSession(payload, 'TOKEN_REFRESHED')
+    })
+    .finally(() => {
+      if (refreshState === state) refreshState = null
+    })
+  refreshState = state
+  return state.promise
 }
 
 export async function refreshCurrentSession(session = readApiSession()) {
   if (!session?.refresh_token) return null
+  const attemptedToken = session.refresh_token
   try {
     return await refreshApiSession(session)
   } catch (error) {
-    clearApiSession()
-    notifyApiAuth('SIGNED_OUT', null)
+    const current = readStoredApiSession() || readApiSession()
+    if (current?.refresh_token && current.refresh_token !== attemptedToken) return current
+    if (clearApiSession(attemptedToken)) notifyApiAuth('SIGNED_OUT', null)
     throw error
   }
 }
@@ -129,8 +155,10 @@ export async function getCurrentSession() {
     try {
       return await refreshApiSession(apiSession)
     } catch {
-      if (Number(apiSession.expires_at || 0) > now + 5) return apiSession
-      clearApiSession()
+      const current = readStoredApiSession() || readApiSession()
+      if (current?.refresh_token && current.refresh_token !== apiSession.refresh_token) return current
+      if (Number(apiSession.expires_at || 0) > now + 5) return current || apiSession
+      if (clearApiSession(apiSession.refresh_token)) notifyApiAuth('SIGNED_OUT', null)
     }
   }
   return null
@@ -145,9 +173,17 @@ export async function signOutVera() {
   const session = readApiSession()
   // Local logout must be immediate even if the revoke request is slow or the
   // API is temporarily unreachable. Server-side revocation remains best effort.
-  clearApiSession()
-  if (session) notifyApiAuth('SIGNED_OUT', null)
+  if (clearApiSession(session?.refresh_token || '')) notifyApiAuth('SIGNED_OUT', null)
   if (session?.refresh_token) {
     await apiAuthRequest('/v2/auth/logout', { refresh_token: session.refresh_token }).catch(() => {})
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== API_SESSION_KEY) return
+    authEpoch += 1
+    volatileApiSession = parseApiSession(event.newValue)
+    notifyApiAuth(volatileApiSession ? 'SIGNED_IN' : 'SIGNED_OUT', volatileApiSession)
+  })
 }

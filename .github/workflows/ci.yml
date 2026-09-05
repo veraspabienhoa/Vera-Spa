@@ -108,14 +108,29 @@ jobs:
 
           checks = {
               'opaque access and refresh token prefixes': 'vera_at_' in local_auth and 'vera_rt_' in local_auth,
-              'only token digests are persisted': 'access_token_hash' in local_auth and 'refresh_token_hash' in local_auth,
-              'runtime schema checks are read-only': 'if migrate:' in local_auth and 'with engine.connect() as conn:' in local_auth,
+              'only token digests are persisted': 'access_token_hash' in gateway and 'refresh_token_hash' in gateway and 'token_digest(' in gateway,
+              'Auth uses reserved existing app-setting namespaces': all(item in local_auth for item in (
+                  'public.vera_app_setting',
+                  '__vera_local_auth_session_v1__',
+                  '__vera_local_auth_attempt_v1__',
+              )),
+              'Auth cutover requires no runtime DDL': not any(
+                  statement in local_auth.upper()
+                  for statement in ('CREATE TABLE', 'ALTER TABLE', 'DROP TABLE')
+              ),
+              'deploy validates real app-setting CRUD before cutover': 'write_probe=True' in local_auth and 'ON CONFLICT (category, setting_key)' in local_auth,
               'login switches on explicit local provider': 'if local_auth_enabled()' in gateway,
-              'local refresh rotates its token': '_rotate_local_session' in gateway,
+              'local refresh rotates with replay-safe CAS': all(item in gateway for item in (
+                  '_rotate_local_session',
+                  'old_refresh_hash',
+                  'old_generation',
+                  'RETURNING setting_key',
+              )),
+              'local token lookups fail closed on duplicate digests': 'if len(rows) != 1:' in gateway and 'if len(rows) != 1:' in api,
               'local logout revokes its session': '@app.post("/v2/auth/logout")' in gateway,
               'API rejects cross-provider access tokens': 'if not is_local_access_token(token)' in api,
               'password changes revoke local sessions': 'revoke_local_sessions' in Path('vera_web_v2_profile.py').read_text(encoding='utf-8'),
-              'deploy activates local provider after migration': deploy.index('/opt/vera-spa/.venv/bin/python "$local_auth_migrator"') < deploy.index('export VERA_AUTH_PROVIDER=local'),
+              'deploy activates local provider after store validation': deploy.index('/opt/vera-spa/.venv/bin/python "$local_auth_migrator"') < deploy.index('export VERA_AUTH_PROVIDER=local'),
               'deploy selects scripts from active release': all(item in workflow for item in (
                   'readlink -f',
                   '${release_dir}/configure_vps_database.sh',
@@ -123,6 +138,8 @@ jobs:
               )),
               'browser disables Supabase session persistence': 'persistSession: false' in client and 'autoRefreshToken: false' in client,
               'browser uses API logout': "apiAuthRequest('/v2/auth/logout'" in client,
+              'browser preserves a newer cross-tab session': 'expectedRefreshToken' in client and 'current.refresh_token !== attemptedToken' in client,
+              'browser invalidates in-flight refresh on logout': 'authEpoch' in client and 'authEpoch !== epoch' in client,
           }
           failed = [name for name, ok in checks.items() if not ok]
           for name, ok in checks.items():

@@ -32,24 +32,18 @@ TABLES = (
     "payroll_history_rows",
     "vera_dataset_cache",
     "vera_primary_dataset",
-    "vera_source_row",
+    "vera_app_setting",
 )
-LOCAL_AUTH_TABLE = "vera_v2_local_auth_session"
-AUTH_ATTEMPT_TABLE = "vera_v2_auth_attempt"
+LOCAL_AUTH_STORE_TABLE = "vera_app_setting"
 LOCAL_AUTH_COLUMNS = {
-    "session_id",
-    "auth_user_id",
-    "employee_username",
-    "access_token_hash",
-    "refresh_token_hash",
-    "credential_fingerprint",
-    "refresh_generation",
-    "access_expires_at",
-    "refresh_expires_at",
+    "category",
+    "setting_key",
+    "value_json",
+    "source",
+    "updated_by",
+    "revision",
     "created_at",
-    "last_refreshed_at",
-    "revoked_at",
-    "revoke_reason",
+    "updated_at",
 }
 
 
@@ -110,11 +104,9 @@ def main() -> None:
     provider = str(environment.get("VERA_AUTH_PROVIDER") or "").strip().lower()
     if provider != "local":
         raise SystemExit("DATA CHECK FAILED: running API did not inherit VERA_AUTH_PROVIDER=local")
-    if LOCAL_AUTH_TABLE not in existing:
-        raise SystemExit(f"DATA CHECK FAILED: missing {LOCAL_AUTH_TABLE}")
-    if AUTH_ATTEMPT_TABLE not in existing:
-        raise SystemExit(f"DATA CHECK FAILED: missing {AUTH_ATTEMPT_TABLE}")
-    auth_columns = {str(item["name"]) for item in inspector.get_columns(LOCAL_AUTH_TABLE)}
+    if LOCAL_AUTH_STORE_TABLE not in existing:
+        raise SystemExit(f"DATA CHECK FAILED: missing {LOCAL_AUTH_STORE_TABLE}")
+    auth_columns = {str(item["name"]) for item in inspector.get_columns(LOCAL_AUTH_STORE_TABLE)}
     missing_auth_columns = sorted(LOCAL_AUTH_COLUMNS - auth_columns)
     if missing_auth_columns:
         raise SystemExit(
@@ -123,6 +115,19 @@ def main() -> None:
     counts: dict[str, int | None] = {}
     with engine.connect() as connection:
         connection.execute(text("SELECT 1")).scalar_one()
+        if not bool(connection.execute(
+            text("SELECT has_schema_privilege(current_user, 'public', 'USAGE')")
+        ).scalar_one()):
+            raise SystemExit("DATA CHECK FAILED: runtime role lacks USAGE on schema public")
+        privileges = connection.execute(text("""
+            SELECT
+              has_table_privilege(current_user, 'public.vera_app_setting', 'SELECT'),
+              has_table_privilege(current_user, 'public.vera_app_setting', 'INSERT'),
+              has_table_privilege(current_user, 'public.vera_app_setting', 'UPDATE'),
+              has_table_privilege(current_user, 'public.vera_app_setting', 'DELETE')
+        """)).one()
+        if not all(bool(item) for item in privileges):
+            raise SystemExit("DATA CHECK FAILED: runtime role lacks CRUD access to vera_app_setting")
         linked_profiles = int(connection.execute(text("""
             SELECT COUNT(*)
             FROM vera_v2_user_profile p
@@ -159,7 +164,7 @@ def main() -> None:
 
     print("DATA CHECK: database connection OK")
     print("DATA CHECK: auth_provider=local")
-    print(f"DATA CHECK: {LOCAL_AUTH_TABLE}=ready")
+    print("DATA CHECK: local_auth_store=vera_app_setting namespaces ready")
     print(f"DATA CHECK: linked_auth_profiles={linked_profiles}")
     print("DATA CHECK: admin_auth_profile=ready" if admin_profiles == 1 else "DATA CHECK: admin_auth_profile=invalid")
     for table, count in counts.items():

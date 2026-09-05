@@ -1,14 +1,18 @@
 """PostgreSQL-backed sessions for Vera Spa Web V2.
 
-The browser treats access and refresh tokens as opaque values.  Only SHA-256
-digests are stored in PostgreSQL, so a database read of the session table does
-not reveal reusable bearer tokens.  Authorization data is deliberately not
-stored in the token: every API request reloads the linked profile and employee
-status from PostgreSQL.
+The browser treats access and refresh tokens as opaque values. Only SHA-256
+digests are persisted, so a database read cannot reveal reusable bearer tokens.
+
+Production's ``vera_dev`` role intentionally has no CREATE privilege on the
+public schema. Runtime Auth records therefore live in isolated categories inside
+the existing ``vera_app_setting`` table rather than requiring deployment-time
+DDL. The deploy probe verifies real SELECT/INSERT/UPDATE/DELETE access before
+the service is switched away from Supabase Auth.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -21,31 +25,20 @@ from sqlalchemy import text
 
 ACCESS_TOKEN_PREFIX = "vera_at_"
 REFRESH_TOKEN_PREFIX = "vera_rt_"
-SESSION_TABLE_NAME = "vera_v2_local_auth_session"
-SESSION_TABLE = f"public.{SESSION_TABLE_NAME}"
-ATTEMPT_TABLE_NAME = "vera_v2_auth_attempt"
-ATTEMPT_TABLE = f"public.{ATTEMPT_TABLE_NAME}"
-SCHEMA_VERSION = 1
-SCHEMA_VERSION_TABLE = "public.vera_local_auth_schema_version"
-REQUIRED_SESSION_COLUMNS = {
-    "session_id",
-    "auth_user_id",
-    "employee_username",
-    "access_token_hash",
-    "refresh_token_hash",
-    "credential_fingerprint",
-    "refresh_generation",
-    "access_expires_at",
-    "refresh_expires_at",
+SESSION_STORE_TABLE = "public.vera_app_setting"
+SESSION_CATEGORY = "__vera_local_auth_session_v1__"
+ATTEMPT_CATEGORY = "__vera_local_auth_attempt_v1__"
+SESSION_RECORD_KIND = "vera_local_auth_session"
+ATTEMPT_RECORD_KIND = "vera_local_auth_attempt"
+STORE_VERSION = 1
+REQUIRED_STORE_COLUMNS = {
+    "category",
+    "setting_key",
+    "value_json",
+    "source",
+    "updated_by",
+    "revision",
     "created_at",
-    "last_refreshed_at",
-    "revoked_at",
-    "revoke_reason",
-}
-REQUIRED_ATTEMPT_COLUMNS = {
-    "attempt_key",
-    "window_started_at",
-    "failures",
     "updated_at",
 }
 _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{48,160}$")
@@ -119,64 +112,101 @@ def credential_fingerprint(username: Any, password_value: Any) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _validate_local_auth_schema(conn) -> None:
-    missing_tables = []
-    for table_name in (SESSION_TABLE_NAME, ATTEMPT_TABLE_NAME):
-        if not conn.execute(
-            text("SELECT to_regclass(:table_name)"),
-            {"table_name": f"public.{table_name}"},
-        ).scalar_one_or_none():
-            missing_tables.append(table_name)
-    if missing_tables:
-        raise RuntimeError("missing local Auth tables: " + ", ".join(missing_tables))
+def _validate_local_auth_store(conn, *, write_probe: bool = False) -> None:
+    if not bool(conn.execute(
+        text("SELECT has_schema_privilege(current_user, 'public', 'USAGE')")
+    ).scalar_one()):
+        raise RuntimeError("runtime role lacks USAGE on schema public")
 
-    for table_name, required_columns in (
-        (SESSION_TABLE_NAME, REQUIRED_SESSION_COLUMNS),
-        (ATTEMPT_TABLE_NAME, REQUIRED_ATTEMPT_COLUMNS),
-    ):
-        columns = {
-            str(row[0])
-            for row in conn.execute(text("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema='public' AND table_name=:table_name
-            """), {"table_name": table_name})
-        }
-        missing_columns = sorted(required_columns - columns)
-        if missing_columns:
-            raise RuntimeError(
-                f"incomplete {table_name} schema: " + ", ".join(missing_columns)
-            )
+    exists = conn.execute(
+        text("SELECT to_regclass(:table_name)"),
+        {"table_name": SESSION_STORE_TABLE},
+    ).scalar_one_or_none()
+    if not exists:
+        raise RuntimeError("missing PostgreSQL runtime store: vera_app_setting")
 
-    row = conn.execute(text("""
-        SELECT c.relrowsecurity, c.relforcerowsecurity,
-               pg_get_userbyid(c.relowner)=current_user AS owns_table
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname='public' AND c.relname=:table_name
-    """), {"table_name": SESSION_TABLE_NAME}).mappings().one()
-    if (
-        not bool(row.get("relrowsecurity"))
-        or bool(row.get("relforcerowsecurity"))
-        or not bool(row.get("owns_table"))
-    ):
-        raise RuntimeError("local Auth session table ownership/RLS is not safe for the runtime role")
-
-    constraints = {
-        str(row[0]): int(row[1])
+    columns = {
+        str(row[0])
         for row in conn.execute(text("""
-            SELECT contype, COUNT(*)
-            FROM pg_constraint
-            WHERE conrelid=to_regclass(:table_name)
-            GROUP BY contype
-        """), {"table_name": SESSION_TABLE})
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='vera_app_setting'
+        """))
     }
-    if constraints.get("p", 0) < 1 or constraints.get("u", 0) < 2 or constraints.get("f", 0) < 2:
-        raise RuntimeError("local Auth session constraints are incomplete")
+    missing_columns = sorted(REQUIRED_STORE_COLUMNS - columns)
+    if missing_columns:
+        raise RuntimeError("incomplete vera_app_setting schema: " + ", ".join(missing_columns))
+
+    privileges = conn.execute(text("""
+        SELECT
+          has_table_privilege(current_user, :table_name, 'SELECT') AS can_select,
+          has_table_privilege(current_user, :table_name, 'INSERT') AS can_insert,
+          has_table_privilege(current_user, :table_name, 'UPDATE') AS can_update,
+          has_table_privilege(current_user, :table_name, 'DELETE') AS can_delete
+    """), {"table_name": SESSION_STORE_TABLE}).mappings().one()
+    if not all(bool(privileges.get(key)) for key in ("can_select", "can_insert", "can_update", "can_delete")):
+        raise RuntimeError("runtime role lacks CRUD access to vera_app_setting")
+
+    if not write_probe:
+        return
+
+    probe_id = "probe-" + secrets.token_hex(16)
+    probe_payload = json.dumps({"kind": "local_auth_probe", "state": 1})
+    inserted = conn.execute(text(f"""
+        INSERT INTO {SESSION_STORE_TABLE}(
+            category, setting_key, value_json, source, updated_by,
+            revision, created_at, updated_at
+        ) VALUES (
+            :category, :setting_key, CAST(:payload AS jsonb),
+            'local_auth', 'deploy_probe', 1, NOW(), NOW()
+        )
+        RETURNING setting_key
+    """), {
+        "category": SESSION_CATEGORY,
+        "setting_key": probe_id,
+        "payload": probe_payload,
+    }).scalar_one()
+    if inserted != probe_id:
+        raise RuntimeError("PostgreSQL runtime store insert probe failed")
+    updated = conn.execute(text(f"""
+        INSERT INTO {SESSION_STORE_TABLE} AS auth_probe(
+            category, setting_key, value_json, source, updated_by,
+            revision, created_at, updated_at
+        ) VALUES (
+            :category, :setting_key, CAST(:payload AS jsonb),
+            'local_auth', 'deploy_probe', 1, NOW(), NOW()
+        )
+        ON CONFLICT (category, setting_key) DO UPDATE SET
+          value_json=auth_probe.value_json || jsonb_build_object('state', 2),
+          source='local_auth',
+          updated_by='deploy_probe',
+          revision=auth_probe.revision + 1,
+          updated_at=NOW()
+        RETURNING value_json->>'state'
+    """), {
+        "category": SESSION_CATEGORY,
+        "setting_key": probe_id,
+        "payload": probe_payload,
+    }).scalar_one()
+    if updated != "2":
+        raise RuntimeError("PostgreSQL runtime store update probe failed")
+    state = conn.execute(text(f"""
+        SELECT value_json->>'state'
+        FROM {SESSION_STORE_TABLE}
+        WHERE category=:category AND setting_key=:setting_key
+    """), {"category": SESSION_CATEGORY, "setting_key": probe_id}).scalar_one()
+    if state != "2":
+        raise RuntimeError("PostgreSQL runtime store write probe did not round-trip")
+    deleted = conn.execute(text(f"""
+        DELETE FROM {SESSION_STORE_TABLE}
+        WHERE category=:category AND setting_key=:setting_key
+    """), {"category": SESSION_CATEGORY, "setting_key": probe_id})
+    if int(deleted.rowcount or 0) != 1:
+        raise RuntimeError("PostgreSQL runtime store delete probe failed")
 
 
 def ensure_local_auth_schema(engine, *, migrate: bool = False) -> None:
-    """Migrate at deploy time; perform only read-only validation at runtime."""
+    """Validate the existing runtime store; deploy mode also performs a CRUD probe."""
     global _SCHEMA_READY
     if _SCHEMA_READY and not migrate:
         return
@@ -184,109 +214,82 @@ def ensure_local_auth_schema(engine, *, migrate: bool = False) -> None:
         if _SCHEMA_READY and not migrate:
             return
         if migrate:
-            with engine.begin() as conn:
-                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
-                conn.execute(text("SET LOCAL statement_timeout = '30s'"))
-                conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera-local-auth-schema-v1'))"))
-                conn.execute(text(f"""
-                    CREATE TABLE IF NOT EXISTS {SCHEMA_VERSION_TABLE} (
-                        component text PRIMARY KEY,
-                        version integer NOT NULL,
-                        updated_at timestamptz NOT NULL DEFAULT NOW()
-                    )
-                """))
-                conn.execute(text(f"""
-                    CREATE TABLE IF NOT EXISTS {ATTEMPT_TABLE} (
-                        attempt_key char(64) PRIMARY KEY,
-                        window_started_at timestamptz NOT NULL DEFAULT NOW(),
-                        failures integer NOT NULL DEFAULT 0,
-                        updated_at timestamptz NOT NULL DEFAULT NOW()
-                    )
-                """))
-                conn.execute(text(f"""
-                    CREATE INDEX IF NOT EXISTS idx_vera_v2_auth_attempt_updated
-                    ON {ATTEMPT_TABLE}(updated_at)
-                """))
-                conn.execute(text(f"""
-                    CREATE TABLE IF NOT EXISTS {SESSION_TABLE} (
-                        session_id uuid PRIMARY KEY,
-                        auth_user_id uuid NOT NULL
-                            REFERENCES public.vera_v2_user_profile(auth_user_id)
-                            ON UPDATE CASCADE ON DELETE CASCADE,
-                        employee_username text NOT NULL
-                            REFERENCES public.employees(username)
-                            ON UPDATE CASCADE ON DELETE CASCADE,
-                        access_token_hash char(64) NOT NULL UNIQUE,
-                        refresh_token_hash char(64) NOT NULL UNIQUE,
-                        credential_fingerprint char(64) NOT NULL,
-                        refresh_generation integer NOT NULL DEFAULT 0,
-                        access_expires_at timestamptz NOT NULL,
-                        refresh_expires_at timestamptz NOT NULL,
-                        created_at timestamptz NOT NULL DEFAULT NOW(),
-                        last_refreshed_at timestamptz,
-                        revoked_at timestamptz,
-                        revoke_reason text NOT NULL DEFAULT ''
-                    )
-                """))
-                conn.execute(text(f"""
-                    CREATE INDEX IF NOT EXISTS idx_vera_v2_local_auth_employee_active
-                    ON {SESSION_TABLE}(employee_username, created_at DESC)
-                    WHERE revoked_at IS NULL
-                """))
-                conn.execute(text(f"""
-                    CREATE INDEX IF NOT EXISTS idx_vera_v2_local_auth_auth_user
-                    ON {SESSION_TABLE}(auth_user_id)
-                """))
-                conn.execute(text(f"""
-                    CREATE INDEX IF NOT EXISTS idx_vera_v2_local_auth_employee
-                    ON {SESSION_TABLE}(employee_username)
-                """))
-                conn.execute(text(f"""
-                    CREATE INDEX IF NOT EXISTS idx_vera_v2_local_auth_expiry
-                    ON {SESSION_TABLE}(refresh_expires_at)
-                """))
-                conn.execute(text(f"ALTER TABLE {SESSION_TABLE} ENABLE ROW LEVEL SECURITY"))
-                conn.execute(text(f"REVOKE ALL ON TABLE {SESSION_TABLE} FROM PUBLIC"))
-                conn.execute(text(f"""
-                    INSERT INTO {SCHEMA_VERSION_TABLE} AS versions(component, version, updated_at)
-                    VALUES ('local_auth_sessions', :version, NOW())
-                    ON CONFLICT (component) DO UPDATE SET
-                      version=GREATEST(versions.version, EXCLUDED.version),
-                      updated_at=NOW()
-                """), {"version": SCHEMA_VERSION})
-                _validate_local_auth_schema(conn)
+            with engine.connect() as conn:
+                transaction = conn.begin()
+                try:
+                    conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+                    conn.execute(text("SET LOCAL statement_timeout = '30s'"))
+                    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera-local-auth-store-v1'))"))
+                    _validate_local_auth_store(conn, write_probe=True)
+                finally:
+                    # Roll back both the sentinel and any audit-trigger side effects.
+                    transaction.rollback()
         else:
             with engine.connect() as conn:
-                _validate_local_auth_schema(conn)
+                _validate_local_auth_store(conn)
         _SCHEMA_READY = True
 
 
-def revoke_local_sessions(conn, employee_username: str, reason: str) -> int:
-    """Revoke every live local session if the session table is present."""
-    exists = conn.execute(text("SELECT to_regclass(:table_name)"), {
-        "table_name": SESSION_TABLE,
-    }).scalar_one_or_none()
-    if not exists:
-        return 0
+def revoke_local_session_row(conn, session_id: str, reason: str) -> int:
     result = conn.execute(text(f"""
-        UPDATE {SESSION_TABLE}
-        SET revoked_at=COALESCE(revoked_at, NOW()), revoke_reason=:reason
-        WHERE employee_username=:username AND revoked_at IS NULL
+        UPDATE {SESSION_STORE_TABLE}
+        SET value_json=value_json || jsonb_build_object(
+              'revoked_at', EXTRACT(EPOCH FROM clock_timestamp()),
+              'revoke_reason', CAST(:reason AS text)
+            ),
+            source='local_auth',
+            updated_by='system',
+            revision=revision + 1,
+            updated_at=clock_timestamp()
+        WHERE category=:category
+          AND setting_key=:session_id
+          AND value_json->>'kind'=:kind
+          AND value_json->>'version'=:version
+          AND value_json->>'revoked_at' IS NULL
     """), {
+        "category": SESSION_CATEGORY,
+        "session_id": str(session_id or ""),
+        "reason": str(reason or "account_changed")[:120],
+        "kind": SESSION_RECORD_KIND,
+        "version": str(STORE_VERSION),
+    })
+    return int(result.rowcount or 0)
+
+
+def revoke_local_sessions(conn, employee_username: str, reason: str) -> int:
+    """Revoke every live local session for one canonical employee username."""
+    result = conn.execute(text(f"""
+        UPDATE {SESSION_STORE_TABLE}
+        SET value_json=value_json || jsonb_build_object(
+              'revoked_at', EXTRACT(EPOCH FROM clock_timestamp()),
+              'revoke_reason', CAST(:reason AS text)
+            ),
+            source='local_auth',
+            updated_by='system',
+            revision=revision + 1,
+            updated_at=clock_timestamp()
+        WHERE category=:category
+          AND value_json->>'kind'=:kind
+          AND value_json->>'version'=:version
+          AND value_json->>'employee_username'=:username
+          AND value_json->>'revoked_at' IS NULL
+    """), {
+        "category": SESSION_CATEGORY,
         "username": str(employee_username or "").strip(),
         "reason": str(reason or "account_changed")[:120],
+        "kind": SESSION_RECORD_KIND,
+        "version": str(STORE_VERSION),
     })
     return int(result.rowcount or 0)
 
 
 def main() -> None:
-    """Deployment-time schema validation entrypoint."""
+    """Deployment-time store and account validation entrypoint."""
     from vera_web_v2_api import _engine_instance
 
     engine = _engine_instance()
     ensure_local_auth_schema(engine, migrate=True)
     with engine.connect() as conn:
-        conn.execute(text(f"SELECT 1 FROM {SESSION_TABLE} LIMIT 1"))
         linked_profiles = int(conn.execute(text("""
             SELECT COUNT(*)
             FROM public.vera_v2_user_profile p
@@ -318,7 +321,7 @@ def main() -> None:
         raise RuntimeError("no active Web V2 profile is linked to an employee")
     if admin_profiles != 1:
         raise RuntimeError("the admin Web V2 profile is missing, inactive, or duplicated")
-    print("LOCAL AUTH SCHEMA: PostgreSQL session storage ready")
+    print("LOCAL AUTH STORE: PostgreSQL vera_app_setting namespaces ready")
 
 
 if __name__ == "__main__":
