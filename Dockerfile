@@ -7,9 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# libpq5 cho PostgreSQL; ca-certificates cho HTTPS.
+# libpq5 cho PostgreSQL; postgresql-client cung cap pg_dump/pg_restore cho migration; ca-certificates cho HTTPS.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 ca-certificates \
+    && apt-get install -y --no-install-recommends libpq5 postgresql-client ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -20,6 +20,6 @@ RUN pip install --upgrade pip \
 
 COPY . .
 
-# Cloud Run service dùng CMD này. Cloud Run Job sẽ override command/args thành:
+# Cloud Run service dung CMD nay. Cloud Run Job se override command/args thanh:
 #   python timesoft_sync_job.py
 CMD ["sh", "-c", "streamlit run app.py --server.address=0.0.0.0 --server.port=${PORT:-8080} --server.headless=true --browser.gatherUsageStats=false"]
