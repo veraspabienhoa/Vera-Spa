@@ -1,8 +1,8 @@
 """Report safe production data-source counts without exposing credentials.
 
-The VPS deploy user does not necessarily inherit the API service environment.
-This check reuses only the DB_* variables from the running Web V2 API process,
-then prints aggregate row counts for deployment verification.
+The check prefers the same private managed file loaded by the API.  It falls
+back to the process's initial environment for deployments that have not adopted
+that file yet, then prints only aggregate verification results.
 """
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import URL
+
+from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_environment
 
 
 API_MARKER = "vera_web_v2_api_v38:app"
@@ -87,9 +89,14 @@ def _database_url(environment: dict[str, str]) -> URL:
 
 
 def main() -> None:
-    environment = _running_api_environment()
+    managed_environment_loaded = load_managed_runtime_environment()
+    environment = (
+        {key: os.environ.get(key, "") for key in RUNTIME_ENV_KEYS}
+        if managed_environment_loaded
+        else _running_api_environment()
+    )
     if not environment:
-        raise SystemExit("DATA CHECK FAILED: running Web V2 API process was not found or is not readable")
+        raise SystemExit("DATA CHECK FAILED: managed settings and running API environment are unavailable")
 
     engine = create_engine(
         _database_url(environment),

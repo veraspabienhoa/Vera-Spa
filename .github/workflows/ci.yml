@@ -103,7 +103,10 @@ jobs:
           client = Path('web-v2/src/lib/supabase.js').read_text(encoding='utf-8')
           deploy = Path('configure_vps_database.sh').read_text(encoding='utf-8')
           workflow = Path('.github/workflows/deploy-vps.yml').read_text(encoding='utf-8')
-          for source in (local_auth, gateway, api):
+          runtime_env = Path('vera_web_v2_runtime_env.py').read_text(encoding='utf-8')
+          entrypoint = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
+          data_check = Path('vera_vps_data_check.py').read_text(encoding='utf-8')
+          for source in (local_auth, gateway, api, runtime_env, entrypoint):
               ast.parse(source)
           gateway_tree = ast.parse(gateway)
           api_tree = ast.parse(api)
@@ -129,6 +132,24 @@ jobs:
                   for statement in ('CREATE TABLE', 'ALTER TABLE', 'DROP TABLE')
               ),
               'deploy validates real app-setting CRUD before cutover': 'write_probe=True' in local_auth and 'ON CONFLICT (category, setting_key)' in local_auth,
+              'API loads the private managed environment before shared imports': (
+                  entrypoint.index('load_managed_runtime_environment()')
+                  < entrypoint.index('import vera_web_v2_api_shared')
+              ),
+              'managed environment loader is private and allowlisted': all(item in runtime_env for item in (
+                  'file_stat.st_uid != os.getuid()',
+                  'stat.S_IMODE(file_stat.st_mode) & 0o077',
+                  '.config/vera-spa/web-v2-api.env',
+                  '_validate_settings(parsed)',
+                  'VERA_AUTH_PROVIDER": "local"',
+                  '("\\x00", "\\r", "\\n")',
+                  'os.environ.update(parsed)',
+                  'os.environ.pop(key, None)',
+              )),
+              'post-deploy data check uses the managed environment': all(item in data_check for item in (
+                  'load_managed_runtime_environment()',
+                  'for key in RUNTIME_ENV_KEYS',
+              )),
               'login switches on explicit local provider': 'if local_auth_enabled()' in gateway,
               'local login bootstraps employees without Supabase profiles': (
                   'local_auth_user_id(username)' in gateway_functions.get('_create_local_session', '')
@@ -148,6 +169,14 @@ jobs:
               'API rejects cross-provider access tokens': 'if not is_local_access_token(token)' in api,
               'password changes revoke local sessions': 'revoke_local_sessions' in Path('vera_web_v2_profile.py').read_text(encoding='utf-8'),
               'deploy activates local provider after store validation': deploy.index('/opt/vera-spa/.venv/bin/python "$local_auth_migrator"') < deploy.index('export VERA_AUTH_PROVIDER=local'),
+              'deploy verifies live PostgreSQL Auth health': all(item in deploy for item in (
+                  'http://127.0.0.1:8000/v2/auth/health',
+                  'payload.get("provider") != "postgres-local"',
+              )),
+              'deploy keeps DB credentials out of the shared user manager': (
+                  'systemctl --user import-environment' not in deploy
+                  and 'API and deployment account ownership do not match' in deploy
+              ),
               'deploy selects scripts from active release': all(item in workflow for item in (
                   'readlink -f',
                   '${release_dir}/configure_vps_database.sh',

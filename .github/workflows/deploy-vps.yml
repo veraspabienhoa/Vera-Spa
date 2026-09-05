@@ -107,4 +107,4 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
-            'PID=$(pgrep -o -f "vera_web_v2_api_v38:app" || true); [ -n "$PID" ] || exit 0; UNIT=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/$PID/cgroup" | head -n 1); [ -n "$UNIT" ] || exit 0; sudo -n journalctl -u "$UNIT" --since "60 minutes ago" --priority err --no-pager -n 250 || journalctl -u "$UNIT" --since "60 minutes ago" --priority err --no-pager -n 250 || true'
+            'PID=$(pgrep -n -f "[v]era_web_v2_api_v38:app" || true); [ -n "$PID" ] || exit 0; UNIT=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/$PID/cgroup" | head -n 1); [ -n "$UNIT" ] || exit 0; journalctl -q -u "$UNIT" --since "60 minutes ago" --priority err --no-pager -n 250 || true'

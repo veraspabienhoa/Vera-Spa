@@ -1,6 +1,12 @@
 """Web V2 shared API entrypoint + Payroll 3.8 installers."""
 from __future__ import annotations
 
+from vera_web_v2_runtime_env import load_managed_runtime_environment
+
+# This must run before importing the shared API because several modules read
+# database/Auth settings while their module globals are initialized.
+load_managed_runtime_environment()
+
 from fastapi import HTTPException
 from sqlalchemy import text
 
