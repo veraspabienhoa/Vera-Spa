@@ -12,13 +12,18 @@ db_port=$3
 db_name=$4
 db_user=$5
 IFS= read -r db_pass
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+local_auth_migrator=$script_dir/vera_web_v2_local_auth.py
+data_checker=$script_dir/vera_vps_data_check.py
+
+test "$(git -C "$script_dir" rev-parse HEAD)" = "$deploy_sha"
 
 if [[ -z "$db_pass" ]]; then
   echo "DATABASE CONFIG FAILED: empty database password" >&2
   exit 2
 fi
 
-pid=$(pgrep -o -f "vera_web_v2_api_v38:app" || true)
+pid=$(pgrep -n -f "vera_web_v2_api_v38:app" || true)
 if [[ -z "$pid" ]]; then
   echo "DATABASE CONFIG FAILED: running Web V2 API process was not found" >&2
   exit 1
@@ -26,7 +31,7 @@ fi
 
 readonly -a db_keys=(
   VERA_DB_ENABLED VERA_DATA_BACKEND DB_HOST DB_PORT DB_NAME DB_USER DB_PASS
-  DB_SSLMODE DB_CONNECT_TIMEOUT
+  DB_SSLMODE DB_CONNECT_TIMEOUT VERA_AUTH_PROVIDER
 )
 declare -A previous_values=()
 declare -A previous_present=()
@@ -65,7 +70,10 @@ restore_previous_exports() {
 
 rollback() {
   local exit_code=$?
-  trap - ERR
+  if [[ "$exit_code" == 0 ]]; then
+    exit_code=1
+  fi
+  trap - ERR HUP INT TERM
   echo "DATABASE CONFIG: validation failed; restoring previous API environment" >&2
   if [[ "$had_environment_file" == 1 ]]; then
     install -m 600 "$work_dir/environment.previous" "$environment_path"
@@ -73,13 +81,14 @@ rollback() {
     rm -f -- "$environment_path"
   fi
   restore_previous_exports
+  systemctl --user unset-environment "${db_keys[@]}" >/dev/null 2>&1 || true
   systemctl --user import-environment "${db_keys[@]}" >/dev/null 2>&1 || true
   /opt/vera-spa/deploy.sh "$deploy_sha" || true
   cleanup
   exit "$exit_code"
 }
 
-trap rollback ERR
+trap rollback ERR HUP INT TERM
 trap cleanup EXIT
 
 mkdir -p -- "$environment_dir"
@@ -96,6 +105,21 @@ systemd_quote() {
   printf '"%s"' "$value"
 }
 
+# Phase 1: prove the additive PostgreSQL session schema is usable before the
+# service manager is switched away from Supabase Auth.  A failure here leaves
+# the currently running provider untouched and triggers the rollback handler.
+test -f "$local_auth_migrator"
+export VERA_DB_ENABLED=1
+export VERA_DATA_BACKEND=postgres
+export DB_HOST="$db_host"
+export DB_PORT="$db_port"
+export DB_NAME="$db_name"
+export DB_USER="$db_user"
+export DB_PASS="$db_pass"
+export DB_SSLMODE=require
+export DB_CONNECT_TIMEOUT=10
+/opt/vera-spa/.venv/bin/python "$local_auth_migrator"
+
 {
   printf 'VERA_DB_ENABLED=1\n'
   printf 'VERA_DATA_BACKEND=postgres\n'
@@ -106,25 +130,36 @@ systemd_quote() {
   printf 'DB_PASS=%s\n' "$(systemd_quote "$db_pass")"
   printf 'DB_SSLMODE=require\n'
   printf 'DB_CONNECT_TIMEOUT=10\n'
+  printf 'VERA_AUTH_PROVIDER=local\n'
 } > "$work_dir/50-vera-database.conf"
 install -m 600 "$work_dir/50-vera-database.conf" "$environment_path"
 
-export VERA_DB_ENABLED=1
-export VERA_DATA_BACKEND=postgres
-export DB_HOST="$db_host"
-export DB_PORT="$db_port"
-export DB_NAME="$db_name"
-export DB_USER="$db_user"
-export DB_PASS="$db_pass"
-export DB_SSLMODE=require
-export DB_CONNECT_TIMEOUT=10
+export VERA_AUTH_PROVIDER=local
 systemctl --user import-environment "${db_keys[@]}" >/dev/null 2>&1 || true
 
 /opt/vera-spa/deploy.sh "$deploy_sha"
 
-checker=$(find /opt/vera-spa -maxdepth 4 -name vera_vps_data_check.py -type f -print -quit)
-test -n "$checker"
-/opt/vera-spa/.venv/bin/python "$checker"
+# Phase 2: verify the restarted API inherited the cutover flag, then recheck
+# the schema through the exact code shipped in this release.
+test "$(git -C "$script_dir" rev-parse HEAD)" = "$deploy_sha"
+new_pid=$(pgrep -n -f "vera_web_v2_api_v38:app" || true)
+test -n "$new_pid"
+declare -A new_environment=()
+while IFS= read -r -d '' entry; do
+  key=${entry%%=*}
+  new_environment["$key"]=${entry#*=}
+done < "/proc/$new_pid/environ"
+[[ "${new_environment[DB_HOST]:-}" == "$db_host" ]]
+[[ "${new_environment[DB_PORT]:-}" == "$db_port" ]]
+[[ "${new_environment[DB_NAME]:-}" == "$db_name" ]]
+[[ "${new_environment[DB_USER]:-}" == "$db_user" ]]
+[[ "${new_environment[DB_PASS]:-}" == "$db_pass" ]]
+[[ "${new_environment[DB_SSLMODE]:-}" == "require" ]]
+[[ "${new_environment[VERA_AUTH_PROVIDER]:-}" == "local" ]]
+/opt/vera-spa/.venv/bin/python "$local_auth_migrator"
 
-trap - ERR
-echo "DATABASE CONFIG: PostgreSQL SSL environment applied and verified"
+test -f "$data_checker"
+/opt/vera-spa/.venv/bin/python "$data_checker"
+
+trap - ERR HUP INT TERM
+echo "DATABASE CONFIG: PostgreSQL SSL and local Auth environment applied and verified"

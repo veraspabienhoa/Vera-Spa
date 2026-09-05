@@ -12,6 +12,7 @@ from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
 
 
@@ -218,6 +219,8 @@ def install_profile_routes(
                 )},
                 "payload": json.dumps(payload, ensure_ascii=False),
             })
+            if new_password:
+                revoke_local_sessions(conn, ident.employee_username, "password_changed")
             conn.execute(text("""
                 INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at)
                 VALUES ('employees','profile_updated',:detail,NOW())

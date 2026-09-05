@@ -19,9 +19,12 @@ export const isAuthConfigured = Boolean(apiBase)
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
+        // Authentication is owned by the Vera API. Keep this client only for
+        // legacy data RPCs and never load, refresh, or create a browser-side
+        // Supabase Auth session.
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
       },
     })
   : null
@@ -130,26 +133,21 @@ export async function getCurrentSession() {
       clearApiSession()
     }
   }
-  if (!supabase) return null
-  const { data, error } = await supabase.auth.getSession()
-  if (error) throw error
-  return data.session
+  return null
 }
 
 export function onVeraAuthStateChange(listener) {
   apiAuthListeners.add(listener)
-  const supabaseListener = supabase?.auth.onAuthStateChange((event, session) => {
-    if (!readApiSession()) listener(event, session)
-  })
-  return () => {
-    apiAuthListeners.delete(listener)
-    supabaseListener?.data?.subscription?.unsubscribe()
-  }
+  return () => apiAuthListeners.delete(listener)
 }
 
 export async function signOutVera() {
-  const hadApiSession = Boolean(readApiSession())
+  const session = readApiSession()
+  // Local logout must be immediate even if the revoke request is slow or the
+  // API is temporarily unreachable. Server-side revocation remains best effort.
   clearApiSession()
-  if (hadApiSession) notifyApiAuth('SIGNED_OUT', null)
-  if (supabase) await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+  if (session) notifyApiAuth('SIGNED_OUT', null)
+  if (session?.refresh_token) {
+    await apiAuthRequest('/v2/auth/logout', { refresh_token: session.refresh_token }).catch(() => {})
+  }
 }

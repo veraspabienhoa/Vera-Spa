@@ -89,6 +89,44 @@ jobs:
               raise SystemExit('Failed API-primary auth invariants: ' + ', '.join(failed))
           PY
 
+      - name: Verify PostgreSQL local Auth cutover
+        shell: bash
+        run: |
+          bash -n configure_vps_database.sh
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+
+          local_auth = Path('vera_web_v2_local_auth.py').read_text(encoding='utf-8')
+          gateway = Path('vera_web_v2_auth_gateway.py').read_text(encoding='utf-8')
+          api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          client = Path('web-v2/src/lib/supabase.js').read_text(encoding='utf-8')
+          deploy = Path('configure_vps_database.sh').read_text(encoding='utf-8')
+          workflow = Path('.github/workflows/deploy-vps.yml').read_text(encoding='utf-8')
+          for source in (local_auth, gateway, api):
+              ast.parse(source)
+
+          checks = {
+              'opaque access and refresh token prefixes': 'vera_at_' in local_auth and 'vera_rt_' in local_auth,
+              'only token digests are persisted': 'access_token_hash' in local_auth and 'refresh_token_hash' in local_auth,
+              'runtime schema checks are read-only': 'if migrate:' in local_auth and 'with engine.connect() as conn:' in local_auth,
+              'login switches on explicit local provider': 'if local_auth_enabled()' in gateway,
+              'local refresh rotates its token': '_rotate_local_session' in gateway,
+              'local logout revokes its session': '@app.post("/v2/auth/logout")' in gateway,
+              'API rejects cross-provider access tokens': 'if not is_local_access_token(token)' in api,
+              'password changes revoke local sessions': 'revoke_local_sessions' in Path('vera_web_v2_profile.py').read_text(encoding='utf-8'),
+              'deploy activates local provider after migration': deploy.index('/opt/vera-spa/.venv/bin/python "$local_auth_migrator"') < deploy.index('export VERA_AUTH_PROVIDER=local'),
+              'deploy selects exact release scripts': 'bash /opt/vera-spa/configure_vps_database.sh' in workflow,
+              'browser disables Supabase session persistence': 'persistSession: false' in client and 'autoRefreshToken: false' in client,
+              'browser uses API logout': "apiAuthRequest('/v2/auth/logout'" in client,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if failed:
+              raise SystemExit('Failed PostgreSQL local Auth invariants: ' + ', '.join(failed))
+          PY
+
       - name: Verify runtime patch chain compiles
         shell: bash
         run: |

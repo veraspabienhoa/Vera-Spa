@@ -21,6 +21,8 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from vera_web_v2_local_auth import revoke_local_sessions
+
 from vera_web_v2_security import password_policy_error
 
 
@@ -546,6 +548,12 @@ def install_staff_routes(
         }).mappings().first()
         if not updated:
             raise HTTPException(404, "Nhân viên không còn tồn tại.")
+        if bool(merged.get("login_locked")) or status != STATUS_OPTIONS[0]:
+            revoke_local_sessions(
+                conn,
+                str(row["username"]),
+                "account_locked" if bool(merged.get("login_locked")) else "employment_inactive",
+            )
         if (
             str(merged.get("role") or "").lower() != str(row.get("role") or "").lower()
             or status != old_status
@@ -732,6 +740,7 @@ def install_staff_routes(
                     raise HTTPException(400, "Không thể xóa tài khoản hệ thống/admin.")
             deleted_count = len(targets)
             for row in targets:
+                revoke_local_sessions(conn, str(row["username"]), "employee_deleted")
                 if conn.execute(text("SELECT to_regclass('public.vera_v2_user_profile')")).scalar():
                     conn.execute(text("""
                         UPDATE vera_v2_user_profile SET is_active=false, updated_at=NOW()

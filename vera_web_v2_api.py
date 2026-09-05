@@ -43,6 +43,15 @@ from sqlalchemy.engine import URL
 from vera_google_credentials import google_credentials
 from vera_leave_registration_shared import summarize_leave_day
 from vera_json import json_safe, json_text
+from vera_web_v2_local_auth import (
+    SESSION_TABLE,
+    credential_fingerprint,
+    ensure_local_auth_schema,
+    is_local_access_token,
+    local_auth_enabled,
+    token_digest,
+    valid_local_token,
+)
 from vera_web_v2_token_cache import VerifiedTokenCache
 
 VN_TZ = timezone(timedelta(hours=7))
@@ -547,11 +556,92 @@ def _verify_supabase_token(token: str) -> str:
     return auth_uid
 
 
+def _current_local_identity(token: str) -> Identity:
+    if not local_auth_enabled() or not valid_local_token(token):
+        raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+    credential_changed = False
+    identity: Identity | None = None
+    try:
+        engine = _engine_instance()
+        ensure_local_auth_schema(engine)
+        with engine.begin() as conn:
+            row = conn.execute(text(f"""
+                SELECT s.session_id::text, s.auth_user_id::text,
+                       s.employee_username, s.credential_fingerprint,
+                       p.role, p.is_active,
+                       COALESCE(e.full_name,'') AS full_name,
+                       COALESCE(e.email,'') AS email,
+                       e.password_value, e.login_locked, e.payload
+                FROM {SESSION_TABLE} s
+                JOIN vera_v2_user_profile p
+                  ON p.auth_user_id=s.auth_user_id
+                 AND p.employee_username=s.employee_username
+                JOIN employees e ON e.username=s.employee_username
+                WHERE s.access_token_hash=:access_hash
+                  AND s.revoked_at IS NULL
+                  AND s.access_expires_at > NOW()
+                  AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
+                LIMIT 1
+            """), {"access_hash": token_digest(token)}).mappings().first()
+            if not row:
+                raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+            expected_fingerprint = credential_fingerprint(
+                row.get("employee_username"),
+                row.get("password_value"),
+            )
+            if not hmac.compare_digest(
+                str(row.get("credential_fingerprint") or ""),
+                expected_fingerprint,
+            ):
+                conn.execute(text(f"""
+                    UPDATE {SESSION_TABLE}
+                    SET revoked_at=NOW(), revoke_reason='credential_changed'
+                    WHERE session_id=CAST(:session_id AS uuid)
+                """), {"session_id": row["session_id"]})
+                credential_changed = True
+            elif not bool(row.get("is_active")):
+                raise HTTPException(403, "Tài khoản Web V2 đang bị vô hiệu hóa.")
+            elif _as_bool(row.get("login_locked")):
+                raise HTTPException(403, "Tài khoản đang bị khóa.")
+            else:
+                payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+                employment_status = payload.get("Trạng thái làm việc") or payload.get("employment_status") or "Đang làm việc"
+                if _norm(employment_status) != "dang lam viec":
+                    raise HTTPException(403, "Tài khoản không còn ở trạng thái Đang làm việc.")
+                identity = Identity(
+                    auth_user_id=str(row.get("auth_user_id") or ""),
+                    employee_username=str(row.get("employee_username") or ""),
+                    role=str(row.get("role") or "nhanvien").lower(),
+                    full_name=str(row.get("full_name") or ""),
+                    email=str(row.get("email") or ""),
+                    must_change_password=_as_bool(payload.get("must_change_password")),
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Web V2 local auth: identity lookup unavailable: {type(exc).__name__}")
+        raise HTTPException(503, "Không xác minh được phiên đăng nhập PostgreSQL.") from exc
+
+    if credential_changed:
+        raise HTTPException(401, "Phiên đăng nhập đã bị thu hồi sau khi đổi mật khẩu.")
+    if identity is None:
+        raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+    return identity
+
+
 def current_identity(authorization: str | None = Header(default=None)) -> Identity:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "Thiếu phiên đăng nhập Supabase.")
+        raise HTTPException(401, "Thiếu phiên đăng nhập VERA.")
     token = authorization.split(" ", 1)[1].strip()
-    if not token or not SUPABASE_ANON_KEY:
+    if not token:
+        raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+    if local_auth_enabled():
+        if not is_local_access_token(token):
+            raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+        return _current_local_identity(token)
+    if is_local_access_token(token):
+        raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+    if not SUPABASE_ANON_KEY:
         raise HTTPException(503, "API Auth chưa được cấu hình.")
     auth_uid = _VERIFIED_TOKENS.get_or_load(token, lambda: _verify_supabase_token(token))
 

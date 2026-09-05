@@ -17,6 +17,7 @@ from fastapi import Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
 
 
@@ -134,6 +135,7 @@ def install_staff_security_routes(
                 "payload": json.dumps(payload, ensure_ascii=False),
                 "username": row["username"],
             })
+            revoke_local_sessions(conn, str(row["username"]), "admin_password_reset")
             tx.commit()
             return {
                 "ok": True,

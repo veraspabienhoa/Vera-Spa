@@ -19,10 +19,11 @@ jobs:
   deploy:
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (vars.AUTO_DEPLOY_VPS == 'true' &&
-       github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main')
+       github.event.workflow_run.head_branch == 'main' &&
+       (vars.AUTO_DEPLOY_VPS == 'true' ||
+        contains(github.event.workflow_run.head_commit.message, '[deploy-vps]')))
     runs-on: ubuntu-latest
 
     steps:
@@ -62,7 +63,7 @@ jobs:
           fi
           printf '%s\n' "$VERA_DB_PASS" | ssh -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
-            "SCRIPT=\$(find /opt/vera-spa -maxdepth 4 -name configure_vps_database.sh -type f -print -quit); test -n \"\$SCRIPT\"; bash \"\$SCRIPT\" '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
+            "test \"\$(git -C /opt/vera-spa rev-parse HEAD)\" = '${DEPLOY_SHA}'; bash /opt/vera-spa/configure_vps_database.sh '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
 
       - name: Verify production data sources
         env:
@@ -71,7 +72,32 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
-            "SCRIPT=\$(find /opt/vera-spa -maxdepth 4 -name vera_vps_data_check.py -type f -print -quit); test -n \"\$SCRIPT\"; /opt/vera-spa/.venv/bin/python \"\$SCRIPT\""
+            "/opt/vera-spa/.venv/bin/python /opt/vera-spa/vera_vps_data_check.py"
+
+      - name: Verify production local Auth health
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          url = "https://api.veraspa.vn/v2/auth/health"
+          last_error = None
+          for _ in range(6):
+              try:
+                  with urllib.request.urlopen(url, timeout=10) as response:
+                      payload = json.load(response)
+                  if payload.get("ok") is True and payload.get("provider") == "postgres-local":
+                      print("PRODUCTION AUTH CHECK: PostgreSQL local Auth ready")
+                      break
+                  last_error = RuntimeError(f"unexpected health payload: {payload!r}")
+              except Exception as exc:
+                  last_error = exc
+              time.sleep(3)
+          else:
+              raise SystemExit(f"Production local Auth health check failed: {last_error}")
+          PY
 
       - name: Report recent API errors
         if: always()

@@ -24,6 +24,7 @@ SAFE_ENV_KEYS = {
     "DB_MAX_OVERFLOW",
     "DB_CONNECT_TIMEOUT",
     "DB_SSLMODE",
+    "VERA_AUTH_PROVIDER",
 }
 TABLES = (
     "employees",
@@ -33,12 +34,32 @@ TABLES = (
     "vera_primary_dataset",
     "vera_source_row",
 )
+LOCAL_AUTH_TABLE = "vera_v2_local_auth_session"
+AUTH_ATTEMPT_TABLE = "vera_v2_auth_attempt"
+LOCAL_AUTH_COLUMNS = {
+    "session_id",
+    "auth_user_id",
+    "employee_username",
+    "access_token_hash",
+    "refresh_token_hash",
+    "credential_fingerprint",
+    "refresh_generation",
+    "access_expires_at",
+    "refresh_expires_at",
+    "created_at",
+    "last_refreshed_at",
+    "revoked_at",
+    "revoke_reason",
+}
 
 
 def _running_api_environment(proc_root: Path = Path("/proc")) -> dict[str, str]:
-    for process_dir in proc_root.iterdir():
-        if not process_dir.name.isdigit():
-            continue
+    process_dirs = sorted(
+        (path for path in proc_root.iterdir() if path.name.isdigit()),
+        key=lambda path: int(path.name),
+        reverse=True,
+    )
+    for process_dir in process_dirs:
         try:
             command = (process_dir / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
             if API_MARKER not in command:
@@ -84,10 +105,51 @@ def main() -> None:
             "sslmode": environment.get("DB_SSLMODE", "require").strip() or "require",
         },
     )
-    existing = set(inspect(engine).get_table_names())
+    inspector = inspect(engine)
+    existing = set(inspector.get_table_names())
+    provider = str(environment.get("VERA_AUTH_PROVIDER") or "").strip().lower()
+    if provider != "local":
+        raise SystemExit("DATA CHECK FAILED: running API did not inherit VERA_AUTH_PROVIDER=local")
+    if LOCAL_AUTH_TABLE not in existing:
+        raise SystemExit(f"DATA CHECK FAILED: missing {LOCAL_AUTH_TABLE}")
+    if AUTH_ATTEMPT_TABLE not in existing:
+        raise SystemExit(f"DATA CHECK FAILED: missing {AUTH_ATTEMPT_TABLE}")
+    auth_columns = {str(item["name"]) for item in inspector.get_columns(LOCAL_AUTH_TABLE)}
+    missing_auth_columns = sorted(LOCAL_AUTH_COLUMNS - auth_columns)
+    if missing_auth_columns:
+        raise SystemExit(
+            "DATA CHECK FAILED: local Auth schema is incomplete: " + ", ".join(missing_auth_columns)
+        )
     counts: dict[str, int | None] = {}
     with engine.connect() as connection:
         connection.execute(text("SELECT 1")).scalar_one()
+        linked_profiles = int(connection.execute(text("""
+            SELECT COUNT(*)
+            FROM vera_v2_user_profile p
+            JOIN employees e ON e.username=p.employee_username
+            WHERE p.is_active=true
+              AND COALESCE(e.login_locked, false)=false
+              AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
+              AND COALESCE(
+                    e.payload->>'Trạng thái làm việc',
+                    e.payload->>'employment_status',
+                    'Đang làm việc'
+                  ) = 'Đang làm việc'
+        """)).scalar_one())
+        admin_profiles = int(connection.execute(text("""
+            SELECT COUNT(*)
+            FROM vera_v2_user_profile p
+            JOIN employees e ON e.username=p.employee_username
+            WHERE lower(btrim(e.username))='admin'
+              AND p.is_active=true
+              AND COALESCE(e.login_locked, false)=false
+              AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
+              AND COALESCE(
+                    e.payload->>'Trạng thái làm việc',
+                    e.payload->>'employment_status',
+                    'Đang làm việc'
+                  ) = 'Đang làm việc'
+        """)).scalar_one())
         for table in TABLES:
             counts[table] = (
                 int(connection.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar_one())
@@ -96,10 +158,18 @@ def main() -> None:
             )
 
     print("DATA CHECK: database connection OK")
+    print("DATA CHECK: auth_provider=local")
+    print(f"DATA CHECK: {LOCAL_AUTH_TABLE}=ready")
+    print(f"DATA CHECK: linked_auth_profiles={linked_profiles}")
+    print("DATA CHECK: admin_auth_profile=ready" if admin_profiles == 1 else "DATA CHECK: admin_auth_profile=invalid")
     for table, count in counts.items():
         print(f"DATA CHECK: {table}={'missing' if count is None else count}")
     if not any((count or 0) > 0 for count in counts.values()):
         raise SystemExit("DATA CHECK FAILED: production database contains no application rows")
+    if linked_profiles < 1:
+        raise SystemExit("DATA CHECK FAILED: no active Web V2 profile is linked to an employee")
+    if admin_profiles != 1:
+        raise SystemExit("DATA CHECK FAILED: the admin Web V2 profile is missing, inactive, or duplicated")
 
 
 if __name__ == "__main__":

@@ -1,19 +1,21 @@
 """Server-side authentication gateway for Web V2.
 
-The browser talks only to api.veraspa.vn. Username/password verification and
-Supabase Auth user provisioning are performed here so login no longer depends
-on the vera-v2-login Edge Function. Supabase Auth is still used to mint the
-Bearer session consumed by the existing Web V2 APIs.
+The browser talks only to api.veraspa.vn.  Production VPS deployments use
+opaque PostgreSQL sessions, so login remains available when external identity
+services are unavailable.  The Supabase path remains only for deployments that
+have not explicitly selected the local provider.
 """
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import os
 import secrets
 import time
 import unicodedata
+import uuid
 from typing import Any, Callable
 
 import google.auth
@@ -23,6 +25,21 @@ from fastapi.responses import JSONResponse
 from google.auth.transport.requests import AuthorizedSession
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+
+from vera_web_v2_local_auth import (
+    ATTEMPT_TABLE,
+    SESSION_TABLE,
+    access_ttl_seconds,
+    credential_fingerprint,
+    ensure_local_auth_schema,
+    is_local_refresh_token,
+    local_auth_enabled,
+    new_access_token,
+    new_refresh_token,
+    refresh_ttl_seconds,
+    token_digest,
+    valid_local_token,
+)
 
 
 _RETRYABLE_STATUS = {502, 503, 504}
@@ -42,6 +59,10 @@ class VeraLoginRequest(BaseModel):
 
 class VeraRefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=4096)
+
+
+class VeraLogoutRequest(BaseModel):
+    refresh_token: str = Field(default="", max_length=4096)
 
 
 def _post_with_retry(url: str, *, headers: dict[str, str], payload: dict[str, Any]):
@@ -94,6 +115,13 @@ def _response_json(response) -> dict[str, Any]:
 
 def _raise_upstream_error(response, *, default_message: str) -> None:
     payload = _response_json(response)
+    error_code = str(payload.get("error_code") or payload.get("code") or "").strip()
+    if response.status_code == 402:
+        print(f"Web V2 auth: Supabase service restricted (code={error_code or 'unknown'})")
+        raise HTTPException(
+            503,
+            "Dịch vụ Supabase đang bị giới hạn quota; VPS Auth sẽ được sử dụng khi đã bật cấu hình local.",
+        )
     message = str(
         payload.get("message")
         or payload.get("msg")
@@ -293,10 +321,10 @@ def _create_or_update_auth_user(
 def _attempt_state(attempt_key: str) -> tuple[bool, int]:
     try:
         with _engine_instance().connect() as conn:
-            row = conn.execute(text("""
+            row = conn.execute(text(f"""
                 SELECT failures,
                        COALESCE(window_started_at >= NOW() - INTERVAL '15 minutes', false) AS active
-                FROM vera_v2_auth_attempt
+                FROM {ATTEMPT_TABLE}
                 WHERE attempt_key=:attempt_key
                 LIMIT 1
             """), {"attempt_key": attempt_key}).mappings().first()
@@ -311,17 +339,23 @@ def _attempt_state(attempt_key: str) -> tuple[bool, int]:
 def _record_failed_attempt(attempt_key: str) -> int:
     try:
         with _engine_instance().begin() as conn:
-            row = conn.execute(text("""
-                INSERT INTO vera_v2_auth_attempt(attempt_key, window_started_at, failures, updated_at)
+            conn.execute(text(f"""
+                DELETE FROM {ATTEMPT_TABLE}
+                WHERE updated_at < NOW() - INTERVAL '7 days'
+            """))
+            row = conn.execute(text(f"""
+                INSERT INTO {ATTEMPT_TABLE} AS attempts(
+                    attempt_key, window_started_at, failures, updated_at
+                )
                 VALUES (:attempt_key, NOW(), 1, NOW())
                 ON CONFLICT (attempt_key) DO UPDATE SET
                   failures = CASE
-                    WHEN vera_v2_auth_attempt.window_started_at < NOW() - INTERVAL '15 minutes' THEN 1
-                    ELSE vera_v2_auth_attempt.failures + 1
+                    WHEN attempts.window_started_at < NOW() - INTERVAL '15 minutes' THEN 1
+                    ELSE attempts.failures + 1
                   END,
                   window_started_at = CASE
-                    WHEN vera_v2_auth_attempt.window_started_at < NOW() - INTERVAL '15 minutes' THEN NOW()
-                    ELSE vera_v2_auth_attempt.window_started_at
+                    WHEN attempts.window_started_at < NOW() - INTERVAL '15 minutes' THEN NOW()
+                    ELSE attempts.window_started_at
                   END,
                   updated_at = NOW()
                 RETURNING failures
@@ -336,7 +370,7 @@ def _clear_attempt(attempt_key: str) -> None:
     try:
         with _engine_instance().begin() as conn:
             conn.execute(
-                text("DELETE FROM vera_v2_auth_attempt WHERE attempt_key=:attempt_key"),
+                text(f"DELETE FROM {ATTEMPT_TABLE} WHERE attempt_key=:attempt_key"),
                 {"attempt_key": attempt_key},
             )
     except Exception as exc:
@@ -390,6 +424,243 @@ def _persist_profile_link(*, auth_user_id: str, employee: dict[str, Any], is_fir
         })
 
 
+def _local_user_payload(auth_user_id: str, employee: dict[str, Any]) -> dict[str, Any]:
+    username = str(employee.get("username") or "").strip()
+    return {
+        "id": auth_user_id,
+        "aud": "authenticated",
+        "role": "authenticated",
+        "email": str(employee.get("email") or "").strip(),
+        "app_metadata": {"provider": "vera-local", "providers": ["vera-local"]},
+        "user_metadata": {
+            "employee_username": username,
+            "full_name": employee.get("full_name") or username,
+            "role": employee.get("role") or "nhanvien",
+        },
+    }
+
+
+def _local_session_response(
+    *,
+    access_token: str,
+    refresh_token: str,
+    access_expires_at: datetime,
+    auth_user_id: str,
+    employee: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": access_ttl_seconds(),
+        "expires_at": int(access_expires_at.timestamp()),
+        "user": _local_user_payload(auth_user_id, employee),
+    }
+
+
+def _ensure_local_auth_ready() -> None:
+    try:
+        ensure_local_auth_schema(_engine_instance())
+    except Exception as exc:
+        print(f"Web V2 local auth: session schema unavailable: {type(exc).__name__}")
+        raise HTTPException(503, "Kho phiên đăng nhập PostgreSQL chưa sẵn sàng.") from exc
+
+
+def _create_local_session(employee: dict[str, Any]) -> dict[str, Any]:
+    """Issue a revocable opaque session for an already-linked Web V2 user."""
+    _ensure_local_auth_ready()
+    username = str(employee.get("username") or "").strip()
+    access_token = new_access_token()
+    refresh_token = new_refresh_token()
+    now = datetime.now(timezone.utc)
+    access_expires_at = now + timedelta(seconds=access_ttl_seconds())
+    refresh_expires_at = now + timedelta(seconds=refresh_ttl_seconds())
+    session_id = str(uuid.uuid4())
+    fingerprint = credential_fingerprint(username, employee.get("password_value"))
+
+    try:
+        with _engine_instance().begin() as conn:
+            profile = conn.execute(text("""
+                SELECT auth_user_id::text AS auth_user_id, is_active
+                FROM vera_v2_user_profile
+                WHERE employee_username=:username AND is_active=true
+                ORDER BY updated_at DESC
+                LIMIT 1
+                FOR UPDATE
+            """), {"username": username}).mappings().first()
+            if not profile:
+                raise HTTPException(
+                    403,
+                    "Tài khoản chưa được liên kết Web V2. Vui lòng liên hệ Admin để kích hoạt.",
+                )
+            auth_user_id = str(profile.get("auth_user_id") or "").strip()
+            try:
+                auth_user_id = str(uuid.UUID(auth_user_id))
+            except (TypeError, ValueError, AttributeError) as exc:
+                raise HTTPException(503, "Liên kết tài khoản Web V2 không hợp lệ.") from exc
+
+            conn.execute(text(f"""
+                DELETE FROM {SESSION_TABLE}
+                WHERE refresh_expires_at < NOW() - INTERVAL '7 days'
+                   OR revoked_at < NOW() - INTERVAL '7 days'
+            """))
+            conn.execute(text(f"""
+                INSERT INTO {SESSION_TABLE}(
+                    session_id, auth_user_id, employee_username,
+                    access_token_hash, refresh_token_hash,
+                    credential_fingerprint, access_expires_at,
+                    refresh_expires_at, created_at
+                ) VALUES (
+                    CAST(:session_id AS uuid), CAST(:auth_user_id AS uuid), :username,
+                    :access_hash, :refresh_hash,
+                    :credential_fingerprint, :access_expires_at,
+                    :refresh_expires_at, NOW()
+                )
+            """), {
+                "session_id": session_id,
+                "auth_user_id": auth_user_id,
+                "username": username,
+                "access_hash": token_digest(access_token),
+                "refresh_hash": token_digest(refresh_token),
+                "credential_fingerprint": fingerprint,
+                "access_expires_at": access_expires_at,
+                "refresh_expires_at": refresh_expires_at,
+            })
+            conn.execute(text(f"""
+                WITH stale AS (
+                    SELECT session_id
+                    FROM {SESSION_TABLE}
+                    WHERE employee_username=:username AND revoked_at IS NULL
+                    ORDER BY created_at DESC
+                    OFFSET 10
+                )
+                UPDATE {SESSION_TABLE} AS target
+                SET revoked_at=NOW(), revoke_reason='session_limit'
+                FROM stale
+                WHERE target.session_id=stale.session_id
+            """), {"username": username})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Web V2 local auth: cannot create session: {type(exc).__name__}")
+        raise HTTPException(503, "Không tạo được phiên đăng nhập PostgreSQL.") from exc
+
+    return _local_session_response(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        access_expires_at=access_expires_at,
+        auth_user_id=auth_user_id,
+        employee=employee,
+    )
+
+
+def _rotate_local_session(refresh_token: str) -> dict[str, Any]:
+    if not valid_local_token(refresh_token, refresh=True):
+        raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+    _ensure_local_auth_ready()
+    new_access_token_value = new_access_token()
+    new_refresh_token_value = new_refresh_token()
+    now = datetime.now(timezone.utc)
+    access_expires_at = now + timedelta(seconds=access_ttl_seconds())
+    credential_changed = False
+
+    try:
+        with _engine_instance().begin() as conn:
+            row = conn.execute(text(f"""
+                SELECT s.session_id::text AS session_id,
+                       s.auth_user_id::text AS auth_user_id,
+                       s.employee_username,
+                       s.credential_fingerprint,
+                       s.refresh_generation,
+                       p.is_active AS profile_active,
+                       e.password_value, e.role, e.full_name, e.email,
+                       e.login_locked, e.payload
+                FROM {SESSION_TABLE} s
+                JOIN vera_v2_user_profile p
+                  ON p.auth_user_id=s.auth_user_id
+                 AND p.employee_username=s.employee_username
+                JOIN employees e ON e.username=s.employee_username
+                WHERE s.refresh_token_hash=:refresh_hash
+                  AND s.revoked_at IS NULL
+                  AND s.refresh_expires_at > NOW()
+                  AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
+                LIMIT 1
+                FOR UPDATE OF s
+            """), {"refresh_hash": token_digest(refresh_token)}).mappings().first()
+            if not row:
+                raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+            employee = dict(row)
+            if not bool(row.get("profile_active")):
+                raise HTTPException(403, "Tài khoản Web V2 đang bị vô hiệu hóa.")
+            if _locked(row.get("login_locked")):
+                raise HTTPException(403, "Tài khoản đang bị khóa.")
+            if _employment_status(row.get("payload")) != "dang lam viec":
+                raise HTTPException(403, "Tài khoản không còn ở trạng thái Đang làm việc.")
+            expected_fingerprint = credential_fingerprint(
+                row.get("employee_username"),
+                row.get("password_value"),
+            )
+            if not hmac.compare_digest(
+                str(row.get("credential_fingerprint") or ""),
+                expected_fingerprint,
+            ):
+                conn.execute(text(f"""
+                    UPDATE {SESSION_TABLE}
+                    SET revoked_at=NOW(), revoke_reason='credential_changed'
+                    WHERE session_id=CAST(:session_id AS uuid)
+                """), {"session_id": row["session_id"]})
+                credential_changed = True
+            else:
+                conn.execute(text(f"""
+                    UPDATE {SESSION_TABLE}
+                    SET access_token_hash=:access_hash,
+                        refresh_token_hash=:refresh_hash,
+                        access_expires_at=:access_expires_at,
+                        refresh_generation=refresh_generation + 1,
+                        last_refreshed_at=NOW()
+                    WHERE session_id=CAST(:session_id AS uuid)
+                """), {
+                    "session_id": row["session_id"],
+                    "access_hash": token_digest(new_access_token_value),
+                    "refresh_hash": token_digest(new_refresh_token_value),
+                    "access_expires_at": access_expires_at,
+                })
+                auth_user_id = str(row.get("auth_user_id") or "")
+                employee["username"] = str(row.get("employee_username") or "")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Web V2 local auth: cannot refresh session: {type(exc).__name__}")
+        raise HTTPException(503, "Không làm mới được phiên đăng nhập PostgreSQL.") from exc
+
+    if credential_changed:
+        raise HTTPException(401, "Phiên đăng nhập đã bị thu hồi sau khi đổi mật khẩu.")
+
+    return _local_session_response(
+        access_token=new_access_token_value,
+        refresh_token=new_refresh_token_value,
+        access_expires_at=access_expires_at,
+        auth_user_id=auth_user_id,
+        employee=employee,
+    )
+
+
+def _revoke_local_session(refresh_token: str) -> None:
+    if not valid_local_token(refresh_token, refresh=True):
+        return
+    _ensure_local_auth_ready()
+    try:
+        with _engine_instance().begin() as conn:
+            conn.execute(text(f"""
+                UPDATE {SESSION_TABLE}
+                SET revoked_at=COALESCE(revoked_at, NOW()), revoke_reason='logout'
+                WHERE refresh_token_hash=:refresh_hash
+            """), {"refresh_hash": token_digest(refresh_token)})
+    except Exception as exc:
+        print(f"Web V2 local auth: logout revocation unavailable: {type(exc).__name__}")
+        raise HTTPException(503, "Chưa thu hồi được phiên đăng nhập PostgreSQL.") from exc
+
+
 def install_auth_gateway(
     app: FastAPI,
     *,
@@ -406,6 +677,36 @@ def install_auth_gateway(
             raise HTTPException(503, "API Auth chưa được cấu hình.")
         return _supabase_api_headers(supabase_anon_key)
 
+    @app.get("/v2/auth/health")
+    def auth_health():
+        if local_auth_enabled():
+            _ensure_local_auth_ready()
+            with _engine_instance().connect() as conn:
+                linked_profiles = int(conn.execute(text("""
+                    SELECT COUNT(*)
+                    FROM vera_v2_user_profile p
+                    JOIN employees e ON e.username=p.employee_username
+                    WHERE p.is_active=true
+                      AND COALESCE(e.login_locked, false)=false
+                      AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
+                      AND COALESCE(
+                            e.payload->>'Trạng thái làm việc',
+                            e.payload->>'employment_status',
+                            'Đang làm việc'
+                          ) = 'Đang làm việc'
+                """)).scalar_one())
+                conn.execute(text(f"SELECT 1 FROM {SESSION_TABLE} LIMIT 1"))
+            if linked_profiles < 1:
+                raise HTTPException(503, "Chưa có tài khoản Web V2 hoạt động trong PostgreSQL.")
+            return {
+                "ok": True,
+                "provider": "postgres-local",
+            }
+        return {
+            "ok": bool(supabase_url and supabase_anon_key),
+            "provider": "supabase",
+        }
+
     @app.post("/v2/auth/login")
     def login(body: VeraLoginRequest, request: Request):
         username = body.username.strip()
@@ -413,7 +714,9 @@ def install_auth_gateway(
             raise HTTPException(400, "Tên đăng nhập hoặc mật khẩu không hợp lệ.")
 
         username_key = _normalize(username)
-        forwarded = str(request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        # The right-most hop is appended by the trusted edge proxy.  Taking the
+        # first value would let a client-supplied X-Forwarded-For evade limits.
+        forwarded = str(request.headers.get("x-forwarded-for") or "").split(",")[-1].strip()
         client_ip = forwarded or str(getattr(request.client, "host", "") or "unknown")
         attempt_key = hashlib.sha256(f"{username_key}|{client_ip}".encode("utf-8")).hexdigest()
         active_window, failures = _attempt_state(attempt_key)
@@ -424,7 +727,10 @@ def install_auth_gateway(
         password_matches = bool(
             employee
             and not _locked(employee.get("login_locked"))
-            and hmac.compare_digest(str(body.password), str(employee.get("password_value") or ""))
+            and hmac.compare_digest(
+                str(body.password).encode("utf-8"),
+                str(employee.get("password_value") or "").encode("utf-8"),
+            )
         )
         if not password_matches:
             new_failures = _record_failed_attempt(attempt_key)
@@ -437,6 +743,16 @@ def install_auth_gateway(
             raise HTTPException(403, "Tài khoản đang Tạm thời nghỉ việc hoặc Đã nghỉ việc nên không thể đăng nhập.")
 
         canonical_username = str(employee.get("username") or "")
+        if local_auth_enabled():
+            session = _create_local_session(employee)
+            session_auth_user_id = str(session["user"].get("id") or "").strip()
+            if profile_loader:
+                profile = profile_loader(canonical_username)
+                profile["auth_user_id"] = session_auth_user_id
+                session["vera_profile"] = profile
+            _clear_attempt(attempt_key)
+            return JSONResponse(session, headers=_NO_STORE_HEADERS)
+
         existing_auth_user_id = _existing_profile_auth_user_id(canonical_username)
         is_first_web_login = not bool(existing_auth_user_id)
         email_hash = hashlib.sha256(_normalize(canonical_username).encode("utf-8")).hexdigest()
@@ -485,6 +801,21 @@ def install_auth_gateway(
 
     @app.post("/v2/auth/refresh")
     def refresh(body: VeraRefreshRequest):
+        if local_auth_enabled():
+            if not is_local_refresh_token(body.refresh_token):
+                raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+            session = _rotate_local_session(body.refresh_token)
+            employee_username = str(
+                (session.get("user") or {}).get("user_metadata", {}).get("employee_username") or ""
+            ).strip()
+            if profile_loader and employee_username:
+                profile = profile_loader(employee_username)
+                profile["auth_user_id"] = str(session["user"].get("id") or "")
+                session["vera_profile"] = profile
+            return JSONResponse(session, headers=_NO_STORE_HEADERS)
+        if is_local_refresh_token(body.refresh_token):
+            raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
+
         token_response = _post_with_retry(
             f"{supabase_url}/auth/v1/token?grant_type=refresh_token",
             headers=_public_headers(),
@@ -500,3 +831,9 @@ def install_auth_gateway(
         if verified_token_callback and auth_user_id:
             verified_token_callback(session["access_token"], auth_user_id)
         return JSONResponse(session, headers=_NO_STORE_HEADERS)
+
+    @app.post("/v2/auth/logout")
+    def logout(body: VeraLogoutRequest):
+        if is_local_refresh_token(body.refresh_token):
+            _revoke_local_session(body.refresh_token)
+        return JSONResponse({"ok": True}, headers=_NO_STORE_HEADERS)
