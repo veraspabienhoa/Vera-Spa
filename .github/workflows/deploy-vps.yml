@@ -63,7 +63,7 @@ jobs:
           fi
           printf '%s\n' "$VERA_DB_PASS" | ssh -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
-            "test \"\$(git -C /opt/vera-spa rev-parse HEAD)\" = '${DEPLOY_SHA}'; bash /opt/vera-spa/configure_vps_database.sh '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
+            "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; bash \"\${release_dir}/configure_vps_database.sh\" '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
 
       - name: Verify production data sources
         env:
@@ -72,7 +72,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
-            "/opt/vera-spa/.venv/bin/python /opt/vera-spa/vera_vps_data_check.py"
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python "${release_dir}/vera_vps_data_check.py"'
 
       - name: Verify production local Auth health
         shell: bash
