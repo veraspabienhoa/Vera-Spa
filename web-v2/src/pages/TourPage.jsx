@@ -268,6 +268,7 @@ export default function TourPage({ user }) {
   }, [tourCacheKey])
 
   useEffect(() => {
+    // Máy chủ giữ cache mỗi 1 phút; client chỉ thăm dò cache này mỗi 10 giây.
     void load(false, initiallyCached.current)
     const interval = window.setInterval(() => { void load(false, true) }, 10000)
     return () => window.clearInterval(interval)
