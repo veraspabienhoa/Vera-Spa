@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
+from pypdf import PdfReader
 
 import vera_web_v2_staff_security as staff_security
 
@@ -60,6 +61,21 @@ def test_employee_profile_pdf_is_printable_a4_document():
     assert len(content) > 10_000
 
 
+def test_selected_employee_profiles_merge_into_one_pdf():
+    profile = {
+        "username": "nhanvien01",
+        "full_name": "Nguyễn Văn An",
+        "employment_status": "Đang làm việc",
+    }
+    content = staff_security._merge_profile_pdfs([
+        (profile, {"portrait": _sample_image()}),
+        ({**profile, "username": "nhanvien02", "full_name": "Trần Thị Bình"}, {}),
+    ])
+
+    assert content.startswith(b"%PDF-")
+    assert len(PdfReader(BytesIO(content)).pages) == 2
+
+
 def test_employee_media_security_and_exports_are_wired():
     security_source = (ROOT / "vera_web_v2_staff_security.py").read_text(encoding="utf-8")
     staff_source = (ROOT / "vera_web_v2_staff.py").read_text(encoding="utf-8")
@@ -78,6 +94,11 @@ def test_employee_media_security_and_exports_are_wired():
     assert "setCropInset('left'" in identity_ui
     assert "setCropInset('right'" in identity_ui
     assert "staffSecurityApi.extractIdentity(blob)" in identity_ui
+    assert "onPointerDown={beginCropGesture}" in identity_ui
+    assert "Vẽ vùng crop tự do" in identity_ui
+    assert "Di chuyển ảnh/vùng chọn" in identity_ui
+    assert "@app.post(\"/v2/staff/profiles.pdf\")" in security_source
+    assert "_merge_profile_pdfs" in security_source
 
     pdf_builder = security_source.split("def _build_employee_profile_pdf", 1)[1].split("def install_staff_security_routes", 1)[0]
     assert '("Tên đăng nhập",' not in pdf_builder

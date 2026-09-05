@@ -159,7 +159,6 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       <div>
         <span className="eyebrow"><ShieldCheck size={14} /> Chỉ Admin</span>
         <h2>ĐỔI TÊN ĐĂNG NHẬP ADMIN</h2>
-        <p>Tên mới sẽ trở thành tên đăng nhập chính. Dữ liệu, quyền Admin, lịch sử và thông báo vẫn được giữ nguyên.</p>
         <label>Tên đăng nhập mới<input value={adminUsername} onChange={(event) => setAdminUsername(event.target.value)} maxLength="120" autoComplete="username" /></label>
       </div>
       <button className="primary-button" type="button" onClick={renameAdminUsername} disabled={renamingUsername || loading}>

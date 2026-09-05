@@ -81,6 +81,37 @@ function drawProcessedImage(canvas, image, crop, rotation, maxEdge, aspectRatio 
   context.restore()
 }
 
+function drawCropEditorImage(canvas, image, crop) {
+  if (!canvas || !image) return
+  const sourceWidth = image.naturalWidth || image.width
+  const sourceHeight = image.naturalHeight || image.height
+  const scale = Math.min(1, 1200 / Math.max(sourceWidth, sourceHeight))
+  const width = Math.max(1, Math.round(sourceWidth * scale))
+  const height = Math.max(1, Math.round(sourceHeight * scale))
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d', { alpha: false })
+  context.drawImage(image, 0, 0, width, height)
+  const x = width * crop.x / 100
+  const y = height * crop.y / 100
+  const w = width * crop.w / 100
+  const h = height * crop.h / 100
+  context.fillStyle = 'rgba(5, 18, 14, .62)'
+  context.fillRect(0, 0, width, height)
+  context.drawImage(image, sourceWidth * crop.x / 100, sourceHeight * crop.y / 100, sourceWidth * crop.w / 100, sourceHeight * crop.h / 100, x, y, w, h)
+  context.strokeStyle = '#f5c451'
+  context.lineWidth = Math.max(3, Math.round(Math.min(width, height) * 0.008))
+  context.strokeRect(x, y, w, h)
+  context.fillStyle = '#fff'
+  const handle = Math.max(7, Math.round(Math.min(width, height) * 0.018))
+  for (const [hx, hy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+    context.beginPath()
+    context.arc(hx, hy, handle, 0, Math.PI * 2)
+    context.fill()
+    context.stroke()
+  }
+}
+
 async function createCompressedBlob(image, crop, rotation, preferredEdge, preferredQuality, aspectRatio = null) {
   let maxEdge = preferredEdge
   let quality = preferredQuality
@@ -208,7 +239,9 @@ function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = C
   const [maxEdge, setMaxEdge] = useState(1600)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [cropTool, setCropTool] = useState('draw')
   const canvasRef = useRef(null)
+  const dragRef = useRef(null)
 
   useEffect(() => {
     let active = true
@@ -222,8 +255,50 @@ function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = C
   useEffect(() => () => { if (sourceUrl) URL.revokeObjectURL(sourceUrl) }, [sourceUrl])
 
   useEffect(() => {
-    if (source && canvasRef.current) drawProcessedImage(canvasRef.current, source, crop, rotation, 720, aspectRatio)
-  }, [aspectRatio, crop, rotation, source])
+    if (source && canvasRef.current) drawCropEditorImage(canvasRef.current, source, crop)
+  }, [crop, source])
+
+  const pointerPoint = (event) => {
+    const bounds = canvasRef.current?.getBoundingClientRect()
+    if (!bounds?.width || !bounds?.height) return null
+    return {
+      x: Math.max(0, Math.min(100, (event.clientX - bounds.left) * 100 / bounds.width)),
+      y: Math.max(0, Math.min(100, (event.clientY - bounds.top) * 100 / bounds.height)),
+    }
+  }
+
+  const beginCropGesture = (event) => {
+    const point = pointerPoint(event)
+    if (!point || busy) return
+    event.preventDefault()
+    canvasRef.current?.setPointerCapture?.(event.pointerId)
+    dragRef.current = { point, crop: { ...crop }, mode: cropTool }
+    if (cropTool === 'draw') setCrop({ x: point.x, y: point.y, w: 0.1, h: 0.1 })
+  }
+
+  const updateCropGesture = (event) => {
+    const gesture = dragRef.current
+    const point = pointerPoint(event)
+    if (!gesture || !point) return
+    event.preventDefault()
+    if (gesture.mode === 'move') {
+      const x = Math.max(0, Math.min(100 - gesture.crop.w, gesture.crop.x + point.x - gesture.point.x))
+      const y = Math.max(0, Math.min(100 - gesture.crop.h, gesture.crop.y + point.y - gesture.point.y))
+      setCrop({ ...gesture.crop, x, y })
+      return
+    }
+    const x = Math.min(gesture.point.x, point.x)
+    const y = Math.min(gesture.point.y, point.y)
+    setCrop({ x, y, w: Math.max(0.1, Math.abs(point.x - gesture.point.x)), h: Math.max(0.1, Math.abs(point.y - gesture.point.y)) })
+  }
+
+  const endCropGesture = (event) => {
+    const gesture = dragRef.current
+    if (!gesture) return
+    canvasRef.current?.releasePointerCapture?.(event.pointerId)
+    dragRef.current = null
+    setCrop((current) => current.w < MIN_CROP || current.h < MIN_CROP ? gesture.crop : current)
+  }
 
   const setCropInset = (edge, raw) => {
     const value = Number(raw)
@@ -265,11 +340,12 @@ function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = C
     <div className="identity-editor-card">
       <div className="identity-editor-head"><div><span className="eyebrow"><Crop size={14}/> {mediaLabel}</span><h3>CHỈNH ẢNH {title.toUpperCase()}</h3><p>Crop vùng cần giữ, xoay đúng chiều và nén ảnh trước khi tải lên theo tỷ lệ {aspectRatio < 1 ? '3:4' : 'CCCD'}.</p></div><button type="button" className="secondary-button compact" onClick={onCancel} disabled={busy}><X size={16}/> Đóng</button></div>
       <div className="identity-editor-layout">
-        <div className="identity-editor-preview"><canvas ref={canvasRef}/><small>Ảnh xem trước sau Crop + Rotate</small></div>
+        <div className="identity-editor-preview"><canvas ref={canvasRef} onPointerDown={beginCropGesture} onPointerMove={updateCropGesture} onPointerUp={endCropGesture} onPointerCancel={endCropGesture}/><small>Chạm/kéo trực tiếp trên ảnh để chọn hoặc di chuyển vùng giữ lại.</small></div>
         <div className="identity-editor-controls">
           <div className="identity-editor-section"><strong><RotateCw size={15}/> Xoay ảnh</strong><div className="identity-editor-buttons"><button type="button" className="secondary-button compact" onClick={() => setRotation((value) => (value + 270) % 360)}><RotateCcw size={14}/> -90°</button><button type="button" className="secondary-button compact" onClick={() => setRotation((value) => (value + 90) % 360)}><RotateCw size={14}/> +90°</button><span>{rotation}°</span></div></div>
           <div className="identity-editor-section"><strong><Crop size={15}/> Crop</strong>
-            <small>Kéo từng cạnh để loại bỏ phần thừa; khung xem trước cập nhật ngay.</small>
+            <small>Chọn “Vẽ vùng crop tự do” rồi kéo trên ảnh; hoặc chọn “Di chuyển ảnh/vùng chọn” để đặt đúng vị trí hiển thị.</small>
+            <div className="identity-editor-buttons"><button type="button" className={cropTool === 'draw' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setCropTool('draw')}><Crop size={14}/> Vẽ vùng crop tự do</button><button type="button" className={cropTool === 'move' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setCropTool('move')}><SlidersHorizontal size={14}/> Di chuyển ảnh/vùng chọn</button></div>
             <label>Trái: {Math.round(crop.x)}%<input type="range" min="0" max={Math.max(0, 100 - (100 - crop.x - crop.w) - MIN_CROP)} value={crop.x} onChange={(e) => setCropInset('left', e.target.value)}/></label>
             <label>Phải: {Math.round(100 - crop.x - crop.w)}%<input type="range" min="0" max={Math.max(0, 100 - crop.x - MIN_CROP)} value={100 - crop.x - crop.w} onChange={(e) => setCropInset('right', e.target.value)}/></label>
             <label>Trên: {Math.round(crop.y)}%<input type="range" min="0" max={Math.max(0, 100 - (100 - crop.y - crop.h) - MIN_CROP)} value={crop.y} onChange={(e) => setCropInset('top', e.target.value)}/></label>
@@ -536,7 +612,7 @@ export function EmployeeMediaDraftPanel({ value, onChange, onIdentityExtracted }
   </div>
 }
 
-export default function EmployeeIdentityPanel({ username, allowPasswordReset = false, className = '', onIdentityExtracted }) {
+export default function EmployeeIdentityPanel({ username, allowPasswordReset = false, allowAdminEdit = false, className = '', onIdentityExtracted }) {
   const [meta, setMeta] = useState({ front: null, back: null, portrait: null })
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
@@ -574,16 +650,16 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
       .employee-identity-panel{display:grid;gap:14px;padding:16px;border:1px solid #dfe7e3;border-radius:16px;background:#f9fbfa}.employee-identity-title{display:flex;gap:10px;align-items:flex-start}.employee-identity-title h3{margin:0;font-size:15px}.employee-identity-title p{margin:3px 0 0;color:#6c7873;font-size:12px;line-height:1.45}
       .employee-portrait-section{display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:14px;align-items:start}.employee-portrait-side,.employee-id-side{border:1px solid #e2e8e5;border-radius:14px;background:#fff;padding:12px;min-width:0}.employee-portrait-preview{width:min(100%,180px);aspect-ratio:3/4;margin:10px auto;border-radius:12px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-portrait-preview img{width:100%;height:100%;object-fit:cover}.employee-portrait-help{padding:13px;border-radius:14px;background:#edf5f1;color:#38564a;font-size:12px;line-height:1.55}.employee-portrait-help strong{display:block;margin-bottom:5px;color:#173d2f}.employee-identity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.employee-id-side-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.employee-id-side-head div{display:grid;gap:2px}.employee-id-side-head strong{font-size:13px}.employee-id-side-head span{font-size:11px;color:#74807b}.employee-id-preview{height:132px;margin:10px 0;border-radius:10px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-id-preview img{width:100%;height:100%;object-fit:contain;background:#111}.employee-id-placeholder{font-weight:900;color:#9aa6a1;letter-spacing:.12em;display:grid;place-items:center;gap:6px}.employee-id-actions{display:flex;flex-wrap:wrap;gap:7px}.employee-id-actions button{min-height:34px}
       .employee-password-reset{display:grid;gap:10px;padding:13px;border:1px solid #eadfcf;border-radius:14px;background:#fffaf2}.employee-password-reset-head{display:flex;gap:8px;align-items:flex-start}.employee-password-reset-head h4{margin:0;font-size:13px}.employee-password-reset-head p{margin:3px 0 0;font-size:11px;color:#776d60;line-height:1.45}.employee-password-reset-grid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}.employee-password-default{display:grid;gap:4px;min-width:0}.employee-password-default span{font-size:11px;color:#776d60}.employee-password-default strong{font-size:15px;letter-spacing:.02em;color:#173d2f}.employee-identity-notice{padding:9px 11px;border-radius:10px;font-size:12px}.employee-identity-notice.success{background:#edf8f2;color:#17603b}.employee-identity-notice.error{background:#fff1f0;color:#a62a20}
-      .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(760px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{position:sticky;bottom:-18px;z-index:3;display:flex;justify-content:flex-end;gap:9px;margin-top:14px;padding:12px 0 0;background:#fff}
+      .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(760px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff;touch-action:none;cursor:crosshair;user-select:none;-webkit-user-select:none}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{position:sticky;bottom:-18px;z-index:3;display:flex;justify-content:flex-end;gap:9px;margin-top:14px;padding:12px 0 0;background:#fff}
       .identity-camera-facing{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0}.identity-camera-facing>span{color:#5f6e67;font-size:11px;font-weight:900}.identity-camera-facing button{min-width:132px}
       .identity-camera-landscape{position:relative;width:min(90vw,680px);max-width:100%;aspect-ratio:85.6/53.98;margin:16px auto 0;overflow:hidden;border-radius:18px;background:#101815}.identity-camera-landscape.portrait{width:min(72vw,360px)}.identity-camera-landscape video{width:100%;height:100%;object-fit:cover}.identity-camera-card-guide{position:absolute;inset:4%;border:3px solid rgba(255,255,255,.98);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.20),inset 0 0 0 1px rgba(0,0,0,.25);display:flex;align-items:flex-end;justify-content:center;padding:10px;pointer-events:none}.identity-camera-card-guide span{padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.58);color:#fff;font-size:10px;font-weight:900;letter-spacing:.05em}.identity-camera-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,.35);color:#fff;font-weight:800}.identity-camera-help{margin:10px auto 0;max-width:680px;color:#68736f;font-size:11px;line-height:1.45;text-align:center}
       .employee-profile-export{display:flex;justify-content:flex-end}.employee-profile-export button{min-height:38px}
       @media(max-width:700px){.employee-identity-panel{padding:12px;gap:11px}.employee-portrait-section,.employee-identity-grid{grid-template-columns:1fr}.employee-id-preview{height:118px}.employee-password-reset-grid{grid-template-columns:1fr}.employee-password-reset-grid>.employee-password-submit{width:100%}.identity-editor-backdrop{padding:7px}.identity-editor-card,.identity-camera-card{padding:12px;border-radius:14px}.identity-editor-layout{grid-template-columns:1fr}.identity-editor-preview{min-height:220px}.identity-editor-preview canvas{max-height:34vh}.identity-editor-footer{display:grid;grid-template-columns:1fr 1fr}.identity-editor-footer button{width:100%}.identity-camera-facing{display:grid;grid-template-columns:1fr 1fr}.identity-camera-facing>span{grid-column:1/-1;text-align:center}.identity-camera-facing button{min-width:0;width:100%}.identity-camera-landscape{width:min(95vw,680px)}.identity-camera-landscape.portrait{width:min(78vw,330px)}}
     `}</style>
     <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3><p>Ảnh hiển thị theo tỷ lệ dọc 3:4. Nhân viên có thể upload hoặc chụp trực tiếp với khung căn hình.</p></div></div>
-    <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowPasswordReset}/><div className="employee-portrait-help"><strong>Tiêu chuẩn ảnh</strong>Canh khuôn mặt rõ, đủ sáng, không che mặt. Hệ thống tự crop đúng tỷ lệ 3:4 và nén trước khi lưu. Ảnh này được đưa vào file Excel và PDF hồ sơ.</div></div>
-    <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3><p>Ảnh CCCD được bảo vệ, chỉ chính nhân viên và Admin được xem. Sau khi lưu, nhân viên không thể xóa; Admin có thể Crop, xoay và lưu lại. Khi bấm Lưu hồ sơ, hệ thống bắt buộc Họ tên và Số Căn cước đọc từ ảnh phải khớp thông tin đã khai.</p></div></div>
-    <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.includes('front')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset} allowAdminEdit={allowPasswordReset} onExtracted={onIdentityExtracted}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.includes('back')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset} allowAdminEdit={allowPasswordReset} onExtracted={onIdentityExtracted}/></div>
+    <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowAdminEdit || allowPasswordReset}/></div>
+    <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3></div></div>
+    <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.includes('front')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.includes('back')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/></div>
     <div className="employee-profile-export"><button type="button" className="secondary-button" onClick={exportPdf} disabled={busy === 'profile-pdf'}>{busy === 'profile-pdf' ? <LoaderCircle className="spin" size={16}/> : <FileDown size={16}/>} Xuất PDF hồ sơ nhân viên</button></div>
     {allowPasswordReset && <div className="employee-password-reset"><div className="employee-password-reset-head"><KeyRound size={17}/><div><h4>RESET MẬT KHẨU NHÂN VIÊN</h4><p>Bấm Reset để tự động đặt mật khẩu mặc định và xóa phiên đăng nhập cũ.</p></div></div><div className="employee-password-reset-grid"><div className="employee-password-default"><span>Mật khẩu mặc định</span><strong>{DEFAULT_RESET_PASSWORD}</strong></div><button type="button" className="primary-button employee-password-submit" onClick={resetPassword} disabled={busy === 'password'}>{busy === 'password' ? <LoaderCircle className="spin" size={16}/> : <KeyRound size={16}/>} Reset mật khẩu</button></div></div>}
     {notice && <div className={`employee-identity-notice ${notice.type}`}>{notice.message}</div>}

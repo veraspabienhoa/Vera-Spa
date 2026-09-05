@@ -100,6 +100,7 @@ class StaffUpdate(BaseModel):
     cccd_number: str | None = Field(default=None, max_length=20)
     cccd_issue_date: str | None = Field(default=None, max_length=30)
     cccd_issue_place: str | None = Field(default=None, max_length=500)
+    profile_hidden: bool | None = None
 
 
 class StaffDelete(BaseModel):
@@ -194,6 +195,12 @@ def _shift_label(item: dict[str, Any]) -> str:
     return label
 
 
+def _bool_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().casefold() in {"1", "true", "yes", "y", "có", "ẩn"}
+
+
 def _shift_catalog(conn, employee_rows: list[dict[str, Any]]) -> dict[str, list[str]]:
     output = {department: [] for department in DEPARTMENT_ORDER}
     payload = conn.execute(text("""
@@ -258,6 +265,7 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
         "Ngày bắt đầu làm": str(row.get("employment_start_date") or ""),
         "Ngày nghỉ việc": str(row.get("employment_end_date") or ""),
         "Trạng thái làm việc": status,
+        "Ẩn nhân viên": _bool_value(row.get("profile_hidden")),
     })
     return payload
 
@@ -294,6 +302,7 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
         "login_locked": bool(row.get("login_locked")),
         "employment_start_date": str(row.get("employment_start_date") or ""),
         "employment_end_date": str(row.get("employment_end_date") or payload.get("Ngày nghỉ việc") or ""),
+        "profile_hidden": _bool_value(row.get("profile_hidden") if row.get("profile_hidden") is not None else payload.get("Ẩn nhân viên")),
     }
 
 
@@ -329,6 +338,7 @@ def _select_staff_rows(
             "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
             "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
             "employment_end_date": str(payload.get("Ngày nghỉ việc") or payload.get("Ngày kết thúc làm việc") or payload.get("employment_end_date") or ""),
+            "profile_hidden": _bool_value(payload.get("Ẩn nhân viên")),
         })
         output.append(item)
     return output
@@ -464,6 +474,7 @@ def install_staff_routes(
             "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save",
             "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
             "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
+            "employees_visibility_manage",
         )
         output = {key: feature_allowed(conn, ident, key) for key in keys}
         # Xóa nhân viên là thao tác quản trị tài khoản chỉ dựa trên vai trò
@@ -472,6 +483,7 @@ def install_staff_routes(
         is_admin = str(ident.role).lower() == "admin"
         output["employee_delete"] = is_admin
         output["employee_delete_confirm"] = is_admin
+        output["employees_visibility_manage"] = is_admin or output["employees_visibility_manage"]
         return output
 
     def allowed_roles(ident) -> list[str]:
@@ -509,7 +521,10 @@ def install_staff_routes(
         ]
         all_public = list(public_rows)
         if str(ident.role).lower() != "admin":
-            public_rows = [row for row in public_rows if row["role"] != "quanly"]
+            public_rows = [
+                row for row in public_rows
+                if row["role"] != "quanly" and not row["profile_hidden"]
+            ]
         role_rank = {role: index for index, role in enumerate(ROLE_ORDER)}
         status_rank = {status: index for index, status in enumerate(STATUS_OPTIONS)}
         public_rows.sort(key=lambda row: (
@@ -561,6 +576,8 @@ def install_staff_routes(
             require_feature(conn, ident, "shift_assignment_edit")
         if "login_locked" in values:
             require_feature(conn, ident, "account_lock_edit")
+        if "profile_hidden" in values:
+            require_feature(conn, ident, "employees_visibility_manage")
 
         merged = dict(row)
         if "role" in values:
@@ -610,6 +627,8 @@ def install_staff_routes(
             if merged["login_locked"]:
                 merged["remember_token_hash"] = ""
                 merged["remember_token_expiry"] = ""
+        if "profile_hidden" in values:
+            merged["profile_hidden"] = bool(values["profile_hidden"])
         old_status = _effective_status(row, norm)
         status = _status_value(values.get("employment_status", old_status), norm)
         if str(merged.get("role") or "").lower() == "admin" and status != STATUS_OPTIONS[0]:

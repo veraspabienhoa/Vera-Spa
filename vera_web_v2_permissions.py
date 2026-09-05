@@ -49,6 +49,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "employee_edit_save": "Lưu chỉnh sửa hồ sơ", "employment_status": "Xem trạng thái làm việc",
         "employment_status_edit": "Thay đổi trạng thái làm việc", "employee_delete": "Mở chức năng xóa",
         "employee_delete_confirm": "Xác nhận xóa tài khoản", "account_lock": "Xem khóa đăng nhập",
+        "employees_visibility_manage": "Tạm ẩn / hiện nhân viên",
         "account_lock_edit": "Khóa / mở đăng nhập", "registration_lock": "Xem khóa đăng ký",
         "registration_lock_edit": "Khóa / mở quyền đăng ký", "shift": "Xem chia ca",
         "shift_definition_edit": "Tạo / sửa / xóa ca", "shift_break_config_edit": "Cấu hình nghỉ giữa ca",

@@ -26,6 +26,7 @@ from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from PIL import Image as PILImage, ImageFilter, ImageOps
 from pydantic import BaseModel, Field
+from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -41,7 +42,7 @@ from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
 
 
-STAFF_SECURITY_RELEASE = "4.4-employee-identity-match"
+STAFF_SECURITY_RELEASE = "4.5-batch-profiles-mobile-crop"
 MAX_IDENTITY_BYTES = 700 * 1024
 IDENTITY_SIDES = {"front": "Mặt trước", "back": "Mặt sau"}
 MEDIA_SIDES = {**IDENTITY_SIDES, "portrait": "Ảnh nhân viên"}
@@ -52,6 +53,10 @@ BUSINESS_ADDRESS = "193 Trương Định, Phường Tam Hiệp, Thành Phố Đ�
 
 class StaffPasswordReset(BaseModel):
     new_password: str = Field(min_length=8, max_length=256)
+
+
+class StaffBatchPdfRequest(BaseModel):
+    usernames: list[str] = Field(min_length=1, max_length=100)
 
 
 def _ensure_identity_table(conn) -> None:
@@ -348,6 +353,41 @@ def _full_employee_address(row: dict[str, Any], payload: dict[str, Any]) -> str:
     return ", ".join(part for part in parts if part)
 
 
+def _employee_profile_record(row: dict[str, Any]) -> dict[str, str]:
+    payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
+    return {
+        "username": str(row.get("username") or ""),
+        "full_name": str(row.get("full_name") or ""),
+        "birth_date": str(row.get("birth_date") or ""),
+        "gender": str(payload.get("Giới tính") or ""),
+        "ethnicity": str(payload.get("Dân tộc") or ""),
+        "phone": str(row.get("phone") or ""),
+        "email": str(row.get("email") or ""),
+        "address": _full_employee_address(row, payload),
+        "role": str(row.get("role") or ""),
+        "employment_status": str(payload.get("Trạng thái làm việc") or "Đang làm việc"),
+        "employment_start_date": str(row.get("employment_start_date") or ""),
+        "employment_end_date": str(payload.get("Ngày nghỉ việc") or payload.get("Ngày kết thúc làm việc") or payload.get("employment_end_date") or ""),
+        "work_shift": str(row.get("work_shift") or ""),
+        "cccd_number": str(payload.get("Số CCCD") or ""),
+        "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
+        "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
+        "bank_account": str(row.get("bank_account") or ""),
+        "bank_name": str(row.get("bank_name") or ""),
+    }
+
+
+def _merge_profile_pdfs(items: list[tuple[dict[str, Any], dict[str, bytes]]]) -> bytes:
+    writer = PdfWriter()
+    for page_number, (profile, media) in enumerate(items, start=1):
+        reader = PdfReader(BytesIO(_build_employee_profile_pdf(profile, media, page_label=page_number)))
+        for page in reader.pages:
+            writer.add_page(page)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def _pdf_font_names() -> tuple[str, str]:
     regular_candidates = (
         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
@@ -384,7 +424,9 @@ def _pdf_image(data: bytes | None, width: float, height: float, label: str, styl
     return placeholder
 
 
-def _build_employee_profile_pdf(profile: dict[str, Any], media: dict[str, bytes]) -> bytes:
+def _build_employee_profile_pdf(
+    profile: dict[str, Any], media: dict[str, bytes], *, page_label: int | None = None,
+) -> bytes:
     font, bold = _pdf_font_names()
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="vera_title", fontName=bold, fontSize=16, leading=20, textColor=colors.HexColor("#173D2F"), alignment=TA_CENTER))
@@ -464,7 +506,7 @@ def _build_employee_profile_pdf(profile: dict[str, Any], media: dict[str, bytes]
         canvas.saveState()
         canvas.setFont(font, 7)
         canvas.setFillColor(colors.HexColor("#6F7F78"))
-        canvas.drawCentredString(A4[0] / 2, 7 * mm, f"{BUSINESS_NAME} - Trang {doc.page}")
+        canvas.drawCentredString(A4[0] / 2, 7 * mm, f"{BUSINESS_NAME} - Trang {page_label or doc.page}")
         canvas.restoreState()
 
     document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
@@ -728,30 +770,54 @@ def install_staff_security_routes(
                 WHERE employee_username=:username
             """), {"username": row["username"]}).mappings().all()
             media = {str(item["side"]): bytes(item["content"]) for item in documents}
-            payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
-            profile = {
-                "username": str(row.get("username") or ""),
-                "full_name": str(row.get("full_name") or ""),
-                "birth_date": str(row.get("birth_date") or ""),
-                "gender": str(payload.get("Giới tính") or ""),
-                "ethnicity": str(payload.get("Dân tộc") or ""),
-                "phone": str(row.get("phone") or ""),
-                "email": str(row.get("email") or ""),
-                "address": _full_employee_address(row, payload),
-                "role": str(row.get("role") or ""),
-                "employment_status": str(payload.get("Trạng thái làm việc") or "Đang làm việc"),
-                "employment_start_date": str(row.get("employment_start_date") or ""),
-                "employment_end_date": str(payload.get("Ngày nghỉ việc") or payload.get("Ngày kết thúc làm việc") or payload.get("employment_end_date") or ""),
-                "work_shift": str(row.get("work_shift") or ""),
-                "cccd_number": str(payload.get("Số CCCD") or ""),
-                "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
-                "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
-                "bank_account": str(row.get("bank_account") or ""),
-                "bank_name": str(row.get("bank_name") or ""),
-            }
+            profile = _employee_profile_record(row)
         content = _build_employee_profile_pdf(profile, media)
         safe_name = re.sub(r"[^\w.-]+", "_", profile["full_name"] or profile["username"], flags=re.UNICODE).strip("_") or "Nhan_Vien"
         filename = f"Ho_So_{safe_name}.pdf"
+        return StreamingResponse(
+            BytesIO(content),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+                "Cache-Control": "private, no-store, max-age=0",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @app.post("/v2/staff/profiles.pdf")
+    def export_selected_employee_profiles_pdf(
+        body: StaffBatchPdfRequest,
+        ident: identity_type = Depends(current_identity),
+    ):
+        if str(getattr(ident, "role", "") or "").lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được xuất đồng loạt hồ sơ nhân viên.")
+        usernames = []
+        seen = set()
+        for value in body.usernames:
+            username = str(value or "").strip()
+            key = norm(username)
+            if username and key not in seen:
+                seen.add(key)
+                usernames.append(username)
+        if not usernames:
+            raise HTTPException(400, "Chưa chọn nhân viên cần xuất hồ sơ PDF.")
+
+        items = []
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "staff_export")
+            _ensure_identity_table(conn)
+            for username in usernames:
+                row = employee_row(conn, username)
+                documents = conn.execute(text("""
+                    SELECT side, content
+                    FROM vera_employee_identity_document
+                    WHERE employee_username=:username
+                """), {"username": row["username"]}).mappings().all()
+                media = {str(item["side"]): bytes(item["content"]) for item in documents}
+                items.append((_employee_profile_record(row), media))
+
+        content = _merge_profile_pdfs(items)
+        filename = f"Ho_So_Nhan_Vien_Da_Chon_{len(items)}.pdf"
         return StreamingResponse(
             BytesIO(content),
             media_type="application/pdf",

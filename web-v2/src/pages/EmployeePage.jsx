@@ -1,6 +1,6 @@
 import {
-  BriefcaseBusiness, Download, FilePenLine, LoaderCircle, LockKeyhole, PencilLine, Plus,
-  RefreshCw, Save, Search, Trash2, UserCheck, UserRoundCog, UsersRound,
+  BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
+  PencilLine, Plus, RefreshCw, Save, Search, Trash2, UserCheck, UserRoundCog, UsersRound,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
@@ -132,6 +132,7 @@ export default function EmployeePage({ user }) {
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [shiftFilter, setShiftFilter] = useState('')
+  const [visibilityFilter, setVisibilityFilter] = useState('visible')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
@@ -192,8 +193,9 @@ export default function EmployeePage({ user }) {
       return matchesName && (!roleFilter || employee.role === roleFilter)
         && (!statusFilter || employee.employment_status === statusFilter)
         && (!shiftFilter || employee.work_shift === shiftFilter)
+        && (visibilityFilter === 'all' || (visibilityFilter === 'hidden' ? employee.profile_hidden : !employee.profile_hidden))
     })
-  }, [data, roleFilter, search, shiftFilter, statusFilter])
+  }, [data, roleFilter, search, shiftFilter, statusFilter, visibilityFilter])
   const shiftOptions = useMemo(() => Array.from(new Set([
     ...(data?.employees || []).map((employee) => employee.work_shift),
     ...Object.values(data?.shifts_by_department || {}).flat(),
@@ -210,6 +212,7 @@ export default function EmployeePage({ user }) {
   const canManage = (employee) => isAdmin || manageableRoles.has(employee.role)
   const canSaveRows = permissions.employee_edit_save || permissions.employment_status_edit
     || permissions.shift_assignment_edit || permissions.account_lock_edit
+  const canSelectRows = isAdmin && (permissions.staff_export || permissions.employee_delete || permissions.employees_visibility_manage)
 
   const setDraft = (username, field, value) => {
     setDrafts((current) => ({
@@ -348,6 +351,29 @@ export default function EmployeePage({ user }) {
       : [...current, username])
   }
 
+  const selectAllVisible = () => setSelected(visible.filter(canManage).map((employee) => employee.username))
+  const clearSelected = () => setSelected([])
+
+  const exportSelectedProfiles = () => run('profiles-pdf', async () => {
+    if (!selected.length) throw new Error('Chưa chọn nhân viên cần xuất hồ sơ PDF.')
+    await staffSecurityApi.exportProfilesPdf(selected)
+    setNotice({ type: 'success', message: `Đã xuất ${selected.length} hồ sơ nhân viên trong một file PDF.` })
+  })
+
+  const setEmployeeHidden = (employee, hidden) => run(`visibility-${employee.username}`, async () => {
+    const result = await veraApi.updateStaff(employee.username, { profile_hidden: hidden })
+    await load(true)
+    setNotice({ type: 'success', message: result.message || `Đã ${hidden ? 'ẩn' : 'hiện'} nhân viên ${employee.full_name || employee.username}.` })
+  })
+
+  const setSelectedHidden = (hidden) => run(hidden ? 'hide-selected' : 'show-selected', async () => {
+    if (!selected.length) throw new Error('Chưa chọn nhân viên.')
+    for (const username of selected) await veraApi.updateStaff(username, { profile_hidden: hidden })
+    const count = selected.length
+    await load(true)
+    setNotice({ type: 'success', message: `Đã ${hidden ? 'tạm ẩn' : 'hiện lại'} ${count} nhân viên.` })
+  })
+
   if (!isApiConfigured) return <div className="setup-note">Mục Nhân viên cần Python API V2 để ghi an toàn.</div>
 
   return (
@@ -388,11 +414,17 @@ export default function EmployeePage({ user }) {
             <option value="">Tất cả ca làm việc</option>
             {shiftOptions.map((shift) => <option key={shift}>{shift}</option>)}
           </select>
+          {isAdmin && <select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>}
         </div>
         <div className="staff-actionbar">
           {permissions.employee_add && <button className="primary-button" onClick={() => setAddOpen((value) => !value)}><Plus size={17} /> Thêm nhân viên</button>}
           {permissions.staff_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /> Export Excel</button>}
           {canSaveRows && <button className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
+          {canSelectRows && <button className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17} /> Chọn tất cả</button>}
+          {canSelectRows && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}>Bỏ chọn</button>}
+          {isAdmin && permissions.staff_export && <button className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
+          {isAdmin && permissions.employees_visibility_manage && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(true)}><EyeOff size={17}/> Ẩn đã chọn</button>}
+          {isAdmin && permissions.employees_visibility_manage && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(false)}><Eye size={17}/> Hiện đã chọn</button>}
           {isAdmin && permissions.employee_delete && <button className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
         </div>
       </section>
@@ -448,7 +480,7 @@ export default function EmployeePage({ user }) {
               })}
             </div>
           </div>)}
-          {isAdmin && <EmployeeIdentityPanel username={profileUser} allowPasswordReset className="span-2" onIdentityExtracted={(fields) => setProfileDraft((current) => ({
+          {isAdmin && <EmployeeIdentityPanel username={profileUser} allowPasswordReset allowAdminEdit className="span-2" onIdentityExtracted={(fields) => setProfileDraft((current) => ({
             ...current,
             cccd_number: current.cccd_number || fields.cccd_number || '',
             cccd_issue_date: current.cccd_issue_date || toInputDate(fields.cccd_issue_date) || '',
@@ -469,10 +501,10 @@ export default function EmployeePage({ user }) {
                 const draft = drafts[employee.username] || rowDraft(employee)
                 const editable = canManage(employee)
                 const missingFields = missingEmployeeProfileFields(employee)
-                const rowClassName = [employee.employment_status === 'Đã nghỉ việc' ? 'staff-left-row' : '', missingFields.length ? 'staff-incomplete-row' : ''].filter(Boolean).join(' ')
+                const rowClassName = [employee.employment_status === 'Đã nghỉ việc' ? 'staff-left-row' : '', missingFields.length ? 'staff-incomplete-row' : '', employee.profile_hidden ? 'staff-hidden-row' : ''].filter(Boolean).join(' ')
                 return <tr key={employee.username} className={rowClassName} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
-                  <td className="center"><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} aria-label={`Chọn ${employee.username}`} /></td>
-                  <td><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><strong>{employee.username}</strong>{isAdmin && <button type="button" className="text-button" title="Đổi Tên hệ thống và Tên đăng nhập" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={13} /></button>}</div><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</td>
+                  <td className="center"><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !canSelectRows} onChange={() => toggleSelected(employee.username)} aria-label={`Chọn ${employee.username}`} /></td>
+                  <td><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><strong>{employee.username}</strong>{isAdmin && <button type="button" className="text-button" title="Đổi Tên hệ thống và Tên đăng nhập" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={13} /></button>}</div><small>{employee.full_name || '—'}</small>{employee.profile_hidden && <span className="staff-hidden-badge">Đang ẩn</span>}{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</td>
                   <td><select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></td>
                   <td><select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></td>
                   <td><select value={draft.work_shift} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'work_shift', event.target.value)}><option value="">Chưa chia ca</option>{shiftsFor(employee).map((shift) => <option key={shift}>{shift}</option>)}</select></td>
@@ -480,7 +512,7 @@ export default function EmployeePage({ user }) {
                   <td><select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></td>
                   <td className="center"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} aria-label={`Khóa ${employee.username}`} /></td>
                   <td><button className="text-button staff-edit-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Sửa</button></td>
-                  <td>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</td>
+                  <td><div className="list-actions">{isAdmin && permissions.employees_visibility_manage && <button className="secondary-button compact" disabled={Boolean(busy)} onClick={() => setEmployeeHidden(employee, !employee.profile_hidden)}>{employee.profile_hidden ? <Eye size={14}/> : <EyeOff size={14}/>} {employee.profile_hidden ? 'Hiện' : 'Ẩn'}</button>}{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></td>
                 </tr>
               })}</tbody>
             </table>
@@ -490,8 +522,8 @@ export default function EmployeePage({ user }) {
             const draft = drafts[employee.username] || rowDraft(employee)
             const editable = canManage(employee)
             const missingFields = missingEmployeeProfileFields(employee)
-            return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''} ${missingFields.length ? 'incomplete' : ''}`} key={employee.username} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
-              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!isAdmin || !editable || !permissions.employee_delete} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><div className="list-actions">{isAdmin && <button className="text-button" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={15} /> Đổi tên</button>}<button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
+            return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''} ${missingFields.length ? 'incomplete' : ''} ${employee.profile_hidden ? 'hidden' : ''}`} key={employee.username} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
+              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !canSelectRows} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{employee.profile_hidden && <span className="staff-hidden-badge">Đang ẩn</span>}{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><div className="list-actions">{isAdmin && <button className="text-button" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={15} /> Đổi tên</button>}<button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employees_visibility_manage && <button className="secondary-button compact" disabled={Boolean(busy)} onClick={() => setEmployeeHidden(employee, !employee.profile_hidden)}>{employee.profile_hidden ? <Eye size={14}/> : <EyeOff size={14}/>} {employee.profile_hidden ? 'Hiện' : 'Ẩn'}</button>}{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
               <div className="staff-mobile-fields">
                 <label>Phân quyền<select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
                 <label>Trạng thái<select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></label>
