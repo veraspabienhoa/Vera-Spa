@@ -219,6 +219,11 @@ jobs:
                   '${release_dir}/configure_vps_database.sh',
                   '${release_dir}/vera_vps_data_check.py',
               )),
+              'public Auth health probe follows production browser edge policy': all(item in workflow for item in (
+                  '"Origin": "https://app.veraspa.vn"',
+                  '"User-Agent": (',
+                  'urllib.request.urlopen(request, timeout=10)',
+              )),
               'browser disables Supabase session persistence': 'persistSession: false' in client and 'autoRefreshToken: false' in client,
               'browser uses API logout': "apiAuthRequest('/v2/auth/logout'" in client,
               'browser preserves a newer cross-tab session': 'expectedRefreshToken' in client and 'current.refresh_token !== attemptedToken' in client,
