@@ -69,4 +69,6 @@ def test_employee_media_security_and_exports_are_wired():
     assert "ws.add_image" in staff_source
     assert "Xuất PDF hồ sơ nhân viên" in identity_ui
     assert "Crop / Xoay ảnh đã lưu" in identity_ui
-
+    assert "Camera trước" in identity_ui
+    assert "Camera sau" in identity_ui
+    assert "facingMode: { ideal: facingMode }" in identity_ui

@@ -75,6 +75,9 @@
 .identity-editor-buttons span { font-size: 12px; font-weight: 900; }
 .identity-editor-size { color: #68736f; font-size: 11px; line-height: 1.5; }
 .identity-editor-footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 14px; }
+.identity-camera-facing { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 14px 0 0; }
+.identity-camera-facing > span { color: #5f6e67; font-size: 11px; font-weight: 900; }
+.identity-camera-facing button { min-width: 132px; }
 .identity-camera-landscape { position: relative; width: min(90vw,680px); max-width: 100%; margin: 16px auto 0; overflow: hidden; border-radius: 18px; background: #101815; }
 .identity-camera-landscape.portrait { width: min(72vw,360px); }
 .identity-camera-landscape video { width: 100%; height: 100%; object-fit: cover; }
@@ -92,6 +95,9 @@
   .identity-editor-preview canvas { max-height: 34vh; }
   .identity-editor-footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .identity-editor-footer button { width: 100%; }
+  .identity-camera-facing { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .identity-camera-facing > span { grid-column: 1 / -1; text-align: center; }
+  .identity-camera-facing button { min-width: 0; width: 100%; }
   .identity-camera-landscape { width: min(95vw,680px); }
   .identity-camera-landscape.portrait { width: min(78vw,330px); }
 }

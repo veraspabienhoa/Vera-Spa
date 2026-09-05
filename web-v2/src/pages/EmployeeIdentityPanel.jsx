@@ -100,12 +100,15 @@ async function createCompressedBlob(image, crop, rotation, preferredEdge, prefer
 function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_RATIO, mediaLabel = 'CCCD' }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
+  const [facingMode, setFacingMode] = useState(() => aspectRatio < 1 ? 'user' : 'environment')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(true)
 
   useEffect(() => {
     let active = true
     const open = async () => {
+      setBusy(true)
+      setError('')
       if (!navigator.mediaDevices?.getUserMedia) {
         setError('Trình duyệt này không hỗ trợ camera trực tiếp. Hãy dùng nút Tải ảnh.')
         setBusy(false)
@@ -115,7 +118,7 @@ function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
-            facingMode: { ideal: 'environment' },
+            facingMode: { ideal: facingMode },
             width: { ideal: 1920 },
             height: { ideal: 1210 },
             aspectRatio: { ideal: aspectRatio },
@@ -139,7 +142,7 @@ function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_
       streamRef.current?.getTracks().forEach((track) => track.stop())
       streamRef.current = null
     }
-  }, [aspectRatio])
+  }, [aspectRatio, facingMode])
 
   const capture = () => {
     const video = videoRef.current
@@ -179,8 +182,13 @@ function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_
   return <div className="identity-editor-backdrop" role="dialog" aria-modal="true" aria-label={`Camera ${title} ${mediaLabel}`}>
     <div className="identity-camera-card">
       <div className="identity-editor-head"><div><span className="eyebrow"><Camera size={14}/> Camera {mediaLabel}</span><h3>CHỤP {title.toUpperCase()}</h3><p>{isPortrait ? 'Canh khuôn mặt và phần thân trên trong khung dọc 3:4.' : 'Canh đủ bốn góc CCCD trong khung ngang rồi chụp.'}</p></div><button type="button" className="secondary-button compact" onClick={onCancel}><X size={16}/> Đóng</button></div>
+      <div className="identity-camera-facing" aria-label="Lựa chọn camera trước hoặc camera sau">
+        <span>Chọn camera</span>
+        <button type="button" aria-pressed={facingMode === 'user'} className={facingMode === 'user' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('user')} disabled={busy}><Camera size={14}/> Camera trước</button>
+        <button type="button" aria-pressed={facingMode === 'environment'} className={facingMode === 'environment' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('environment')} disabled={busy}><Camera size={14}/> Camera sau</button>
+      </div>
       <div className={`identity-camera-landscape ${isPortrait ? 'portrait' : ''}`} style={{ aspectRatio }}>
-        <video ref={videoRef} playsInline muted autoPlay />
+        <video ref={videoRef} playsInline muted autoPlay style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }} />
         <div className="identity-camera-card-guide"><span>{isPortrait ? 'CANH ẢNH NHÂN VIÊN TỶ LỆ 3:4' : 'CANH 4 GÓC CCCD TRONG KHUNG NÀY'}</span></div>
         {busy && <div className="identity-camera-loading"><LoaderCircle className="spin" size={24}/> Đang mở Camera…</div>}
       </div>
@@ -536,9 +544,10 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
       .employee-portrait-section{display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:14px;align-items:start}.employee-portrait-side,.employee-id-side{border:1px solid #e2e8e5;border-radius:14px;background:#fff;padding:12px;min-width:0}.employee-portrait-preview{width:min(100%,180px);aspect-ratio:3/4;margin:10px auto;border-radius:12px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-portrait-preview img{width:100%;height:100%;object-fit:cover}.employee-portrait-help{padding:13px;border-radius:14px;background:#edf5f1;color:#38564a;font-size:12px;line-height:1.55}.employee-portrait-help strong{display:block;margin-bottom:5px;color:#173d2f}.employee-identity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.employee-id-side-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.employee-id-side-head div{display:grid;gap:2px}.employee-id-side-head strong{font-size:13px}.employee-id-side-head span{font-size:11px;color:#74807b}.employee-id-preview{height:132px;margin:10px 0;border-radius:10px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-id-preview img{width:100%;height:100%;object-fit:contain;background:#111}.employee-id-placeholder{font-weight:900;color:#9aa6a1;letter-spacing:.12em;display:grid;place-items:center;gap:6px}.employee-id-actions{display:flex;flex-wrap:wrap;gap:7px}.employee-id-actions button{min-height:34px}
       .employee-password-reset{display:grid;gap:10px;padding:13px;border:1px solid #eadfcf;border-radius:14px;background:#fffaf2}.employee-password-reset-head{display:flex;gap:8px;align-items:flex-start}.employee-password-reset-head h4{margin:0;font-size:13px}.employee-password-reset-head p{margin:3px 0 0;font-size:11px;color:#776d60;line-height:1.45}.employee-password-reset-grid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}.employee-password-default{display:grid;gap:4px;min-width:0}.employee-password-default span{font-size:11px;color:#776d60}.employee-password-default strong{font-size:15px;letter-spacing:.02em;color:#173d2f}.employee-identity-notice{padding:9px 11px;border-radius:10px;font-size:12px}.employee-identity-notice.success{background:#edf8f2;color:#17603b}.employee-identity-notice.error{background:#fff1f0;color:#a62a20}
       .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(760px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{display:flex;justify-content:flex-end;gap:9px;margin-top:14px}
+      .identity-camera-facing{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0}.identity-camera-facing>span{color:#5f6e67;font-size:11px;font-weight:900}.identity-camera-facing button{min-width:132px}
       .identity-camera-landscape{position:relative;width:min(90vw,680px);max-width:100%;aspect-ratio:85.6/53.98;margin:16px auto 0;overflow:hidden;border-radius:18px;background:#101815}.identity-camera-landscape.portrait{width:min(72vw,360px)}.identity-camera-landscape video{width:100%;height:100%;object-fit:cover}.identity-camera-card-guide{position:absolute;inset:4%;border:3px solid rgba(255,255,255,.98);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.20),inset 0 0 0 1px rgba(0,0,0,.25);display:flex;align-items:flex-end;justify-content:center;padding:10px;pointer-events:none}.identity-camera-card-guide span{padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.58);color:#fff;font-size:10px;font-weight:900;letter-spacing:.05em}.identity-camera-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,.35);color:#fff;font-weight:800}.identity-camera-help{margin:10px auto 0;max-width:680px;color:#68736f;font-size:11px;line-height:1.45;text-align:center}
       .employee-profile-export{display:flex;justify-content:flex-end}.employee-profile-export button{min-height:38px}
-      @media(max-width:700px){.employee-identity-panel{padding:12px;gap:11px}.employee-portrait-section,.employee-identity-grid{grid-template-columns:1fr}.employee-id-preview{height:118px}.employee-password-reset-grid{grid-template-columns:1fr}.employee-password-reset-grid>.employee-password-submit{width:100%}.identity-editor-backdrop{padding:7px}.identity-editor-card,.identity-camera-card{padding:12px;border-radius:14px}.identity-editor-layout{grid-template-columns:1fr}.identity-editor-preview{min-height:220px}.identity-editor-preview canvas{max-height:34vh}.identity-editor-footer{display:grid;grid-template-columns:1fr 1fr}.identity-editor-footer button{width:100%}.identity-camera-landscape{width:min(95vw,680px)}.identity-camera-landscape.portrait{width:min(78vw,330px)}}
+      @media(max-width:700px){.employee-identity-panel{padding:12px;gap:11px}.employee-portrait-section,.employee-identity-grid{grid-template-columns:1fr}.employee-id-preview{height:118px}.employee-password-reset-grid{grid-template-columns:1fr}.employee-password-reset-grid>.employee-password-submit{width:100%}.identity-editor-backdrop{padding:7px}.identity-editor-card,.identity-camera-card{padding:12px;border-radius:14px}.identity-editor-layout{grid-template-columns:1fr}.identity-editor-preview{min-height:220px}.identity-editor-preview canvas{max-height:34vh}.identity-editor-footer{display:grid;grid-template-columns:1fr 1fr}.identity-editor-footer button{width:100%}.identity-camera-facing{display:grid;grid-template-columns:1fr 1fr}.identity-camera-facing>span{grid-column:1/-1;text-align:center}.identity-camera-facing button{min-width:0;width:100%}.identity-camera-landscape{width:min(95vw,680px)}.identity-camera-landscape.portrait{width:min(78vw,330px)}}
     `}</style>
     <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3><p>Ảnh hiển thị theo tỷ lệ dọc 3:4. Nhân viên có thể upload hoặc chụp trực tiếp với khung căn hình.</p></div></div>
     <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowPasswordReset}/><div className="employee-portrait-help"><strong>Tiêu chuẩn ảnh</strong>Canh khuôn mặt rõ, đủ sáng, không che mặt. Hệ thống tự crop đúng tỷ lệ 3:4 và nén trước khi lưu. Ảnh này được đưa vào file Excel và PDF hồ sơ.</div></div>

@@ -76,6 +76,7 @@ jobs:
               'Excel embeds employee portraits': 'ws.add_image(image' in staff and '"Ảnh nhân viên"' in staff,
               'manual CCCD profile fields exist': all(key in profile for key in ('cccd_number', 'cccd_issue_date', 'cccd_issue_place')),
               'camera crop and rotation UI exists': all(key in identity_ui for key in ('IdentityCamera', 'IdentityImageEditor', 'PORTRAIT_ASPECT_RATIO')),
+              'camera can switch front and rear': all(key in identity_ui for key in ('Camera trước', 'Camera sau', 'facingMode: { ideal: facingMode }')),
               'new employee form accepts media': 'EmployeeMediaDraftPanel' in employee_ui,
               'runtime includes Vietnamese OCR and imaging': 'Pillow' in requirements and 'tesseract-ocr-vie' in dockerfile,
           }
