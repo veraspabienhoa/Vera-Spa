@@ -1,4 +1,4 @@
-"""Editable Contract No. 1 and printable PDF exports for Leader/employee profiles."""
+"""Editable KTV contracts and printable PDF exports for Leader/employee profiles."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -27,7 +27,7 @@ from sqlalchemy import text
 from vera_web_v2_staff_security import _ensure_identity_table, _extract_cccd_fields
 
 
-CONTRACT_RELEASE = "1.0-editable-batch-permissions"
+CONTRACT_RELEASE = "1.1-ktv-multi-select-profile-validation"
 SETTING_CATEGORY = "contract"
 SETTING_KEY = "contract_1"
 ELIGIBLE_ROLES = ("leader", "nhanvien")
@@ -106,8 +106,9 @@ class ContractSettingsUpdate(BaseModel):
 
 
 class ContractExportRequest(BaseModel):
-    scope: Literal["individual", "department", "all"] = "individual"
+    scope: Literal["selected", "individual", "department", "all"] = "selected"
     username: str = Field(default="", max_length=300)
+    usernames: list[str] = Field(default_factory=list, max_length=500)
     role: Literal["leader", "nhanvien"] | None = None
 
 
@@ -181,12 +182,14 @@ def _date_parts(value: Any) -> tuple[str, str, str]:
 
 
 def _display_date(value: Any) -> str:
+    if not str(value or "").strip():
+        return ""
     day, month, year = _date_parts(value)
     return f"{day}/{month}/{year}"
 
 
 def _full_profile_address(row: dict[str, Any], payload: dict[str, Any]) -> str:
-    detail = str(payload.get("Địa chỉ chi tiết") or row.get("address") or "").strip()
+    detail = str(payload.get("Địa chỉ cụ thể") or payload.get("Địa chỉ chi tiết") or row.get("address") or "").strip()
     ward = str(payload.get("Xã/Phường") or "").strip()
     district = str(payload.get("Quận/Huyện") or "").strip()
     province = str(payload.get("Tỉnh/Thành phố") or "").strip()
@@ -239,22 +242,21 @@ def _contract_employee(conn, row: dict[str, Any]) -> dict[str, str]:
         ocr.get("permanent_address")
         or payload.get("Địa chỉ thường trú CCCD")
         or payload.get("Nơi thường trú CCCD")
-        or _full_profile_address(row, payload)
-        or "…………………………………………………………………………………………"
+        or ""
     ).strip()
     birth_place = str(
         ocr.get("place_of_origin")
         or payload.get("Quê quán CCCD")
         or payload.get("Nơi sinh")
         or payload.get("Tỉnh/Thành phố")
-        or "……………………………………"
+        or ""
     ).strip()
-    cccd_number = str(payload.get("Số CCCD") or ocr.get("cccd_number") or "………………………………").strip()
+    cccd_number = str(payload.get("Số CCCD") or ocr.get("cccd_number") or "").strip()
     issue_date = str(payload.get("Ngày cấp CCCD") or ocr.get("cccd_issue_date") or "").strip()
-    issue_place = str(payload.get("Nơi cấp CCCD") or ocr.get("cccd_issue_place") or "……………………………………").strip()
+    issue_place = str(payload.get("Nơi cấp CCCD") or ocr.get("cccd_issue_place") or "").strip()
     return {
         "username": str(row.get("username") or ""),
-        "employee_name": str(row.get("full_name") or row.get("username") or "……………………………………").strip(),
+        "employee_name": str(row.get("full_name") or "").strip(),
         "birth_date": str(row.get("birth_date") or ""),
         "birth_place": birth_place,
         "permanent_address": permanent_address,
@@ -263,6 +265,40 @@ def _contract_employee(conn, row: dict[str, Any]) -> dict[str, str]:
         "cccd_issue_place": issue_place,
         "role": str(row.get("role") or "").lower(),
     }
+
+
+REQUIRED_EMPLOYEE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("employee_name", "Họ và tên đầy đủ"),
+    ("birth_date", "Ngày sinh"),
+    ("birth_place", "Nơi sinh/Tỉnh, thành phố"),
+    ("permanent_address", "Địa chỉ thường trú từ CCCD"),
+    ("cccd_number", "Số CCCD"),
+    ("cccd_issue_date", "Ngày cấp CCCD"),
+    ("cccd_issue_place", "Nơi cấp CCCD"),
+)
+
+
+def _missing_contract_fields(employee: dict[str, str]) -> list[str]:
+    return [label for key, label in REQUIRED_EMPLOYEE_FIELDS if not str(employee.get(key) or "").strip()]
+
+
+def _ensure_complete_contract_profiles(employees: list[dict[str, str]]) -> None:
+    incomplete: list[tuple[str, list[str]]] = []
+    for employee in employees:
+        missing = _missing_contract_fields(employee)
+        if missing:
+            name = employee.get("employee_name") or employee.get("username") or "Không rõ nhân viên"
+            incomplete.append((name, missing))
+    if not incomplete:
+        return
+    details = "; ".join(f"{name}: {', '.join(fields)}" for name, fields in incomplete[:20])
+    if len(incomplete) > 20:
+        details += f"; và {len(incomplete) - 20} nhân viên khác"
+    raise HTTPException(
+        422,
+        "Không thể xuất PDF vì hồ sơ người lao động còn thiếu thông tin. "
+        f"Vui lòng bổ sung: {details}.",
+    )
 
 
 def _pdf_fonts() -> tuple[str, str]:
@@ -318,7 +354,7 @@ def _contract_pdf(employee: dict[str, str], settings: dict[str, str]) -> bytes:
     document = SimpleDocTemplate(
         output, pagesize=A4, rightMargin=17 * mm, leftMargin=17 * mm,
         topMargin=13 * mm, bottomMargin=14 * mm,
-        title=f"Hợp đồng số 1 - {employee['employee_name']}",
+        title=f"Hợp đồng KTV - {employee['employee_name']}",
         author=settings.get("business_name") or "HỘ KINH DOANH VERA",
     )
     story: list[Any] = [
@@ -386,7 +422,7 @@ def _contract_pdf(employee: dict[str, str], settings: dict[str, str]) -> bytes:
         canvas.saveState()
         canvas.setFont(regular, 7)
         canvas.setFillColor(colors.HexColor("#68766F"))
-        canvas.drawString(17 * mm, 7 * mm, f"Hợp đồng số 1 · {employee['employee_name']}")
+        canvas.drawString(17 * mm, 7 * mm, f"Hợp đồng KTV · {employee['employee_name']}")
         canvas.drawRightString(A4[0] - 17 * mm, 7 * mm, f"Trang {doc.page}")
         canvas.restoreState()
 
@@ -486,29 +522,35 @@ def install_contract_1_routes(
                 "value_json": json.dumps(saved, ensure_ascii=False),
                 "updated_by": str(getattr(ident, "employee_username", "") or ""),
             })
-            return {"ok": True, "message": "Đã lưu nội dung và cài đặt Hợp đồng số 1.", "settings": saved, "revision": revision + 1}
+            return {"ok": True, "message": "Đã lưu nội dung và cài đặt Hợp đồng KTV.", "settings": saved, "revision": revision + 1}
 
     @app.post("/v2/contracts/1/export.pdf")
     def export_contract_1_pdf(body: ContractExportRequest, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "contract_1_view")
             can_bulk = feature_allowed(conn, ident, "contract_1_export_bulk")
-            if body.scope == "individual":
-                requested_key = norm(body.username or getattr(ident, "employee_username", ""))
+            if body.scope in {"selected", "individual"}:
+                requested_usernames = body.usernames or ([body.username] if body.username else [])
+                if not requested_usernames:
+                    requested_usernames = [str(getattr(ident, "employee_username", "") or "")]
+                requested_keys = {norm(item) for item in requested_usernames if norm(item)}
                 own_key = norm(getattr(ident, "employee_username", ""))
-                if requested_key != own_key and not can_bulk:
-                    raise HTTPException(403, "Bạn chỉ được xuất hợp đồng của chính mình.")
-                if requested_key == own_key:
+                if requested_keys == {own_key}:
                     require_feature(conn, ident, "contract_1_export_self")
+                elif not can_bulk:
+                    raise HTTPException(403, "Bạn chỉ được xuất hợp đồng của chính mình.")
                 else:
                     require_feature(conn, ident, "contract_1_export_bulk")
             else:
                 require_feature(conn, ident, "contract_1_export_bulk")
 
             rows = _eligible_employee_rows(conn)
-            if body.scope == "individual":
-                requested_key = norm(body.username or getattr(ident, "employee_username", ""))
-                rows = [row for row in rows if norm(row.get("username")) == requested_key]
+            if body.scope in {"selected", "individual"}:
+                requested_usernames = body.usernames or ([body.username] if body.username else [])
+                if not requested_usernames:
+                    requested_usernames = [str(getattr(ident, "employee_username", "") or "")]
+                requested_keys = {norm(item) for item in requested_usernames if norm(item)}
+                rows = [row for row in rows if norm(row.get("username")) in requested_keys]
             elif body.scope == "department":
                 if body.role not in ELIGIBLE_ROLES:
                     raise HTTPException(400, "Vui lòng chọn bộ phận Leader hoặc Nhân viên.")
@@ -518,15 +560,16 @@ def install_contract_1_routes(
 
             settings, _revision = _settings(conn)
             employees = [_contract_employee(conn, row) for row in rows]
+            _ensure_complete_contract_profiles(employees)
             content = _merge_contract_pdfs([(employee, settings) for employee in employees])
 
         if len(employees) == 1:
             safe = re.sub(r"[^\w.-]+", "_", employees[0]["employee_name"], flags=re.UNICODE).strip("_") or "Nhan_Vien"
-            filename = f"Hop_Dong_So_1_{safe}.pdf"
+            filename = f"Hop_Dong_KTV_{safe}.pdf"
         elif body.scope == "department":
-            filename = f"Hop_Dong_So_1_{ROLE_LABELS.get(body.role or '', body.role or 'Bo_Phan')}_{len(employees)}.pdf"
+            filename = f"Hop_Dong_KTV_{ROLE_LABELS.get(body.role or '', body.role or 'Bo_Phan')}_{len(employees)}.pdf"
         else:
-            filename = f"Hop_Dong_So_1_Tat_Ca_{len(employees)}.pdf"
+            filename = f"Hop_Dong_KTV_Da_Chon_{len(employees)}.pdf" if body.scope in {"selected", "individual"} else f"Hop_Dong_KTV_Tat_Ca_{len(employees)}.pdf"
         return StreamingResponse(
             BytesIO(content),
             media_type="application/pdf",
@@ -544,5 +587,6 @@ def install_contract_1_routes(
 
 __all__ = [
     "DEFAULT_SETTINGS", "DEFAULT_TEMPLATE_CONTENT", "_contract_pdf", "_merge_contract_pdfs",
+    "_missing_contract_fields", "_ensure_complete_contract_profiles",
     "install_contract_1_routes",
 ]

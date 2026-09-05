@@ -97,7 +97,7 @@ jobs:
               raise SystemExit('Failed employee media invariants: ' + ', '.join(failed))
           PY
 
-      - name: Verify Contract No. 1 and permission controls
+      - name: Verify KTV contract and permission controls
         shell: bash
         run: |
           python - <<'PY'
@@ -117,23 +117,24 @@ jobs:
               'contract_1_template_edit', 'contract_1_settings_edit',
           )
           checks = {
-              'menu and route exist': "id: 'contract-1'" in shell and "page === 'contract-1'" in app,
+              'menu and route exist': "id: 'contract-1'" in shell and "label: 'Hợp đồng'" in shell and "page === 'contract-1'" in app,
               'all contract permissions are configurable': all(key in permissions for key in permission_keys),
               'leader and employee get self-service defaults': all(key in permissions.split('EMPLOYEE = {', 1)[1].split('}', 1)[0] for key in ('contract_1_view', 'contract_1_export_self')),
               'backend installer is active': 'install_contract_1_routes' in api,
               'settings use shared PostgreSQL store': "SETTING_CATEGORY = \"contract\"" in backend and 'vera_app_setting' in backend,
-              'single department and all export modes exist': all(value in backend for value in ('"individual"', '"department"', '"all"')),
+              'selected department and all export modes exist': all(value in backend for value in ('"selected"', '"department"', '"all"', 'usernames')),
               'batch PDF is merged': '_merge_contract_pdfs' in backend and 'PdfWriter' in backend,
+              'incomplete employee profiles block PDF': '_ensure_complete_contract_profiles(employees)' in backend and 'Không thể xuất PDF vì hồ sơ người lao động còn thiếu thông tin' in backend,
               'employee profile and CCCD feed the contract': all(value in backend for value in ('employee_name', 'permanent_address', 'cccd_number', 'cccd_issue_date')),
               'CCCD OCR reads permanent address': all(value in security for value in ('place_of_origin', 'permanent_address', 'Địa chỉ thường trú CCCD')),
-              'editable representative term signing and salary controls exist': all(value in ui for value in ('representative_name', 'contract_term', 'signing_date', 'salary_amount', 'template_content')),
+              'editable representative term signing and salary controls exist': all(value in ui for value in ('representative_name', 'contract_term', 'signing_date', 'salary_amount', 'template_content', 'contract-highlight-field')),
               'browser downloads private PDF': '/v2/contracts/1/export.pdf' in client and 'URL.createObjectURL' in client,
           }
           for name, ok in checks.items():
               print(('PASS' if ok else 'FAIL') + ': ' + name)
           failed = [name for name, ok in checks.items() if not ok]
           if failed:
-              raise SystemExit('Failed Contract No. 1 invariants: ' + ', '.join(failed))
+              raise SystemExit('Failed KTV contract invariants: ' + ', '.join(failed))
           PY
 
       - name: Verify weekend Người Thứ N policy

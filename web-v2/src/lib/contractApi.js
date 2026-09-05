@@ -40,7 +40,7 @@ async function exportPdf(body) {
   const blob = await response.blob()
   const disposition = response.headers.get('content-disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
-  const filename = encoded ? decodeURIComponent(encoded.replace(/^"|"$/g, '')) : 'Hop_Dong_So_1.pdf'
+  const filename = encoded ? decodeURIComponent(encoded.replace(/^"|"$/g, '')) : 'Hop_Dong_KTV.pdf'
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url

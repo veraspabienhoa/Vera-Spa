@@ -56,12 +56,12 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "shift_assignment_edit": "Sửa phân ca", "shift_plan_edit": "Lưu kế hoạch hẹn ngày",
         "shift_assignment_clear": "Xóa phân ca", "shift_import": "Import phân ca", "shift_export_pdf": "Export ca",
     },
-    "Hợp đồng số 1": {
-        "contract_1_view": "Xem Hợp đồng số 1",
+    "Hợp đồng": {
+        "contract_1_view": "Xem Hợp đồng KTV",
         "contract_1_export_self": "Xuất hợp đồng của chính mình",
-        "contract_1_export_bulk": "Xuất hợp đồng theo nhân viên / bộ phận / toàn bộ",
-        "contract_1_template_edit": "Chỉnh sửa nội dung mẫu hợp đồng",
-        "contract_1_settings_edit": "Chỉnh người đại diện, thời hạn, ngày ký và mức lương",
+        "contract_1_export_bulk": "Xuất Hợp đồng KTV theo nhân viên / bộ phận / toàn bộ",
+        "contract_1_template_edit": "Chỉnh sửa nội dung mẫu Hợp đồng KTV",
+        "contract_1_settings_edit": "Chỉnh người đại diện, thời hạn, ngày ký và mức lương Hợp đồng KTV",
     },
     "Nội quy": {
         "official_rules_view": "Xem Nội quy", "official_rules_edit": "Sửa Nội quy",
