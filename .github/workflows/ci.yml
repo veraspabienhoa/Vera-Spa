@@ -81,7 +81,7 @@ jobs:
               'camera crop and rotation UI exists': all(key in identity_ui for key in ('IdentityCamera', 'IdentityImageEditor', 'PORTRAIT_ASPECT_RATIO')),
               'crop supports all four independently movable edges': all(key in identity_ui for key in ("setCropInset('left'", "setCropInset('right'", "setCropInset('top'", "setCropInset('bottom'")),
               'mobile crop supports pointer drag and free selection': all(key in identity_ui for key in ('onPointerDown={beginCropGesture}', 'Vẽ vùng crop tự do', 'Di chuyển ảnh/vùng chọn', 'touch-action:none')),
-              'admin can hide and show employees': all(key in employee_ui for key in ('Chọn tất cả', 'Bỏ chọn', 'Ẩn đã chọn', 'Hiện đã chọn', 'profile_hidden')) and 'employees_visibility_manage' in staff,
+              'admin can hide and show employees': all(key in employee_ui for key in ('staff-list-selection-actions', 'Chọn tất cả', 'Bỏ chọn', 'Ẩn đã chọn', 'Hiện nhân viên đã ẩn', 'showHiddenEmployees', 'profile_hidden')) and 'Hiện đã chọn' not in employee_ui and 'employees_visibility_manage' in staff,
               'removed employee media helper copy stays hidden': all(key not in identity_ui for key in ('Hệ thống tự crop đúng tỷ lệ 3:4', 'Ảnh CCCD được bảo vệ')),
               'camera can switch front and rear': all(key in identity_ui for key in ('Camera trước', 'Camera sau', 'facingMode: { ideal: facingMode }')),
               'PDF uses full address and conditional end date': '_full_employee_address(row, payload)' in security and 'rows.insert(11, ("Ngày nghỉ việc"' in security,

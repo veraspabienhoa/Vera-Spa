@@ -205,6 +205,10 @@ export default function EmployeePage({ user }) {
     () => visible.filter((employee) => missingEmployeeProfileFields(employee).length).length,
     [visible],
   )
+  const hiddenEmployees = useMemo(
+    () => (data?.employees || []).filter((employee) => employee.profile_hidden),
+    [data],
+  )
 
   const permissions = data?.permissions || {}
   const isAdmin = user?.role === 'admin'
@@ -374,6 +378,15 @@ export default function EmployeePage({ user }) {
     setNotice({ type: 'success', message: `Đã ${hidden ? 'tạm ẩn' : 'hiện lại'} ${count} nhân viên.` })
   })
 
+  const showHiddenEmployees = () => run('show-hidden-employees', async () => {
+    if (!hiddenEmployees.length) throw new Error('Không có nhân viên đang bị ẩn.')
+    for (const employee of hiddenEmployees) await veraApi.updateStaff(employee.username, { profile_hidden: false })
+    const count = hiddenEmployees.length
+    setVisibilityFilter('visible')
+    await load(true)
+    setNotice({ type: 'success', message: `Đã hiện lại ${count} nhân viên đang bị ẩn.` })
+  })
+
   if (!isApiConfigured) return <div className="setup-note">Mục Nhân viên cần Python API V2 để ghi an toàn.</div>
 
   return (
@@ -420,11 +433,7 @@ export default function EmployeePage({ user }) {
           {permissions.employee_add && <button className="primary-button" onClick={() => setAddOpen((value) => !value)}><Plus size={17} /> Thêm nhân viên</button>}
           {permissions.staff_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /> Export Excel</button>}
           {canSaveRows && <button className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
-          {canSelectRows && <button className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17} /> Chọn tất cả</button>}
-          {canSelectRows && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}>Bỏ chọn</button>}
           {isAdmin && permissions.staff_export && <button className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
-          {isAdmin && permissions.employees_visibility_manage && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(true)}><EyeOff size={17}/> Ẩn đã chọn</button>}
-          {isAdmin && permissions.employees_visibility_manage && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(false)}><Eye size={17}/> Hiện đã chọn</button>}
           {isAdmin && permissions.employee_delete && <button className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
         </div>
       </section>
@@ -492,6 +501,12 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-list-panel">
         <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /> Làm mới</button></div>
+        {canSelectRows && <div className="staff-list-selection-actions">
+          <button className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/> Chọn tất cả</button>
+          <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}>Bỏ chọn</button>
+          {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(true)}><EyeOff size={17}/> Ẩn đã chọn</button>}
+          {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!hiddenEmployees.length || Boolean(busy)} onClick={showHiddenEmployees}>{busy === 'show-hidden-employees' ? <LoaderCircle className="spin" size={17}/> : <Eye size={17}/>} Hiện nhân viên đã ẩn ({hiddenEmployees.length})</button>}
+        </div>}
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">
             <table className="staff-table">
