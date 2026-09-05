@@ -46,4 +46,23 @@ export const staffSecurityApi = {
   deleteIdentity: (username, side) => jsonRequest(`/v2/staff/${encodeURIComponent(username)}/identity/${encodeURIComponent(side)}`, {
     method: 'DELETE',
   }),
+  exportProfilePdf: async (username) => {
+    const response = await authorizedFetch(`/v2/staff/${encodeURIComponent(username)}/profile.pdf`)
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    const disposition = response.headers.get('content-disposition') || ''
+    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    const filename = encoded ? decodeURIComponent(encoded) : `Ho_So_${username}.pdf`
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
 }

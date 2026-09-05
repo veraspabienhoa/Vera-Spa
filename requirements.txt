@@ -15,4 +15,5 @@ psycopg[binary]>=3.2,<4
 pywebpush==2.4.0
 playwright==1.62.0
 reportlab>=4.0
+Pillow>=10,<13
 matplotlib>=3.8

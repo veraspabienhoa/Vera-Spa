@@ -14,6 +14,7 @@ from urllib.parse import quote
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
+from openpyxl.drawing.image import Image as ExcelImage
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -27,8 +28,9 @@ from vera_web_v2_security import password_policy_error
 
 
 STAFF_EXPORT_COLUMNS = [
-    "Tên nhân viên", "Họ và tên đầy đủ", "Ngày bắt đầu làm", "Ngày sinh",
+    "Ảnh nhân viên", "Tên nhân viên", "Họ và tên đầy đủ", "Ngày bắt đầu làm", "Ngày sinh",
     "Phân quyền", "Trạng thái làm việc", "Điện thoại", "Email", "Địa chỉ",
+    "Số CCCD", "Ngày cấp CCCD", "Nơi cấp CCCD",
     "Số tài khoản ngân hàng", "Tên ngân hàng", "Phát sinh tháng", "Có phép tháng",
     "Phép năm", "Ca làm việc", "Ngày bắt đầu ca", "Chu kỳ", "Khóa đăng nhập",
 ]
@@ -57,6 +59,9 @@ class StaffCreate(BaseModel):
     bank_account: str = Field(default="", max_length=100)
     bank_name: str = Field(default="", max_length=300)
     employment_start_date: str = Field(default="", max_length=30)
+    cccd_number: str = Field(default="", max_length=20)
+    cccd_issue_date: str = Field(default="", max_length=30)
+    cccd_issue_place: str = Field(default="", max_length=500)
 
 
 class StaffUpdate(BaseModel):
@@ -77,6 +82,9 @@ class StaffUpdate(BaseModel):
     login_locked: bool | None = None
     employment_start_date: str | None = Field(default=None, max_length=30)
     employment_status: str | None = Field(default=None, max_length=100)
+    cccd_number: str | None = Field(default=None, max_length=20)
+    cccd_issue_date: str | None = Field(default=None, max_length=30)
+    cccd_issue_place: str | None = Field(default=None, max_length=500)
 
 
 class StaffDelete(BaseModel):
@@ -117,6 +125,13 @@ def _number(value: Any, *, field_name: str) -> float:
     if result < 0:
         raise HTTPException(400, f"{field_name} phải là số không âm.")
     return result
+
+
+def _cccd_number(value: Any) -> str:
+    raw = re.sub(r"\s+", "", str(value or "").strip())
+    if raw and (not raw.isdigit() or len(raw) not in {9, 12}):
+        raise HTTPException(400, "Số CCCD/CMND phải gồm 9 hoặc 12 chữ số.")
+    return raw
 
 
 def _department(role: str) -> str:
@@ -189,6 +204,9 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
         "Điện thoại": str(row.get("phone") or ""),
         "Email": str(row.get("email") or ""),
         "Địa chỉ": str(row.get("address") or ""),
+        "Số CCCD": str(row.get("cccd_number") or ""),
+        "Ngày cấp CCCD": str(row.get("cccd_issue_date") or ""),
+        "Nơi cấp CCCD": str(row.get("cccd_issue_place") or ""),
         "Số tài khoản ngân hàng": str(row.get("bank_account") or ""),
         "Tên ngân hàng": str(row.get("bank_name") or ""),
         "Phát sinh tháng": float(row.get("monthly_generated") or 0),
@@ -207,6 +225,7 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
 
 
 def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
+    payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
     return {
         "username": str(row.get("username") or ""),
         "full_name": str(row.get("full_name") or ""),
@@ -214,6 +233,9 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
         "phone": str(row.get("phone") or ""),
         "email": str(row.get("email") or ""),
         "address": str(row.get("address") or ""),
+        "cccd_number": str(row.get("cccd_number") or payload.get("Số CCCD") or ""),
+        "cccd_issue_date": str(row.get("cccd_issue_date") or payload.get("Ngày cấp CCCD") or ""),
+        "cccd_issue_place": str(row.get("cccd_issue_place") or payload.get("Nơi cấp CCCD") or ""),
         "bank_account": str(row.get("bank_account") or ""),
         "bank_name": str(row.get("bank_name") or ""),
         "monthly_generated": float(row.get("monthly_generated") or 0),
@@ -247,7 +269,17 @@ def _select_staff_rows(
     """ + deleted_filter + """
         ORDER BY COALESCE(stt, 2147483647), username
     """ + suffix)).mappings().all()
-    return [dict(row) for row in rows]
+    output = []
+    for row in rows:
+        item = dict(row)
+        payload = dict(item.get("payload") or {}) if isinstance(item.get("payload"), dict) else {}
+        item.update({
+            "cccd_number": str(payload.get("Số CCCD") or ""),
+            "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
+            "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
+        })
+        output.append(item)
+    return output
 
 
 def _effective_status(row: dict[str, Any], norm: Callable[[Any], str]) -> str:
@@ -466,6 +498,7 @@ def install_staff_routes(
         profile_fields = {
             "role", "full_name", "birth_date", "phone", "email", "address", "bank_account",
             "bank_name", "monthly_generated", "monthly_leave", "annual_leave", "employment_start_date",
+            "cccd_number", "cccd_issue_date", "cccd_issue_place",
         }
         if profile_fields.intersection(values):
             require_feature(conn, ident, "employee_edit_save")
@@ -481,13 +514,16 @@ def install_staff_routes(
             merged["role"] = validate_role(ident, values["role"])
         if "full_name" in values:
             merged["full_name"] = str(values["full_name"] or "").strip()
-        for key in ("phone", "email", "address", "bank_account", "bank_name"):
+        for key in ("phone", "email", "address", "bank_account", "bank_name", "cccd_issue_place"):
             if key in values:
                 merged[key] = str(values[key] or "").strip()
+        if "cccd_number" in values:
+            merged["cccd_number"] = _cccd_number(values["cccd_number"])
         for key, label in (
             ("birth_date", "Ngày sinh"),
             ("shift_start_date", "Ngày bắt đầu ca"),
             ("employment_start_date", "Ngày bắt đầu làm"),
+            ("cccd_issue_date", "Ngày cấp CCCD"),
         ):
             if key in values:
                 merged[key] = _date_text(values[key], field_name=label)
@@ -622,6 +658,9 @@ def install_staff_routes(
                 "remember_token_hash": "", "remember_token_expiry": "",
                 "employment_start_date": start_work, "source_sheet_id": "postgresql",
                 "source_row": None, "payload": {"must_change_password": True},
+                "cccd_number": _cccd_number(body.cccd_number),
+                "cccd_issue_date": _date_text(body.cccd_issue_date, field_name="Ngày cấp CCCD"),
+                "cccd_issue_place": body.cccd_issue_place.strip(),
             }
             status = STATUS_OPTIONS[0]
             payload = _employee_payload(record, status)
@@ -798,7 +837,12 @@ def install_staff_routes(
             data = [row for row in data if row["work_shift"] == shift.strip()]
         return data
 
-    def build_staff_workbook(rows: list[dict[str, Any]], shifts: dict[str, list[str]]) -> bytes:
+    def build_staff_workbook(
+        rows: list[dict[str, Any]],
+        shifts: dict[str, list[str]],
+        portraits: dict[str, bytes] | None = None,
+    ) -> bytes:
+        portraits = portraits or {}
         wb = Workbook()
         ws = wb.active
         ws.title = "DanhSachNhanSu"
@@ -815,14 +859,17 @@ def install_staff_routes(
             cell.border = Border(bottom=thin)
         ws.row_dimensions[1].height = 34
 
-        date_columns = {"Ngày bắt đầu làm", "Ngày sinh", "Ngày bắt đầu ca"}
+        date_columns = {"Ngày bắt đầu làm", "Ngày sinh", "Ngày cấp CCCD", "Ngày bắt đầu ca"}
         number_columns = {"Phát sinh tháng", "Có phép tháng", "Phép năm"}
         for row in rows:
             values = {
+                "Ảnh nhân viên": "",
                 "Tên nhân viên": row["username"], "Họ và tên đầy đủ": row["full_name"],
                 "Ngày bắt đầu làm": row["employment_start_date"], "Ngày sinh": row["birth_date"],
                 "Phân quyền": row["role"], "Trạng thái làm việc": row["employment_status"],
                 "Điện thoại": row["phone"], "Email": row["email"], "Địa chỉ": row["address"],
+                "Số CCCD": row.get("cccd_number", ""), "Ngày cấp CCCD": row.get("cccd_issue_date", ""),
+                "Nơi cấp CCCD": row.get("cccd_issue_place", ""),
                 "Số tài khoản ngân hàng": row["bank_account"], "Tên ngân hàng": row["bank_name"],
                 "Phát sinh tháng": row["monthly_generated"], "Có phép tháng": row["monthly_leave"],
                 "Phép năm": row["annual_leave"], "Ca làm việc": row["work_shift"],
@@ -839,11 +886,23 @@ def install_staff_routes(
                         pass
                 excel_values.append(value)
             ws.append(excel_values)
-        for row in ws.iter_rows(min_row=2):
-            for cell in row:
+            portrait = portraits.get(str(row["username"]))
+            if portrait:
+                try:
+                    image = ExcelImage(BytesIO(portrait))
+                    image.width = 72
+                    image.height = 96
+                    ws.add_image(image, f"A{ws.max_row}")
+                    ws.row_dimensions[ws.max_row].height = 76
+                except Exception:
+                    ws.cell(ws.max_row, 1, "Ảnh không đọc được")
+        for row_index, row_cells in enumerate(ws.iter_rows(min_row=2), start=2):
+            for cell in row_cells:
                 cell.border = Border(bottom=thin)
                 cell.alignment = Alignment(vertical="center")
-            ws.row_dimensions[row[0].row].height = 22
+            employee_index = row_index - 2
+            if employee_index >= len(rows) or not portraits.get(str(rows[employee_index]["username"])):
+                ws.row_dimensions[row_index].height = 22
         for column in date_columns:
             index = STAFF_EXPORT_COLUMNS.index(column) + 1
             for cell in ws.iter_cols(min_col=index, max_col=index, min_row=2, max_row=max(2, ws.max_row)):
@@ -855,22 +914,25 @@ def install_staff_routes(
                 for item in cell:
                     item.number_format = "0.0"
                     item.alignment = Alignment(horizontal="right", vertical="center")
-        for column in ("Điện thoại", "Số tài khoản ngân hàng"):
+        for column in ("Điện thoại", "Số CCCD", "Số tài khoản ngân hàng"):
             index = STAFF_EXPORT_COLUMNS.index(column) + 1
             for cell in ws.iter_cols(min_col=index, max_col=index, min_row=2, max_row=max(2, ws.max_row)):
                 for item in cell:
                     item.number_format = "@"
 
         widths = {
+            "Ảnh nhân viên": 13,
             "Tên nhân viên": 24, "Họ và tên đầy đủ": 28, "Ngày bắt đầu làm": 18, "Ngày sinh": 16,
             "Phân quyền": 14, "Trạng thái làm việc": 22, "Điện thoại": 16, "Email": 30,
             "Địa chỉ": 42, "Số tài khoản ngân hàng": 22, "Tên ngân hàng": 24,
+            "Số CCCD": 18, "Ngày cấp CCCD": 18, "Nơi cấp CCCD": 36,
             "Phát sinh tháng": 16, "Có phép tháng": 16, "Phép năm": 14, "Ca làm việc": 28,
             "Ngày bắt đầu ca": 18, "Chu kỳ": 23, "Khóa đăng nhập": 18,
         }
         for index, column in enumerate(STAFF_EXPORT_COLUMNS, start=1):
             ws.column_dimensions[get_column_letter(index)].width = widths[column]
-        ws.auto_filter.ref = f"A1:R{max(1, ws.max_row)}"
+        last_col = get_column_letter(len(STAFF_EXPORT_COLUMNS))
+        ws.auto_filter.ref = f"A1:{last_col}{max(1, ws.max_row)}"
 
         catalog = wb.create_sheet("DanhMuc")
         catalog.sheet_state = "hidden"
@@ -896,7 +958,7 @@ def install_staff_routes(
             validation.add(f"{target_col}2:{target_col}{last_row}")
         status_col = get_column_letter(STAFF_EXPORT_COLUMNS.index("Trạng thái làm việc") + 1)
         ws.conditional_formatting.add(
-            f"A2:R{last_row}",
+            f"A2:{last_col}{last_row}",
             FormulaRule(formula=[f'${status_col}2="Đã nghỉ việc"'], fill=PatternFill("solid", fgColor="FDECEC")),
         )
 
@@ -930,7 +992,19 @@ def install_staff_routes(
             require_feature(conn, ident, "staff_export")
             rows = filtered_staff(conn, ident, search, role, status, shift)
             shifts = staff_result(conn, ident)["shifts_by_department"]
-        content = build_staff_workbook(rows, shifts)
+            portraits = {}
+            if conn.execute(text("SELECT to_regclass('vera_employee_identity_document')")).scalar_one_or_none():
+                names = [row["username"] for row in rows]
+                if names:
+                    portraits = {
+                        str(item["employee_username"]): bytes(item["content"])
+                        for item in conn.execute(text("""
+                            SELECT employee_username, content
+                            FROM vera_employee_identity_document
+                            WHERE side='portrait' AND employee_username = ANY(:names)
+                        """), {"names": names}).mappings().all()
+                    }
+        content = build_staff_workbook(rows, shifts, portraits)
         filename = f"VeraSpa_DanhSachNhanSu_{datetime.now(vn_tz).strftime('%d%m%Y')}.xlsx"
         return StreamingResponse(
             BytesIO(content),
@@ -971,7 +1045,8 @@ def install_staff_routes(
         mapping = {
             "Họ và tên đầy đủ": "full_name", "Phân quyền": "role", "Điện thoại": "phone",
             "Email": "email", "Địa chỉ": "address", "Số tài khoản ngân hàng": "bank_account",
-            "Tên ngân hàng": "bank_name", "Ca làm việc": "work_shift", "Chu kỳ": "rotation_cycle",
+            "Tên ngân hàng": "bank_name", "Số CCCD": "cccd_number", "Nơi cấp CCCD": "cccd_issue_place",
+            "Ca làm việc": "work_shift", "Chu kỳ": "rotation_cycle",
         }
         output = {}
         for source, target in mapping.items():
@@ -986,6 +1061,7 @@ def install_staff_routes(
         for source, target in (
             ("Ngày bắt đầu làm", "employment_start_date"),
             ("Ngày sinh", "birth_date"),
+            ("Ngày cấp CCCD", "cccd_issue_date"),
             ("Ngày bắt đầu ca", "shift_start_date"),
         ):
             if source in item:

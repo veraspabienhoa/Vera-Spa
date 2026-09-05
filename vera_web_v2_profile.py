@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 import hmac
 import json
+import re
 import time
 from typing import Any, Callable
 
@@ -17,7 +18,7 @@ from vera_web_v2_security import password_policy_error
 
 
 class ProfileUpdate(BaseModel):
-    current_password: str = Field(min_length=1, max_length=300)
+    current_password: str = Field(default="", max_length=300)
     new_password: str = Field(default="", max_length=300)
     full_name: str = Field(default="", max_length=300)
     birth_date: str = Field(default="", max_length=30)
@@ -29,6 +30,9 @@ class ProfileUpdate(BaseModel):
     address_detail: str = Field(default="", max_length=700)
     bank_account: str = Field(default="", max_length=100)
     bank_name: str = Field(default="", max_length=300)
+    cccd_number: str = Field(default="", max_length=20)
+    cccd_issue_date: str = Field(default="", max_length=30)
+    cccd_issue_place: str = Field(default="", max_length=500)
 
 
 FALLBACK_PROVINCES = [
@@ -97,7 +101,7 @@ def _wards(province_code: int) -> list[str]:
     return list(values)
 
 
-def _date_text(value: str) -> str:
+def _date_text(value: str, field_name: str = "Ngày sinh") -> str:
     raw = str(value or "").strip()
     if not raw:
         return ""
@@ -106,7 +110,14 @@ def _date_text(value: str) -> str:
             return datetime.strptime(raw, fmt).strftime("%d/%m/%Y")
         except ValueError:
             pass
-    raise HTTPException(400, "Ngày sinh không hợp lệ. Dùng định dạng DD/MM/YYYY.")
+    raise HTTPException(400, f"{field_name} không hợp lệ. Dùng định dạng DD/MM/YYYY.")
+
+
+def _cccd_number(value: str) -> str:
+    raw = re.sub(r"\s+", "", str(value or "").strip())
+    if raw and (not raw.isdigit() or len(raw) not in {9, 12}):
+        raise HTTPException(400, "Số CCCD/CMND phải gồm 9 hoặc 12 chữ số.")
+    return raw
 
 
 def install_profile_routes(
@@ -133,6 +144,9 @@ def install_profile_routes(
             "province": str(payload.get("Tỉnh/Thành phố") or ""),
             "ward": str(payload.get("Xã/Phường") or ""),
             "address_detail": str(payload.get("Địa chỉ chi tiết") or profile.get("address") or ""),
+            "cccd_number": str(payload.get("Số CCCD") or ""),
+            "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
+            "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
         })
         return {"profile": profile}
 
@@ -155,6 +169,8 @@ def install_profile_routes(
     def update_profile(body: ProfileUpdate, ident: identity_type = Depends(current_identity)):
         new_password = str(body.new_password or "")
         birth_date = _date_text(body.birth_date)
+        cccd_issue_date = _date_text(body.cccd_issue_date, "Ngày cấp CCCD")
+        cccd_number = _cccd_number(body.cccd_number)
         conn = engine_instance().connect()
         tx = conn.begin()
         try:
@@ -167,9 +183,11 @@ def install_profile_routes(
             """), {"username": ident.employee_username}).mappings().first()
             if not current:
                 raise HTTPException(404, "Không tìm thấy hồ sơ nhân viên.")
-            if not hmac.compare_digest(str(current.get("password_value") or ""), str(body.current_password)):
-                raise HTTPException(400, "Mật khẩu hiện tại không đúng.")
             must_change_password = bool((current.get("payload") or {}).get("must_change_password"))
+            if (new_password or must_change_password) and not hmac.compare_digest(
+                str(current.get("password_value") or ""), str(body.current_password)
+            ):
+                raise HTTPException(400, "Mật khẩu hiện tại không đúng.")
             if must_change_password and not new_password:
                 raise HTTPException(400, "Bạn phải đặt mật khẩu mới trước khi tiếp tục sử dụng Web V2.")
             if new_password:
@@ -192,6 +210,8 @@ def install_profile_routes(
                 "full_name": body.full_name.strip(), "birth_date": birth_date, "phone": body.phone.strip(),
                 "email": body.email.strip(), "address": composed_address,
                 "bank_account": body.bank_account.strip(), "bank_name": body.bank_name.strip(),
+                "cccd_number": cccd_number, "cccd_issue_date": cccd_issue_date,
+                "cccd_issue_place": body.cccd_issue_place.strip(),
             })
             if new_password:
                 updated.update({"password_value": new_password, "remember_token_hash": "", "remember_token_expiry": ""})
@@ -201,6 +221,8 @@ def install_profile_routes(
                 "Điện thoại": updated["phone"], "Email": updated["email"], "Địa chỉ": updated["address"],
                 "Số tài khoản ngân hàng": updated["bank_account"], "Tên ngân hàng": updated["bank_name"],
                 "Tỉnh/Thành phố": province, "Xã/Phường": ward, "Địa chỉ chi tiết": address_detail,
+                "Số CCCD": updated["cccd_number"], "Ngày cấp CCCD": updated["cccd_issue_date"],
+                "Nơi cấp CCCD": updated["cccd_issue_place"],
             })
             if new_password:
                 payload["must_change_password"] = False

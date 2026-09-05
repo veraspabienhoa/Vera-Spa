@@ -30,6 +30,72 @@
   --tour-row-idle: #d9ead3;
 }
 
+/* Employee media fields are also used in the new-employee form, where the
+   saved-profile panel (and its component-local styles) is not mounted yet. */
+.employee-media-draft {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #f7faf8;
+}
+.employee-media-draft > h3 { margin: 0; color: var(--green-950); font-size: 15px; }
+.employee-media-draft > p { margin: -4px 0 2px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.employee-media-draft-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.employee-media-draft .employee-id-side { min-width: 0; padding: 11px; border: 1px solid #dfe8e3; border-radius: 13px; background: #fff; }
+.employee-media-draft .employee-id-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.employee-media-draft .employee-id-side-head > div { display: grid; gap: 2px; }
+.employee-media-draft .employee-id-side-head strong { color: var(--green-950); font-size: 12px; }
+.employee-media-draft .employee-id-side-head span { color: var(--muted); font-size: 9px; }
+.employee-media-draft .employee-id-preview { height: 112px; margin: 9px 0; overflow: hidden; border-radius: 10px; background: #edf3f0; display: flex; align-items: center; justify-content: center; }
+.employee-media-draft .portrait-draft .employee-id-preview { width: 84px; height: 112px; margin-inline: auto; }
+.employee-media-draft .employee-id-preview img { width: 100%; height: 100%; object-fit: contain; background: #111; }
+.employee-media-draft .portrait-draft .employee-id-preview img { object-fit: cover; }
+.employee-media-draft .employee-id-placeholder { display: grid; place-items: center; gap: 5px; color: #96a29c; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.employee-media-draft .employee-id-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.employee-media-draft .employee-id-actions button { min-height: 32px; }
+.identity-editor-backdrop { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(9,25,20,.72); }
+.identity-editor-card, .identity-camera-card { width: min(980px, 100%); max-height: 94vh; overflow: auto; padding: 18px; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px rgba(0,0,0,.3); }
+.identity-camera-card { width: min(760px, 100%); }
+.identity-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.identity-editor-head h3 { margin: 3px 0; }
+.identity-editor-head p { margin: 0; color: #6c7873; font-size: 12px; }
+.identity-editor-layout { display: grid; grid-template-columns: minmax(0,1.25fr) minmax(280px,.75fr); gap: 16px; margin-top: 14px; }
+.identity-editor-preview { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 14px; background: #17201d; }
+.identity-editor-preview canvas { max-width: 100%; max-height: 58vh; object-fit: contain; background: #fff; }
+.identity-editor-preview small { color: #d4dfda; }
+.identity-editor-controls { display: grid; align-content: start; gap: 10px; }
+.identity-editor-section { display: grid; gap: 8px; padding: 11px; border: 1px solid #e0e7e3; border-radius: 12px; }
+.identity-editor-section > strong { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.identity-editor-section label { display: grid; gap: 4px; font-size: 11px; font-weight: 800; }
+.identity-editor-section input[type="range"], .identity-editor-section select { width: 100%; }
+.identity-editor-buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.identity-editor-buttons span { font-size: 12px; font-weight: 900; }
+.identity-editor-size { color: #68736f; font-size: 11px; line-height: 1.5; }
+.identity-editor-footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 14px; }
+.identity-camera-landscape { position: relative; width: min(90vw,680px); max-width: 100%; margin: 16px auto 0; overflow: hidden; border-radius: 18px; background: #101815; }
+.identity-camera-landscape.portrait { width: min(72vw,360px); }
+.identity-camera-landscape video { width: 100%; height: 100%; object-fit: cover; }
+.identity-camera-card-guide { position: absolute; inset: 4%; display: flex; align-items: flex-end; justify-content: center; padding: 10px; border: 3px solid rgba(255,255,255,.98); border-radius: 16px; box-shadow: 0 0 0 999px rgba(0,0,0,.2), inset 0 0 0 1px rgba(0,0,0,.25); pointer-events: none; }
+.identity-camera-card-guide span { padding: 5px 9px; border-radius: 999px; color: #fff; background: rgba(0,0,0,.58); font-size: 10px; font-weight: 900; letter-spacing: .05em; }
+.identity-camera-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: #fff; background: rgba(0,0,0,.35); font-weight: 800; }
+.identity-camera-help { max-width: 680px; margin: 10px auto 0; color: #68736f; font-size: 11px; line-height: 1.45; text-align: center; }
+
+@media (max-width: 850px) {
+  .employee-media-draft-grid { grid-template-columns: minmax(0, 1fr); }
+  .identity-editor-backdrop { padding: 7px; }
+  .identity-editor-card, .identity-camera-card { padding: 12px; border-radius: 14px; }
+  .identity-editor-layout { grid-template-columns: minmax(0, 1fr); }
+  .identity-editor-preview { min-height: 220px; }
+  .identity-editor-preview canvas { max-height: 34vh; }
+  .identity-editor-footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .identity-editor-footer button { width: 100%; }
+  .identity-camera-landscape { width: min(95vw,680px); }
+  .identity-camera-landscape.portrait { width: min(78vw,330px); }
+}
+
 /* Annual leave / long leave at the bottom of leave registration */
 .long-leave-section { width: 100%; max-width: 100%; min-width: 0; display: grid; gap: 18px; margin-top: 0; }
 .long-leave-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 5px 2px 0; }

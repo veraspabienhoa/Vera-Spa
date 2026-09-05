@@ -5,6 +5,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
+import { EmployeeMediaDraftPanel } from './EmployeeIdentityPanel'
+import { staffSecurityApi } from '../lib/staffSecurityApi'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
@@ -16,19 +18,22 @@ const ROLE_LABELS = {
 const EMPTY_CREATE = {
   username: '', password: '', role: 'nhanvien', full_name: '', birth_date: '',
   phone: '', email: '', address: '', bank_account: '', bank_name: '', employment_start_date: '',
+  cccd_number: '', cccd_issue_date: '', cccd_issue_place: '',
 }
 
 const PROFILE_FIELDS = [
   ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'],
   ['employment_start_date', 'Ngày bắt đầu làm'], ['phone', 'Điện thoại'],
   ['email', 'Email'], ['address', 'Địa chỉ'], ['bank_account', 'Số tài khoản ngân hàng'],
-  ['bank_name', 'Tên ngân hàng'],
+  ['bank_name', 'Tên ngân hàng'], ['cccd_number', 'Số CCCD'],
+  ['cccd_issue_date', 'Ngày cấp CCCD'], ['cccd_issue_place', 'Nơi cấp CCCD'],
 ]
 
 const REQUIRED_PROFILE_FIELDS = [
   ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'],
   ['phone', 'Điện thoại'], ['email', 'Email'], ['address', 'Địa chỉ'],
   ['bank_account', 'Số tài khoản ngân hàng'], ['bank_name', 'Tên ngân hàng'],
+  ['cccd_number', 'Số CCCD'], ['cccd_issue_date', 'Ngày cấp CCCD'], ['cccd_issue_place', 'Nơi cấp CCCD'],
 ]
 
 function missingEmployeeProfileFields(employee) {
@@ -118,6 +123,7 @@ export default function EmployeePage({ user }) {
   const [notice, setNotice] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [createForm, setCreateForm] = useState(EMPTY_CREATE)
+  const [createMedia, setCreateMedia] = useState({ portrait: null, front: null, back: null })
   const [profileUser, setProfileUser] = useState('')
   const [profileDraft, setProfileDraft] = useState({})
   const [profileScrollRequest, setProfileScrollRequest] = useState(0)
@@ -147,6 +153,20 @@ export default function EmployeePage({ user }) {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [profileScrollRequest])
+
+  useEffect(() => {
+    const applyExtracted = (event) => {
+      if (!profileUser || event.detail?.username !== profileUser) return
+      const fields = event.detail?.fields || {}
+      setProfileDraft((current) => ({
+        ...current,
+        ...fields,
+        cccd_issue_date: fields.cccd_issue_date ? toInputDate(fields.cccd_issue_date) : current.cccd_issue_date,
+      }))
+    }
+    window.addEventListener('vera-identity-extracted', applyExtracted)
+    return () => window.removeEventListener('vera-identity-extracted', applyExtracted)
+  }, [profileUser])
 
   const visible = useMemo(() => {
     const employees = data?.employees || []
@@ -255,12 +275,28 @@ export default function EmployeePage({ user }) {
         ...createForm,
         birth_date: datePayload(createForm.birth_date),
         employment_start_date: datePayload(createForm.employment_start_date),
+        cccd_issue_date: datePayload(createForm.cccd_issue_date),
       }
       const result = await veraApi.createStaff(payload)
+      const mediaWarnings = []
+      for (const side of ['portrait', 'front', 'back']) {
+        if (!createMedia[side]) continue
+        try {
+          await staffSecurityApi.uploadIdentity(payload.username, side, createMedia[side])
+        } catch (mediaError) {
+          mediaWarnings.push(`${side === 'portrait' ? 'ảnh nhân viên' : side === 'front' ? 'mặt trước CCCD' : 'mặt sau CCCD'}: ${mediaError.message}`)
+        }
+      }
       setCreateForm(EMPTY_CREATE)
+      setCreateMedia({ portrait: null, front: null, back: null })
       setAddOpen(false)
       await load(true)
-      setNotice({ type: 'success', message: result.message })
+      setNotice({
+        type: mediaWarnings.length ? 'error' : 'success',
+        message: mediaWarnings.length
+          ? `${result.message} Chưa tải được ${mediaWarnings.join('; ')}. Có thể bổ sung trong Hồ sơ nhân viên.`
+          : result.message,
+      })
     })
   }
 
@@ -283,6 +319,7 @@ export default function EmployeePage({ user }) {
     const payload = { ...profileDraft }
     payload.birth_date = datePayload(payload.birth_date)
     payload.employment_start_date = datePayload(payload.employment_start_date)
+    payload.cccd_issue_date = datePayload(payload.cccd_issue_date)
     const result = await veraApi.updateStaff(profileUser, payload)
     setProfileUser('')
     await load(true)
@@ -358,6 +395,10 @@ export default function EmployeePage({ user }) {
           <label className="span-2">Địa chỉ<input value={createForm.address} onChange={(event) => setCreateForm({ ...createForm, address: event.target.value })} /></label>
           <label>Số tài khoản ngân hàng<input value={createForm.bank_account} onChange={(event) => setCreateForm({ ...createForm, bank_account: event.target.value })} /></label>
           <label>Tên ngân hàng<input value={createForm.bank_name} onChange={(event) => setCreateForm({ ...createForm, bank_name: event.target.value })} /></label>
+          <label>Số CCCD<input inputMode="numeric" maxLength="12" value={createForm.cccd_number} onChange={(event) => setCreateForm({ ...createForm, cccd_number: event.target.value.replace(/\D/g, '').slice(0, 12) })} /></label>
+          <label>Ngày cấp CCCD<input type="date" value={createForm.cccd_issue_date} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_date: event.target.value })} /></label>
+          <label className="span-2">Nơi cấp CCCD<input value={createForm.cccd_issue_place} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_place: event.target.value })} /></label>
+          <EmployeeMediaDraftPanel value={createMedia} onChange={setCreateMedia}/>
           <div className="staff-form-actions span-2"><button type="button" className="secondary-button" onClick={() => setAddOpen(false)}>Hủy</button><button className="primary-button" disabled={busy === 'create'}>{busy === 'create' ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />} Thêm nhân viên</button></div>
         </form>
       </section>}

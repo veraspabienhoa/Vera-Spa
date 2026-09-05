@@ -7,9 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# libpq5 cho PostgreSQL; postgresql-client cung cap pg_dump/pg_restore cho migration; ca-certificates cho HTTPS.
+# libpq5 cho PostgreSQL; postgresql-client cung cap pg_dump/pg_restore cho migration;
+# Tesseract OCR doc CCCD tieng Viet; DejaVu ho tro font Unicode khi xuat PDF.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 postgresql-client ca-certificates \
+    && apt-get install -y --no-install-recommends libpq5 postgresql-client ca-certificates tesseract-ocr tesseract-ocr-vie fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

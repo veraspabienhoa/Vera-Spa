@@ -10,21 +10,43 @@ an Admin. SVG and other active formats are intentionally rejected.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
+from io import BytesIO
 import json
+from pathlib import Path
+import re
+import shutil
+import subprocess
 from typing import Any, Callable
+from urllib.parse import quote
+from xml.sax.saxutils import escape
 
 from fastapi import Depends, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
+from PIL import Image as PILImage
 from pydantic import BaseModel, Field
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Image as PdfImage
+from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import text
 
 from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
 
 
-STAFF_SECURITY_RELEASE = "3.9-postgres-only-staff-security"
+STAFF_SECURITY_RELEASE = "4.2-employee-media-cccd-pdf"
 MAX_IDENTITY_BYTES = 700 * 1024
 IDENTITY_SIDES = {"front": "Mặt trước", "back": "Mặt sau"}
+MEDIA_SIDES = {**IDENTITY_SIDES, "portrait": "Ảnh nhân viên"}
 ALLOWED_IMAGE_TYPES = {"image/webp", "image/jpeg", "image/png"}
+BUSINESS_NAME = "HỘ KINH DOANH VERA"
+BUSINESS_ADDRESS = "193 Trương Định, Phường Tam Hiệp, Thành Phố Đồng Nai"
 
 
 class StaffPasswordReset(BaseModel):
@@ -35,7 +57,7 @@ def _ensure_identity_table(conn) -> None:
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS vera_employee_identity_document (
             employee_username text NOT NULL,
-            side text NOT NULL CHECK (side IN ('front','back')),
+            side text NOT NULL CHECK (side IN ('front','back','portrait')),
             content_type text NOT NULL,
             content bytea NOT NULL,
             size_bytes integer NOT NULL,
@@ -44,6 +66,29 @@ def _ensure_identity_table(conn) -> None:
             updated_by text NOT NULL DEFAULT '',
             PRIMARY KEY (employee_username, side)
         )
+    """))
+    conn.execute(text("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid='vera_employee_identity_document'::regclass
+                  AND conname='vera_employee_identity_document_side_check'
+                  AND pg_get_constraintdef(oid) NOT ILIKE '%portrait%'
+            ) THEN
+                ALTER TABLE vera_employee_identity_document
+                    DROP CONSTRAINT vera_employee_identity_document_side_check;
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conrelid='vera_employee_identity_document'::regclass
+                  AND conname='vera_employee_identity_document_side_check'
+            ) THEN
+                ALTER TABLE vera_employee_identity_document
+                    ADD CONSTRAINT vera_employee_identity_document_side_check
+                    CHECK (side IN ('front','back','portrait'));
+            END IF;
+        END $$;
     """))
 
 
@@ -55,6 +100,235 @@ def _valid_image(data: bytes, content_type: str) -> bool:
     if content_type == "image/png":
         return len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n"
     return False
+
+
+def _image_dimensions(data: bytes) -> tuple[int, int]:
+    try:
+        with PILImage.open(BytesIO(data)) as image:
+            image.verify()
+        with PILImage.open(BytesIO(data)) as image:
+            width, height = int(image.width), int(image.height)
+            if width < 160 or height < 160:
+                raise HTTPException(400, "Ảnh quá nhỏ; cần tối thiểu 160 × 160 px.")
+            if width > 6000 or height > 6000 or width * height > 24_000_000:
+                raise HTTPException(400, "Ảnh có độ phân giải quá lớn; vui lòng nén ảnh trước khi tải lên.")
+            return width, height
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(400, "Không đọc được dữ liệu ảnh.") from exc
+
+
+def _ocr_text(data: bytes) -> str:
+    command = shutil.which("tesseract")
+    if not command:
+        return ""
+    for language in ("vie+eng", "eng"):
+        try:
+            result = subprocess.run(
+                [command, "stdin", "stdout", "-l", language, "--psm", "6"],
+                input=data,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=20,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        if result.returncode == 0:
+            return result.stdout.decode("utf-8", errors="ignore")[:12000]
+    return ""
+
+
+def _extract_cccd_fields(data: bytes) -> dict[str, str]:
+    raw = _ocr_text(data)
+    if not raw:
+        return {}
+    clean = "\n".join(" ".join(line.split()) for line in raw.splitlines() if line.strip())
+    compact_digits = re.sub(r"(?<=\d)\s+(?=\d)", "", clean)
+    number_match = re.search(r"(?<!\d)(\d{12})(?!\d)", compact_digits)
+    if not number_match:
+        number_match = re.search(r"(?<!\d)(\d{9})(?!\d)", compact_digits)
+
+    issue_date = ""
+    date_patterns = (
+        r"(?:ngày\s*cấp|date\s*of\s*issue)[^\d]{0,24}(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+        r"(?:ngày,?\s*tháng,?\s*năm|date,?\s*month,?\s*year)[^\d]{0,24}(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+    )
+    for pattern in date_patterns:
+        match = re.search(pattern, clean, flags=re.IGNORECASE)
+        if match:
+            try:
+                issue_date = datetime.strptime(match.group(1).replace("-", "/"), "%d/%m/%Y").strftime("%d/%m/%Y")
+            except ValueError:
+                issue_date = ""
+            if issue_date:
+                break
+
+    place = ""
+    place_match = re.search(
+        r"(?:nơi\s*cấp\s*/\s*place\s*of\s*issue|nơi\s*cấp|place\s*of\s*issue)\s*[:\-]?\s*([^\n]{3,300})",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    if place_match:
+        place = place_match.group(1).strip(" .,:;-")[:500]
+
+    return {
+        key: value for key, value in {
+            "cccd_number": number_match.group(1) if number_match else "",
+            "cccd_issue_date": issue_date,
+            "cccd_issue_place": place,
+        }.items() if value
+    }
+
+
+def _apply_extracted_cccd(conn, row: dict[str, Any], extracted: dict[str, str]) -> dict[str, str]:
+    if not extracted:
+        return {}
+    payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
+    key_map = {
+        "cccd_number": "Số CCCD",
+        "cccd_issue_date": "Ngày cấp CCCD",
+        "cccd_issue_place": "Nơi cấp CCCD",
+    }
+    applied = {}
+    for field, payload_key in key_map.items():
+        if extracted.get(field) and not str(payload.get(payload_key) or "").strip():
+            payload[payload_key] = extracted[field]
+            applied[field] = extracted[field]
+    if applied:
+        conn.execute(text("""
+            UPDATE employees
+            SET payload=CAST(:payload AS jsonb), updated_at=NOW()
+            WHERE username=:username
+        """), {
+            "payload": json.dumps(payload, ensure_ascii=False),
+            "username": row["username"],
+        })
+    return applied
+
+
+def _pdf_font_names() -> tuple[str, str]:
+    regular_candidates = (
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/opt/codex/runtimes/codex-primary-runtime/dependencies/native/poppler/poppler/fonts/DejaVuSans.ttf"),
+    )
+    bold_candidates = (
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        Path("/opt/codex/runtimes/codex-primary-runtime/dependencies/native/poppler/poppler/fonts/DejaVuSans-Bold.ttf"),
+    )
+    regular = next((path for path in regular_candidates if path.exists()), None)
+    bold = next((path for path in bold_candidates if path.exists()), None)
+    if regular and bold:
+        if "VeraProfile" not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont("VeraProfile", str(regular)))
+        if "VeraProfileBold" not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont("VeraProfileBold", str(bold)))
+        return "VeraProfile", "VeraProfileBold"
+    return "Helvetica", "Helvetica-Bold"
+
+
+def _pdf_image(data: bytes | None, width: float, height: float, label: str, styles) -> Any:
+    if data:
+        try:
+            return PdfImage(BytesIO(data), width=width, height=height, kind="proportional")
+        except Exception:
+            pass
+    placeholder = Table([[Paragraph(escape(label), styles["placeholder"])]], colWidths=[width], rowHeights=[height])
+    placeholder.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#B9C9C1")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F2F6F4")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
+    return placeholder
+
+
+def _build_employee_profile_pdf(profile: dict[str, Any], media: dict[str, bytes]) -> bytes:
+    font, bold = _pdf_font_names()
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="vera_title", fontName=bold, fontSize=16, leading=20, textColor=colors.HexColor("#173D2F"), alignment=TA_CENTER))
+    styles.add(ParagraphStyle(name="vera_center", fontName=font, fontSize=9, leading=13, alignment=TA_CENTER, textColor=colors.HexColor("#3F5149")))
+    styles.add(ParagraphStyle(name="section", fontName=bold, fontSize=11, leading=14, textColor=colors.HexColor("#173D2F"), spaceBefore=4, spaceAfter=5))
+    styles.add(ParagraphStyle(name="cell", fontName=font, fontSize=8.2, leading=11, textColor=colors.HexColor("#263832")))
+    styles.add(ParagraphStyle(name="cell_bold", fontName=bold, fontSize=8.2, leading=11, textColor=colors.HexColor("#173D2F")))
+    styles.add(ParagraphStyle(name="placeholder", fontName=bold, fontSize=8, leading=10, alignment=TA_CENTER, textColor=colors.HexColor("#789087")))
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output, pagesize=A4, rightMargin=15 * mm, leftMargin=15 * mm,
+        topMargin=12 * mm, bottomMargin=12 * mm,
+        title=f"Hồ sơ nhân viên - {profile.get('full_name') or profile.get('username') or ''}",
+        author=BUSINESS_NAME,
+    )
+    story = [
+        Paragraph(BUSINESS_NAME, styles["vera_title"]),
+        Paragraph(f"Địa chỉ: {escape(BUSINESS_ADDRESS)}", styles["vera_center"]),
+        Spacer(1, 5 * mm),
+        Paragraph("HỒ SƠ NHÂN VIÊN", styles["vera_title"]),
+        Spacer(1, 3 * mm),
+    ]
+    rows = [
+        ("Tên đăng nhập", profile.get("username")),
+        ("Họ và tên", profile.get("full_name")),
+        ("Ngày sinh", profile.get("birth_date")),
+        ("Điện thoại", profile.get("phone")),
+        ("Email", profile.get("email")),
+        ("Địa chỉ", profile.get("address")),
+        ("Phân quyền", profile.get("role")),
+        ("Trạng thái làm việc", profile.get("employment_status")),
+        ("Ngày bắt đầu làm", profile.get("employment_start_date")),
+        ("Ca làm việc", profile.get("work_shift")),
+        ("Số CCCD", profile.get("cccd_number")),
+        ("Ngày cấp CCCD", profile.get("cccd_issue_date")),
+        ("Nơi cấp CCCD", profile.get("cccd_issue_place")),
+        ("Số tài khoản", profile.get("bank_account")),
+        ("Ngân hàng", profile.get("bank_name")),
+    ]
+    info = Table([
+        [Paragraph(escape(label), styles["cell_bold"]), Paragraph(escape(str(value or "")), styles["cell"])]
+        for label, value in rows
+    ], colWidths=[35 * mm, 91 * mm])
+    info.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6E0DB")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EDF5F1")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+    ]))
+    portrait = _pdf_image(media.get("portrait"), 38 * mm, 50.7 * mm, "ẢNH NHÂN VIÊN\n3:4", styles)
+    summary = Table([[info, portrait]], colWidths=[129 * mm, 43 * mm])
+    summary.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+    story.extend([summary, Spacer(1, 5 * mm), Paragraph("ẢNH CĂN CƯỚC CÔNG DÂN", styles["section"])])
+    front = _pdf_image(media.get("front"), 82 * mm, 51.7 * mm, "MẶT TRƯỚC CCCD", styles)
+    back = _pdf_image(media.get("back"), 82 * mm, 51.7 * mm, "MẶT SAU CCCD", styles)
+    cards = Table([[front, back]], colWidths=[86 * mm, 86 * mm])
+    cards.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (0, 0), (-1, -1), "CENTER")]))
+    generated = datetime.now().strftime("%d/%m/%Y %H:%M")
+    signatures = Table([
+        [Paragraph("Người lao động", styles["cell_bold"]), Paragraph("Đại diện HỘ KINH DOANH VERA", styles["cell_bold"])],
+        [Paragraph("(Ký và ghi rõ họ tên)", styles["vera_center"]), Paragraph("(Ký và ghi rõ họ tên)", styles["vera_center"])],
+        ["", ""],
+    ], colWidths=[86 * mm, 86 * mm], rowHeights=[7 * mm, 6 * mm, 17 * mm])
+    signatures.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.extend([
+        KeepTogether([cards, Spacer(1, 4 * mm)]),
+        Paragraph(f"Ngày xuất hồ sơ: {generated}", styles["vera_center"]),
+        Spacer(1, 5 * mm),
+        signatures,
+    ])
+
+    def page_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 7)
+        canvas.setFillColor(colors.HexColor("#6F7F78"))
+        canvas.drawCentredString(A4[0] / 2, 7 * mm, f"{BUSINESS_NAME} - Trang {doc.page}")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
+    return output.getvalue()
 
 
 def install_staff_security_routes(
@@ -72,8 +346,7 @@ def install_staff_security_routes(
     def employee_row(conn, username: str, *, for_update: bool = False) -> dict[str, Any]:
         suffix = " FOR UPDATE" if for_update else ""
         row = conn.execute(text("""
-            SELECT username, full_name, role, password_value, payload,
-                   remember_token_hash, remember_token_expiry
+            SELECT *
             FROM employees
             WHERE lower(btrim(username))=lower(btrim(:username))
               AND COALESCE(payload->>'__deleted','false') <> 'true'
@@ -83,8 +356,8 @@ def install_staff_security_routes(
             raise HTTPException(404, "Không tìm thấy nhân viên.")
         return dict(row)
 
-    def require_identity_access(conn, ident, username: str) -> dict[str, Any]:
-        row = employee_row(conn, username)
+    def require_identity_access(conn, ident, username: str, *, for_update: bool = False) -> dict[str, Any]:
+        row = employee_row(conn, username, for_update=for_update)
         is_admin = str(getattr(ident, "role", "") or "").lower() == "admin"
         is_self = norm(row["username"]) == norm(getattr(ident, "employee_username", ""))
         if not (is_admin or is_self):
@@ -169,13 +442,16 @@ def install_staff_security_routes(
                 "employee_username": row["username"],
                 "front": by_side.get("front"),
                 "back": by_side.get("back"),
+                "portrait": by_side.get("portrait"),
                 "max_bytes": MAX_IDENTITY_BYTES,
+                "can_delete_identity": str(getattr(ident, "role", "") or "").lower() == "admin",
+                "can_edit_saved_identity": str(getattr(ident, "role", "") or "").lower() == "admin",
             }
 
     @app.get("/v2/staff/{username}/identity/{side}")
     def identity_image(username: str, side: str, ident: identity_type = Depends(current_identity)):
-        if side not in IDENTITY_SIDES:
-            raise HTTPException(404, "Mặt Căn cước công dân không hợp lệ.")
+        if side not in MEDIA_SIDES:
+            raise HTTPException(404, "Loại ảnh hồ sơ không hợp lệ.")
         with engine_instance().begin() as conn:
             row = require_identity_access(conn, ident, username)
             _ensure_identity_table(conn)
@@ -185,7 +461,7 @@ def install_staff_security_routes(
                 WHERE employee_username=:username AND side=:side
             """), {"username": row["username"], "side": side}).mappings().first()
             if not document:
-                raise HTTPException(404, f"Chưa có ảnh {IDENTITY_SIDES[side].lower()} CCCD.")
+                raise HTTPException(404, f"Chưa có {MEDIA_SIDES[side].lower()}.")
             content = bytes(document["content"])
             return Response(
                 content=content,
@@ -204,21 +480,24 @@ def install_staff_security_routes(
         request: Request,
         ident: identity_type = Depends(current_identity),
     ):
-        if side not in IDENTITY_SIDES:
-            raise HTTPException(404, "Mặt Căn cước công dân không hợp lệ.")
+        if side not in MEDIA_SIDES:
+            raise HTTPException(404, "Loại ảnh hồ sơ không hợp lệ.")
         content_type = str(request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
         if content_type not in ALLOWED_IMAGE_TYPES:
             raise HTTPException(400, "Chỉ chấp nhận ảnh WebP, JPEG hoặc PNG.")
         content = await request.body()
         if not content:
-            raise HTTPException(400, "Ảnh CCCD đang trống.")
+            raise HTTPException(400, "Ảnh hồ sơ đang trống.")
         if len(content) > MAX_IDENTITY_BYTES:
             raise HTTPException(413, "Ảnh sau nén vẫn quá lớn. Vui lòng chọn ảnh rõ hơn hoặc thử lại.")
         if not _valid_image(content, content_type):
             raise HTTPException(400, "Nội dung file ảnh không hợp lệ.")
+        width, height = _image_dimensions(content)
+        if side == "portrait" and abs((width / max(height, 1)) - 0.75) > 0.035:
+            raise HTTPException(400, "Ảnh nhân viên phải được Crop đúng tỷ lệ dọc 3:4 trước khi lưu.")
 
         with engine_instance().begin() as conn:
-            row = require_identity_access(conn, ident, username)
+            row = require_identity_access(conn, ident, username, for_update=True)
             _ensure_identity_table(conn)
             digest = hashlib.sha256(content).hexdigest()
             conn.execute(text("""
@@ -245,20 +524,27 @@ def install_staff_security_routes(
                 "sha256": digest,
                 "updated_by": str(getattr(ident, "employee_username", "") or ""),
             })
+            extracted = _extract_cccd_fields(content) if side in IDENTITY_SIDES else {}
+            applied = _apply_extracted_cccd(conn, row, extracted)
             return {
                 "ok": True,
                 "side": side,
                 "size_bytes": len(content),
                 "sha256": digest,
-                "message": f"Đã lưu {IDENTITY_SIDES[side]} CCCD ({round(len(content) / 1024)} KB).",
+                "extracted_fields": extracted,
+                "applied_fields": applied,
+                "ocr_status": "extracted" if extracted else ("not_applicable" if side == "portrait" else "not_detected"),
+                "message": f"Đã lưu {MEDIA_SIDES[side]} ({round(len(content) / 1024)} KB).",
             }
 
     @app.delete("/v2/staff/{username}/identity/{side}")
     def delete_identity_image(username: str, side: str, ident: identity_type = Depends(current_identity)):
-        if side not in IDENTITY_SIDES:
-            raise HTTPException(404, "Mặt Căn cước công dân không hợp lệ.")
+        if side not in MEDIA_SIDES:
+            raise HTTPException(404, "Loại ảnh hồ sơ không hợp lệ.")
         with engine_instance().begin() as conn:
             row = require_identity_access(conn, ident, username)
+            if side in IDENTITY_SIDES and str(getattr(ident, "role", "") or "").lower() != "admin":
+                raise HTTPException(403, "Nhân viên không được xóa ảnh CCCD sau khi đã lưu. Vui lòng liên hệ Admin.")
             _ensure_identity_table(conn)
             result = conn.execute(text("""
                 DELETE FROM vera_employee_identity_document
@@ -267,8 +553,50 @@ def install_staff_security_routes(
             return {
                 "ok": True,
                 "deleted": int(result.rowcount or 0),
-                "message": f"Đã xóa ảnh {IDENTITY_SIDES[side].lower()} CCCD.",
+                "message": f"Đã xóa {MEDIA_SIDES[side].lower()}.",
             }
+
+    @app.get("/v2/staff/{username}/profile.pdf")
+    def export_employee_profile_pdf(username: str, ident: identity_type = Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            row = require_identity_access(conn, ident, username)
+            _ensure_identity_table(conn)
+            documents = conn.execute(text("""
+                SELECT side, content
+                FROM vera_employee_identity_document
+                WHERE employee_username=:username
+            """), {"username": row["username"]}).mappings().all()
+            media = {str(item["side"]): bytes(item["content"]) for item in documents}
+            payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
+            profile = {
+                "username": str(row.get("username") or ""),
+                "full_name": str(row.get("full_name") or ""),
+                "birth_date": str(row.get("birth_date") or ""),
+                "phone": str(row.get("phone") or ""),
+                "email": str(row.get("email") or ""),
+                "address": str(row.get("address") or ""),
+                "role": str(row.get("role") or ""),
+                "employment_status": str(payload.get("Trạng thái làm việc") or "Đang làm việc"),
+                "employment_start_date": str(row.get("employment_start_date") or ""),
+                "work_shift": str(row.get("work_shift") or ""),
+                "cccd_number": str(payload.get("Số CCCD") or ""),
+                "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
+                "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
+                "bank_account": str(row.get("bank_account") or ""),
+                "bank_name": str(row.get("bank_name") or ""),
+            }
+        content = _build_employee_profile_pdf(profile, media)
+        safe_name = re.sub(r"[^\w.-]+", "_", profile["full_name"] or profile["username"], flags=re.UNICODE).strip("_") or "Nhan_Vien"
+        filename = f"Ho_So_{safe_name}.pdf"
+        return StreamingResponse(
+            BytesIO(content),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+                "Cache-Control": "private, no-store, max-age=0",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     app.state.staff_security_routes_installed = True
     app.state.staff_security_release = STAFF_SECURITY_RELEASE

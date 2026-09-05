@@ -53,6 +53,39 @@ jobs:
           print(f"Compiled {len(files)} Python files successfully.")
           PY
 
+      - name: Verify employee profile media and CCCD exports
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          security = Path('vera_web_v2_staff_security.py').read_text(encoding='utf-8')
+          staff = Path('vera_web_v2_staff.py').read_text(encoding='utf-8')
+          profile = Path('vera_web_v2_profile.py').read_text(encoding='utf-8')
+          identity_ui = Path('web-v2/src/pages/EmployeeIdentityPanel.jsx').read_text(encoding='utf-8')
+          employee_ui = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
+          requirements = Path('requirements.txt').read_text(encoding='utf-8')
+          dockerfile = Path('Dockerfile').read_text(encoding='utf-8')
+
+          checks = {
+              'portrait has a 3:4 server gate': 'abs((width / max(height, 1)) - 0.75)' in security,
+              'employee cannot delete saved CCCD': 'Nhân viên không được xóa ảnh CCCD sau khi đã lưu' in security,
+              'OCR never overwrites entered CCCD fields': 'and not str(payload.get(payload_key) or "").strip()' in security,
+              'printable PDF route exists': '@app.get("/v2/staff/{username}/profile.pdf")' in security,
+              'business identity is on PDF': 'HỘ KINH DOANH VERA' in security and '193 Trương Định' in security,
+              'Excel embeds employee portraits': 'ws.add_image(image' in staff and '"Ảnh nhân viên"' in staff,
+              'manual CCCD profile fields exist': all(key in profile for key in ('cccd_number', 'cccd_issue_date', 'cccd_issue_place')),
+              'camera crop and rotation UI exists': all(key in identity_ui for key in ('IdentityCamera', 'IdentityImageEditor', 'PORTRAIT_ASPECT_RATIO')),
+              'new employee form accepts media': 'EmployeeMediaDraftPanel' in employee_ui,
+              'runtime includes Vietnamese OCR and imaging': 'Pillow' in requirements and 'tesseract-ocr-vie' in dockerfile,
+          }
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              raise SystemExit('Failed employee media invariants: ' + ', '.join(failed))
+          PY
+
       - name: Verify weekend Người Thứ N policy
         shell: bash
         run: |
