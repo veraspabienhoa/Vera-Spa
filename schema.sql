@@ -156,6 +156,7 @@ CREATE INDEX IF NOT EXISTS idx_payroll_history_batch
     ON payroll_history_rows(batch_id);
 CREATE INDEX IF NOT EXISTS idx_payroll_history_employee
     ON payroll_history_rows(employee_name, period_end DESC);
+ALTER TABLE payroll_history_rows ENABLE ROW LEVEL SECURITY;
 
 CREATE TABLE IF NOT EXISTS app_config (
     config_group TEXT NOT NULL,

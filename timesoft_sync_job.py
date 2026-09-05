@@ -72,6 +72,8 @@ TIMESOFT_HISTORY_RETENTION_DAYS = max(
 )
 TIMESOFT_HISTORY_TTL_SECONDS = TIMESOFT_HISTORY_RETENTION_DAYS * 86400
 LOCK_NAME = "vera-timesoft-background-sync-v84"
+PAYROLL_SUMMARY_DETAIL_RELEASE = "summary-invoice-product-detail-v2"
+PAYROLL_SUMMARY_TYPE_CANDIDATES = (1, 2, 3, 4, 0)
 
 REPORT_SUMMARY_PAGE = "/Report/ReportSummaryInvoice/Index"
 REPORT_CHECKIN_PAGE = "/Report/ReportEmployeeCheckin/Index"
@@ -1025,25 +1027,130 @@ def post_json(session: requests.Session, api_path: str, referer_path: str, paylo
     return data or {}
 
 
-def fetch_summary(session: requests.Session, target_date: date) -> tuple[pd.DataFrame, dict]:
-    payload = {
+def _summary_payload(target_date: date, type_data: int) -> dict:
+    return {
         "objectSearch": {
-            "TypeData": 0,
+            "TypeData": int(type_data),
             "TypeInvoice": 1,
             "TachInvoiceSpa": 0,
             "CreateTimeRange": _date_range_text(target_date, target_date),
         },
+        "pageIndex": 1,
         "pageSize": 0,
     }
-    data = post_json(session, API_SUMMARY, REPORT_SUMMARY_PAGE, payload)
-    rows = data.get("Data") or []
-    df = pd.json_normalize(rows, sep=".") if isinstance(rows, list) and rows else pd.DataFrame()
+
+
+def _summary_scalar_pairs(node, prefix: str = ""):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, (dict, list, tuple)):
+                yield from _summary_scalar_pairs(value, path)
+            else:
+                yield path, value
+    elif isinstance(node, (list, tuple)):
+        for index, value in enumerate(node):
+            path = f"{prefix}.{index}" if prefix else str(index)
+            if isinstance(value, (dict, list, tuple)):
+                yield from _summary_scalar_pairs(value, path)
+            else:
+                yield path, value
+
+
+def _summary_detail_quality(rows) -> tuple[int, dict]:
+    if not isinstance(rows, list):
+        return -1_000_000, {"rows": 0, "items": 0, "employees": 0, "tips": 0}
+    item_keys = (
+        "ProductName", "ServiceName", "DetailItemName", "VasServiceName",
+        "TicketName", "ItemName", "ProductServiceName",
+    )
+    employee_keys = (
+        "SellerName", "TrainerName", "EmployeeName", "ConsultantName",
+        "AdvisorName", "EmployeeIdListStr", "EmployeeInfo.Name",
+    )
+    items = 0
+    employees = 0
+    tips = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        pairs = list(_summary_scalar_pairs(row))
+        item_values = [
+            str(value or "").strip() for key, value in pairs
+            if any(str(key).casefold().endswith(alias.casefold()) for alias in item_keys)
+        ]
+        employee_values = [
+            str(value or "").strip() for key, value in pairs
+            if any(str(key).casefold().endswith(alias.casefold()) for alias in employee_keys)
+        ]
+        item_values = [value for value in item_values if value]
+        employee_values = [value for value in employee_values if value]
+        if item_values:
+            items += 1
+            if any(re.match(r"^tip(?:$|[_\-\s])", value, flags=re.IGNORECASE) for value in item_values):
+                tips += 1
+        if any(employee_values):
+            employees += 1
+    aggregate_only = len(rows) == 1 and items == 0 and employees == 0
+    quality = tips * 100_000 + items * 1_000 + employees * 100 + len(rows)
+    if aggregate_only:
+        quality -= 1_000_000
+    return quality, {"rows": len(rows), "items": items, "employees": employees, "tips": tips}
+
+
+def fetch_summary(session: requests.Session, target_date: date) -> tuple[pd.DataFrame, dict]:
+    """Fetch product/service rows, not the one-row daily aggregate.
+
+    TimeSoft installations have used different numeric values for the report's
+    “Theo sản phẩm/dịch vụ” selector. Probe the bounded known values and keep the
+    response that actually contains service and employee fields. The old
+    TypeData=0 response is retained only as a diagnostic fallback.
+    """
+    best: tuple[int, int, dict, list, dict] | None = None
+    errors: list[str] = []
+    for type_data in PAYROLL_SUMMARY_TYPE_CANDIDATES:
+        try:
+            data = post_json(
+                session,
+                API_SUMMARY,
+                REPORT_SUMMARY_PAGE,
+                _summary_payload(target_date, type_data),
+            )
+        except Exception as exc:
+            errors.append(f"TypeData={type_data}:{type(exc).__name__}")
+            continue
+        rows = data.get("Data") or []
+        quality, diagnostics = _summary_detail_quality(rows)
+        candidate = (quality, int(type_data), data, rows if isinstance(rows, list) else [], diagnostics)
+        if best is None or candidate[0] > best[0]:
+            best = candidate
+        if diagnostics["tips"] > 0 and diagnostics["employees"] > 0:
+            break
+        if diagnostics["items"] > 0 and diagnostics["employees"] > 0:
+            break
+    if best is None:
+        raise RuntimeError("Không lấy được Báo cáo tổng hợp TimeSoft: " + ", ".join(errors[:5]))
+    _quality, selected_type, data, rows, diagnostics = best
+    df = pd.json_normalize(rows, sep=".") if rows else pd.DataFrame()
     meta_keys = [
         "Total", "TotalMoney", "TotalDiscount", "TotalQuantity", "TotalInvoice",
         "TotalActualRevenu", "TotalPromotion", "TotalPayment", "TotalActualTerm",
         "TotalDebt", "ReportByYear", "Message",
     ]
     meta = {k: data.get(k) for k in meta_keys if k in data}
+    meta.update({
+        "PayrollTypeData": selected_type,
+        "PayrollMappingMode": (
+            "empty" if not rows else
+            "product_detail" if diagnostics["items"] > 0 else
+            "aggregate_only"
+        ),
+        "PayrollSourceRows": diagnostics["rows"],
+        "PayrollItemRows": diagnostics["items"],
+        "PayrollEmployeeRows": diagnostics["employees"],
+        "PayrollTipRows": diagnostics["tips"],
+        "PayrollMappingRelease": PAYROLL_SUMMARY_DETAIL_RELEASE,
+    })
     return df, meta
 
 
@@ -1412,8 +1519,17 @@ def _key(prefix: str, target_date: date) -> str:
     return f"{prefix}_{target_date.strftime('%Y%m%d')}"
 
 
+def _payroll_invoice_snapshot_valid(payload, source_version: str) -> bool:
+    if PAYROLL_SUMMARY_DETAIL_RELEASE not in str(source_version or ""):
+        return False
+    if not isinstance(payload, list) or not payload:
+        return True
+    _quality, diagnostics = _summary_detail_quality(payload)
+    return diagnostics["items"] > 0 or diagnostics["rows"] == 0
+
+
 def _missing_payroll_invoice_dates(conn, today: date) -> list[date]:
-    """Return absent daily invoice snapshots, oldest first.
+    """Return absent or aggregate-only daily invoice snapshots, oldest first.
 
     ``dataset_key`` is the primary key of ``vera_dataset_cache``.  The bounded
     key range therefore uses the existing primary-key index and avoids scanning
@@ -1423,21 +1539,28 @@ def _missing_payroll_invoice_dates(conn, today: date) -> list[date]:
     first_date = today - timedelta(days=PAYROLL_BACKFILL_DAYS - 1)
     first_key = _key("timesoft_summary_invoice", first_date)
     last_key = _key("timesoft_summary_invoice", today)
-    existing = set(conn.execute(text("""
-        SELECT dataset_key
+    existing_rows = conn.execute(text("""
+        SELECT dataset_key,payload,source_version
         FROM vera_dataset_cache
         WHERE dataset_key BETWEEN :first_key AND :last_key
-    """), {"first_key": first_key, "last_key": last_key}).scalars().all())
+    """), {"first_key": first_key, "last_key": last_key}).mappings().all()
+    existing = {
+        str(row.get("dataset_key")): _payroll_invoice_snapshot_valid(
+            row.get("payload"), str(row.get("source_version") or "")
+        )
+        for row in existing_rows
+    }
     return [
         first_date + timedelta(days=index)
         for index in range(PAYROLL_BACKFILL_DAYS)
-        if _key("timesoft_summary_invoice", first_date + timedelta(days=index)) not in existing
+        if not existing.get(_key("timesoft_summary_invoice", first_date + timedelta(days=index)), False)
     ]
 
 
 def write_invoice_snapshot(target_date: date, invoice_df: pd.DataFrame, invoice_meta: dict) -> None:
     """Persist the invoice datasets consumed by automatic Payroll."""
-    source_version = target_date.isoformat()
+    mapping_mode = str((invoice_meta or {}).get("PayrollMappingMode") or "unknown")
+    source_version = f"{target_date.isoformat()}|{PAYROLL_SUMMARY_DETAIL_RELEASE}|{mapping_mode}"
     vpg.write_dataset(
         _key("timesoft_summary_invoice", target_date),
         invoice_df,

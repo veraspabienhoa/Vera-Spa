@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import date
 import hashlib
+import unicodedata
 from typing import Any
 
 from fastapi import Body, Depends, HTTPException, Query
@@ -22,11 +23,20 @@ from sqlalchemy import text
 import vera_web_v2_payroll as _payroll
 
 
-PAYROLL_DEBT_SYNC_RELEASE = "3.8-auto-legacy-obligations-admin"
+PAYROLL_DEBT_SYNC_RELEASE = "3.8-auto-legacy-obligations-settlement-ledger"
 LEGACY_DEBT_DATASET_KEY = "violation_debt"
 LEGACY_DEBT_HIDDEN_KEY = "legacy_debt_hidden_keys"
 LEGACY_DEBT_MANUAL_KEY = "legacy_debt_manual_rows"
+LEGACY_DEBT_SETTLEMENTS_KEY = "legacy_debt_settlements"
 LEGACY_DEBT_TYPES = {"Âm thực nhận", "Tạm hoãn vi phạm"}
+
+
+def _status_norm(value: Any) -> str:
+    raw = unicodedata.normalize("NFD", str(value or ""))
+    return " ".join(
+        "".join(character for character in raw if unicodedata.category(character) != "Mn")
+        .replace("đ", "d").replace("Đ", "D").casefold().split()
+    )
 
 
 class LegacyDebtAdminCreate(BaseModel):
@@ -85,8 +95,13 @@ def _date_key(value: Any) -> str:
 
 
 def _legacy_debt_key(item: dict[str, Any]) -> str:
+    explicit = str(item.get("__debt_key") or "").strip()
+    if explicit:
+        return explicit
     employee = str(item.get("employee_name") or item.get("Tên nhân viên") or "").strip().casefold()
-    amount = str(max(0, _payroll._number(item.get("amount") or item.get("Số tiền"))))
+    amount = str(max(0, _payroll._number(
+        item.get("__original_amount") or item.get("amount") or item.get("Số tiền")
+    )))
     period_start = _date_key(item.get("period_start") or item.get("Kỳ phát sinh từ"))
     period_end = _date_key(item.get("period_end") or item.get("Kỳ phát sinh đến"))
     due_from = _date_key(item.get("due_from") or item.get("Bắt đầu trừ từ"))
@@ -107,9 +122,55 @@ def _hidden_keys(conn) -> set[str]:
     return {str(item or "").strip() for item in raw if str(item or "").strip()}
 
 
+def _settlement_ledger(conn) -> dict[str, dict[str, int]]:
+    raw = _payroll._setting(conn, LEGACY_DEBT_SETTLEMENTS_KEY, {})
+    if not isinstance(raw, dict):
+        return {}
+    output: dict[str, dict[str, int]] = {}
+    for debt_key, batch_values in raw.items():
+        key = str(debt_key or "").strip()
+        if not key or not isinstance(batch_values, dict):
+            continue
+        clean = {
+            str(batch or "").strip(): max(0, _payroll._number(amount))
+            for batch, amount in batch_values.items()
+            if str(batch or "").strip() and _payroll._number(amount) > 0
+        }
+        if clean:
+            output[key] = clean
+    return output
+
+
+def replace_batch_settlements(
+    conn,
+    batch: str,
+    allocations: dict[str, int],
+    actor: str,
+) -> list[dict[str, Any]]:
+    """Idempotently replace one payroll batch's payments against legacy debt."""
+    wanted = str(batch or "").strip()
+    ledger = _settlement_ledger(conn)
+    for debt_key in list(ledger):
+        ledger[debt_key].pop(wanted, None)
+        if not ledger[debt_key]:
+            ledger.pop(debt_key, None)
+    for debt_key, amount in allocations.items():
+        key = str(debt_key or "").strip()
+        value = max(0, _payroll._number(amount))
+        if key and value > 0:
+            ledger.setdefault(key, {})[wanted] = value
+    _payroll._put_setting(conn, LEGACY_DEBT_SETTLEMENTS_KEY, ledger, actor)
+    return _write_adjusted_cache(
+        conn,
+        _read_cached_obligations(conn),
+        "legacy_payroll_settlement_adjusted",
+    )
+
+
 def _apply_admin_adjustments(conn, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     hidden = _hidden_keys(conn)
     manual = _manual_rows(conn)
+    settlements = _settlement_ledger(conn)
     merged: dict[str, dict[str, Any]] = {}
     for item in records:
         key = _legacy_debt_key(item)
@@ -119,7 +180,35 @@ def _apply_admin_adjustments(conn, records: list[dict[str, Any]]) -> list[dict[s
         key = _legacy_debt_key(item)
         if key and key not in hidden:
             merged[key] = dict(item)
-    return list(merged.values())
+    adjusted: list[dict[str, Any]] = []
+    for key, source in merged.items():
+        item = dict(source)
+        original_amount = max(0, _payroll._number(
+            item.get("__original_amount") or item.get("Số tiền") or item.get("amount")
+        ))
+        original_status = str(
+            item.get("__original_status")
+            or item.get("Trạng thái")
+            or item.get("status")
+            or "Chưa hoàn thành"
+        ).strip()
+        paid_by_batch = settlements.get(key, {})
+        paid = min(original_amount, sum(max(0, _payroll._number(value)) for value in paid_by_batch.values()))
+        source_is_open = _payroll._open_obligation(original_status, _status_norm)
+        remaining = max(0, original_amount - paid) if source_is_open else original_amount
+        item.update({
+            "__debt_key": key,
+            "__original_amount": original_amount,
+            "__original_status": original_status,
+            "__settlements": paid_by_batch,
+            "Số tiền": remaining,
+        })
+        if source_is_open:
+            item["Trạng thái"] = "Chưa hoàn thành" if remaining > 0 else "Đã hoàn thành"
+            if remaining <= 0 and paid_by_batch:
+                item["Kỳ đã khấu trừ"] = sorted(paid_by_batch)[-1]
+        adjusted.append(item)
+    return adjusted
 
 
 def _write_adjusted_cache(conn, records: list[dict[str, Any]], source_version: str) -> list[dict[str, Any]]:

@@ -1,4 +1,4 @@
-import { Edit3, Trash2 } from 'lucide-react'
+import { Edit3 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getCurrentSession } from '../lib/supabase'
@@ -17,26 +17,9 @@ async function savedPayrollRequest(path, options = {}) {
   return payload
 }
 
-function setNativeValue(element, value) {
-  if (!element) return
-  const proto = element.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype
-  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
-  if (setter) setter.call(element, String(value))
-  else element.value = String(value)
-  element.dispatchEvent(new Event('change', { bubbles: true }))
-}
-
-function clickExistingButton(text) {
-  const button = Array.from(document.querySelectorAll('.payroll-page-enhanced button'))
-    .find((item) => String(item.textContent || '').includes(text))
-  if (!button) throw new Error(`Không tìm thấy nút “${text}”. Hãy bấm Làm mới và thử lại.`)
-  button.click()
-}
-
 export default function PayrollSavedAdminPanel({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const canManage = isAdmin || Boolean(user?.permissions?.payroll_history_edit)
-  const [draftActionsTarget, setDraftActionsTarget] = useState(null)
   const [historyPanel, setHistoryPanel] = useState(null)
   const [cardTargets, setCardTargets] = useState([])
   const [busy, setBusy] = useState('')
@@ -47,9 +30,6 @@ export default function PayrollSavedAdminPanel({ user }) {
     let cancelled = false
     const locate = () => {
       if (cancelled) return
-      const draftActions = document.querySelector('.payroll-page-enhanced .payroll-draft-panel .panel-title-row .list-actions')
-      setDraftActionsTarget((current) => current === draftActions ? current : (draftActions || null))
-
       const sections = Array.from(document.querySelectorAll('.payroll-page-enhanced section.panel'))
       const history = sections.find((section) => section.querySelector('h2')?.textContent?.includes('LỊCH SỬ BẢNG LƯƠNG')) || null
       setHistoryPanel((current) => current === history ? current : history)
@@ -78,23 +58,8 @@ export default function PayrollSavedAdminPanel({ user }) {
     setBusy(batch); setNotice(null)
     try {
       const result = await savedPayrollRequest(`/v2/payroll/saved-batches/${encodeURIComponent(batch)}/edit`, { method: 'POST' })
-      const monthInput = document.querySelector('.payroll-page-enhanced .payroll-calculate-panel input[type="month"]')
-      const periodSelect = document.querySelector('.payroll-page-enhanced .payroll-calculate-panel select')
-      if (!monthInput || !periodSelect) throw new Error('Không tìm thấy bộ chọn kỳ lương trên màn hình.')
-
-      const wantedMonth = String(result.month)
-      const wantedPeriod = String(result.period_no)
-      if (monthInput.value === wantedMonth && periodSelect.value === wantedPeriod) {
-        setNativeValue(periodSelect, wantedPeriod === '1' ? '2' : '1')
-        await new Promise((resolve) => window.setTimeout(resolve, 100))
-      }
-      if (monthInput.value !== wantedMonth) {
-        setNativeValue(monthInput, wantedMonth)
-        await new Promise((resolve) => window.setTimeout(resolve, 100))
-      }
-      setNativeValue(periodSelect, wantedPeriod)
+      window.dispatchEvent(new CustomEvent('vera:payroll-reopen', { detail: result }))
       setNotice({ type: 'success', message: result.message })
-      window.setTimeout(() => document.querySelector('.payroll-page-enhanced .payroll-draft-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 500)
     } catch (error) {
       setNotice({ type: 'error', message: error.message })
     } finally {
@@ -105,12 +70,8 @@ export default function PayrollSavedAdminPanel({ user }) {
   if (!canManage) return null
 
   return <>
-    {draftActionsTarget && createPortal(<>
-      <button className="danger-button" type="button" disabled={Boolean(busy)} onClick={() => clickExistingButton('Xóa bảng lương nháp')}><Trash2 size={16} /> Xóa bảng lương đã lưu</button>
-    </>, draftActionsTarget, 'payroll-current-save-actions')}
-
     {cardTargets.map(({ batch, target }) => createPortal(
-      <button className="secondary-button compact" type="button" disabled={Boolean(busy)} onClick={() => reopenForEdit(batch)}><Edit3 size={14} /> {busy === batch ? 'Đang mở…' : 'Chỉnh sửa'}</button>,
+      <button className="secondary-button compact" type="button" disabled={Boolean(busy)} onClick={() => reopenForEdit(batch)}><Edit3 size={14} /> {busy === batch ? 'Đang mở…' : 'Lấy lại & sửa'}</button>,
       target,
       `edit-${batch}`,
     ))}

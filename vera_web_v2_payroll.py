@@ -644,21 +644,23 @@ def _open_obligation(value: Any, norm) -> bool:
 def _obligation_group(records: list[dict[str, Any]], obligation_type: str, norm) -> dict[str, Any]:
     details: list[dict[str, Any]] = []
     for item in records:
-        if norm(item.get("Loại")) != norm(obligation_type) or not _open_obligation(item.get("Trạng thái"), norm):
+        item_type = item.get("Loại") or item.get("type")
+        status = item.get("Trạng thái") or item.get("status")
+        if norm(item_type) != norm(obligation_type) or not _open_obligation(status, norm):
             continue
-        employee_name = str(item.get("Tên nhân viên") or "").strip()
-        amount = max(0, _number(item.get("Số tiền")))
+        employee_name = str(item.get("Tên nhân viên") or item.get("employee_name") or "").strip()
+        amount = max(0, _number(item.get("Số tiền") or item.get("amount")))
         if not employee_name or amount <= 0:
             continue
         details.append({
             "employee_name": employee_name,
             "amount": amount,
-            "period_start": str(item.get("Kỳ phát sinh từ") or "").strip(),
-            "period_end": str(item.get("Kỳ phát sinh đến") or "").strip(),
-            "due_from": str(item.get("Bắt đầu trừ từ") or "").strip(),
-            "content": str(item.get("Nội dung") or "Chưa hoàn thành nghĩa vụ Vi phạm").strip(),
-            "type": str(item.get("Loại") or obligation_type).strip(),
-            "status": str(item.get("Trạng thái") or "Chưa hoàn thành").strip(),
+            "period_start": str(item.get("Kỳ phát sinh từ") or item.get("period_start") or "").strip(),
+            "period_end": str(item.get("Kỳ phát sinh đến") or item.get("period_end") or "").strip(),
+            "due_from": str(item.get("Bắt đầu trừ từ") or item.get("due_from") or "").strip(),
+            "content": str(item.get("Nội dung") or item.get("content") or "Chưa hoàn thành nghĩa vụ Vi phạm").strip(),
+            "type": str(item_type or obligation_type).strip(),
+            "status": str(status or "Chưa hoàn thành").strip(),
         })
     details.sort(key=lambda item: (_parse_date(item["period_start"]) or date.max, norm(item["employee_name"])))
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -1267,6 +1269,17 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             merged = [item for item in existing if str(item.get("Mã bản lưu") or "") != label] + clean_rows
             serialized = json.dumps(merged, ensure_ascii=False, separators=(",", ":"), default=str)
             checksum = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+            before_save = getattr(app.state, "payroll_before_save_hook", None)
+            hook_result = {}
+            if callable(before_save):
+                hook_result = dict(before_save(
+                    conn=conn,
+                    body=body,
+                    prepared_rows=clean_rows,
+                    actor=ident.employee_username,
+                    label=label,
+                    norm=norm,
+                ) or {})
             conn.execute(text("DELETE FROM payroll_history_rows WHERE batch_id=:label"), {"label": label})
             for row in clean_rows:
                 conn.execute(text("""
@@ -1286,7 +1299,13 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             raise
         finally:
             conn.close()
-        return {"ok": True, "batch": label, "saved": len(clean_rows), "message": f"Đã lưu {label} cho {len(clean_rows)} nhân viên."}
+        return {
+            "ok": True,
+            "batch": label,
+            "saved": len(clean_rows),
+            "message": f"Đã lưu {label} cho {len(clean_rows)} nhân viên.",
+            **hook_result,
+        }
 
     @app.get("/v2/payroll/obligations")
     def obligations(ident: identity_type = Depends(current_identity)):
@@ -1294,12 +1313,17 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             require_feature(conn, ident, "payroll_penalty_obligation")
             rows = _obligations(conn)
             legacy_rows = _legacy_obligations(conn)
+        open_rows = [
+            item for item in rows
+            if _open_obligation(item.get("status"), norm) and max(0, _number(item.get("amount"))) > 0
+        ]
+        grouped_rows = legacy_rows + rows
         groups = [
-            _obligation_group(legacy_rows, "Âm thực nhận", norm),
-            _obligation_group(legacy_rows, "Tạm hoãn vi phạm", norm),
+            _obligation_group(grouped_rows, "Âm thực nhận", norm),
+            _obligation_group(grouped_rows, "Tạm hoãn vi phạm", norm),
         ]
         return {
-            "obligations": rows, "count": len(rows), "legacy_count": len(legacy_rows),
+            "obligations": open_rows, "count": len(open_rows), "legacy_count": len(legacy_rows),
             "groups": groups,
         }
 

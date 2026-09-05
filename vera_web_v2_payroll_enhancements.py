@@ -18,7 +18,7 @@ from sqlalchemy import text
 import vera_web_v2_payroll as _payroll
 
 
-PAYROLL_ENHANCEMENTS_RELEASE = "3.8-payroll-completion-history-deferral"
+PAYROLL_ENHANCEMENTS_RELEASE = "3.8-payroll-history-debt-reconciliation"
 DELETED_BATCHES_KEY = "deleted_payroll_batches"
 
 
@@ -111,30 +111,194 @@ def _defer_source_key(employee_name: str, start: date, end: date, norm) -> str:
     return f"DEFER|{start.isoformat()}|{end.isoformat()}|{norm(employee_name)}"
 
 
-def _mark_applied_custom_obligations_completed(conn, body: _payroll.PayrollSave, actor: str, norm) -> int:
-    employees = {norm(item.get("Tên Hệ thống")) for item in body.rows if isinstance(item, dict)} - {""}
-    if not employees:
-        return 0
-    rows = _payroll._obligations(conn)
-    changed = 0
+def _clean_settlements(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(batch or "").strip(): max(0, _payroll._number(amount))
+        for batch, amount in value.items()
+        if str(batch or "").strip() and _payroll._number(amount) > 0
+    }
+
+
+def _custom_principal(item: dict[str, Any]) -> int:
+    settlements = _clean_settlements(item.get("settlements"))
+    explicit = _payroll._number(item.get("principal_amount"))
+    if explicit > 0 or "principal_amount" in item:
+        return max(0, explicit)
+    return max(0, _payroll._number(item.get("amount"))) + sum(settlements.values())
+
+
+def _refresh_custom_obligation(item: dict[str, Any], label: str, actor: str) -> int:
+    settlements = _clean_settlements(item.get("settlements"))
+    principal = _custom_principal(item)
+    source_status = str(item.get("source_status") or item.get("status") or "Chưa hoàn thành").strip()
+    item.update({
+        "principal_amount": principal,
+        "settlements": settlements,
+        "source_status": source_status,
+    })
+    paid = min(principal, sum(settlements.values()))
+    remaining = max(0, principal - paid)
+    item["amount"] = remaining
+    if source_status.casefold() in {"", "chưa hoàn thành", "chua hoan thanh"}:
+        item["status"] = "Chưa hoàn thành" if remaining > 0 else "Đã hoàn thành"
+        if remaining <= 0 and settlements:
+            item["completed_period"] = sorted(settlements)[-1]
+            item["completed_by"] = actor
+        else:
+            item.pop("completed_period", None)
+            item.pop("completed_by", None)
+    item["updated_by"] = actor
+    return remaining
+
+
+def _custom_source_open(item: dict[str, Any], norm) -> bool:
+    source_status = norm(item.get("source_status") or item.get("status") or "Chưa hoàn thành")
+    return source_status in {"", "chua hoan thanh"}
+
+
+def _reconcile_payroll_debts(
+    conn,
+    body: _payroll.PayrollSave,
+    prepared_rows: list[dict[str, Any]],
+    actor: str,
+    norm,
+) -> dict[str, int]:
+    """Replace one period's debt settlement and create its negative-net debt.
+
+    The operation is idempotent: reopening a saved payroll and completing it
+    again replaces this batch's settlement amounts instead of deducting twice.
+    """
+    from vera_web_v2_payroll_debt_sync import (  # lazy import avoids module cycle
+        _legacy_debt_key,
+        replace_batch_settlements,
+    )
+
     label = _payroll._period_label(body.start, body.end)
-    for item in rows:
-        status = norm(item.get("status") or "Chưa hoàn thành")
-        if status not in {"", "chua hoan thanh"}:
-            continue
-        if norm(item.get("employee_name")) not in employees:
-            continue
+    custom_rows = _payroll._obligations(conn)
+
+    # First undo this batch's previous custom/legacy allocation. This makes an
+    # edited history batch safe to complete again with a different amount.
+    for item in custom_rows:
+        settlements = _clean_settlements(item.get("settlements"))
+        settlements.pop(label, None)
+        item["settlements"] = settlements
+        _refresh_custom_obligation(item, label, actor)
+    legacy_rows = replace_batch_settlements(conn, label, {}, actor)
+
+    requested = {
+        norm(row.get("Tên Hệ thống")): max(0, _payroll._number(row.get("Vi phạm kỳ trước")))
+        for row in prepared_rows
+        if norm(row.get("Tên Hệ thống"))
+    }
+    claims: dict[str, list[dict[str, Any]]] = {}
+    for index, item in enumerate(custom_rows):
+        employee_key = norm(item.get("employee_name"))
         due = _payroll._parse_date(item.get("due_from"))
+        remaining = max(0, _payroll._number(item.get("amount")))
+        if not employee_key or not _custom_source_open(item, norm) or remaining <= 0:
+            continue
         if due and due > body.start:
             continue
-        item["status"] = "Đã hoàn thành"
-        item["completed_period"] = label
-        item["completed_by"] = actor
-        item["completed_on"] = body.end.isoformat()
-        changed += 1
-    if changed:
-        _payroll._put_setting(conn, "violation_obligations", rows, actor)
-    return changed
+        claims.setdefault(employee_key, []).append({
+            "kind": "custom",
+            "index": index,
+            "amount": remaining,
+            "due": due or date.min,
+            "period": _payroll._parse_date(item.get("period_start")) or date.min,
+            "priority": 1,
+        })
+
+    for item in legacy_rows:
+        status = norm(item.get("Trạng thái") or item.get("status") or "Chưa hoàn thành")
+        employee_key = norm(item.get("Tên nhân viên") or item.get("employee_name"))
+        due = _payroll._parse_date(item.get("Bắt đầu trừ từ") or item.get("due_from"))
+        remaining = max(0, _payroll._number(item.get("Số tiền") or item.get("amount")))
+        if status not in {"", "chua hoan thanh"} or not employee_key or remaining <= 0:
+            continue
+        if due and due > body.start:
+            continue
+        debt_type = norm(item.get("Loại") or item.get("type"))
+        claims.setdefault(employee_key, []).append({
+            "kind": "legacy",
+            "debt_key": _legacy_debt_key(item),
+            "amount": remaining,
+            "due": due or date.min,
+            "period": _payroll._parse_date(item.get("Kỳ phát sinh từ") or item.get("period_start")) or date.min,
+            "priority": 0 if debt_type == norm("Âm thực nhận") else 1,
+        })
+
+    legacy_allocations: dict[str, int] = {}
+    applied_total = 0
+    custom_applied = 0
+    legacy_applied = 0
+    for employee_key, amount in requested.items():
+        remaining_request = amount
+        employee_claims = sorted(
+            claims.get(employee_key, []),
+            key=lambda claim: (claim["due"], claim["period"], claim["priority"], claim["kind"]),
+        )
+        for claim in employee_claims:
+            if remaining_request <= 0:
+                break
+            applied = min(remaining_request, claim["amount"])
+            if applied <= 0:
+                continue
+            if claim["kind"] == "custom":
+                obligation = custom_rows[claim["index"]]
+                settlements = _clean_settlements(obligation.get("settlements"))
+                settlements[label] = applied
+                obligation["settlements"] = settlements
+                custom_applied += applied
+            else:
+                debt_key = claim["debt_key"]
+                legacy_allocations[debt_key] = legacy_allocations.get(debt_key, 0) + applied
+                legacy_applied += applied
+            remaining_request -= applied
+            applied_total += applied
+
+    for item in custom_rows:
+        _refresh_custom_obligation(item, label, actor)
+    replace_batch_settlements(conn, label, legacy_allocations, actor)
+
+    # A negative actual payment becomes a new obligation starting next period.
+    negative_created = 0
+    for row in prepared_rows:
+        employee = str(row.get("Tên Hệ thống") or "").strip()
+        source_key = f"NEGATIVE|{body.start.isoformat()}|{body.end.isoformat()}|{norm(employee)}"
+        principal = max(0, -_payroll._number(row.get("Số tiền thực nhận")))
+        existing = next((item for item in custom_rows if str(item.get("source_key") or "") == source_key), None)
+        if existing is None and principal <= 0:
+            continue
+        if existing is None:
+            existing = {"id": str(uuid.uuid4()), "settlements": {}}
+            custom_rows.append(existing)
+        existing.update({
+            "employee_name": employee,
+            "principal_amount": principal,
+            "content": "Nợ chuyển kỳ do Số tiền thực nhận âm",
+            "type": "Âm thực nhận",
+            "period_start": body.start.isoformat(),
+            "period_end": body.end.isoformat(),
+            "due_from": (body.end + timedelta(days=1)).isoformat(),
+            "source_key": source_key,
+            "source_status": "Chưa hoàn thành",
+        })
+        _refresh_custom_obligation(existing, label, actor)
+        if principal > 0:
+            negative_created += 1
+
+    _payroll._put_setting(conn, "violation_obligations", custom_rows, actor)
+    requested_total = sum(requested.values())
+    return {
+        "requested": requested_total,
+        "applied": applied_total,
+        "unmatched": max(0, requested_total - applied_total),
+        "custom_applied": custom_applied,
+        "legacy_applied": legacy_applied,
+        "negative_created": negative_created,
+    }
 
 
 def install_payroll_enhancement_routes(
@@ -158,6 +322,33 @@ def install_payroll_enhancement_routes(
     original_save = save_route.endpoint
     app.router.routes.remove(history_route)
     app.router.routes.remove(save_route)
+
+    previous_before_save = getattr(app.state, "payroll_before_save_hook", None)
+
+    def before_payroll_save(*, conn, body, prepared_rows, actor, label, **_kwargs):
+        hook_result: dict[str, Any] = {}
+        if callable(previous_before_save):
+            hook_result.update(previous_before_save(
+                conn=conn,
+                body=body,
+                prepared_rows=prepared_rows,
+                actor=actor,
+                label=label,
+            ) or {})
+        deleted = _deleted_batches(conn)
+        if label in deleted:
+            deleted.remove(label)
+            _save_deleted_batches(conn, deleted, actor)
+        hook_result["debt_reconciliation"] = _reconcile_payroll_debts(
+            conn,
+            body,
+            prepared_rows,
+            actor,
+            norm,
+        )
+        return hook_result
+
+    app.state.payroll_before_save_hook = before_payroll_save
 
     @app.get("/v2/payroll-enhancements/health")
     def payroll_enhancements_health():
@@ -231,18 +422,18 @@ def install_payroll_enhancement_routes(
     ):
         result = dict(original_save(body=body, ident=ident) or {})
         label = _payroll._period_label(body.start, body.end)
-        with engine_instance().begin() as conn:
-            deleted = _deleted_batches(conn)
-            if label in deleted:
-                deleted.remove(label)
-                _save_deleted_batches(conn, deleted, ident.employee_username)
-            completed_obligations = _mark_applied_custom_obligations_completed(
-                conn, body, ident.employee_username, norm
-            )
+        reconciliation = dict(result.get("debt_reconciliation") or {})
         result.update({
             "completed": True,
-            "completed_obligations": completed_obligations,
-            "message": f"Đã hoàn thành {label} và lưu vào LỊCH SỬ BẢNG LƯƠNG.",
+            "completed_obligations": reconciliation.get("applied", 0),
+            "message": (
+                f"Đã hoàn thành {label} và lưu vào LỊCH SỬ BẢNG LƯƠNG. "
+                f"Đã đối trừ {_payroll._number(reconciliation.get('applied')):,.0f}đ nợ kỳ trước; "
+                f"còn {_payroll._number(reconciliation.get('unmatched')):,.0f}đ nhập vượt số nợ đang mở."
+            ).replace(",", ".") if _payroll._number(reconciliation.get("unmatched")) > 0 else (
+                f"Đã hoàn thành {label} và lưu vào LỊCH SỬ BẢNG LƯƠNG. "
+                f"Đã đối trừ {_payroll._number(reconciliation.get('applied')):,.0f}đ nợ kỳ trước."
+            ).replace(",", "."),
         })
         return result
 

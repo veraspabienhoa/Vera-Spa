@@ -25,19 +25,21 @@ from sqlalchemy import text
 import vera_web_v2_payroll as payroll
 
 
-RELEASE = "payroll-timesoft-auto-2026-08-29.2"
+RELEASE = "payroll-timesoft-auto-2026-09-05.3"
 VN_TZ = timezone(timedelta(hours=7))
 DATASET_PREFIX = "timesoft_summary_invoice_"
 
 TIME_KEYS = (
     "thoi gian", "create time", "createtime", "create time str", "createtimestr",
     "create date", "createdate", "create date str", "createdatestr", "invoice date",
-    "invoicedate", "invoice time", "invoicetime", "date", "time",
+    "invoicedate", "invoice time", "invoicetime", "date group str", "dategroupstr",
+    "date group", "dategroup", "date", "time",
 )
 ITEM_KEYS = (
     "san pham dich vu pt", "san pham dich vu", "product name", "productname",
     "product service name", "productservicename", "service name", "servicename",
-    "item name", "itemname", "product", "service", "item",
+    "detail item name", "detailitemname", "vas service name", "vasservicename",
+    "ticket name", "ticketname", "item name", "itemname", "product", "service", "item",
 )
 AMOUNT_KEYS = (
     "tong tien", "total money", "totalmoney", "total amount", "totalamount",
@@ -46,7 +48,8 @@ AMOUNT_KEYS = (
 EMPLOYEE_KEYS = (
     "nv tu van", "nhan vien tu van", "employee name", "employeename", "staff name",
     "staffname", "consultant name", "consultantname", "advisor name", "advisorname",
-    "employeeinfo name", "employee info name", "name employee",
+    "seller name", "sellername", "trainer name", "trainername", "employee id list str",
+    "employeeidliststr", "employeeinfo name", "employee info name", "name employee",
 )
 
 
@@ -234,6 +237,7 @@ def _canonical_tip_rows(conn, start: date, end: date, norm) -> tuple[list[dict[s
     seen: set[tuple[str, str, int, str]] = set()
     sample_keys: set[str] = set()
     source_records = 0
+    aggregate_dates: list[date] = []
 
     for target_date in required_dates:
         exists, payload = _dataset_row(conn, target_date)
@@ -241,6 +245,12 @@ def _canonical_tip_rows(conn, start: date, end: date, norm) -> tuple[list[dict[s
             missing_dates.append(target_date)
             continue
         source_records += len(payload)
+        if len(payload) == 1 and isinstance(payload[0], dict):
+            first = payload[0]
+            item_value = _preferred_value(first, ITEM_KEYS, norm)
+            employee_value = _preferred_value(first, EMPLOYEE_KEYS, norm)
+            if not str(item_value or "").strip() and not str(employee_value or "").strip():
+                aggregate_dates.append(target_date)
         for record in payload:
             if isinstance(record, dict):
                 sample_keys.update(str(key) for key in record.keys())
@@ -274,10 +284,18 @@ def _canonical_tip_rows(conn, start: date, end: date, norm) -> tuple[list[dict[s
         )
     if not rows:
         keys = ", ".join(sorted(sample_keys)[:18]) or "(không có cột nguồn)"
+        aggregate_note = ""
+        if aggregate_dates:
+            labels = ", ".join(value.strftime("%d/%m/%Y") for value in aggregate_dates[:8])
+            aggregate_note = (
+                f" Snapshot các ngày {labels} đang là dòng tổng hợp, chưa phải chế độ "
+                "Theo sản phẩm/dịch vụ; hệ thống đồng bộ sẽ tự tải lại dữ liệu chi tiết."
+            )
         raise HTTPException(
             422,
             "Đã có snapshot TimeSoft nhưng chưa nhận diện được dòng TIP phù hợp để tính lương. "
-            f"Cột nguồn mẫu: {keys}. Có thể tiếp tục dùng Upload Excel trong khi kiểm tra mapping TimeSoft.",
+            f"Cột nguồn mẫu: {keys}.{aggregate_note} "
+            "Có thể tiếp tục dùng Upload Excel trong khi dữ liệu chi tiết đang được đồng bộ lại.",
         )
 
     return rows, {
