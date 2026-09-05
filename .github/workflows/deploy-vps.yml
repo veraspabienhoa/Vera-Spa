@@ -48,6 +48,21 @@ jobs:
             "${VPS_USER}@${VPS_HOST}" \
             "/opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
 
+      - name: Configure PostgreSQL SSL environment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
+        run: |
+          test -n "$VERA_DB_PASS"
+          if [[ "$VERA_DB_PASS" == *$'\n'* || "$VERA_DB_PASS" == *$'\r'* ]]; then
+            echo "VERA_DB_PASS must be a single-line secret" >&2
+            exit 1
+          fi
+          printf '%s\n' "$VERA_DB_PASS" | ssh -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            'SCRIPT=$(find /opt/vera-spa -maxdepth 4 -name configure_vps_database.sh -type f -print -quit); test -n "$SCRIPT"; bash "$SCRIPT" 160.236.192.51 5432 veraspa vera_dev'
+
       - name: Verify production data sources
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
