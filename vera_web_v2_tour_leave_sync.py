@@ -30,8 +30,9 @@ from vera_google_credentials import google_credentials
 
 
 RELEASE = "tour-leave-sync-2026-09-02.2-cp-only"
-TOUR_FILE_ID = os.getenv(
-    "VERA_TOUR_FILE_ID", "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
+TOUR_FILE_ID = (
+    os.getenv("VERA_TOUR_FILE_ID", "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS")
+    or "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS"
 ).strip()
 TOUR_MIME = "application/vnd.ms-excel.sheet.macroenabled.12"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"

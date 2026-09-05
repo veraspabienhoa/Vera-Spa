@@ -48,8 +48,11 @@ SHEET_DU_PHONG_ID = os.getenv(
     "1Kz0aw-JatptAN9G7YSwZ6rJO09urOPaD-rS-18eZSY0",
 )
 
-# V86.6: TourVera mới.
-BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
+# TourVera hiện hành; có thể thay đổi an toàn qua biến môi trường khi cần.
+BANG_TOUR_FILE_ID = (
+    os.getenv("VERA_TOUR_FILE_ID", "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS")
+    or "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS"
+).strip()
 
 BANG_TOUR_AUDIT_WORKSHEET = os.getenv(
     "BANG_TOUR_AUDIT_WORKSHEET",

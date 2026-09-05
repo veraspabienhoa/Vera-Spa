@@ -30,7 +30,10 @@ import vera_progressive_penalty as progressive_penalty
 from vera_attendance_rules import late_penalty_eligible, supported_late_minutes
 
 # V93.3: nguồn TourVera hiện hành + Auto vắng mặt sau 20:00.
-ts.BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
+ts.BANG_TOUR_FILE_ID = (
+    os.getenv("VERA_TOUR_FILE_ID", "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS")
+    or "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS"
+).strip()
 
 SMTP_SENDER_EMAIL = "veraspabienhoa@gmail.com"
 SMTP_APP_PASSWORD = (os.getenv("SMTP_APP_PASSWORD", "") or "").strip()

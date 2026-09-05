@@ -2872,7 +2872,10 @@ LEAVE_HEADER_ALIASES = {
     "nguoi cap nhat": "Người cập nhật",
 }
 SHEET_CHINH_ID = "1xTjmi6BaQFSqsgn9-EM7MjVS2n2FNuxT"
-BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
+BANG_TOUR_FILE_ID = (
+    os.getenv("VERA_TOUR_FILE_ID", "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS")
+    or "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS"
+).strip()
 PAYROLL_SOURCE_SHEET_ID = "1WtYsbEAlifL1PZ-nSGBojgL4Bnur-1vF"
 
 # V84 - Auto Check. Trạng thái lưu trên Google Sheet để mọi instance dùng chung.

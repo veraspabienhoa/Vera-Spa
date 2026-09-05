@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 import json
 import math
+import os
 import re
 import threading
 import time
@@ -20,7 +21,10 @@ from vera_tour_break_counter import next_break_event_state, tour_business_date
 import vera_web_v2_snapshot as attendance_snapshot
 
 
-BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
+BANG_TOUR_FILE_ID = (
+    os.getenv("VERA_TOUR_FILE_ID", "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS")
+    or "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS"
+).strip()
 TOUR_CACHE_SECONDS = 60
 _tour_cache: dict[str, Any] = {"loaded_at": 0.0, "columns": [], "records": [], "rooms": {}, "source_updated_at": ""}
 _tour_lock = threading.Lock()

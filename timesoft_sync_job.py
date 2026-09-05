@@ -82,7 +82,10 @@ API_CHECKIN = "/Report/ReportEmployeeCheckin/SearchElastic"
 # employee reads are retired; employee identity comes from PostgreSQL below.
 SHEET_MAT_KHAU_ID = "1DGXy3kPyMPwtz-3CnG8i6BiQbXFDApasoXVFzSmUe24"
 SHEET_DU_PHONG_ID = "1Kz0aw-JatptAN9G7YSwZ6rJO09urOPaD-rS-18eZSY0"
-BANG_TOUR_FILE_ID = "151d1ueCwH2KXX-HPQF1uj340uWSCS2dW"
+BANG_TOUR_FILE_ID = (
+    os.getenv("VERA_TOUR_FILE_ID", "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS")
+    or "15nDSicFhEHstxQjGrETuSK8Z7q6cSQyS"
+).strip()
 
 AUTO_PENALTY_CONFIG_WORKSHEET = "CauHinhAutoPhat"
 AUTO_PENALTY_CONFIG_HEADERS = [
