@@ -18,6 +18,7 @@ from openpyxl import load_workbook
 from sqlalchemy import text
 
 from vera_tour_break_counter import next_break_event_state, tour_business_date
+from vera_tour_source import get_tour_file_id
 import vera_web_v2_snapshot as attendance_snapshot
 
 
@@ -111,10 +112,11 @@ def _available_rooms_for_tour(rooms: dict[str, Any], prepared: dict[str, Any]) -
 
 
 def _download_tour() -> tuple[list[str], list[dict[str, Any]], str]:
+    file_id = get_tour_file_id(BANG_TOUR_FILE_ID)
     errors = []
     for url in (
-        f"https://drive.usercontent.google.com/download?id={BANG_TOUR_FILE_ID}&export=download&confirm=t",
-        f"https://drive.google.com/uc?export=download&id={BANG_TOUR_FILE_ID}&confirm=t",
+        f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t",
+        f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t",
     ):
         try:
             response = requests.get(url, timeout=25, allow_redirects=True)

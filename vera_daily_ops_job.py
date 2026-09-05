@@ -35,6 +35,7 @@ from sqlalchemy import text
 
 import auto_penalty_daily_job as daily_mail
 import vera_postgres as vpg
+from vera_tour_source import get_tour_file_id
 
 
 VN_TZ = timezone(timedelta(hours=7))
@@ -350,7 +351,7 @@ def open_bang_tour(data_only=False):
 
     fd, path = tempfile.mkstemp(suffix=".xlsm")
     os.close(fd)
-    download_drive_file(BANG_TOUR_FILE_ID, path)
+    download_drive_file(get_tour_file_id(BANG_TOUR_FILE_ID), path)
 
     wb = load_workbook(
         path,
@@ -1099,7 +1100,7 @@ def process_violations() -> str:
         f"saved={saved_count}, "
         f"emails={sent_count}, "
         f"zero_penalty={zero_penalty}, "
-        f"tour_file={BANG_TOUR_FILE_ID}, "
+        f"tour_file={get_tour_file_id(BANG_TOUR_FILE_ID)}, "
         f"late_threshold={AUTO_LATE_MINUTES}"
     )
 

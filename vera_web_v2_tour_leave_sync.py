@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from vera_google_credentials import google_credentials
+from vera_tour_source import get_tour_file_id
 
 
 RELEASE = "tour-leave-sync-2026-09-02.2-cp-only"
@@ -712,9 +713,9 @@ def _drive_session() -> AuthorizedSession:
     return AuthorizedSession(google_credentials([DRIVE_SCOPE]))
 
 
-def _download_tour(session: AuthorizedSession) -> tuple[bytes, str]:
+def _download_tour(session: AuthorizedSession, file_id: str) -> tuple[bytes, str]:
     response = session.get(
-        f"https://www.googleapis.com/drive/v3/files/{TOUR_FILE_ID}"
+        f"https://www.googleapis.com/drive/v3/files/{file_id}"
         "?alt=media&supportsAllDrives=true",
         timeout=90,
     )
@@ -729,9 +730,9 @@ def _download_tour(session: AuthorizedSession) -> tuple[bytes, str]:
     return payload, etag
 
 
-def _upload_and_verify(session: AuthorizedSession, payload: bytes, etag: str) -> dict[str, Any]:
+def _upload_and_verify(session: AuthorizedSession, payload: bytes, etag: str, file_id: str) -> dict[str, Any]:
     response = session.patch(
-        f"https://www.googleapis.com/upload/drive/v3/files/{TOUR_FILE_ID}"
+        f"https://www.googleapis.com/upload/drive/v3/files/{file_id}"
         "?uploadType=media&supportsAllDrives=true&fields=id,name,mimeType,modifiedTime,size,md5Checksum",
         headers={"Content-Type": TOUR_MIME, "If-Match": etag},
         data=payload,
@@ -745,7 +746,7 @@ def _upload_and_verify(session: AuthorizedSession, payload: bytes, etag: str) ->
             503, f"Không ghi được TourVera (Drive HTTP {response.status_code}): {detail}"
         )
     verify = session.get(
-        f"https://www.googleapis.com/drive/v3/files/{TOUR_FILE_ID}"
+        f"https://www.googleapis.com/drive/v3/files/{file_id}"
         "?alt=media&supportsAllDrives=true",
         timeout=90,
     )
@@ -799,7 +800,8 @@ def install_tour_leave_sync_routes(
 
             try:
                 session = _drive_session()
-                original, etag = _download_tour(session)
+                file_id = get_tour_file_id(TOUR_FILE_ID)
+                original, etag = _download_tour(session, file_id)
                 editor = _TourWorkbook(original)
                 target_date = datetime.now(vn_tz).date()
                 stats = _apply_action(
@@ -810,7 +812,7 @@ def install_tour_leave_sync_routes(
                     catalog=catalog,
                 )
                 updated = editor.to_bytes()
-                metadata = _upload_and_verify(session, updated, etag)
+                metadata = _upload_and_verify(session, updated, etag, file_id)
             except HTTPException:
                 raise
             except Exception as exc:

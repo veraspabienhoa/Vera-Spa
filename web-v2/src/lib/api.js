@@ -317,6 +317,8 @@ export const veraApi = {
   }),
   birthdays: (month = new Date().getMonth() + 1) => request(`/v2/birthdays?month=${encodeURIComponent(month)}`),
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
+  tourSource: () => request('/v2/tour/source'),
+  saveTourSource: (body) => request('/v2/tour/source', { method: 'PUT', body: JSON.stringify(body) }),
   syncTourLeave: (action) => request('/v2/tour-leave-sync', {
     method: 'POST', body: JSON.stringify({ action }),
   }),

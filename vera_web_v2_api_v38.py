@@ -58,6 +58,7 @@ from vera_web_v2_staff_status_sort import install_staff_status_sort
 from vera_web_v2_support_shift_break import install_support_shift_break
 from vera_web_v2_system_name import install_system_name_routes
 from vera_web_v2_tour_leave_sync import install_tour_leave_sync_routes
+from vera_web_v2_tour_source import install_tour_source_routes
 from vera_web_v2_violation_unlimited import install_violation_unlimited
 from vera_web_v2_work_schedule import install_work_schedule_routes
 from vera_web_v2_work_schedule_permissions import install_work_schedule_permissions
@@ -133,6 +134,7 @@ install_staff_status_sort(_shared.app, current_identity=_api.current_identity, i
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_tour_leave_sync_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, invalidate_tour_cache=invalidate_tour_cache)
+install_tour_source_routes(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity, invalidate_tour_cache=invalidate_tour_cache)
 install_leave_source_export_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID)
 install_work_schedule_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, feature_allowed=_api._feature_allowed)
 install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)

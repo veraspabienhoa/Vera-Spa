@@ -1,4 +1,4 @@
-import { Clock3, Compass, Crown, DoorOpen, LayoutGrid, RefreshCw, Search } from 'lucide-react'
+import { Clock3, Compass, Crown, DoorOpen, ExternalLink, LayoutGrid, Link2, RefreshCw, Save, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 
@@ -248,6 +248,11 @@ export default function TourPage({ user }) {
   const [roomSegment, setRoomSegment] = useState('all')
   const [selectedRoomKey, setSelectedRoomKey] = useState('')
   const [clockMs, setClockMs] = useState(Date.now())
+  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
+  const [tourSource, setTourSource] = useState(null)
+  const [tourSourceDraft, setTourSourceDraft] = useState('')
+  const [tourSourceBusy, setTourSourceBusy] = useState(false)
+  const [tourSourceNotice, setTourSourceNotice] = useState({ text: '', error: false })
   const load = useCallback(async (refresh = false, quiet = false) => {
     if (!quiet) setBusy(true)
     setError('')
@@ -263,8 +268,8 @@ export default function TourPage({ user }) {
   }, [tourCacheKey])
 
   useEffect(() => {
-    void load(true, initiallyCached.current)
-    const interval = window.setInterval(() => { void load(true, true) }, 10000)
+    void load(false, initiallyCached.current)
+    const interval = window.setInterval(() => { void load(false, true) }, 10000)
     return () => window.clearInterval(interval)
   }, [load])
 
@@ -272,6 +277,44 @@ export default function TourPage({ user }) {
     const interval = window.setInterval(() => setClockMs(Date.now()), 1000)
     return () => window.clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (!isAdmin) return undefined
+    let mounted = true
+    veraApi.tourSource().then((source) => {
+      if (!mounted) return
+      setTourSource(source)
+      setTourSourceDraft(source?.url || '')
+    }).catch((err) => {
+      if (mounted) setTourSourceNotice({ text: err.message || 'Không đọc được link TourVera hiện tại.', error: true })
+    })
+    return () => { mounted = false }
+  }, [isAdmin])
+
+  const openStandaloneTour = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('page', 'tour')
+    url.searchParams.set('standalone', '1')
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
+
+  const saveTourSource = async (event) => {
+    event.preventDefault()
+    if (!tourSourceDraft.trim() || tourSourceBusy) return
+    setTourSourceBusy(true)
+    setTourSourceNotice({ text: '', error: false })
+    try {
+      const source = await veraApi.saveTourSource({ url: tourSourceDraft.trim() })
+      setTourSource(source)
+      setTourSourceDraft(source?.url || tourSourceDraft.trim())
+      setTourSourceNotice({ text: 'Đã lưu link TourVera và làm mới cache Bảng tua.', error: false })
+      await load(true, true)
+    } catch (err) {
+      setTourSourceNotice({ text: err.message || 'Không lưu được link TourVera.', error: true })
+    } finally {
+      setTourSourceBusy(false)
+    }
+  }
 
   const columns = useMemo(() => data.columns || [], [data.columns])
   const validRecords = useMemo(
@@ -379,6 +422,7 @@ export default function TourPage({ user }) {
       .tour-room-empty{grid-column:1/-1;padding:6px;color:#5d7168;font-size:9px;text-align:center}
       .tour-room-detail{margin-top:5px;padding:6px;border:1px solid #d9e2dd;border-radius:8px;background:#fff}.tour-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.tour-room-detail-head strong{font-size:10px}.tour-room-detail-head small{color:#68776f;font-size:7px;font-weight:800}.tour-room-detail-list{display:grid;gap:3px}.tour-room-detail-row{min-width:0;display:grid;grid-template-columns:minmax(90px,.55fr) minmax(120px,1fr);gap:8px;padding:4px 6px;border-radius:6px;background:#f3f6f4;font-size:8px}.tour-room-detail-row strong,.tour-room-detail-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tour-room-detail-row span{color:#55665e}.tour-room-detail-empty{padding:4px;color:#68776f;font-size:8px}
       .tour-legend{padding:9px}.tour-legend .panel-title-row{margin-bottom:5px}.tour-legend .panel-title-row h2{font-size:14px}.tour-legend .panel-title-row p{font-size:9px}.tour-legend-grid{gap:4px}.tour-legend-grid span{padding:4px 7px;font-size:8px}
+      .tour-source-panel{padding:8px}.tour-source-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}.tour-source-head strong{display:flex;align-items:center;gap:5px;font-size:11px}.tour-source-head small{color:#65756e;font-size:8px}.tour-source-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}.tour-source-form input{min-width:0;height:32px;padding:5px 9px;font-size:10px}.tour-source-form button{min-height:32px;padding:5px 10px}.tour-source-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:5px;color:#65756e;font-size:8px}.tour-source-meta a{color:#155b78;font-weight:850}.tour-source-notice{font-weight:800;color:#247146}.tour-source-notice.error{color:#a52a22}
       @media(max-width:640px){
         .tour-shift-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-bottom:7px}
         .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
@@ -393,13 +437,14 @@ export default function TourPage({ user }) {
         .tour-employee-search{min-width:0;max-width:none}
         .tour-employee-search input{min-width:0;height:29px;padding:5px 5px 5px 27px;font-size:8px}
         .tour-employee-search svg{left:8px;width:14px}
+        .tour-source-head{align-items:flex-start;flex-direction:column}.tour-source-form{grid-template-columns:1fr}.tour-source-form button{width:100%}
         .tour-room-panel{padding:5px}.tour-room-panel-head{margin-bottom:4px}.tour-room-panel-title{font-size:9px}.tour-room-panel-head small{min-width:125px;font-size:12px}.tour-room-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}.tour-room-card{min-height:58px;padding:4px}.tour-room-card.vip{padding:2px}.tour-room-card-head strong{font-size:8px}.tour-room-type{padding:2px 3px;font-size:4px}.tour-room-countdown{font-size:9px}.tour-room-countdown svg{width:10px;height:10px}.tour-room-meta{font-size:6px}.tour-room-detail-row{grid-template-columns:minmax(75px,.55fr) minmax(0,1fr);gap:4px;padding:4px;font-size:7px}
       }
       @media(max-width:420px){
         .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       }
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1><p>Cache máy chủ Bảng tua làm mới tối đa mỗi 1 phút; màn hình tự kiểm tra dữ liệu mới mỗi 10 giây.</p></div><div className="tour-heading-actions">{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div></div>
+    <div className="page-heading"><div><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1></div><div className="tour-heading-actions"><button type="button" className="secondary-button" onClick={openStandaloneTour}><ExternalLink size={16} /> Mở tab riêng</button>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div></div>
     {error && <div className="error-box">{error}</div>}
     {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
     <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca" data-tour-customer-count={customerCount}>
@@ -452,6 +497,18 @@ export default function TourPage({ user }) {
       <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
+    {isAdmin && <section className="panel tour-source-panel">
+      <div className="tour-source-head"><strong><Link2 size={15}/> Link file TourVera</strong><small>Chỉ Admin · cấu hình dùng chung, không cần sửa code khi đổi file</small></div>
+      <form className="tour-source-form" onSubmit={saveTourSource}>
+        <input type="url" value={tourSourceDraft} onChange={(event) => setTourSourceDraft(event.target.value)} placeholder="Dán link Google Drive của TourVera.xlsm" aria-label="Link Google Drive của TourVera" required />
+        <button type="submit" className="primary-button" disabled={tourSourceBusy || !tourSourceDraft.trim()}><Save size={15}/> {tourSourceBusy ? 'Đang kiểm tra…' : 'Lưu link'}</button>
+      </form>
+      <div className="tour-source-meta">
+        {tourSource?.name && <span>File hiện tại: <strong>{tourSource.name}</strong></span>}
+        {tourSource?.url && <a href={tourSource.url} target="_blank" rel="noreferrer">Mở trên Google Drive</a>}
+        {tourSourceNotice.text && <span className={`tour-source-notice ${tourSourceNotice.error ? 'error' : ''}`}>{tourSourceNotice.text}</span>}
+      </div>
+    </section>}
     <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu áp dụng cho toàn bộ dòng và Break luôn được ưu tiên cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
     <div className="setup-note tour-countdown-note">Thời gian còn lại do hệ thống tự đếm: Yêu cầu trống dùng “TG bắt đầu thực hiện”; Yêu cầu YC dùng “TG bắt đầu thực hiện YC”; cả hai cộng theo Thời lượng.</div>
   </div>

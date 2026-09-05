@@ -39,6 +39,7 @@ import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
 import vera_missing_checkin_notifications as missing_checkin_notifications
 import vera_progressive_penalty as progressive_penalty
+from vera_tour_source import get_tour_file_id
 import vera_web_v2_department_attendance as department_attendance
 from vera_attendance_rules import supported_late_minutes
 
@@ -651,10 +652,11 @@ def save_auto_violation(
 # BẢNG TOUR
 # ==========================================================
 def _download_bang_tour_bytes() -> bytes:
+    file_id = get_tour_file_id(BANG_TOUR_FILE_ID)
     # Link usercontent thường trả thẳng binary cho file public/được chia sẻ.
     urls = [
-        f"https://drive.usercontent.google.com/download?id={BANG_TOUR_FILE_ID}&export=download&confirm=t",
-        f"https://drive.google.com/uc?export=download&id={BANG_TOUR_FILE_ID}&confirm=t",
+        f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t",
+        f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t",
     ]
     errors = []
     for url in urls:
