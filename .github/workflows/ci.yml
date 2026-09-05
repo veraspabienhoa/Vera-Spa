@@ -65,8 +65,12 @@ jobs:
           auth_client = Path('web-v2/src/lib/supabase.js').read_text(encoding='utf-8')
           login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
           pages_workflow = Path('.github/workflows/vera-web-v2-pages.yml').read_text(encoding='utf-8')
-          public_session = gateway.split('def _public_session', 1)[1].split('def install_auth_gateway', 1)[0]
-          ast.parse(gateway)
+          gateway_tree = ast.parse(gateway)
+          public_session_node = next(
+              node for node in gateway_tree.body
+              if isinstance(node, ast.FunctionDef) and node.name == '_public_session'
+          )
+          public_session = ast.get_source_segment(gateway, public_session_node) or ''
           checks = {
               'API login route exists': '@app.post("/v2/auth/login")' in gateway,
               'API refresh route exists': '@app.post("/v2/auth/refresh")' in gateway,
