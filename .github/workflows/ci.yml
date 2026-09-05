@@ -116,7 +116,11 @@ jobs:
               'API rejects cross-provider access tokens': 'if not is_local_access_token(token)' in api,
               'password changes revoke local sessions': 'revoke_local_sessions' in Path('vera_web_v2_profile.py').read_text(encoding='utf-8'),
               'deploy activates local provider after migration': deploy.index('/opt/vera-spa/.venv/bin/python "$local_auth_migrator"') < deploy.index('export VERA_AUTH_PROVIDER=local'),
-              'deploy selects exact release scripts': 'bash /opt/vera-spa/configure_vps_database.sh' in workflow,
+              'deploy selects scripts from active release': all(item in workflow for item in (
+                  'readlink -f',
+                  '${release_dir}/configure_vps_database.sh',
+                  '${release_dir}/vera_vps_data_check.py',
+              )),
               'browser disables Supabase session persistence': 'persistSession: false' in client and 'autoRefreshToken: false' in client,
               'browser uses API logout': "apiAuthRequest('/v2/auth/logout'" in client,
           }
