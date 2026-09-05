@@ -1240,12 +1240,24 @@ def process_break_return_penalties(engine, catalog: dict) -> dict:
     return result
 
 
+def _timesoft_penalty_date_eligible(
+    target_date: date,
+    today: date,
+    *,
+    include_synced_history: bool = False,
+) -> bool:
+    """Bound historical evaluation to an explicit manual Auto Check run."""
+    return target_date == today or include_synced_history
+
+
 def process_timesoft_penalties(
     engine,
     cfg: dict,
     employee_map: dict,
     catalog: dict,
     checkin_by_date: list[tuple[date, pd.DataFrame]],
+    *,
+    include_synced_history: bool = False,
 ) -> dict:
     result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
     reason_item = _catalog_item(catalog, "Đi trễ không phép")
@@ -1257,9 +1269,16 @@ def process_timesoft_penalties(
     today = datetime.now(VN_TZ).date()
 
     for target_date, df in checkin_by_date:
-        # V84.1: Auto phạt chỉ xử lý dữ liệu của NGÀY HÔM NAY.
-        # PostgreSQL vẫn được phép đồng bộ hôm nay + hôm qua theo SYNC_DAYS.
-        if target_date != today:
+        # Scheduled runs keep the historical V84.1 rule and only evaluate the
+        # current Vietnam work date.  A manual request intentionally evaluates
+        # every date already fetched by this bounded sync (normally today and
+        # yesterday), which safely repairs a missed/paused previous-day run.
+        # save_violation is idempotent, so an already processed event is skipped.
+        if not _timesoft_penalty_date_eligible(
+            target_date,
+            today,
+            include_synced_history=include_synced_history,
+        ):
             continue
         if not isinstance(df, pd.DataFrame) or df.empty:
             continue
@@ -1548,7 +1567,7 @@ def write_status(status: str, started_at: datetime, details: list[dict], error: 
 # ==========================================================
 def run_sync() -> int:
     started_at = datetime.now(VN_TZ)
-    _log(f"Bắt đầu TimeSoft background sync V93.6; days={SYNC_DAYS}")
+    _log(f"Bắt đầu TimeSoft background sync V93.7; days={SYNC_DAYS}")
     if not vpg.is_enabled():
         _log("ERROR: PostgreSQL chưa được bật.")
         return 2
@@ -1620,9 +1639,10 @@ def run_sync() -> int:
             with engine.begin() as conn:
                 cfg = auto_check.load_config(conn)
                 grace_period_revoked = auto_check.revoke_grace_period_penalties(conn)
-                trigger_type = "manual" if cfg.get("manual_run_requested") else "scheduled"
+                manual_run_requested = bool(cfg.get("manual_run_requested"))
+                trigger_type = "manual" if manual_run_requested else "scheduled"
                 run_id = auto_check.start_run(conn, trigger_type)
-                if cfg.get("manual_run_requested"):
+                if manual_run_requested:
                     cfg = auto_check.save_config(conn, {"manual_run_requested": False}, "AUTO CHECK JOB")
             auto_status = str(cfg.get("status", "UNKNOWN"))
             _log(f"Auto penalty status={auto_status}; threshold={cfg.get('threshold_minutes', AUTO_PENALTY_MINUTES)} phút")
@@ -1634,7 +1654,14 @@ def run_sync() -> int:
                 with engine.connect() as conn:
                     catalog = auto_check.load_catalog(conn)
                 _log(f"Đã tải danh mục: employees={len(employee_map)}; leave_types={len(catalog)}")
-                timesoft_result = process_timesoft_penalties(engine, cfg, employee_map, catalog, checkin_by_date)
+                timesoft_result = process_timesoft_penalties(
+                    engine,
+                    cfg,
+                    employee_map,
+                    catalog,
+                    checkin_by_date,
+                    include_synced_history=manual_run_requested,
+                )
                 break_return_result = process_break_return_penalties(engine, catalog)
                 tour_result = process_tour_penalties(engine, cfg, employee_map, catalog)
                 _log(
@@ -1670,7 +1697,7 @@ def run_sync() -> int:
             break_return_result=break_return_result,
             payroll_backfill_result=payroll_backfill_result,
         )
-        _log(f"Hoàn tất Job V93.6 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
+        _log(f"Hoàn tất Job V93.7 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
         return 0
     except Exception as exc:
         safe_error = f"{type(exc).__name__}: {exc}"

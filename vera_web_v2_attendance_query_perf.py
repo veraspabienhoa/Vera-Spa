@@ -4,7 +4,10 @@ The original 4.2 reader selected every `timesoft_employee_checkin_20%` payload
 and then discarded out-of-range dates in Python.  Attendance is opened often
 and is also reused by break-alert polling, so that pattern repeatedly decoded
 all historical JSON.  This patch keeps the exact 4.2 business logic but asks
-PostgreSQL only for the selected date keys (plus today's alias/raw snapshot).
+PostgreSQL only for the selected date keys (plus the rolling today alias/raw
+snapshot).  The alias is always included because the API server runs in UTC
+while TimeSoft rolls its work date in Vietnam time; payload work dates remain
+the authoritative range filter below.
 """
 from __future__ import annotations
 
@@ -19,20 +22,22 @@ import vera_web_v2_snapshot as snapshot
 from vera_attendance_rules import apply_break_restriction
 
 
-RELEASE = "attendance-date-key-query-2026-08-31-v1"
+RELEASE = "attendance-date-key-query-2026-09-05-v2"
 
 
 def _keys_for_range(start: date, end: date) -> list[str]:
-    keys: list[str] = []
+    # Always read the small rolling alias.  Around 00:00-07:00 Vietnam time,
+    # ``datetime.now().date()`` on the UTC API host still points at yesterday
+    # and used to omit the only freshly available snapshot for the requested
+    # local date.  _records_v42_fast validates each payload's explicit work
+    # date, so an alias for another day cannot leak into the response.
+    keys: list[str] = ["timesoft_employee_checkin_today"]
     day = start
     while day <= end:
         stamp = day.strftime("%Y%m%d")
         keys.append(f"timesoft_employee_checkin_{stamp}")
         keys.append(f"timesoft_employee_checkin_{stamp}_raw")
         day += timedelta(days=1)
-    today = datetime.now().date()
-    if start <= today <= end:
-        keys.insert(0, "timesoft_employee_checkin_today")
     return list(dict.fromkeys(keys))
 
 
