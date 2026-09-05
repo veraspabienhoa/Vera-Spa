@@ -1,8 +1,8 @@
 """Server-side authentication gateway for Web V2.
 
-The browser talks only to api.veraspa.vn.  Username/password verification and
+The browser talks only to api.veraspa.vn. Username/password verification and
 Supabase Auth user provisioning are performed here so login no longer depends
-on the vera-v2-login Edge Function.  Supabase Auth is still used to mint the
+on the vera-v2-login Edge Function. Supabase Auth is still used to mint the
 Bearer session consumed by the existing Web V2 APIs.
 """
 from __future__ import annotations
@@ -61,6 +61,29 @@ def _post_with_retry(url: str, *, headers: dict[str, str], payload: dict[str, An
     raise HTTPException(503, "Dịch vụ đăng nhập tạm thời chưa kết nối được.") from last_error
 
 
+def _request_with_retry(method: str, url: str, *, headers: dict[str, str], payload: dict[str, Any] | None = None):
+    last_error: requests.RequestException | None = None
+    for attempt in range(2):
+        try:
+            response = _HTTP.request(
+                method,
+                url,
+                headers=headers,
+                json=payload if payload is not None else None,
+                timeout=(4, 12),
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt == 0:
+                time.sleep(0.35)
+                continue
+            raise HTTPException(503, "Dịch vụ Supabase Auth tạm thời chưa kết nối được.") from exc
+        if response.status_code not in _RETRYABLE_STATUS or attempt == 1:
+            return response
+        time.sleep(0.35)
+    raise HTTPException(503, "Dịch vụ Supabase Auth tạm thời chưa kết nối được.") from last_error
+
+
 def _response_json(response) -> dict[str, Any]:
     try:
         payload = response.json()
@@ -75,9 +98,10 @@ def _raise_upstream_error(response, *, default_message: str) -> None:
         payload.get("message")
         or payload.get("msg")
         or payload.get("error_description")
+        or payload.get("error")
         or ""
     ).strip()
-    if response.status_code in {400, 401, 403, 429} and message:
+    if response.status_code in {400, 401, 403, 404, 409, 422, 429} and message:
         raise HTTPException(response.status_code, message[:300])
     raise HTTPException(503, default_message)
 
@@ -116,8 +140,6 @@ def _employment_status(payload: Any) -> str:
 
 
 def _engine_instance():
-    # Imported lazily to avoid an import cycle: this module is installed by
-    # vera_web_v2_api_v38 after the shared API module has initialized.
     import vera_web_v2_api_shared as shared
     return shared._api._engine_instance()
 
@@ -132,10 +154,6 @@ def _service_role_key() -> str:
         _SERVICE_ROLE_CACHE = direct
         return direct
 
-    # Cloud Run deployments made before the secret was added to cloudbuild.yaml
-    # can still read it directly from Secret Manager because vera-spa-run has
-    # roles/secretmanager.secretAccessor.  This also prevents a future deploy
-    # from silently breaking login if an env-secret mapping is omitted.
     try:
         project_id = str(os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT") or "vera-hr-app").strip()
         credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
@@ -157,13 +175,27 @@ def _service_role_key() -> str:
     raise HTTPException(503, "API Auth chưa được cấu hình đầy đủ.")
 
 
-def _admin_headers(supabase_anon_key: str) -> dict[str, str]:
-    key = _service_role_key()
-    return {
-        "apikey": key or supabase_anon_key,
-        "Authorization": f"Bearer {key}",
+def _supabase_api_headers(key: str) -> dict[str, str]:
+    """Build headers compatible with both legacy JWT keys and new sb_* keys.
+
+    New Supabase publishable/secret keys are API keys, not JWTs, so they must
+    not be sent as Authorization: Bearer. Legacy anon/service_role JWTs still
+    need the Bearer header for backwards compatibility.
+    """
+    clean = str(key or "").strip()
+    if not clean:
+        raise HTTPException(503, "API Auth chưa được cấu hình đầy đủ.")
+    headers = {
+        "apikey": clean,
         "Content-Type": "application/json",
     }
+    if not clean.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {clean}"
+    return headers
+
+
+def _admin_headers(_supabase_anon_key: str) -> dict[str, str]:
+    return _supabase_api_headers(_service_role_key())
 
 
 def _auth_user_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -174,11 +206,11 @@ def _auth_user_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _update_auth_user(supabase_url: str, headers: dict[str, str], auth_user_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    response = _HTTP.put(
+    response = _request_with_retry(
+        "PUT",
         f"{supabase_url}/auth/v1/admin/users/{auth_user_id}",
         headers=headers,
-        json=body,
-        timeout=(4, 12),
+        payload=body,
     )
     if response.status_code not in {200, 201}:
         _raise_upstream_error(response, default_message="Không cập nhật được tài khoản xác thực VERA.")
@@ -205,11 +237,11 @@ def _create_or_update_auth_user(
         user = _update_auth_user(supabase_url, headers, auth_user_id, body)
         return str(user.get("id") or auth_user_id)
 
-    response = _HTTP.post(
+    response = _request_with_retry(
+        "POST",
         f"{supabase_url}/auth/v1/admin/users",
         headers=headers,
-        json=body,
-        timeout=(4, 12),
+        payload=body,
     )
     if response.status_code in {200, 201}:
         user = _auth_user_from_payload(_response_json(response))
@@ -217,12 +249,10 @@ def _create_or_update_auth_user(
         if created_id:
             return created_id
 
-    # A deterministic internal email may already exist from an earlier login
-    # even when the profile link is missing.  Find and repair that user.
-    listed = _HTTP.get(
+    listed = _request_with_retry(
+        "GET",
         f"{supabase_url}/auth/v1/admin/users?page=1&per_page=1000",
         headers=headers,
-        timeout=(4, 12),
     )
     if listed.status_code == 200:
         users = _response_json(listed).get("users") or []
@@ -358,11 +388,7 @@ def install_auth_gateway(
     def _public_headers() -> dict[str, str]:
         if not supabase_url or not supabase_anon_key:
             raise HTTPException(503, "API Auth chưa được cấu hình.")
-        return {
-            "apikey": supabase_anon_key,
-            "Authorization": f"Bearer {supabase_anon_key}",
-            "Content-Type": "application/json",
-        }
+        return _supabase_api_headers(supabase_anon_key)
 
     @app.post("/v2/auth/login")
     def login(body: VeraLoginRequest, request: Request):
