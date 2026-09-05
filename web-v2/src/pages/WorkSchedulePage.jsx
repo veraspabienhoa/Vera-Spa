@@ -213,6 +213,19 @@ async function scheduleRequest(path, options = {}) {
   return payload
 }
 
+async function scheduleFileRequest(path, options = {}) {
+  if (!API_BASE) throw new Error('Python API V2 chưa được cấu hình.')
+  const session = await getCurrentSession()
+  const headers = new Headers(options.headers || {})
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload?.detail || payload?.message || 'Không xử lý được file lịch làm việc.')
+  }
+  return options.download ? response.blob() : response.json()
+}
+
 function saleDateLabel(value) {
   const parsed = parseIsoDate(value)
   return parsed ? displayFullDate(parsed) : (value || '—')
@@ -316,8 +329,10 @@ export default function WorkSchedulePage({ user }) {
   const [monthlyRows, setMonthlyRows] = useState([])
   const [comboSales, setComboSales] = useState([])
   const comboFileInputRef = useRef(null)
+  const scheduleFileInputRef = useRef(null)
   const autoSaveTimerRef = useRef(null)
   const autoSaveAttemptRef = useRef('')
+  const importedAwaitingManualSaveRef = useRef(false)
   const [shiftDefinitions, setShiftDefinitions] = useState({ quanly: {}, letan: {}, locker: {}, tapvu: {} })
   const [shiftDrafts, setShiftDrafts] = useState([])
   const [shiftEditorOpen, setShiftEditorOpen] = useState(false)
@@ -427,6 +442,7 @@ export default function WorkSchedulePage({ user }) {
       })))
       setSaved(mapped)
       setDrafts(mapped)
+      importedAwaitingManualSaveRef.current = false
       autoSaveAttemptRef.current = ''
       setAutoSaveState('saved')
 
@@ -593,6 +609,7 @@ export default function WorkSchedulePage({ user }) {
     if (!pendingChanges.length) {
       if (!automatic) setNotice('Mọi thay đổi lịch đã được lưu.')
       setAutoSaveState('saved')
+      if (!automatic) importedAwaitingManualSaveRef.current = false
       return
     }
     setBusy(true)
@@ -651,6 +668,7 @@ export default function WorkSchedulePage({ user }) {
         return [...retained, ...rows.filter((row) => row.work_date >= monthBounds.start && row.work_date <= monthBounds.end)]
       })
       setAutoSaveState('saved')
+      if (!automatic) importedAwaitingManualSaveRef.current = false
       setNotice(automatic
         ? `Đã tự lưu ${rows.length + deletes.length} thay đổi lịch làm việc.`
         : `Đã lưu ${rows.length + deletes.length} thay đổi lịch làm việc.`)
@@ -663,7 +681,7 @@ export default function WorkSchedulePage({ user }) {
   }
 
   useEffect(() => {
-    if (!canEdit || loading || busy || !pendingChanges.length || autoSaveAttemptRef.current === pendingSignature) return undefined
+    if (!canEdit || loading || busy || importedAwaitingManualSaveRef.current || !pendingChanges.length || autoSaveAttemptRef.current === pendingSignature) return undefined
     setAutoSaveState('pending')
     window.clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = window.setTimeout(() => {
@@ -672,6 +690,60 @@ export default function WorkSchedulePage({ user }) {
     }, 900)
     return () => window.clearTimeout(autoSaveTimerRef.current)
   }, [busy, canEdit, loading, pendingSignature]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const exportScheduleTemplate = async () => {
+    setBusy(true)
+    setNotice('')
+    try {
+      const path = `/v2/work-schedule/template.xlsx?${new URLSearchParams({ start: rangeStart, end: rangeEnd, department })}`
+      const blob = await scheduleFileRequest(path, { download: true })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `Lich_lam_viec_${department}_${rangeStart}_${rangeEnd}.xlsx`
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setNotice('Đã xuất file mẫu Excel kèm đầy đủ danh sách chọn Nhân viên, Ca làm, Tăng ca và Bộ phận.')
+    } catch (error) {
+      setNotice(error.message || 'Không xuất được file mẫu lịch làm việc.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const importScheduleTemplate = async (file) => {
+    if (!file || !canEdit) return
+    setBusy(true)
+    setNotice('')
+    try {
+      const path = `/v2/work-schedule/import.xlsx?${new URLSearchParams({ start: rangeStart, end: rangeEnd, department })}`
+      const result = await scheduleFileRequest(path, {
+        method: 'POST',
+        body: file,
+        headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+      })
+      const imported = Object.fromEntries((result.rows || []).map((row) => [keyFor(row.employee_username, row.work_date), {
+        ...emptyCell(),
+        shift_code: row.shift_code || '',
+        overtime_shift: row.overtime_shift || '',
+        start_time: row.start_time || '',
+        end_time: row.end_time || '',
+        overtime_start_time: row.overtime_start_time || '',
+        overtime_end_time: row.overtime_end_time || '',
+        note: row.note || '',
+      }]))
+      setDrafts((current) => ({ ...current, ...imported }))
+      importedAwaitingManualSaveRef.current = true
+      autoSaveAttemptRef.current = ''
+      setAutoSaveState('pending')
+      setNotice(result.message || 'Đã nạp Excel. Kiểm tra và bấm Lưu lịch để ghi vào hệ thống.')
+    } catch (error) {
+      setNotice(error.message || 'Không Import được file lịch làm việc.')
+    } finally {
+      setBusy(false)
+      if (scheduleFileInputRef.current) scheduleFileInputRef.current.value = ''
+    }
+  }
 
   useEffect(() => {
     if (!pendingChanges.length && autoSaveState !== 'saving') setAutoSaveState('saved')
@@ -1018,10 +1090,12 @@ export default function WorkSchedulePage({ user }) {
         </div>
         <button type="button" className="schedule-copy-button" onClick={() => selectedCell && void copyCell(selectedCell.username, selectedCell.day)} disabled={!selectedCell}><Copy size={16}/> Sao chép ô</button>
         <button type="button" className="schedule-copy-button" onClick={() => void openPastePanel()} disabled={!selectedCell || !canEdit}><ClipboardPaste size={16}/> Áp dụng cho ngày</button>
+        <button type="button" className="schedule-copy-button" onClick={() => void exportScheduleTemplate()} disabled={busy || loading}><Download size={16}/> Xuất Excel mẫu</button>
+        {canEdit && <><button type="button" className="schedule-copy-button" onClick={() => scheduleFileInputRef.current?.click()} disabled={busy || loading}><Upload size={16}/> Import Excel</button><input ref={scheduleFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importScheduleTemplate(event.target.files?.[0])} /></>}
         <button type="button" className="schedule-copy-button" onClick={() => void captureFullSchedule()} disabled={loading || captureBusy}>{captureBusy ? <LoaderCircle size={16} className="spin" /> : <Camera size={16}/>} {captureBusy ? 'Đang chụp…' : 'Chụp toàn bộ bảng'}</button>
         {canEdit && department !== 'quanly' && <button type="button" className="schedule-config-button" onClick={() => setShiftEditorOpen((value) => !value)}><Settings2 size={16}/> Tạo / sửa ca</button>}
         {canEdit && <button type="button" className="schedule-save" onClick={() => void saveChanges(false)} disabled={busy || loading || !pendingChanges.length}>{busy ? <LoaderCircle size={16} className="spin" /> : <Save size={16}/>} Lưu lịch</button>}
-        {canEdit && <span className={`schedule-autosave-state ${autoSaveState}`}>{autoSaveState === 'saving' ? 'Đang tự lưu…' : autoSaveState === 'pending' ? 'Chờ tự lưu' : autoSaveState === 'error' ? 'Tự lưu lỗi' : 'Đã tự lưu'}</span>}
+        {canEdit && <span className={`schedule-autosave-state ${autoSaveState}`}>{importedAwaitingManualSaveRef.current ? 'Excel chờ Lưu lịch' : autoSaveState === 'saving' ? 'Đang tự lưu…' : autoSaveState === 'pending' ? 'Chờ tự lưu' : autoSaveState === 'error' ? 'Tự lưu lỗi' : 'Đã tự lưu'}</span>}
       </div>
     </div>
 

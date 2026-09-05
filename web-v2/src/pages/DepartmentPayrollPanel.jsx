@@ -1,4 +1,4 @@
-import { Download, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
+import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { numberInputDisplayValue } from '../lib/numberInput'
@@ -52,7 +52,7 @@ const editableFields = [
   ['attendance_bonus', 'Chuyên cần'], ['responsibility', 'Trách nhiệm'],
   ['seniority', 'Thâm niên'], ['combo_sales', 'Bán combo'],
   ['other_income_1', 'Khoản cộng 1'], ['other_income_2', 'Khoản cộng 2'],
-  ['violation_penalty', 'Phạt vi phạm'], ['late_penalty', 'Phạt đi trễ'], ['advance', 'Tiền đã ứng'],
+  ['violation_penalty', 'Phạt vi phạm'], ['late_penalty', 'Phạt đi trễ'],
 ]
 
 const operationsEmployeeFields = [
@@ -76,7 +76,6 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const canSave = isAdmin || permissions.payroll_save
   const canExport = isAdmin || permissions.payroll_export
   const canEmail = isAdmin || permissions.payroll_email
-  const [department, setDepartment] = useState('locker')
   const [month, setMonth] = useState(monthNow())
   const [settings, setSettings] = useState({})
   const [salaryConfigTables, setSalaryConfigTables] = useState({ operations: [], tapvu: [] })
@@ -85,12 +84,14 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [employeeSearch, setEmployeeSearch] = useState({ operations: '', tapvu: '' })
   const [pendingEmployee, setPendingEmployee] = useState({ operations: '', tapvu: '' })
   const [rows, setRows] = useState([])
+  const [history, setHistory] = useState([])
+  const [editingHistoryId, setEditingHistoryId] = useState('')
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
 
-  const current = settings[department] || { config: {}, penalty_rules: [], email_template: { subject: '', body: '' } }
   const totalNet = rows.reduce((sum, row) => sum + Number(row.net_salary || 0), 0)
+  const totalAdvance = rows.reduce((sum, row) => sum + Number(row.advance || 0), 0)
 
   const run = async (key, callback) => {
     setBusy(key); setNotice(null)
@@ -98,51 +99,76 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   }
 
   const loadSettings = async () => run('settings-load', async () => {
-    const result = await request('/v2/department-payroll/settings')
+    const [result, historyResult] = await Promise.all([
+      request('/v2/department-payroll/settings'),
+      settingsOnly ? Promise.resolve({ items: [] }) : request('/v2/department-payroll/combined/history'),
+    ])
     setSettings(result.departments || {})
     setSalaryConfigTables(result.salary_config_tables || { operations: [], tapvu: [] })
     setEmployeeCatalog(result.salary_employee_catalog || [])
+    setHistory(historyResult.items || [])
   })
 
   useEffect(() => { void loadSettings() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const calculate = () => run('calculate', async () => {
-    const result = await request(`/v2/department-payroll/calculate?department=${department}&month=${month}`)
+  const calculate = (source) => run(`calculate-${source}`, async () => {
+    const result = await request(`/v2/department-payroll/combined/calculate?month=${month}&source=${source}`)
     setRows(result.rows || []); setSelected([])
-    setSettings((value) => ({ ...value, [department]: result }))
-    setNotice({ type: 'success', message: `Đã tính ${result.rows?.length || 0} nhân viên ${labels[department]} từ Chấm công và Lịch làm việc Web V2.` })
+    setEditingHistoryId('')
+    setNotice({ type: 'success', message: `Đã tính ${result.rows?.length || 0} nhân viên Quản lý, Locker, Lễ tân và Tạp vụ từ ${result.source_label}.` })
   })
 
   const loadDraft = () => run('draft-load', async () => {
-    const result = await request(`/v2/department-payroll/draft?department=${department}&month=${month}`)
+    const result = await request(`/v2/department-payroll/combined/draft?month=${month}`)
     if (!result.rows?.length) throw new Error('Kỳ này chưa có bảng lương nháp.')
     setRows(result.rows); setSelected([])
-    setNotice({ type: 'success', message: `Đã mở bảng lương nháp ${labels[department]}.` })
+    setEditingHistoryId('')
+    setNotice({ type: 'success', message: 'Đã mở bảng Lương hành chánh nháp.' })
   })
 
-  const editRow = (employee, key, value) => setRows((items) => items.map((item) => item.employee_username === employee ? recalculate({ ...item, [key]: value }, current.config) : item))
-  const payload = () => ({ department, month, rows })
+  const editRow = (employee, key, value) => setRows((items) => items.map((item) => item.employee_username === employee
+    ? recalculate({ ...item, [key]: value }, item.calculation_config || settings[item.department]?.config || {})
+    : item))
+  const payload = () => ({ month, rows, history_id: editingHistoryId })
 
   const saveDraft = () => run('draft-save', async () => {
-    const result = await request('/v2/department-payroll/draft', { method: 'PUT', body: JSON.stringify(payload()) })
+    const result = await request('/v2/department-payroll/combined/draft', { method: 'PUT', body: JSON.stringify(payload()) })
     setRows(result.rows); setNotice({ type: 'success', message: result.message })
   })
-  const saveOfficial = () => run('official-save', async () => {
-    if (!window.confirm(`Lưu chính thức bảng lương ${labels[department]} tháng ${month.split('-').reverse().join('/')}?`)) return
-    const result = await request('/v2/department-payroll/save', { method: 'POST', body: JSON.stringify(payload()) })
-    setRows(result.rows); setNotice({ type: 'success', message: result.message })
+  const completePayroll = () => run('complete', async () => {
+    if (!window.confirm(`Hoàn thành bảng Lương hành chánh tháng ${month.split('-').reverse().join('/')} và lưu vào lịch sử?`)) return
+    const result = await request('/v2/department-payroll/combined/complete', { method: 'POST', body: JSON.stringify(payload()) })
+    setRows(result.rows); setEditingHistoryId(result.history_id || '')
+    const historyResult = await request('/v2/department-payroll/combined/history')
+    setHistory(historyResult.items || [])
+    setNotice({ type: 'success', message: result.message })
   })
   const exportExcel = () => run('export', async () => {
-    const blob = await request('/v2/department-payroll/export.xlsx', { method: 'POST', body: JSON.stringify(payload()), download: true })
+    const blob = await request('/v2/department-payroll/combined/export.xlsx', { method: 'POST', body: JSON.stringify(payload()), download: true })
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a')
-    anchor.href = url; anchor.download = `Bang_luong_${department}_${month}.xlsx`; anchor.click()
+    anchor.href = url; anchor.download = `Luong_hanh_chanh_${month}.xlsx`; anchor.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   })
   const sendEmail = () => run('email', async () => {
     if (!selected.length) throw new Error('Vui lòng chọn nhân viên cần gửi email.')
-    if (!window.confirm(`Gửi ${selected.length} email bảng lương ${labels[department]}?`)) return
-    const result = await request('/v2/department-payroll/email', { method: 'POST', body: JSON.stringify({ ...payload(), employees: selected }) })
-    setNotice({ type: result.ok ? 'success' : 'error', message: result.message })
+    if (!window.confirm(`Gửi ${selected.length} email bảng Lương hành chánh?`)) return
+    const results = []
+    for (const department of Object.keys(labels)) {
+      const departmentRows = rows.filter((row) => row.department === department && selected.includes(row.employee_username))
+      if (departmentRows.length) results.push(await request('/v2/department-payroll/email', {
+        method: 'POST',
+        body: JSON.stringify({ department, month, rows: rows.filter((row) => row.department === department), employees: departmentRows.map((row) => row.employee_username) }),
+      }))
+    }
+    const sent = results.reduce((sum, item) => sum + (item.sent?.length || 0), 0)
+    const failed = results.reduce((sum, item) => sum + (item.failed?.length || 0), 0)
+    setNotice({ type: failed ? 'error' : 'success', message: `Đã gửi ${sent} email; lỗi ${failed}.` })
+  })
+
+  const openHistory = (historyId) => run('history-open', async () => {
+    const result = await request(`/v2/department-payroll/combined/history/${encodeURIComponent(historyId)}/open`, { method: 'POST' })
+    setMonth(result.month); setRows(result.rows || []); setSelected([]); setEditingHistoryId(result.history_id)
+    setNotice({ type: 'success', message: result.message })
   })
 
   const editEmployeeConfig = (group, username, key, value) => setSalaryConfigTables((currentTables) => ({
@@ -224,21 +250,31 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 
   return <div className="feature-page department-payroll-page">
     <section className="panel department-payroll-panel">
-      <div className="panel-title-row"><div><h2>BẢNG LƯƠNG THÁNG THEO BỘ PHẬN</h2><p>Quản lý, Locker và Lễ tân tính theo giờ; Tạp vụ tính lương cơ bản theo 26 ngày công. Mỗi bộ phận có một bảng chính thức mỗi tháng; lưu lại cùng tháng sẽ cập nhật bảng tháng đó.</p></div></div>
+      <div className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Một bảng chung cho Quản lý, Locker, Lễ tân và Tạp vụ. Quản lý/Locker/Lễ tân tính theo giờ; Tạp vụ tính theo 26 ngày công.</p></div></div>
       {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
       <div className="department-payroll-toolbar">
-        <div className="department-payroll-tabs">{Object.entries(labels).map(([key, label]) => <button key={key} className={department === key ? 'primary-button' : 'secondary-button'} onClick={() => { setDepartment(key); setRows([]); setSelected([]) }}>{label}</button>)}</div>
-        <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]) }} /></label>
-        <button className="primary-button" disabled={Boolean(busy)} onClick={calculate}><RefreshCw size={16} className={busy === 'calculate' ? 'spin' : ''} /> Tính từ chấm công</button>
+        <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]); setEditingHistoryId('') }} /></label>
+        <button className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /> Tính từ chấm công</button>
+        <button className="primary-button" disabled={Boolean(busy)} onClick={() => calculate('schedule')}><CalendarDays size={16} /> Tính từ lịch làm việc</button>
         <button className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}>Mở bảng nháp</button>
       </div>
 
       {!!rows.length && <>
-        <div className="department-payroll-summary"><span>Nhân viên<strong>{rows.length}</strong></span><span>Tổng thực nhận<strong>{money(totalNet)}</strong></span><span>Đã chọn gửi email<strong>{selected.length}</strong></span></div>
+        {editingHistoryId && <div className="setup-note"><History size={16} /> Đang sửa bảng lương đã lưu. Khi bấm Hoàn thành bảng lương, bản lịch sử này sẽ được cập nhật và giữ nguyên mã.</div>}
+        <div className="department-payroll-summary"><span>Nhân viên<strong>{rows.length}</strong></span><span>Tổng ứng lương<strong>{money(totalAdvance)}</strong></span><span>Tổng thực nhận<strong>{money(totalNet)}</strong></span></div>
+        <section className="salary-advance-panel">
+          <div className="panel-title-row"><div><h3><Banknote size={17} /> NHÂN VIÊN ỨNG LƯƠNG</h3><p>Nhập số tiền đã ứng; hệ thống tự trừ ngay vào Thực nhận của bảng lương hiện tại.</p></div></div>
+          <div className="salary-advance-grid">{rows.map((row) => <label key={`advance-${row.employee_username}`}><span>{row.employee_name}<small>{row.department_label}</small></span><input className="payroll-money-input" type="number" min="0" inputMode="numeric" value={numberInputDisplayValue(row.advance)} onChange={(event) => editRow(row.employee_username, 'advance', event.target.value)} /></label>)}</div>
+        </section>
         {canEmail && <div className="list-actions"><button className="secondary-button" type="button" onClick={() => setSelected(rows.filter((row) => String(row.email || '').includes('@')).map((row) => row.employee_username))}><Mail size={15} /> Chọn tất cả có email</button><button className="secondary-button" type="button" onClick={() => setSelected([])}>Bỏ chọn</button></div>}
-        <div className="responsive-data-table department-payroll-table"><table><thead><tr><th>Gửi</th><th>TT</th><th>Nhân viên</th><th>Ngày công</th><th>Giờ Ca 1</th><th>Ca 2 trước 22h</th><th>Ca 2 sau 22h</th><th>Tiền lương</th>{editableFields.map(([, label]) => <th key={label}>{label}</th>)}<th>Tổng lương</th><th>Thực nhận</th></tr></thead><tbody>{rows.map((row) => <tr key={row.employee_username}><td><input type="checkbox" checked={selected.includes(row.employee_username)} onChange={() => setSelected((items) => items.includes(row.employee_username) ? items.filter((item) => item !== row.employee_username) : [...items, row.employee_username])} /></td><td>{row.tt}</td><td><strong>{row.employee_name}</strong><small>{row.employee_username} · {row.email || 'Chưa có email'}</small>{row.incomplete_days > 0 && <small className="attendance-warning">{row.incomplete_days} ngày thiếu đủ FaceID</small>}</td><td>{row.work_days}</td><td>{row.hours_ca1}</td><td>{row.hours_ca2_before_22}</td><td>{row.hours_ca2_after_22}</td><td className="money-cell">{money(row.salary)}</td>{editableFields.map(([key]) => <td key={key}><input className="payroll-money-input" type="number" min="0" value={numberInputDisplayValue(row[key])} onChange={(event) => editRow(row.employee_username, key, event.target.value)} /></td>)}<td className="money-cell"><strong>{money(row.total_salary)}</strong></td><td className="money-cell"><strong>{money(row.net_salary)}</strong></td></tr>)}</tbody></table></div>
-        <div className="list-actions department-payroll-actions">{canSave && <button className="secondary-button" disabled={Boolean(busy)} onClick={saveDraft}><Save size={16} /> Lưu bảng nháp</button>}{canSave && <button className="primary-button" disabled={Boolean(busy)} onClick={saveOfficial}><Save size={16} /> Lưu chính thức</button>}{canExport && <button className="secondary-button" disabled={Boolean(busy)} onClick={exportExcel}><Download size={16} /> Export Excel</button>}{canEmail && <button className="secondary-button" disabled={Boolean(busy) || !selected.length} onClick={sendEmail}><Send size={16} /> <Mail size={14} /> Gửi email ({selected.length})</button>}</div>
+        <div className="responsive-data-table department-payroll-table"><table><thead><tr><th>Gửi</th><th>TT</th><th>Nhân viên</th><th>Bộ phận</th><th>Nguồn</th><th>Ngày công</th><th>Giờ Ca 1</th><th>Ca 2 trước 22h</th><th>Ca 2 sau 22h</th><th>Tiền lương</th>{editableFields.map(([, label]) => <th key={label}>{label}</th>)}<th>Tổng lương</th><th>Thực nhận</th></tr></thead><tbody>{rows.map((row) => <tr key={row.employee_username}><td><input type="checkbox" checked={selected.includes(row.employee_username)} onChange={() => setSelected((items) => items.includes(row.employee_username) ? items.filter((item) => item !== row.employee_username) : [...items, row.employee_username])} /></td><td>{row.tt}</td><td><strong>{row.employee_name}</strong><small>{row.employee_username} · {row.email || 'Chưa có email'}</small>{row.incomplete_days > 0 && <small className="attendance-warning">{row.incomplete_days} ngày thiếu đủ FaceID</small>}</td><td><strong>{row.department_label}</strong></td><td>{row.calculation_source === 'schedule' ? 'Lịch làm việc' : 'Chấm công'}</td><td>{row.work_days}</td><td>{row.hours_ca1}</td><td>{row.hours_ca2_before_22}</td><td>{row.hours_ca2_after_22}</td><td className="money-cell">{money(row.salary)}</td>{editableFields.map(([key]) => <td key={key}><input className="payroll-money-input" type="number" min="0" value={numberInputDisplayValue(row[key])} onChange={(event) => editRow(row.employee_username, key, event.target.value)} /></td>)}<td className="money-cell"><strong>{money(row.total_salary)}</strong></td><td className="money-cell"><strong>{money(row.net_salary)}</strong></td></tr>)}</tbody></table></div>
+        <div className="list-actions department-payroll-actions">{canSave && <button className="secondary-button" disabled={Boolean(busy)} onClick={saveDraft}><Save size={16} /> Lưu bảng nháp</button>}{canSave && <button className="primary-button" disabled={Boolean(busy)} onClick={completePayroll}><CheckCircle2 size={16} /> Hoàn thành bảng lương</button>}{canExport && <button className="secondary-button" disabled={Boolean(busy)} onClick={exportExcel}><Download size={16} /> Export Excel</button>}{canEmail && <button className="secondary-button" disabled={Boolean(busy) || !selected.length} onClick={sendEmail}><Send size={16} /> <Mail size={14} /> Gửi email ({selected.length})</button>}</div>
       </>}
+    </section>
+    <section className="panel department-payroll-history">
+      <div className="panel-title-row"><div><h2><History size={18} /> LỊCH SỬ BẢNG LƯƠNG</h2><p>Bảng đã hoàn thành có thể mở lại, chỉnh sửa và hoàn thành lại để cập nhật đúng bản cũ.</p></div><button className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} /> Làm mới</button></div>
+      <div className="department-history-list">{history.map((item) => <article key={item.id}><div><strong>Tháng {item.month_label}</strong><span>{item.employee_count} nhân viên · {item.source_label || 'Chấm công'} · Thực nhận {money(item.total_net)}</span><small>Lưu bởi {item.saved_by || '—'} · {item.saved_at ? new Date(item.saved_at).toLocaleString('vi-VN') : '—'}</small></div>{canSave && <button className="secondary-button" type="button" disabled={Boolean(busy)} onClick={() => openHistory(item.id)}><History size={15} /> Mở để sửa</button>}</article>)}</div>
+      {!history.length && <div className="setup-note">Chưa có lịch sử bảng Lương hành chánh.</div>}
     </section>
   </div>
 }

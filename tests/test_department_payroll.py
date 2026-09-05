@@ -8,6 +8,7 @@ from vera_web_v2_department_payroll import (
     _clean_config,
     _recalculate,
     _render_template,
+    _schedule_totals,
 )
 
 
@@ -97,3 +98,23 @@ def test_email_template_contains_department_totals_and_employee():
     assert "7.022.000đ" in body
     assert "6.972.000đ" in body
     assert "<!doctype html>" in html
+
+
+def test_schedule_source_counts_regular_and_overtime_hours():
+    totals = _schedule_totals([{
+        "work_date": date(2026, 9, 5),
+        "employee_username": "locker-a",
+        "shift_code": "Ca 2",
+        "overtime_shift": "TC Ca 1",
+    }], "locker-a", "locker", {
+        "locker": {
+            "Ca 1": {"start": "09:30", "end": "17:30"},
+            "Ca 2": {"start": "17:30", "end": "01:30"},
+        },
+    }, DEFAULT_CONFIG["locker"], _norm)
+
+    assert totals["work_days"] == 1
+    assert totals["minutes_ca1"] == 480
+    assert totals["minutes_ca2_before_22"] == 270
+    assert totals["minutes_ca2_after_22"] == 210
+    assert totals["full_days"] == 1

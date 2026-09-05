@@ -10,16 +10,23 @@ def test_department_payroll_has_dedicated_menu_and_route():
     payroll = (ROOT / "web-v2/src/pages/PayrollPageV38.jsx").read_text(encoding="utf-8")
     panel = (ROOT / "web-v2/src/pages/DepartmentPayrollPanel.jsx").read_text(encoding="utf-8")
     assert "id: 'payroll', label: 'Lương KTV'" in shell
-    assert "id: 'department-payroll', label: 'HC'" in shell
+    assert "id: 'department-payroll', label: 'Lương hành chánh'" in shell
     assert "page === 'department-payroll' && <DepartmentPayrollPanel" in app
     assert "import DepartmentPayrollPanel" not in payroll
     assert "Chọn tất cả có email" in panel
+    assert "Tính từ lịch làm việc" in panel
+    assert "NHÂN VIÊN ỨNG LƯƠNG" in panel
+    assert "Hoàn thành bảng lương" in panel
+    assert "LỊCH SỬ BẢNG LƯƠNG" in panel
+    assert "/v2/department-payroll/combined/history" in panel
 
 
 def test_official_department_payroll_is_one_record_per_month():
     backend = (ROOT / "vera_web_v2_department_payroll.py").read_text(encoding="utf-8")
     assert 'item.get("month") == body.month' in backend
     assert "history.append" in backend
+    assert "department_payroll_combined_history" in backend
+    assert "_clean_combined_rows" in backend
 
 
 def test_salary_configuration_is_split_into_two_employee_tables():

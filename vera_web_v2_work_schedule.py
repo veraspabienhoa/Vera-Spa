@@ -9,7 +9,7 @@ the same overtime choices: TC Ca 1, TC Ca 2, or an explicit time range.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 import re
 from typing import Any, Callable, Literal
@@ -20,6 +20,7 @@ import uuid
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -55,6 +56,13 @@ COMBO_EXCEL_HEADERS = (
     "Tên khách hàng", "Số điện thoại", "Vé combo", "Ghi chú",
 )
 COMBO_EXCEL_USERNAME_MARKER = "__VERA_EMPLOYEE_USERNAME__"
+SCHEDULE_EXCEL_HEADERS = (
+    "Ngày", "Tên đăng nhập", "Tên nhân viên", "Bộ phận", "Ca làm",
+    "Giờ bắt đầu", "Giờ kết thúc", "Tăng ca", "TC bắt đầu", "TC kết thúc", "Ghi chú",
+)
+SCHEDULE_DEPARTMENT_LABELS = {
+    "quanly": "Quản lý", "locker": "Locker", "letan": "Lễ tân", "tapvu": "Tạp vụ",
+}
 
 
 class ScheduleRow(BaseModel):
@@ -353,6 +361,168 @@ def _safe_combo_sheet_title(value: Any, used: set[str]) -> str:
     return candidate
 
 
+def _schedule_excel_bytes(
+    *,
+    start: date,
+    end: date,
+    department: str,
+    employees: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    shift_definitions: dict[str, Any],
+) -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "LichLamViec"
+    worksheet.append(list(SCHEDULE_EXCEL_HEADERS))
+    header_fill = PatternFill("solid", fgColor="1F513F")
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    existing = {
+        (str(item.get("employee_username") or ""), item.get("work_date")): item
+        for item in rows
+    }
+    cursor = start
+    while cursor <= end:
+        for employee in employees:
+            username = str(employee.get("username") or "").strip()
+            item = existing.get((username, cursor), {})
+            worksheet.append([
+                cursor,
+                username,
+                str(employee.get("full_name") or username),
+                SCHEDULE_DEPARTMENT_LABELS[department],
+                item.get("shift_code") or "",
+                item.get("start_time") or "",
+                item.get("end_time") or "",
+                item.get("overtime_shift") or "",
+                item.get("overtime_start_time") or "",
+                item.get("overtime_end_time") or "",
+                item.get("note") or "",
+            ])
+        cursor += timedelta(days=1)
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = f"A1:K{max(2, worksheet.max_row)}"
+    widths = (13, 22, 28, 16, 18, 15, 15, 20, 15, 15, 36)
+    for index, width in enumerate(widths, start=1):
+        worksheet.column_dimensions[worksheet.cell(1, index).column_letter].width = width
+    for cell in worksheet["A"][1:]:
+        cell.number_format = "DD/MM/YYYY"
+
+    catalog = workbook.create_sheet("DanhMuc")
+    catalog.append(["Tên đăng nhập", "Ca làm", "Tăng ca", "Bộ phận"])
+    usernames = [str(item.get("username") or "").strip() for item in employees]
+    shifts = ["Giờ làm", "Nghỉ"] if department == "quanly" else [
+        *(shift_definitions.get(department) or {}).keys(), "Nghỉ",
+    ]
+    overtime = ["TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"]
+    maximum = max(len(usernames), len(shifts), len(overtime), 1)
+    for index in range(maximum):
+        catalog.append([
+            usernames[index] if index < len(usernames) else "",
+            shifts[index] if index < len(shifts) else "",
+            overtime[index] if index < len(overtime) else "",
+            SCHEDULE_DEPARTMENT_LABELS[department] if index == 0 else "",
+        ])
+    catalog.sheet_state = "hidden"
+
+    last_row = max(2, worksheet.max_row)
+    validations = [
+        ("B", max(1, len(usernames)), "A"),
+        ("E", max(1, len(shifts)), "B"),
+        ("H", max(1, len(overtime)), "C"),
+        ("D", 1, "D"),
+    ]
+    for target_column, count, source_column in validations:
+        validation = DataValidation(
+            type="list",
+            formula1=f"'DanhMuc'!${source_column}$2:${source_column}${count + 1}",
+            allow_blank=target_column in {"E", "H"},
+        )
+        validation.error = "Vui lòng chọn một giá trị trong danh sách."
+        validation.errorTitle = "Giá trị không hợp lệ"
+        validation.showErrorMessage = True
+        worksheet.add_data_validation(validation)
+        validation.add(f"{target_column}2:{target_column}{last_row}")
+
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def _schedule_import_rows(payload: bytes, department: str) -> list[dict[str, Any]]:
+    if not payload or len(payload) > 15 * 1024 * 1024 or not payload.startswith(b"PK"):
+        raise HTTPException(400, "File lịch làm việc phải là Excel .xlsx hợp lệ và không vượt quá 15 MB.")
+    try:
+        workbook = load_workbook(BytesIO(payload), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(400, "Không đọc được file Excel lịch làm việc.") from exc
+    worksheet = workbook["LichLamViec"] if "LichLamViec" in workbook.sheetnames else workbook.active
+    aliases = {
+        _normalize_excel_header(label): key for label, key in zip(SCHEDULE_EXCEL_HEADERS, (
+            "work_date", "employee_username", "employee_name", "department_label", "shift_code",
+            "start_time", "end_time", "overtime_shift", "overtime_start_time", "overtime_end_time", "note",
+        ))
+    }
+    try:
+        headers = list(next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), ()))
+        indexes = {
+            aliases[normalized]: index
+            for index, header in enumerate(headers)
+            if (normalized := _normalize_excel_header(header)) in aliases
+        }
+        required = {"work_date", "employee_username", "shift_code"}
+        if required - set(indexes):
+            raise HTTPException(400, "File Excel thiếu cột Ngày, Tên đăng nhập hoặc Ca làm.")
+        result: list[dict[str, Any]] = []
+        seen: set[tuple[date, str]] = set()
+        expected_label = _normalize_excel_header(SCHEDULE_DEPARTMENT_LABELS[department])
+        for row_number, values in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+            def value(field: str) -> Any:
+                index = indexes.get(field, -1)
+                return values[index] if 0 <= index < len(values) else ""
+
+            raw_date = value("work_date")
+            username = _combo_excel_text(value("employee_username"))
+            shift_code = _combo_excel_text(value("shift_code"))
+            if raw_date in (None, "") and not username and not shift_code:
+                continue
+            location = f"Dòng {row_number}"
+            work_date = _combo_excel_date(raw_date, location=location)
+            if not username:
+                raise HTTPException(400, f"{location}: Tên đăng nhập không được để trống.")
+            department_label = _combo_excel_text(value("department_label"))
+            if department_label and _normalize_excel_header(department_label) != expected_label:
+                raise HTTPException(400, f"{location}: Bộ phận không khớp với file đang Import.")
+            key = (work_date, username.casefold())
+            if key in seen:
+                raise HTTPException(400, f"{location}: lịch nhân viên bị trùng ngày.")
+            seen.add(key)
+            result.append({
+                "work_date": work_date,
+                "employee_username": username,
+                "employee_name": _combo_excel_text(value("employee_name")),
+                "department": department,
+                "shift_code": shift_code,
+                "start_time": _combo_excel_text(value("start_time"))[:5],
+                "end_time": _combo_excel_text(value("end_time"))[:5],
+                "overtime_shift": _combo_excel_text(value("overtime_shift")),
+                "overtime_start_time": _combo_excel_text(value("overtime_start_time"))[:5],
+                "overtime_end_time": _combo_excel_text(value("overtime_end_time"))[:5],
+                "note": _combo_excel_text(value("note"))[:500],
+            })
+            if len(result) > 20_000:
+                raise HTTPException(413, "Mỗi lần chỉ Import tối đa 20.000 ô lịch.")
+    finally:
+        workbook.close()
+    if not result:
+        raise HTTPException(400, "File Excel không có dữ liệu lịch làm việc.")
+    return result
+
+
 def _feature_for_department(department: str) -> str:
     try:
         return WORK_SCHEDULE_FEATURES[department]
@@ -560,6 +730,107 @@ def install_work_schedule_routes(
             "display_mode": "selected_month_all_days",
             "overtime_mode": {"locker": "shared", "letan": "shared", "tapvu": "shared", "quanly": "shared"},
             "overtime_choices": ["TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"],
+        }
+
+    @app.get("/v2/work-schedule/template.xlsx")
+    def export_work_schedule_template(
+        start: date = Query(...),
+        end: date = Query(...),
+        department: str = Query(...),
+        ident=Depends(current_identity),
+    ):
+        dep = department.strip().lower()
+        if dep not in WORK_SCHEDULE_FEATURES:
+            raise HTTPException(400, "Bộ phận không hợp lệ.")
+        if end < start or (end - start).days > 62:
+            raise HTTPException(400, "Khoảng xuất Excel phải từ 1 đến 63 ngày.")
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            if not _allowed_department(conn, ident, dep, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền xuất lịch của bộ phận này.")
+            employees = [
+                item for item in _employee_catalog(conn, dep)
+                if str(item.get("employment_status") or "").strip().casefold() != "đã nghỉ việc".casefold()
+            ]
+            rows = [dict(row) for row in conn.execute(text("""
+                SELECT work_date,employee_username,employee_name,department,shift_code,
+                       overtime_shift,start_time,end_time,overtime_start_time,overtime_end_time,note
+                FROM vera_work_schedule
+                WHERE work_date BETWEEN :start AND :end AND department=:department
+                ORDER BY work_date,employee_name,employee_username
+            """), {"start": start, "end": end, "department": dep}).mappings().all()]
+            definitions = _load_shift_definitions(conn)
+        content = _schedule_excel_bytes(
+            start=start, end=end, department=dep, employees=employees, rows=rows,
+            shift_definitions=definitions,
+        )
+        filename = f"Lich_lam_viec_{dep}_{start.isoformat()}_{end.isoformat()}.xlsx"
+        return StreamingResponse(
+            BytesIO(content),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    @app.post("/v2/work-schedule/import.xlsx")
+    async def import_work_schedule_template(
+        request: Request,
+        start: date = Query(...),
+        end: date = Query(...),
+        department: str = Query(...),
+        ident=Depends(current_identity),
+    ):
+        if _role(ident) not in {"admin", "quanly"}:
+            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được Import lịch làm việc.")
+        dep = department.strip().lower()
+        if dep not in WORK_SCHEDULE_FEATURES:
+            raise HTTPException(400, "Bộ phận không hợp lệ.")
+        if end < start or (end - start).days > 62:
+            raise HTTPException(400, "Khoảng Import Excel phải từ 1 đến 63 ngày.")
+        payload = await request.body()
+        imported = _schedule_import_rows(payload, dep)
+        with engine_instance().begin() as conn:
+            _ensure_schema(conn)
+            if not _allowed_department(conn, ident, dep, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền Import lịch của bộ phận này.")
+            employee_map = {
+                str(item.get("username") or "").strip().casefold(): item
+                for item in _employee_catalog(conn, dep)
+                if str(item.get("employment_status") or "").strip().casefold() != "đã nghỉ việc".casefold()
+            }
+            definitions = _load_shift_definitions(conn)
+            normalized: list[dict[str, Any]] = []
+            for item in imported:
+                work_date = item["work_date"]
+                username = str(item.get("employee_username") or "").strip()
+                employee = employee_map.get(username.casefold())
+                if not employee:
+                    raise HTTPException(400, f"Nhân viên '{username}' không thuộc bộ phận {SCHEDULE_DEPARTMENT_LABELS[dep]}.")
+                if work_date < start or work_date > end:
+                    raise HTTPException(400, f"Ngày {work_date:%d/%m/%Y} nằm ngoài khoảng lịch đang xem.")
+                item["employee_username"] = str(employee.get("username") or username)
+                item["employee_name"] = str(employee.get("full_name") or username)
+                if item.get("shift_code"):
+                    validated = ScheduleRow(**item)
+                    start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time = _validate_row(validated, definitions)
+                    item.update({
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "overtime_shift": overtime_shift,
+                        "overtime_start_time": overtime_start_time,
+                        "overtime_end_time": overtime_end_time,
+                    })
+                else:
+                    item.update({
+                        "start_time": "", "end_time": "", "overtime_shift": "",
+                        "overtime_start_time": "", "overtime_end_time": "", "note": "",
+                    })
+                normalized.append({**item, "work_date": work_date.isoformat()})
+        return {
+            "ok": True,
+            "rows": normalized,
+            "count": len(normalized),
+            "save_mode": "manual",
+            "message": f"Đã đọc {len(normalized)} ô lịch từ Excel. Kiểm tra và bấm Lưu lịch để ghi vào hệ thống.",
         }
 
     @app.put("/v2/work-schedule/shifts")

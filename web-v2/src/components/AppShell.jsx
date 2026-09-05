@@ -10,7 +10,7 @@ const items = [
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Lương KTV', icon: WalletCards, ready: true, permission: 'payroll_history' },
-  { id: 'department-payroll', label: 'HC', icon: WalletCards, ready: true, permission: 'payroll_calculate' },
+  { id: 'department-payroll', label: 'Lương hành chánh', icon: WalletCards, ready: true, permission: 'payroll_calculate' },
   { id: 'payroll-config', label: 'Cấu hình lương', icon: Settings2, ready: true, permission: 'payroll_config_edit', adminOnly: true },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
