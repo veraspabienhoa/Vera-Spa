@@ -1,5 +1,5 @@
 import {
-  CalendarDays, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Download, LoaderCircle,
+  CalendarDays, Camera, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Download, LoaderCircle,
   PencilLine, Plus, Save, Settings2, Trash2, Upload,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -194,6 +194,12 @@ function compactCellLabel(value, department) {
   return label
 }
 
+function canvasToPngBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Không tạo được ảnh PNG.')), 'image/png')
+  })
+}
+
 async function scheduleRequest(path, options = {}) {
   if (!API_BASE) throw new Error('Python API V2 chưa được cấu hình.')
   const session = await getCurrentSession()
@@ -295,6 +301,7 @@ export default function WorkSchedulePage({ user }) {
   const rangeEnd = isoDate(days[days.length - 1])
   const rangeKey = `${rangeStart}_${rangeEnd}`
   const isWeekView = ['week', 'next_week'].includes(rangeMode) && days.length === 7
+  const isMonthView = ['month', 'next_month', 'selected_month'].includes(rangeMode) && days.length >= 28
 
   const availableDepartments = useMemo(() => {
     if (String(user?.role || '').toLowerCase() === 'admin') return DEPARTMENTS
@@ -308,6 +315,8 @@ export default function WorkSchedulePage({ user }) {
   const [monthlyRows, setMonthlyRows] = useState([])
   const [comboSales, setComboSales] = useState([])
   const comboFileInputRef = useRef(null)
+  const autoSaveTimerRef = useRef(null)
+  const autoSaveAttemptRef = useRef('')
   const [shiftDefinitions, setShiftDefinitions] = useState({ quanly: {}, letan: {}, locker: {}, tapvu: {} })
   const [shiftDrafts, setShiftDrafts] = useState([])
   const [shiftEditorOpen, setShiftEditorOpen] = useState(false)
@@ -320,6 +329,8 @@ export default function WorkSchedulePage({ user }) {
   const [clipboardCell, setClipboardCell] = useState(null)
   const [pastePanelOpen, setPastePanelOpen] = useState(false)
   const [pasteEndDay, setPasteEndDay] = useState('')
+  const [autoSaveState, setAutoSaveState] = useState('saved')
+  const [captureBusy, setCaptureBusy] = useState(false)
 
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
@@ -415,6 +426,8 @@ export default function WorkSchedulePage({ user }) {
       })))
       setSaved(mapped)
       setDrafts(mapped)
+      autoSaveAttemptRef.current = ''
+      setAutoSaveState('saved')
 
       const own = wanted.find((item) => String(item.username || '').toLowerCase() === ownUsername)
       if (own) {
@@ -456,6 +469,8 @@ export default function WorkSchedulePage({ user }) {
   }
 
   const setCell = (username, day, field, value) => {
+    autoSaveAttemptRef.current = ''
+    setAutoSaveState('pending')
     const key = keyFor(username, day)
     setDrafts((current) => {
       const next = { ...emptyCell(), ...(current[key] || {}), [field]: value }
@@ -507,9 +522,11 @@ export default function WorkSchedulePage({ user }) {
     if (payload.department !== department) return setNotice('Không thể áp dụng lịch giữa hai bộ phận khác nhau.')
     setClipboardCell(payload)
     setDrafts((current) => ({ ...current, [keyFor(username, day)]: { ...emptyCell(), ...payload.value } }))
+    autoSaveAttemptRef.current = ''
+    setAutoSaveState('pending')
     setSelectedCell({ username, day })
     setPastePanelOpen(false)
-    setNotice(`Đã áp dụng lịch vào ngày ${day}. Bấm Lưu lịch để ghi chính thức.`)
+    setNotice(`Đã áp dụng lịch vào ngày ${day}; hệ thống sẽ tự lưu.`)
   }
 
   const openPastePanel = async () => {
@@ -533,8 +550,10 @@ export default function WorkSchedulePage({ user }) {
       targetDays.forEach((day) => { next[keyFor(selectedCell.username, day)] = { ...emptyCell(), ...clipboardCell.value } })
       return next
     })
+    autoSaveAttemptRef.current = ''
+    setAutoSaveState('pending')
     setPastePanelOpen(false)
-    setNotice(`Đã áp dụng lịch cho ${targetDays.length} ngày. Bấm Lưu lịch để ghi chính thức.`)
+    setNotice(`Đã áp dụng lịch cho ${targetDays.length} ngày; hệ thống sẽ tự lưu.`)
   }
 
   const handleCellKeyDown = (event, username, day) => {
@@ -549,64 +568,113 @@ export default function WorkSchedulePage({ user }) {
     }
   }
 
-  const saveChanges = async () => {
+  const pendingChanges = useMemo(() => {
+    const output = []
+    for (const employee of employees) {
+      for (const date of days) {
+        const day = isoDate(date)
+        const key = keyFor(employee.username, day)
+        const before = { ...emptyCell(), ...(saved[key] || {}) }
+        const after = { ...emptyCell(), ...(drafts[key] || {}) }
+        if (JSON.stringify(before) !== JSON.stringify(after)) output.push({ employee, day, key, before, after })
+      }
+    }
+    return output
+  }, [days, drafts, employees, saved])
+
+  const pendingSignature = useMemo(
+    () => JSON.stringify(pendingChanges.map(({ key, after }) => [key, after])),
+    [pendingChanges],
+  )
+
+  const saveChanges = async (automatic = false) => {
     if (!canEdit) return
+    if (!pendingChanges.length) {
+      if (!automatic) setNotice('Mọi thay đổi lịch đã được lưu.')
+      setAutoSaveState('saved')
+      return
+    }
     setBusy(true)
-    setNotice('')
+    setAutoSaveState('saving')
+    if (!automatic) setNotice('')
     try {
       const rows = []
       const deletes = []
-      for (const employee of employees) {
-        for (const date of days) {
-          const day = isoDate(date)
-          const key = keyFor(employee.username, day)
-          const before = { ...emptyCell(), ...(saved[key] || {}) }
-          const after = { ...emptyCell(), ...(drafts[key] || {}) }
-          if (JSON.stringify(before) === JSON.stringify(after)) continue
-          if (!after.shift_code) {
-            if (before.shift_code) deletes.push({ day, username: employee.username })
-            continue
-          }
-          if (department === 'quanly' && after.shift_code === 'Giờ làm' && (!after.start_time || !after.end_time)) {
-            throw new Error(`${systemName(employee)} · ${day}: cần đủ giờ bắt đầu và giờ kết thúc.`)
-          }
-          if (overtimeMode(after) === 'Từ giờ tới giờ' && (!after.overtime_start_time || !after.overtime_end_time)) {
-            throw new Error(`${systemName(employee)} · ${day}: tăng ca cần đủ giờ bắt đầu và giờ kết thúc.`)
-          }
-          rows.push({
-            work_date: day,
-            employee_username: employee.username,
-            employee_name: systemName(employee),
-            department,
-            shift_code: after.shift_code,
-            overtime_shift: overtimeMode(after),
-            start_time: department === 'quanly' ? (after.start_time || '') : '',
-            end_time: department === 'quanly' ? (after.end_time || '') : '',
-            overtime_start_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_start_time || '') : '',
-            overtime_end_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_end_time || '') : '',
-            note: after.note || '',
-            combo_sold: ['quanly', 'letan'].includes(department) && Boolean(after.combo_sold),
-            combo_sale_date: after.combo_sold ? (after.combo_sale_date || day) : null,
-            combo_customer_name: after.combo_sold ? (after.combo_customer_name || '') : '',
-            combo_customer_phone: after.combo_sold ? (after.combo_customer_phone || '') : '',
-            combo_ticket: after.combo_sold ? (after.combo_ticket || '') : '',
-            combo_note: after.combo_sold ? (after.combo_note || '') : '',
-          })
+      for (const { employee, day, before, after } of pendingChanges) {
+        if (!after.shift_code) {
+          if (before.shift_code) deletes.push({ day, username: employee.username })
+          continue
         }
+        if (department === 'quanly' && after.shift_code === 'Giờ làm' && (!after.start_time || !after.end_time)) {
+          throw new Error(`${systemName(employee)} · ${day}: cần đủ giờ bắt đầu và giờ kết thúc.`)
+        }
+        if (overtimeMode(after) === 'Từ giờ tới giờ' && (!after.overtime_start_time || !after.overtime_end_time)) {
+          throw new Error(`${systemName(employee)} · ${day}: tăng ca cần đủ giờ bắt đầu và giờ kết thúc.`)
+        }
+        rows.push({
+          work_date: day,
+          employee_username: employee.username,
+          employee_name: systemName(employee),
+          department,
+          shift_code: after.shift_code,
+          overtime_shift: overtimeMode(after),
+          start_time: department === 'quanly' ? (after.start_time || '') : '',
+          end_time: department === 'quanly' ? (after.end_time || '') : '',
+          overtime_start_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_start_time || '') : '',
+          overtime_end_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_end_time || '') : '',
+          note: after.note || '',
+          combo_sold: ['quanly', 'letan'].includes(department) && Boolean(after.combo_sold),
+          combo_sale_date: after.combo_sold ? (after.combo_sale_date || day) : null,
+          combo_customer_name: after.combo_sold ? (after.combo_customer_name || '') : '',
+          combo_customer_phone: after.combo_sold ? (after.combo_customer_phone || '') : '',
+          combo_ticket: after.combo_sold ? (after.combo_ticket || '') : '',
+          combo_note: after.combo_sold ? (after.combo_note || '') : '',
+        })
       }
-      if (!rows.length && !deletes.length) throw new Error('Chưa có thay đổi cần lưu.')
       if (rows.length) await scheduleRequest('/v2/work-schedule', { method: 'PUT', body: JSON.stringify({ rows }) })
       for (const item of deletes) {
         await scheduleRequest(`/v2/work-schedule?work_date=${item.day}&employee_username=${encodeURIComponent(item.username)}`, { method: 'DELETE' })
       }
-      await load()
-      setNotice(`Đã lưu ${rows.length + deletes.length} thay đổi lịch làm việc.`)
+      setSaved((current) => {
+        const next = { ...current }
+        pendingChanges.forEach(({ key, after }) => {
+          if (after.shift_code) next[key] = { ...emptyCell(), ...after }
+          else delete next[key]
+        })
+        return next
+      })
+      setMonthlyRows((current) => {
+        const changedKeys = new Set(pendingChanges.map(({ employee, day }) => keyFor(employee.username, day)))
+        const retained = current.filter((row) => !changedKeys.has(keyFor(row.employee_username, row.work_date)))
+        const monthBounds = monthRange(month)
+        return [...retained, ...rows.filter((row) => row.work_date >= monthBounds.start && row.work_date <= monthBounds.end)]
+      })
+      setAutoSaveState('saved')
+      setNotice(automatic
+        ? `Đã tự lưu ${rows.length + deletes.length} thay đổi lịch làm việc.`
+        : `Đã lưu ${rows.length + deletes.length} thay đổi lịch làm việc.`)
     } catch (error) {
+      setAutoSaveState('error')
       setNotice(error.message || 'Không lưu được lịch làm việc.')
     } finally {
       setBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (!canEdit || loading || busy || !pendingChanges.length || autoSaveAttemptRef.current === pendingSignature) return undefined
+    setAutoSaveState('pending')
+    window.clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveAttemptRef.current = pendingSignature
+      void saveChanges(true)
+    }, 900)
+    return () => window.clearTimeout(autoSaveTimerRef.current)
+  }, [busy, canEdit, loading, pendingSignature]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!pendingChanges.length && autoSaveState !== 'saving') setAutoSaveState('saved')
+  }, [autoSaveState, pendingChanges.length])
 
   const changeShiftDraft = (index, field, value) => setShiftDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))
 
@@ -696,6 +764,95 @@ export default function WorkSchedulePage({ user }) {
     }), { workDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0 })
     return { rows, departmentTotal }
   }, [department, employees, monthlyRows, shiftDefinitions, yesterdayIso])
+
+  const captureFullSchedule = async () => {
+    if (loading || captureBusy) return
+    setCaptureBusy(true)
+    try {
+      if (!navigator.clipboard?.write || !window.ClipboardItem) {
+        throw new Error('Trình duyệt này chưa hỗ trợ chép ảnh vào bộ nhớ tạm. Hãy dùng Chrome hoặc Edge qua HTTPS.')
+      }
+      const nameWidth = 190
+      const dayWidth = isMonthView ? 52 : 112
+      const titleHeight = 52
+      const headerHeight = 48
+      const rowHeight = 38
+      const summaryRows = department === 'quanly' ? [] : configuredShiftNames
+      const logicalWidth = nameWidth + days.length * dayWidth
+      const logicalHeight = titleHeight + headerHeight + (employees.length + summaryRows.length) * rowHeight
+      const scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.ceil(logicalWidth * scale)
+      canvas.height = Math.ceil(logicalHeight * scale)
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Không khởi tạo được ảnh lịch làm việc.')
+      context.scale(scale, scale)
+      context.textBaseline = 'middle'
+
+      const drawCell = (x, y, width, height, fill, text, options = {}) => {
+        context.fillStyle = fill
+        context.fillRect(x, y, width, height)
+        context.strokeStyle = '#d8e3de'
+        context.strokeRect(x, y, width, height)
+        context.font = `${options.bold ? '700' : '500'} ${options.size || 11}px Arial, sans-serif`
+        context.fillStyle = options.color || '#183d31'
+        context.textAlign = options.align || 'center'
+        const padding = 6
+        const maxWidth = Math.max(4, width - padding * 2)
+        let label = String(text || '')
+        while (label.length > 1 && context.measureText(label).width > maxWidth) label = `${label.slice(0, -2)}…`
+        const textX = options.align === 'left' ? x + padding : x + width / 2
+        context.fillText(label, textX, y + height / 2)
+      }
+
+      context.fillStyle = '#173329'
+      context.fillRect(0, 0, logicalWidth, titleHeight)
+      context.fillStyle = '#fff'
+      context.textAlign = 'left'
+      context.font = '700 18px Arial, sans-serif'
+      context.fillText(`VERA SPA · LỊCH LÀM VIỆC · ${DEPARTMENT_INFO[department].label.toUpperCase()}`, 12, 18)
+      context.font = '500 11px Arial, sans-serif'
+      context.fillText(rangeLabel, 12, 38)
+
+      drawCell(0, titleHeight, nameWidth, headerHeight, '#dfeee8', 'Tên nhân viên', { bold: true, align: 'left', size: 12 })
+      days.forEach((date, index) => {
+        const fill = date.getDay() === 0 ? '#fff0ea' : '#eef6f3'
+        drawCell(nameWidth + index * dayWidth, titleHeight, dayWidth, headerHeight, fill, `${WEEKDAYS_SHORT[date.getDay()]} ${displayDate(date)}`, { bold: true, size: isMonthView ? 8 : 10 })
+      })
+
+      employees.forEach((employee, rowIndex) => {
+        const y = titleHeight + headerHeight + rowIndex * rowHeight
+        drawCell(0, y, nameWidth, rowHeight, '#fff', systemName(employee), { bold: true, align: 'left', size: 11 })
+        days.forEach((date, dayIndex) => {
+          const day = isoDate(date)
+          const value = { ...emptyCell(), ...(drafts[keyFor(employee.username, day)] || {}) }
+          const fill = value.shift_code === 'Ca 1' ? '#dff3cc'
+            : value.shift_code === 'Ca 2' ? '#fff8a8'
+              : value.shift_code === 'Nghỉ' ? '#ffe0b8'
+                : date.getDay() === 0 ? '#fff6f2' : '#fff'
+          drawCell(nameWidth + dayIndex * dayWidth, y, dayWidth, rowHeight, fill, compactCellLabel(value, department), { bold: true, size: isMonthView ? 8 : 10 })
+        })
+      })
+
+      summaryRows.forEach((shift, summaryIndex) => {
+        const y = titleHeight + headerHeight + (employees.length + summaryIndex) * rowHeight
+        drawCell(0, y, nameWidth, rowHeight, '#e7f1ed', `Tổng NV · ${shift}`, { bold: true, align: 'left', size: 10 })
+        days.forEach((date, dayIndex) => {
+          const day = isoDate(date)
+          const counts = shiftSummary?.[day]?.[shift] || { regular: 0, overtime: 0, total: 0 }
+          drawCell(nameWidth + dayIndex * dayWidth, y, dayWidth, rowHeight, '#f4f8f6', `${counts.total} (${counts.regular}+${counts.overtime})`, { bold: true, size: isMonthView ? 7 : 9 })
+        })
+      })
+
+      const blob = await canvasToPngBlob(canvas)
+      await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })])
+      setNotice(`Đã chụp toàn bộ bảng ${rangeLabel} và lưu ảnh PNG vào bộ nhớ tạm. Bạn có thể nhấn Ctrl+V để dán.`)
+    } catch (error) {
+      setNotice(error.message || 'Không chụp được toàn bộ bảng lịch làm việc.')
+    } finally {
+      setCaptureBusy(false)
+    }
+  }
 
   const employeeMatchesTotal = (employee, day, shift) => {
     const value = { ...emptyCell(), ...(drafts[keyFor(employee.username, day)] || {}) }
@@ -825,7 +982,7 @@ export default function WorkSchedulePage({ user }) {
 
   return <section className="work-schedule-page">
     <style>{`
-      .work-schedule-page{display:grid;gap:14px}.schedule-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.schedule-title h2{margin:0}.schedule-range{margin-top:7px;font-size:13px;font-weight:800;color:#1f513f}.schedule-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.schedule-month-picker{display:flex;align-items:center;gap:6px;border:1px solid #d7e2dd;border-radius:12px;padding:5px 7px;background:#fff}.schedule-month-picker input{border:0;background:transparent;font:inherit;font-weight:800;color:#25483b;min-width:142px}.schedule-icon-button{border:0;background:#eef5f2;color:#244a3a;border-radius:8px;width:34px;height:34px;display:grid;place-items:center}.schedule-filter-bar{display:flex;gap:6px;flex-wrap:wrap}.schedule-filter-bar button{border:1px solid #d6e2dd;background:#fff;border-radius:999px;padding:7px 11px;font-weight:800;color:#466057}.schedule-filter-bar button.active{background:#173329;border-color:#173329;color:#fff}.schedule-custom-range{display:inline-flex;gap:7px;align-items:center;width:max-content;max-width:100%}.schedule-custom-range input{border:1px solid #d6e2dd;border-radius:9px;padding:7px;width:170px;min-width:0}.schedule-department-tabs{display:flex;gap:6px;flex-wrap:wrap}.schedule-department-tabs button{border:1px solid #d7e2dd;background:#fff;border-radius:10px;padding:8px 11px;font-weight:800;color:#4a5d55}.schedule-department-tabs button.active{background:#173329;color:#fff;border-color:#173329}.schedule-legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #dfe8e5;border-radius:12px;background:#f8fbfa;font-size:13px}.schedule-scroll{overflow-x:auto;border:1px solid #dfe8e5;border-radius:14px;background:#fff;max-width:100%}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%}.schedule-grid th,.schedule-grid td{border-right:1px solid #e6ecea;border-bottom:1px solid #e6ecea;padding:6px;text-align:center;vertical-align:middle}.schedule-grid thead th{position:sticky;top:0;background:#eef6f3;z-index:4;min-width:116px}.schedule-grid thead tr:nth-child(2) th{top:35px}.schedule-grid thead th.employee-head{left:0;z-index:8;min-width:170px}.schedule-grid td.employee-cell,.schedule-grid tfoot td.summary-label{position:sticky;left:0;background:#fff;z-index:3;text-align:left;min-width:170px}.schedule-grid .month-head{height:35px;background:#dfeee8;font-weight:900;color:#244a3a}.schedule-grid .sunday{background:#fff6f2}.schedule-grid .today{box-shadow:inset 0 0 0 2px #bb8b34}.schedule-grid td.selected{box-shadow:inset 0 0 0 3px #245b47;background:#eff8f4}.schedule-grid tr.own-row td.employee-cell{background:#eef8f3}.schedule-grid tr.own-row td.employee-cell strong:after{content:' · Lịch của bạn';font-size:11px;color:#267051}.employee-name-line{display:flex;gap:5px;align-items:center}.employee-highlight-button{border:0;background:transparent;color:inherit;padding:4px 5px;margin:-4px -5px;border-radius:7px;text-align:left;cursor:pointer}.employee-highlight-button.active{background:#1f6b4d;color:#fff}.schedule-grid th.employee-work-day{background:#ccebdc;color:#155b3e;box-shadow:inset 0 -3px 0 #1f7a54}.schedule-grid td.employee-work-day{background:#e2f6eb!important;outline:3px solid #2b8a61;outline-offset:-3px}.system-name-edit{border:0;background:transparent;color:#5b7168;padding:2px;display:grid;place-items:center}.employee-role{display:block;color:#708079;font-size:11px;margin-top:2px}.schedule-cell{display:grid;gap:5px}.shift-select,.ot-select,.manager-status,.manager-time,.letan-ot-time{border:1px solid #d9e2df;border-radius:8px;background:#fff}.shift-select,.ot-select{width:108px;padding:5px;font-size:12px}.shift-select.ca1{background:#dff3cc}.shift-select.ca2{background:#fff8a8}.shift-select.off,.manager-status.off{background:#ffe0b8}.ot-select.no-overtime{color:#d5dfdb;border-color:#edf2f0;background:#fbfcfc}.ot-select.active{color:#244a3a}.manager-cell{display:grid;gap:5px;min-width:136px}.manager-status{width:126px;padding:5px;font-size:12px}.manager-time-row{display:grid;grid-template-columns:1fr 1fr;gap:4px}.manager-time{width:61px;padding:5px 3px;font-size:11px}.shared-overtime{display:grid;gap:4px}.overtime-time-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:2px}.letan-ot-time{width:48px;padding:4px 1px;font-size:10px}.schedule-save,.schedule-copy-button,.schedule-config-button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:9px 13px;font-weight:700}.schedule-save{background:#173329;color:white}.schedule-copy-button,.schedule-config-button{background:#eef5f2;color:#214538;border:1px solid #ccddd5}.schedule-save:disabled,.schedule-copy-button:disabled,.schedule-config-button:disabled{opacity:.5}.schedule-notice{padding:10px 12px;border-radius:10px;background:#edf7f3}.paste-range-panel,.shift-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#fbfdfc}.paste-range-panel{grid-template-columns:auto auto auto auto;align-items:end}.paste-range-panel label,.shift-editor label{display:grid;gap:4px;font-size:12px;font-weight:800}.paste-range-panel input,.shift-editor input{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff}.shift-editor-rows{display:grid;gap:8px}.shift-editor-row{display:grid;grid-template-columns:minmax(140px,1fr) 110px 110px 42px;gap:8px;align-items:end}.shift-editor-row button{height:36px;border:1px solid #efd3d3;background:#fff4f4;color:#9b3636;border-radius:8px}.shift-editor-actions,.shift-editor-head{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}.schedule-grid tfoot td{background:#f4f8f6;font-size:11px;font-weight:700}.schedule-grid tfoot td.summary-label{background:#e7f1ed;font-weight:900}.shift-total-cell{display:grid;gap:2px;min-width:100px;width:100%;border:0;background:transparent;border-radius:8px;padding:4px;cursor:pointer}.shift-total-cell.active{background:#1f6b4d}.shift-total-cell b{font-size:15px;color:#173329}.shift-total-cell small{color:#6a7a73}.shift-total-cell.active b,.shift-total-cell.active small{color:#fff}.monthly-statistics{display:grid;gap:8px}.monthly-statistics h3{margin:0;color:#173329}.monthly-statistics table{width:100%;border-collapse:collapse;background:#fff}.monthly-statistics th,.monthly-statistics td{border:1px solid #dfe8e5;padding:8px;text-align:center}.monthly-statistics th:first-child,.monthly-statistics td:first-child{text-align:left}.monthly-statistics tfoot td{background:#e7f1ed;font-weight:900}.weekday-short,.mobile-cell-summary,.mobile-week-editor{display:none}
+      .work-schedule-page{display:grid;gap:14px}.schedule-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.schedule-title h2{margin:0}.schedule-range{margin-top:7px;font-size:13px;font-weight:800;color:#1f513f}.schedule-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.schedule-month-picker{display:flex;align-items:center;gap:6px;border:1px solid #d7e2dd;border-radius:12px;padding:5px 7px;background:#fff}.schedule-month-picker input{border:0;background:transparent;font:inherit;font-weight:800;color:#25483b;min-width:142px}.schedule-icon-button{border:0;background:#eef5f2;color:#244a3a;border-radius:8px;width:34px;height:34px;display:grid;place-items:center}.schedule-filter-bar{display:flex;gap:6px;flex-wrap:wrap}.schedule-filter-bar button{border:1px solid #d6e2dd;background:#fff;border-radius:999px;padding:7px 11px;font-weight:800;color:#466057}.schedule-filter-bar button.active{background:#173329;border-color:#173329;color:#fff}.schedule-custom-range{display:inline-flex;gap:7px;align-items:center;width:max-content;max-width:100%}.schedule-custom-range input{border:1px solid #d6e2dd;border-radius:9px;padding:7px;width:170px;min-width:0}.schedule-department-tabs{display:flex;gap:6px;flex-wrap:wrap}.schedule-department-tabs button{border:1px solid #d7e2dd;background:#fff;border-radius:10px;padding:8px 11px;font-weight:800;color:#4a5d55}.schedule-department-tabs button.active{background:#173329;color:#fff;border-color:#173329}.schedule-legend{display:flex;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #dfe8e5;border-radius:12px;background:#f8fbfa;font-size:13px}.schedule-scroll{overflow-x:auto;border:1px solid #dfe8e5;border-radius:14px;background:#fff;max-width:100%}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%}.schedule-grid th,.schedule-grid td{border-right:1px solid #e6ecea;border-bottom:1px solid #e6ecea;padding:6px;text-align:center;vertical-align:middle}.schedule-grid thead th{position:sticky;top:0;background:#eef6f3;z-index:4;min-width:116px}.schedule-grid thead tr:nth-child(2) th{top:35px}.schedule-grid thead th.employee-head{left:0;z-index:8;min-width:170px}.schedule-grid td.employee-cell,.schedule-grid tfoot td.summary-label{position:sticky;left:0;background:#fff;z-index:3;text-align:left;min-width:170px}.schedule-grid .month-head{height:35px;background:#dfeee8;font-weight:900;color:#244a3a}.schedule-grid .sunday{background:#fff6f2}.schedule-grid .today{box-shadow:inset 0 0 0 2px #bb8b34}.schedule-grid td.selected{box-shadow:inset 0 0 0 3px #245b47;background:#eff8f4}.schedule-grid tr.own-row td.employee-cell{background:#eef8f3}.schedule-grid tr.own-row td.employee-cell strong:after{content:' · Lịch của bạn';font-size:11px;color:#267051}.employee-name-line{display:flex;gap:5px;align-items:center}.employee-highlight-button{border:0;background:transparent;color:inherit;padding:4px 5px;margin:-4px -5px;border-radius:7px;text-align:left;cursor:pointer}.employee-highlight-button.active{background:#1f6b4d;color:#fff}.schedule-grid th.employee-work-day{background:#ccebdc;color:#155b3e;box-shadow:inset 0 -3px 0 #1f7a54}.schedule-grid td.employee-work-day{background:#e2f6eb!important;outline:3px solid #2b8a61;outline-offset:-3px}.system-name-edit{border:0;background:transparent;color:#5b7168;padding:2px;display:grid;place-items:center}.employee-role{display:block;color:#708079;font-size:11px;margin-top:2px}.schedule-cell{display:grid;gap:5px}.shift-select,.ot-select,.manager-status,.manager-time,.letan-ot-time{border:1px solid #d9e2df;border-radius:8px;background:#fff}.shift-select,.ot-select{width:108px;padding:5px;font-size:12px}.shift-select.ca1{background:#dff3cc}.shift-select.ca2{background:#fff8a8}.shift-select.off,.manager-status.off{background:#ffe0b8}.ot-select.no-overtime{color:#d5dfdb;border-color:#edf2f0;background:#fbfcfc}.ot-select.active{color:#244a3a}.manager-cell{display:grid;gap:5px;min-width:136px}.manager-status{width:126px;padding:5px;font-size:12px}.manager-time-row{display:grid;grid-template-columns:1fr 1fr;gap:4px}.manager-time{width:61px;padding:5px 3px;font-size:11px}.shared-overtime{display:grid;gap:4px}.overtime-time-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:2px}.letan-ot-time{width:48px;padding:4px 1px;font-size:10px}.schedule-save,.schedule-copy-button,.schedule-config-button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:9px 13px;font-weight:700}.schedule-save{background:#173329;color:white}.schedule-copy-button,.schedule-config-button{background:#eef5f2;color:#214538;border:1px solid #ccddd5}.schedule-save:disabled,.schedule-copy-button:disabled,.schedule-config-button:disabled{opacity:.5}.schedule-notice{padding:10px 12px;border-radius:10px;background:#edf7f3}.schedule-autosave-state{display:inline-flex;align-items:center;min-height:34px;padding:0 10px;border-radius:999px;background:#edf7f3;color:#256047;font-size:12px;font-weight:900}.schedule-autosave-state.pending{background:#fff6d6;color:#7a5a00}.schedule-autosave-state.saving{background:#e8f0ff;color:#28549d}.schedule-autosave-state.error{background:#fff0f0;color:#a43131}.paste-range-panel,.shift-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#fbfdfc}.paste-range-panel{grid-template-columns:auto auto auto auto;align-items:end}.paste-range-panel label,.shift-editor label{display:grid;gap:4px;font-size:12px;font-weight:800}.paste-range-panel input,.shift-editor input{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff}.shift-editor-rows{display:grid;gap:8px}.shift-editor-row{display:grid;grid-template-columns:minmax(140px,1fr) 110px 110px 42px;gap:8px;align-items:end}.shift-editor-row button{height:36px;border:1px solid #efd3d3;background:#fff4f4;color:#9b3636;border-radius:8px}.shift-editor-actions,.shift-editor-head{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}.schedule-grid tfoot td{background:#f4f8f6;font-size:11px;font-weight:700}.schedule-grid tfoot td.summary-label{background:#e7f1ed;font-weight:900}.shift-total-cell{display:grid;gap:2px;min-width:100px;width:100%;border:0;background:transparent;border-radius:8px;padding:4px;cursor:pointer}.shift-total-cell.active{background:#1f6b4d}.shift-total-cell b{font-size:15px;color:#173329}.shift-total-cell small{color:#6a7a73}.shift-total-cell.active b,.shift-total-cell.active small{color:#fff}.monthly-statistics{display:grid;gap:8px}.monthly-statistics h3{margin:0;color:#173329}.monthly-statistics table{width:100%;border-collapse:collapse;background:#fff}.monthly-statistics th,.monthly-statistics td{border:1px solid #dfe8e5;padding:8px;text-align:center}.monthly-statistics th:first-child,.monthly-statistics td:first-child{text-align:left}.monthly-statistics tfoot td{background:#e7f1ed;font-weight:900}.weekday-short,.mobile-cell-summary,.mobile-week-editor{display:none}.schedule-scroll.month-view{overflow-x:hidden}.schedule-scroll.month-view .schedule-grid{width:100%;min-width:0;table-layout:fixed}.schedule-scroll.month-view .schedule-grid thead th{min-width:0;padding:3px 1px;font-size:8px}.schedule-scroll.month-view .schedule-grid thead th.employee-head,.schedule-scroll.month-view .schedule-grid td.employee-cell,.schedule-scroll.month-view .schedule-grid tfoot td.summary-label{width:116px;min-width:116px;max-width:116px;padding:4px;white-space:normal;overflow:hidden}.schedule-scroll.month-view .schedule-grid td{min-width:0;padding:2px 1px}.schedule-scroll.month-view .weekday-full{display:none}.schedule-scroll.month-view .weekday-short{display:block;font-size:7px}.schedule-scroll.month-view .schedule-cell-editor{display:none}.schedule-scroll.month-view .mobile-cell-summary{display:block;overflow:hidden;padding:5px 0;border-radius:4px;font-size:7px;font-weight:900;line-height:1;color:#244a3a;white-space:nowrap;text-overflow:ellipsis}.schedule-scroll.month-view .mobile-cell-summary.ca1{background:#dff3cc}.schedule-scroll.month-view .mobile-cell-summary.ca2{background:#fff8a8}.schedule-scroll.month-view .mobile-cell-summary.off{background:#ffe0b8}.schedule-scroll.month-view .employee-cell strong{font-size:9px;line-height:1.1}.schedule-scroll.month-view .employee-role,.schedule-scroll.month-view tr.own-row td.employee-cell strong:after,.schedule-scroll.month-view .system-name-edit{display:none}.schedule-scroll.month-view .month-head{height:28px;font-size:10px}.schedule-scroll.month-view .schedule-grid thead tr:nth-child(2) th{top:28px}.schedule-scroll.month-view .shift-total-cell{min-width:0;padding:2px}.schedule-scroll.month-view .shift-total-cell b{font-size:10px}.schedule-scroll.month-view .shift-total-cell small{display:none}.mobile-week-editor.month-editor{display:grid;gap:8px;padding:10px;border:1px solid #d5e3dd;border-radius:12px;background:#f8fbfa}
       @media(max-width:700px){.schedule-tools{width:100%}.schedule-copy-button,.schedule-save,.schedule-config-button{flex:1;justify-content:center}.schedule-month-picker{width:100%;justify-content:space-between}.schedule-filter-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.schedule-filter-bar button{padding:7px 2px;font-size:10px}.schedule-custom-range{display:grid;grid-template-columns:1fr 1fr;width:100%;max-width:100%}.schedule-custom-range input{min-width:0;width:100%}.paste-range-panel{grid-template-columns:1fr 1fr}.shift-editor-row{grid-template-columns:1fr 1fr}.shift-editor-row label:first-child{grid-column:1/-1}.schedule-scroll.week-view{overflow-x:hidden}.schedule-scroll.week-view .schedule-grid{min-width:0;width:100%;table-layout:fixed}.schedule-scroll.week-view .schedule-grid thead th{min-width:0;padding:3px 1px;font-size:9px}.schedule-scroll.week-view .weekday-full{display:none}.schedule-scroll.week-view .weekday-short{display:block}.schedule-scroll.week-view .schedule-grid thead th.employee-head,.schedule-scroll.week-view .schedule-grid td.employee-cell,.schedule-scroll.week-view .schedule-grid tfoot td.summary-label{width:72px;min-width:72px;max-width:72px;padding:3px;white-space:normal;word-break:break-word}.schedule-scroll.week-view .schedule-grid td{padding:2px 1px;min-width:0}.schedule-scroll.week-view .employee-cell strong{font-size:9px;line-height:1.1}.schedule-scroll.week-view .employee-role,.schedule-scroll.week-view tr.own-row td.employee-cell strong:after,.schedule-scroll.week-view .system-name-edit{display:none}.schedule-scroll.week-view .schedule-cell-editor{display:none}.schedule-scroll.week-view .mobile-cell-summary{display:block;padding:5px 1px;border-radius:6px;font-size:9px;font-weight:900;line-height:1.1;color:#244a3a}.schedule-scroll.week-view .mobile-cell-summary.ca1{background:#dff3cc}.schedule-scroll.week-view .mobile-cell-summary.ca2{background:#fff8a8}.schedule-scroll.week-view .mobile-cell-summary.off{background:#ffe0b8}.schedule-scroll.week-view .month-head{font-size:10px;height:28px}.schedule-scroll.week-view .schedule-grid thead tr:nth-child(2) th{top:28px}.schedule-scroll.week-view .shift-total-cell{min-width:0;font-size:8px}.schedule-scroll.week-view .shift-total-cell b{font-size:11px}.schedule-scroll.week-view .shift-total-cell small{font-size:7px}.mobile-week-editor{display:grid;gap:8px;padding:10px;border:1px solid #d5e3dd;border-radius:12px;background:#f8fbfa}.mobile-week-editor .shift-select,.mobile-week-editor .ot-select,.mobile-week-editor .manager-status,.mobile-week-editor .manager-time,.mobile-week-editor .letan-ot-time{width:100%}}
     `}</style>
     <style>{`
@@ -855,8 +1012,10 @@ export default function WorkSchedulePage({ user }) {
         </div>
         <button type="button" className="schedule-copy-button" onClick={() => selectedCell && void copyCell(selectedCell.username, selectedCell.day)} disabled={!selectedCell}><Copy size={16}/> Sao chép ô</button>
         <button type="button" className="schedule-copy-button" onClick={() => void openPastePanel()} disabled={!selectedCell || !canEdit}><ClipboardPaste size={16}/> Áp dụng cho ngày</button>
+        <button type="button" className="schedule-copy-button" onClick={() => void captureFullSchedule()} disabled={loading || captureBusy}>{captureBusy ? <LoaderCircle size={16} className="spin" /> : <Camera size={16}/>} {captureBusy ? 'Đang chụp…' : 'Chụp toàn bộ bảng'}</button>
         {canEdit && department !== 'quanly' && <button type="button" className="schedule-config-button" onClick={() => setShiftEditorOpen((value) => !value)}><Settings2 size={16}/> Tạo / sửa ca</button>}
-        {canEdit && <button type="button" className="schedule-save" onClick={saveChanges} disabled={busy || loading}>{busy ? <LoaderCircle size={16} className="spin" /> : <Save size={16}/>} Lưu lịch</button>}
+        {canEdit && <button type="button" className="schedule-save" onClick={() => void saveChanges(false)} disabled={busy || loading || !pendingChanges.length}>{busy ? <LoaderCircle size={16} className="spin" /> : <Save size={16}/>} Lưu lịch</button>}
+        {canEdit && <span className={`schedule-autosave-state ${autoSaveState}`}>{autoSaveState === 'saving' ? 'Đang tự lưu…' : autoSaveState === 'pending' ? 'Chờ tự lưu' : autoSaveState === 'error' ? 'Tự lưu lỗi' : 'Đã tự lưu'}</span>}
       </div>
     </div>
 
@@ -889,16 +1048,16 @@ export default function WorkSchedulePage({ user }) {
     </div>}
     {notice && <div className="schedule-notice">{notice}</div>}
 
-    {isWeekView && selectedCell && selectedEmployee && selectedValue && canEdit && <div className="mobile-week-editor"><strong>{systemName(selectedEmployee)} · {selectedCell.day}</strong>{editorFor(selectedEmployee, selectedCell.day, selectedValue)}</div>}
+    {(isWeekView || isMonthView) && selectedCell && selectedEmployee && selectedValue && canEdit && <div className={`mobile-week-editor ${isMonthView ? 'month-editor' : ''}`}><strong>{systemName(selectedEmployee)} · {selectedCell.day}</strong>{editorFor(selectedEmployee, selectedCell.day, selectedValue)}</div>}
 
-    {loading ? <div className="page-loading"><LoaderCircle size={18} className="spin" /> Đang tải lịch…</div> : <div className={`schedule-scroll ${isWeekView ? 'week-view' : ''}`}>
+    {loading ? <div className="page-loading"><LoaderCircle size={18} className="spin" /> Đang tải lịch…</div> : <div className={`schedule-scroll ${isWeekView ? 'week-view' : ''} ${isMonthView ? 'month-view' : ''}`.trim()}>
       <table className="schedule-grid">
         <thead><tr><th className="employee-head" rowSpan="2">Tên nhân viên</th><th className="month-head" colSpan={days.length}>{rangeTitle}</th></tr><tr>{days.map((date) => {
           const day = isoDate(date)
           const classes = [date.getDay() === 0 ? 'sunday' : '', day === todayIso ? 'today' : ''].filter(Boolean).join(' ')
           const highlightedValue = highlightedEmployee ? { ...emptyCell(), ...(drafts[keyFor(highlightedEmployee, day)] || {}) } : null
           const isEmployeeWorkDay = Boolean(highlightedValue?.shift_code && highlightedValue.shift_code !== 'Nghỉ')
-          return <th key={day} className={[classes, isEmployeeWorkDay ? 'employee-work-day' : ''].filter(Boolean).join(' ')}><div className="weekday-full">{WEEKDAYS[date.getDay()]}</div><div className="weekday-short">{WEEKDAYS_SHORT[date.getDay()]}</div><small>{displayDate(date)}</small></th>
+          return <th key={day} className={[classes, isEmployeeWorkDay ? 'employee-work-day' : ''].filter(Boolean).join(' ')}><div className="weekday-full">{WEEKDAYS[date.getDay()]}</div><div className="weekday-short">{WEEKDAYS_SHORT[date.getDay()]}</div><small>{isMonthView ? date.getDate() : displayDate(date)}</small></th>
         })}</tr></thead>
         <tbody>{employees.map((employee) => {
           const isOwn = String(employee.username || '').toLowerCase() === ownUsername
@@ -911,7 +1070,7 @@ export default function WorkSchedulePage({ user }) {
             const isEmployeeWorkDay = isHighlightedEmployee && Boolean(value.shift_code && value.shift_code !== 'Nghỉ')
             const tdClass = [date.getDay() === 0 ? 'sunday' : '', day === todayIso ? 'today' : '', isSelected ? 'selected' : '', isEmployeeWorkDay ? 'employee-work-day' : ''].filter(Boolean).join(' ')
             const mobileShiftClass = value.shift_code === 'Ca 1' ? 'ca1' : value.shift_code === 'Ca 2' ? 'ca2' : value.shift_code === 'Nghỉ' ? 'off' : ''
-            return <td key={day} className={tdClass} tabIndex={0} onFocus={() => setSelectedCell({ username: employee.username, day })} onClick={() => setSelectedCell({ username: employee.username, day })} onKeyDown={(event) => handleCellKeyDown(event, employee.username, day)}><div className="schedule-cell-editor">{editorFor(employee, day, value)}</div><div className={`mobile-cell-summary ${mobileShiftClass}`}>{compactCellLabel(value, department)}</div></td>
+            return <td key={day} className={tdClass} tabIndex={0} onFocus={() => setSelectedCell({ username: employee.username, day })} onClick={() => setSelectedCell({ username: employee.username, day })} onKeyDown={(event) => handleCellKeyDown(event, employee.username, day)}><div className="schedule-cell-editor">{editorFor(employee, day, value)}</div><div className={`mobile-cell-summary ${mobileShiftClass}`} title={compactCellLabel(value, department)}>{compactCellLabel(value, department)}</div></td>
           })}</tr>
         })}</tbody>
         {department !== 'quanly' && configuredShiftNames.length > 0 && <tfoot>{configuredShiftNames.map((shift) => <tr key={`summary-${shift}`}><td className="summary-label">Tổng NV · {shift}</td>{days.map((date) => {
