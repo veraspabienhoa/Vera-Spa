@@ -105,6 +105,16 @@ jobs:
           workflow = Path('.github/workflows/deploy-vps.yml').read_text(encoding='utf-8')
           for source in (local_auth, gateway, api):
               ast.parse(source)
+          gateway_tree = ast.parse(gateway)
+          api_tree = ast.parse(api)
+          gateway_functions = {
+              node.name: ast.get_source_segment(gateway, node) or ''
+              for node in gateway_tree.body if isinstance(node, ast.FunctionDef)
+          }
+          api_functions = {
+              node.name: ast.get_source_segment(api, node) or ''
+              for node in api_tree.body if isinstance(node, ast.FunctionDef)
+          }
 
           checks = {
               'opaque access and refresh token prefixes': 'vera_at_' in local_auth and 'vera_rt_' in local_auth,
@@ -120,6 +130,13 @@ jobs:
               ),
               'deploy validates real app-setting CRUD before cutover': 'write_probe=True' in local_auth and 'ON CONFLICT (category, setting_key)' in local_auth,
               'login switches on explicit local provider': 'if local_auth_enabled()' in gateway,
+              'local login bootstraps employees without Supabase profiles': (
+                  'local_auth_user_id(username)' in gateway_functions.get('_create_local_session', '')
+              ),
+              'local authorization uses live employee state': (
+                  'vera_v2_user_profile' not in gateway_functions.get('_rotate_local_session', '')
+                  and 'vera_v2_user_profile' not in api_functions.get('_current_local_identity', '')
+              ),
               'local refresh rotates with replay-safe CAS': all(item in gateway for item in (
                   '_rotate_local_session',
                   'old_refresh_hash',

@@ -39,6 +39,7 @@ from vera_web_v2_local_auth import (
     ensure_local_auth_schema,
     is_local_refresh_token,
     local_auth_enabled,
+    local_auth_user_id,
     new_access_token,
     new_refresh_token,
     refresh_ttl_seconds,
@@ -572,7 +573,7 @@ def _ensure_local_auth_ready() -> None:
 
 
 def _create_local_session(employee: dict[str, Any]) -> dict[str, Any]:
-    """Issue a revocable opaque session for an already-linked Web V2 user."""
+    """Issue a revocable opaque session for a verified active employee."""
     _ensure_local_auth_ready()
     username = str(employee.get("username") or "").strip()
     access_token = new_access_token()
@@ -586,19 +587,19 @@ def _create_local_session(employee: dict[str, Any]) -> dict[str, Any]:
     try:
         with _engine_instance().begin() as conn:
             profile = conn.execute(text("""
-                SELECT auth_user_id::text AS auth_user_id, is_active
+                SELECT auth_user_id::text AS auth_user_id
                 FROM vera_v2_user_profile
-                WHERE employee_username=:username AND is_active=true
-                ORDER BY updated_at DESC
+                WHERE lower(btrim(employee_username))=lower(btrim(:username))
+                ORDER BY COALESCE(is_active, false) DESC,
+                         updated_at DESC NULLS LAST, auth_user_id
                 LIMIT 1
-                FOR UPDATE
             """), {"username": username}).mappings().first()
-            if not profile:
-                raise HTTPException(
-                    403,
-                    "Tài khoản chưa được liên kết Web V2. Vui lòng liên hệ Admin để kích hoạt.",
-                )
-            auth_user_id = str(profile.get("auth_user_id") or "").strip()
+            # Preserve a legacy Supabase UUID when one exists so existing
+            # per-user data remains addressable. New local-only employees get a
+            # deterministic UUID and do not need a row in auth.users/profile.
+            auth_user_id = str((profile or {}).get("auth_user_id") or "").strip()
+            if not auth_user_id:
+                auth_user_id = local_auth_user_id(username)
             try:
                 auth_user_id = str(uuid.UUID(auth_user_id))
             except (TypeError, ValueError, AttributeError) as exc:
@@ -739,13 +740,9 @@ def _rotate_local_session(refresh_token: str) -> dict[str, Any]:
                            THEN (s.value_json->>'refresh_generation')::integer
                          ELSE 0
                        END AS refresh_generation,
-                       p.is_active AS profile_active,
                        e.password_value, e.role, e.full_name, e.email,
                        e.login_locked, e.payload
                 FROM {SESSION_STORE_TABLE} s
-                JOIN vera_v2_user_profile p
-                  ON p.auth_user_id::text=s.value_json->>'auth_user_id'
-                 AND p.employee_username=s.value_json->>'employee_username'
                 JOIN employees e ON e.username=s.value_json->>'employee_username'
                 WHERE s.category=:category
                   AND s.value_json->>'kind'=:kind
@@ -768,8 +765,6 @@ def _rotate_local_session(refresh_token: str) -> dict[str, Any]:
                 raise HTTPException(401, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.")
             row = rows[0]
             employee = dict(row)
-            if not bool(row.get("profile_active")):
-                raise HTTPException(403, "Tài khoản Web V2 đang bị vô hiệu hóa.")
             if _locked(row.get("login_locked")):
                 raise HTTPException(403, "Tài khoản đang bị khóa.")
             if _employment_status(row.get("payload")) != "dang lam viec":
@@ -910,12 +905,11 @@ def install_auth_gateway(
         if local_auth_enabled():
             _ensure_local_auth_ready()
             with _engine_instance().connect() as conn:
-                linked_profiles = int(conn.execute(text("""
+                eligible_accounts = int(conn.execute(text("""
                     SELECT COUNT(*)
-                    FROM vera_v2_user_profile p
-                    JOIN employees e ON e.username=p.employee_username
-                    WHERE p.is_active=true
-                      AND COALESCE(e.login_locked, false)=false
+                    FROM employees e
+                    WHERE COALESCE(e.login_locked, false)=false
+                      AND COALESCE(e.password_value, '') <> ''
                       AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
                       AND COALESCE(
                             e.payload->>'Trạng thái làm việc',
@@ -934,8 +928,8 @@ def install_auth_gateway(
                     "kind": SESSION_RECORD_KIND,
                     "version": str(STORE_VERSION),
                 })
-            if linked_profiles < 1:
-                raise HTTPException(503, "Chưa có tài khoản Web V2 hoạt động trong PostgreSQL.")
+            if eligible_accounts < 1:
+                raise HTTPException(503, "Chưa có tài khoản nhân viên hoạt động cho PostgreSQL Auth.")
             return {
                 "ok": True,
                 "provider": "postgres-local",

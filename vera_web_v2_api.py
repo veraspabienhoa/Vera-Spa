@@ -574,14 +574,11 @@ def _current_local_identity(token: str) -> Identity:
                        s.value_json->>'auth_user_id' AS auth_user_id,
                        s.value_json->>'employee_username' AS employee_username,
                        s.value_json->>'credential_fingerprint' AS credential_fingerprint,
-                       p.role, p.is_active,
+                       e.role,
                        COALESCE(e.full_name,'') AS full_name,
                        COALESCE(e.email,'') AS email,
                        e.password_value, e.login_locked, e.payload
                 FROM {SESSION_STORE_TABLE} s
-                JOIN vera_v2_user_profile p
-                  ON p.auth_user_id::text=s.value_json->>'auth_user_id'
-                 AND p.employee_username=s.value_json->>'employee_username'
                 JOIN employees e ON e.username=s.value_json->>'employee_username'
                 WHERE s.category=:category
                   AND s.value_json->>'kind'=:kind
@@ -612,8 +609,6 @@ def _current_local_identity(token: str) -> Identity:
             ):
                 revoke_local_session_row(conn, str(row["session_id"]), "credential_changed")
                 credential_changed = True
-            elif not bool(row.get("is_active")):
-                raise HTTPException(403, "Tài khoản Web V2 đang bị vô hiệu hóa.")
             elif _as_bool(row.get("login_locked")):
                 raise HTTPException(403, "Tài khoản đang bị khóa.")
             else:

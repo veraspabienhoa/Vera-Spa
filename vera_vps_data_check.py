@@ -128,12 +128,11 @@ def main() -> None:
         """)).one()
         if not all(bool(item) for item in privileges):
             raise SystemExit("DATA CHECK FAILED: runtime role lacks CRUD access to vera_app_setting")
-        linked_profiles = int(connection.execute(text("""
+        eligible_accounts = int(connection.execute(text("""
             SELECT COUNT(*)
-            FROM vera_v2_user_profile p
-            JOIN employees e ON e.username=p.employee_username
-            WHERE p.is_active=true
-              AND COALESCE(e.login_locked, false)=false
+            FROM employees e
+            WHERE COALESCE(e.login_locked, false)=false
+              AND COALESCE(e.password_value, '') <> ''
               AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
               AND COALESCE(
                     e.payload->>'Trạng thái làm việc',
@@ -141,13 +140,13 @@ def main() -> None:
                     'Đang làm việc'
                   ) = 'Đang làm việc'
         """)).scalar_one())
-        admin_profiles = int(connection.execute(text("""
+        admin_accounts = int(connection.execute(text("""
             SELECT COUNT(*)
-            FROM vera_v2_user_profile p
-            JOIN employees e ON e.username=p.employee_username
+            FROM employees e
             WHERE lower(btrim(e.username))='admin'
-              AND p.is_active=true
               AND COALESCE(e.login_locked, false)=false
+              AND COALESCE(e.password_value, '') <> ''
+              AND lower(COALESCE(e.role, ''))='admin'
               AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
               AND COALESCE(
                     e.payload->>'Trạng thái làm việc',
@@ -165,16 +164,16 @@ def main() -> None:
     print("DATA CHECK: database connection OK")
     print("DATA CHECK: auth_provider=local")
     print("DATA CHECK: local_auth_store=vera_app_setting namespaces ready")
-    print(f"DATA CHECK: linked_auth_profiles={linked_profiles}")
-    print("DATA CHECK: admin_auth_profile=ready" if admin_profiles == 1 else "DATA CHECK: admin_auth_profile=invalid")
+    print(f"DATA CHECK: eligible_local_auth_accounts={eligible_accounts}")
+    print("DATA CHECK: local_auth_admin=ready" if admin_accounts == 1 else "DATA CHECK: local_auth_admin=invalid")
     for table, count in counts.items():
         print(f"DATA CHECK: {table}={'missing' if count is None else count}")
     if not any((count or 0) > 0 for count in counts.values()):
         raise SystemExit("DATA CHECK FAILED: production database contains no application rows")
-    if linked_profiles < 1:
-        raise SystemExit("DATA CHECK FAILED: no active Web V2 profile is linked to an employee")
-    if admin_profiles != 1:
-        raise SystemExit("DATA CHECK FAILED: the admin Web V2 profile is missing, inactive, or duplicated")
+    if eligible_accounts < 1:
+        raise SystemExit("DATA CHECK FAILED: no active employee account is eligible for local Auth")
+    if admin_accounts != 1:
+        raise SystemExit("DATA CHECK FAILED: the active local Auth admin employee is missing or duplicated")
 
 
 if __name__ == "__main__":

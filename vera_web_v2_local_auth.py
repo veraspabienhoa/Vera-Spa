@@ -18,6 +18,7 @@ import re
 import secrets
 import threading
 import unicodedata
+import uuid
 from typing import Any
 
 from sqlalchemy import text
@@ -110,6 +111,17 @@ def credential_fingerprint(username: Any, password_value: Any) -> str:
         + str(password_value or "")
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def local_auth_user_id(username: Any) -> str:
+    """Return a stable UUID for employees that never had a Supabase profile."""
+    canonical = _canonical_username(username)
+    if not canonical:
+        raise ValueError("local Auth username is empty")
+    return str(uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"https://app.veraspa.vn/local-auth/v1/{canonical}",
+    ))
 
 
 def _validate_local_auth_store(conn, *, write_probe: bool = False) -> None:
@@ -290,12 +302,11 @@ def main() -> None:
     engine = _engine_instance()
     ensure_local_auth_schema(engine, migrate=True)
     with engine.connect() as conn:
-        linked_profiles = int(conn.execute(text("""
+        eligible_accounts = int(conn.execute(text("""
             SELECT COUNT(*)
-            FROM public.vera_v2_user_profile p
-            JOIN public.employees e ON e.username=p.employee_username
-            WHERE p.is_active=true
-              AND COALESCE(e.login_locked, false)=false
+            FROM public.employees e
+            WHERE COALESCE(e.login_locked, false)=false
+              AND COALESCE(e.password_value, '') <> ''
               AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
               AND COALESCE(
                     e.payload->>'Trạng thái làm việc',
@@ -303,13 +314,13 @@ def main() -> None:
                     'Đang làm việc'
                   ) = 'Đang làm việc'
         """)).scalar_one())
-        admin_profiles = int(conn.execute(text("""
+        admin_accounts = int(conn.execute(text("""
             SELECT COUNT(*)
-            FROM public.vera_v2_user_profile p
-            JOIN public.employees e ON e.username=p.employee_username
+            FROM public.employees e
             WHERE lower(btrim(e.username))='admin'
-              AND p.is_active=true
               AND COALESCE(e.login_locked, false)=false
+              AND COALESCE(e.password_value, '') <> ''
+              AND lower(COALESCE(e.role, ''))='admin'
               AND COALESCE(e.payload->>'__deleted', 'false') <> 'true'
               AND COALESCE(
                     e.payload->>'Trạng thái làm việc',
@@ -317,11 +328,16 @@ def main() -> None:
                     'Đang làm việc'
                   ) = 'Đang làm việc'
         """)).scalar_one())
-    if linked_profiles < 1:
-        raise RuntimeError("no active Web V2 profile is linked to an employee")
-    if admin_profiles != 1:
-        raise RuntimeError("the admin Web V2 profile is missing, inactive, or duplicated")
     print("LOCAL AUTH STORE: PostgreSQL vera_app_setting namespaces ready")
+    print(
+        "LOCAL AUTH ACCOUNTS: "
+        f"eligible_employees={eligible_accounts}; admin_candidates={admin_accounts}"
+    )
+    if eligible_accounts < 1:
+        raise RuntimeError("no active employee account is eligible for local Auth")
+    if admin_accounts != 1:
+        raise RuntimeError("the active local Auth admin employee is missing or duplicated")
+    print("LOCAL AUTH ACCOUNTS: admin=ready")
 
 
 if __name__ == "__main__":
