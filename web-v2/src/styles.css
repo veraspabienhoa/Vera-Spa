@@ -22,6 +22,12 @@
   --success-bg: #e9f7ef;
   --warning: #75561e;
   --warning-bg: #fff7e6;
+  --tour-row-green: #92d050;
+  --tour-row-yellow: #ffd966;
+  --tour-row-red: #ff6666;
+  --tour-row-break: #f4b183;
+  --tour-row-waiting: #d9c2f0;
+  --tour-row-idle: #d9ead3;
 }
 
 /* Annual leave / long leave at the bottom of leave registration */
@@ -106,8 +112,10 @@
 html, body, #root { width: 100%; max-width: 100%; }
 body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: clip; }
 button, input, select, textarea { font: inherit; }
-button { cursor: pointer; }
+button { cursor: pointer; transition: background-color .18s ease, color .18s ease, border-color .18s ease, box-shadow .18s ease, filter .18s ease, transform .18s ease; }
 button:disabled { cursor: not-allowed; opacity: .6; }
+button:not(:disabled):not(.disabled):hover { filter: brightness(.9) saturate(1.14); transform: translateY(-1px); }
+button:not(:disabled):not(.disabled):active { filter: brightness(.84) saturate(1.08); transform: translateY(0) scale(.99); }
 
 .boot-screen { min-height: 100vh; display: grid; place-items: center; background: var(--green-950); color: white; font-weight: 700; }
 .page-loading { min-height: 220px; display: grid; place-items: center; color: var(--green-800); font-weight: 800; }
@@ -238,11 +246,11 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .tour-table .tour-col-remaining { width: 58px; min-width: 58px; max-width: 58px; text-align: center; white-space: normal; overflow-wrap: anywhere; }
 .tour-table .tour-col-room, .tour-table .tour-col-request { width: 54px; min-width: 54px; max-width: 54px; text-align: center; white-space: normal; overflow-wrap: anywhere; }
 .tour-table .tour-col-appointment { width: 88px; min-width: 88px; max-width: 88px; white-space: normal; overflow-wrap: anywhere; }
-.tour-table tr.tour-row-green td { color: #000; background: #92d050; font-weight: 700; }
-.tour-table tr.tour-row-yellow td { color: #000; background: #ffd966; font-weight: 700; }
-.tour-table tr.tour-row-red td { color: #000; background: #ff6666; font-weight: 700; }
-.tour-table tr.tour-row-break td { color: #000; background: #f4b183; font-weight: 800; }
-.tour-table tr.tour-row-idle td { color: #000; background: #d9ead3; font-weight: 800; }
+.tour-table tr.tour-row-green td { color: #000; background: var(--tour-row-green); font-weight: 700; }
+.tour-table tr.tour-row-yellow td { color: #000; background: var(--tour-row-yellow); font-weight: 700; }
+.tour-table tr.tour-row-red td { color: #000; background: var(--tour-row-red); font-weight: 700; }
+.tour-table tr.tour-row-break td { color: #000; background: var(--tour-row-break); font-weight: 800; }
+.tour-table tr.tour-row-idle td { color: #000; background: var(--tour-row-idle); font-weight: 800; }
 .tour-table tr.tour-row-leave td { color: #a6a6a6; background: #fff; }
 .tour-table tr.tour-row-work td, .tour-table tr.tour-row-default td { color: #000; background: #fff; }
 .tour-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 0; }
@@ -257,12 +265,12 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 .tour-legend { margin: 0; }
 .tour-legend-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .tour-legend-grid span { border: 1px solid rgba(0,0,0,.09); border-radius: 999px; padding: 7px 10px; color: #1e2c25; font-size: 10px; font-weight: 800; }
-.tour-legend-grid .green { background: #92d050; }
-.tour-legend-grid .yellow { background: #ffd966; }
+.tour-legend-grid .green { background: var(--tour-row-green); }
+.tour-legend-grid .yellow { background: var(--tour-row-yellow); }
 .tour-legend-grid .red { background: #ff8b8b; }
 .tour-legend-grid .blank { background: #fff; }
-.tour-legend-grid .break { background: #f4b183; }
-.tour-legend-grid .idle { background: #d9ead3; }
+.tour-legend-grid .break { background: var(--tour-row-break); }
+.tour-legend-grid .idle { background: var(--tour-row-idle); }
 .tour-legend-grid .leave { color: #8a8a8a; background: #fff; }
 .tour-countdown-note { margin-top: 12px; }
 .payroll-config-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }

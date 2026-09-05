@@ -299,6 +299,7 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
             elapsed = (now - started).total_seconds() / 60
             if elapsed >= 0:
                 remaining = int(math.ceil(duration - elapsed))
+        countdown_deadline = started + timedelta(minutes=duration) if remaining is not None and started is not None and duration is not None else None
 
         status_token = _token(source.get(status_column, "")) if status_column else ""
         work_token = _token(source.get(work_column, "")) if work_column else ""
@@ -338,6 +339,7 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
 
         values = {column: _display_value(source.get(column, "")) for column in ordered_columns}
         values[remaining_column] = "" if expired or remaining is None else remaining
+        values["_countdown_deadline"] = countdown_deadline.isoformat() if countdown_deadline is not None else ""
         if status_column:
             values[status_column] = {"dang cho": "Đang chờ", "dang thuc hien": "Đang thực hiện"}.get(status_token, values[status_column])
         time_column = _find_column(columns, "Thời gian")

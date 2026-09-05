@@ -1,6 +1,8 @@
+from datetime import datetime, timedelta, timezone
+
 from openpyxl import Workbook
 
-from vera_web_v2_people import _available_rooms_for_tour, _room_snapshot
+from vera_web_v2_people import _available_rooms_for_tour, _prepare_tour, _room_snapshot
 
 
 def test_room_is_not_available_when_any_slot_is_doing_or_waiting():
@@ -38,3 +40,28 @@ def test_room_is_not_available_when_it_appears_in_web_tour_room_column():
     }
 
     assert _available_rooms_for_tour(rooms, prepared) == ["1", "3"]
+
+
+def test_tour_record_exposes_exact_countdown_deadline_for_room_clock():
+    vn_tz = timezone(timedelta(hours=7))
+    now = datetime(2026, 9, 5, 12, 0, tzinfo=vn_tz)
+    columns = [
+        "STT", "Tên nhân viên", "Trạng thái", "Phòng", "Đi làm", "Vào ca",
+        "Yêu cầu", "Thời lượng", "TG bắt đầu thực hiện",
+    ]
+    source = [{
+        "STT": 1,
+        "Tên nhân viên": "Nhân viên A",
+        "Trạng thái": "Đang thực hiện",
+        "Phòng": 16,
+        "Đi làm": "Đi làm",
+        "Vào ca": "Ca 1",
+        "Yêu cầu": "",
+        "Thời lượng": 60,
+        "TG bắt đầu thực hiện": "05/09/2026 11:40:00",
+    }]
+
+    record = _prepare_tour(columns, source, now)["records"][0]
+
+    assert record["TG CÒN LẠI"] == 40
+    assert datetime.fromisoformat(record["_countdown_deadline"]) == datetime(2026, 9, 5, 12, 40, tzinfo=vn_tz)
