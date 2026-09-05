@@ -2,6 +2,7 @@ import { Activity, Archive, BellRing, CalendarDays, Download, RefreshCw } from '
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
+import VeraDateInput from '../components/VeraDateInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const formatTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value)) : '—'
@@ -185,7 +186,7 @@ export default function AdminChangesPage() {
 
     <section className="panel data-toolbar"><div className="audit-toolbar-content">
       <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
-      {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<input type="date" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<input type="date" min={start} value={end} onChange={(e) => setEnd(e.target.value)}/></label></div>}
+      {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<VeraDateInput aria-label="Đến ngày" min={start} value={end} onChange={(e) => setEnd(e.target.value)}/></label></div>}
       <div className="audit-search-line"><label>Người thực hiện<input type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-total">{data.changes?.length || 0} thay đổi</div></div>
     </div></section>
 

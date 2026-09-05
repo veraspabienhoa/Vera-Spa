@@ -1,6 +1,7 @@
 import { CheckSquare, Download, FileSignature, RefreshCw, Save, Search, Settings2, Square, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { contractApi } from '../lib/contractApi'
+import VeraDateInput from '../components/VeraDateInput'
 
 const scopeOptions = [
   { value: 'selected', label: 'Chọn nhân viên' },
@@ -157,7 +158,7 @@ export default function ContractPage() {
     {canConfigure && settings && <section className="panel contract-settings-panel">
       <div className="panel-title-row"><div><h2><Settings2 size={18} /> Cài đặt Hợp đồng KTV</h2><p>Thay đổi thông tin người đại diện, thời hạn, ngày ký, mức lương và nội dung mẫu.</p></div></div>
       <div className="contract-settings-grid">
-        {settingFields.map(([key, label]) => <label key={key} className={`${key === 'business_address' ? 'span-2' : ''} ${['contract_term', 'signing_date'].includes(key) ? 'contract-highlight-field' : ''}`.trim()}>{label}<input type={key === 'signing_date' ? 'date' : 'text'} value={settings[key] || ''} disabled={!permissions.can_edit_settings} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} /></label>)}
+        {settingFields.map(([key, label]) => <label key={key} className={`${key === 'business_address' ? 'span-2' : ''} ${['contract_term', 'signing_date'].includes(key) ? 'contract-highlight-field' : ''}`.trim()}>{label}{key === 'signing_date' ? <VeraDateInput aria-label={label} value={settings[key] || ''} disabled={!permissions.can_edit_settings} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} /> : <input type="text" value={settings[key] || ''} disabled={!permissions.can_edit_settings} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} />}</label>)}
       </div>
       <label className="contract-template-field">Nội dung mẫu hợp đồng<textarea rows="20" value={settings.template_content || ''} disabled={!permissions.can_edit_template} onChange={(event) => setSettings({ ...settings, template_content: event.target.value })} /></label>
       <details className="contract-placeholders"><summary>Biến tự động có thể dùng trong mẫu</summary><div>{placeholderHelp.map((item) => <code key={item}>{item}</code>)}</div></details>

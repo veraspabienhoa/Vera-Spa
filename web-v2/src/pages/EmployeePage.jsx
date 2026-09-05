@@ -5,7 +5,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
-import EmployeeIdentityPanel, { EmployeeMediaDraftPanel } from './EmployeeIdentityPanel'
+import EmployeeIdentityPanel from './EmployeeIdentityPanel'
+import VeraDateInput from '../components/VeraDateInput'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -16,7 +17,7 @@ const ROLE_LABELS = {
 }
 
 const EMPTY_CREATE = {
-  username: '', password: '', role: 'nhanvien', full_name: '', birth_date: '',
+  username: '', password: 'Vera123456', role: 'nhanvien', full_name: '', birth_date: '',
   gender: '', ethnicity: '', phone: '', email: '', province: '', district: '', ward: '', address_detail: '',
   address: '', bank_account: '', bank_name: '', employment_start_date: '',
   cccd_number: '', cccd_issue_date: '', cccd_issue_place: '',
@@ -138,7 +139,7 @@ export default function EmployeePage({ user }) {
   const [notice, setNotice] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
   const [createForm, setCreateForm] = useState(EMPTY_CREATE)
-  const [createMedia, setCreateMedia] = useState({ portrait: null, front: null, back: null })
+  const [createPasswordVisible, setCreatePasswordVisible] = useState(false)
   const [profileUser, setProfileUser] = useState('')
   const [profileDraft, setProfileDraft] = useState({})
   const [profileScrollRequest, setProfileScrollRequest] = useState(0)
@@ -292,33 +293,17 @@ export default function EmployeePage({ user }) {
   const createStaff = (event) => {
     event.preventDefault()
     run('create', async () => {
-      await staffSecurityApi.validateDraftIdentity(createMedia, createForm.full_name, createForm.cccd_number)
       const payload = {
         ...createForm,
         birth_date: datePayload(createForm.birth_date),
         employment_start_date: datePayload(createForm.employment_start_date),
-        cccd_issue_date: datePayload(createForm.cccd_issue_date),
       }
       const result = await veraApi.createStaff(payload)
-      const mediaWarnings = []
-      for (const side of ['portrait', 'front', 'back']) {
-        if (!createMedia[side]) continue
-        try {
-          await staffSecurityApi.uploadIdentity(payload.username, side, createMedia[side])
-        } catch (mediaError) {
-          mediaWarnings.push(`${side === 'portrait' ? 'ảnh nhân viên' : side === 'front' ? 'mặt trước CCCD' : 'mặt sau CCCD'}: ${mediaError.message}`)
-        }
-      }
       setCreateForm(EMPTY_CREATE)
-      setCreateMedia({ portrait: null, front: null, back: null })
+      setCreatePasswordVisible(false)
       setAddOpen(false)
       await load(true)
-      setNotice({
-        type: mediaWarnings.length ? 'error' : 'success',
-        message: mediaWarnings.length
-          ? `${result.message} Chưa tải được ${mediaWarnings.join('; ')}. Có thể bổ sung trong Hồ sơ nhân viên.`
-          : result.message,
-      })
+      setNotice({ type: 'success', message: result.message })
     })
   }
 
@@ -439,39 +424,17 @@ export default function EmployeePage({ user }) {
       </section>
 
       {addOpen && <section className="panel staff-form-panel">
-        <div className="panel-title-row"><div><h2>THÊM NHÂN VIÊN</h2><p>Mật khẩu chỉ được nhập khi tạo mới và không xuất ra Excel.</p></div></div>
+        <div className="panel-title-row"><div><h2>THÊM NHÂN VIÊN</h2><p>Các trường có dấu <span className="required-star">*</span> là thông tin bắt buộc khi tạo mới. Các thông tin còn lại bổ sung trong phần Sửa hồ sơ.</p></div></div>
         <form className="staff-form-grid" onSubmit={createStaff}>
           <div className="profile-field-section span-2">Thông tin tài khoản</div>
-          <label>Tên nhân viên<input required value={createForm.username} onChange={(event) => setCreateForm({ ...createForm, username: event.target.value })} /></label>
-          <label>Mật khẩu ban đầu (tối thiểu 8 ký tự)<input required minLength={8} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /></label>
-          <label>Phân quyền<select value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value })}>{(data?.role_options || []).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
-          <label>Ngày bắt đầu làm<input type="date" value={createForm.employment_start_date} onChange={(event) => setCreateForm({ ...createForm, employment_start_date: event.target.value })} /></label>
+          <label><span className="required-label">Tên nhân viên <b className="required-star">*</b></span><input required value={createForm.username} onChange={(event) => setCreateForm({ ...createForm, username: event.target.value })} /></label>
+          <label><span className="required-label">Mật khẩu ban đầu (tối thiểu 8 ký tự) <b className="required-star">*</b></span><span className="password-input-wrap"><input required minLength={8} type={createPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /><button type="button" className="password-eye-button" onClick={() => setCreatePasswordVisible((value) => !value)} aria-label={createPasswordVisible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}>{createPasswordVisible ? <EyeOff size={17}/> : <Eye size={17}/>}</button></span></label>
+          <label><span className="required-label">Phân quyền <b className="required-star">*</b></span><select required value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value })}>{(data?.role_options || []).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
+          <label><span className="required-label">Ngày bắt đầu làm <b className="required-star">*</b></span><VeraDateInput required aria-label="Ngày bắt đầu làm" value={createForm.employment_start_date} onChange={(event) => setCreateForm({ ...createForm, employment_start_date: event.target.value })} /></label>
           <div className="profile-field-section span-2">Thông tin cá nhân</div>
-          <label>Họ và tên đầy đủ<input required value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
-          <label>Ngày sinh<input type="date" value={createForm.birth_date} onChange={(event) => setCreateForm({ ...createForm, birth_date: event.target.value })} /></label>
-          <label>Giới tính<select value={createForm.gender} onChange={(event) => setCreateForm({ ...createForm, gender: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
-          <label>Dân tộc<input value={createForm.ethnicity} onChange={(event) => setCreateForm({ ...createForm, ethnicity: event.target.value })} /></label>
-          <div className="profile-field-section span-2">Thông tin định danh</div>
-          <label>Số Căn cước<input required inputMode="numeric" maxLength="12" value={createForm.cccd_number} onChange={(event) => setCreateForm({ ...createForm, cccd_number: event.target.value.replace(/\D/g, '').slice(0, 12) })} /></label>
-          <label>Ngày cấp<input type="date" value={createForm.cccd_issue_date} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_date: event.target.value })} /></label>
-          <label className="span-2">Nơi cấp<input value={createForm.cccd_issue_place} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_place: event.target.value })} /></label>
-          <div className="profile-field-section span-2">Thông tin liên hệ & Địa chỉ</div>
-          <label>Điện thoại<input value={createForm.phone} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} /></label>
-          <label>Email<input type="email" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} /></label>
-          <label>Tỉnh/Thành phố<input value={createForm.province} onChange={(event) => setCreateForm({ ...createForm, province: event.target.value })} /></label>
-          <label>Quận/Huyện<input value={createForm.district} onChange={(event) => setCreateForm({ ...createForm, district: event.target.value })} /></label>
-          <label>Phường/Xã<input value={createForm.ward} onChange={(event) => setCreateForm({ ...createForm, ward: event.target.value })} /></label>
-          <label>Địa chỉ cụ thể (Số nhà, tên đường...)<input value={createForm.address_detail} onChange={(event) => setCreateForm({ ...createForm, address_detail: event.target.value })} /></label>
-          <div className="profile-field-section span-2">Thông tin thanh toán/Ngân hàng</div>
-          <label>Tên ngân hàng<input value={createForm.bank_name} onChange={(event) => setCreateForm({ ...createForm, bank_name: event.target.value })} /></label>
-          <label>Số tài khoản ngân hàng<input value={createForm.bank_account} onChange={(event) => setCreateForm({ ...createForm, bank_account: event.target.value })} /></label>
-          <EmployeeMediaDraftPanel value={createMedia} onChange={setCreateMedia} onIdentityExtracted={(fields) => setCreateForm((current) => ({
-            ...current,
-            full_name: current.full_name || fields.full_name || '',
-            cccd_number: current.cccd_number || fields.cccd_number || '',
-            cccd_issue_date: current.cccd_issue_date || toInputDate(fields.cccd_issue_date) || '',
-            cccd_issue_place: current.cccd_issue_place || fields.cccd_issue_place || '',
-          }))}/>
+          <label><span className="required-label">Họ và tên đầy đủ <b className="required-star">*</b></span><input required value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
+          <label><span className="required-label">Ngày sinh <b className="required-star">*</b></span><VeraDateInput required aria-label="Ngày sinh" value={createForm.birth_date} onChange={(event) => setCreateForm({ ...createForm, birth_date: event.target.value })} /></label>
+          <label><span className="required-label">Giới tính <b className="required-star">*</b></span><select required value={createForm.gender} onChange={(event) => setCreateForm({ ...createForm, gender: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
           <div className="staff-form-actions span-2"><button type="button" className="secondary-button" onClick={() => setAddOpen(false)}>Hủy</button><button className="primary-button" disabled={busy === 'create'}>{busy === 'create' ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />} Thêm nhân viên</button></div>
         </form>
       </section>}
@@ -485,7 +448,8 @@ export default function EmployeePage({ user }) {
               {section.fields.map(([field, label]) => {
                 const isDate = field.includes('date')
                 if (field === 'gender') return <label key={field}>{label}<select value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
-                return <label key={field}>{label}<input type={isDate ? 'date' : 'text'} inputMode={field === 'cccd_number' ? 'numeric' : undefined} maxLength={field === 'cccd_number' ? 12 : undefined} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: field === 'cccd_number' ? event.target.value.replace(/\D/g, '').slice(0, 12) : event.target.value })} /></label>
+                if (isDate) return <label key={field}>{label}<VeraDateInput aria-label={label} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })} /></label>
+                return <label key={field}>{label}<input type="text" inputMode={field === 'cccd_number' ? 'numeric' : undefined} maxLength={field === 'cccd_number' ? 12 : undefined} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: field === 'cccd_number' ? event.target.value.replace(/\D/g, '').slice(0, 12) : event.target.value })} /></label>
               })}
             </div>
           </div>)}
@@ -523,7 +487,7 @@ export default function EmployeePage({ user }) {
                   <td><select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></td>
                   <td><select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></td>
                   <td><select value={draft.work_shift} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'work_shift', event.target.value)}><option value="">Chưa chia ca</option>{shiftsFor(employee).map((shift) => <option key={shift}>{shift}</option>)}</select></td>
-                  <td><input type="date" value={draft.shift_start_date} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'shift_start_date', event.target.value)} /></td>
+                  <td><VeraDateInput aria-label={`Ngày bắt đầu ca ${employee.full_name || employee.username}`} value={draft.shift_start_date} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'shift_start_date', event.target.value)} /></td>
                   <td><select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></td>
                   <td className="center"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} aria-label={`Khóa ${employee.username}`} /></td>
                   <td><button className="text-button staff-edit-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Sửa</button></td>
@@ -543,7 +507,7 @@ export default function EmployeePage({ user }) {
                 <label>Phân quyền<select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
                 <label>Trạng thái<select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></label>
                 <label className="span-2">Ca làm việc<select value={draft.work_shift} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'work_shift', event.target.value)}><option value="">Chưa chia ca</option>{shiftsFor(employee).map((shift) => <option key={shift}>{shift}</option>)}</select></label>
-                <label>Ngày bắt đầu ca<input type="date" value={draft.shift_start_date} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'shift_start_date', event.target.value)} /></label>
+                <label>Ngày bắt đầu ca<VeraDateInput aria-label={`Ngày bắt đầu ca ${employee.full_name || employee.username}`} value={draft.shift_start_date} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'shift_start_date', event.target.value)} /></label>
                 <label>Chu kỳ<select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></label>
                 <label className="staff-lock-field"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} /> Khóa đăng nhập</label>
               </div>

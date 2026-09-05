@@ -86,7 +86,7 @@ jobs:
               'camera can switch front and rear': all(key in identity_ui for key in ('Camera trước', 'Camera sau', 'facingMode: { ideal: facingMode }')),
               'PDF uses full address and conditional end date': '_full_employee_address(row, payload)' in security and 'rows.insert(11, ("Ngày nghỉ việc"' in security,
               'PDF omits internal and bank fields': all(key not in security.split('def _build_employee_profile_pdf', 1)[1].split('def install_staff_security_routes', 1)[0] for key in ('("Tên đăng nhập",', '("Phân quyền",', '("Ca làm việc",', '("Số tài khoản",', '("Ngân hàng",')),
-              'new employee form accepts media': 'EmployeeMediaDraftPanel' in employee_ui,
+              'new employee form only asks for mandatory account fields': all(key in employee_ui for key in ("password: 'Vera123456'", 'createPasswordVisible', 'Mật khẩu ban đầu (tối thiểu 8 ký tự)', 'Ngày bắt đầu làm', 'Họ và tên đầy đủ', 'Ngày sinh', 'Giới tính', 'required-star')) and '<EmployeeMediaDraftPanel' not in employee_ui,
               'profile has ordered demographic and district fields': all(key in profile for key in ('gender', 'ethnicity', 'district')) and all(label in employee_ui for label in ('Thông tin cá nhân', 'Thông tin định danh', 'Thông tin liên hệ & Địa chỉ', 'Thông tin thanh toán/Ngân hàng')),
               'runtime includes Vietnamese OCR and imaging': 'Pillow' in requirements and 'tesseract-ocr-vie' in dockerfile,
           }
@@ -670,7 +670,7 @@ jobs:
               'staff list/create/update/delete endpoints exist': all(route in staff_api for route in ('@app.get("/v2/staff")', '@app.post("/v2/staff")', '@app.patch("/v2/staff/{username}")', '@app.delete("/v2/staff")')),
               'staff Excel endpoints exist': '@app.get("/v2/staff/export.xlsx")' in staff_api and '@app.post("/v2/staff/import.xlsx")' in staff_api,
               'password and token columns are not exported': 'STAFF_EXPORT_COLUMNS' in staff_api and 'Mật khẩu' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0] and 'Remember Token' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0],
-              'new employees require the configured eight-character minimum': 'default="123456"' not in staff_api and 'password: str = Field(min_length=8' in staff_api and 'minLength={8}' in page,
+              'new employees use the requested default and eight-character minimum': 'password: str = Field(default="Vera123456", min_length=8' in staff_api and "password: 'Vera123456'" in page and 'minLength={8}' in page,
               'import updates existing accounts only': 'Không tìm thấy trong hệ thống' in staff_api and 'update_database_row(conn, ident, row, values' in staff_api,
               'employee deletion permanently removes the account and preserves business history': 'Đã xóa vĩnh viễn' in delete_staff_route and 'Toàn bộ lịch sử nghiệp vụ được giữ nguyên' in delete_staff_route and 'DELETE FROM employees WHERE username=:username' in delete_staff_route and '"__deleted": True' not in delete_staff_route and 'DELETE FROM leave_records' not in delete_staff_route,
               'employee deletion is Admin role controlled without hidden permission denial': 'output["employee_delete"] = is_admin' in staff_api and 'output["employee_delete_confirm"] = is_admin' in staff_api and 'require_feature(conn, ident, "employee_delete")' not in delete_staff_route and 'require_feature(conn, ident, "employee_delete_confirm")' not in delete_staff_route,

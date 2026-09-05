@@ -1,6 +1,7 @@
 import { CalendarDays, CheckCircle2, Clock3, RefreshCw, Send, UserRoundCheck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
+import VeraDateInput from './VeraDateInput'
 
 const ANNUAL = 'Nghỉ Phép năm'
 const LONG = 'Nghỉ làm đẹp'
@@ -311,7 +312,7 @@ function DateField({ label, value, min, max, onChange }) {
       <div className="long-leave-date-control">
         <span>{formatDateDisplay(value)}</span>
         <CalendarDays size={17} aria-hidden="true" />
-        <input type="date" value={value} min={min} max={max} onChange={(event) => onChange(event.target.value)} required aria-label={label} />
+        <VeraDateInput value={value} min={min} max={max} onChange={(event) => onChange(event.target.value)} required aria-label={label} />
       </div>
     </label>
   )

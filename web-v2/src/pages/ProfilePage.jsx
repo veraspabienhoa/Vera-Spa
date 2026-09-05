@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
 import EmployeeIdentityPanel from './EmployeeIdentityPanel'
 import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
+import VeraDateInput from '../components/VeraDateInput'
 
 const toInputDate = (value) => {
   const [day, month, year] = String(value || '').split('/')
@@ -121,12 +122,12 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       <form className="profile-form" onSubmit={submit}>
         <div className="profile-field-section wide-field">Thông tin cá nhân</div>
         <label>Họ và tên đầy đủ<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
-        <label>Ngày sinh<input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} /></label>
+        <label>Ngày sinh<VeraDateInput aria-label="Ngày sinh" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} /></label>
         <label>Giới tính<select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
         <label>Dân tộc<input value={form.ethnicity} onChange={(e) => setForm({ ...form, ethnicity: e.target.value })} /></label>
         <div className="profile-field-section wide-field">Thông tin định danh</div>
         <label>Số Căn cước<input inputMode="numeric" maxLength="12" value={form.cccd_number} onChange={(e) => setForm({ ...form, cccd_number: e.target.value.replace(/\D/g, '').slice(0, 12) })} /></label>
-        <label>Ngày cấp<input type="date" value={form.cccd_issue_date} onChange={(e) => setForm({ ...form, cccd_issue_date: e.target.value })} /></label>
+        <label>Ngày cấp<VeraDateInput aria-label="Ngày cấp CCCD" value={form.cccd_issue_date} onChange={(e) => setForm({ ...form, cccd_issue_date: e.target.value })} /></label>
         <label className="wide-field">Nơi cấp<input value={form.cccd_issue_place} onChange={(e) => setForm({ ...form, cccd_issue_place: e.target.value })} /></label>
         <div className="profile-field-section wide-field">Thông tin liên hệ & Địa chỉ</div>
         <label>Điện thoại<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>

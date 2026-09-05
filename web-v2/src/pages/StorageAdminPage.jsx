@@ -1,6 +1,7 @@
 import { CalendarRange, DatabaseBackup, Download, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
+import VeraDateInput from '../components/VeraDateInput'
 
 const dateInput = (value) => {
   const year = value.getFullYear()
@@ -74,7 +75,7 @@ export default function StorageAdminPage() {
       <div className="storage-presets">
         {[['previous_month', 'Tháng trước'], ['current_month', 'Tháng này'], ['previous_year', 'Năm trước'], ['custom', 'Tùy chỉnh']].map(([value, label]) => <button key={value} className={preset === value ? 'active' : ''} onClick={() => choosePreset(value)}>{label}</button>)}
       </div>
-      <div className="storage-dates"><label><CalendarRange size={15} /> Từ ngày<input type="date" value={start} onChange={(event) => { setPreset('custom'); setStart(event.target.value) }} /></label><label><CalendarRange size={15} /> Đến ngày<input type="date" min={start} value={end} onChange={(event) => { setPreset('custom'); setEnd(event.target.value) }} /></label></div>
+      <div className="storage-dates"><label><CalendarRange size={15} /> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(event) => { setPreset('custom'); setStart(event.target.value) }} /></label><label><CalendarRange size={15} /> Đến ngày<VeraDateInput aria-label="Đến ngày" min={start} value={end} onChange={(event) => { setPreset('custom'); setEnd(event.target.value) }} /></label></div>
     </section>
     <div className="metric-grid small storage-metrics">{cards.map((item) => <div className="metric-card" key={item.key}><span>{item.label}</span><strong>{item.count}</strong></div>)}</div>
     <section className="panel storage-actions-grid">

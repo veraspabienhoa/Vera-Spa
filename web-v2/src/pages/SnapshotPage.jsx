@@ -1,6 +1,7 @@
 import { BellRing, CalendarDays, Download, Power, RefreshCw, ScanLine, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
+import VeraDateInput from '../components/VeraDateInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
@@ -308,7 +309,7 @@ export default function SnapshotPage({ user }) {
         <div className="attendance-filter-buttons" role="group" aria-label="Lọc thời gian chấm công">
           {FILTERS.map((item) => <button type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}
         </div>
-        {period === 'Tùy chỉnh' && <div className="attendance-date-custom"><label><CalendarDays size={15} /> Từ ngày<input type="date" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }} /></label><label><CalendarDays size={15} /> Đến ngày<input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label></div>}
+        {period === 'Tùy chỉnh' && <div className="attendance-date-custom"><label><CalendarDays size={15} /> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }} /></label><label><CalendarDays size={15} /> Đến ngày<VeraDateInput aria-label="Đến ngày" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label></div>}
         <div className="attendance-search-grid">
           <label>Tên nhân viên<input type="search" value={filters.employee} onChange={(e) => setFilters({...filters, employee:e.target.value})} placeholder="Tìm tên nhân viên" list="attendance-employees" /></label>
           <label>Bộ phận<input type="search" value={filters.department} onChange={(e) => setFilters({...filters, department:e.target.value})} placeholder="Tìm bộ phận" list="attendance-departments" /></label>

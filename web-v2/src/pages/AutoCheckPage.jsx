@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Activity, CalendarDays, Database, Download, Pause, Play, RefreshCw, ShieldCheck } from 'lucide-react'
 import { veraApi } from '../lib/api'
 import { tourCacheControl } from '../lib/tourCacheControl'
+import VeraDateInput from '../components/VeraDateInput'
 
 const FILTER_OPTIONS = ['Hôm qua', 'Hôm nay', 'Tuần trước', 'Tháng trước', 'Tùy chỉnh']
 
@@ -157,8 +158,8 @@ export default function AutoCheckPage({ user }) {
         {FILTER_OPTIONS.map((filter) => <button key={filter} type="button" className={`secondary-button${timeFilter === filter ? ' active' : ''}`} onClick={() => selectTimeFilter(filter)}>{filter}</button>)}
       </div>
       {timeFilter === 'Tùy chỉnh' && <div className="auto-check-custom">
-        <label>Từ ngày<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-        <label>Đến ngày<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
+        <label>Từ ngày<VeraDateInput aria-label="Từ ngày" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+        <label>Đến ngày<VeraDateInput aria-label="Đến ngày" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
       </div>}
     </div>
 

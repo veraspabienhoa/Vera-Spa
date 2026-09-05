@@ -5,6 +5,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
+import VeraDateInput from '../components/VeraDateInput'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const WEEKDAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
@@ -249,7 +250,7 @@ function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave
       <span>{rows.length.toLocaleString('vi-VN')} lượt trong tháng</span>
     </div>
     {canEdit && <div className="combo-sale-fields">
-      <label>Ngày bán<input type="date" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
+      <label>Ngày bán<VeraDateInput aria-label="Ngày bán" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
       <label>Tên khách hàng<input value={draft.customer_name} onChange={(event) => setDraft({ ...draft, customer_name: event.target.value })} /></label>
       <label>Số điện thoại<input type="tel" inputMode="tel" value={draft.customer_phone} onChange={(event) => setDraft({ ...draft, customer_phone: event.target.value })} /></label>
       <label>Vé combo<input value={draft.combo_ticket} onChange={(event) => setDraft({ ...draft, combo_ticket: event.target.value })} /></label>
@@ -1026,8 +1027,8 @@ export default function WorkSchedulePage({ user }) {
 
     <div className="schedule-filter-bar">{RANGE_FILTERS.map(([mode, label]) => <button type="button" key={mode} className={rangeMode === mode ? 'active' : ''} onClick={() => selectRange(mode)}>{label}</button>)}</div>
     {rangeMode === 'custom' && <div className="schedule-custom-range">
-      <input type="date" value={customStart} onChange={(event) => { const value = event.target.value; setCustomStart(value); if (customEnd < value) setCustomEnd(value) }} />
-      <input type="date" min={customStart} value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} />
+      <VeraDateInput aria-label="Từ ngày" value={customStart} onChange={(event) => { const value = event.target.value; setCustomStart(value); if (customEnd < value) setCustomEnd(value) }} />
+      <VeraDateInput aria-label="Đến ngày" min={customStart} value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} />
     </div>}
 
     <div className="schedule-department-tabs">{availableDepartments.map((item) => <button type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setDepartment(item); setShiftEditorOpen(false) }}>{DEPARTMENT_INFO[item].label}</button>)}</div>
@@ -1047,8 +1048,8 @@ export default function WorkSchedulePage({ user }) {
 
     {pastePanelOpen && selectedCell && <div className="paste-range-panel">
       <label>Nhân viên<input value={systemName(employees.find((item) => item.username === selectedCell.username)) || selectedCell.username} readOnly /></label>
-      <label>Từ ngày<input type="date" value={selectedCell.day} readOnly /></label>
-      <label>Đến ngày<input type="date" min={selectedCell.day} max={rangeEnd} value={pasteEndDay} onChange={(event) => setPasteEndDay(event.target.value)} /></label>
+      <label>Từ ngày<VeraDateInput aria-label="Từ ngày" value={selectedCell.day} readOnly /></label>
+      <label>Đến ngày<VeraDateInput aria-label="Đến ngày" min={selectedCell.day} max={rangeEnd} value={pasteEndDay} onChange={(event) => setPasteEndDay(event.target.value)} /></label>
       <button type="button" className="schedule-save" onClick={applyPasteRange}><ClipboardPaste size={15}/> Áp dụng</button>
     </div>}
     {notice && <div className="schedule-notice">{notice}</div>}

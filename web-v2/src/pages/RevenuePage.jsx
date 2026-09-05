@@ -2,6 +2,7 @@ import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, ExternalLi
 import { useEffect, useMemo, useState } from 'react'
 import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
+import VeraDateInput from '../components/VeraDateInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
@@ -250,7 +251,7 @@ export default function RevenuePage() {
         <div><span className="eyebrow"><FileSpreadsheet size={14}/> Đối chiếu chi mua hàng</span><h2>BÁO CÁO MUA HÀNG ↔ QUẢN LÝ THU CHI</h2><p>So sánh từng ngày: tổng cột Thành Tiền của BaoCaoMuaHang với các dòng Input có B = Chi và nội dung mua hàng, số tiền lấy từ cột C. Chênh lệch từ 1đ đến 5.000đ được xếp GẦN KHỚP; trên 5.000đ là KHÔNG KHỚP.</p></div>
         <div className="reconcile-filter">
           <label>Bộ lọc thời gian<select value={filterPreset} onChange={(event) => setFilterPreset(event.target.value)}>{reconcileFilters.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-          {filterPreset === 'custom' && <><label>Từ ngày<input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} /></label><label>Đến ngày<input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} /></label></>}
+          {filterPreset === 'custom' && <><label>Từ ngày<VeraDateInput aria-label="Từ ngày" value={customStart} onChange={(event) => setCustomStart(event.target.value)} /></label><label>Đến ngày<VeraDateInput aria-label="Đến ngày" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} /></label></>}
         </div>
       </div>
 
