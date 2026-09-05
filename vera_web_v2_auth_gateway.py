@@ -205,13 +205,22 @@ def _auth_user_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _update_auth_user(supabase_url: str, headers: dict[str, str], auth_user_id: str, body: dict[str, Any]) -> dict[str, Any]:
+def _update_auth_user(
+    supabase_url: str,
+    headers: dict[str, str],
+    auth_user_id: str,
+    body: dict[str, Any],
+    *,
+    missing_ok: bool = False,
+) -> dict[str, Any] | None:
     response = _request_with_retry(
         "PUT",
         f"{supabase_url}/auth/v1/admin/users/{auth_user_id}",
         headers=headers,
         payload=body,
     )
+    if missing_ok and response.status_code == 404:
+        return None
     if response.status_code not in {200, 201}:
         _raise_upstream_error(response, default_message="Không cập nhật được tài khoản xác thực VERA.")
     return _auth_user_from_payload(_response_json(response))
@@ -234,8 +243,15 @@ def _create_or_update_auth_user(
         "user_metadata": metadata,
     }
     if auth_user_id:
-        user = _update_auth_user(supabase_url, headers, auth_user_id, body)
-        return str(user.get("id") or auth_user_id)
+        user = _update_auth_user(
+            supabase_url,
+            headers,
+            auth_user_id,
+            body,
+            missing_ok=True,
+        )
+        if user:
+            return str(user.get("id") or auth_user_id)
 
     response = _request_with_retry(
         "POST",

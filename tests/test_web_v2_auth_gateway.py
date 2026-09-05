@@ -13,6 +13,35 @@ class _Response:
         return self._payload
 
 
+def test_stale_profile_auth_id_is_recreated(monkeypatch):
+    calls = []
+
+    def fake_request(method, url, *, headers, json, timeout):
+        calls.append((method, url, json))
+        if method == "PUT" and url.endswith("/auth/v1/admin/users/stale-user-id"):
+            return _Response(404, {"message": "User not found"})
+        if method == "GET" and "/auth/v1/admin/users?" in url:
+            return _Response(200, {"users": []})
+        if method == "POST" and url.endswith("/auth/v1/admin/users"):
+            return _Response(201, {"id": "replacement-user-id"})
+        raise AssertionError(f"Unexpected request: {method} {url}")
+
+    monkeypatch.setattr(gateway._HTTP, "request", fake_request)
+    monkeypatch.setattr(gateway, "_service_role_key", lambda: "service-role-key")
+
+    auth_user_id = gateway._create_or_update_auth_user(
+        supabase_url="https://project.supabase.co",
+        supabase_anon_key="public-key",
+        auth_user_id="stale-user-id",
+        internal_email="vera-user@users.veraspa.local",
+        ephemeral_password="temporary-password",
+        metadata={"employee_username": "admin"},
+    )
+
+    assert auth_user_id == "replacement-user-id"
+    assert [call[0] for call in calls] == ["PUT", "POST"]
+
+
 def _client():
     app = FastAPI()
     gateway.install_auth_gateway(
