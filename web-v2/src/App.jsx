@@ -33,12 +33,16 @@ const rememberActivePage = (user, page) => {
   try { window.localStorage.setItem(activePageStorageKey(user), page) } catch { /* storage may be unavailable in private mode */ }
 }
 
-const isStandaloneTourRequest = () => {
+const readStandalonePageRequest = () => {
   try {
     const params = new URLSearchParams(window.location.search)
-    return params.get('page') === 'tour' && params.get('standalone') === '1'
+    const requestedPage = params.get('page')
+    return {
+      enabled: params.get('standalone') === '1' && VALID_PAGES.has(requestedPage),
+      page: VALID_PAGES.has(requestedPage) ? requestedPage : '',
+    }
   } catch {
-    return false
+    return { enabled: false, page: '' }
   }
 }
 
@@ -69,7 +73,7 @@ const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentP
 const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollPanel'))
 const ContractPage = lazyPage(() => import('./pages/ContractPage'))
 export default function App() {
-  const [standaloneTourRequest] = useState(isStandaloneTourRequest)
+  const [standaloneRequest] = useState(readStandalonePageRequest)
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(isAuthConfigured)
@@ -93,7 +97,7 @@ export default function App() {
         if (!me?.employee_username || me?.is_active === false) throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
         if (mounted) {
           setProfile(me)
-          setPage(me.must_change_password ? 'profile' : standaloneTourRequest ? 'tour' : readActivePage(nextSession.user))
+          setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readActivePage(nextSession.user))
         }
       } catch (err) {
         if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await signOutVera(); setSession(null) }
@@ -104,7 +108,7 @@ export default function App() {
     })
     const unsubscribe = onVeraAuthStateChange((_event, nextSession) => applySession(nextSession))
     return () => { mounted = false; unsubscribe() }
-  }, [standaloneTourRequest])
+  }, [standaloneRequest])
 
   // Every authenticated account keeps an already-approved Web Push endpoint
   // synchronized with the backend. This is especially important on iPhone:
@@ -142,10 +146,10 @@ export default function App() {
   // signOutVera keeps the Supabase fallback local-only: signOut({ scope: 'local' }).
   const signOut = async () => { setProfile(null); if (session) await signOutVera() }
   const changePage = (nextPage) => {
-    if (standaloneTourRequest && nextPage !== 'tour') {
+    if (standaloneRequest.enabled) {
       const url = new URL(window.location.href)
-      url.searchParams.delete('standalone')
-      url.searchParams.delete('page')
+      url.searchParams.set('standalone', '1')
+      url.searchParams.set('page', nextPage)
       window.history.replaceState({}, '', url)
     }
     rememberActivePage(user, nextPage)
@@ -167,7 +171,7 @@ export default function App() {
   if (!shellUser) return <div className="boot-screen">Đang xác minh hồ sơ VERA SPA…</div>
 
   return (
-    <AppShell user={shellUser} currentPage={page} standalone={standaloneTourRequest && page === 'tour'} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
+    <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
       <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
         {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}

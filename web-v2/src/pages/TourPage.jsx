@@ -296,7 +296,7 @@ export default function TourPage({ user }) {
     return () => { mounted = false }
   }, [isAdmin, showAdminTools])
 
-  const openStandaloneTour = () => {
+  const openTourInNewTab = () => {
     const url = new URL(window.location.href)
     url.searchParams.set('page', 'tour')
     url.searchParams.set('standalone', '1')
@@ -503,7 +503,7 @@ export default function TourPage({ user }) {
           <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
           <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
         </div>
-        <div className="tour-heading-actions">{isAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><Link2 size={16} /> {showAdminTools ? 'Ẩn Link & màu dòng' : 'Hiện Link & màu dòng'}</button>}<button type="button" className="secondary-button" onClick={openStandaloneTour}><ExternalLink size={16} /> Mở tab riêng</button>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div>
+        <div className="tour-heading-actions">{isAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><Link2 size={16} /> {showAdminTools ? 'Ẩn Link & màu dòng' : 'Hiện Link & màu dòng'}</button>}<button type="button" className="secondary-button" onClick={openTourInNewTab}><ExternalLink size={16} /> Mở tab mới</button>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div>
       </div>
       {error && <div className="error-box">{error}</div>}
       {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}

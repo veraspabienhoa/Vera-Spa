@@ -9,7 +9,8 @@ def test_department_payroll_has_dedicated_menu_and_route():
     app = (ROOT / "web-v2/src/App.jsx").read_text(encoding="utf-8")
     payroll = (ROOT / "web-v2/src/pages/PayrollPageV38.jsx").read_text(encoding="utf-8")
     panel = (ROOT / "web-v2/src/pages/DepartmentPayrollPanel.jsx").read_text(encoding="utf-8")
-    assert "id: 'department-payroll', label: 'Lương bộ phận'" in shell
+    assert "id: 'payroll', label: 'Lương KTV'" in shell
+    assert "id: 'department-payroll', label: 'HC'" in shell
     assert "page === 'department-payroll' && <DepartmentPayrollPanel" in app
     assert "import DepartmentPayrollPanel" not in payroll
     assert "Chọn tất cả có email" in panel
