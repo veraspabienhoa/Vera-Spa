@@ -2,14 +2,19 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
-const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
+// api.veraspa.vn is the canonical production backend. Keep an env override for
+// local/staging builds, but never let a production browser silently fall back
+// to calling the Supabase Edge Function directly when the API has a transient
+// error. That fallback hid the real backend failure behind the generic SDK
+// message "Failed to send a request to the Edge Function".
+const apiBase = (import.meta.env.VITE_VERA_API_BASE_URL?.trim() || 'https://api.veraspa.vn').replace(/\/$/, '')
 const API_SESSION_KEY = 'vera-v2-api-auth-session'
 const apiAuthListeners = new Set()
 let refreshPromise = null
 let volatileApiSession = null
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
-export const isAuthConfigured = Boolean(apiBase || isSupabaseConfigured)
+export const isAuthConfigured = Boolean(apiBase)
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
@@ -61,7 +66,6 @@ const clearApiSession = () => {
 }
 
 const apiAuthRequest = async (path, body) => {
-  if (!apiBase) throw new Error('Máy chủ VERA chưa được cấu hình.')
   const response = await fetch(`${apiBase}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -76,48 +80,22 @@ const apiAuthRequest = async (path, body) => {
   return payload
 }
 
-const directSupabaseLogin = async (username, password) => {
-  if (!supabase) throw new Error('Supabase chưa được cấu hình.')
-  const { data: bridge, error: bridgeError } = await supabase.functions.invoke('vera-v2-login', {
-    body: { username, password },
-  })
-  if (bridgeError) {
-    let detail = bridgeError.message
-    try {
-      const responseBody = await bridgeError.context?.json?.()
-      detail = responseBody?.message || detail
-    } catch {
-      // Keep the SDK error message when the Edge Function response has no JSON body.
-    }
-    throw new Error(detail || 'Không xác thực được tài khoản VERA.')
-  }
-  if (!bridge?.email || !bridge?.password) {
-    throw new Error(bridge?.message || 'Không xác thực được tài khoản VERA.')
-  }
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: bridge.email,
-    password: bridge.password,
-  })
-  if (error) throw error
-  clearApiSession()
-  return data.session
-}
-
 export async function signInWithVeraPassword(username, password) {
   const cleanUsername = String(username || '').trim()
   if (!cleanUsername || !password) throw new Error('Vui lòng nhập tên đăng nhập và mật khẩu.')
 
-  if (apiBase) {
-    try {
-      const payload = await apiAuthRequest('/v2/auth/login', { username: cleanUsername, password })
-      return saveApiSession(payload)
-    } catch (error) {
-      // Invalid/locked/inactive accounts must not be retried through another path.
-      if (Number(error?.status || 0) >= 400 && Number(error?.status || 0) < 500) throw error
-      if (!supabase) throw error
+  try {
+    const payload = await apiAuthRequest('/v2/auth/login', { username: cleanUsername, password })
+    return saveApiSession(payload)
+  } catch (error) {
+    // Authentication is owned by api.veraspa.vn. Do not retry through the
+    // browser-facing Edge Function: it creates a second failure mode and can
+    // replace a useful API error with a generic network message.
+    if (error instanceof TypeError) {
+      throw new Error('Không kết nối được máy chủ VERA. Vui lòng thử lại sau ít phút.')
     }
+    throw error
   }
-  return directSupabaseLogin(cleanUsername, password)
 }
 
 const refreshApiSession = async (session) => {
