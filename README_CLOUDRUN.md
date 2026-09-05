@@ -132,6 +132,7 @@ Quan trọng:
 - `DB_NAME`
 - `DB_USER`
 - `DB_PASS`
+- `DB_SSLMODE=require` cho mọi kết nối PostgreSQL qua TCP
 - `INSTANCE_CONNECTION_NAME`
 - `SMTP_APP_PASSWORD`
 

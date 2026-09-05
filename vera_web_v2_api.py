@@ -106,6 +106,10 @@ def _engine_instance():
             pool_pre_ping=True,
             pool_size=int(os.getenv("DB_POOL_SIZE", "2")),
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "0")),
+            connect_args={
+                "connect_timeout": max(3, int(os.getenv("DB_CONNECT_TIMEOUT", "10"))),
+                "sslmode": os.getenv("DB_SSLMODE", "require").strip() or "require",
+            },
             # Keep healthy pooler connections longer.  Recreating a connection
             # repeatedly triggers PostgreSQL timezone-catalog discovery.
             pool_recycle=max(3600, int(os.getenv("DB_POOL_RECYCLE", "3600"))),

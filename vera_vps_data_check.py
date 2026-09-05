@@ -22,6 +22,8 @@ SAFE_ENV_KEYS = {
     "DB_PASS",
     "DB_POOL_SIZE",
     "DB_MAX_OVERFLOW",
+    "DB_CONNECT_TIMEOUT",
+    "DB_SSLMODE",
 }
 TABLES = (
     "employees",
@@ -74,7 +76,14 @@ def main() -> None:
     if not environment:
         raise SystemExit("DATA CHECK FAILED: running Web V2 API process was not found or is not readable")
 
-    engine = create_engine(_database_url(environment), pool_pre_ping=True)
+    engine = create_engine(
+        _database_url(environment),
+        pool_pre_ping=True,
+        connect_args={
+            "connect_timeout": max(3, int(environment.get("DB_CONNECT_TIMEOUT", "10"))),
+            "sslmode": environment.get("DB_SSLMODE", "require").strip() or "require",
+        },
+    )
     existing = set(inspect(engine).get_table_names())
     counts: dict[str, int | None] = {}
     with engine.connect() as connection:

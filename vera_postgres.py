@@ -71,9 +71,9 @@ def _build_database_url() -> str:
             direct = "postgresql+psycopg://" + direct[len("postgresql://"):]
         return direct
 
-    user = quote_plus(str(os.getenv("DB_USER", "vera_app")))
+    user = quote_plus(str(os.getenv("DB_USER", "vera_dev")))
     password = quote_plus(str(os.getenv("DB_PASS", "")))
-    db_name = quote_plus(str(os.getenv("DB_NAME", "vera_spa")))
+    db_name = quote_plus(str(os.getenv("DB_NAME", "veraspa")))
     instance = str(os.getenv("INSTANCE_CONNECTION_NAME", "")).strip()
     host = str(os.getenv("DB_HOST", "")).strip()
     port = str(os.getenv("DB_PORT", "5432")).strip() or "5432"
@@ -82,7 +82,7 @@ def _build_database_url() -> str:
         socket_dir = f"/cloudsql/{instance}"
         return f"postgresql+psycopg://{user}:{password}@/{db_name}?host={quote_plus(socket_dir)}"
     if not host:
-        host = "127.0.0.1"
+        host = "160.236.192.51"
     return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db_name}"
 
 
@@ -97,6 +97,13 @@ def get_engine() -> Engine:
     recycle = max(3600, int(os.getenv("DB_POOL_RECYCLE", "3600")))
     connect_timeout = max(3, int(os.getenv("DB_CONNECT_TIMEOUT", "10")))
 
+    connect_args: dict[str, Any] = {"connect_timeout": connect_timeout}
+    # Cloud SQL Unix sockets handle transport security outside libpq. Every
+    # normal TCP connection must use TLS; callers may tighten this further with
+    # verify-ca/verify-full through DB_SSLMODE.
+    if not str(os.getenv("INSTANCE_CONNECTION_NAME", "")).strip():
+        connect_args["sslmode"] = str(os.getenv("DB_SSLMODE", "require")).strip() or "require"
+
     engine = create_engine(
         _build_database_url(),
         pool_pre_ping=True,
@@ -104,7 +111,7 @@ def get_engine() -> Engine:
         max_overflow=max_overflow,
         pool_timeout=timeout,
         pool_recycle=recycle,
-        connect_args={"connect_timeout": connect_timeout},
+        connect_args=connect_args,
         future=True,
     )
     ensure_schema(engine)
