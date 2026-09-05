@@ -49,7 +49,7 @@ steps:
       - "--command=uvicorn"
       - "--args=vera_web_v2_api_v38:app,--host,0.0.0.0,--port,8080"
       - "--set-env-vars=^@^DB_HOST=${_DB_HOST}@DB_PORT=${_DB_PORT}@DB_NAME=${_DB_NAME}@DB_USER=${_DB_USER}@DB_POOL_SIZE=2@DB_MAX_OVERFLOW=0@DB_POOL_RECYCLE=600@SUPABASE_URL=https://nunxfjhrszmlyyrvphuq.supabase.co@SUPABASE_ANON_KEY=${_SUPABASE_ANON_KEY}@VERA_LEAVE_SHEET_ID=1Kz0aw-JatptAN9G7YSwZ6rJO09urOPaD-rS-18eZSY0@VERA_V2_CORS_ORIGINS=https://app.veraspa.vn,https://veraspabienhoa.github.io@SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com"
-      - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,SMTP_APP_PASSWORD=vera-smtp-app-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest"
+      - "--set-secrets=DB_PASS=${_DB_SECRET}:latest,SMTP_APP_PASSWORD=vera-smtp-app-password:latest,TIMESOFT_USERNAME=vera-timesoft-username:latest,TIMESOFT_PASSWORD=vera-timesoft-password:latest,SUPABASE_SERVICE_ROLE_KEY=vera-supabase-service-role-key:latest"
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: "health-check-web-v2-api"
@@ -130,7 +130,7 @@ steps:
                     last=RuntimeError(f'Unexpected TourVera leave sync health payload: {body}')
             except Exception as exc:
                 last=exc
-                print(f'TourVera leave sync health attempt {attempt}/12 failed: {exc}', file=sys.stderr)
+                print(f'TourVera leave sync attempt {attempt}/12 failed: {exc}', file=sys.stderr)
             time.sleep(5)
         raise SystemExit(f'TourVera leave sync health check failed: {last}')
         PY
