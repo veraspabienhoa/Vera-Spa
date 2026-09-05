@@ -1,0 +1,63 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    id: "build-neon-migration-image"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/vera-neon-migrate:$BUILD_ID"
+      - "."
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: "push-neon-migration-image"
+    args:
+      - "push"
+      - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/vera-neon-migrate:$BUILD_ID"
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "deploy-neon-migration-job"
+    args:
+      - "run"
+      - "jobs"
+      - "deploy"
+      - "${_MIGRATION_JOB}"
+      - "--image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/vera-neon-migrate:$BUILD_ID"
+      - "--region=${_REGION}"
+      - "--service-account=${_RUN_SERVICE_ACCOUNT}"
+      - "--cpu=1"
+      - "--memory=2Gi"
+      - "--task-timeout=3600s"
+      - "--max-retries=0"
+      - "--tasks=1"
+      - "--parallelism=1"
+      - "--command=python"
+      - "--args=neon_migrate_from_supabase.py"
+      - "--set-env-vars=^@^DB_HOST=${_DB_HOST}@DB_PORT=${_DB_PORT}@DB_NAME=${_DB_NAME}@DB_USER=${_DB_USER}@DB_SSLMODE=require@NEON_DB_HOST=${_NEON_DB_HOST}@NEON_DB_PORT=5432@NEON_DB_NAME=neondb@NEON_DB_USER=neondb_owner@NEON_DB_SSLMODE=require"
+      - "--set-secrets=DB_PASS=${_DB_SECRET}:latest"
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "execute-neon-migration-job"
+    args:
+      - "run"
+      - "jobs"
+      - "execute"
+      - "${_MIGRATION_JOB}"
+      - "--region=${_REGION}"
+      - "--wait"
+
+substitutions:
+  _REGION: "asia-southeast1"
+  _AR_REPO: "vera-spa"
+  _MIGRATION_JOB: "vera-spa-neon-migration-test"
+  _RUN_SERVICE_ACCOUNT: "vera-spa-run@vera-hr-app.iam.gserviceaccount.com"
+  _DB_HOST: "aws-0-ap-southeast-1.pooler.supabase.com"
+  _DB_PORT: "5432"
+  _DB_NAME: "postgres"
+  _DB_USER: "postgres.nunxfjhrszmlyyrvphuq"
+  _DB_SECRET: "vera-supabase-db-password"
+  _NEON_DB_HOST: "ep-muddy-forest-b3bg5crr.c-4.ap-southeast-1.aws.neon.tech"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/vera-neon-migrate:$BUILD_ID"
