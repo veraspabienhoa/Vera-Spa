@@ -76,3 +76,24 @@ def test_desktop_employee_table_expands_to_show_all_rows():
 
     assert ".tour-records-panel .tour-table{max-height:none;overflow-x:auto;overflow-y:visible}" in source
     assert ".tour-records-panel .tour-table{max-height:calc(100vh" not in source
+
+
+def test_tour_metric_boxes_follow_the_requested_two_row_order():
+    source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
+    labels = (
+        "Có thể lên tua", "Đang thực hiện", "Số nhân viên", "Nghỉ phép",
+        "Sắp xong", "Đang chờ", "Đi làm", "Nghỉ giữa Ca",
+    )
+
+    positions = [source.index(f"label: '{label}'") for label in labels]
+    assert positions == sorted(positions)
+    assert 'className="tour-customer-count"' not in source
+
+
+def test_desktop_employee_header_stays_fixed_without_vertical_table_scroll():
+    source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
+
+    assert "--tour-table-head-offset" in source
+    assert "stickyRect.bottom + 4 - tableRect.top" in source
+    assert "ref={recordsTableRef}" in source
+    assert ".tour-records-panel .tour-table{max-height:none" in source

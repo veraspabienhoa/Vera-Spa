@@ -154,11 +154,6 @@ function groupCount(records, key) {
   return records.reduce((count, record) => count + (hasGroup(record, key) ? 1 : 0), 0)
 }
 
-function numberValue(value) {
-  const parsed = Number(String(value ?? '').replace(/[^0-9-]/g, ''))
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
 function employeeCountFromStt(records, columns) {
   const values = records.map((record) => sttValue(record, columns)).filter(Boolean)
   return new Set(values).size
@@ -253,6 +248,8 @@ export default function TourPage({ user }) {
   const [tourSourceDraft, setTourSourceDraft] = useState('')
   const [tourSourceBusy, setTourSourceBusy] = useState(false)
   const [tourSourceNotice, setTourSourceNotice] = useState({ text: '', error: false })
+  const stickyTopRef = useRef(null)
+  const recordsTableRef = useRef(null)
   const load = useCallback(async (refresh = false, quiet = false) => {
     if (!quiet) setBusy(true)
     setError('')
@@ -336,6 +333,41 @@ export default function TourPage({ user }) {
     () => prioritizeRecords(searchedRecords, columns, activeFilter),
     [activeFilter, columns, searchedRecords],
   )
+  useEffect(() => {
+    let frame = 0
+    const updateStickyTableHeader = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        const table = recordsTableRef.current
+        const stickyTop = stickyTopRef.current
+        if (!table || !stickyTop || window.matchMedia('(max-width: 640px)').matches) {
+          table?.style.removeProperty('--tour-table-head-offset')
+          return
+        }
+        const tableRect = table.getBoundingClientRect()
+        const stickyRect = stickyTop.getBoundingClientRect()
+        const headerHeight = table.querySelector('thead')?.getBoundingClientRect().height || 0
+        const requestedOffset = Math.max(0, stickyRect.bottom + 4 - tableRect.top)
+        const maximumOffset = Math.max(0, tableRect.height - headerHeight)
+        table.style.setProperty(
+          '--tour-table-head-offset',
+          `${Math.min(requestedOffset, maximumOffset)}px`,
+        )
+      })
+    }
+    const observer = new ResizeObserver(updateStickyTableHeader)
+    if (recordsTableRef.current) observer.observe(recordsTableRef.current)
+    if (stickyTopRef.current) observer.observe(stickyTopRef.current)
+    window.addEventListener('scroll', updateStickyTableHeader, { passive: true })
+    window.addEventListener('resize', updateStickyTableHeader)
+    updateStickyTableHeader()
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('scroll', updateStickyTableHeader)
+      window.removeEventListener('resize', updateStickyTableHeader)
+    }
+  }, [columns, displayedRecords.length])
   const availableRooms = useMemo(
     () => (Array.isArray(data.available_rooms) ? data.available_rooms : []),
     [data.available_rooms],
@@ -387,20 +419,14 @@ export default function TourPage({ user }) {
   const retainedMetric = data.metric_snapshots?.[shiftFilter] || null
   const breakTotal = retainedMetric?.break_total_count ?? retainedMetric?.break_count ?? groupCount(shiftRecords, 'break')
   const breakActive = retainedMetric?.break_active_count ?? groupCount(shiftRecords, 'break')
-  const customerCount = useMemo(() => {
-    if (retainedMetric && Number.isFinite(Number(retainedMetric.customer_count))) return Number(retainedMetric.customer_count)
-    const totalColumn = findColumn(columns, ['TONG SL', 'TONG SO LUONG'])
-    return shiftRecords.reduce((sum, record) => sum + numberValue(record[totalColumn]), 0)
-      + groupCount(shiftRecords, 'waiting')
-  }, [columns, retainedMetric, shiftRecords])
   const metrics = useMemo(() => [
     { key: 'available', label: 'Có thể lên tua', value: groupCount(shiftRecords, 'available'), className: 'tour-available-metric' },
-    { key: 'all', label: 'Số nhân viên', value: employeeCountFromStt(shiftRecords, columns), className: '' },
-    { key: 'finishing', label: 'Sắp xong', value: groupCount(shiftRecords, 'finishing'), className: '' },
-    { key: 'working', label: 'Đi làm', value: groupCount(shiftRecords, 'working'), className: '' },
-    { key: 'waiting', label: 'Đang chờ', value: groupCount(shiftRecords, 'waiting'), className: '' },
-    { key: 'leave', label: 'Nghỉ phép', value: groupCount(shiftRecords, 'leave'), className: '' },
     { key: 'doing', label: 'Đang thực hiện', value: groupCount(shiftRecords, 'doing'), className: '' },
+    { key: 'all', label: 'Số nhân viên', value: employeeCountFromStt(shiftRecords, columns), className: '' },
+    { key: 'leave', label: 'Nghỉ phép', value: groupCount(shiftRecords, 'leave'), className: '' },
+    { key: 'finishing', label: 'Sắp xong', value: groupCount(shiftRecords, 'finishing'), className: '' },
+    { key: 'waiting', label: 'Đang chờ', value: groupCount(shiftRecords, 'waiting'), className: '' },
+    { key: 'working', label: 'Đi làm', value: groupCount(shiftRecords, 'working'), className: '' },
     { key: 'break', label: 'Nghỉ giữa Ca', value: `${breakTotal}-${breakActive}`, className: 'tour-break-metric' },
   ], [breakActive, breakTotal, columns, shiftRecords])
   const chooseFilter = (key) => setActiveFilter((current) => key === 'all' || current === key ? 'all' : key)
@@ -416,7 +442,6 @@ export default function TourPage({ user }) {
       .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
       .tour-shift-filter{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;margin:0}
       .tour-shift-filter button{min-width:66px;padding:5px 9px;border-radius:8px;font-size:10px}
-      .tour-customer-count{display:inline-flex;align-items:center;gap:4px;min-height:29px;padding:0 9px;border:1px solid #dfe8e3;border-radius:8px;background:#fff;color:#455d53;font-size:10px;font-weight:850;white-space:nowrap}.tour-customer-count strong{color:#126147;font-size:17px}
       .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.tour-heading-actions button{min-height:34px;padding:6px 10px;font-size:10px}
       .tour-control-layout{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);gap:4px;align-items:stretch}
       .tour-control-layout .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
@@ -427,7 +452,7 @@ export default function TourPage({ user }) {
       .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}
       .tour-room-segment-button svg{width:15px;height:15px}.tour-room-segment-button span{font-size:9px;line-height:1}.tour-room-segment-button small{color:inherit;font-size:7px;opacity:.88}
       .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
-      .tour-table-panel{padding:5px}.tour-table th{padding-top:5px;padding-bottom:5px}.tour-table td{padding-top:5px;padding-bottom:5px}.tour-records-panel{min-height:0}.tour-records-panel .tour-table{max-height:none;overflow-x:auto;overflow-y:visible}
+      .tour-table-panel{padding:5px}.tour-table th{padding-top:5px;padding-bottom:5px}.tour-table td{padding-top:5px;padding-bottom:5px}.tour-records-panel{min-height:0}.tour-records-panel .tour-table{max-height:none;overflow-x:auto;overflow-y:visible}.tour-records-panel .tour-table thead{position:relative;z-index:7;transform:translateY(var(--tour-table-head-offset,0));will-change:transform}.tour-records-panel .tour-table th{position:static}
       .tour-quick-tools{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:3px 0 0}.tour-employee-search{position:relative;flex:1 1 260px;max-width:360px}.tour-employee-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.tour-employee-search input{width:100%;height:27px;padding:4px 7px 4px 27px;box-sizing:border-box;font-size:9px}
       .tour-room-panel{margin:0;padding:5px;border:1px solid #cfe1d8;border-radius:9px;background:#f3faf6}.tour-room-panel-head{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:3px}.tour-room-panel-title{display:flex;align-items:center;gap:4px;color:#173c30;font-size:11px;font-weight:900}.tour-room-panel-head small{min-width:160px;color:#3f574c;font-size:15px;font-weight:950;line-height:1;text-align:center}.tour-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px}
       .tour-room-card{--room-segment:#155b78;width:100%;min-width:0;min-height:53px;display:grid;align-content:space-between;gap:1px;border:1px solid rgba(0,0,0,.13);border-radius:7px;padding:4px;color:inherit;background:#fff;text-align:left;appearance:none;box-shadow:inset 0 2px 0 var(--room-segment),0 2px 5px rgba(28,52,42,.06);transition:transform .16s ease,box-shadow .16s ease}.tour-room-card.vip{--room-segment:#b58a31;border:3px solid #c59a3d;padding:2px;box-shadow:inset 0 2px 0 #f3cf72,0 2px 7px rgba(130,92,19,.16)}.tour-room-card:hover{transform:translateY(-1px);box-shadow:inset 0 2px 0 var(--room-segment),0 5px 10px rgba(28,52,42,.11)}.tour-room-card.vip:hover{box-shadow:inset 0 2px 0 #f3cf72,0 5px 11px rgba(130,92,19,.24)}.tour-room-card.selected{outline:2px solid #173c30;outline-offset:1px}.tour-room-card.vip.selected{outline-color:#9b6e16}
@@ -462,14 +487,13 @@ export default function TourPage({ user }) {
         .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       }
     `}</style>
-    <div className="tour-sticky-top">
+    <div className="tour-sticky-top" ref={stickyTopRef}>
       <div className="tour-topbar">
         <div className="tour-heading-title"><span className="eyebrow"><Compass size={14} /> Vận hành</span><h1>BẢNG TUA</h1></div>
         <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca">
           <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
           <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
           <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
-          {isAdmin && <span className="tour-customer-count">Số khách: <strong>{customerCount}</strong></span>}
         </div>
         <div className="tour-heading-actions"><button type="button" className="secondary-button" onClick={openStandaloneTour}><ExternalLink size={16} /> Mở tab riêng</button>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div>
       </div>
@@ -519,7 +543,7 @@ export default function TourPage({ user }) {
       </section>
     </div>
     <section className="panel tour-table-panel tour-records-panel">
-      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
+      <div className="responsive-data-table tour-table" ref={recordsTableRef} tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
     {isAdmin && <section className="panel tour-source-panel">
