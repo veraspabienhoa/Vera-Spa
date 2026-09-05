@@ -102,7 +102,10 @@ def get_engine() -> Engine:
     # normal TCP connection must use TLS; callers may tighten this further with
     # verify-ca/verify-full through DB_SSLMODE.
     if not str(os.getenv("INSTANCE_CONNECTION_NAME", "")).strip():
-        connect_args["sslmode"] = str(os.getenv("DB_SSLMODE", "require")).strip() or "require"
+        sslmode = str(os.getenv("DB_SSLMODE", "require")).strip().lower() or "require"
+        if sslmode not in {"require", "verify-ca", "verify-full"}:
+            sslmode = "require"
+        connect_args["sslmode"] = sslmode
 
     engine = create_engine(
         _build_database_url(),

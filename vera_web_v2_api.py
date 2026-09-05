@@ -114,6 +114,9 @@ def _engine_instance():
             "postgresql+psycopg", username=user, password=password,
             host=host, port=port, database=database,
         )
+        sslmode = os.getenv("DB_SSLMODE", "require").strip().lower() or "require"
+        if sslmode not in {"require", "verify-ca", "verify-full"}:
+            sslmode = "require"
         _engine = create_engine(
             url,
             pool_pre_ping=True,
@@ -121,7 +124,7 @@ def _engine_instance():
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "0")),
             connect_args={
                 "connect_timeout": max(3, int(os.getenv("DB_CONNECT_TIMEOUT", "10"))),
-                "sslmode": os.getenv("DB_SSLMODE", "require").strip() or "require",
+                "sslmode": sslmode,
             },
             # Keep healthy pooler connections longer.  Recreating a connection
             # repeatedly triggers PostgreSQL timezone-catalog discovery.

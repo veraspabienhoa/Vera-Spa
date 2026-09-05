@@ -14,8 +14,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import pwd
 import re
 import secrets
+import stat
 import threading
 import unicodedata
 import uuid
@@ -45,12 +47,53 @@ REQUIRED_STORE_COLUMNS = {
 _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{48,160}$")
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
+_LOCAL_AUTH_MARKER_CONTENT = b"postgres-local-v1\n"
+
+
+def _secure_local_auth_marker_enabled() -> bool:
+    """Read the deploy-owned, non-secret VPS cutover marker safely."""
+    try:
+        runtime_home = pwd.getpwuid(os.getuid()).pw_dir
+        marker_path = os.path.join(
+            runtime_home,
+            ".config",
+            "vera-spa",
+            "web-v2-local-auth.enabled",
+        )
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(marker_path, flags)
+    except (KeyError, OSError):
+        return False
+
+    try:
+        marker_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(marker_stat.st_mode):
+            return False
+        if marker_stat.st_uid != os.getuid():
+            return False
+        if stat.S_IMODE(marker_stat.st_mode) != 0o600:
+            return False
+        if marker_stat.st_size != len(_LOCAL_AUTH_MARKER_CONTENT):
+            return False
+        return os.read(descriptor, len(_LOCAL_AUTH_MARKER_CONTENT) + 1) == _LOCAL_AUTH_MARKER_CONTENT
+    except OSError:
+        return False
+    finally:
+        os.close(descriptor)
+
+
+_LOCAL_AUTH_MARKER_ENABLED = _secure_local_auth_marker_enabled()
 
 
 def local_auth_enabled() -> bool:
-    """Return true only when this service was explicitly switched to local auth."""
-    provider = str(os.getenv("VERA_AUTH_PROVIDER") or "supabase").strip().lower()
-    return provider in {"local", "postgres", "postgresql", "vps"}
+    """Return true for an explicit provider or the secure VPS cutover marker."""
+    # An explicit service-manager policy remains authoritative.  Only a runtime
+    # with no provider setting can be switched through the host-local marker;
+    # Cloud Run therefore keeps its existing Supabase default.
+    if "VERA_AUTH_PROVIDER" in os.environ:
+        provider = str(os.getenv("VERA_AUTH_PROVIDER") or "").strip().lower()
+        return provider in {"local", "postgres", "postgresql", "vps"}
+    return _LOCAL_AUTH_MARKER_ENABLED
 
 
 def _bounded_env_seconds(name: str, default: int, minimum: int, maximum: int) -> int:

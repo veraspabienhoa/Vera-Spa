@@ -12,6 +12,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import URL
 
+from vera_web_v2_local_auth import local_auth_enabled
 from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_environment
 
 
@@ -98,19 +99,21 @@ def main() -> None:
     if not environment:
         raise SystemExit("DATA CHECK FAILED: managed settings and running API environment are unavailable")
 
+    sslmode = environment.get("DB_SSLMODE", "require").strip().lower() or "require"
+    if sslmode not in {"require", "verify-ca", "verify-full"}:
+        sslmode = "require"
     engine = create_engine(
         _database_url(environment),
         pool_pre_ping=True,
         connect_args={
             "connect_timeout": max(3, int(environment.get("DB_CONNECT_TIMEOUT", "10"))),
-            "sslmode": environment.get("DB_SSLMODE", "require").strip() or "require",
+            "sslmode": sslmode,
         },
     )
     inspector = inspect(engine)
     existing = set(inspector.get_table_names())
-    provider = str(environment.get("VERA_AUTH_PROVIDER") or "").strip().lower()
-    if provider != "local":
-        raise SystemExit("DATA CHECK FAILED: running API did not inherit VERA_AUTH_PROVIDER=local")
+    if not local_auth_enabled():
+        raise SystemExit("DATA CHECK FAILED: PostgreSQL local Auth is not active")
     if LOCAL_AUTH_STORE_TABLE not in existing:
         raise SystemExit(f"DATA CHECK FAILED: missing {LOCAL_AUTH_STORE_TABLE}")
     auth_columns = {str(item["name"]) for item in inspector.get_columns(LOCAL_AUTH_STORE_TABLE)}

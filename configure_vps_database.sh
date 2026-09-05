@@ -54,7 +54,6 @@ fi
 echo "DATABASE CONFIG: API runtime scope=$service_scope unit=${service_unit:-none}"
 protect_home=""
 environment_files=""
-service_environment_path=""
 if [[ -n "$service_unit" ]]; then
   if environment_files=$("${service_ctl[@]}" show "$service_unit" --property=EnvironmentFiles --value 2>/dev/null); then
     echo "DATABASE CONFIG: API EnvironmentFiles=${environment_files:-none}"
@@ -64,16 +63,6 @@ if [[ -n "$service_unit" ]]; then
   service_user=$("${service_ctl[@]}" show "$service_unit" --property=User --value 2>/dev/null || true)
   protect_home=$("${service_ctl[@]}" show "$service_unit" --property=ProtectHome --value 2>/dev/null || true)
   echo "DATABASE CONFIG: API unit user=${service_user:-default} protect_home=${protect_home:-unknown}"
-  if [[ "$environment_files" =~ ^([^[:space:]]+)[[:space:]]+\(ignore_errors=(yes|no)\)$ ]]; then
-    environment_candidate=${BASH_REMATCH[1]}
-    if [[ "$environment_candidate" =~ ^/[A-Za-z0-9_./@:+-]+$ \
-      && "$environment_candidate" != *"/../"* \
-      && "$environment_candidate" != */.. \
-      && -f "$environment_candidate" \
-      && ! -L "$environment_candidate" ]]; then
-      service_environment_path=$environment_candidate
-    fi
-  fi
 fi
 deploy_uid=$(id -u)
 api_uid=$(stat -c '%u' "/proc/$pid" 2>/dev/null || true)
@@ -94,19 +83,27 @@ fi
 environment_dir=$runtime_home/.config/vera-spa
 environment_path=$environment_dir/web-v2-api.env
 staged_environment_path=$environment_dir/.web-v2-api.env.$$
+auth_marker_path=$environment_dir/web-v2-local-auth.enabled
+staged_auth_marker_path=$environment_dir/.web-v2-local-auth.enabled.$$
 work_dir=$(mktemp -d)
 had_environment_file=0
+had_auth_marker=0
 configuration_changed=none
 restart_attempted=0
 
 cleanup() {
-  rm -f -- "$staged_environment_path"
+  rm -f -- "$staged_environment_path" "$staged_auth_marker_path"
   rm -rf -- "$work_dir"
 }
 
 install_environment_file() {
   install -m 600 "$1" "$staged_environment_path"
   mv -f -- "$staged_environment_path" "$environment_path"
+}
+
+install_auth_marker() {
+  install -m 600 "$1" "$staged_auth_marker_path"
+  mv -f -- "$staged_auth_marker_path" "$auth_marker_path"
 }
 
 rollback() {
@@ -118,22 +115,24 @@ rollback() {
   fi
   trap - ERR HUP INT TERM
   echo "DATABASE CONFIG: validation failed at stage=$validation_stage; restoring previous API environment" >&2
-  if [[ "$configuration_changed" == service ]]; then
-    if ! cp -- "$work_dir/service-environment.previous" "$service_environment_path"; then
-      echo "DATABASE CONFIG ROLLBACK FAILED: could not restore system service EnvironmentFile" >&2
+  if [[ "$configuration_changed" == marker ]]; then
+    if [[ "$had_auth_marker" == 1 ]]; then
+      if ! install_auth_marker "$work_dir/auth-marker.previous"; then
+        echo "DATABASE CONFIG ROLLBACK FAILED: could not restore local Auth marker" >&2
+        rollback_failed=1
+      fi
+    elif ! rm -f -- "$auth_marker_path"; then
+      echo "DATABASE CONFIG ROLLBACK FAILED: could not remove local Auth marker" >&2
       rollback_failed=1
     fi
-  elif [[ "$configuration_changed" == private ]]; then
     if [[ "$had_environment_file" == 1 ]]; then
       if ! install_environment_file "$work_dir/environment.previous"; then
-        echo "DATABASE CONFIG ROLLBACK FAILED: could not restore managed environment file" >&2
+        echo "DATABASE CONFIG ROLLBACK FAILED: could not restore private fallback environment" >&2
         rollback_failed=1
       fi
-    else
-      if ! rm -f -- "$environment_path"; then
-        echo "DATABASE CONFIG ROLLBACK FAILED: could not remove managed environment file" >&2
-        rollback_failed=1
-      fi
+    elif ! rm -f -- "$environment_path"; then
+      echo "DATABASE CONFIG ROLLBACK FAILED: could not remove private fallback environment" >&2
+      rollback_failed=1
     fi
   fi
   if [[ "$restart_attempted" == 1 ]]; then
@@ -167,33 +166,34 @@ trap cleanup EXIT
 
 mkdir -p -- "$environment_dir"
 chmod 700 "$environment_dir"
-if [[ -f "$environment_path" ]]; then
+if [[ -e "$environment_path" || -L "$environment_path" ]]; then
+  if [[ ! -f "$environment_path" || -L "$environment_path" ]]; then
+    echo "DATABASE CONFIG FAILED: unsafe private fallback environment path" >&2
+    exit 1
+  fi
   cp -- "$environment_path" "$work_dir/environment.previous"
   had_environment_file=1
 fi
-
-systemd_quote() {
-  local value=$1
-  value=${value//\\/\\\\}
-  value=${value//\"/\\\"}
-  printf '"%s"' "$value"
-}
-
-write_database_environment() {
-  printf 'VERA_DB_ENABLED=1\n'
-  printf 'VERA_DATA_BACKEND=postgres\n'
-  printf 'DB_HOST=%s\n' "$(systemd_quote "$db_host")"
-  printf 'DB_PORT=%s\n' "$(systemd_quote "$db_port")"
-  printf 'DB_NAME=%s\n' "$(systemd_quote "$db_name")"
-  printf 'DB_USER=%s\n' "$(systemd_quote "$db_user")"
-  printf 'DB_PASS=%s\n' "$(systemd_quote "$db_pass")"
-  printf 'DB_SSLMODE=require\n'
-  printf 'DB_CONNECT_TIMEOUT=10\n'
-  printf 'VERA_AUTH_PROVIDER=local\n'
-}
+if [[ -e "$auth_marker_path" || -L "$auth_marker_path" ]]; then
+  if [[ ! -f "$auth_marker_path" || -L "$auth_marker_path" ]]; then
+    echo "DATABASE CONFIG FAILED: unsafe local Auth marker path" >&2
+    exit 1
+  fi
+  auth_marker_uid=$(stat -c '%u' "$auth_marker_path" 2>/dev/null || true)
+  auth_marker_mode=$(stat -c '%a' "$auth_marker_path" 2>/dev/null || true)
+  if [[ "$auth_marker_uid" != "$deploy_uid" \
+    || "$auth_marker_mode" != 600 \
+    || ! -r "$auth_marker_path" ]] \
+    || ! cmp -s -- "$auth_marker_path" <(printf 'postgres-local-v1\n'); then
+    echo "DATABASE CONFIG FAILED: existing local Auth marker is invalid" >&2
+    exit 1
+  fi
+  cp -- "$auth_marker_path" "$work_dir/auth-marker.previous"
+  had_auth_marker=1
+fi
 
 # Phase 1: prove the existing PostgreSQL runtime store supports Auth CRUD before
-# the service manager is switched away from Supabase Auth. A failure here leaves
+# the API is switched away from Supabase Auth. A failure here leaves
 # the currently running provider untouched and triggers the rollback handler.
 validation_stage=preflight
 test -f "$local_auth_migrator"
@@ -208,45 +208,75 @@ export DB_SSLMODE=require
 export DB_CONNECT_TIMEOUT=10
 /opt/vera-spa/.venv/bin/python "$local_auth_migrator"
 
-export VERA_AUTH_PROVIDER=local
-
-if [[ -n "$service_environment_path" ]]; then
-  service_readable=no
-  service_writable=no
-  [[ -r "$service_environment_path" ]] && service_readable=yes
-  [[ -w "$service_environment_path" ]] && service_writable=yes
-  echo "DATABASE CONFIG: API EnvironmentFile readable=$service_readable writable=$service_writable"
-fi
-if [[ -n "$service_environment_path" \
-  && -r "$service_environment_path" \
-  && -w "$service_environment_path" ]]; then
-  cp -- "$service_environment_path" "$work_dir/service-environment.previous"
-  configuration_changed=service
-  {
-    printf '\n# VERA SPA managed PostgreSQL local Auth settings\n'
-    write_database_environment
-  } >> "$service_environment_path"
-  echo "DATABASE CONFIG: system service EnvironmentFile updated"
-elif [[ "$service_scope" == system && -n "$environment_files" ]]; then
-  echo "DATABASE CONFIG FAILED: API system EnvironmentFile is not safely readable and writable" >&2
+# The local Auth probe and the live API must target the same database.  The
+# service may intentionally use a different, more privileged database role, so
+# compare endpoint identity only and never print credentials or values.
+declare -A api_database_environment=()
+api_provider_present=0
+while IFS= read -r -d '' entry; do
+  key=${entry%%=*}
+  case "$key" in
+    DB_HOST|DB_PORT|DB_NAME)
+      api_database_environment["$key"]=${entry#*=}
+      ;;
+    VERA_AUTH_PROVIDER)
+      api_provider_present=1
+      api_provider_value=${entry#*=}
+      ;;
+  esac
+done < "/proc/$pid/environ"
+api_database_mismatches=()
+[[ "${api_database_environment[DB_HOST]:-}" == "$db_host" ]] || api_database_mismatches+=(DB_HOST)
+[[ "${api_database_environment[DB_PORT]:-5432}" == "$db_port" ]] || api_database_mismatches+=(DB_PORT)
+[[ "${api_database_environment[DB_NAME]:-postgres}" == "$db_name" ]] || api_database_mismatches+=(DB_NAME)
+if (( ${#api_database_mismatches[@]} > 0 )); then
+  echo "DATABASE CONFIG FAILED: live API database endpoint mismatch: ${api_database_mismatches[*]}" >&2
   false
-else
-  write_database_environment > "$work_dir/web-v2-api.env"
-  configuration_changed=private
-  install_environment_file "$work_dir/web-v2-api.env"
-  echo "DATABASE CONFIG: private managed runtime file installed"
 fi
+echo "DATABASE CONFIG: live API database endpoint matches the verified target"
+if [[ "$api_provider_present" == 1 ]]; then
+  api_provider_normalized=${api_provider_value,,}
+  if [[ ! "$api_provider_normalized" =~ ^[[:space:]]*(local|postgres|postgresql|vps)[[:space:]]*$ ]]; then
+    echo "DATABASE CONFIG FAILED: explicit API Auth provider policy does not permit marker cutover" >&2
+    false
+  fi
+  echo "DATABASE CONFIG: explicit API Auth provider already permits local Auth"
+else
+  echo "DATABASE CONFIG: API Auth provider is eligible for secure marker cutover"
+fi
+
+# The production system EnvironmentFile is root-managed.  Activate only Auth
+# through a strict, non-secret marker owned by the API/deployment account; keep
+# the service's already-working database credentials unchanged.  Removing the
+# earlier full environment fallback also avoids changing unrelated data modes.
+validation_stage=cutover
+printf 'postgres-local-v1\n' > "$work_dir/web-v2-local-auth.enabled"
+configuration_changed=marker
+rm -f -- "$environment_path"
+install_auth_marker "$work_dir/web-v2-local-auth.enabled"
+echo "DATABASE CONFIG: secure PostgreSQL local Auth marker installed"
 
 validation_stage=prestart
 (
+  trap - ERR
+  unset VERA_AUTH_PROVIDER
   cd -- "$script_dir"
-  /opt/vera-spa/.venv/bin/python - <<'PY'
-from vera_web_v2_local_auth import local_auth_enabled
-import vera_web_v2_api_v38
+  timeout 45 /opt/vera-spa/.venv/bin/python - <<'PY'
+import sys
 
+try:
+    from vera_web_v2_runtime_env import load_managed_runtime_environment
+    from vera_web_v2_local_auth import local_auth_enabled
+    loaded = load_managed_runtime_environment()
+except Exception as exc:
+    print(f"RUNTIME PRESTART FAILED: {type(exc).__name__}", file=sys.stderr)
+    raise SystemExit(1)
+
+if loaded:
+    raise SystemExit("RUNTIME PRESTART FAILED: stale private database environment was loaded")
 if not local_auth_enabled():
-    raise SystemExit("API PRESTART FAILED: PostgreSQL local Auth is not active")
-print("API PRESTART: application imports with PostgreSQL local Auth")
+    raise SystemExit("RUNTIME PRESTART FAILED: secure local Auth marker is not active")
+print("RUNTIME PRESTART: secure PostgreSQL local Auth marker verified")
 PY
 )
 
@@ -255,9 +285,8 @@ restart_attempted=1
 /opt/vera-spa/deploy.sh "$deploy_sha"
 echo "DATABASE CONFIG: deploy completed; waiting for local Auth health"
 
-# Phase 2: the API receives the managed settings from its system EnvironmentFile
-# when writable, or loads the private fallback before importing application
-# modules. Verify the exact release and its live Auth endpoint.
+# Phase 2: the API keeps its existing database settings and reads the non-secret
+# provider marker. Verify the exact release and its live Auth endpoint.
 validation_stage=health
 test "$(git -C "$script_dir" rev-parse HEAD)" = "$deploy_sha"
 new_pid=""
@@ -309,4 +338,4 @@ test -f "$data_checker"
 /opt/vera-spa/.venv/bin/python "$data_checker"
 
 trap - ERR HUP INT TERM
-echo "DATABASE CONFIG: PostgreSQL SSL and local Auth environment applied and verified"
+echo "DATABASE CONFIG: PostgreSQL SSL and local Auth cutover applied and verified"

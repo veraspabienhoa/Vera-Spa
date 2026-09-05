@@ -100,6 +100,7 @@ jobs:
           local_auth = Path('vera_web_v2_local_auth.py').read_text(encoding='utf-8')
           gateway = Path('vera_web_v2_auth_gateway.py').read_text(encoding='utf-8')
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
+          postgres = Path('vera_postgres.py').read_text(encoding='utf-8')
           client = Path('web-v2/src/lib/supabase.js').read_text(encoding='utf-8')
           deploy = Path('configure_vps_database.sh').read_text(encoding='utf-8')
           workflow = Path('.github/workflows/deploy-vps.yml').read_text(encoding='utf-8')
@@ -146,11 +147,22 @@ jobs:
                   'os.environ.update(parsed)',
                   'os.environ.pop(key, None)',
               )),
-              'post-deploy data check uses the managed environment': all(item in data_check for item in (
+              'local Auth marker is owner-only exact-content and no-follow': all(item in local_auth for item in (
+                  'web-v2-local-auth.enabled',
+                  'getattr(os, "O_NOFOLLOW", 0)',
+                  'marker_stat.st_uid != os.getuid()',
+                  'stat.S_IMODE(marker_stat.st_mode) != 0o600',
+                  'postgres-local-v1\\n',
+              )) and (
+                  local_auth.index('if "VERA_AUTH_PROVIDER" in os.environ:')
+                  < local_auth.index('return _LOCAL_AUTH_MARKER_ENABLED')
+              ),
+              'post-deploy data check follows the effective Auth provider': all(item in data_check for item in (
                   'load_managed_runtime_environment()',
                   'for key in RUNTIME_ENV_KEYS',
+                  'if not local_auth_enabled():',
               )),
-              'login switches on explicit local provider': 'if local_auth_enabled()' in gateway,
+              'login switches on effective local provider': 'if local_auth_enabled()' in gateway,
               'local login bootstraps employees without Supabase profiles': (
                   'local_auth_user_id(username)' in gateway_functions.get('_create_local_session', '')
               ),
@@ -168,7 +180,10 @@ jobs:
               'local logout revokes its session': '@app.post("/v2/auth/logout")' in gateway,
               'API rejects cross-provider access tokens': 'if not is_local_access_token(token)' in api,
               'password changes revoke local sessions': 'revoke_local_sessions' in Path('vera_web_v2_profile.py').read_text(encoding='utf-8'),
-              'deploy activates local provider after store validation': deploy.index('/opt/vera-spa/.venv/bin/python "$local_auth_migrator"') < deploy.index('export VERA_AUTH_PROVIDER=local'),
+              'deploy activates local provider after store validation': (
+                  deploy.index('/opt/vera-spa/.venv/bin/python "$local_auth_migrator"')
+                  < deploy.index('install_auth_marker "$work_dir/web-v2-local-auth.enabled"')
+              ),
               'deploy verifies live PostgreSQL Auth health': all(item in deploy for item in (
                   'http://127.0.0.1:8000/v2/auth/health',
                   'payload.get("provider") != "postgres-local"',
@@ -177,12 +192,28 @@ jobs:
                   'systemctl --user import-environment' not in deploy
                   and 'API and deployment account ownership do not match' in deploy
               ),
-              'deploy prefers the API system service EnvironmentFile': all(item in deploy for item in (
+              'deploy preserves root-managed service settings and uses a rollback-safe marker': all(item in deploy for item in (
                   '--property=EnvironmentFiles',
-                  'write_database_environment',
-                  '>> "$service_environment_path"',
-                  'service-environment.previous',
+                  'secure PostgreSQL local Auth marker installed',
+                  'auth-marker.previous',
+                  'rm -f -- "$environment_path"',
+              )) and '>> "$service_environment_path"' not in deploy,
+              'deploy checks target database and explicit provider before marker cutover': all(item in deploy for item in (
+                  'live API database endpoint mismatch',
+                  'DB_HOST|DB_PORT|DB_NAME',
+                  'explicit API Auth provider policy does not permit marker cutover',
               )),
+              'API enforces TLS even when a legacy environment requests a weaker mode': all(
+                  item in source
+                  for source in (api, postgres, data_check)
+                  for item in ('{"require", "verify-ca", "verify-full"}', 'sslmode = "require"')
+              ),
+              'deploy prestart validation is bounded and side-effect free': all(item in deploy for item in (
+                  'trap - ERR',
+                  'timeout 45',
+                  'from vera_web_v2_runtime_env import load_managed_runtime_environment',
+                  'from vera_web_v2_local_auth import local_auth_enabled',
+              )) and 'import vera_web_v2_api_v38' not in deploy,
               'deploy selects scripts from active release': all(item in workflow for item in (
                   'readlink -f',
                   '${release_dir}/configure_vps_database.sh',
