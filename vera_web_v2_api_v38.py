@@ -25,6 +25,7 @@ from vera_web_v2_attendance_break_dispatch import install_attendance_break_dispa
 from vera_web_v2_attendance_policy_patch import install_attendance_policy_patch
 from vera_web_v2_department_attendance import install_department_attendance_routes
 from vera_web_v2_department_payroll import install_department_payroll_routes
+from vera_web_v2_contracts import install_contract_1_routes
 from vera_web_v2_break_alert_control import install_break_alert_control
 from vera_web_v2_break_return_penalty import install_break_return_penalty
 from vera_web_v2_auto_check import install_auto_check_routes
@@ -130,6 +131,7 @@ install_payroll_personal_routes(_shared.app, engine_instance=_api._engine_instan
 install_accumulation_permission(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, api_module=_api)
 install_payroll_saved_edit_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
 install_staff_security_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
+install_contract_1_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, norm=_api._norm, identity_type=_api.Identity)
 install_staff_status_sort(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)

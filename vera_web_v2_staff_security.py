@@ -233,12 +233,34 @@ def _extract_cccd_fields(data: bytes) -> dict[str, str]:
         # nhãn “Nơi cấp / Place of issue”. Chuẩn hóa về tên cơ quan cấp.
         place = "Cục Cảnh sát quản lý hành chính về trật tự xã hội"
 
+    def labeled_value(label: str, stops: str) -> str:
+        match = re.search(
+            rf"(?:{label})\s*[:\-]?\s*(.+?)(?=\n\s*(?:{stops})\b|$)",
+            clean,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            return ""
+        value = re.sub(r"\s+", " ", match.group(1)).strip(" .,:;-")
+        return value[:1000]
+
+    place_of_origin = labeled_value(
+        r"qu[eê]\s*qu[aá]n(?:\s*/\s*place\s*of\s*origin)?|place\s*of\s*origin",
+        r"n[oơ]i\s*thường\s*tr[uú]|place\s*of\s*residence|nơi\s*cấp|date\s*of\s*issue|c[oó]\s*gi[aá]\s*tr[iị]",
+    )
+    permanent_address = labeled_value(
+        r"n[oơ]i\s*thường\s*tr[uú](?:\s*/\s*place\s*of\s*residence)?|đ[iị]a\s*ch[iỉ]\s*thường\s*tr[uú]|place\s*of\s*residence|permanent\s*residence",
+        r"c[oó]\s*gi[aá]\s*tr[iị]|date\s*of\s*expiry|đ[aặ]c\s*đi[eể]m\s*nh[aậ]n\s*d[aạ]ng|personal\s*identification|nơi\s*cấp|date\s*of\s*issue",
+    )
+
     return {
         key: value for key, value in {
             "full_name": full_name,
             "cccd_number": number_match.group(1) if number_match else "",
             "cccd_issue_date": issue_date,
             "cccd_issue_place": place,
+            "place_of_origin": place_of_origin,
+            "permanent_address": permanent_address,
         }.items() if value
     }
 
@@ -319,6 +341,8 @@ def _apply_extracted_cccd(conn, row: dict[str, Any], extracted: dict[str, str]) 
         "cccd_number": "Số CCCD",
         "cccd_issue_date": "Ngày cấp CCCD",
         "cccd_issue_place": "Nơi cấp CCCD",
+        "place_of_origin": "Quê quán CCCD",
+        "permanent_address": "Địa chỉ thường trú CCCD",
     }
     applied = {}
     for field, payload_key in key_map.items():

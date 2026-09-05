@@ -15,7 +15,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -67,6 +67,7 @@ const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
 const WorkSchedulePage = lazyPage(() => import('./pages/WorkSchedulePage'))
 const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentPayrollSettingsPage'))
 const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollPanel'))
+const ContractPage = lazyPage(() => import('./pages/ContractPage'))
 export default function App() {
   const [standaloneTourRequest] = useState(isStandaloneTourRequest)
   const [session, setSession] = useState(null)
@@ -177,6 +178,7 @@ export default function App() {
           <LongLeaveSection key={longLeaveRevision} user={shellUser} />
         </>}
         {page === 'employees' && <><EmployeePage user={shellUser} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
+        {page === 'contract-1' && <ContractPage user={shellUser} />}
         {page === 'rules' && <><RulesPage user={shellUser} /><LetanLeavePolicyRules /></>}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}

@@ -687,6 +687,32 @@ tr:last-child td { border-bottom: 0; }
 .rules-table input[type="checkbox"] { min-width: 0; width: 17px; height: 17px; padding: 0; accent-color: var(--green-800); }
 .rules-mobile-list { display: none; }
 
+.contract-page { display: grid; gap: 18px; }
+.contract-export-panel, .contract-settings-panel { padding: 20px; }
+.contract-count { flex: 0 0 auto; padding: 7px 11px; border: 1px solid #c8dbd1; border-radius: 999px; color: var(--green-800); background: #eff7f2; font-size: 12px; font-weight: 900; }
+.contract-scope-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.contract-scope-tabs button { min-height: 42px; border: 1px solid var(--line); border-radius: 10px; color: #45574e; background: #f7f9f8; font-weight: 800; }
+.contract-scope-tabs button.active { border-color: #1d5843; color: white; background: #1d5843; }
+.contract-employee-picker { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(280px, 1.2fr); gap: 12px; }
+.contract-employee-picker label, .contract-department, .contract-settings-grid label, .contract-template-field { min-width: 0; display: grid; gap: 6px; color: #4b5b53; font-size: 11px; font-weight: 800; }
+.contract-employee-picker select, .contract-department select, .contract-settings-grid input, .contract-template-field textarea { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; color: var(--ink); background: white; font: inherit; }
+.contract-search { position: relative; }
+.contract-search svg { position: absolute; left: 12px; bottom: 13px; color: #708178; }
+.contract-search input { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px 11px 38px; }
+.contract-department { max-width: 480px; }
+.contract-all-note { padding: 13px; border: 1px solid #d8e4dd; border-radius: 10px; color: #50635a; background: #f6faf8; font-size: 12px; }
+.contract-export-actions, .contract-save-actions { display: flex; align-items: center; gap: 12px; margin-top: 15px; }
+.contract-export-actions small { color: var(--muted); }
+.contract-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.contract-settings-grid .span-2 { grid-column: 1 / -1; }
+.contract-template-field { margin-top: 16px; }
+.contract-template-field textarea { min-height: 360px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; }
+.contract-placeholders { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; color: #50635a; background: #fafcfb; font-size: 12px; }
+.contract-placeholders summary { cursor: pointer; font-weight: 900; }
+.contract-placeholders div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.contract-placeholders code { padding: 4px 6px; border-radius: 6px; color: #174735; background: #e9f3ed; font-size: 10px; }
+.contract-settings-panel input:disabled, .contract-template-field textarea:disabled { color: #75837d; background: #f1f4f2; cursor: not-allowed; }
+
 @media (max-width: 1050px) {
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
   .content-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "registration" "statistics" "list"; }
@@ -720,6 +746,17 @@ tr:last-child td { border-bottom: 0; }
   .page-wrap { padding: 14px 8px 24px; }
   .weekend-unpaid-nth-content { align-items: stretch; flex-direction: column; gap: 11px; }
   .weekend-unpaid-nth-content button { width: 100%; }
+  .contract-page { gap: 12px; }
+  .contract-export-panel, .contract-settings-panel { padding: 12px 10px; }
+  .contract-export-panel .panel-title-row { align-items: flex-start; }
+  .contract-count { padding: 6px 8px; font-size: 9px; }
+  .contract-scope-tabs { grid-template-columns: 1fr; gap: 6px; }
+  .contract-scope-tabs button { min-height: 38px; font-size: 10px; }
+  .contract-employee-picker, .contract-settings-grid { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .contract-settings-grid .span-2 { grid-column: auto; }
+  .contract-export-actions, .contract-save-actions { align-items: stretch; flex-direction: column; }
+  .contract-export-actions button, .contract-save-actions button { width: 100%; }
+  .contract-template-field textarea { min-height: 300px; font-size: 10px; }
   .page-heading-row { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
   .page-title { margin: 0; font-size: 33px; }
   .page-heading-row .secondary-button { width: auto; margin-left: auto; padding: 9px 11px; white-space: nowrap; }

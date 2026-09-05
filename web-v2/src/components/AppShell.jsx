@@ -1,4 +1,4 @@
-import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, FileSignature, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
@@ -14,6 +14,7 @@ const items = [
   { id: 'payroll-config', label: 'Cấu hình lương', icon: Settings2, ready: true, permission: 'payroll_config_edit', adminOnly: true },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
+  { id: 'contract-1', label: 'Hợp đồng số 1', icon: FileSignature, ready: true, permission: 'contract_1_view' },
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
   { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
   { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck, ready: true, permission: 'permission_admin' },
