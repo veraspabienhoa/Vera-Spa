@@ -109,3 +109,20 @@ def test_desktop_employee_header_stays_fixed_without_vertical_table_scroll():
     assert "stickyRect.bottom + 4 - tableRect.top" in source
     assert "ref={recordsTableRef}" in source
     assert ".tour-records-panel .tour-table{max-height:none" in source
+
+
+def test_private_service_badge_vip_19_and_admin_tools_are_compact():
+    source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
+    shell = (ROOT / "web-v2/src/components/AppShell.jsx").read_text(encoding="utf-8")
+
+    assert "function isPrivateService(value)" in source
+    assert "records.some((item) => isPrivateService(cellValue(item, serviceColumn)))" in source
+    assert 'className="tour-room-private-badge"' in source
+    assert ">PR</span>" in source
+    assert ".tour-room-detail.vip-19{max-height:none;overflow:visible}" in source
+    assert "roomKey(selectedRoom) === '19' ? 'vip-19'" in source
+    assert "const [showAdminTools, setShowAdminTools] = useState(false)" in source
+    assert "isAdmin && showAdminTools" in source
+    assert "Hiện Link & màu dòng" in source
+    assert "currentPage === 'tour' ? 'tour-page-wrap'" in shell
+    assert ".page-wrap.tour-page-wrap{padding-top:4px}" in source
