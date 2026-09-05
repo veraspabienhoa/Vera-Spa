@@ -512,7 +512,7 @@ function DraftMediaSide({ title, value, onChange, aspectRatio, mediaLabel, onExt
           const fields = result.extracted_fields || {}
           if (Object.keys(fields).length) {
             onExtracted?.(fields)
-            setOcrNote(`Đã tự điền ${Object.keys(fields).length} trường CCCD còn trống.`)
+            setOcrNote(`Đã nhận dạng ${Object.keys(fields).length} trường. Khi lưu, hệ thống sẽ đối chiếu Họ tên và Số Căn cước.`)
           } else setOcrNote('Không đọc được chữ; có thể nhập tay hoặc thử ảnh rõ hơn.')
         } catch (error) {
           setOcrNote(`Không thể tự đọc CCCD (${error.message}). Ảnh vẫn được giữ để lưu.`)
@@ -527,7 +527,7 @@ export function EmployeeMediaDraftPanel({ value, onChange, onIdentityExtracted }
   const media = value || { portrait: null, front: null, back: null }
   const update = (side, blob) => onChange({ ...media, [side]: blob })
   return <div className="employee-media-draft span-2">
-    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH HỒ SƠ KHI TẠO NHÂN VIÊN</h3><p>Có thể chụp trực tiếp hoặc upload. Ảnh nhân viên luôn được căn tỷ lệ 3:4; ảnh CCCD sẽ tự đọc và điền ngay Số CCCD, Ngày cấp, Nơi cấp nếu các ô còn trống.</p></div></div>
+    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH HỒ SƠ KHI TẠO NHÂN VIÊN</h3><p>Bắt buộc có ảnh nhân viên 3:4 và đủ hai mặt CCCD. Hệ thống tự điền ô còn trống, sau đó đối chiếu Họ tên và Số Căn cước trước khi cho lưu.</p></div></div>
     <div className="employee-media-draft-grid">
       <DraftMediaSide title="Ảnh nhân viên" value={media.portrait} onChange={(blob) => update('portrait', blob)} aspectRatio={PORTRAIT_ASPECT_RATIO} mediaLabel="Hồ sơ"/>
       <DraftMediaSide title="Mặt trước CCCD" value={media.front} onChange={(blob) => update('front', blob)} aspectRatio={CCCD_ASPECT_RATIO} mediaLabel="CCCD" onExtracted={onIdentityExtracted}/>
@@ -582,7 +582,7 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
     `}</style>
     <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3><p>Ảnh hiển thị theo tỷ lệ dọc 3:4. Nhân viên có thể upload hoặc chụp trực tiếp với khung căn hình.</p></div></div>
     <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowPasswordReset}/><div className="employee-portrait-help"><strong>Tiêu chuẩn ảnh</strong>Canh khuôn mặt rõ, đủ sáng, không che mặt. Hệ thống tự crop đúng tỷ lệ 3:4 và nén trước khi lưu. Ảnh này được đưa vào file Excel và PDF hồ sơ.</div></div>
-    <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3><p>Ảnh CCCD được bảo vệ, chỉ chính nhân viên và Admin được xem. Sau khi lưu, nhân viên không thể xóa; Admin có thể mở ảnh đã lưu để Crop, xoay và lưu lại. Hệ thống tự nhận dạng Số CCCD, Ngày cấp và Nơi cấp khi đọc được rõ.</p></div></div>
+    <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3><p>Ảnh CCCD được bảo vệ, chỉ chính nhân viên và Admin được xem. Sau khi lưu, nhân viên không thể xóa; Admin có thể Crop, xoay và lưu lại. Khi bấm Lưu hồ sơ, hệ thống bắt buộc Họ tên và Số Căn cước đọc từ ảnh phải khớp thông tin đã khai.</p></div></div>
     <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.includes('front')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset} allowAdminEdit={allowPasswordReset} onExtracted={onIdentityExtracted}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.includes('back')} onChanged={run} setNotice={setNotice} allowDownload={allowPasswordReset} allowAdminEdit={allowPasswordReset} onExtracted={onIdentityExtracted}/></div>
     <div className="employee-profile-export"><button type="button" className="secondary-button" onClick={exportPdf} disabled={busy === 'profile-pdf'}>{busy === 'profile-pdf' ? <LoaderCircle className="spin" size={16}/> : <FileDown size={16}/>} Xuất PDF hồ sơ nhân viên</button></div>
     {allowPasswordReset && <div className="employee-password-reset"><div className="employee-password-reset-head"><KeyRound size={17}/><div><h4>RESET MẬT KHẨU NHÂN VIÊN</h4><p>Bấm Reset để tự động đặt mật khẩu mặc định và xóa phiên đăng nhập cũ.</p></div></div><div className="employee-password-reset-grid"><div className="employee-password-default"><span>Mật khẩu mặc định</span><strong>{DEFAULT_RESET_PASSWORD}</strong></div><button type="button" className="primary-button employee-password-submit" onClick={resetPassword} disabled={busy === 'password'}>{busy === 'password' ? <LoaderCircle className="spin" size={16}/> : <KeyRound size={16}/>} Reset mật khẩu</button></div></div>}

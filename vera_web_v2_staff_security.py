@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import unicodedata
 from typing import Any, Callable
 from urllib.parse import quote
 from xml.sax.saxutils import escape
@@ -40,7 +41,7 @@ from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
 
 
-STAFF_SECURITY_RELEASE = "4.3-employee-media-ocr-pdf-fixes"
+STAFF_SECURITY_RELEASE = "4.4-employee-identity-match"
 MAX_IDENTITY_BYTES = 700 * 1024
 IDENTITY_SIDES = {"front": "Mặt trước", "back": "Mặt sau"}
 MEDIA_SIDES = {**IDENTITY_SIDES, "portrait": "Ảnh nhân viên"}
@@ -89,6 +90,10 @@ def _ensure_identity_table(conn) -> None:
                     CHECK (side IN ('front','back','portrait'));
             END IF;
         END $$;
+    """))
+    conn.execute(text("""
+        ALTER TABLE vera_employee_identity_document
+        ADD COLUMN IF NOT EXISTS ocr_payload jsonb NOT NULL DEFAULT '{}'::jsonb
     """))
 
 
@@ -169,6 +174,18 @@ def _extract_cccd_fields(data: bytes) -> dict[str, str]:
     if not raw:
         return {}
     clean = "\n".join(" ".join(line.split()) for line in raw.splitlines() if line.strip())
+    full_name = ""
+    name_match = re.search(
+        r"(?:h[oọ]\s+v[aà]\s+t[eê]n|full\s*name)"
+        r"(?:\s*/\s*(?:full\s*name|h[oọ]\s+v[aà]\s+t[eê]n))?"
+        r"\s*[:\-]?\s*([^\n]{3,120})",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    if name_match:
+        candidate = re.sub(r"\s+", " ", name_match.group(1)).strip(" .,:;-")
+        if not re.search(r"(?:ng[aà]y\s*sinh|date\s*of\s*birth|gi[oớ]i\s*t[ií]nh|sex)", candidate, flags=re.IGNORECASE):
+            full_name = candidate[:300]
     compact_digits = re.sub(r"(?<=\d)[\s.\-]+(?=\d)", "", clean)
     number_match = re.search(r"(?<!\d)(\d{12})(?!\d)", compact_digits)
     if not number_match:
@@ -213,11 +230,80 @@ def _extract_cccd_fields(data: bytes) -> dict[str, str]:
 
     return {
         key: value for key, value in {
+            "full_name": full_name,
             "cccd_number": number_match.group(1) if number_match else "",
             "cccd_issue_date": issue_date,
             "cccd_issue_place": place,
         }.items() if value
     }
+
+
+def _identity_match_key(value: Any) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or ""))
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = normalized.replace("đ", "d").replace("Đ", "D").casefold()
+    return " ".join(re.findall(r"[a-z0-9]+", normalized))
+
+
+def validate_saved_identity_matches(
+    conn, username: str, *, full_name: str, cccd_number: str,
+) -> dict[str, str]:
+    """Validate saved CCCD images against the proposed profile identity.
+
+    Legacy employees without CCCD images remain editable. Once either CCCD side
+    exists, both sides and readable matching name/number are mandatory.
+    """
+    _ensure_identity_table(conn)
+    rows = conn.execute(text("""
+        SELECT side, content, COALESCE(ocr_payload,'{}'::jsonb) ocr_payload
+        FROM vera_employee_identity_document
+        WHERE employee_username=:username AND side IN ('front','back')
+        ORDER BY side
+    """), {"username": username}).mappings().all()
+    if not rows:
+        return {}
+    present = {str(row["side"]) for row in rows}
+    missing = [IDENTITY_SIDES[side] for side in IDENTITY_SIDES if side not in present]
+    if missing:
+        raise HTTPException(400, f"Hồ sơ CCCD còn thiếu {', '.join(missing)}; vui lòng tải đủ hai mặt trước khi lưu.")
+
+    extracted: dict[str, str] = {}
+    for row in rows:
+        cached = row.get("ocr_payload") if isinstance(row.get("ocr_payload"), dict) else {}
+        for key, value in cached.items():
+            if value and not extracted.get(key):
+                extracted[key] = str(value)
+    if not extracted.get("full_name") or not extracted.get("cccd_number"):
+        for row in rows:
+            detected = _extract_cccd_fields(bytes(row["content"]))
+            conn.execute(text("""
+                UPDATE vera_employee_identity_document
+                SET ocr_payload=CAST(:ocr_payload AS jsonb)
+                WHERE employee_username=:username AND side=:side
+            """), {
+                "ocr_payload": json.dumps(detected, ensure_ascii=False),
+                "username": username,
+                "side": row["side"],
+            })
+            for key, value in detected.items():
+                if value and not extracted.get(key):
+                    extracted[key] = str(value)
+
+    declared_name = str(full_name or "").strip()
+    declared_number = re.sub(r"\D", "", str(cccd_number or ""))
+    detected_name = str(extracted.get("full_name") or "").strip()
+    detected_number = re.sub(r"\D", "", str(extracted.get("cccd_number") or ""))
+    if not declared_name or not declared_number:
+        raise HTTPException(400, "Phải khai Họ và tên đầy đủ và Số Căn cước trước khi lưu hồ sơ có ảnh CCCD.")
+    if not detected_name:
+        raise HTTPException(400, "Không đọc rõ Họ và tên trên ảnh CCCD; vui lòng chụp hoặc tải lại ảnh rõ hơn.")
+    if not detected_number:
+        raise HTTPException(400, "Không đọc rõ Số Căn cước trên ảnh CCCD; vui lòng chụp hoặc tải lại ảnh rõ hơn.")
+    if _identity_match_key(detected_name) != _identity_match_key(declared_name):
+        raise HTTPException(400, f"Họ và tên trên CCCD ({detected_name}) không khớp với Họ và tên đã khai ({declared_name}).")
+    if detected_number != declared_number:
+        raise HTTPException(400, f"Số Căn cước trên CCCD ({detected_number}) không khớp với số đã khai ({declared_number}).")
+    return extracted
 
 
 def _apply_extracted_cccd(conn, row: dict[str, Any], extracted: dict[str, str]) -> dict[str, str]:
@@ -249,13 +335,14 @@ def _apply_extracted_cccd(conn, row: dict[str, Any], extracted: dict[str, str]) 
 def _full_employee_address(row: dict[str, Any], payload: dict[str, Any]) -> str:
     detail = str(payload.get("Địa chỉ chi tiết") or "").strip()
     ward = str(payload.get("Xã/Phường") or "").strip()
+    district = str(payload.get("Quận/Huyện") or "").strip()
     province = str(payload.get("Tỉnh/Thành phố") or "").strip()
     stored = str(row.get("address") or payload.get("Địa chỉ") or "").strip()
     if detail:
-        return ", ".join(part for part in (detail, ward, province) if part)
+        return ", ".join(part for part in (detail, ward, district, province) if part)
     parts = [stored]
     folded_stored = stored.casefold()
-    for value in (ward, province):
+    for value in (ward, district, province):
         if value and value.casefold() not in folded_stored:
             parts.append(value)
     return ", ".join(part for part in parts if part)
@@ -325,17 +412,19 @@ def _build_employee_profile_pdf(profile: dict[str, Any], media: dict[str, bytes]
     rows = [
         ("Họ và tên", profile.get("full_name")),
         ("Ngày sinh", profile.get("birth_date")),
+        ("Giới tính", profile.get("gender")),
+        ("Dân tộc", profile.get("ethnicity")),
+        ("Số CCCD", profile.get("cccd_number")),
+        ("Ngày cấp CCCD", profile.get("cccd_issue_date")),
+        ("Nơi cấp CCCD", profile.get("cccd_issue_place")),
         ("Điện thoại", profile.get("phone")),
         ("Email", profile.get("email")),
         ("Địa chỉ", profile.get("address")),
         ("Trạng thái làm việc", profile.get("employment_status")),
         ("Ngày bắt đầu làm", profile.get("employment_start_date")),
-        ("Số CCCD", profile.get("cccd_number")),
-        ("Ngày cấp CCCD", profile.get("cccd_issue_date")),
-        ("Nơi cấp CCCD", profile.get("cccd_issue_place")),
     ]
     if str(profile.get("employment_status") or "").strip() == "Đã nghỉ việc":
-        rows.insert(6, ("Ngày nghỉ việc", profile.get("employment_end_date")))
+        rows.insert(11, ("Ngày nghỉ việc", profile.get("employment_end_date")))
     info = Table([
         [Paragraph(escape(label), styles["cell_bold"]), Paragraph(escape(str(value or "")), styles["cell"])]
         for label, value in rows
@@ -570,13 +659,14 @@ def install_staff_security_routes(
             row = require_identity_access(conn, ident, username, for_update=True)
             _ensure_identity_table(conn)
             digest = hashlib.sha256(content).hexdigest()
+            extracted = _extract_cccd_fields(content) if side in IDENTITY_SIDES else {}
             conn.execute(text("""
                 INSERT INTO vera_employee_identity_document(
                     employee_username, side, content_type, content, size_bytes,
-                    sha256, updated_at, updated_by
+                    sha256, updated_at, updated_by, ocr_payload
                 ) VALUES (
                     :username, :side, :content_type, :content, :size_bytes,
-                    :sha256, NOW(), :updated_by
+                    :sha256, NOW(), :updated_by, CAST(:ocr_payload AS jsonb)
                 )
                 ON CONFLICT (employee_username, side) DO UPDATE SET
                     content_type=EXCLUDED.content_type,
@@ -584,7 +674,8 @@ def install_staff_security_routes(
                     size_bytes=EXCLUDED.size_bytes,
                     sha256=EXCLUDED.sha256,
                     updated_at=NOW(),
-                    updated_by=EXCLUDED.updated_by
+                    updated_by=EXCLUDED.updated_by,
+                    ocr_payload=EXCLUDED.ocr_payload
             """), {
                 "username": row["username"],
                 "side": side,
@@ -593,8 +684,8 @@ def install_staff_security_routes(
                 "size_bytes": len(content),
                 "sha256": digest,
                 "updated_by": str(getattr(ident, "employee_username", "") or ""),
+                "ocr_payload": json.dumps(extracted, ensure_ascii=False),
             })
-            extracted = _extract_cccd_fields(content) if side in IDENTITY_SIDES else {}
             applied = _apply_extracted_cccd(conn, row, extracted)
             return {
                 "ok": True,
@@ -642,6 +733,8 @@ def install_staff_security_routes(
                 "username": str(row.get("username") or ""),
                 "full_name": str(row.get("full_name") or ""),
                 "birth_date": str(row.get("birth_date") or ""),
+                "gender": str(payload.get("Giới tính") or ""),
+                "ethnicity": str(payload.get("Dân tộc") or ""),
                 "phone": str(row.get("phone") or ""),
                 "email": str(row.get("email") or ""),
                 "address": _full_employee_address(row, payload),

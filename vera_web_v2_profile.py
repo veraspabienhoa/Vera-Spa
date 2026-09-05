@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
+from vera_web_v2_staff_security import validate_saved_identity_matches
 
 
 class ProfileUpdate(BaseModel):
@@ -22,10 +23,13 @@ class ProfileUpdate(BaseModel):
     new_password: str = Field(default="", max_length=300)
     full_name: str = Field(default="", max_length=300)
     birth_date: str = Field(default="", max_length=30)
+    gender: str = Field(default="", max_length=20)
+    ethnicity: str = Field(default="", max_length=100)
     phone: str = Field(default="", max_length=80)
     email: str = Field(default="", max_length=300)
     address: str = Field(default="", max_length=1000)
     province: str = Field(default="", max_length=200)
+    district: str = Field(default="", max_length=200)
     ward: str = Field(default="", max_length=200)
     address_detail: str = Field(default="", max_length=700)
     bank_account: str = Field(default="", max_length=100)
@@ -141,7 +145,10 @@ def install_profile_routes(
         profile = dict(row)
         payload = profile.pop("payload", {}) if isinstance(profile.get("payload"), dict) else {}
         profile.update({
+            "gender": str(payload.get("Giới tính") or ""),
+            "ethnicity": str(payload.get("Dân tộc") or ""),
             "province": str(payload.get("Tỉnh/Thành phố") or ""),
+            "district": str(payload.get("Quận/Huyện") or ""),
             "ward": str(payload.get("Xã/Phường") or ""),
             "address_detail": str(payload.get("Địa chỉ chi tiết") or profile.get("address") or ""),
             "cccd_number": str(payload.get("Số CCCD") or ""),
@@ -202,25 +209,38 @@ def install_profile_routes(
                     raise HTTPException(400, "Mật khẩu mới phải khác mật khẩu hiện tại.")
 
             updated = dict(current)
+            gender = body.gender.strip()
+            if gender and gender not in {"Nam", "Nữ"}:
+                raise HTTPException(400, "Giới tính chỉ chấp nhận Nam hoặc Nữ.")
             province = body.province.strip()
+            district = body.district.strip()
             ward = body.ward.strip()
             address_detail = body.address_detail.strip() or body.address.strip()
-            composed_address = ", ".join(part for part in (address_detail, ward, province) if part)
+            composed_address = ", ".join(part for part in (address_detail, ward, district, province) if part)
             updated.update({
-                "full_name": body.full_name.strip(), "birth_date": birth_date, "phone": body.phone.strip(),
+                "full_name": body.full_name.strip(), "birth_date": birth_date,
+                "gender": gender, "ethnicity": body.ethnicity.strip(), "phone": body.phone.strip(),
                 "email": body.email.strip(), "address": composed_address,
                 "bank_account": body.bank_account.strip(), "bank_name": body.bank_name.strip(),
                 "cccd_number": cccd_number, "cccd_issue_date": cccd_issue_date,
                 "cccd_issue_place": body.cccd_issue_place.strip(),
             })
+            validate_saved_identity_matches(
+                conn,
+                str(current.get("username") or ident.employee_username),
+                full_name=updated["full_name"],
+                cccd_number=updated["cccd_number"],
+            )
             if new_password:
                 updated.update({"password_value": new_password, "remember_token_hash": "", "remember_token_expiry": ""})
             payload = dict(updated.get("payload") or {})
             payload.update({
                 "Họ và tên đầy đủ": updated["full_name"], "Ngày sinh": updated["birth_date"],
+                "Giới tính": updated["gender"], "Dân tộc": updated["ethnicity"],
                 "Điện thoại": updated["phone"], "Email": updated["email"], "Địa chỉ": updated["address"],
                 "Số tài khoản ngân hàng": updated["bank_account"], "Tên ngân hàng": updated["bank_name"],
-                "Tỉnh/Thành phố": province, "Xã/Phường": ward, "Địa chỉ chi tiết": address_detail,
+                "Tỉnh/Thành phố": province, "Quận/Huyện": district,
+                "Xã/Phường": ward, "Địa chỉ chi tiết": address_detail,
                 "Số CCCD": updated["cccd_number"], "Ngày cấp CCCD": updated["cccd_issue_date"],
                 "Nơi cấp CCCD": updated["cccd_issue_place"],
             })

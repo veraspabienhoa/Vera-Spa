@@ -5,7 +5,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
-import { EmployeeMediaDraftPanel } from './EmployeeIdentityPanel'
+import EmployeeIdentityPanel, { EmployeeMediaDraftPanel } from './EmployeeIdentityPanel'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -17,21 +17,35 @@ const ROLE_LABELS = {
 
 const EMPTY_CREATE = {
   username: '', password: '', role: 'nhanvien', full_name: '', birth_date: '',
-  phone: '', email: '', address: '', bank_account: '', bank_name: '', employment_start_date: '',
+  gender: '', ethnicity: '', phone: '', email: '', province: '', district: '', ward: '', address_detail: '',
+  address: '', bank_account: '', bank_name: '', employment_start_date: '',
   cccd_number: '', cccd_issue_date: '', cccd_issue_place: '',
 }
 
-const PROFILE_FIELDS = [
-  ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'],
-  ['employment_start_date', 'Ngày bắt đầu làm'], ['employment_end_date', 'Ngày nghỉ việc'], ['phone', 'Điện thoại'],
-  ['email', 'Email'], ['address', 'Địa chỉ'], ['bank_account', 'Số tài khoản ngân hàng'],
-  ['bank_name', 'Tên ngân hàng'], ['cccd_number', 'Số CCCD'],
-  ['cccd_issue_date', 'Ngày cấp CCCD'], ['cccd_issue_place', 'Nơi cấp CCCD'],
+const PROFILE_SECTIONS = [
+  { title: 'Thông tin cá nhân', fields: [
+    ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'], ['gender', 'Giới tính'], ['ethnicity', 'Dân tộc'],
+  ] },
+  { title: 'Thông tin định danh', fields: [
+    ['cccd_number', 'Số Căn cước'], ['cccd_issue_date', 'Ngày cấp'], ['cccd_issue_place', 'Nơi cấp'],
+  ] },
+  { title: 'Thông tin liên hệ & Địa chỉ', fields: [
+    ['phone', 'Điện thoại'], ['email', 'Email'], ['province', 'Tỉnh/Thành phố'], ['district', 'Quận/Huyện'],
+    ['ward', 'Phường/Xã'], ['address_detail', 'Địa chỉ cụ thể (Số nhà, tên đường...)'],
+  ] },
+  { title: 'Thông tin thanh toán/Ngân hàng', fields: [
+    ['bank_name', 'Tên ngân hàng'], ['bank_account', 'Số tài khoản ngân hàng'],
+  ] },
+  { title: 'Thông tin việc làm', fields: [
+    ['employment_start_date', 'Ngày bắt đầu làm'], ['employment_end_date', 'Ngày nghỉ việc'],
+  ] },
 ]
+const PROFILE_FIELDS = PROFILE_SECTIONS.flatMap((section) => section.fields)
 
 const REQUIRED_PROFILE_FIELDS = [
-  ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'],
-  ['phone', 'Điện thoại'], ['email', 'Email'], ['address', 'Địa chỉ'],
+  ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'], ['gender', 'Giới tính'], ['ethnicity', 'Dân tộc'],
+  ['phone', 'Điện thoại'], ['email', 'Email'], ['province', 'Tỉnh/Thành phố'], ['district', 'Quận/Huyện'],
+  ['ward', 'Phường/Xã'], ['address_detail', 'Địa chỉ cụ thể'],
   ['bank_account', 'Số tài khoản ngân hàng'], ['bank_name', 'Tên ngân hàng'],
   ['cccd_number', 'Số CCCD'], ['cccd_issue_date', 'Ngày cấp CCCD'], ['cccd_issue_place', 'Nơi cấp CCCD'],
 ]
@@ -271,6 +285,7 @@ export default function EmployeePage({ user }) {
   const createStaff = (event) => {
     event.preventDefault()
     run('create', async () => {
+      await staffSecurityApi.validateDraftIdentity(createMedia, createForm.full_name, createForm.cccd_number)
       const payload = {
         ...createForm,
         birth_date: datePayload(createForm.birth_date),
@@ -385,22 +400,33 @@ export default function EmployeePage({ user }) {
       {addOpen && <section className="panel staff-form-panel">
         <div className="panel-title-row"><div><h2>THÊM NHÂN VIÊN</h2><p>Mật khẩu chỉ được nhập khi tạo mới và không xuất ra Excel.</p></div></div>
         <form className="staff-form-grid" onSubmit={createStaff}>
+          <div className="profile-field-section span-2">Thông tin tài khoản</div>
           <label>Tên nhân viên<input required value={createForm.username} onChange={(event) => setCreateForm({ ...createForm, username: event.target.value })} /></label>
           <label>Mật khẩu ban đầu (tối thiểu 8 ký tự)<input required minLength={8} type="password" autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /></label>
           <label>Phân quyền<select value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value })}>{(data?.role_options || []).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
-          <label>Họ và tên đầy đủ<input required value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
           <label>Ngày bắt đầu làm<input type="date" value={createForm.employment_start_date} onChange={(event) => setCreateForm({ ...createForm, employment_start_date: event.target.value })} /></label>
+          <div className="profile-field-section span-2">Thông tin cá nhân</div>
+          <label>Họ và tên đầy đủ<input required value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
           <label>Ngày sinh<input type="date" value={createForm.birth_date} onChange={(event) => setCreateForm({ ...createForm, birth_date: event.target.value })} /></label>
+          <label>Giới tính<select value={createForm.gender} onChange={(event) => setCreateForm({ ...createForm, gender: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
+          <label>Dân tộc<input value={createForm.ethnicity} onChange={(event) => setCreateForm({ ...createForm, ethnicity: event.target.value })} /></label>
+          <div className="profile-field-section span-2">Thông tin định danh</div>
+          <label>Số Căn cước<input required inputMode="numeric" maxLength="12" value={createForm.cccd_number} onChange={(event) => setCreateForm({ ...createForm, cccd_number: event.target.value.replace(/\D/g, '').slice(0, 12) })} /></label>
+          <label>Ngày cấp<input type="date" value={createForm.cccd_issue_date} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_date: event.target.value })} /></label>
+          <label className="span-2">Nơi cấp<input value={createForm.cccd_issue_place} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_place: event.target.value })} /></label>
+          <div className="profile-field-section span-2">Thông tin liên hệ & Địa chỉ</div>
           <label>Điện thoại<input value={createForm.phone} onChange={(event) => setCreateForm({ ...createForm, phone: event.target.value })} /></label>
           <label>Email<input type="email" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} /></label>
-          <label className="span-2">Địa chỉ<input value={createForm.address} onChange={(event) => setCreateForm({ ...createForm, address: event.target.value })} /></label>
-          <label>Số tài khoản ngân hàng<input value={createForm.bank_account} onChange={(event) => setCreateForm({ ...createForm, bank_account: event.target.value })} /></label>
+          <label>Tỉnh/Thành phố<input value={createForm.province} onChange={(event) => setCreateForm({ ...createForm, province: event.target.value })} /></label>
+          <label>Quận/Huyện<input value={createForm.district} onChange={(event) => setCreateForm({ ...createForm, district: event.target.value })} /></label>
+          <label>Phường/Xã<input value={createForm.ward} onChange={(event) => setCreateForm({ ...createForm, ward: event.target.value })} /></label>
+          <label>Địa chỉ cụ thể (Số nhà, tên đường...)<input value={createForm.address_detail} onChange={(event) => setCreateForm({ ...createForm, address_detail: event.target.value })} /></label>
+          <div className="profile-field-section span-2">Thông tin thanh toán/Ngân hàng</div>
           <label>Tên ngân hàng<input value={createForm.bank_name} onChange={(event) => setCreateForm({ ...createForm, bank_name: event.target.value })} /></label>
-          <label>Số CCCD<input inputMode="numeric" maxLength="12" value={createForm.cccd_number} onChange={(event) => setCreateForm({ ...createForm, cccd_number: event.target.value.replace(/\D/g, '').slice(0, 12) })} /></label>
-          <label>Ngày cấp CCCD<input type="date" value={createForm.cccd_issue_date} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_date: event.target.value })} /></label>
-          <label className="span-2">Nơi cấp CCCD<input value={createForm.cccd_issue_place} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_place: event.target.value })} /></label>
+          <label>Số tài khoản ngân hàng<input value={createForm.bank_account} onChange={(event) => setCreateForm({ ...createForm, bank_account: event.target.value })} /></label>
           <EmployeeMediaDraftPanel value={createMedia} onChange={setCreateMedia} onIdentityExtracted={(fields) => setCreateForm((current) => ({
             ...current,
+            full_name: current.full_name || fields.full_name || '',
             cccd_number: current.cccd_number || fields.cccd_number || '',
             cccd_issue_date: current.cccd_issue_date || toInputDate(fields.cccd_issue_date) || '',
             cccd_issue_place: current.cccd_issue_place || fields.cccd_issue_place || '',
@@ -412,10 +438,22 @@ export default function EmployeePage({ user }) {
       {profileUser && <section ref={profileSectionRef} className="panel staff-form-panel" style={{ scrollMarginTop: 128 }}>
         <div className="panel-title-row"><div><h2>SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div></div>
         <div className="staff-form-grid">
-          {PROFILE_FIELDS.map(([field, label]) => {
-            const isDate = field.includes('date')
-            return <label key={field}>{label}<input type={isDate ? 'date' : 'text'} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })} /></label>
-          })}
+          {PROFILE_SECTIONS.map((section) => <div className="profile-section-fields span-2" key={section.title}>
+            <div className="profile-field-section">{section.title}</div>
+            <div className="staff-form-grid">
+              {section.fields.map(([field, label]) => {
+                const isDate = field.includes('date')
+                if (field === 'gender') return <label key={field}>{label}<select value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
+                return <label key={field}>{label}<input type={isDate ? 'date' : 'text'} inputMode={field === 'cccd_number' ? 'numeric' : undefined} maxLength={field === 'cccd_number' ? 12 : undefined} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: field === 'cccd_number' ? event.target.value.replace(/\D/g, '').slice(0, 12) : event.target.value })} /></label>
+              })}
+            </div>
+          </div>)}
+          {isAdmin && <EmployeeIdentityPanel username={profileUser} allowPasswordReset className="span-2" onIdentityExtracted={(fields) => setProfileDraft((current) => ({
+            ...current,
+            cccd_number: current.cccd_number || fields.cccd_number || '',
+            cccd_issue_date: current.cccd_issue_date || toInputDate(fields.cccd_issue_date) || '',
+            cccd_issue_place: current.cccd_issue_place || fields.cccd_issue_place || '',
+          }))}/>}
           <div className="staff-form-actions span-2"><button className="secondary-button" onClick={() => setProfileUser('')}>Hủy</button><button className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={17} /> Lưu hồ sơ</button></div>
         </div>
       </section>}

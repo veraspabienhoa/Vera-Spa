@@ -25,13 +25,15 @@ from sqlalchemy import text
 from vera_web_v2_local_auth import revoke_local_sessions
 
 from vera_web_v2_security import password_policy_error
+from vera_web_v2_staff_security import validate_saved_identity_matches
 
 
 STAFF_EXPORT_COLUMNS = [
-    "Ảnh nhân viên", "Tên nhân viên", "Họ và tên đầy đủ", "Ngày bắt đầu làm", "Ngày sinh",
-    "Phân quyền", "Trạng thái làm việc", "Điện thoại", "Email", "Địa chỉ",
-    "Số CCCD", "Ngày cấp CCCD", "Nơi cấp CCCD",
-    "Số tài khoản ngân hàng", "Tên ngân hàng", "Phát sinh tháng", "Có phép tháng",
+    "Ảnh nhân viên", "Tên nhân viên", "Họ và tên đầy đủ", "Ngày sinh", "Giới tính", "Dân tộc",
+    "Số CCCD", "Ngày cấp CCCD", "Nơi cấp CCCD", "Điện thoại", "Email",
+    "Tỉnh/Thành phố", "Quận/Huyện", "Xã/Phường", "Địa chỉ cụ thể", "Địa chỉ",
+    "Tên ngân hàng", "Số tài khoản ngân hàng", "Ngày bắt đầu làm",
+    "Phân quyền", "Trạng thái làm việc", "Phát sinh tháng", "Có phép tháng",
     "Phép năm", "Ca làm việc", "Ngày bắt đầu ca", "Chu kỳ", "Khóa đăng nhập",
 ]
 ALL_ROLES = ["nhanvien", "leader", "quanly", "letan", "locker", "tapvu", "admin"]
@@ -53,9 +55,15 @@ class StaffCreate(BaseModel):
     role: str = Field(default="nhanvien", min_length=1, max_length=50)
     full_name: str = Field(min_length=1, max_length=300)
     birth_date: str = Field(default="", max_length=30)
+    gender: str = Field(default="", max_length=20)
+    ethnicity: str = Field(default="", max_length=100)
     phone: str = Field(default="", max_length=80)
     email: str = Field(default="", max_length=300)
     address: str = Field(default="", max_length=1000)
+    province: str = Field(default="", max_length=200)
+    district: str = Field(default="", max_length=200)
+    ward: str = Field(default="", max_length=200)
+    address_detail: str = Field(default="", max_length=700)
     bank_account: str = Field(default="", max_length=100)
     bank_name: str = Field(default="", max_length=300)
     employment_start_date: str = Field(default="", max_length=30)
@@ -68,9 +76,15 @@ class StaffUpdate(BaseModel):
     role: str | None = Field(default=None, max_length=50)
     full_name: str | None = Field(default=None, max_length=300)
     birth_date: str | None = Field(default=None, max_length=30)
+    gender: str | None = Field(default=None, max_length=20)
+    ethnicity: str | None = Field(default=None, max_length=100)
     phone: str | None = Field(default=None, max_length=80)
     email: str | None = Field(default=None, max_length=300)
     address: str | None = Field(default=None, max_length=1000)
+    province: str | None = Field(default=None, max_length=200)
+    district: str | None = Field(default=None, max_length=200)
+    ward: str | None = Field(default=None, max_length=200)
+    address_detail: str | None = Field(default=None, max_length=700)
     bank_account: str | None = Field(default=None, max_length=100)
     bank_name: str | None = Field(default=None, max_length=300)
     monthly_generated: float | None = Field(default=None, ge=0)
@@ -133,6 +147,22 @@ def _cccd_number(value: Any) -> str:
     if raw and (not raw.isdigit() or len(raw) not in {9, 12}):
         raise HTTPException(400, "Số CCCD/CMND phải gồm 9 hoặc 12 chữ số.")
     return raw
+
+
+def _gender(value: Any) -> str:
+    result = str(value or "").strip()
+    if result and result not in {"Nam", "Nữ"}:
+        raise HTTPException(400, "Giới tính chỉ chấp nhận Nam hoặc Nữ.")
+    return result
+
+
+def _composed_address(row: dict[str, Any]) -> str:
+    return ", ".join(part for part in (
+        str(row.get("address_detail") or "").strip(),
+        str(row.get("ward") or "").strip(),
+        str(row.get("district") or "").strip(),
+        str(row.get("province") or "").strip(),
+    ) if part)
 
 
 def _department(role: str) -> str:
@@ -202,9 +232,15 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
         "Phân quyền": str(row.get("role") or ""),
         "Họ và tên đầy đủ": str(row.get("full_name") or ""),
         "Ngày sinh": str(row.get("birth_date") or ""),
+        "Giới tính": str(row.get("gender") or ""),
+        "Dân tộc": str(row.get("ethnicity") or ""),
         "Điện thoại": str(row.get("phone") or ""),
         "Email": str(row.get("email") or ""),
         "Địa chỉ": str(row.get("address") or ""),
+        "Tỉnh/Thành phố": str(row.get("province") or ""),
+        "Quận/Huyện": str(row.get("district") or ""),
+        "Xã/Phường": str(row.get("ward") or ""),
+        "Địa chỉ chi tiết": str(row.get("address_detail") or ""),
         "Số CCCD": str(row.get("cccd_number") or ""),
         "Ngày cấp CCCD": str(row.get("cccd_issue_date") or ""),
         "Nơi cấp CCCD": str(row.get("cccd_issue_place") or ""),
@@ -232,9 +268,15 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
         "username": str(row.get("username") or ""),
         "full_name": str(row.get("full_name") or ""),
         "birth_date": str(row.get("birth_date") or ""),
+        "gender": str(row.get("gender") or payload.get("Giới tính") or ""),
+        "ethnicity": str(row.get("ethnicity") or payload.get("Dân tộc") or ""),
         "phone": str(row.get("phone") or ""),
         "email": str(row.get("email") or ""),
         "address": str(row.get("address") or ""),
+        "province": str(row.get("province") or payload.get("Tỉnh/Thành phố") or ""),
+        "district": str(row.get("district") or payload.get("Quận/Huyện") or ""),
+        "ward": str(row.get("ward") or payload.get("Xã/Phường") or ""),
+        "address_detail": str(row.get("address_detail") or payload.get("Địa chỉ chi tiết") or row.get("address") or ""),
         "cccd_number": str(row.get("cccd_number") or payload.get("Số CCCD") or ""),
         "cccd_issue_date": str(row.get("cccd_issue_date") or payload.get("Ngày cấp CCCD") or ""),
         "cccd_issue_place": str(row.get("cccd_issue_place") or payload.get("Nơi cấp CCCD") or ""),
@@ -277,6 +319,12 @@ def _select_staff_rows(
         item = dict(row)
         payload = dict(item.get("payload") or {}) if isinstance(item.get("payload"), dict) else {}
         item.update({
+            "gender": str(payload.get("Giới tính") or ""),
+            "ethnicity": str(payload.get("Dân tộc") or ""),
+            "province": str(payload.get("Tỉnh/Thành phố") or ""),
+            "district": str(payload.get("Quận/Huyện") or ""),
+            "ward": str(payload.get("Xã/Phường") or ""),
+            "address_detail": str(payload.get("Địa chỉ chi tiết") or item.get("address") or ""),
             "cccd_number": str(payload.get("Số CCCD") or ""),
             "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
             "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
@@ -500,7 +548,8 @@ def install_staff_routes(
     ) -> dict[str, Any]:
         ensure_manageable(ident, str(row.get("role") or ""))
         profile_fields = {
-            "role", "full_name", "birth_date", "phone", "email", "address", "bank_account",
+            "role", "full_name", "birth_date", "gender", "ethnicity", "phone", "email", "address",
+            "province", "district", "ward", "address_detail", "bank_account",
             "bank_name", "monthly_generated", "monthly_leave", "annual_leave", "employment_start_date",
             "employment_end_date", "cccd_number", "cccd_issue_date", "cccd_issue_place",
         }
@@ -518,9 +567,16 @@ def install_staff_routes(
             merged["role"] = validate_role(ident, values["role"])
         if "full_name" in values:
             merged["full_name"] = str(values["full_name"] or "").strip()
-        for key in ("phone", "email", "address", "bank_account", "bank_name", "cccd_issue_place"):
+        if "gender" in values:
+            merged["gender"] = _gender(values["gender"])
+        for key in (
+            "ethnicity", "phone", "email", "address", "province", "district", "ward",
+            "address_detail", "bank_account", "bank_name", "cccd_issue_place",
+        ):
             if key in values:
                 merged[key] = str(values[key] or "").strip()
+        if {"province", "district", "ward", "address_detail"}.intersection(values):
+            merged["address"] = _composed_address(merged)
         if "cccd_number" in values:
             merged["cccd_number"] = _cccd_number(values["cccd_number"])
         for key, label in (
@@ -565,6 +621,18 @@ def install_staff_routes(
             # remembered-login material immediately when employment pauses or ends.
             merged["remember_token_hash"] = ""
             merged["remember_token_expiry"] = ""
+
+        if {
+            "full_name", "birth_date", "gender", "ethnicity", "phone", "email", "address",
+            "province", "district", "ward", "address_detail", "bank_account", "bank_name",
+            "cccd_number", "cccd_issue_date", "cccd_issue_place",
+        }.intersection(values):
+            validate_saved_identity_matches(
+                conn,
+                str(row.get("username") or ""),
+                full_name=str(merged.get("full_name") or ""),
+                cccd_number=str(merged.get("cccd_number") or ""),
+            )
 
         payload = _employee_payload(merged, status)
         updated = conn.execute(text("""
@@ -652,13 +720,21 @@ def install_staff_routes(
                 body.employment_start_date or datetime.now(vn_tz).strftime("%d/%m/%Y"),
                 field_name="Ngày bắt đầu làm", allow_blank=False,
             )
+            address_parts = {
+                "address_detail": body.address_detail.strip() or body.address.strip(),
+                "ward": body.ward.strip(),
+                "district": body.district.strip(),
+                "province": body.province.strip(),
+            }
             stt = max([int(row.get("stt") or 0) for row in rows] + [0]) + 1
             record = {
                 "username": username, "stt": stt, "password_value": body.password,
                 "role": role, "full_name": full_name,
                 "birth_date": _date_text(body.birth_date, field_name="Ngày sinh"),
+                "gender": _gender(body.gender), "ethnicity": body.ethnicity.strip(),
                 "phone": body.phone.strip(), "email": body.email.strip(),
-                "address": body.address.strip(), "bank_account": body.bank_account.strip(),
+                **address_parts,
+                "address": _composed_address(address_parts), "bank_account": body.bank_account.strip(),
                 "bank_name": body.bank_name.strip(), "monthly_generated": 0,
                 "monthly_leave": 0, "annual_leave": 0, "work_shift": "",
                 "shift_start_date": "", "rotation_cycle": "", "login_locked": False,
@@ -873,12 +949,17 @@ def install_staff_routes(
             values = {
                 "Ảnh nhân viên": "",
                 "Tên nhân viên": row["username"], "Họ và tên đầy đủ": row["full_name"],
-                "Ngày bắt đầu làm": row["employment_start_date"], "Ngày sinh": row["birth_date"],
+                "Ngày sinh": row["birth_date"], "Giới tính": row.get("gender", ""),
+                "Dân tộc": row.get("ethnicity", ""),
                 "Phân quyền": row["role"], "Trạng thái làm việc": row["employment_status"],
-                "Điện thoại": row["phone"], "Email": row["email"], "Địa chỉ": row["address"],
+                "Điện thoại": row["phone"], "Email": row["email"],
+                "Tỉnh/Thành phố": row.get("province", ""), "Quận/Huyện": row.get("district", ""),
+                "Xã/Phường": row.get("ward", ""), "Địa chỉ cụ thể": row.get("address_detail", ""),
+                "Địa chỉ": row["address"],
                 "Số CCCD": row.get("cccd_number", ""), "Ngày cấp CCCD": row.get("cccd_issue_date", ""),
                 "Nơi cấp CCCD": row.get("cccd_issue_place", ""),
                 "Số tài khoản ngân hàng": row["bank_account"], "Tên ngân hàng": row["bank_name"],
+                "Ngày bắt đầu làm": row["employment_start_date"],
                 "Phát sinh tháng": row["monthly_generated"], "Có phép tháng": row["monthly_leave"],
                 "Phép năm": row["annual_leave"], "Ca làm việc": row["work_shift"],
                 "Ngày bắt đầu ca": row["shift_start_date"], "Chu kỳ": row["rotation_cycle"],
@@ -931,8 +1012,10 @@ def install_staff_routes(
         widths = {
             "Ảnh nhân viên": 13,
             "Tên nhân viên": 24, "Họ và tên đầy đủ": 28, "Ngày bắt đầu làm": 18, "Ngày sinh": 16,
+            "Giới tính": 13, "Dân tộc": 16,
             "Phân quyền": 14, "Trạng thái làm việc": 22, "Điện thoại": 16, "Email": 30,
-            "Địa chỉ": 42, "Số tài khoản ngân hàng": 22, "Tên ngân hàng": 24,
+            "Tỉnh/Thành phố": 22, "Quận/Huyện": 22, "Xã/Phường": 22,
+            "Địa chỉ cụ thể": 36, "Địa chỉ": 42, "Số tài khoản ngân hàng": 22, "Tên ngân hàng": 24,
             "Số CCCD": 18, "Ngày cấp CCCD": 18, "Nơi cấp CCCD": 36,
             "Phát sinh tháng": 16, "Có phép tháng": 16, "Phép năm": 14, "Ca làm việc": 28,
             "Ngày bắt đầu ca": 18, "Chu kỳ": 23, "Khóa đăng nhập": 18,
@@ -1051,8 +1134,10 @@ def install_staff_routes(
 
     def import_values(item: dict[str, Any]) -> dict[str, Any]:
         mapping = {
-            "Họ và tên đầy đủ": "full_name", "Phân quyền": "role", "Điện thoại": "phone",
-            "Email": "email", "Địa chỉ": "address", "Số tài khoản ngân hàng": "bank_account",
+            "Họ và tên đầy đủ": "full_name", "Giới tính": "gender", "Dân tộc": "ethnicity",
+            "Phân quyền": "role", "Điện thoại": "phone", "Email": "email", "Địa chỉ": "address",
+            "Tỉnh/Thành phố": "province", "Quận/Huyện": "district", "Xã/Phường": "ward",
+            "Địa chỉ cụ thể": "address_detail", "Số tài khoản ngân hàng": "bank_account",
             "Tên ngân hàng": "bank_name", "Số CCCD": "cccd_number", "Nơi cấp CCCD": "cccd_issue_place",
             "Ca làm việc": "work_shift", "Chu kỳ": "rotation_cycle",
         }

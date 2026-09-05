@@ -17,18 +17,20 @@ def _sample_image(width: int = 600, height: int = 800) -> bytes:
     return output.getvalue()
 
 
-def test_cccd_ocr_parses_number_date_and_place(monkeypatch):
+def test_cccd_ocr_parses_name_number_date_and_place(monkeypatch):
     monkeypatch.setattr(
         staff_security,
         "_ocr_text",
-        lambda _: "Số / No: 075204001234\nNgày cấp / Date of issue: 05/09/2026\nNơi cấp / Place of issue: Cục Cảnh sát QLHC về TTXH",
+        lambda _: "Họ và tên / Full name: NGUYỄN VĂN AN\nSố / No: 075204001234\nNgày cấp / Date of issue: 05/09/2026\nNơi cấp / Place of issue: Cục Cảnh sát QLHC về TTXH",
     )
 
     assert staff_security._extract_cccd_fields(b"image") == {
+        "full_name": "NGUYỄN VĂN AN",
         "cccd_number": "075204001234",
         "cccd_issue_date": "05/09/2026",
         "cccd_issue_place": "Cục Cảnh sát QLHC về TTXH",
     }
+    assert staff_security._identity_match_key("NGUYỄN VĂN AN") == staff_security._identity_match_key("Nguyen Van An")
 
 
 def test_employee_profile_pdf_is_printable_a4_document():
@@ -83,5 +85,9 @@ def test_employee_media_security_and_exports_are_wired():
     assert '("Ca làm việc",' not in pdf_builder
     assert '("Số tài khoản",' not in pdf_builder
     assert '("Ngân hàng",' not in pdf_builder
-    assert 'rows.insert(6, ("Ngày nghỉ việc"' in pdf_builder
+    assert 'rows.insert(11, ("Ngày nghỉ việc"' in pdf_builder
     assert 'styles["signature_title"]' in pdf_builder
+    assert "validate_saved_identity_matches" in security_source
+    assert "ocr_payload" in security_source
+    assert '"Giới tính"' in staff_source
+    assert '"Quận/Huyện"' in staff_source

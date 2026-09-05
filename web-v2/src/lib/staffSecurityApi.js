@@ -19,7 +19,38 @@ async function jsonRequest(path, options = {}) {
   return payload
 }
 
+function identityKey(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLocaleLowerCase('vi')
+    .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
+}
+
+async function validateDraftIdentity(media, fullName, cccdNumber) {
+  if (!media?.portrait) throw new Error('Phải có ảnh nhân viên tỷ lệ 3:4 trước khi lưu.')
+  if (!media?.front || !media?.back) throw new Error('Phải tải hoặc chụp đủ mặt trước và mặt sau CCCD trước khi lưu.')
+  const results = await Promise.all([
+    staffSecurityApi.extractIdentity(media.front),
+    staffSecurityApi.extractIdentity(media.back),
+  ])
+  const extracted = {}
+  results.forEach((result) => Object.entries(result.extracted_fields || {}).forEach(([key, value]) => {
+    if (value && !extracted[key]) extracted[key] = value
+  }))
+  const declaredName = String(fullName || '').trim()
+  const declaredNumber = String(cccdNumber || '').replace(/\D/g, '')
+  if (!extracted.full_name) throw new Error('Không đọc rõ Họ và tên trên ảnh CCCD; vui lòng chụp hoặc tải lại ảnh rõ hơn.')
+  if (!extracted.cccd_number) throw new Error('Không đọc rõ Số Căn cước trên ảnh CCCD; vui lòng chụp hoặc tải lại ảnh rõ hơn.')
+  if (identityKey(extracted.full_name) !== identityKey(declaredName)) {
+    throw new Error(`Họ và tên trên CCCD (${extracted.full_name}) không khớp với Họ và tên đã khai (${declaredName}).`)
+  }
+  if (String(extracted.cccd_number).replace(/\D/g, '') !== declaredNumber) {
+    throw new Error(`Số Căn cước trên CCCD (${extracted.cccd_number}) không khớp với số đã khai (${declaredNumber}).`)
+  }
+  return extracted
+}
+
 export const staffSecurityApi = {
+  validateDraftIdentity,
   resetPassword: (username, newPassword) => jsonRequest(`/v2/staff/${encodeURIComponent(username)}/reset-password`, {
     method: 'POST',
     body: JSON.stringify({ new_password: newPassword }),

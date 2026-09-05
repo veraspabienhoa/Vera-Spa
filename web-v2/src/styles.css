@@ -237,6 +237,9 @@ button:not(:disabled):not(.disabled):active { filter: brightness(.84) saturate(1
 .profile-form label { min-width: 0; display: grid; gap: 6px; color: #4b5b53; font-size: 11px; font-weight: 800; }
 .profile-form input, .profile-form select { width: 100%; min-width: 0; }
 .profile-form .wide-field { grid-column: 1 / -1; }
+.profile-field-section { padding: 9px 11px; border-left: 4px solid var(--gold); border-radius: 8px; color: var(--green-950); background: #f4f8f5; font-size: 12px; font-weight: 900; letter-spacing: .035em; text-transform: uppercase; }
+.profile-section-fields { min-width: 0; display: grid; gap: 10px; }
+.profile-section-fields > .staff-form-grid { margin: 0; }
 .profile-password-box { padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: #f6f9f7; }
 .profile-password-box h3 { margin: 0; color: var(--green-950); font-size: 14px; }
 .profile-password-box p { margin: 4px 0 11px; }

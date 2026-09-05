@@ -72,6 +72,7 @@ jobs:
               'employee cannot delete saved CCCD': 'Nhân viên không được xóa ảnh CCCD sau khi đã lưu' in security,
               'OCR never overwrites entered CCCD fields': 'and not str(payload.get(payload_key) or "").strip()' in security,
               'OCR supports immediate create-form extraction': '@app.post("/v2/staff/identity/ocr")' in security and 'staffSecurityApi.extractIdentity(blob)' in identity_ui,
+              'OCR extracts and enforces matching name and identity number': all(key in security for key in ('"full_name": full_name', 'validate_saved_identity_matches', '_identity_match_key', 'ocr_payload')) and 'validateDraftIdentity' in employee_ui,
               'printable PDF route exists': '@app.get("/v2/staff/{username}/profile.pdf")' in security,
               'business identity is on PDF': 'HỘ KINH DOANH VERA' in security and '193 Trương Định' in security,
               'Excel embeds employee portraits': 'ws.add_image(image' in staff and '"Ảnh nhân viên"' in staff,
@@ -79,9 +80,10 @@ jobs:
               'camera crop and rotation UI exists': all(key in identity_ui for key in ('IdentityCamera', 'IdentityImageEditor', 'PORTRAIT_ASPECT_RATIO')),
               'crop supports all four independently movable edges': all(key in identity_ui for key in ("setCropInset('left'", "setCropInset('right'", "setCropInset('top'", "setCropInset('bottom'")),
               'camera can switch front and rear': all(key in identity_ui for key in ('Camera trước', 'Camera sau', 'facingMode: { ideal: facingMode }')),
-              'PDF uses full address and conditional end date': '_full_employee_address(row, payload)' in security and 'rows.insert(6, ("Ngày nghỉ việc"' in security,
+              'PDF uses full address and conditional end date': '_full_employee_address(row, payload)' in security and 'rows.insert(11, ("Ngày nghỉ việc"' in security,
               'PDF omits internal and bank fields': all(key not in security.split('def _build_employee_profile_pdf', 1)[1].split('def install_staff_security_routes', 1)[0] for key in ('("Tên đăng nhập",', '("Phân quyền",', '("Ca làm việc",', '("Số tài khoản",', '("Ngân hàng",')),
               'new employee form accepts media': 'EmployeeMediaDraftPanel' in employee_ui,
+              'profile has ordered demographic and district fields': all(key in profile for key in ('gender', 'ethnicity', 'district')) and all(label in employee_ui for label in ('Thông tin cá nhân', 'Thông tin định danh', 'Thông tin liên hệ & Địa chỉ', 'Thông tin thanh toán/Ngân hàng')),
               'runtime includes Vietnamese OCR and imaging': 'Pillow' in requirements and 'tesseract-ocr-vie' in dockerfile,
           }
           for name, ok in checks.items():
