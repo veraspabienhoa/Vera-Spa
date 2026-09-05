@@ -567,6 +567,10 @@ tr:last-child td { border-bottom: 0; }
 /* Employee management */
 .staff-page { width: 100%; max-width: 100%; min-width: 0; display: grid; gap: 18px; }
 .staff-page .page-heading-row, .staff-page .metric-grid { margin-bottom: 0; }
+.staff-metric-card { width: 100%; color: inherit; text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease, transform .16s ease; }
+.staff-metric-card:hover { border-color: #a9c7b6; box-shadow: 0 12px 32px rgba(25,50,40,.09); transform: translateY(-1px); }
+.staff-metric-card:focus-visible { outline: 3px solid rgba(33,70,57,.22); outline-offset: 2px; }
+.staff-metric-card.active { border-color: #3e845f; background: #edf7f1; box-shadow: inset 3px 0 0 #3e845f, 0 9px 28px rgba(25,50,40,.065); }
 .staff-notice { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid; border-radius: 13px; font-size: 12px; }
 .staff-notice.success { color: var(--success); border-color: #c5e3d1; background: var(--success-bg); }
 .staff-notice.error { color: var(--danger); border-color: #efc7c7; background: var(--danger-bg); }

@@ -388,12 +388,19 @@ export default function EmployeePage({ user }) {
 
       <div className="metric-grid staff-metrics">
         {[
-          ['Tổng nhân viên', data?.summary?.total || 0, UsersRound],
-          ['Đang làm việc', data?.summary?.active || 0, UserCheck],
-          ['Tạm thời nghỉ', data?.summary?.temporary || 0, BriefcaseBusiness],
-          ['Đã nghỉ việc', data?.summary?.left || 0, LockKeyhole],
-        ].map(([label, value, Icon]) => (
-          <div className="metric-card" key={label}><div className="metric-icon"><Icon size={21} /></div><div><span>{label}</span><strong>{value}</strong></div></div>
+          ['Tổng nhân viên', data?.summary?.total || 0, UsersRound, ''],
+          ['Đang làm việc', data?.summary?.active || 0, UserCheck, 'Đang làm việc'],
+          ['Tạm thời nghỉ', data?.summary?.temporary || 0, BriefcaseBusiness, 'Tạm thời nghỉ việc'],
+          ['Đã nghỉ việc', data?.summary?.left || 0, LockKeyhole, 'Đã nghỉ việc'],
+        ].map(([label, value, Icon, filterValue]) => (
+          <button
+            type="button"
+            className={`metric-card staff-metric-card ${statusFilter === filterValue ? 'active' : ''}`.trim()}
+            key={label}
+            onClick={() => setStatusFilter(filterValue)}
+            aria-pressed={statusFilter === filterValue}
+            aria-label={`Lọc ${label.toLocaleLowerCase('vi')}`}
+          ><div className="metric-icon"><Icon size={21} /></div><div><span>{label}</span><strong>{value}</strong></div></button>
         ))}
       </div>
 
@@ -417,8 +424,8 @@ export default function EmployeePage({ user }) {
         <div className="staff-actionbar">
           {permissions.employee_add && <button className="primary-button" onClick={() => setAddOpen((value) => !value)}><Plus size={17} /> Thêm nhân viên</button>}
           {permissions.staff_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /> Export Excel</button>}
-          {canSaveRows && <button className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
           {isAdmin && permissions.staff_export && <button className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
+          {canSaveRows && <button className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
           {isAdmin && permissions.employee_delete && <button className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
         </div>
       </section>

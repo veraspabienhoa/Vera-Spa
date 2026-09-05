@@ -98,6 +98,8 @@ def test_contract_ui_names_multi_select_and_highlighted_settings():
     assert "contractType" in page
     assert "contract_type: contractType" in page
     assert "selectedUsernames" in page
+    assert "setSelectedUsernames((current) => current.filter" in page
+    assert "result.employees?.[0]?.username" not in page
     assert "Chọn tất cả đang hiển thị" in page
     assert "contract-highlight-field" in page
     assert "label: 'Hợp đồng'" in shell

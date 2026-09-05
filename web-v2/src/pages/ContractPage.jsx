@@ -65,10 +65,7 @@ export default function ContractPage({ user }) {
       setData(result); setSettings(result.settings)
       setContractType(result.contract_type || requestedType)
       const available = new Set((result.employees || []).map((item) => item.username))
-      setSelectedUsernames((current) => {
-        const retained = current.filter((username) => available.has(username))
-        return retained.length ? retained : (result.employees?.[0]?.username ? [result.employees[0].username] : [])
-      })
+      setSelectedUsernames((current) => current.filter((username) => available.has(username)))
       setRole((current) => (result.roles || []).some((item) => item.value === current)
         ? current
         : (result.roles?.[0]?.value || ''))

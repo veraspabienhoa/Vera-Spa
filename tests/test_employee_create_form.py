@@ -46,3 +46,14 @@ def test_shared_date_control_displays_vietnamese_date_format():
     assert "parseVeraDate" in source
     assert "formatVeraDate" in source
     assert "showPicker" in source
+
+
+def test_employee_summary_cards_filter_status_and_actions_are_ordered():
+    source = (ROOT / "web-v2/src/pages/EmployeePage.jsx").read_text(encoding="utf-8")
+
+    assert "onClick={() => setStatusFilter(filterValue)}" in source
+    assert "['Tổng nhân viên', data?.summary?.total || 0, UsersRound, '']" in source
+    assert "['Đang làm việc', data?.summary?.active || 0, UserCheck, 'Đang làm việc']" in source
+    assert "['Tạm thời nghỉ', data?.summary?.temporary || 0, BriefcaseBusiness, 'Tạm thời nghỉ việc']" in source
+    assert "['Đã nghỉ việc', data?.summary?.left || 0, LockKeyhole, 'Đã nghỉ việc']" in source
+    assert source.index('Xuất đồng loạt PDF') < source.index('Lưu thay đổi')
