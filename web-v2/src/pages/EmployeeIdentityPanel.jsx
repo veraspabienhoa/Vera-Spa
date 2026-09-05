@@ -225,18 +225,25 @@ function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = C
     if (source && canvasRef.current) drawProcessedImage(canvasRef.current, source, crop, rotation, 720, aspectRatio)
   }, [aspectRatio, crop, rotation, source])
 
-  const setCropValue = (key, raw) => {
+  const setCropInset = (edge, raw) => {
     const value = Number(raw)
     setCrop((current) => {
-      const next = { ...current, [key]: value }
-      if (key === 'x') next.w = Math.min(next.w, 100 - value)
-      if (key === 'y') next.h = Math.min(next.h, 100 - value)
-      if (key === 'w') next.w = Math.min(value, 100 - next.x)
-      if (key === 'h') next.h = Math.min(value, 100 - next.y)
-      next.w = Math.max(MIN_CROP, next.w)
-      next.h = Math.max(MIN_CROP, next.h)
-      next.x = Math.min(next.x, 100 - next.w)
-      next.y = Math.min(next.y, 100 - next.h)
+      const right = Math.max(0, 100 - current.x - current.w)
+      const bottom = Math.max(0, 100 - current.y - current.h)
+      const next = { ...current }
+      if (edge === 'left') {
+        next.x = Math.min(value, 100 - right - MIN_CROP)
+        next.w = 100 - right - next.x
+      } else if (edge === 'right') {
+        const nextRight = Math.min(value, 100 - current.x - MIN_CROP)
+        next.w = 100 - current.x - nextRight
+      } else if (edge === 'top') {
+        next.y = Math.min(value, 100 - bottom - MIN_CROP)
+        next.h = 100 - bottom - next.y
+      } else if (edge === 'bottom') {
+        const nextBottom = Math.min(value, 100 - current.y - MIN_CROP)
+        next.h = 100 - current.y - nextBottom
+      }
       return next
     })
   }
@@ -262,10 +269,11 @@ function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = C
         <div className="identity-editor-controls">
           <div className="identity-editor-section"><strong><RotateCw size={15}/> Xoay ảnh</strong><div className="identity-editor-buttons"><button type="button" className="secondary-button compact" onClick={() => setRotation((value) => (value + 270) % 360)}><RotateCcw size={14}/> -90°</button><button type="button" className="secondary-button compact" onClick={() => setRotation((value) => (value + 90) % 360)}><RotateCw size={14}/> +90°</button><span>{rotation}°</span></div></div>
           <div className="identity-editor-section"><strong><Crop size={15}/> Crop</strong>
-            <label>Trái: {crop.x}%<input type="range" min="0" max={Math.max(0, 100 - crop.w)} value={crop.x} onChange={(e) => setCropValue('x', e.target.value)}/></label>
-            <label>Trên: {crop.y}%<input type="range" min="0" max={Math.max(0, 100 - crop.h)} value={crop.y} onChange={(e) => setCropValue('y', e.target.value)}/></label>
-            <label>Rộng: {crop.w}%<input type="range" min={MIN_CROP} max={100 - crop.x} value={crop.w} onChange={(e) => setCropValue('w', e.target.value)}/></label>
-            <label>Cao: {crop.h}%<input type="range" min={MIN_CROP} max={100 - crop.y} value={crop.h} onChange={(e) => setCropValue('h', e.target.value)}/></label>
+            <small>Kéo từng cạnh để loại bỏ phần thừa; khung xem trước cập nhật ngay.</small>
+            <label>Trái: {Math.round(crop.x)}%<input type="range" min="0" max={Math.max(0, 100 - (100 - crop.x - crop.w) - MIN_CROP)} value={crop.x} onChange={(e) => setCropInset('left', e.target.value)}/></label>
+            <label>Phải: {Math.round(100 - crop.x - crop.w)}%<input type="range" min="0" max={Math.max(0, 100 - crop.x - MIN_CROP)} value={100 - crop.x - crop.w} onChange={(e) => setCropInset('right', e.target.value)}/></label>
+            <label>Trên: {Math.round(crop.y)}%<input type="range" min="0" max={Math.max(0, 100 - (100 - crop.y - crop.h) - MIN_CROP)} value={crop.y} onChange={(e) => setCropInset('top', e.target.value)}/></label>
+            <label>Dưới: {Math.round(100 - crop.y - crop.h)}%<input type="range" min="0" max={Math.max(0, 100 - crop.y - MIN_CROP)} value={100 - crop.y - crop.h} onChange={(e) => setCropInset('bottom', e.target.value)}/></label>
             <button type="button" className="secondary-button compact" onClick={() => setCrop({ x: 0, y: 0, w: 100, h: 100 })}>Khôi phục toàn ảnh</button>
           </div>
           <div className="identity-editor-section"><strong><SlidersHorizontal size={15}/> Nén trước khi upload</strong>
@@ -310,8 +318,13 @@ function IdentitySide({ username, side, title, metadata, busy, onChanged, setNot
           const result = await staffSecurityApi.uploadIdentity(username, side, blob)
           if (previewUrl) URL.revokeObjectURL(previewUrl)
           setPreviewUrl(URL.createObjectURL(blob))
-          setNotice({ type: 'success', message: `${result.message} Ảnh gốc ${formatBytes(original?.size)} → sau Crop/Rotate/Nén ${formatBytes(blob.size)}.` })
-          if (Object.keys(result.applied_fields || {}).length) {
+          const appliedCount = Object.keys(result.applied_fields || {}).length
+          const detectedCount = Object.keys(result.extracted_fields || {}).length
+          const ocrMessage = appliedCount
+            ? ` Đã tự điền ${appliedCount} trường CCCD còn trống.`
+            : detectedCount ? ' Đã nhận dạng CCCD; dữ liệu đang có được giữ nguyên.' : ' Không đọc được thông tin chữ; vui lòng nhập tay hoặc thử ảnh rõ hơn.'
+          setNotice({ type: 'success', message: `${result.message} Ảnh gốc ${formatBytes(original?.size)} → sau Crop/Rotate/Nén ${formatBytes(blob.size)}.${ocrMessage}` })
+          if (appliedCount) {
             onExtracted?.(result.applied_fields)
             window.dispatchEvent(new CustomEvent('vera-identity-extracted', { detail: { username, fields: result.applied_fields } }))
           }
@@ -462,11 +475,12 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
   </div>
 }
 
-function DraftMediaSide({ title, value, onChange, aspectRatio, mediaLabel }) {
+function DraftMediaSide({ title, value, onChange, aspectRatio, mediaLabel, onExtracted }) {
   const inputRef = useRef(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [pendingFile, setPendingFile] = useState(null)
   const [cameraOpen, setCameraOpen] = useState(false)
+  const [ocrNote, setOcrNote] = useState('')
   useEffect(() => {
     if (!value) { setPreviewUrl(''); return undefined }
     const url = URL.createObjectURL(value)
@@ -476,6 +490,7 @@ function DraftMediaSide({ title, value, onChange, aspectRatio, mediaLabel }) {
   const acceptFile = (file) => {
     if (!file) return
     if (!String(file.type || '').startsWith('image/') || file.size > MAX_SOURCE_BYTES) return
+    setOcrNote('')
     setPendingFile(file)
   }
   return <div className={`employee-id-side draft ${aspectRatio < 1 ? 'portrait-draft' : ''}`}>
@@ -487,20 +502,36 @@ function DraftMediaSide({ title, value, onChange, aspectRatio, mediaLabel }) {
       <button type="button" className="secondary-button compact" onClick={() => inputRef.current?.click()}><Upload size={14}/> Chọn ảnh</button>
       {value && <button type="button" className="secondary-button compact" onClick={() => onChange(null)}><X size={14}/> Bỏ chọn</button>}
     </div>
+    {ocrNote && <small className="employee-media-ocr-note">{ocrNote}</small>}
     {cameraOpen && <IdentityCamera title={title} mediaLabel={mediaLabel} aspectRatio={aspectRatio} onCancel={() => setCameraOpen(false)} onCapture={(file) => { setCameraOpen(false); acceptFile(file) }}/>}
-    {pendingFile && <IdentityImageEditor file={pendingFile} title={title} mediaLabel={mediaLabel} aspectRatio={aspectRatio} onCancel={() => setPendingFile(null)} onConfirm={async (blob) => { onChange(blob); setPendingFile(null) }}/>}
+    {pendingFile && <IdentityImageEditor file={pendingFile} title={title} mediaLabel={mediaLabel} aspectRatio={aspectRatio} onCancel={() => setPendingFile(null)} onConfirm={async (blob) => {
+      onChange(blob)
+      if (mediaLabel === 'CCCD') {
+        try {
+          const result = await staffSecurityApi.extractIdentity(blob)
+          const fields = result.extracted_fields || {}
+          if (Object.keys(fields).length) {
+            onExtracted?.(fields)
+            setOcrNote(`Đã tự điền ${Object.keys(fields).length} trường CCCD còn trống.`)
+          } else setOcrNote('Không đọc được chữ; có thể nhập tay hoặc thử ảnh rõ hơn.')
+        } catch (error) {
+          setOcrNote(`Không thể tự đọc CCCD (${error.message}). Ảnh vẫn được giữ để lưu.`)
+        }
+      }
+      setPendingFile(null)
+    }}/>}
   </div>
 }
 
-export function EmployeeMediaDraftPanel({ value, onChange }) {
+export function EmployeeMediaDraftPanel({ value, onChange, onIdentityExtracted }) {
   const media = value || { portrait: null, front: null, back: null }
   const update = (side, blob) => onChange({ ...media, [side]: blob })
   return <div className="employee-media-draft span-2">
-    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH HỒ SƠ KHI TẠO NHÂN VIÊN</h3><p>Có thể chụp trực tiếp hoặc upload. Ảnh nhân viên luôn được căn tỷ lệ 3:4; ảnh CCCD sẽ tự đọc Số CCCD, Ngày cấp và Nơi cấp sau khi lưu.</p></div></div>
+    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH HỒ SƠ KHI TẠO NHÂN VIÊN</h3><p>Có thể chụp trực tiếp hoặc upload. Ảnh nhân viên luôn được căn tỷ lệ 3:4; ảnh CCCD sẽ tự đọc và điền ngay Số CCCD, Ngày cấp, Nơi cấp nếu các ô còn trống.</p></div></div>
     <div className="employee-media-draft-grid">
       <DraftMediaSide title="Ảnh nhân viên" value={media.portrait} onChange={(blob) => update('portrait', blob)} aspectRatio={PORTRAIT_ASPECT_RATIO} mediaLabel="Hồ sơ"/>
-      <DraftMediaSide title="Mặt trước CCCD" value={media.front} onChange={(blob) => update('front', blob)} aspectRatio={CCCD_ASPECT_RATIO} mediaLabel="CCCD"/>
-      <DraftMediaSide title="Mặt sau CCCD" value={media.back} onChange={(blob) => update('back', blob)} aspectRatio={CCCD_ASPECT_RATIO} mediaLabel="CCCD"/>
+      <DraftMediaSide title="Mặt trước CCCD" value={media.front} onChange={(blob) => update('front', blob)} aspectRatio={CCCD_ASPECT_RATIO} mediaLabel="CCCD" onExtracted={onIdentityExtracted}/>
+      <DraftMediaSide title="Mặt sau CCCD" value={media.back} onChange={(blob) => update('back', blob)} aspectRatio={CCCD_ASPECT_RATIO} mediaLabel="CCCD" onExtracted={onIdentityExtracted}/>
     </div>
   </div>
 }
@@ -543,7 +574,7 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
       .employee-identity-panel{display:grid;gap:14px;padding:16px;border:1px solid #dfe7e3;border-radius:16px;background:#f9fbfa}.employee-identity-title{display:flex;gap:10px;align-items:flex-start}.employee-identity-title h3{margin:0;font-size:15px}.employee-identity-title p{margin:3px 0 0;color:#6c7873;font-size:12px;line-height:1.45}
       .employee-portrait-section{display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:14px;align-items:start}.employee-portrait-side,.employee-id-side{border:1px solid #e2e8e5;border-radius:14px;background:#fff;padding:12px;min-width:0}.employee-portrait-preview{width:min(100%,180px);aspect-ratio:3/4;margin:10px auto;border-radius:12px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-portrait-preview img{width:100%;height:100%;object-fit:cover}.employee-portrait-help{padding:13px;border-radius:14px;background:#edf5f1;color:#38564a;font-size:12px;line-height:1.55}.employee-portrait-help strong{display:block;margin-bottom:5px;color:#173d2f}.employee-identity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.employee-id-side-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.employee-id-side-head div{display:grid;gap:2px}.employee-id-side-head strong{font-size:13px}.employee-id-side-head span{font-size:11px;color:#74807b}.employee-id-preview{height:132px;margin:10px 0;border-radius:10px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-id-preview img{width:100%;height:100%;object-fit:contain;background:#111}.employee-id-placeholder{font-weight:900;color:#9aa6a1;letter-spacing:.12em;display:grid;place-items:center;gap:6px}.employee-id-actions{display:flex;flex-wrap:wrap;gap:7px}.employee-id-actions button{min-height:34px}
       .employee-password-reset{display:grid;gap:10px;padding:13px;border:1px solid #eadfcf;border-radius:14px;background:#fffaf2}.employee-password-reset-head{display:flex;gap:8px;align-items:flex-start}.employee-password-reset-head h4{margin:0;font-size:13px}.employee-password-reset-head p{margin:3px 0 0;font-size:11px;color:#776d60;line-height:1.45}.employee-password-reset-grid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}.employee-password-default{display:grid;gap:4px;min-width:0}.employee-password-default span{font-size:11px;color:#776d60}.employee-password-default strong{font-size:15px;letter-spacing:.02em;color:#173d2f}.employee-identity-notice{padding:9px 11px;border-radius:10px;font-size:12px}.employee-identity-notice.success{background:#edf8f2;color:#17603b}.employee-identity-notice.error{background:#fff1f0;color:#a62a20}
-      .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(760px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{display:flex;justify-content:flex-end;gap:9px;margin-top:14px}
+      .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(760px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{position:sticky;bottom:-18px;z-index:3;display:flex;justify-content:flex-end;gap:9px;margin-top:14px;padding:12px 0 0;background:#fff}
       .identity-camera-facing{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0}.identity-camera-facing>span{color:#5f6e67;font-size:11px;font-weight:900}.identity-camera-facing button{min-width:132px}
       .identity-camera-landscape{position:relative;width:min(90vw,680px);max-width:100%;aspect-ratio:85.6/53.98;margin:16px auto 0;overflow:hidden;border-radius:18px;background:#101815}.identity-camera-landscape.portrait{width:min(72vw,360px)}.identity-camera-landscape video{width:100%;height:100%;object-fit:cover}.identity-camera-card-guide{position:absolute;inset:4%;border:3px solid rgba(255,255,255,.98);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.20),inset 0 0 0 1px rgba(0,0,0,.25);display:flex;align-items:flex-end;justify-content:center;padding:10px;pointer-events:none}.identity-camera-card-guide span{padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.58);color:#fff;font-size:10px;font-weight:900;letter-spacing:.05em}.identity-camera-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,.35);color:#fff;font-weight:800}.identity-camera-help{margin:10px auto 0;max-width:680px;color:#68736f;font-size:11px;line-height:1.45;text-align:center}
       .employee-profile-export{display:flex;justify-content:flex-end}.employee-profile-export button{min-height:38px}

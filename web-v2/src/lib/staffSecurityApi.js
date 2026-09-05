@@ -25,6 +25,16 @@ export const staffSecurityApi = {
     body: JSON.stringify({ new_password: newPassword }),
   }),
   identityMetadata: (username) => jsonRequest(`/v2/staff/${encodeURIComponent(username)}/identity`),
+  extractIdentity: async (blob) => {
+    const response = await authorizedFetch('/v2/staff/identity/ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': blob.type || 'image/webp' },
+      body: blob,
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+    return payload
+  },
   identityBlob: async (username, side) => {
     const response = await authorizedFetch(`/v2/staff/${encodeURIComponent(username)}/identity/${encodeURIComponent(side)}`)
     if (!response.ok) {

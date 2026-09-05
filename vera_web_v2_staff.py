@@ -81,6 +81,7 @@ class StaffUpdate(BaseModel):
     rotation_cycle: str | None = Field(default=None, max_length=100)
     login_locked: bool | None = None
     employment_start_date: str | None = Field(default=None, max_length=30)
+    employment_end_date: str | None = Field(default=None, max_length=30)
     employment_status: str | None = Field(default=None, max_length=100)
     cccd_number: str | None = Field(default=None, max_length=20)
     cccd_issue_date: str | None = Field(default=None, max_length=30)
@@ -219,6 +220,7 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
         "Remember Token Hash": str(row.get("remember_token_hash") or ""),
         "Remember Token Expiry": str(row.get("remember_token_expiry") or ""),
         "Ngày bắt đầu làm": str(row.get("employment_start_date") or ""),
+        "Ngày nghỉ việc": str(row.get("employment_end_date") or ""),
         "Trạng thái làm việc": status,
     })
     return payload
@@ -249,6 +251,7 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
         "rotation_cycle": str(row.get("rotation_cycle") or ""),
         "login_locked": bool(row.get("login_locked")),
         "employment_start_date": str(row.get("employment_start_date") or ""),
+        "employment_end_date": str(row.get("employment_end_date") or payload.get("Ngày nghỉ việc") or ""),
     }
 
 
@@ -277,6 +280,7 @@ def _select_staff_rows(
             "cccd_number": str(payload.get("Số CCCD") or ""),
             "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
             "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
+            "employment_end_date": str(payload.get("Ngày nghỉ việc") or payload.get("Ngày kết thúc làm việc") or payload.get("employment_end_date") or ""),
         })
         output.append(item)
     return output
@@ -498,7 +502,7 @@ def install_staff_routes(
         profile_fields = {
             "role", "full_name", "birth_date", "phone", "email", "address", "bank_account",
             "bank_name", "monthly_generated", "monthly_leave", "annual_leave", "employment_start_date",
-            "cccd_number", "cccd_issue_date", "cccd_issue_place",
+            "employment_end_date", "cccd_number", "cccd_issue_date", "cccd_issue_place",
         }
         if profile_fields.intersection(values):
             require_feature(conn, ident, "employee_edit_save")
@@ -523,6 +527,7 @@ def install_staff_routes(
             ("birth_date", "Ngày sinh"),
             ("shift_start_date", "Ngày bắt đầu ca"),
             ("employment_start_date", "Ngày bắt đầu làm"),
+            ("employment_end_date", "Ngày nghỉ việc"),
             ("cccd_issue_date", "Ngày cấp CCCD"),
         ):
             if key in values:
@@ -553,6 +558,8 @@ def install_staff_routes(
         status = _status_value(values.get("employment_status", old_status), norm)
         if str(merged.get("role") or "").lower() == "admin" and status != STATUS_OPTIONS[0]:
             raise HTTPException(400, "Không áp dụng trạng thái nghỉ việc cho tài khoản admin.")
+        if status == STATUS_OPTIONS[2] and not str(merged.get("employment_end_date") or "").strip():
+            merged["employment_end_date"] = datetime.now(vn_tz).strftime("%d/%m/%Y")
         if status != STATUS_OPTIONS[0]:
             # Employment status is an independent login gate.  Clear legacy
             # remembered-login material immediately when employment pauses or ends.
@@ -657,6 +664,7 @@ def install_staff_routes(
                 "shift_start_date": "", "rotation_cycle": "", "login_locked": False,
                 "remember_token_hash": "", "remember_token_expiry": "",
                 "employment_start_date": start_work, "source_sheet_id": "postgresql",
+                "employment_end_date": "",
                 "source_row": None, "payload": {"must_change_password": True},
                 "cccd_number": _cccd_number(body.cccd_number),
                 "cccd_issue_date": _date_text(body.cccd_issue_date, field_name="Ngày cấp CCCD"),

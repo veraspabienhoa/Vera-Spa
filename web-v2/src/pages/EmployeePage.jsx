@@ -23,7 +23,7 @@ const EMPTY_CREATE = {
 
 const PROFILE_FIELDS = [
   ['full_name', 'Họ và tên đầy đủ'], ['birth_date', 'Ngày sinh'],
-  ['employment_start_date', 'Ngày bắt đầu làm'], ['phone', 'Điện thoại'],
+  ['employment_start_date', 'Ngày bắt đầu làm'], ['employment_end_date', 'Ngày nghỉ việc'], ['phone', 'Điện thoại'],
   ['email', 'Email'], ['address', 'Địa chỉ'], ['bank_account', 'Số tài khoản ngân hàng'],
   ['bank_name', 'Tên ngân hàng'], ['cccd_number', 'Số CCCD'],
   ['cccd_issue_date', 'Ngày cấp CCCD'], ['cccd_issue_place', 'Nơi cấp CCCD'],
@@ -319,6 +319,7 @@ export default function EmployeePage({ user }) {
     const payload = { ...profileDraft }
     payload.birth_date = datePayload(payload.birth_date)
     payload.employment_start_date = datePayload(payload.employment_start_date)
+    payload.employment_end_date = datePayload(payload.employment_end_date)
     payload.cccd_issue_date = datePayload(payload.cccd_issue_date)
     const result = await veraApi.updateStaff(profileUser, payload)
     setProfileUser('')
@@ -398,7 +399,12 @@ export default function EmployeePage({ user }) {
           <label>Số CCCD<input inputMode="numeric" maxLength="12" value={createForm.cccd_number} onChange={(event) => setCreateForm({ ...createForm, cccd_number: event.target.value.replace(/\D/g, '').slice(0, 12) })} /></label>
           <label>Ngày cấp CCCD<input type="date" value={createForm.cccd_issue_date} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_date: event.target.value })} /></label>
           <label className="span-2">Nơi cấp CCCD<input value={createForm.cccd_issue_place} onChange={(event) => setCreateForm({ ...createForm, cccd_issue_place: event.target.value })} /></label>
-          <EmployeeMediaDraftPanel value={createMedia} onChange={setCreateMedia}/>
+          <EmployeeMediaDraftPanel value={createMedia} onChange={setCreateMedia} onIdentityExtracted={(fields) => setCreateForm((current) => ({
+            ...current,
+            cccd_number: current.cccd_number || fields.cccd_number || '',
+            cccd_issue_date: current.cccd_issue_date || toInputDate(fields.cccd_issue_date) || '',
+            cccd_issue_place: current.cccd_issue_place || fields.cccd_issue_place || '',
+          }))}/>
           <div className="staff-form-actions span-2"><button type="button" className="secondary-button" onClick={() => setAddOpen(false)}>Hủy</button><button className="primary-button" disabled={busy === 'create'}>{busy === 'create' ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />} Thêm nhân viên</button></div>
         </form>
       </section>}

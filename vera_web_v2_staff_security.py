@@ -23,7 +23,7 @@ from xml.sax.saxutils import escape
 
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageFilter, ImageOps
 from pydantic import BaseModel, Field
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -40,7 +40,7 @@ from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
 
 
-STAFF_SECURITY_RELEASE = "4.2-employee-media-cccd-pdf"
+STAFF_SECURITY_RELEASE = "4.3-employee-media-ocr-pdf-fixes"
 MAX_IDENTITY_BYTES = 700 * 1024
 IDENTITY_SIDES = {"front": "Mặt trước", "back": "Mặt sau"}
 MEDIA_SIDES = {**IDENTITY_SIDES, "portrait": "Ảnh nhân viên"}
@@ -123,20 +123,44 @@ def _ocr_text(data: bytes) -> str:
     command = shutil.which("tesseract")
     if not command:
         return ""
-    for language in ("vie+eng", "eng"):
-        try:
-            result = subprocess.run(
-                [command, "stdin", "stdout", "-l", language, "--psm", "6"],
-                input=data,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=20,
+    try:
+        with PILImage.open(BytesIO(data)) as source:
+            normalized = ImageOps.exif_transpose(source).convert("RGB")
+        if max(normalized.size) < 1800:
+            scale = 1800 / max(normalized.size)
+            normalized = normalized.resize(
+                (max(1, round(normalized.width * scale)), max(1, round(normalized.height * scale))),
+                PILImage.Resampling.LANCZOS,
             )
-        except (OSError, subprocess.TimeoutExpired):
-            return ""
-        if result.returncode == 0:
-            return result.stdout.decode("utf-8", errors="ignore")[:12000]
+        grayscale = ImageOps.autocontrast(ImageOps.grayscale(normalized)).filter(ImageFilter.SHARPEN)
+        variants = []
+        for image in (normalized, grayscale):
+            output = BytesIO()
+            image.save(output, format="PNG", optimize=True)
+            variants.append(output.getvalue())
+    except Exception:
+        variants = [data]
+
+    for language in ("vie+eng", "eng"):
+        texts = []
+        for payload, page_mode in zip(variants, ("6", "11")):
+            try:
+                result = subprocess.run(
+                    [command, "stdin", "stdout", "-l", language, "--psm", page_mode],
+                    input=payload,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                    timeout=20,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if result.returncode == 0:
+                value = result.stdout.decode("utf-8", errors="ignore").strip()
+                if value and value not in texts:
+                    texts.append(value)
+        if texts:
+            return "\n".join(texts)[:24000]
     return ""
 
 
@@ -145,21 +169,26 @@ def _extract_cccd_fields(data: bytes) -> dict[str, str]:
     if not raw:
         return {}
     clean = "\n".join(" ".join(line.split()) for line in raw.splitlines() if line.strip())
-    compact_digits = re.sub(r"(?<=\d)\s+(?=\d)", "", clean)
+    compact_digits = re.sub(r"(?<=\d)[\s.\-]+(?=\d)", "", clean)
     number_match = re.search(r"(?<!\d)(\d{12})(?!\d)", compact_digits)
     if not number_match:
         number_match = re.search(r"(?<!\d)(\d{9})(?!\d)", compact_digits)
 
     issue_date = ""
     date_patterns = (
-        r"(?:ngày\s*cấp|date\s*of\s*issue)[^\d]{0,24}(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
-        r"(?:ngày,?\s*tháng,?\s*năm|date,?\s*month,?\s*year)[^\d]{0,24}(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+        r"(?:ngày\s*cấp|date\s*of\s*issue)[^\d]{0,32}(\d{1,2}[./-]\d{1,2}[./-]\d{4})",
+        r"(?:ngày,?\s*tháng,?\s*năm|date,?\s*month,?\s*year)[^\d]{0,32}(\d{1,2}[./-]\d{1,2}[./-]\d{4})",
+        r"(?:ngày\s*cấp|date\s*of\s*issue|ngày,?\s*tháng,?\s*năm)[^\d]{0,32}(\d{1,2})\s*tháng\s*(\d{1,2})\s*năm\s*(\d{4})",
     )
     for pattern in date_patterns:
         match = re.search(pattern, clean, flags=re.IGNORECASE)
         if match:
             try:
-                issue_date = datetime.strptime(match.group(1).replace("-", "/"), "%d/%m/%Y").strftime("%d/%m/%Y")
+                candidate = (
+                    "/".join(match.groups()[:3]) if len(match.groups()) >= 3 and match.group(2)
+                    else match.group(1).replace("-", "/").replace(".", "/")
+                )
+                issue_date = datetime.strptime(candidate, "%d/%m/%Y").strftime("%d/%m/%Y")
             except ValueError:
                 issue_date = ""
             if issue_date:
@@ -173,6 +202,14 @@ def _extract_cccd_fields(data: bytes) -> dict[str, str]:
     )
     if place_match:
         place = place_match.group(1).strip(" .,:;-")[:500]
+    elif re.search(
+        r"c[uụ]c\s+(?:trưởng\s+c[uụ]c\s+)?c[aả]nh\s+s[aá]t.*qu[aả]n\s+l[yý]\s+h[aà]nh\s+ch[ií]nh.*tr[aậ]t\s+t[uự]\s+x[aã]\s+h[oộ]i",
+        clean,
+        flags=re.IGNORECASE,
+    ):
+        # Mặt sau CCCD gắn chip thường chỉ in tên cơ quan ký, không có
+        # nhãn “Nơi cấp / Place of issue”. Chuẩn hóa về tên cơ quan cấp.
+        place = "Cục Cảnh sát quản lý hành chính về trật tự xã hội"
 
     return {
         key: value for key, value in {
@@ -207,6 +244,21 @@ def _apply_extracted_cccd(conn, row: dict[str, Any], extracted: dict[str, str]) 
             "username": row["username"],
         })
     return applied
+
+
+def _full_employee_address(row: dict[str, Any], payload: dict[str, Any]) -> str:
+    detail = str(payload.get("Địa chỉ chi tiết") or "").strip()
+    ward = str(payload.get("Xã/Phường") or "").strip()
+    province = str(payload.get("Tỉnh/Thành phố") or "").strip()
+    stored = str(row.get("address") or payload.get("Địa chỉ") or "").strip()
+    if detail:
+        return ", ".join(part for part in (detail, ward, province) if part)
+    parts = [stored]
+    folded_stored = stored.casefold()
+    for value in (ward, province):
+        if value and value.casefold() not in folded_stored:
+            parts.append(value)
+    return ", ".join(part for part in parts if part)
 
 
 def _pdf_font_names() -> tuple[str, str]:
@@ -253,6 +305,8 @@ def _build_employee_profile_pdf(profile: dict[str, Any], media: dict[str, bytes]
     styles.add(ParagraphStyle(name="section", fontName=bold, fontSize=11, leading=14, textColor=colors.HexColor("#173D2F"), spaceBefore=4, spaceAfter=5))
     styles.add(ParagraphStyle(name="cell", fontName=font, fontSize=8.2, leading=11, textColor=colors.HexColor("#263832")))
     styles.add(ParagraphStyle(name="cell_bold", fontName=bold, fontSize=8.2, leading=11, textColor=colors.HexColor("#173D2F")))
+    styles.add(ParagraphStyle(name="signature_title", fontName=bold, fontSize=8.2, leading=11, alignment=TA_CENTER, textColor=colors.HexColor("#173D2F")))
+    styles.add(ParagraphStyle(name="signature_note", fontName=font, fontSize=8.2, leading=11, alignment=TA_CENTER, textColor=colors.HexColor("#3F5149")))
     styles.add(ParagraphStyle(name="placeholder", fontName=bold, fontSize=8, leading=10, alignment=TA_CENTER, textColor=colors.HexColor("#789087")))
     output = BytesIO()
     document = SimpleDocTemplate(
@@ -269,22 +323,19 @@ def _build_employee_profile_pdf(profile: dict[str, Any], media: dict[str, bytes]
         Spacer(1, 3 * mm),
     ]
     rows = [
-        ("Tên đăng nhập", profile.get("username")),
         ("Họ và tên", profile.get("full_name")),
         ("Ngày sinh", profile.get("birth_date")),
         ("Điện thoại", profile.get("phone")),
         ("Email", profile.get("email")),
         ("Địa chỉ", profile.get("address")),
-        ("Phân quyền", profile.get("role")),
         ("Trạng thái làm việc", profile.get("employment_status")),
         ("Ngày bắt đầu làm", profile.get("employment_start_date")),
-        ("Ca làm việc", profile.get("work_shift")),
         ("Số CCCD", profile.get("cccd_number")),
         ("Ngày cấp CCCD", profile.get("cccd_issue_date")),
         ("Nơi cấp CCCD", profile.get("cccd_issue_place")),
-        ("Số tài khoản", profile.get("bank_account")),
-        ("Ngân hàng", profile.get("bank_name")),
     ]
+    if str(profile.get("employment_status") or "").strip() == "Đã nghỉ việc":
+        rows.insert(6, ("Ngày nghỉ việc", profile.get("employment_end_date")))
     info = Table([
         [Paragraph(escape(label), styles["cell_bold"]), Paragraph(escape(str(value or "")), styles["cell"])]
         for label, value in rows
@@ -308,8 +359,8 @@ def _build_employee_profile_pdf(profile: dict[str, Any], media: dict[str, bytes]
     cards.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (0, 0), (-1, -1), "CENTER")]))
     generated = datetime.now().strftime("%d/%m/%Y %H:%M")
     signatures = Table([
-        [Paragraph("Người lao động", styles["cell_bold"]), Paragraph("Đại diện HỘ KINH DOANH VERA", styles["cell_bold"])],
-        [Paragraph("(Ký và ghi rõ họ tên)", styles["vera_center"]), Paragraph("(Ký và ghi rõ họ tên)", styles["vera_center"])],
+        [Paragraph("Người lao động", styles["signature_title"]), Paragraph("Đại diện HỘ KINH DOANH VERA", styles["signature_title"])],
+        [Paragraph("(Ký và ghi rõ họ tên)", styles["signature_note"]), Paragraph("(Ký và ghi rõ họ tên)", styles["signature_note"])],
         ["", ""],
     ], colWidths=[86 * mm, 86 * mm], rowHeights=[7 * mm, 6 * mm, 17 * mm])
     signatures.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
@@ -367,6 +418,25 @@ def install_staff_security_routes(
     @app.get("/v2/staff-security/health")
     def staff_security_health():
         return {"ok": True, "release": STAFF_SECURITY_RELEASE}
+
+    @app.post("/v2/staff/identity/ocr")
+    async def extract_identity_fields(request: Request, ident: identity_type = Depends(current_identity)):
+        content_type = str(request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+        if content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(400, "Chỉ chấp nhận ảnh WebP, JPEG hoặc PNG.")
+        content = await request.body()
+        if not content or len(content) > MAX_IDENTITY_BYTES:
+            raise HTTPException(400, "Ảnh CCCD trống hoặc vượt quá dung lượng cho phép.")
+        if not _valid_image(content, content_type):
+            raise HTTPException(400, "Nội dung file ảnh không hợp lệ.")
+        _image_dimensions(content)
+        extracted = _extract_cccd_fields(content)
+        return {
+            "ok": True,
+            "extracted_fields": extracted,
+            "ocr_status": "extracted" if extracted else "not_detected",
+            "message": "Đã đọc thông tin CCCD." if extracted else "Không đọc được thông tin CCCD; vui lòng nhập tay.",
+        }
 
     @app.post("/v2/staff/{username}/reset-password")
     def reset_staff_password(
@@ -574,10 +644,11 @@ def install_staff_security_routes(
                 "birth_date": str(row.get("birth_date") or ""),
                 "phone": str(row.get("phone") or ""),
                 "email": str(row.get("email") or ""),
-                "address": str(row.get("address") or ""),
+                "address": _full_employee_address(row, payload),
                 "role": str(row.get("role") or ""),
                 "employment_status": str(payload.get("Trạng thái làm việc") or "Đang làm việc"),
                 "employment_start_date": str(row.get("employment_start_date") or ""),
+                "employment_end_date": str(payload.get("Ngày nghỉ việc") or payload.get("Ngày kết thúc làm việc") or payload.get("employment_end_date") or ""),
                 "work_shift": str(row.get("work_shift") or ""),
                 "cccd_number": str(payload.get("Số CCCD") or ""),
                 "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),

@@ -41,8 +41,9 @@ def test_employee_profile_pdf_is_printable_a4_document():
             "email": "an@example.com",
             "address": "Đồng Nai",
             "role": "nhanvien",
-            "employment_status": "Đang làm việc",
+            "employment_status": "Đã nghỉ việc",
             "employment_start_date": "01/09/2026",
+            "employment_end_date": "30/09/2026",
             "work_shift": "Ca 1",
             "cccd_number": "075204001234",
             "cccd_issue_date": "05/09/2026",
@@ -72,3 +73,15 @@ def test_employee_media_security_and_exports_are_wired():
     assert "Camera trước" in identity_ui
     assert "Camera sau" in identity_ui
     assert "facingMode: { ideal: facingMode }" in identity_ui
+    assert "setCropInset('left'" in identity_ui
+    assert "setCropInset('right'" in identity_ui
+    assert "staffSecurityApi.extractIdentity(blob)" in identity_ui
+
+    pdf_builder = security_source.split("def _build_employee_profile_pdf", 1)[1].split("def install_staff_security_routes", 1)[0]
+    assert '("Tên đăng nhập",' not in pdf_builder
+    assert '("Phân quyền",' not in pdf_builder
+    assert '("Ca làm việc",' not in pdf_builder
+    assert '("Số tài khoản",' not in pdf_builder
+    assert '("Ngân hàng",' not in pdf_builder
+    assert 'rows.insert(6, ("Ngày nghỉ việc"' in pdf_builder
+    assert 'styles["signature_title"]' in pdf_builder
