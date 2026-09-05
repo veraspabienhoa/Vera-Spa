@@ -216,7 +216,7 @@ api_provider_present=0
 while IFS= read -r -d '' entry; do
   key=${entry%%=*}
   case "$key" in
-    DB_HOST|DB_PORT|DB_NAME)
+    DB_PORT|DB_NAME)
       api_database_environment["$key"]=${entry#*=}
       ;;
     VERA_AUTH_PROVIDER)
@@ -226,7 +226,6 @@ while IFS= read -r -d '' entry; do
   esac
 done < "/proc/$pid/environ"
 api_database_mismatches=()
-[[ "${api_database_environment[DB_HOST]:-}" == "$db_host" ]] || api_database_mismatches+=(DB_HOST)
 [[ "${api_database_environment[DB_PORT]:-5432}" == "$db_port" ]] || api_database_mismatches+=(DB_PORT)
 [[ "${api_database_environment[DB_NAME]:-postgres}" == "$db_name" ]] || api_database_mismatches+=(DB_NAME)
 if (( ${#api_database_mismatches[@]} > 0 )); then

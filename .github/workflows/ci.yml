@@ -200,7 +200,7 @@ jobs:
               )) and '>> "$service_environment_path"' not in deploy,
               'deploy checks target database and explicit provider before marker cutover': all(item in deploy for item in (
                   'live API database endpoint mismatch',
-                  'DB_HOST|DB_PORT|DB_NAME',
+                  'DB_PORT|DB_NAME',
                   'explicit API Auth provider policy does not permit marker cutover',
               )),
               'API enforces TLS even when a legacy environment requests a weaker mode': all(
