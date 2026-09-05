@@ -744,11 +744,15 @@ export default function WorkSchedulePage({ user }) {
   const monthlyStatistics = useMemo(() => {
     const definitions = shiftDefinitions?.[department] || {}
     const byEmployee = Object.fromEntries(employees.map((employee) => [employee.username, {
-      username: employee.username, name: systemName(employee), workDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0,
+      username: employee.username, name: systemName(employee), workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0,
     }]))
     monthlyRows.filter((row) => row.work_date <= yesterdayIso).forEach((row) => {
       const item = byEmployee[row.employee_username]
-      if (!item || !row.shift_code || row.shift_code === 'Nghỉ') return
+      if (!item || !row.shift_code) return
+      if (row.shift_code === 'Nghỉ') {
+        item.offDays += 1
+        return
+      }
       item.workDays += 1
       const bucket = workShiftBucket(row)
       if (bucket === 'Ca 1') item.ca1Days += 1
@@ -758,10 +762,11 @@ export default function WorkSchedulePage({ user }) {
     const rows = Object.values(byEmployee)
     const departmentTotal = rows.reduce((total, item) => ({
       workDays: total.workDays + item.workDays,
+      offDays: total.offDays + item.offDays,
       ca1Days: total.ca1Days + item.ca1Days,
       ca2Days: total.ca2Days + item.ca2Days,
       overtimeHours: total.overtimeHours + item.overtimeHours,
-    }), { workDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0 })
+    }), { workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0 })
     return { rows, departmentTotal }
   }, [department, employees, monthlyRows, shiftDefinitions, yesterdayIso])
 
@@ -1085,9 +1090,9 @@ export default function WorkSchedulePage({ user }) {
     {!loading && <div className="schedule-scroll monthly-statistics">
       <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến hết ngày hôm qua · {DEPARTMENT_INFO[department].label}</h3>
       <table>
-        <thead><tr><th>Nhân viên</th><th>Ngày làm việc</th><th>Ngày Ca 1</th><th>Ngày Ca 2</th><th>Giờ tăng ca</th></tr></thead>
-        <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr>)}</tbody>
-        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr></tfoot>
+        <thead><tr><th>Nhân viên</th><th>Ngày làm việc</th><th>Ngày nghỉ</th><th>Ngày Ca 1</th><th>Ngày Ca 2</th><th>Giờ tăng ca</th></tr></thead>
+        <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr>)}</tbody>
+        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr></tfoot>
       </table>
     </div>}
     {!loading && comboEditor}

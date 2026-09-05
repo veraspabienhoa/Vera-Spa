@@ -53,6 +53,9 @@ def test_schedule_page_has_monthly_statistics_and_clickable_total_highlight():
     assert "Từ giờ tới giờ" in source
     assert "Tổng bộ phận" in source
     assert "row.work_date <= yesterdayIso" in source
+    assert "<th>Ngày nghỉ</th>" in source
+    assert "item.offDays += 1" in source
+    assert "monthlyStatistics.departmentTotal.offDays" in source
     assert "mobile-cell-summary ${mobileShiftClass}" in source
     assert "BÁN COMBO" in source
     assert "combo_customer_phone" in source

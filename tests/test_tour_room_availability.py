@@ -78,6 +78,18 @@ def test_desktop_employee_table_expands_to_show_all_rows():
     assert ".tour-records-panel .tour-table{max-height:calc(100vh" not in source
 
 
+def test_tour_heading_and_available_room_summary_are_compact():
+    source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
+
+    assert "<span className=\"eyebrow\"><Compass" not in source
+    assert ".tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:18px" in source
+    assert "}.tour-heading-title h1{font-size:14.5px}" in source
+    assert ")).length} phòng đang trống</small>" in source
+    assert ")).length}/{displayedRooms.length} phòng đang trống" not in source
+    assert "grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr)" in source
+    assert ".tour-room-panel-head small{justify-self:center" in source
+
+
 def test_tour_metric_boxes_follow_the_requested_two_row_order():
     source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
     labels = (
