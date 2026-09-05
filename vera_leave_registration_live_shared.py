@@ -14,6 +14,12 @@ from typing import Any, Mapping
 import pandas as pd
 
 from vera_leave_registration_shared import norm
+from vera_progressive_penalty import (
+    DEFAULT_WEEKEND_UNPAID_ENABLED,
+    applies as progressive_applies,
+    bonus as progressive_bonus_amount,
+    canonical_reason as progressive_canonical_reason,
+)
 
 VN_TZ = timezone(timedelta(hours=7))
 EMPLOYEE_LIKE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
@@ -225,23 +231,25 @@ def leave_exists(df_sources, ngay, employee, reason):
 
 
 def progressive_penalty_reason(value):
-    key = norm(clean_display(value))
-    mapping = {
-        norm("Nghỉ không phép"): "Nghỉ không phép",
-        norm("Nghỉ KHÔNG phép"): "Nghỉ không phép",
-        norm("Đi trễ không phép"): "Đi trễ không phép",
-        norm("Đi trễ KHÔNG phép"): "Đi trễ không phép",
-        norm("Về sớm không phép"): "Về sớm không phép",
-        norm("Về sớm KHÔNG phép"): "Về sớm không phép",
-        norm("Ra sớm không phép"): "Về sớm không phép",
-    }
-    return mapping.get(key)
+    return progressive_canonical_reason(clean_display(value))
 
 
-def progressive_ordinal_and_bonus(df_sources, ngay, reason):
+def progressive_ordinal_and_bonus(
+    df_sources,
+    ngay,
+    reason,
+    *,
+    weekend_unpaid_enabled=DEFAULT_WEEKEND_UNPAID_ENABLED,
+):
     canonical = progressive_penalty_reason(reason)
     if canonical is None:
-        return 1, 0
+        return None, 0
+    if not progressive_applies(
+        ngay,
+        reason,
+        weekend_unpaid_enabled=weekend_unpaid_enabled,
+    ):
+        return None, 0
     target = _parse_date(ngay)
     if target is None or not isinstance(df_sources, pd.DataFrame) or df_sources.empty:
         ordinal = 1
@@ -250,7 +258,12 @@ def progressive_ordinal_and_bonus(df_sources, ngay, reason):
         dates = d["Ngày"].apply(_parse_date)
         canonical_series = d["Lý do nghỉ"].astype(str).apply(progressive_penalty_reason)
         ordinal = int(((dates == target) & canonical_series.eq(canonical)).sum()) + 1
-    return ordinal, max(0, ordinal - 2) * 100000
+    return ordinal, progressive_bonus_amount(
+        ordinal,
+        target,
+        reason,
+        weekend_unpaid_enabled=weekend_unpaid_enabled,
+    )
 
 
 def daily_group_quota(all_leave_df, target_date, reason, is_zero_day_co_phep=False, weekday_limit=5, weekend_limit=3, phat_sinh_limit=2):
@@ -494,10 +507,11 @@ def validate_leave_registration_request_live(payload, live_df, credentials_df, r
         progressive_reason = progressive_reason_fn(reason)
         if progressive_reason:
             ordinal, extra_penalty = progressive_bonus(source_df, target_date, reason)
-            preview_total = default_phat + float(extra_penalty)
-            result["warnings"].append(
-                f"{target_date.strftime('%d/%m/%Y')}: Người Thứ {ordinal} {str(progressive_reason).lower()} · tổng phạt dự kiến {preview_total:,.0f} VNĐ."
-            )
+            if ordinal is not None:
+                preview_total = default_phat + float(extra_penalty)
+                result["warnings"].append(
+                    f"{target_date.strftime('%d/%m/%Y')}: Người Thứ {ordinal} {str(progressive_reason).lower()} · tổng phạt dự kiến {preview_total:,.0f} VNĐ."
+                )
 
     result["ok"] = True
     return result

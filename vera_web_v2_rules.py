@@ -23,6 +23,14 @@ from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from vera_progressive_penalty import (
+    CONFIG_SHEET_KEY as WEEKEND_UNPAID_NTH_CONFIG_SHEET_KEY,
+    DEFAULT_WEEKEND_UNPAID_ENABLED,
+    SETTING_CATEGORY as WEEKEND_UNPAID_NTH_CATEGORY,
+    SETTING_KEY as WEEKEND_UNPAID_NTH_KEY,
+    as_bool as weekend_unpaid_nth_as_bool,
+)
+
 
 CATEGORY = "official_policy"
 SETTING_KEY = "leave_rules"
@@ -90,6 +98,11 @@ class LateThresholdUpdate(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class WeekendUnpaidNthPenaltyUpdate(BaseModel):
+    enabled: bool
+    expected_revision: int = Field(ge=0)
+
+
 class DepartmentPenaltyRule(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), max_length=80)
     name: str = Field(min_length=1, max_length=300)
@@ -143,6 +156,27 @@ def _load_late_threshold(conn) -> dict[str, Any]:
         threshold = DEFAULT_LATE_THRESHOLD_MINUTES
     return {
         "threshold_minutes": threshold,
+        "revision": int(row["revision"] or 0) if row else 0,
+        "updated_at": row["updated_at"].isoformat() if row and row["updated_at"] else "",
+        "updated_by": str(row["updated_by"] or "") if row else "",
+    }
+
+
+def _load_weekend_unpaid_nth_penalty(conn) -> dict[str, Any]:
+    row = conn.execute(text("""
+        SELECT value_json, revision, updated_at, updated_by
+        FROM vera_app_setting
+        WHERE category=:category AND setting_key=:setting_key
+        LIMIT 1
+    """), {
+        "category": WEEKEND_UNPAID_NTH_CATEGORY,
+        "setting_key": WEEKEND_UNPAID_NTH_KEY,
+    }).mappings().first()
+    return {
+        "enabled": weekend_unpaid_nth_as_bool(
+            row["value_json"] if row else None,
+            DEFAULT_WEEKEND_UNPAID_ENABLED,
+        ),
         "revision": int(row["revision"] or 0) if row else 0,
         "updated_at": row["updated_at"].isoformat() if row and row["updated_at"] else "",
         "updated_by": str(row["updated_by"] or "") if row else "",
@@ -274,6 +308,37 @@ def _write_daily_quota_sheet(ws, payload: dict[str, Any]) -> None:
             rows[index][0:2] = [key, value]
         else:
             rows.append([key, value])
+    width = max(2, max(len(row) for row in rows))
+    padded = [row + [""] * (width - len(row)) for row in rows]
+    ws.clear()
+    ws.update(
+        range_name=f"A1:{get_column_letter(width)}{len(padded)}",
+        values=padded,
+        value_input_option="USER_ENTERED",
+    )
+
+
+def _write_config_sheet_value(ws, key: str, value: Any) -> None:
+    old_values = ws.get_all_values()
+    rows = [list(row) for row in old_values]
+    if not rows:
+        rows = [["Key", "Value"]]
+    if len(rows[0]) < 2:
+        rows[0] += [""] * (2 - len(rows[0]))
+    rows[0][0:2] = ["Key", "Value"]
+
+    index_by_key = {
+        str(row[0] if row else "").strip(): index
+        for index, row in enumerate(rows[1:], start=1)
+        if row and str(row[0]).strip()
+    }
+    if key in index_by_key:
+        index = index_by_key[key]
+        rows[index] += [""] * max(0, 2 - len(rows[index]))
+        rows[index][0:2] = [key, value]
+    else:
+        rows.append([key, value])
+
     width = max(2, max(len(row) for row in rows))
     padded = [row + [""] * (width - len(row)) for row in rows]
     ws.clear()
@@ -549,6 +614,7 @@ def install_rules_routes(
         document = _load_document(conn)
         daily_quota = _load_daily_quota(conn)
         late_threshold = _load_late_threshold(conn)
+        weekend_unpaid_nth_penalty = _load_weekend_unpaid_nth_penalty(conn)
         is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         return {
             **document,
@@ -556,12 +622,14 @@ def install_rules_routes(
             "permissions": _permissions(conn, ident, feature_allowed),
             "daily_quota": daily_quota,
             "late_threshold": late_threshold,
+            "weekend_unpaid_nth_penalty": weekend_unpaid_nth_penalty,
             "department_rules": {
                 department: _load_department_rules(conn, department)
                 for department in DEPARTMENT_RULES
             },
             "can_edit_daily_quota": is_admin,
             "can_edit_late_threshold": is_admin,
+            "can_edit_weekend_unpaid_nth_penalty": is_admin,
             "can_edit_department_rules": is_admin,
         }
 
@@ -900,6 +968,118 @@ def install_rules_routes(
             if sheet_changed and config_ws is not None:
                 _restore_legacy_sheet(config_ws, old_sheet_values)
             raise HTTPException(500, f"Không thể áp dụng hạn mức nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
+        finally:
+            conn.close()
+
+    @app.put("/v2/rules/weekend-unpaid-nth-penalty")
+    def save_weekend_unpaid_nth_penalty(
+        body: WeekendUnpaidNthPenaltyUpdate,
+        ident: identity_type = Depends(current_identity),
+    ):
+        conn = engine_instance().connect()
+        tx = conn.begin()
+        config_ws = None
+        old_sheet_values: list[list[Any]] = []
+        sheet_changed = False
+        try:
+            conn.execute(text(
+                "SELECT pg_advisory_xact_lock(hashtext('vera:web-v2:weekend-unpaid-nth-penalty'))"
+            ))
+            require_feature(conn, ident, "official_rules_edit")
+            if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+                raise HTTPException(
+                    403,
+                    "Chỉ tài khoản admin được bật hoặc tắt Người Thứ N cho nghỉ không phép cuối tuần.",
+                )
+
+            current = conn.execute(text("""
+                SELECT revision
+                FROM vera_app_setting
+                WHERE category=:category AND setting_key=:setting_key
+                FOR UPDATE
+            """), {
+                "category": WEEKEND_UNPAID_NTH_CATEGORY,
+                "setting_key": WEEKEND_UNPAID_NTH_KEY,
+            }).scalar_one_or_none()
+            current_revision = int(current or 0)
+            if current_revision != body.expected_revision:
+                raise HTTPException(
+                    409,
+                    "Cấu hình Người Thứ N cuối tuần đã được cập nhật. Hãy bấm Làm mới trước khi áp dụng lại.",
+                )
+
+            value = {"enabled": bool(body.enabled)}
+            if current is None:
+                saved = conn.execute(text("""
+                    INSERT INTO vera_app_setting(
+                        category, setting_key, value_json, source, updated_by,
+                        revision, created_at, updated_at
+                    ) VALUES (
+                        :category, :setting_key, CAST(:value_json AS jsonb),
+                        'web_v2_rules', :updated_by, 1, now(), now()
+                    )
+                    RETURNING revision, updated_at
+                """), {
+                    "category": WEEKEND_UNPAID_NTH_CATEGORY,
+                    "setting_key": WEEKEND_UNPAID_NTH_KEY,
+                    "value_json": json.dumps(value, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+            else:
+                saved = conn.execute(text("""
+                    UPDATE vera_app_setting
+                    SET value_json=CAST(:value_json AS jsonb),
+                        source='web_v2_rules', updated_by=:updated_by,
+                        revision=revision + 1, updated_at=now()
+                    WHERE category=:category AND setting_key=:setting_key
+                    RETURNING revision, updated_at
+                """), {
+                    "category": WEEKEND_UNPAID_NTH_CATEGORY,
+                    "setting_key": WEEKEND_UNPAID_NTH_KEY,
+                    "value_json": json.dumps(value, ensure_ascii=False),
+                    "updated_by": ident.employee_username,
+                }).mappings().one()
+
+            spreadsheet = google_client().open_by_key(leave_sheet_id)
+            try:
+                config_ws = spreadsheet.worksheet("Config")
+            except Exception:
+                config_ws = spreadsheet.add_worksheet(title="Config", rows=100, cols=10)
+            old_sheet_values = config_ws.get_all_values()
+            sheet_changed = True
+            _write_config_sheet_value(
+                config_ws,
+                WEEKEND_UNPAID_NTH_CONFIG_SHEET_KEY,
+                "TRUE" if body.enabled else "FALSE",
+            )
+            tx.commit()
+            return {
+                "ok": True,
+                "message": (
+                    "Đã KÍCH HOẠT Người Thứ N cho nghỉ không phép cuối tuần."
+                    if body.enabled
+                    else "Đã TẮT Người Thứ N cho nghỉ không phép cuối tuần."
+                ),
+                "enabled": bool(body.enabled),
+                "revision": int(saved["revision"]),
+                "updated_at": saved["updated_at"].isoformat(),
+                "updated_by": ident.employee_username,
+            }
+        except HTTPException:
+            if tx.is_active:
+                tx.rollback()
+            if sheet_changed and config_ws is not None:
+                _restore_legacy_sheet(config_ws, old_sheet_values)
+            raise
+        except Exception as exc:
+            if tx.is_active:
+                tx.rollback()
+            if sheet_changed and config_ws is not None:
+                _restore_legacy_sheet(config_ws, old_sheet_values)
+            raise HTTPException(
+                500,
+                f"Không thể áp dụng cấu hình Người Thứ N cuối tuần an toàn: {type(exc).__name__}: {exc}",
+            ) from exc
         finally:
             conn.close()
 

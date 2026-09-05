@@ -46,6 +46,11 @@ from vera_leave_registration_live_shared import (
     rows_counting_toward_quota,
     validate_leave_registration_request_live,
 )
+from vera_progressive_penalty import (
+    applies as progressive_applies,
+    bonus as progressive_bonus_amount,
+    load_weekend_unpaid_enabled,
+)
 
 
 def _reason_item(conn, reason: str) -> dict:
@@ -271,6 +276,7 @@ def _validate_and_prepare(
     item = _reason_item(conn, body.leave_reason)
     base_penalty = float(body.manual_penalty) if item["requires_manual_penalty"] and body.manual_penalty is not None else float(item["penalty"])
     live_df = _live_leave_df(conn, exclude_record_uid=exclude_record_uid)
+    weekend_unpaid_enabled = load_weekend_unpaid_enabled(conn)
     credentials_df = pd.DataFrame([{
         "Tên nhân viên": employee,
         "Phát sinh tháng": float(emp["monthly_generated"] or 0),
@@ -289,6 +295,14 @@ def _validate_and_prepare(
         except HTTPException as exc:
             return False, str(exc.detail)
 
+    def progressive_for_request(df_sources, target_date, reason):
+        return progressive_ordinal_and_bonus(
+            df_sources,
+            target_date,
+            reason,
+            weekend_unpaid_enabled=weekend_unpaid_enabled,
+        )
+
     runtime = {
         "clean_leave_reason_display": clean_display,
         "is_annual_leave_range_reason": is_annual_reason,
@@ -306,7 +320,7 @@ def _validate_and_prepare(
         "validate_daily_employee_registration_rule": lambda df, d, e, r, days: _daily_employee_rule(conn, df, d, e, r, days),
         "validate_daily_group_quota": lambda df, d, r, is_zero_day_co_phep=False: _daily_group_quota(conn, df, d, r, is_zero_day_co_phep),
         "get_progressive_penalty_reason": progressive_penalty_reason,
-        "progressive_ordinal_and_bonus": progressive_ordinal_and_bonus,
+        "progressive_ordinal_and_bonus": progressive_for_request,
         "now_vn": lambda: datetime.now(_api.VN_TZ),
     }
     reason_key = norm(item["name"])
@@ -336,12 +350,22 @@ def _validate_and_prepare(
     ordinal = None
     extra = 0.0
     progressive_reason = progressive_penalty_reason(item["name"])
-    if progressive_reason:
+    progressive_enabled = progressive_applies(
+        body.leave_date,
+        item["name"],
+        weekend_unpaid_enabled=weekend_unpaid_enabled,
+    )
+    if progressive_reason and progressive_enabled:
         if existing_ordinal is not None:
             ordinal = int(existing_ordinal)
-            extra = max(0, ordinal - 2) * 100000.0
+            extra = progressive_bonus_amount(
+                ordinal,
+                body.leave_date,
+                item["name"],
+                weekend_unpaid_enabled=weekend_unpaid_enabled,
+            )
         else:
-            ordinal, extra = progressive_ordinal_and_bonus(live_df, body.leave_date, item["name"])
+            ordinal, extra = progressive_for_request(live_df, body.leave_date, item["name"])
 
     accumulated = float(validation.get("accumulated_month", 0) or 0)
     if not (is_video_reason(item["name"]) or is_long_sick_reason(item["name"])):

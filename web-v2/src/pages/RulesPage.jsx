@@ -1,6 +1,6 @@
 import {
   Download, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw,
-  Save, Search, ShieldCheck, Trash2, Upload,
+  Power, Save, Search, ShieldCheck, Trash2, Upload,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -48,6 +48,7 @@ export default function RulesPage() {
   const [quotaOriginalSignature, setQuotaOriginalSignature] = useState('')
   const [lateThreshold, setLateThreshold] = useState(5)
   const [lateThresholdOriginal, setLateThresholdOriginal] = useState(5)
+  const [weekendUnpaidNthPenalty, setWeekendUnpaidNthPenalty] = useState({ enabled: false, revision: 0 })
   const [departmentRules, setDepartmentRules] = useState({ locker: [], letan: [] })
   const [departmentRulesOriginal, setDepartmentRulesOriginal] = useState({ locker: '[]', letan: '[]' })
   const [selected, setSelected] = useState([])
@@ -75,6 +76,11 @@ export default function RulesPage() {
     const nextLateThreshold = Number(result.late_threshold?.threshold_minutes || 5)
     setLateThreshold(nextLateThreshold)
     setLateThresholdOriginal(nextLateThreshold)
+    setWeekendUnpaidNthPenalty({
+      ...(result.weekend_unpaid_nth_penalty || {}),
+      enabled: result.weekend_unpaid_nth_penalty?.enabled === true,
+      revision: Number(result.weekend_unpaid_nth_penalty?.revision || 0),
+    })
     const nextDepartmentRules = Object.fromEntries(Object.keys(departmentRuleLabels).map((department) => [
       department,
       (result.department_rules?.[department]?.rules || []).map((item) => ({ ...item })),
@@ -107,6 +113,7 @@ export default function RulesPage() {
   const canEdit = permissions.official_rules_edit === true
   const canEditDailyQuota = data?.can_edit_daily_quota === true
   const canEditLateThreshold = data?.can_edit_late_threshold === true
+  const canEditWeekendUnpaidNthPenalty = data?.can_edit_weekend_unpaid_nth_penalty === true
   const canEditDepartmentRules = data?.can_edit_department_rules === true
   const dirty = documentSignature(columns, rows) !== originalSignature
   const quotaDirty = JSON.stringify(quotaRows) !== quotaOriginalSignature
@@ -268,6 +275,15 @@ export default function RulesPage() {
     setNotice({ type: 'success', message: result.message })
   })
 
+  const toggleWeekendUnpaidNthPenalty = () => run('weekend-unpaid-nth-penalty', async () => {
+    const result = await veraApi.saveWeekendUnpaidNthPenalty({
+      enabled: !weekendUnpaidNthPenalty.enabled,
+      expected_revision: Number(weekendUnpaidNthPenalty.revision || 0),
+    })
+    await load(true)
+    setNotice({ type: 'success', message: result.message })
+  })
+
   const saveDepartmentRules = (department) => run(`department-${department}`, async () => {
     if (!departmentRulesDirty(department)) throw new Error(`Nội quy ${departmentRuleLabels[department]} chưa có thay đổi cần áp dụng.`)
     const result = await veraApi.saveDepartmentRules(department, {
@@ -360,6 +376,39 @@ export default function RulesPage() {
           </button>}
         </div>
         <p className="page-subtitle" style={{ marginTop: 10 }}>Ví dụ: ngưỡng 5 phút thì trễ 4 phút không phạt; trễ từ 5 phút trở lên mới phạt.</p>
+      </section>
+
+      <section className="panel weekend-unpaid-nth-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>NGƯỜI THỨ N – NGHỈ KHÔNG PHÉP CUỐI TUẦN</h2>
+            <p>Công tắc này chỉ áp dụng cho Nghỉ không phép vào Thứ Bảy và Chủ nhật.</p>
+          </div>
+          <span className={`weekend-unpaid-nth-state ${weekendUnpaidNthPenalty.enabled ? 'enabled' : 'disabled'}`}>
+            {weekendUnpaidNthPenalty.enabled ? 'ĐANG BẬT' : 'ĐANG TẮT'}
+          </span>
+        </div>
+        <div className="weekend-unpaid-nth-content">
+          <div>
+            <strong>{weekendUnpaidNthPenalty.enabled ? 'Đang tính phạt Người Thứ N cuối tuần' : 'Đang giữ nguyên mức phạt gốc cuối tuần'}</strong>
+            <p>
+              Khi TẮT, người thứ 3, 4, 5… nghỉ không phép vào cuối tuần không cộng thêm 100.000đ/người.
+              Ngày thường và các lý do Đi trễ/Về sớm không thay đổi.
+            </p>
+          </div>
+          {canEditWeekendUnpaidNthPenalty && <button
+            type="button"
+            className={weekendUnpaidNthPenalty.enabled ? 'danger-button' : 'primary-button'}
+            disabled={busy === 'weekend-unpaid-nth-penalty'}
+            onClick={toggleWeekendUnpaidNthPenalty}
+          >
+            {busy === 'weekend-unpaid-nth-penalty'
+              ? <LoaderCircle size={17} className="spin" />
+              : <Power size={17} />}
+            {weekendUnpaidNthPenalty.enabled ? 'Tắt Người Thứ N cuối tuần' : 'Kích hoạt Người Thứ N cuối tuần'}
+          </button>}
+        </div>
+        {!canEditWeekendUnpaidNthPenalty && <p className="weekend-unpaid-nth-admin-note"><ShieldCheck size={15} /> Chỉ Admin được thay đổi công tắc này.</p>}
       </section>
 
       <section className="panel daily-quota-panel">

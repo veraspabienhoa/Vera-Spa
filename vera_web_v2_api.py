@@ -43,6 +43,12 @@ from sqlalchemy.engine import URL
 from vera_google_credentials import google_credentials
 from vera_leave_registration_shared import summarize_leave_day
 from vera_json import json_safe, json_text
+from vera_progressive_penalty import (
+    applies as progressive_penalty_applies,
+    bonus as progressive_penalty_bonus,
+    load_weekend_unpaid_enabled,
+    progressive_key as canonical_progressive_key,
+)
 from vera_web_v2_local_auth import (
     SESSION_CATEGORY,
     SESSION_RECORD_KIND,
@@ -434,14 +440,7 @@ def _is_annual(reason: str) -> bool:
 
 
 def _progressive_key(reason: str) -> str:
-    n = _norm(reason)
-    if "nghi" in n and "khong phep" in n:
-        return "nghi_khong_phep"
-    if "di tre" in n and "khong phep" in n:
-        return "di_tre_khong_phep"
-    if ("ve som" in n or "ra som" in n) and "khong phep" in n:
-        return "ve_som_khong_phep"
-    return ""
+    return canonical_progressive_key(reason)
 
 
 class Identity(BaseModel):
@@ -1237,10 +1236,20 @@ def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dic
     warnings = []
     ordinal = None
     extra = 0.0
-    if progressive:
+    weekend_unpaid_enabled = load_weekend_unpaid_enabled(conn)
+    if progressive and progressive_penalty_applies(
+        body.leave_date,
+        item["name"],
+        weekend_unpaid_enabled=weekend_unpaid_enabled,
+    ):
         day_reasons = conn.execute(text("SELECT leave_reason FROM leave_records WHERE leave_date=:d"), {"d": body.leave_date}).scalars().all()
         ordinal = sum(1 for r in day_reasons if _progressive_key(r) == progressive) + 1
-        extra = max(0, ordinal - 2) * 100000.0
+        extra = progressive_penalty_bonus(
+            ordinal,
+            body.leave_date,
+            item["name"],
+            weekend_unpaid_enabled=weekend_unpaid_enabled,
+        )
         warnings.append(f"Người Thứ {ordinal} · phạt lũy tiến cộng thêm {extra:,.0f} VNĐ.")
 
     # Monthly accumulated value mirrors the existing main-data convention.
@@ -1442,6 +1451,7 @@ def _rebalance_progressive_rows(conn, target: date, keys: set[str]) -> list[tupl
     """), {"d": target, "sid": LEAVE_SHEET_ID}).mappings().all()
     changed = []
     counters: dict[str, int] = {key: 0 for key in keys}
+    weekend_unpaid_enabled = load_weekend_unpaid_enabled(conn)
     for raw in rows:
         key = _progressive_key(raw["leave_reason"])
         if key not in keys:
@@ -1451,9 +1461,22 @@ def _rebalance_progressive_rows(conn, target: date, keys: set[str]) -> list[tupl
         item = _reason_item(conn, raw["leave_reason"])
         base = float(item.get("penalty") or 0)
         detail = _strip_progressive_prefix(raw.get("detail", ""))
-        prefix = f"Người Thứ {ordinal} {item['name'].lower()}"
-        new_detail = f"{prefix} | {detail}" if detail else prefix
-        new_penalty = base + max(0, ordinal - 2) * 100000.0
+        progressive_enabled = progressive_penalty_applies(
+            target,
+            raw["leave_reason"],
+            weekend_unpaid_enabled=weekend_unpaid_enabled,
+        )
+        if progressive_enabled:
+            prefix = f"Người Thứ {ordinal} {item['name'].lower()}"
+            new_detail = f"{prefix} | {detail}" if detail else prefix
+        else:
+            new_detail = detail
+        new_penalty = base + progressive_penalty_bonus(
+            ordinal,
+            target,
+            raw["leave_reason"],
+            weekend_unpaid_enabled=weekend_unpaid_enabled,
+        )
         if new_detail == str(raw.get("detail") or "") and abs(new_penalty - float(raw.get("penalty") or 0)) < 1e-9:
             continue
         record = _row_record(dict(raw))

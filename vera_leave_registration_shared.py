@@ -11,6 +11,8 @@ import re
 import unicodedata
 from typing import Any
 
+from vera_progressive_penalty import progressive_key
+
 VN_TZ = timezone(timedelta(hours=7))
 
 
@@ -183,17 +185,6 @@ def is_long_sick(reason: str) -> bool:
 
 def is_annual(reason: str) -> bool:
     return "phep nam" in norm(reason)
-
-
-def progressive_key(reason: str) -> str:
-    n = norm(reason)
-    if "nghi" in n and "khong phep" in n:
-        return "nghi_khong_phep"
-    if "di tre" in n and "khong phep" in n:
-        return "di_tre_khong_phep"
-    if ("ve som" in n or "ra som" in n) and "khong phep" in n:
-        return "ve_som_khong_phep"
-    return ""
 
 
 def summarize_leave_day(rows, active_employee_count: int) -> dict[str, int]:

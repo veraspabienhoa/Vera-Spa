@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field
 import requests
 from sqlalchemy import text
 
+from vera_progressive_penalty import applies as progressive_penalty_applies
+from vera_progressive_penalty import load_weekend_unpaid_enabled
+
 import vera_web_v2_permissions as permissions
 
 
@@ -324,9 +327,14 @@ def _progressive_detail_map(conn, start_date: date, end_date: date, progressive_
     """), {"start_date": start_date, "end_date": end_date}).mappings().all()
     counters: dict[tuple[date, str], int] = {}
     output: dict[str, str] = {}
+    weekend_unpaid_enabled = load_weekend_unpaid_enabled(conn)
     for row in rows:
         key = str(progressive_key(row.get("leave_reason")) or "")
-        if not key:
+        if not key or not progressive_penalty_applies(
+            row.get("leave_date"),
+            row.get("leave_reason"),
+            weekend_unpaid_enabled=weekend_unpaid_enabled,
+        ):
             continue
         bucket = (row["leave_date"], key)
         counters[bucket] = counters.get(bucket, 0) + 1

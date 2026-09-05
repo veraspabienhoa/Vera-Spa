@@ -38,6 +38,7 @@ import vera_postgres as vpg
 import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
 import vera_missing_checkin_notifications as missing_checkin_notifications
+import vera_progressive_penalty as progressive_penalty
 import vera_web_v2_department_attendance as department_attendance
 from vera_attendance_rules import supported_late_minutes
 
@@ -135,10 +136,69 @@ OUTSIDE_LATE_EXCLUDED = {
     "ra ngoai vao muon tren 120 phut",
 }
 
+_WEEKEND_UNPAID_SWITCH_CACHE_SECONDS = 15.0
+_weekend_unpaid_switch_cache: tuple[float, bool] | None = None
+
 
 def _log(msg: str) -> None:
     now = datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{now} +07] {msg}", flush=True)
+
+
+def _weekend_unpaid_nth_enabled(client: gspread.Client | None = None) -> bool:
+    """Read the weekend switch from PostgreSQL, then the legacy Config sheet.
+
+    Auto writers can add many rows in one pass, so the resolved value is cached
+    only briefly.  A missing or unreadable setting fails safely to OFF.
+    """
+    global _weekend_unpaid_switch_cache
+    now = time.monotonic()
+    if (
+        _weekend_unpaid_switch_cache is not None
+        and now < _weekend_unpaid_switch_cache[0]
+    ):
+        return _weekend_unpaid_switch_cache[1]
+
+    value: bool | None = None
+    try:
+        with vpg.get_engine().connect() as conn:
+            stored = conn.execute(text("""
+                SELECT value_json
+                FROM vera_app_setting
+                WHERE category=:category AND setting_key=:setting_key
+                LIMIT 1
+            """), {
+                "category": progressive_penalty.SETTING_CATEGORY,
+                "setting_key": progressive_penalty.SETTING_KEY,
+            }).scalar_one_or_none()
+            if stored is not None:
+                value = progressive_penalty.load_weekend_unpaid_enabled(conn)
+    except Exception:
+        value = None
+
+    if value is None and client is not None:
+        try:
+            worksheet = client.open_by_key(SHEET_DU_PHONG_ID).worksheet("Config")
+            rows = worksheet.get_all_values()
+            wanted = _norm(progressive_penalty.CONFIG_SHEET_KEY)
+            start = 1 if rows and len(rows[0]) >= 2 and _norm(rows[0][0]) == "key" else 0
+            for row in rows[start:]:
+                if len(row) >= 2 and _norm(row[0]) == wanted:
+                    value = progressive_penalty.as_bool(row[1])
+                    break
+        except Exception:
+            value = None
+
+    resolved = (
+        progressive_penalty.DEFAULT_WEEKEND_UNPAID_ENABLED
+        if value is None
+        else bool(value)
+    )
+    _weekend_unpaid_switch_cache = (
+        now + _WEEKEND_UNPAID_SWITCH_CACHE_SECONDS,
+        resolved,
+    )
+    return resolved
 
 
 def _strip_accents(value) -> str:
@@ -478,7 +538,7 @@ def _progressive_canonical(reason: str) -> str | None:
     key = _norm(reason)
     if key in OUTSIDE_LATE_EXCLUDED:
         return None
-    return PROGRESSIVE_REASONS.get(key)
+    return progressive_penalty.canonical_reason(reason)
 
 
 def _same_leave_exists(rows: list[dict], d: date, employee: str, reason: str) -> bool:
@@ -542,9 +602,20 @@ def save_auto_violation(
     accumulated = _monthly_accumulated_days(live_rows, d, employee, days)
     penalty = base_penalty
     canonical = _progressive_canonical(reason)
-    if canonical:
+    weekend_unpaid_enabled = _weekend_unpaid_nth_enabled(client)
+    progressive = bool(canonical) and progressive_penalty.applies(
+        d,
+        reason,
+        weekend_unpaid_enabled=weekend_unpaid_enabled,
+    )
+    if progressive:
         ordinal = _progressive_ordinal(live_rows, d, reason)
-        penalty += max(0, ordinal - 2) * 100000
+        penalty += progressive_penalty.bonus(
+            ordinal,
+            d,
+            reason,
+            weekend_unpaid_enabled=weekend_unpaid_enabled,
+        )
         prefix = f"Người Thứ {ordinal} {canonical.lower()}"
         detail = f"{prefix} | {detail}" if detail else prefix
 

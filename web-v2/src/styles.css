@@ -549,6 +549,17 @@ tr:last-child td { border-bottom: 0; }
 .rules-notice strong { font-size: 10px; letter-spacing: .06em; }
 .rules-notice button { width: 28px; height: 28px; border: 0; border-radius: 8px; color: currentColor; background: rgba(255,255,255,.55); font-size: 20px; line-height: 1; }
 .rules-metrics .metric-small-value { max-width: 190px; font-family: inherit; font-size: 13px; line-height: 1.25; }
+.weekend-unpaid-nth-panel { min-width: 0; display: grid; gap: 13px; }
+.weekend-unpaid-nth-panel h2 { letter-spacing: .025em; }
+.weekend-unpaid-nth-state { flex: 0 0 auto; padding: 6px 10px; border: 1px solid; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: .04em; }
+.weekend-unpaid-nth-state.enabled { color: var(--success); border-color: #b8ddc8; background: var(--success-bg); }
+.weekend-unpaid-nth-state.disabled { color: var(--danger); border-color: #efc7c7; background: var(--danger-bg); }
+.weekend-unpaid-nth-content { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px; background: #f8fbf9; }
+.weekend-unpaid-nth-content > div { min-width: 0; }
+.weekend-unpaid-nth-content strong { display: block; color: var(--green-900); font-size: 13px; }
+.weekend-unpaid-nth-content p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.weekend-unpaid-nth-content button { flex: 0 0 auto; white-space: nowrap; }
+.weekend-unpaid-nth-admin-note { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 10px; }
 .daily-quota-panel { min-width: 0; display: grid; gap: 13px; overflow: hidden; }
 .daily-quota-panel h2 { letter-spacing: .025em; }
 .daily-quota-table-wrap { width: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; }
@@ -617,6 +628,8 @@ tr:last-child td { border-bottom: 0; }
   .topbar-title { font-size: 12px; }
   .topbar-refresh-button { padding: 6px 8px; font-size: 9px; }
   .page-wrap { padding: 14px 8px 24px; }
+  .weekend-unpaid-nth-content { align-items: stretch; flex-direction: column; gap: 11px; }
+  .weekend-unpaid-nth-content button { width: 100%; }
   .page-heading-row { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
   .page-title { margin: 0; font-size: 33px; }
   .page-heading-row .secondary-button { width: auto; margin-left: auto; padding: 9px 11px; white-space: nowrap; }

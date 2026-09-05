@@ -26,6 +26,7 @@ from email.mime.text import MIMEText
 import pandas as pd
 
 import timesoft_sync_job as ts
+import vera_progressive_penalty as progressive_penalty
 from vera_attendance_rules import late_penalty_eligible, supported_late_minutes
 
 # V93.3: nguồn TourVera hiện hành + Auto vắng mặt sau 20:00.
@@ -192,7 +193,7 @@ def _is_auto_timesoft_row(row: dict) -> bool:
 def _strip_progressive_prefix(detail: str) -> str:
     text0 = str(detail or "").strip()
     return re.sub(
-        r"^Người\s+Thứ\s+\d+\s+đi\s+trễ\s+không\s+phép\s*\|\s*",
+        r"^Người\s+Thứ\s+\d+\s+(?:nghỉ|đi\s+trễ|về\s+sớm|ra\s+sớm)\s+không\s+phép\s*(?:\|\s*|$)",
         "",
         text0,
         flags=re.I,
@@ -211,6 +212,7 @@ def _rebalance_primary_late_rows(client, affected_dates: set[date], catalog: dic
     rows = _sheet_rows_new(primary_ws, ts.SHEET_DU_PHONG_ID)
     reason_item = ts._catalog_item(catalog, "Đi trễ không phép") or {"penalty": 0}
     base_penalty = float(reason_item.get("penalty", 0) or 0)
+    weekend_unpaid_enabled = ts._weekend_unpaid_nth_enabled(client)
     changed = 0
     for d in sorted(affected_dates):
         ordinal = 0
@@ -222,11 +224,29 @@ def _rebalance_primary_late_rows(client, affected_dates: set[date], catalog: dic
             ordinal += 1
             if not _is_auto_timesoft_row(row):
                 continue
-            new_penalty = base_penalty + max(0, ordinal - 2) * 100000
+            row_reason = str(
+                row.get("Lý do nghỉ", "")
+                or reason_item.get("name")
+                or "Đi trễ không phép"
+            )
+            progressive = progressive_penalty.applies(
+                d,
+                row_reason,
+                weekend_unpaid_enabled=weekend_unpaid_enabled,
+            )
+            new_penalty = base_penalty + progressive_penalty.bonus(
+                ordinal,
+                d,
+                row_reason,
+                weekend_unpaid_enabled=weekend_unpaid_enabled,
+            )
             base_detail = _strip_progressive_prefix(row.get("Chi tiết", ""))
-            new_detail = f"Người Thứ {ordinal} đi trễ không phép"
-            if base_detail:
-                new_detail += f" | {base_detail}"
+            if progressive:
+                new_detail = f"Người Thứ {ordinal} đi trễ không phép"
+                if base_detail:
+                    new_detail += f" | {base_detail}"
+            else:
+                new_detail = base_detail
             sheet_row = int(row.get("__row", 0) or 0)
             if sheet_row < 2:
                 continue

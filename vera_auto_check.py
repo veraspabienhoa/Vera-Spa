@@ -9,6 +9,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import text
 
+import vera_progressive_penalty as progressive_penalty
+
 VN_TZ = timezone(timedelta(hours=7))
 RELEASE = "auto-check-pg-v3-employee-notification"
 DEFAULT_CONFIG = {
@@ -389,11 +391,29 @@ def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, d
         SELECT COALESCE(SUM(calculated_days),0) FROM leave_records
         WHERE employee_name=:employee AND date_trunc('month',leave_date)=date_trunc('month',CAST(:day AS date))
     """), {"employee": employee, "day": work_date}).scalar() or 0) + days
-    ordinal = int(conn.execute(text("""
-        SELECT COUNT(*) FROM leave_records WHERE leave_date=:day AND lower(leave_reason)=lower(:reason)
-    """), {"day": work_date, "reason": reason}).scalar() or 0) + 1
-    progressive = _norm(reason) in {"nghi khong phep", "di tre khong phep", "ve som khong phep"}
-    penalty = float(reason_item.get("penalty") or 0) + (max(0, ordinal - 2) * 100000 if progressive else 0)
+    weekend_unpaid_enabled = progressive_penalty.load_weekend_unpaid_enabled(conn)
+    progressive = progressive_penalty.applies(
+        work_date,
+        reason,
+        weekend_unpaid_enabled=weekend_unpaid_enabled,
+    )
+    ordinal = 1
+    if progressive:
+        progressive_group = progressive_penalty.progressive_key(reason)
+        existing_reasons = conn.execute(text("""
+            SELECT leave_reason FROM leave_records WHERE leave_date=:day
+        """), {"day": work_date}).scalars().all()
+        ordinal = sum(
+            1
+            for existing_reason in existing_reasons
+            if progressive_penalty.progressive_key(existing_reason) == progressive_group
+        ) + 1
+    penalty = float(reason_item.get("penalty") or 0) + progressive_penalty.bonus(
+        ordinal,
+        work_date,
+        reason,
+        weekend_unpaid_enabled=weekend_unpaid_enabled,
+    )
     if progressive:
         detail = f"Người Thứ {ordinal} {reason.lower()} | {detail}"
     uid = str(uuid.uuid4())

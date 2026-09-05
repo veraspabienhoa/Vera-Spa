@@ -53,6 +53,50 @@ jobs:
           print(f"Compiled {len(files)} Python files successfully.")
           PY
 
+      - name: Verify weekend unpaid Người Thứ N policy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from datetime import date
+          from pathlib import Path
+
+          from vera_progressive_penalty import bonus, canonical_reason
+
+          friday = date(2026, 9, 4)
+          saturday = date(2026, 9, 5)
+          sunday = date(2026, 9, 6)
+
+          assert canonical_reason('Nghỉ CUỐI TUẦN KHÔNG phép') == 'Nghỉ không phép'
+          assert bonus(3, friday, 'Nghỉ không phép') == 100_000
+          assert bonus(3, saturday, 'Nghỉ không phép') == 0
+          assert bonus(5, sunday, 'Nghỉ CUỐI TUẦN KHÔNG phép') == 0
+          assert bonus(3, saturday, 'Nghỉ không phép', weekend_unpaid_enabled=True) == 100_000
+          assert bonus(4, sunday, 'Nghỉ không phép', weekend_unpaid_enabled=True) == 200_000
+          assert bonus(3, saturday, 'Đi trễ không phép') == 100_000
+          assert bonus(3, sunday, 'Về sớm không phép') == 100_000
+
+          sources = {
+              name: Path(name).read_text(encoding='utf-8')
+              for name in (
+                  'vera_web_v2_api.py',
+                  'vera_web_v2_api_shared.py',
+                  'vera_web_v2_rules.py',
+                  'vera_auto_check.py',
+                  'timesoft_sync_job.py',
+                  'vera_web_v2_revenue_leave_list.py',
+                  'web-v2/src/pages/RulesPage.jsx',
+              )
+          }
+          assert 'load_weekend_unpaid_enabled(conn)' in sources['vera_web_v2_api.py']
+          assert 'load_weekend_unpaid_enabled(conn)' in sources['vera_web_v2_api_shared.py']
+          assert '@app.put("/v2/rules/weekend-unpaid-nth-penalty")' in sources['vera_web_v2_rules.py']
+          assert 'progressive_penalty.load_weekend_unpaid_enabled(conn)' in sources['vera_auto_check.py']
+          assert 'progressive_penalty.CONFIG_SHEET_KEY' in sources['timesoft_sync_job.py']
+          assert 'progressive_penalty_applies(' in sources['vera_web_v2_revenue_leave_list.py']
+          assert 'Kích hoạt Người Thứ N cuối tuần' in sources['web-v2/src/pages/RulesPage.jsx']
+          print('Weekend unpaid Người Thứ N policy checks passed.')
+          PY
+
       - name: Verify API-primary authentication gateway
         shell: bash
         run: |
@@ -260,6 +304,7 @@ jobs:
               'vera_official_rules_patch',
               'vera_leave_registration_live_patch',
               'vera_web_v2_rules_permission_patch',
+              'vera_weekend_progressive_penalty_patch',
           ]
 
           all_warnings = []
@@ -313,7 +358,7 @@ jobs:
               'Streamlit delegates to canonical validator': 'validate_leave_registration_request_live as _vera_shared_validate_leave_live' in patch,
               'Streamlit keeps legacy helper callbacks': '_validate_daily_employee_registration_rule' in patch and '_validate_daily_group_quota' in patch,
               'app installs shared patch': 'vera_leave_registration_live_patch' in app,
-              'wrapper build is V92.23.3': 'v92.23.3-postgres-money-parser-1' in app,
+              'wrapper build is V92.23.4': 'v92.23.4-weekend-nth-toggle-1' in app,
               'Web V2 delegates to canonical validator': 'validate_leave_registration_request_live(payload, live_df, credentials_df, runtime)' in api,
               'Web V2 no browser-supplied calculated days': '"days": float(item["days"] or 0)' in api,
               'Web V2 derives policy group from LoaiNghi type': 'def _policy_group' in api and 'leave_type' in api,
@@ -646,7 +691,7 @@ jobs:
               'penalty repair updates strictly by record_uid': 'WHERE record_uid=:record_uid' in repair,
               'penalty repair rechecks before leave reads': 'phase17_leave_dataframe' in repair and 'guarded_leave_dataframe' in repair,
               'penalty repair has last-mile UI guard': '_correct_frame' in repair,
-              'current wrapper build is V92.23.3': 'v92.23.3-postgres-money-parser-1' in app,
+              'current wrapper build is V92.23.4': 'v92.23.4-weekend-nth-toggle-1' in app,
               'official rules patch is installed': 'vera_official_rules_patch' in app,
               'menu display is renamed to Nội quy': '"🧾 Quản lý lý do nghỉ": "📜 Nội quy"' in app,
           }
