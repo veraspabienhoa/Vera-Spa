@@ -27,11 +27,19 @@ from sqlalchemy import text
 from vera_web_v2_staff_security import _ensure_identity_table, _extract_cccd_fields
 
 
-CONTRACT_RELEASE = "1.1-ktv-multi-select-profile-validation"
+CONTRACT_RELEASE = "1.2-role-specific-contracts"
 SETTING_CATEGORY = "contract"
 SETTING_KEY = "contract_1"
 ELIGIBLE_ROLES = ("leader", "nhanvien")
-ROLE_LABELS = {"leader": "Leader", "nhanvien": "Nhân viên"}
+ROLE_LABELS = {
+    "leader": "Leader",
+    "nhanvien": "Nhân viên",
+    "letan": "Lễ tân",
+    "locker": "Locker",
+    "quanly": "Quản lý",
+    "tapvu": "Tạp vụ",
+}
+ContractType = Literal["ktv", "letan", "locker", "quanly", "tapvu"]
 
 DEFAULT_TEMPLATE_CONTENT = """Điều 1: Thời hạn và công việc hợp đồng
 Loại hợp đồng lao động: Nhân viên bán thời gian.
@@ -86,11 +94,162 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "template_content": DEFAULT_TEMPLATE_CONTENT,
 }
 
+
+def _role_template(
+    *,
+    contract_type_line: str,
+    work_line: str,
+    equipment_line: str,
+    salary_line: str,
+) -> str:
+    return (
+        DEFAULT_TEMPLATE_CONTENT
+        .replace("Loại hợp đồng lao động: Nhân viên bán thời gian.", contract_type_line)
+        .replace("Công việc phải làm: Xoa bóp, gội đầu.", work_line)
+        .replace(
+            "Được sử dụng khăn, điện thoại bàn và những đồ dùng cần thiết phục vụ cho công việc.",
+            equipment_line,
+        )
+        .replace("a) Mức lương: {{salary}}.", salary_line)
+    )
+
+
+LE_TAN_TEMPLATE_CONTENT = _role_template(
+    contract_type_line="Loại hợp đồng lao động: Nhân viên Lễ tân bán thời gian.",
+    work_line=(
+        "Công việc phải làm: Đón tiếp và hướng dẫn khách; tiếp nhận đặt lịch; thu ngân; "
+        "phối hợp sắp xếp phòng, nhân viên và thực hiện các công việc Lễ tân theo phân công."
+    ),
+    equipment_line=(
+        "Được sử dụng máy tính, điện thoại bàn, phần mềm quản lý, máy in và những đồ dùng "
+        "cần thiết phục vụ cho công việc."
+    ),
+    salary_line="a) Mức lương theo giờ: {{salary}}.",
+)
+
+LOCKER_TEMPLATE_CONTENT = _role_template(
+    contract_type_line="Loại hợp đồng lao động: Nhân viên Locker bán thời gian.",
+    work_line=(
+        "Công việc phải làm: Tiếp nhận, bảo quản và bàn giao tư trang của khách; quản lý "
+        "chìa khóa, tủ đồ, khăn và vật dụng tại khu vực Locker; hỗ trợ khách và thực hiện "
+        "các công việc Locker theo phân công."
+    ),
+    equipment_line=(
+        "Được sử dụng chìa khóa, tủ đồ, sổ bàn giao, điện thoại nội bộ và những đồ dùng "
+        "cần thiết phục vụ cho công việc."
+    ),
+    salary_line="a) Mức lương theo giờ: {{salary}}.",
+)
+
+QUAN_LY_TEMPLATE_CONTENT = _role_template(
+    contract_type_line="Loại hợp đồng lao động: Nhân viên Quản lý bán thời gian.",
+    work_line=(
+        "Công việc phải làm: Điều hành hoạt động trong ca; phân công và giám sát nhân viên; "
+        "xử lý tình huống với khách; kiểm tra chất lượng dịch vụ, doanh thu và thực hiện "
+        "các công việc Quản lý theo phân công."
+    ),
+    equipment_line=(
+        "Được sử dụng máy tính, điện thoại, phần mềm quản lý, máy in, hồ sơ vận hành và "
+        "những đồ dùng cần thiết phục vụ cho công việc."
+    ),
+    salary_line="a) Mức lương theo giờ: {{salary}}.",
+)
+
+TAP_VU_TEMPLATE_CONTENT = _role_template(
+    contract_type_line="Loại hợp đồng lao động: Nhân viên Tạp vụ.",
+    work_line=(
+        "Công việc phải làm: Vệ sinh phòng dịch vụ, khu vực chung và nhà vệ sinh; giặt, "
+        "gấp, bổ sung khăn và vật dụng; thu gom rác, sắp xếp dụng cụ và thực hiện các "
+        "công việc Tạp vụ theo phân công."
+    ),
+    equipment_line=(
+        "Được sử dụng dụng cụ, máy móc, hóa chất vệ sinh, đồ bảo hộ và những đồ dùng "
+        "cần thiết phục vụ cho công việc."
+    ),
+    salary_line="a) Mức lương cơ bản: {{salary}}.",
+)
+
+
+def _defaults_for(template_content: str, salary_amount: str, salary_unit: str) -> dict[str, str]:
+    return {
+        **DEFAULT_SETTINGS,
+        "salary_amount": salary_amount,
+        "salary_unit": salary_unit,
+        "template_content": template_content,
+    }
+
+
+CONTRACT_TYPE_CONFIGS: dict[str, dict[str, Any]] = {
+    "ktv": {
+        "label": "Hợp đồng KTV",
+        "short_label": "KTV",
+        "roles": ELIGIBLE_ROLES,
+        "setting_key": SETTING_KEY,
+        "document_title": "HỢP ĐỒNG LAO ĐỘNG BÁN THỜI GIAN",
+        "file_slug": "Hop_Dong_KTV",
+        "defaults": DEFAULT_SETTINGS,
+    },
+    "letan": {
+        "label": "Hợp đồng Lễ tân",
+        "short_label": "Lễ tân",
+        "roles": ("letan",),
+        "setting_key": "contract_1_letan",
+        "document_title": "HỢP ĐỒNG LAO ĐỘNG BÁN THỜI GIAN",
+        "file_slug": "Hop_Dong_Le_Tan",
+        "defaults": _defaults_for(
+            LE_TAN_TEMPLATE_CONTENT,
+            "26.000 VNĐ/giờ từ 09:00 đến 16:30; 30.000 VNĐ/giờ từ 16:30 đến 22:00; "
+            "33.000 VNĐ/giờ từ 22:00 đến 03:00",
+            "",
+        ),
+    },
+    "locker": {
+        "label": "Hợp đồng Locker",
+        "short_label": "Locker",
+        "roles": ("locker",),
+        "setting_key": "contract_1_locker",
+        "document_title": "HỢP ĐỒNG LAO ĐỘNG BÁN THỜI GIAN",
+        "file_slug": "Hop_Dong_Locker",
+        "defaults": _defaults_for(
+            LOCKER_TEMPLATE_CONTENT,
+            "………………………",
+            "VNĐ/giờ, áp dụng theo cấu hình lương hiện hành của Hộ Kinh Doanh Vera tại thời điểm ký hợp đồng",
+        ),
+    },
+    "quanly": {
+        "label": "Hợp đồng Quản lý",
+        "short_label": "Quản lý",
+        "roles": ("quanly",),
+        "setting_key": "contract_1_quanly",
+        "document_title": "HỢP ĐỒNG LAO ĐỘNG BÁN THỜI GIAN",
+        "file_slug": "Hop_Dong_Quan_Ly",
+        "defaults": _defaults_for(
+            QUAN_LY_TEMPLATE_CONTENT,
+            "………………………",
+            "VNĐ/giờ, áp dụng theo cấu hình lương hiện hành của Hộ Kinh Doanh Vera tại thời điểm ký hợp đồng",
+        ),
+    },
+    "tapvu": {
+        "label": "Hợp đồng Tạp vụ",
+        "short_label": "Tạp vụ",
+        "roles": ("tapvu",),
+        "setting_key": "contract_1_tapvu",
+        "document_title": "HỢP ĐỒNG LAO ĐỘNG",
+        "file_slug": "Hop_Dong_Tap_Vu",
+        "defaults": _defaults_for(
+            TAP_VU_TEMPLATE_CONTENT,
+            "………………………",
+            "VNĐ/tháng, tính theo 26 ngày công/tháng và áp dụng theo cấu hình lương hiện hành của Hộ Kinh Doanh Vera",
+        ),
+    },
+}
+
 SETTING_FIELDS = tuple(DEFAULT_SETTINGS)
 GENERAL_SETTING_FIELDS = tuple(field for field in SETTING_FIELDS if field != "template_content")
 
 
 class ContractSettingsUpdate(BaseModel):
+    contract_type: ContractType = "ktv"
     representative_name: str | None = Field(default=None, max_length=300)
     representative_title: str | None = Field(default=None, max_length=200)
     business_name: str | None = Field(default=None, max_length=300)
@@ -106,27 +265,39 @@ class ContractSettingsUpdate(BaseModel):
 
 
 class ContractExportRequest(BaseModel):
+    contract_type: ContractType = "ktv"
     scope: Literal["selected", "individual", "department", "all"] = "selected"
     username: str = Field(default="", max_length=300)
     usernames: list[str] = Field(default_factory=list, max_length=500)
-    role: Literal["leader", "nhanvien"] | None = None
+    role: Literal["leader", "nhanvien", "letan", "locker", "quanly", "tapvu"] | None = None
 
 
 def _as_bool(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "có", "co"}
 
 
-def _settings(conn) -> tuple[dict[str, str], int]:
+def _contract_config(contract_type: str) -> dict[str, Any]:
+    config = CONTRACT_TYPE_CONFIGS.get(str(contract_type or "").strip().lower())
+    if not config:
+        raise HTTPException(400, "Loại hợp đồng không hợp lệ.")
+    return config
+
+
+def _settings(conn, contract_type: str = "ktv") -> tuple[dict[str, str], int]:
+    config = _contract_config(contract_type)
     row = conn.execute(text("""
         SELECT value_json, revision
         FROM vera_app_setting
         WHERE category=:category AND setting_key=:setting_key
         LIMIT 1
-    """), {"category": SETTING_CATEGORY, "setting_key": SETTING_KEY}).mappings().first()
+    """), {
+        "category": SETTING_CATEGORY,
+        "setting_key": config["setting_key"],
+    }).mappings().first()
     saved = row.get("value_json") if row and isinstance(row.get("value_json"), dict) else {}
     merged = {
         field: str(saved.get(field) if saved.get(field) is not None else default)
-        for field, default in DEFAULT_SETTINGS.items()
+        for field, default in config["defaults"].items()
     }
     return merged, int(row.get("revision") or 0) if row else 0
 
@@ -139,18 +310,23 @@ def _employee_hidden(payload: dict[str, Any]) -> bool:
     return _as_bool(payload.get("Ẩn nhân viên") if "Ẩn nhân viên" in payload else payload.get("profile_hidden"))
 
 
-def _eligible_employee_rows(conn) -> list[dict[str, Any]]:
+def _eligible_employee_rows(conn, roles: tuple[str, ...] = ELIGIBLE_ROLES) -> list[dict[str, Any]]:
+    allowed_roles = {str(role).strip().lower() for role in roles}
     rows = conn.execute(text("""
         SELECT *
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('leader','nhanvien')
+        WHERE lower(COALESCE(role,'')) IN ('leader','nhanvien','letan','locker','quanly','tapvu')
           AND COALESCE(payload->>'__deleted','false') <> 'true'
-        ORDER BY CASE lower(COALESCE(role,'')) WHEN 'leader' THEN 0 ELSE 1 END,
+        ORDER BY CASE lower(COALESCE(role,''))
+                    WHEN 'leader' THEN 0 WHEN 'nhanvien' THEN 1 WHEN 'letan' THEN 2
+                    WHEN 'locker' THEN 3 WHEN 'quanly' THEN 4 WHEN 'tapvu' THEN 5 ELSE 6 END,
                  COALESCE(stt,2147483647), COALESCE(full_name,username), username
     """)).mappings().all()
     output = []
     for source in rows:
         row = dict(source)
+        if str(row.get("role") or "").strip().lower() not in allowed_roles:
+            continue
         payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
         if _employee_status(payload) != "Đang làm việc" or _employee_hidden(payload):
             continue
@@ -323,7 +499,12 @@ def _replace_placeholders(source: str, values: dict[str, str]) -> str:
     return rendered
 
 
-def _contract_pdf(employee: dict[str, str], settings: dict[str, str]) -> bytes:
+def _contract_pdf(
+    employee: dict[str, str],
+    settings: dict[str, str],
+    contract_type: str = "ktv",
+) -> bytes:
+    config = _contract_config(contract_type)
     regular, bold = _pdf_fonts()
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="contract_center_bold", fontName=bold, fontSize=10.2, leading=13, alignment=TA_CENTER, spaceAfter=2))
@@ -354,14 +535,14 @@ def _contract_pdf(employee: dict[str, str], settings: dict[str, str]) -> bytes:
     document = SimpleDocTemplate(
         output, pagesize=A4, rightMargin=17 * mm, leftMargin=17 * mm,
         topMargin=13 * mm, bottomMargin=14 * mm,
-        title=f"Hợp đồng KTV - {employee['employee_name']}",
+        title=f"{config['label']} - {employee['employee_name']}",
         author=settings.get("business_name") or "HỘ KINH DOANH VERA",
     )
     story: list[Any] = [
         Paragraph("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", styles["contract_center_bold"]),
         Paragraph("Độc lập – Tự do – Hạnh phúc", styles["contract_center_bold"]),
         Paragraph("*****", styles["contract_center_bold"]),
-        Paragraph("HỢP ĐỒNG LAO ĐỘNG BÁN THỜI GIAN", styles["contract_title"]),
+        Paragraph(escape(config["document_title"]), styles["contract_title"]),
         Paragraph(
             f"Hôm nay, ngày {sign_day} tháng {sign_month} năm {sign_year}, tại {escape(settings.get('signing_place') or '………………')}, chúng tôi gồm:",
             styles["contract_body"],
@@ -422,7 +603,7 @@ def _contract_pdf(employee: dict[str, str], settings: dict[str, str]) -> bytes:
         canvas.saveState()
         canvas.setFont(regular, 7)
         canvas.setFillColor(colors.HexColor("#68766F"))
-        canvas.drawString(17 * mm, 7 * mm, f"Hợp đồng KTV · {employee['employee_name']}")
+        canvas.drawString(17 * mm, 7 * mm, f"{config['label']} · {employee['employee_name']}")
         canvas.drawRightString(A4[0] - 17 * mm, 7 * mm, f"Trang {doc.page}")
         canvas.restoreState()
 
@@ -430,10 +611,13 @@ def _contract_pdf(employee: dict[str, str], settings: dict[str, str]) -> bytes:
     return output.getvalue()
 
 
-def _merge_contract_pdfs(items: list[tuple[dict[str, str], dict[str, str]]]) -> bytes:
+def _merge_contract_pdfs(
+    items: list[tuple[dict[str, str], dict[str, str]]],
+    contract_type: str = "ktv",
+) -> bytes:
     writer = PdfWriter()
     for employee, settings in items:
-        reader = PdfReader(BytesIO(_contract_pdf(employee, settings)))
+        reader = PdfReader(BytesIO(_contract_pdf(employee, settings, contract_type)))
         for page in reader.pages:
             writer.add_page(page)
     output = BytesIO()
@@ -455,25 +639,40 @@ def install_contract_1_routes(
         return
 
     @app.get("/v2/contracts/1")
-    def contract_1_overview(ident: identity_type = Depends(current_identity)):
+    def contract_1_overview(
+        contract_type: ContractType = "ktv",
+        ident: identity_type = Depends(current_identity),
+    ):
+        config = _contract_config(contract_type)
+        eligible_roles = tuple(config["roles"])
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "contract_1_view")
-            settings, revision = _settings(conn)
+            settings, revision = _settings(conn, contract_type)
             can_export_self = feature_allowed(conn, ident, "contract_1_export_self")
             can_export_bulk = feature_allowed(conn, ident, "contract_1_export_bulk")
             can_edit_template = feature_allowed(conn, ident, "contract_1_template_edit")
             can_edit_settings = feature_allowed(conn, ident, "contract_1_settings_edit")
-            rows = _eligible_employee_rows(conn)
+            rows = _eligible_employee_rows(conn, eligible_roles)
             if not can_export_bulk:
                 own_key = norm(getattr(ident, "employee_username", ""))
                 rows = [row for row in rows if norm(row.get("username")) == own_key]
             return {
                 "ok": True,
                 "release": CONTRACT_RELEASE,
+                "contract_type": contract_type,
+                "contract_label": config["label"],
+                "contract_types": [
+                    {
+                        "value": key,
+                        "label": item["label"],
+                        "roles": list(item["roles"]),
+                    }
+                    for key, item in CONTRACT_TYPE_CONFIGS.items()
+                ],
                 "settings": settings,
                 "revision": revision,
                 "employees": [_employee_summary(row) for row in rows],
-                "roles": [{"value": role, "label": ROLE_LABELS[role]} for role in ELIGIBLE_ROLES],
+                "roles": [{"value": role, "label": ROLE_LABELS[role]} for role in eligible_roles],
                 "permissions": {
                     "can_export_self": can_export_self,
                     "can_export_bulk": can_export_bulk,
@@ -484,11 +683,12 @@ def install_contract_1_routes(
 
     @app.put("/v2/contracts/1/settings")
     def save_contract_1_settings(body: ContractSettingsUpdate, ident: identity_type = Depends(current_identity)):
-        updates = body.model_dump(exclude={"expected_revision"}, exclude_none=True)
+        config = _contract_config(body.contract_type)
+        updates = body.model_dump(exclude={"contract_type", "expected_revision"}, exclude_none=True)
         if not updates:
             raise HTTPException(400, "Chưa có thay đổi cài đặt hợp đồng.")
         with engine_instance().begin() as conn:
-            current, revision = _settings(conn)
+            current, revision = _settings(conn, body.contract_type)
             changed_template = "template_content" in updates and str(updates["template_content"]) != current["template_content"]
             changed_general = any(field in updates and str(updates[field]) != current[field] for field in GENERAL_SETTING_FIELDS)
             if changed_template:
@@ -518,14 +718,22 @@ def install_contract_1_routes(
                     updated_at=NOW()
             """), {
                 "category": SETTING_CATEGORY,
-                "setting_key": SETTING_KEY,
+                "setting_key": config["setting_key"],
                 "value_json": json.dumps(saved, ensure_ascii=False),
                 "updated_by": str(getattr(ident, "employee_username", "") or ""),
             })
-            return {"ok": True, "message": "Đã lưu nội dung và cài đặt Hợp đồng KTV.", "settings": saved, "revision": revision + 1}
+            return {
+                "ok": True,
+                "message": f"Đã lưu nội dung và cài đặt {config['label']}.",
+                "contract_type": body.contract_type,
+                "settings": saved,
+                "revision": revision + 1,
+            }
 
     @app.post("/v2/contracts/1/export.pdf")
     def export_contract_1_pdf(body: ContractExportRequest, ident: identity_type = Depends(current_identity)):
+        config = _contract_config(body.contract_type)
+        eligible_roles = tuple(config["roles"])
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "contract_1_view")
             can_bulk = feature_allowed(conn, ident, "contract_1_export_bulk")
@@ -544,7 +752,7 @@ def install_contract_1_routes(
             else:
                 require_feature(conn, ident, "contract_1_export_bulk")
 
-            rows = _eligible_employee_rows(conn)
+            rows = _eligible_employee_rows(conn, eligible_roles)
             if body.scope in {"selected", "individual"}:
                 requested_usernames = body.usernames or ([body.username] if body.username else [])
                 if not requested_usernames:
@@ -552,24 +760,29 @@ def install_contract_1_routes(
                 requested_keys = {norm(item) for item in requested_usernames if norm(item)}
                 rows = [row for row in rows if norm(row.get("username")) in requested_keys]
             elif body.scope == "department":
-                if body.role not in ELIGIBLE_ROLES:
-                    raise HTTPException(400, "Vui lòng chọn bộ phận Leader hoặc Nhân viên.")
+                if body.role not in eligible_roles:
+                    role_names = " hoặc ".join(ROLE_LABELS[role] for role in eligible_roles)
+                    raise HTTPException(400, f"Vui lòng chọn bộ phận {role_names}.")
                 rows = [row for row in rows if str(row.get("role") or "").lower() == body.role]
             if not rows:
                 raise HTTPException(404, "Không có nhân viên phù hợp để xuất hợp đồng.")
 
-            settings, _revision = _settings(conn)
+            settings, _revision = _settings(conn, body.contract_type)
             employees = [_contract_employee(conn, row) for row in rows]
             _ensure_complete_contract_profiles(employees)
-            content = _merge_contract_pdfs([(employee, settings) for employee in employees])
+            content = _merge_contract_pdfs(
+                [(employee, settings) for employee in employees],
+                body.contract_type,
+            )
 
+        file_slug = config["file_slug"]
         if len(employees) == 1:
             safe = re.sub(r"[^\w.-]+", "_", employees[0]["employee_name"], flags=re.UNICODE).strip("_") or "Nhan_Vien"
-            filename = f"Hop_Dong_KTV_{safe}.pdf"
+            filename = f"{file_slug}_{safe}.pdf"
         elif body.scope == "department":
-            filename = f"Hop_Dong_KTV_{ROLE_LABELS.get(body.role or '', body.role or 'Bo_Phan')}_{len(employees)}.pdf"
+            filename = f"{file_slug}_{ROLE_LABELS.get(body.role or '', body.role or 'Bo_Phan')}_{len(employees)}.pdf"
         else:
-            filename = f"Hop_Dong_KTV_Da_Chon_{len(employees)}.pdf" if body.scope in {"selected", "individual"} else f"Hop_Dong_KTV_Tat_Ca_{len(employees)}.pdf"
+            filename = f"{file_slug}_Da_Chon_{len(employees)}.pdf" if body.scope in {"selected", "individual"} else f"{file_slug}_Tat_Ca_{len(employees)}.pdf"
         return StreamingResponse(
             BytesIO(content),
             media_type="application/pdf",
@@ -586,7 +799,9 @@ def install_contract_1_routes(
 
 
 __all__ = [
-    "DEFAULT_SETTINGS", "DEFAULT_TEMPLATE_CONTENT", "_contract_pdf", "_merge_contract_pdfs",
+    "CONTRACT_TYPE_CONFIGS", "DEFAULT_SETTINGS", "DEFAULT_TEMPLATE_CONTENT",
+    "LE_TAN_TEMPLATE_CONTENT", "LOCKER_TEMPLATE_CONTENT", "QUAN_LY_TEMPLATE_CONTENT",
+    "TAP_VU_TEMPLATE_CONTENT", "_contract_pdf", "_merge_contract_pdfs",
     "_missing_contract_fields", "_ensure_complete_contract_profiles",
     "install_contract_1_routes",
 ]

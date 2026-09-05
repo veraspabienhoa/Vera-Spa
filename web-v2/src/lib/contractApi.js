@@ -40,7 +40,7 @@ async function exportPdf(body) {
   const blob = await response.blob()
   const disposition = response.headers.get('content-disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
-  const filename = encoded ? decodeURIComponent(encoded.replace(/^"|"$/g, '')) : 'Hop_Dong_KTV.pdf'
+  const filename = encoded ? decodeURIComponent(encoded.replace(/^"|"$/g, '')) : 'Hop_Dong_Lao_Dong.pdf'
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -53,7 +53,7 @@ async function exportPdf(body) {
 }
 
 export const contractApi = {
-  overview: () => jsonRequest('/v2/contracts/1'),
+  overview: (contractType = 'ktv') => jsonRequest(`/v2/contracts/1?contract_type=${encodeURIComponent(contractType)}`),
   saveSettings: (body) => jsonRequest('/v2/contracts/1/settings', {
     method: 'PUT', body: JSON.stringify(body),
   }),

@@ -57,11 +57,11 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "shift_assignment_clear": "Xóa phân ca", "shift_import": "Import phân ca", "shift_export_pdf": "Export ca",
     },
     "Hợp đồng": {
-        "contract_1_view": "Xem Hợp đồng KTV",
+        "contract_1_view": "Xem Hợp đồng lao động",
         "contract_1_export_self": "Xuất hợp đồng của chính mình",
-        "contract_1_export_bulk": "Xuất Hợp đồng KTV theo nhân viên / bộ phận / toàn bộ",
-        "contract_1_template_edit": "Chỉnh sửa nội dung mẫu Hợp đồng KTV",
-        "contract_1_settings_edit": "Chỉnh người đại diện, thời hạn, ngày ký và mức lương Hợp đồng KTV",
+        "contract_1_export_bulk": "Xuất hợp đồng theo nhân viên / bộ phận / toàn bộ",
+        "contract_1_template_edit": "Chỉnh sửa nội dung mẫu hợp đồng",
+        "contract_1_settings_edit": "Chỉnh người đại diện, thời hạn, ngày ký và mức lương hợp đồng",
     },
     "Nội quy": {
         "official_rules_view": "Xem Nội quy", "official_rules_edit": "Sửa Nội quy",
@@ -99,6 +99,7 @@ FRONTDESK = {
     "employee_delete", "employee_delete_confirm", "shift", "shift_assignment_edit", "shift_import", "shift_export_pdf",
     "account_lock", "account_lock_edit", "registration_lock", "registration_lock_edit",
     "profile", "profile_edit", "birthday", "birthday_check",
+    "contract_1_view", "contract_1_export_self",
 }
 EMPLOYEE = {
     "tour", "tour_refresh", "leave", "leave_manage", "leave_create", "leave_export", "leave_detail_edit", "leave_detail_delete",
@@ -109,8 +110,8 @@ EMPLOYEE = {
 DEFAULT_ROLE_FEATURES = {
     "admin": set(FEATURES), "quanly": set(FRONTDESK), "letan": set(FRONTDESK),
     "leader": set(EMPLOYEE), "nhanvien": set(EMPLOYEE),
-    "locker": {"tour", "tour_refresh", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form"},
-    "tapvu": {"profile", "profile_edit", "birthday", "birthday_check", "resignation_form"},
+    "locker": {"tour", "tour_refresh", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form", "contract_1_view", "contract_1_export_self"},
+    "tapvu": {"profile", "profile_edit", "birthday", "birthday_check", "resignation_form", "contract_1_view", "contract_1_export_self"},
 }
 
 

@@ -704,7 +704,10 @@ tr:last-child td { border-bottom: 0; }
 
 .contract-page { display: grid; gap: 18px; }
 .contract-type-panel, .contract-export-panel, .contract-settings-panel { padding: 20px; }
-.contract-type-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 2px solid #1d5843; border-radius: 11px; color: white; background: #1d5843; font-weight: 900; }
+.contract-type-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 9px; }
+.contract-type-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 2px solid #bed2c7; border-radius: 11px; color: #1d5843; background: white; font-weight: 900; transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.contract-type-button:hover:not(:disabled) { border-color: #1d5843; background: #edf7f1; box-shadow: 0 5px 14px rgba(29,88,67,.12); transform: translateY(-1px); }
+.contract-type-button.active { border-color: #1d5843; color: white; background: #1d5843; box-shadow: 0 5px 14px rgba(29,88,67,.18); }
 .contract-count { flex: 0 0 auto; padding: 7px 11px; border: 1px solid #c8dbd1; border-radius: 999px; color: var(--green-800); background: #eff7f2; font-size: 12px; font-weight: 900; }
 .contract-scope-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
 .contract-scope-tabs button { min-height: 42px; border: 1px solid var(--line); border-radius: 10px; color: #45574e; background: #f7f9f8; font-weight: 800; }
@@ -775,6 +778,7 @@ tr:last-child td { border-bottom: 0; }
   .weekend-unpaid-nth-content button { width: 100%; }
   .contract-page { gap: 12px; }
   .contract-type-panel, .contract-export-panel, .contract-settings-panel { padding: 12px 10px; }
+  .contract-type-list { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .contract-export-panel .panel-title-row { align-items: flex-start; }
   .contract-count { padding: 6px 8px; font-size: 9px; }
   .contract-scope-tabs { grid-template-columns: 1fr; gap: 6px; }

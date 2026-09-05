@@ -1,13 +1,30 @@
 import { CheckSquare, Download, FileSignature, RefreshCw, Save, Search, Settings2, Square, Users } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { contractApi } from '../lib/contractApi'
 import VeraDateInput from '../components/VeraDateInput'
 
 const scopeOptions = [
   { value: 'selected', label: 'Chọn nhân viên' },
   { value: 'department', label: 'Theo bộ phận' },
-  { value: 'all', label: 'Tất cả Leader và Nhân viên' },
+  { value: 'all', label: 'Tất cả nhân viên phù hợp' },
 ]
+
+const fallbackContractTypes = [
+  { value: 'ktv', label: 'Hợp đồng KTV', roles: ['leader', 'nhanvien'] },
+  { value: 'letan', label: 'Hợp đồng Lễ tân', roles: ['letan'] },
+  { value: 'locker', label: 'Hợp đồng Locker', roles: ['locker'] },
+  { value: 'quanly', label: 'Hợp đồng Quản lý', roles: ['quanly'] },
+  { value: 'tapvu', label: 'Hợp đồng Tạp vụ', roles: ['tapvu'] },
+]
+
+const contractTypeByRole = {
+  leader: 'ktv',
+  nhanvien: 'ktv',
+  letan: 'letan',
+  locker: 'locker',
+  quanly: 'quanly',
+  tapvu: 'tapvu',
+}
 
 const settingFields = [
   ['representative_name', 'Người đại diện'],
@@ -29,7 +46,9 @@ const placeholderHelp = [
   '{{contract_term}}', '{{contract_effective}}', '{{sign_day}}', '{{sign_month}}', '{{sign_year}}', '{{salary}}',
 ]
 
-export default function ContractPage() {
+export default function ContractPage({ user }) {
+  const initialContractType = contractTypeByRole[String(user?.role || '').toLowerCase()] || 'ktv'
+  const [contractType, setContractType] = useState(initialContractType)
   const [data, setData] = useState(null)
   const [settings, setSettings] = useState(null)
   const [scope, setScope] = useState('selected')
@@ -39,24 +58,36 @@ export default function ContractPage() {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
 
-  const load = async () => {
+  const load = useCallback(async (requestedType) => {
     setBusy('load'); setNotice(null)
     try {
-      const result = await contractApi.overview()
+      const result = await contractApi.overview(requestedType)
       setData(result); setSettings(result.settings)
+      setContractType(result.contract_type || requestedType)
       const available = new Set((result.employees || []).map((item) => item.username))
       setSelectedUsernames((current) => {
         const retained = current.filter((username) => available.has(username))
         return retained.length ? retained : (result.employees?.[0]?.username ? [result.employees[0].username] : [])
       })
+      setRole((current) => (result.roles || []).some((item) => item.value === current)
+        ? current
+        : (result.roles?.[0]?.value || ''))
       if (!result.permissions?.can_export_bulk) setScope('selected')
     } catch (error) {
       setNotice({ type: 'error', message: error.message })
     } finally {
       setBusy('')
     }
+  }, [])
+  useEffect(() => { void load(initialContractType) }, [initialContractType, load])
+
+  const selectContractType = (value) => {
+    if (value === contractType || busy) return
+    setScope('selected')
+    setSearch('')
+    setSelectedUsernames([])
+    void load(value)
   }
-  useEffect(() => { void load() }, [])
 
   const filteredEmployees = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('vi')
@@ -82,7 +113,7 @@ export default function ContractPage() {
   const save = async () => {
     setBusy('save'); setNotice(null)
     try {
-      const result = await contractApi.saveSettings({ ...settings, expected_revision: data.revision })
+      const result = await contractApi.saveSettings({ ...settings, contract_type: contractType, expected_revision: data.revision })
       setData((current) => ({ ...current, settings: result.settings, revision: result.revision }))
       setSettings(result.settings)
       setNotice({ type: 'success', message: result.message })
@@ -97,11 +128,12 @@ export default function ContractPage() {
     setBusy('export'); setNotice(null)
     try {
       const result = await contractApi.exportPdf({
+        contract_type: contractType,
         scope,
         usernames: scope === 'selected' ? selectedUsernames : [],
         role: scope === 'department' ? role : null,
       })
-      setNotice({ type: 'success', message: `Đã xuất ${result.count || exportCount} Hợp đồng KTV.` })
+      setNotice({ type: 'success', message: `Đã xuất ${result.count || exportCount} ${data?.contract_label || 'hợp đồng'}.` })
     } catch (error) {
       setNotice({ type: 'error', message: error.message })
     } finally {
@@ -114,22 +146,36 @@ export default function ContractPage() {
     ? (permissions.can_export_self || permissions.can_export_bulk)
     : permissions.can_export_bulk
   const canConfigure = permissions.can_edit_settings || permissions.can_edit_template
+  const viewerRole = String(user?.role || '').toLowerCase()
+  const contractTypes = (data?.contract_types || fallbackContractTypes).filter((item) => (
+    permissions.can_export_bulk || canConfigure || !item.roles || item.roles.includes(viewerRole)
+  ))
+  const contractLabel = data?.contract_label || fallbackContractTypes.find((item) => item.value === contractType)?.label || 'Hợp đồng'
+  const eligibleRoleLabels = (data?.roles || []).map((item) => item.label).join(' và ')
 
   return <div className="feature-page contract-page">
     <div className="page-heading">
       <div><span className="eyebrow"><FileSignature size={14} /> Hồ sơ lao động</span><h1>HỢP ĐỒNG</h1><p>Chọn loại hợp đồng cần mở và xuất cho một hoặc nhiều nhân viên.</p></div>
-      <button className="secondary-button" onClick={load} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /> Làm mới</button>
+      <button className="secondary-button" onClick={() => load(contractType)} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /> Làm mới</button>
     </div>
 
     {notice && <div className={notice.type === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
 
     <section className="panel contract-type-panel">
       <div className="panel-title-row"><div><h2><FileSignature size={18} /> Chọn loại hợp đồng</h2></div></div>
-      <button type="button" className="contract-type-button active"><FileSignature size={18} /> Hợp đồng KTV</button>
+      <div className="contract-type-list">
+        {contractTypes.map((item) => <button
+          type="button"
+          key={item.value}
+          className={`contract-type-button ${contractType === item.value ? 'active' : ''}`.trim()}
+          onClick={() => selectContractType(item.value)}
+          disabled={Boolean(busy)}
+        ><FileSignature size={18} /> {item.label}</button>)}
+      </div>
     </section>
 
     <section className="panel contract-export-panel">
-      <div className="panel-title-row"><div><h2><Users size={18} /> Chọn đối tượng xuất Hợp đồng KTV</h2><p>Nếu bất kỳ người lao động nào thiếu thông tin bắt buộc, hệ thống sẽ dừng xuất PDF và thông báo rõ tên cùng nội dung cần bổ sung.</p></div><span className="contract-count">{exportCount} hợp đồng</span></div>
+      <div className="panel-title-row"><div><h2><Users size={18} /> Chọn đối tượng xuất {contractLabel}</h2><p>Nếu bất kỳ người lao động nào thiếu thông tin bắt buộc, hệ thống sẽ dừng xuất PDF và thông báo rõ tên cùng nội dung cần bổ sung.</p></div><span className="contract-count">{exportCount} hợp đồng</span></div>
       {permissions.can_export_bulk && <div className="contract-scope-tabs">
         {scopeOptions.map((item) => <button type="button" key={item.value} className={scope === item.value ? 'active' : ''} onClick={() => setScope(item.value)}>{item.label}</button>)}
       </div>}
@@ -148,15 +194,15 @@ export default function ContractPage() {
         </div>
       </div>}
       {scope === 'department' && <label className="contract-department">Bộ phận<select value={role} onChange={(event) => setRole(event.target.value)}>{(data?.roles || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
-      {scope === 'all' && <div className="contract-all-note">File PDF sẽ gồm Hợp đồng KTV của toàn bộ Leader và Nhân viên đang làm việc, đang hiển thị trong hệ thống.</div>}
+      {scope === 'all' && <div className="contract-all-note">File PDF sẽ gồm {contractLabel} của toàn bộ {eligibleRoleLabels || 'nhân viên phù hợp'} đang làm việc, đang hiển thị trong hệ thống.</div>}
       <div className="contract-export-actions">
-        <button className="primary-button" onClick={exportContracts} disabled={Boolean(busy) || !canExport || exportCount < 1}><Download size={17} /> {busy === 'export' ? 'Đang kiểm tra và tạo PDF…' : `Xuất ${exportCount || ''} Hợp đồng KTV`}</button>
+        <button className="primary-button" onClick={exportContracts} disabled={Boolean(busy) || !canExport || exportCount < 1}><Download size={17} /> {busy === 'export' ? 'Đang kiểm tra và tạo PDF…' : `Xuất ${exportCount || ''} ${contractLabel}`}</button>
         {!canExport && <small>Tài khoản chưa được cấp quyền xuất hợp đồng tương ứng.</small>}
       </div>
     </section>
 
     {canConfigure && settings && <section className="panel contract-settings-panel">
-      <div className="panel-title-row"><div><h2><Settings2 size={18} /> Cài đặt Hợp đồng KTV</h2><p>Thay đổi thông tin người đại diện, thời hạn, ngày ký, mức lương và nội dung mẫu.</p></div></div>
+      <div className="panel-title-row"><div><h2><Settings2 size={18} /> Cài đặt {contractLabel}</h2><p>Thay đổi thông tin người đại diện, thời hạn, ngày ký, mức lương và nội dung mẫu riêng của loại hợp đồng này.</p></div></div>
       <div className="contract-settings-grid">
         {settingFields.map(([key, label]) => <label key={key} className={`${key === 'business_address' ? 'span-2' : ''} ${['contract_term', 'signing_date'].includes(key) ? 'contract-highlight-field' : ''}`.trim()}>{label}{key === 'signing_date' ? <VeraDateInput aria-label={label} value={settings[key] || ''} disabled={!permissions.can_edit_settings} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} /> : <input type="text" value={settings[key] || ''} disabled={!permissions.can_edit_settings} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} />}</label>)}
       </div>
