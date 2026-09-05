@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from openpyxl import Workbook
 
 from vera_web_v2_people import _available_rooms_for_tour, _prepare_tour, _room_snapshot
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_room_is_not_available_when_any_slot_is_doing_or_waiting():
@@ -65,3 +69,10 @@ def test_tour_record_exposes_exact_countdown_deadline_for_room_clock():
 
     assert record["TG CÒN LẠI"] == 40
     assert datetime.fromisoformat(record["_countdown_deadline"]) == datetime(2026, 9, 5, 12, 40, tzinfo=vn_tz)
+
+
+def test_desktop_employee_table_expands_to_show_all_rows():
+    source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
+
+    assert ".tour-records-panel .tour-table{max-height:none;overflow-x:auto;overflow-y:visible}" in source
+    assert ".tour-records-panel .tour-table{max-height:calc(100vh" not in source

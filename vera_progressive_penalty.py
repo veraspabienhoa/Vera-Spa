@@ -2,7 +2,10 @@
 
 The base amount always comes from the official leave-policy catalog.  This
 module decides only whether the progressive 100,000 VND surcharge applies and
-keeps every API path on the same reason/date classification.
+keeps every API path on the same reason/date classification.  The historical
+``weekend_unpaid`` setting name is retained for storage compatibility, but its
+switch now governs all three weekend groups: absence, late arrival, and early
+leave.
 """
 from __future__ import annotations
 
@@ -82,11 +85,7 @@ def applies(
     if canonical is None:
         return False
     parsed_date = _as_date(target_date)
-    if (
-        canonical == _UNPAID_LEAVE
-        and parsed_date is not None
-        and parsed_date.weekday() >= 5
-    ):
+    if parsed_date is not None and parsed_date.weekday() >= 5:
         return bool(weekend_unpaid_enabled)
     return True
 

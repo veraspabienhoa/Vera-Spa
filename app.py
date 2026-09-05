@@ -6,7 +6,7 @@ MENU routes, authorization, UI, and business rules.
 
 V92.23.4 weekend policy parity:
 - keeps the V92.6.99 core immutable and installs the PostgreSQL-controlled
-  weekend ``Nghỉ không phép`` Người Thứ N rule through the runtime patch chain;
+  weekend ``Nghỉ/Đi trễ/Về sớm không phép`` Người Thứ N rule through the runtime patch chain;
 - preserves the official base penalty when the weekend ordinal/surcharge is off.
 
 V92.23.2 validation convergence:
@@ -134,6 +134,17 @@ try:
             _penalty_install_v92231(_vpg_runtime)
     except Exception as _penalty_install_error_v92231:
         _phase_install_warnings_v92231.append(f"phase17_penalty:{type(_penalty_install_error_v92231).__name__}")
+    try:
+        _weekend_repair_mod = _importlib.import_module("vera_weekend_penalty_repair")
+        _weekend_repair_status = _weekend_repair_mod.repair_engine(_vpg_runtime.get_engine())
+        if _weekend_repair_status.get("error"):
+            _phase_install_warnings_v92231.append(
+                f"weekend_penalty:{_weekend_repair_status['error']}"
+            )
+    except Exception as _weekend_repair_error:
+        _phase_install_warnings_v92231.append(
+            f"weekend_penalty:{type(_weekend_repair_error).__name__}"
+        )
 except Exception:
     _vpg_runtime = None
 

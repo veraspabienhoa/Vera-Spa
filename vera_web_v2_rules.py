@@ -989,7 +989,7 @@ def install_rules_routes(
             if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
                 raise HTTPException(
                     403,
-                    "Chỉ tài khoản admin được bật hoặc tắt Người Thứ N cho nghỉ không phép cuối tuần.",
+                    "Chỉ tài khoản admin được bật hoặc tắt Người Thứ N cho vi phạm cuối tuần.",
                 )
 
             current = conn.execute(text("""
@@ -1052,13 +1052,16 @@ def install_rules_routes(
                 WEEKEND_UNPAID_NTH_CONFIG_SHEET_KEY,
                 "TRUE" if body.enabled else "FALSE",
             )
+            if not body.enabled:
+                from vera_weekend_penalty_repair import repair_connection
+                repair_connection(conn)
             tx.commit()
             return {
                 "ok": True,
                 "message": (
-                    "Đã KÍCH HOẠT Người Thứ N cho nghỉ không phép cuối tuần."
+                    "Đã KÍCH HOẠT Người Thứ N cho Nghỉ, Đi trễ và Về sớm không phép cuối tuần."
                     if body.enabled
-                    else "Đã TẮT Người Thứ N cho nghỉ không phép cuối tuần."
+                    else "Đã TẮT Người Thứ N cho Nghỉ, Đi trễ và Về sớm không phép cuối tuần."
                 ),
                 "enabled": bool(body.enabled),
                 "revision": int(saved["revision"]),

@@ -1,9 +1,9 @@
 """Install the weekend ``Người Thứ N`` policy into the legacy Streamlit core.
 
 The V92.6.99 core is intentionally immutable.  This source patch keeps the
-existing weekday behaviour, while Saturday/Sunday ``Nghỉ không phép`` rows only
-receive an ordinal/surcharge when the PostgreSQL switch explicitly enables it.
-The official-rule base penalty is never removed by this policy.
+existing weekday behaviour, while Saturday/Sunday absence, late-arrival and
+early-leave rows only receive an ordinal/surcharge when the PostgreSQL switch
+explicitly enables it. The official-rule base penalty is never removed.
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def _vera_progressive_penalty_applies(ngay, loai_nghi):
         _vera_canonical = get_progressive_penalty_reason(loai_nghi)
         _vera_target = pd.to_datetime(ngay, errors='coerce', dayfirst=True)
         if (
-            _vera_canonical == "Nghỉ không phép"
+            _vera_canonical is not None
             and pd.notna(_vera_target)
             and _vera_target.weekday() >= 5
         ):

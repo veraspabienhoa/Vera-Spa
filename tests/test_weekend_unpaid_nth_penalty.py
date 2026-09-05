@@ -23,13 +23,21 @@ def _source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_weekend_unpaid_absence_does_not_add_nth_bonus_by_default():
+def test_weekend_progressive_groups_do_not_add_nth_bonus_by_default():
     saturday = date(2026, 9, 5)
     sunday = date(2026, 9, 6)
 
     for work_date in (saturday, sunday):
-        for reason in ("Nghỉ không phép", "Nghỉ CUỐI TUẦN KHÔNG phép"):
-            assert canonical_reason(reason) == "Nghỉ không phép"
+        for reason in (
+            "Nghỉ không phép",
+            "Nghỉ CUỐI TUẦN KHÔNG phép",
+            "Đi trễ không phép",
+            "Đi trễ CUỐI TUẦN KHÔNG phép",
+            "Về sớm không phép",
+            "Về sớm CUỐI TUẦN KHÔNG phép",
+            "Ra sớm không phép",
+        ):
+            assert canonical_reason(reason) is not None
             assert bonus(3, work_date, reason) == 0
             assert bonus(5, work_date, reason) == 0
 
@@ -37,22 +45,21 @@ def test_weekend_unpaid_absence_does_not_add_nth_bonus_by_default():
 def test_admin_can_enable_weekend_unpaid_nth_bonus_again():
     saturday = date(2026, 9, 5)
 
-    assert bonus(1, saturday, "Nghỉ không phép", weekend_unpaid_enabled=True) == 0
-    assert bonus(2, saturday, "Nghỉ không phép", weekend_unpaid_enabled=True) == 0
-    assert bonus(3, saturday, "Nghỉ không phép", weekend_unpaid_enabled=True) == 100_000
-    assert bonus(4, saturday, "Nghỉ không phép", weekend_unpaid_enabled=True) == 200_000
-    assert bonus(5, saturday, "Nghỉ không phép", weekend_unpaid_enabled=True) == 300_000
+    for reason in ("Nghỉ không phép", "Đi trễ không phép", "Về sớm không phép"):
+        assert bonus(1, saturday, reason, weekend_unpaid_enabled=True) == 0
+        assert bonus(2, saturday, reason, weekend_unpaid_enabled=True) == 0
+        assert bonus(3, saturday, reason, weekend_unpaid_enabled=True) == 100_000
+        assert bonus(4, saturday, reason, weekend_unpaid_enabled=True) == 200_000
+        assert bonus(5, saturday, reason, weekend_unpaid_enabled=True) == 300_000
 
 
-def test_weekdays_and_other_progressive_groups_are_unchanged():
+def test_weekday_progression_and_non_progressive_reasons_are_unchanged():
     friday = date(2026, 9, 4)
     saturday = date(2026, 9, 5)
 
-    assert bonus(3, friday, "Nghỉ không phép") == 100_000
+    for reason in ("Nghỉ không phép", "Đi trễ không phép", "Về sớm không phép"):
+        assert bonus(3, friday, reason) == 100_000
     assert bonus(4, friday, "Nghỉ CUỐI TUẦN KHÔNG phép") == 200_000
-    assert bonus(3, saturday, "Đi trễ không phép") == 100_000
-    assert bonus(3, saturday, "Về sớm không phép") == 100_000
-    assert bonus(3, saturday, "Ra sớm không phép") == 100_000
     assert bonus(7, saturday, "Nghỉ có phép") == 0
 
 
@@ -64,22 +71,23 @@ def test_progressive_groups_remain_independent_and_normalized():
 
 
 def test_shared_preview_and_save_calculation_use_the_same_weekend_switch():
-    existing = pd.DataFrame([
-        {"Ngày": date(2026, 9, 5), "Lý do nghỉ": "Nghỉ không phép"},
-        {"Ngày": date(2026, 9, 5), "Lý do nghỉ": "Nghỉ CUỐI TUẦN KHÔNG phép"},
-    ])
+    for reason in ("Nghỉ không phép", "Đi trễ không phép", "Về sớm không phép"):
+        existing = pd.DataFrame([
+            {"Ngày": date(2026, 9, 5), "Lý do nghỉ": reason},
+            {"Ngày": date(2026, 9, 5), "Lý do nghỉ": reason},
+        ])
 
-    assert progressive_ordinal_and_bonus(
-        existing,
-        date(2026, 9, 5),
-        "Nghỉ không phép",
-    ) == (None, 0)
-    assert progressive_ordinal_and_bonus(
-        existing,
-        date(2026, 9, 5),
-        "Nghỉ không phép",
-        weekend_unpaid_enabled=True,
-    ) == (3, 100_000)
+        assert progressive_ordinal_and_bonus(
+            existing,
+            date(2026, 9, 5),
+            reason,
+        ) == (None, 0)
+        assert progressive_ordinal_and_bonus(
+            existing,
+            date(2026, 9, 5),
+            reason,
+            weekend_unpaid_enabled=True,
+        ) == (3, 100_000)
 
 
 def test_shared_weekday_progression_stays_enabled_by_default():
@@ -169,7 +177,7 @@ def test_rules_page_exposes_an_admin_weekend_toggle():
     assert "expected_revision" in rules
     assert "Chỉ tài khoản admin được bật hoặc tắt Người Thứ N" in rules
     assert "WEEKEND_UNPAID_NTH_CONFIG_SHEET_KEY" in rules
-    assert "NGƯỜI THỨ N – NGHỈ KHÔNG PHÉP CUỐI TUẦN" in page
+    assert "NGƯỜI THỨ N – VI PHẠM CUỐI TUẦN" in page
     assert "Tắt Người Thứ N cuối tuần" in page
     assert "Kích hoạt Người Thứ N cuối tuần" in page
     assert "saveWeekendUnpaidNthPenalty" in client

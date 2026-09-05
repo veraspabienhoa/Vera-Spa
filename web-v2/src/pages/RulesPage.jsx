@@ -381,8 +381,8 @@ export default function RulesPage() {
       <section className="panel weekend-unpaid-nth-panel">
         <div className="panel-title-row">
           <div>
-            <h2>NGƯỜI THỨ N – NGHỈ KHÔNG PHÉP CUỐI TUẦN</h2>
-            <p>Công tắc này chỉ áp dụng cho Nghỉ không phép vào Thứ Bảy và Chủ nhật.</p>
+            <h2>NGƯỜI THỨ N – VI PHẠM CUỐI TUẦN</h2>
+            <p>Công tắc áp dụng cho Nghỉ, Đi trễ và Về sớm không phép vào Thứ Bảy và Chủ nhật.</p>
           </div>
           <span className={`weekend-unpaid-nth-state ${weekendUnpaidNthPenalty.enabled ? 'enabled' : 'disabled'}`}>
             {weekendUnpaidNthPenalty.enabled ? 'ĐANG BẬT' : 'ĐANG TẮT'}
@@ -392,8 +392,8 @@ export default function RulesPage() {
           <div>
             <strong>{weekendUnpaidNthPenalty.enabled ? 'Đang tính phạt Người Thứ N cuối tuần' : 'Đang giữ nguyên mức phạt gốc cuối tuần'}</strong>
             <p>
-              Khi TẮT, người thứ 3, 4, 5… nghỉ không phép vào cuối tuần không cộng thêm 100.000đ/người.
-              Ngày thường và các lý do Đi trễ/Về sớm không thay đổi.
+              Khi TẮT, người thứ 3, 4, 5… trong các nhóm Nghỉ, Đi trễ và Về sớm không phép cuối tuần
+              chỉ chịu mức phạt theo Nội quy, không cộng thêm 100.000đ/người. Ngày thường không thay đổi.
             </p>
           </div>
           {canEditWeekendUnpaidNthPenalty && <button
