@@ -13,6 +13,51 @@
     <link rel="icon" href="/Vera-Spa/icons/vera-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/Vera-Spa/icons/vera-icon-180.png" />
     <title>VERA SPA</title>
+    <script>
+      (() => {
+        const pageTitles = {
+          leave: 'ĐĂNG KÝ NGHỈ',
+          schedule: 'LỊCH LÀM VIỆC',
+          tour: 'BẢNG TUA',
+          snapshot: 'CHẤM CÔNG',
+          'auto-check': 'AUTO CHECK',
+          payroll: 'LƯƠNG KTV',
+          'department-payroll': 'LƯƠNG HÀNH CHÁNH',
+          'payroll-config': 'CẤU HÌNH LƯƠNG',
+          revenue: 'DOANH THU',
+          employees: 'NHÂN VIÊN',
+          'contract-1': 'HỢP ĐỒNG',
+          birthday: 'SINH NHẬT',
+          changes: 'THAY ĐỔI HỆ THỐNG',
+          permissions: 'PHÂN QUYỀN',
+          'long-leave': 'PHÉP NĂM',
+          profile: 'HỒ SƠ & MẬT KHẨU',
+          rules: 'NỘI QUY',
+          storage: 'BỘ NHỚ HỆ THỐNG',
+        }
+
+        const updateStandaloneTitle = () => {
+          const params = new URLSearchParams(window.location.search)
+          const page = params.get('page')
+          const standalone = params.get('standalone') === '1'
+          document.title = standalone && pageTitles[page] ? `VERA SPA-${pageTitles[page]}` : 'VERA SPA'
+        }
+
+        const wrapHistory = (method) => {
+          const original = window.history[method]
+          window.history[method] = function (...args) {
+            const result = original.apply(this, args)
+            updateStandaloneTitle()
+            return result
+          }
+        }
+
+        wrapHistory('pushState')
+        wrapHistory('replaceState')
+        window.addEventListener('popstate', updateStandaloneTitle)
+        updateStandaloneTitle()
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
