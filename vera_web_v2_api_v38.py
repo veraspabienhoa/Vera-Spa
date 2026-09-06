@@ -12,6 +12,10 @@ from sqlalchemy import text
 
 import vera_web_v2_api_shared as _shared
 import vera_web_v2_admin_audit_archive as _audit_archive
+import vera_web_v2_contracts as _contracts
+import vera_web_v2_profile as _profile
+import vera_web_v2_staff as _staff
+import vera_web_v2_staff_security as _staff_security
 import vera_web_v2_staff_status_sort as _staff_sort
 import vera_web_v2_snapshot as _snapshot
 from vera_web_v2_accumulation_permission import install_accumulation_permission
@@ -71,6 +75,21 @@ _audit_archive.identity_type = _api.Identity
 _audit_archive.leave_update_type = _api.LeaveUpdate
 _audit_archive.leave_delete_type = _api.LeaveDelete
 _staff_sort.identity_type = _api.Identity
+
+
+# CCCD images remain required/stored normally, but Web V2 no longer performs
+# OCR, auto-fill, or name/number matching against image text. Employees enter
+# identification fields manually. Keep this override here so every already-
+# installed profile/staff route and the contract route use the same behavior.
+def _no_cccd_ocr(*_args, **_kwargs):
+    return {}
+
+
+_staff_security._extract_cccd_fields = _no_cccd_ocr
+_staff_security.validate_saved_identity_matches = _no_cccd_ocr
+_profile.validate_saved_identity_matches = _no_cccd_ocr
+_staff.validate_saved_identity_matches = _no_cccd_ocr
+_contracts._extract_cccd_fields = _no_cccd_ocr
 
 
 def _login_profile(employee_username: str) -> dict:
