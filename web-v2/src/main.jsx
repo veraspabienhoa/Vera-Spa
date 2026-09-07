@@ -5,12 +5,14 @@ import EmployeeProfileLiveEnhancer from './components/EmployeeProfileLiveEnhance
 import { startPurchaseReconcileAlertWatcher } from './lib/purchaseReconcileAlerts'
 import { registerVeraServiceWorker } from './lib/pushNotifications'
 import { startEmployeeProfileUxEnhancements } from './lib/employeeProfileUx'
+import { startEmployeeCccdFieldExtract } from './lib/employeeCccdFieldExtract'
 import './styles.css'
 import './visibility-cleanup.css'
 
 void registerVeraServiceWorker().catch(() => {})
 startPurchaseReconcileAlertWatcher()
 startEmployeeProfileUxEnhancements()
+startEmployeeCccdFieldExtract()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
