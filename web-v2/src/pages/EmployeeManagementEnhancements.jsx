@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ShiftBreakSettingsPanel from './ShiftBreakSettingsPanel'
+import { staffSecurityApi } from '../lib/staffSecurityApi'
 
 function downloadPortrait(image, username = 'Nhan_Vien') {
   const src = String(image?.src || '')
@@ -11,6 +12,69 @@ function downloadPortrait(image, username = 'Nhan_Vien') {
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
+}
+
+async function copyPlainText(value) {
+  const text = String(value || '')
+  if (!text) return false
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch (_) {
+    // Safari/private browsing may deny Clipboard API; use the legacy fallback.
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;'
+  document.body.appendChild(textarea)
+  textarea.select()
+  let copied = false
+  try { copied = document.execCommand('copy') } catch (_) { copied = false }
+  textarea.remove()
+  return copied
+}
+
+function renderPortraitTextPanel(card, text, statusText, statusType = '') {
+  let panel = card.querySelector('[data-portrait-text-panel="true"]')
+  if (!panel) {
+    panel = document.createElement('div')
+    panel.dataset.portraitTextPanel = 'true'
+    panel.style.cssText = 'display:grid;gap:8px;margin-top:12px;padding:12px;border:1px solid #cfdcd6;border-radius:12px;background:#f6faf8;'
+    card.appendChild(panel)
+  }
+  panel.textContent = ''
+
+  const heading = document.createElement('strong')
+  heading.textContent = 'CHỮ NHẬN DẠNG TỪ ẢNH'
+  const status = document.createElement('div')
+  status.textContent = statusText
+  status.style.cssText = `font-size:11px;font-weight:${statusType ? '800' : '500'};color:${statusType === 'ok' ? '#17603b' : statusType === 'error' ? '#a62a20' : '#4c6259'};`
+  panel.append(heading, status)
+  if (!text) return
+
+  const textarea = document.createElement('textarea')
+  textarea.readOnly = true
+  textarea.value = text
+  textarea.style.cssText = 'width:100%;min-height:140px;resize:vertical;border:1px solid #c8d6d0;border-radius:9px;background:#fff;padding:10px;font:500 13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#17251f;user-select:text;-webkit-user-select:text;'
+  textarea.addEventListener('focus', () => textarea.select())
+
+  const copyButton = document.createElement('button')
+  copyButton.type = 'button'
+  copyButton.className = 'secondary-button compact'
+  copyButton.textContent = 'Sao chép toàn bộ'
+  copyButton.onclick = async () => {
+    const copied = await copyPlainText(text)
+    status.textContent = copied
+      ? 'Đã sao chép toàn bộ chữ vào clipboard.'
+      : 'Không tự sao chép được. Hãy chọn văn bản rồi dùng Ctrl/Cmd+C.'
+    status.style.color = copied ? '#17603b' : '#a62a20'
+    status.style.fontWeight = '800'
+    textarea.focus()
+  }
+  panel.append(textarea, copyButton)
 }
 
 function findActionButton(side, text) {
@@ -77,6 +141,42 @@ function openPortraitViewer(image, side, username) {
   download.textContent = 'Tải ảnh'
   download.onclick = () => downloadPortrait(image, currentPortraitUsername(side) || username)
   actions.appendChild(download)
+
+  const copyText = document.createElement('button')
+  copyText.type = 'button'
+  copyText.className = 'secondary-button compact'
+  copyText.textContent = 'Sao chép chữ'
+  copyText.title = 'Nhận dạng chữ trên ảnh và cho phép chọn/sao chép'
+  copyText.onclick = async () => {
+    const originalLabel = copyText.textContent
+    copyText.disabled = true
+    copyText.textContent = 'Đang đọc chữ…'
+    renderPortraitTextPanel(card, '', 'Đang nhận dạng chữ trên ảnh…')
+    try {
+      const response = await fetch(image.src)
+      if (!response.ok) throw new Error(`Không đọc được ảnh (HTTP ${response.status}).`)
+      const blob = await response.blob()
+      const result = await staffSecurityApi.extractImageText(blob)
+      const text = String(result?.text || '').trim()
+      if (!text) {
+        renderPortraitTextPanel(card, '', 'Không nhận dạng được chữ trên ảnh.', 'error')
+        return
+      }
+      const copied = await copyPlainText(text)
+      renderPortraitTextPanel(
+        card,
+        text,
+        copied ? 'Đã nhận dạng và sao chép toàn bộ chữ vào clipboard.' : 'Đã nhận dạng. Có thể chọn từng phần văn bản để sao chép.',
+        copied ? 'ok' : '',
+      )
+    } catch (error) {
+      renderPortraitTextPanel(card, '', `Không đọc được chữ từ ảnh: ${error?.message || 'lỗi OCR'}`, 'error')
+    } finally {
+      copyText.disabled = false
+      copyText.textContent = originalLabel
+    }
+  }
+  actions.appendChild(copyText)
 
   addAction('Crop / Xoay', 'Crop / Xoay')
   addAction('Xóa', 'Xóa', 'danger-button compact')
