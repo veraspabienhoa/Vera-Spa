@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import EmployeeProfileLiveEnhancer from './components/EmployeeProfileLiveEnhancer.jsx'
 import { startPurchaseReconcileAlertWatcher } from './lib/purchaseReconcileAlerts'
 import { registerVeraServiceWorker } from './lib/pushNotifications'
 import { startEmployeeProfileUxEnhancements } from './lib/employeeProfileUx'
@@ -13,6 +14,7 @@ startEmployeeProfileUxEnhancements()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    <EmployeeProfileLiveEnhancer />
     <App />
   </React.StrictMode>,
 )
