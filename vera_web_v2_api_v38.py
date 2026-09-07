@@ -7,7 +7,7 @@ from vera_web_v2_runtime_env import load_managed_runtime_environment
 # database/Auth settings while their module globals are initialized.
 load_managed_runtime_environment()
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy import text
 
 import vera_web_v2_api_shared as _shared
@@ -90,6 +90,32 @@ _staff_security.validate_saved_identity_matches = _no_cccd_ocr
 _profile.validate_saved_identity_matches = _no_cccd_ocr
 _staff.validate_saved_identity_matches = _no_cccd_ocr
 _contracts._extract_cccd_fields = _no_cccd_ocr
+
+
+# Copy-only OCR is intentionally separate from CCCD profile extraction above.
+# It returns raw selectable text to the authenticated browser and never writes,
+# auto-fills, validates, or matches any employee/profile field.
+@_shared.app.post("/v2/staff/image-text")
+async def extract_profile_image_text(
+    request: Request,
+    _ident: _api.Identity = Depends(_api.current_identity),
+):
+    content_type = str(request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    if content_type not in _staff_security.ALLOWED_IMAGE_TYPES:
+        raise HTTPException(400, "Chỉ chấp nhận ảnh WebP, JPEG hoặc PNG.")
+    content = await request.body()
+    if not content or len(content) > _staff_security.MAX_IDENTITY_BYTES:
+        raise HTTPException(400, "Ảnh trống hoặc vượt quá dung lượng cho phép.")
+    if not _staff_security._valid_image(content, content_type):
+        raise HTTPException(400, "Nội dung file ảnh không hợp lệ.")
+    _staff_security._image_dimensions(content)
+    raw_text = _staff_security._ocr_text(content).strip()
+    return {
+        "ok": True,
+        "text": raw_text,
+        "ocr_status": "extracted" if raw_text else "not_detected",
+        "message": "Đã nhận dạng chữ trên ảnh." if raw_text else "Không nhận dạng được chữ trên ảnh.",
+    }
 
 
 def _login_profile(employee_username: str) -> dict:
