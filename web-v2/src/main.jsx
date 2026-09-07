@@ -12,6 +12,7 @@ import { startEmployeeProfileSwitchGuard } from './lib/employeeProfileSwitchGuar
 import { startEmployeeProfileCompletionAndIssuerFix } from './lib/employeeProfileCompletionAndIssuerFix'
 import { startEmployeeDirectoryUx } from './lib/employeeDirectoryUx'
 import { startEmployeeMissingProfileFix } from './lib/employeeMissingProfileFix'
+import { startDepartmentSalaryAdvanceTransportGuard } from './lib/departmentSalaryAdvanceTransportGuard'
 import { startDepartmentSalaryAdvanceLedger } from './lib/departmentSalaryAdvanceLedger'
 import './styles.css'
 import './visibility-cleanup.css'
@@ -26,6 +27,7 @@ startEmployeeProfileSwitchGuard()
 startEmployeeProfileCompletionAndIssuerFix()
 startEmployeeDirectoryUx()
 startEmployeeMissingProfileFix()
+startDepartmentSalaryAdvanceTransportGuard()
 startDepartmentSalaryAdvanceLedger()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
