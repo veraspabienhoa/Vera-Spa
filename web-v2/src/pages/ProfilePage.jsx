@@ -15,7 +15,7 @@ const toVnDate = (value) => {
 }
 
 export default function ProfilePage({ user, onPasswordChanged, forcePasswordChange = false }) {
-  const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', gender: '', ethnicity: '', phone: '', email: '', address: '', province: '', district: '', ward: '', address_detail: '', bank_account: '', bank_name: '', cccd_number: '', cccd_issue_date: '', cccd_issue_place: '' })
+  const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', gender: '', ethnicity: '', phone: '', email: '', address: '', province: '', ward: '', address_detail: '', bank_account: '', bank_name: '', cccd_number: '', cccd_issue_date: '', cccd_issue_place: '' })
   const [references, setReferences] = useState({ provinces: [], wards: [], banks: [] })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -51,6 +51,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         throw new Error('Chỉ khi đổi mật khẩu mới cần nhập Mật khẩu hiện tại.')
       }
       const payload = { ...form, birth_date: toVnDate(form.birth_date), cccd_issue_date: toVnDate(form.cccd_issue_date) }
+      delete payload.district
       if (!forcePasswordChange && !form.new_password) {
         delete payload.current_password
         delete payload.new_password
@@ -101,7 +102,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   }
 
   const changeProvince = async (provinceName) => {
-    setForm((current) => ({ ...current, province: provinceName, district: '', ward: '' }))
+    setForm((current) => ({ ...current, province: provinceName, ward: '' }))
     const province = references.provinces.find((item) => item.name === provinceName)
     if (!province) { setReferences((current) => ({ ...current, wards: [] })); return }
     try {
@@ -133,9 +134,8 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <label>Điện thoại<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
         <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
         <label>Tỉnh/Thành phố<select value={form.province} onChange={(e) => void changeProvince(e.target.value)}><option value="">-- Chọn Tỉnh/Thành phố --</option>{form.province && !references.provinces.some((item) => item.name === form.province) && <option>{form.province}</option>}{references.provinces.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}</select></label>
-        <label>Quận/Huyện<input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
         <label>Phường/Xã<select value={form.ward} onChange={(e) => setForm({ ...form, ward: e.target.value })} disabled={!form.province}><option value="">-- Chọn Phường/Xã --</option>{form.ward && !references.wards.includes(form.ward) && <option>{form.ward}</option>}{references.wards.map((ward) => <option key={ward}>{ward}</option>)}</select></label>
-        <label>Địa chỉ cụ thể (Số nhà, tên đường...)<input value={form.address_detail} onChange={(e) => setForm({ ...form, address_detail: e.target.value })} placeholder="Số nhà, tên đường, ấp/khu phố" /></label>
+        <label className="wide-field">Địa chỉ cụ thể (Số nhà, tên đường...)<input value={form.address_detail} onChange={(e) => setForm({ ...form, address_detail: e.target.value })} placeholder="Số nhà, tên đường, ấp/khu phố" /></label>
         <div className="profile-field-section wide-field">Thông tin thanh toán/Ngân hàng</div>
         <label>Tên ngân hàng<select value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{form.bank_name && !references.banks.includes(form.bank_name) && <option>{form.bank_name}</option>}{references.banks.map((bank) => <option key={bank}>{bank}</option>)}</select></label>
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value })} /></label>
