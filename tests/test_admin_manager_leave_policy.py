@@ -11,6 +11,8 @@ def test_admin_is_unrestricted_across_shared_web_v2_leave_validation():
     assert 'role != "admin"' in guard
     assert '"admin_unrestricted": True' in guard
     assert "shared_api.validate_leave_registration_request_live = admin_unrestricted_validator" in guard
+    assert "_install_admin_reason_catalog(app, api_module)" in guard
+    assert '"admin_reason_catalog": "all_reasons_all_dates"' in guard
 
     delete_guard = api.split("def _validate_delete_permission", 1)[1].split("def _validate_edit_permission", 1)[0]
     assert 'if role == "admin":' in delete_guard
