@@ -1,18 +1,18 @@
-"""Lễ tân leave-edit/delete guard for VERA SPA Web V2.
+"""Lễ tân/Quản lý leave-edit/delete guard for VERA SPA Web V2.
 
-Business rule:
-- A ``letan`` account cannot edit or delete any leave registration before today.
-- For registrations dated today whose current reason belongs to one of the five
-  explicitly approved groups below, ``letan`` cannot delete the row and may
+Business rule (restored from the 2026-08-29 guard and applied equally to
+``letan`` and ``quanly``):
+- Records before today cannot be edited or deleted.
+- For records dated today whose current reason belongs to one of the five
+  explicitly approved groups below, the editor cannot delete the row and may
   change ``Lý do nghỉ`` only within that same group.
-- Other reasons/types that ``letan`` is allowed to use today keep the existing
-  canonical edit/delete behavior from Phân quyền + Nội quy.
+- Other reasons/types dated today keep the existing canonical edit/delete
+  behavior from Phân quyền + Nội quy.
 - Future-dated records continue through the existing canonical permission and
   cancellation rules unchanged.
 
-The guard patches the canonical permission helpers instead of only hiding UI
-controls. Therefore direct API calls, Admin archive wrappers, and storage-side
-leave deletion all hit the same server-side boundary.
+Admin is intentionally not handled by this guard. The canonical Admin path
+remains unrestricted by these editor-role locks.
 """
 from __future__ import annotations
 
@@ -22,7 +22,11 @@ from typing import Any
 from fastapi import HTTPException
 
 
-RELEASE = "letan-leave-guard-2026-08-29-v2"
+RELEASE = "operations-leave-guard-2026-09-07-v3"
+EDITOR_ROLES = {
+    "letan": "Lễ tân",
+    "quanly": "Quản lý",
+}
 
 LETAN_REASON_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -75,6 +79,10 @@ def _role(ident: Any) -> str:
     return str(getattr(ident, "role", "") or "").strip().lower()
 
 
+def _role_label(role: str) -> str:
+    return EDITOR_ROLES.get(role, role or "Tài khoản")
+
+
 def _reason_group(reason: Any, norm) -> str:
     key = norm(reason)
     if not key:
@@ -94,15 +102,17 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
     norm = api_module._norm
 
     def validate_edit_permission(conn, row: dict, new_reason: str, ident):
-        if _role(ident) != "letan":
+        role = _role(ident)
+        if role not in EDITOR_ROLES:
             return original_edit(conn, row, new_reason, ident)
 
+        label = _role_label(role)
         target = row["leave_date"]
         today = datetime.now(vn_tz).date()
         if target < today:
             raise HTTPException(
                 403,
-                "Tài khoản Lễ tân không được sửa đăng ký có ngày trước ngày hiện tại.",
+                f"Tài khoản {label} không được sửa đăng ký có ngày trước ngày hiện tại.",
             )
 
         if target == today:
@@ -111,8 +121,8 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
 
             # The five named groups are the only same-day rows with the special
             # lock. Every other reason/type falls back to the canonical rules,
-            # so anything Lễ tân is normally allowed to manage today remains
-            # editable/changeable.
+            # so anything the editor role is normally allowed to manage today
+            # remains editable/changeable according to Phân quyền + Nội quy.
             if not old_group:
                 return original_edit(conn, row, new_reason, ident)
 
@@ -120,44 +130,44 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             if new_group != old_group:
                 raise HTTPException(
                     403,
-                    f"Ngày hiện tại Lễ tân chỉ được đổi Lý do nghỉ trong cùng {old_group}.",
+                    f"Ngày hiện tại {label} chỉ được đổi Lý do nghỉ trong cùng {old_group}.",
                 )
 
-            # This is an explicit editor-role exception. The editor is Lễ tân,
-            # so the old allowed_roles check must not reject Leader-policy rows
-            # merely because they are intended for a Leader employee. The new
-            # reason still has to exist in the canonical Nội quy. Returning
-            # True bypasses only the old edit/cancellation timing rule; the
-            # canonical update path still performs duplicate, quota, employee,
-            # penalty and persistence validation.
+            # Explicit same-day/same-group exception restored from the original
+            # Lễ tân rule. The replacement reason must still exist in Nội quy,
+            # but editor-role/day/timing checks do not block switching among
+            # the three reasons of the same group. Remaining canonical update
+            # validation (duplicates, quotas, employee and persistence) stays on.
             item = api_module._reason_item(conn, new_reason)
             return item, True
 
-        # Future-dated rows preserve the existing feature flags, notice period,
+        # Future-dated rows preserve feature flags, notice/cancellation period,
         # registration rules and all other canonical behavior.
         return original_edit(conn, row, new_reason, ident)
 
     def validate_delete_permission(conn, row: dict, ident) -> None:
-        if _role(ident) != "letan":
+        role = _role(ident)
+        if role not in EDITOR_ROLES:
             return original_delete(conn, row, ident)
 
+        label = _role_label(role)
         target = row["leave_date"]
         today = datetime.now(vn_tz).date()
         if target < today:
             raise HTTPException(
                 403,
-                "Tài khoản Lễ tân không được xóa đăng ký có ngày trước ngày hiện tại.",
+                f"Tài khoản {label} không được xóa đăng ký có ngày trước ngày hiện tại.",
             )
 
         reason = str(row.get("leave_reason") or "").strip()
         if target == today and _reason_group(reason, norm):
             raise HTTPException(
                 403,
-                "Tài khoản Lễ tân không được xóa đăng ký ngày hiện tại thuộc Nhóm 1–5; chỉ được đổi Lý do nghỉ trong cùng nhóm.",
+                f"Tài khoản {label} không được xóa đăng ký ngày hiện tại thuộc Nhóm 1–5; chỉ được đổi Lý do nghỉ trong cùng nhóm.",
             )
 
-        # Today + non-group, and all future rows, retain the canonical delete
-        # permission/cancellation rules.
+        # Today + non-group, and all future rows, retain canonical delete
+        # permission/cancellation rules from Phân quyền + Nội quy.
         return original_delete(conn, row, ident)
 
     api_module._validate_edit_permission = validate_edit_permission
@@ -168,6 +178,7 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
         return {
             "ok": True,
             "release": RELEASE,
+            "managed_roles": sorted(EDITOR_ROLES),
             "today_special_scope": "groups_1_to_5_only",
             "other_today_reasons": "canonical_edit_delete",
             "groups": [
