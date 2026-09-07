@@ -1,0 +1,46 @@
+name: Inspect VPS TimeSoft Env Wiring
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-vps-timesoft-env.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Inspect service environment wiring without values
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" '
+            set -e
+            pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app")
+            unit=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/$pid/cgroup" | head -n 1)
+            echo "unit=$unit"
+            systemctl show "$unit" -p FragmentPath -p DropInPaths -p EnvironmentFiles --no-pager
+            fragment=$(systemctl show "$unit" -p FragmentPath --value)
+            if [ -n "$fragment" ]; then stat -c "fragment=%n owner=%U group=%G mode=%a" "$fragment"; fi
+            for path in $(systemctl show "$unit" -p DropInPaths --value); do
+              [ -e "$path" ] && stat -c "dropin=%n owner=%U group=%G mode=%a" "$path"
+            done
+            echo "can_restart_without_sudo=$(systemctl restart "$unit" >/dev/null 2>&1 && echo yes || echo no)"
+          '
