@@ -22,7 +22,7 @@ async function copyPlainText(value) {
       await navigator.clipboard.writeText(text)
       return true
     }
-  } catch (_) {
+  } catch {
     // Safari/private browsing may deny Clipboard API; use the legacy fallback.
   }
   const textarea = document.createElement('textarea')
@@ -32,7 +32,7 @@ async function copyPlainText(value) {
   document.body.appendChild(textarea)
   textarea.select()
   let copied = false
-  try { copied = document.execCommand('copy') } catch (_) { copied = false }
+  try { copied = document.execCommand('copy') } catch { copied = false }
   textarea.remove()
   return copied
 }
