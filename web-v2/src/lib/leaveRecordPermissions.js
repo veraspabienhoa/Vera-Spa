@@ -15,6 +15,7 @@ export const LETAN_REASON_GROUPS = [
   ['Leader nghỉ phép theo chính sách', 'Leader đi trễ sớm theo chính sách', 'Leader về sớm về sớm theo chính sách'],
 ]
 
+const EDITOR_ROLES = new Set(['letan', 'quanly'])
 const GROUP_BY_REASON = new Map(
   LETAN_REASON_GROUPS.flatMap((reasons, index) => reasons.map((reason) => [normalizeReason(reason), index])),
 )
@@ -26,14 +27,15 @@ export function letanReasonGroup(reason) {
 }
 
 export function letanReasonChoices(role, recordDate, currentReason, today) {
-  if (String(role || '').trim().toLowerCase() !== 'letan' || recordDate !== today) return null
+  const roleKey = String(role || '').trim().toLowerCase()
+  if (!EDITOR_ROLES.has(roleKey) || recordDate !== today) return null
   return letanReasonGroup(currentReason)
 }
 
 export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, today }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
-  if (roleKey !== 'letan') return Boolean(allowedByPermission)
+  if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
   if (recordDate === today && letanReasonGroup(currentReason)) return true
   return Boolean(allowedByPermission)
@@ -42,7 +44,7 @@ export function canEditLeaveRecord({ role, allowedByPermission, recordDate, curr
 export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, today }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
-  if (roleKey !== 'letan') return Boolean(allowedByPermission)
+  if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
   if (recordDate === today && letanReasonGroup(currentReason)) return false
   return Boolean(allowedByPermission)
