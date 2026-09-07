@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure SSH
         env:
@@ -45,9 +45,26 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           DEPLOY_SHA: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${VPS_USER}@${VPS_HOST}" \
-            "/opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+          set -e
+          deployed=0
+          for attempt in 1 2 3; do
+            echo "DEPLOY: attempt ${attempt}/3 for ${DEPLOY_SHA}"
+            if ssh -i ~/.ssh/id_ed25519 \
+              "${VPS_USER}@${VPS_HOST}" \
+              "timeout 150 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"; then
+              deployed=1
+              break
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              wait_seconds=$((attempt * 15))
+              echo "DEPLOY: VPS could not fetch GitHub; retrying in ${wait_seconds}s"
+              sleep "$wait_seconds"
+            fi
+          done
+          if [[ "$deployed" != 1 ]]; then
+            echo "DEPLOY FAILED: VPS could not complete deployment after 3 attempts" >&2
+            exit 128
+          fi
 
       - name: Configure PostgreSQL SSL environment
         env:
@@ -56,14 +73,38 @@ jobs:
           VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
           DEPLOY_SHA: ${{ github.sha }}
         run: |
+          set -e
           test -n "$VERA_DB_PASS"
           if [[ "$VERA_DB_PASS" == *$'\n'* || "$VERA_DB_PASS" == *$'\r'* ]]; then
             echo "VERA_DB_PASS must be a single-line secret" >&2
             exit 1
           fi
-          printf '%s\n' "$VERA_DB_PASS" | ssh -i ~/.ssh/id_ed25519 \
-            "${VPS_USER}@${VPS_HOST}" \
-            "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; bash \"\${release_dir}/configure_vps_database.sh\" '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
+
+          # Local Auth is a persistent production cutover. If the newly deployed
+          # release already reports postgres-local, do not invoke deploy.sh a
+          # second time merely to re-apply the same marker/database settings.
+          if python - <<'PY'
+          import json
+          import urllib.request
+
+          try:
+              request = urllib.request.Request(
+                  "https://api.veraspa.vn/v2/auth/health",
+                  headers={"Accept": "application/json", "Cache-Control": "no-cache"},
+              )
+              with urllib.request.urlopen(request, timeout=10) as response:
+                  payload = json.load(response)
+              raise SystemExit(0 if payload.get("ok") is True and payload.get("provider") == "postgres-local" else 1)
+          except Exception:
+              raise SystemExit(1)
+          PY
+          then
+            echo "DATABASE CONFIG: PostgreSQL local Auth already active; no second deploy required"
+          else
+            printf '%s\n' "$VERA_DB_PASS" | ssh -i ~/.ssh/id_ed25519 \
+              "${VPS_USER}@${VPS_HOST}" \
+              "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; bash \"\${release_dir}/configure_vps_database.sh\" '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
+          fi
 
       - name: Verify production data sources
         env:
