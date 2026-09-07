@@ -26,10 +26,12 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Build credential-source diagnostic
+      - name: Build Secret Manager comparison diagnostic
         run: |
           cat > /tmp/vera_timesoft_diag.py <<'PY'
-          import hashlib, os, pathlib, re, sys
+          import hashlib, os, shutil, subprocess, sys
+          from urllib.parse import urljoin
+          import requests
 
           pid, release_dir = sys.argv[1], sys.argv[2]
           env = {}
@@ -38,6 +40,9 @@ jobs:
                   continue
               key, value = item.split(b"=", 1)
               env[key.decode("utf-8", "ignore")] = value.decode("utf-8", "ignore")
+          os.chdir(release_dir)
+          sys.path.insert(0, release_dir)
+          import timesoft_sync_job as ts
 
           def sig(value):
               value = str(value or "")
@@ -45,58 +50,57 @@ jobs:
 
           current_u = env.get("TIMESOFT_USERNAME", "")
           current_p = env.get("TIMESOFT_PASSWORD", "")
-          print("release_dir=", release_dir)
-          print("current_username_meta=", {"length": len(current_u), "sha12": sig(current_u), "trimmed_same": current_u == current_u.strip(), "quoted": current_u[:1] in "\"'" or current_u[-1:] in "\"'"})
-          print("current_password_meta=", {"length": len(current_p), "sha12": sig(current_p), "trimmed_same": current_p == current_p.strip(), "quoted": current_p[:1] in "\"'" or current_p[-1:] in "\"'"})
+          print("current_username=", {"length": len(current_u), "sha12": sig(current_u)})
+          print("current_password=", {"length": len(current_p), "sha12": sig(current_p)})
+          print("gcloud_available=", bool(shutil.which('gcloud')))
+          if not shutil.which('gcloud'):
+              raise SystemExit(0)
 
-          roots = [pathlib.Path('/opt/vera-spa'), pathlib.Path.home()]
-          seen = set()
-          candidates = []
-          key_pattern = re.compile(r'^\s*(?:export\s+)?(TIMESOFT_USERNAME|TIMESOFT_PASSWORD)\s*=\s*(.*)\s*$')
-          for root in roots:
-              if not root.exists():
-                  continue
-              for path in root.rglob('*'):
-                  try:
-                      if not path.is_file() or path.stat().st_size > 2_000_000:
-                          continue
-                      if any(part in {'.git', 'node_modules', '.venv', 'releases'} for part in path.parts):
-                          continue
-                      text = path.read_text(encoding='utf-8', errors='ignore')
-                  except Exception:
-                      continue
-                  if 'TIMESOFT_USERNAME' not in text and 'TIMESOFT_PASSWORD' not in text:
-                      continue
-                  values = {}
-                  for line in text.splitlines():
-                      match = key_pattern.match(line)
-                      if not match:
-                          continue
-                      value = match.group(2).strip()
-                      if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                          value = value[1:-1]
-                      values[match.group(1)] = value
-                  if values:
-                      key = (values.get('TIMESOFT_USERNAME',''), values.get('TIMESOFT_PASSWORD',''))
-                      if key in seen:
-                          continue
-                      seen.add(key)
-                      candidates.append((str(path), values))
-          print("credential_source_count=", len(candidates))
-          for path, values in candidates[:20]:
-              u = values.get('TIMESOFT_USERNAME','')
-              p = values.get('TIMESOFT_PASSWORD','')
-              print("credential_source=", path, {
-                  "username_length": len(u), "username_sha12": sig(u), "username_matches_current": bool(u) and u == current_u,
-                  "password_length": len(p), "password_sha12": sig(p), "password_matches_current": bool(p) and p == current_p,
-              })
+          try:
+              project = subprocess.check_output(
+                  ['gcloud', 'config', 'get-value', 'project'], stderr=subprocess.DEVNULL, text=True, timeout=15
+              ).strip()
+          except Exception:
+              project = ''
+          print("gcloud_project_configured=", bool(project and project != '(unset)'))
+          if not project or project == '(unset)':
+              raise SystemExit(0)
+
+          def secret(name):
+              try:
+                  return subprocess.check_output(
+                      ['gcloud', 'secrets', 'versions', 'access', 'latest', '--secret', name, '--project', project],
+                      stderr=subprocess.DEVNULL, text=True, timeout=20,
+                  ).rstrip('\r\n')
+              except Exception:
+                  return ''
+
+          secret_u = secret('vera-timesoft-username')
+          secret_p = secret('vera-timesoft-password')
+          print("secret_manager_username=", {"available": bool(secret_u), "length": len(secret_u), "sha12": sig(secret_u), "matches_current": bool(secret_u) and secret_u == current_u})
+          print("secret_manager_password=", {"available": bool(secret_p), "length": len(secret_p), "sha12": sig(secret_p), "matches_current": bool(secret_p) and secret_p == current_p})
+          if not secret_u or not secret_p or (secret_u == current_u and secret_p == current_p):
+              raise SystemExit(0)
+
+          session = requests.Session()
+          session.headers.update({"User-Agent":"Mozilla/5.0 Chrome/140 Safari/537.36","Accept-Language":"vi-VN,vi;q=0.9"})
+          report_url = urljoin(ts.BASE_URL + '/', ts.REPORT_CHECKIN_PAGE.lstrip('/'))
+          login_page = session.get(report_url, timeout=20, allow_redirects=True)
+          response = session.post(
+              urljoin(ts.BASE_URL + '/', 'User/ValidateUser'),
+              data={"userName": secret_u, "password": secret_p, "sendOne": ""},
+              headers={"Accept":"application/json, text/javascript, */*; q=0.01","X-Requested-With":"XMLHttpRequest","Referer":str(login_page.url),"Origin":ts.BASE_URL},
+              timeout=20, allow_redirects=False,
+          )
+          payload = response.json() if 'json' in str(response.headers.get('content-type','')).lower() else {}
+          print("secret_manager_login_test=", {key: payload.get(key) for key in ('valid','ErrorCode','Message','linkRedirect') if key in payload})
           PY
 
-      - name: Inspect credential sources without exposing secrets
+      - name: Compare production credentials without exposing secrets
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           scp -i ~/.ssh/id_ed25519 /tmp/vera_timesoft_diag.py "${VPS_USER}@${VPS_HOST}:/tmp/vera_timesoft_diag.py"
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
-            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); echo "service_unit=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/${pid}/cgroup" | head -n 1)"; /opt/vera-spa/.venv/bin/python /tmp/vera_timesoft_diag.py "$pid" "$release_dir"; rm -f /tmp/vera_timesoft_diag.py'
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python /tmp/vera_timesoft_diag.py "$pid" "$release_dir"; rm -f /tmp/vera_timesoft_diag.py'
