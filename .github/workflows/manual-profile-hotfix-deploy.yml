@@ -63,13 +63,30 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import time
           import urllib.request
+
           request = urllib.request.Request(
               'https://api.veraspa.vn/v2/auth/health',
-              headers={'Accept':'application/json','Cache-Control':'no-cache','Origin':'https://app.veraspa.vn'},
+              headers={
+                  'Accept': 'application/json',
+                  'Cache-Control': 'no-cache',
+                  'Origin': 'https://app.veraspa.vn',
+                  'User-Agent': 'Mozilla/5.0 Chrome/140 Safari/537.36',
+              },
           )
-          with urllib.request.urlopen(request, timeout=15) as response:
-              payload = json.load(response)
-          assert payload.get('ok') is True, payload
-          print('Production Auth health OK')
+          last_error = None
+          for _ in range(6):
+              try:
+                  with urllib.request.urlopen(request, timeout=10) as response:
+                      payload = json.load(response)
+                  if payload.get('ok') is True and payload.get('provider') == 'postgres-local':
+                      print('Production Auth health OK')
+                      break
+                  last_error = RuntimeError(f'unexpected health payload: {payload!r}')
+              except Exception as exc:
+                  last_error = exc
+              time.sleep(3)
+          else:
+              raise SystemExit(f'Production local Auth health check failed: {last_error}')
           PY
