@@ -40,6 +40,15 @@ jobs:
             "${VPS_USER}@${VPS_HOST}" \
             "/opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
 
+      - name: Ensure Playwright system dependencies on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            'set -e; sudo -n /opt/vera-spa/.venv/bin/playwright install-deps chromium'
+
       - name: Reload TimeSoft attendance for 6 and 7 Sep 2026
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
