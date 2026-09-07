@@ -27,6 +27,15 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Configure TimeSoft production credentials
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          TIMESOFT_USERNAME: ${{ secrets.TIMESOFT_USERNAME }}
+          TIMESOFT_PASSWORD: ${{ secrets.TIMESOFT_PASSWORD }}
+        run: |
+          bash configure_timesoft_vps.sh
+
       - name: Deploy selected main commit
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
