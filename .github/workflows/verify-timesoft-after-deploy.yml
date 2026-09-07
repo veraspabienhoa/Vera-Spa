@@ -1,0 +1,41 @@
+name: Verify TimeSoft Attendance After Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-timesoft-after-deploy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Verify TimeSoft login and reload attendance 6-7 Sep 2026
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" '
+            set -e
+            pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app")
+            release_dir=$(readlink -f "/proc/${pid}/cwd")
+            echo "production_release=$(git -C "${release_dir}" rev-parse HEAD)"
+            test -f /opt/vera-spa/timesoft-credentials.json
+            echo "timesoft_credential_mode=$(stat -c %a /opt/vera-spa/timesoft-credentials.json)"
+            bash "${release_dir}/reload_timesoft_attendance_vps.sh"
+          '
