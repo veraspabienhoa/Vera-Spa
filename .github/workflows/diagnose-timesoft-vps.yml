@@ -26,106 +26,77 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Build browserless login probe
+      - name: Build credential-source diagnostic
         run: |
           cat > /tmp/vera_timesoft_diag.py <<'PY'
-          import json, os, sys, traceback
-          from urllib.parse import urljoin
-          import requests
+          import hashlib, os, pathlib, re, sys
 
           pid, release_dir = sys.argv[1], sys.argv[2]
-          raw = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
-          for item in raw:
+          env = {}
+          for item in open(f"/proc/{pid}/environ", "rb").read().split(b"\0"):
               if b"=" not in item:
                   continue
               key, value = item.split(b"=", 1)
-              os.environ[key.decode("utf-8", "ignore")] = value.decode("utf-8", "ignore")
-          os.chdir(release_dir)
-          sys.path.insert(0, release_dir)
+              env[key.decode("utf-8", "ignore")] = value.decode("utf-8", "ignore")
 
-          import timesoft_sync_job as ts
-          import vera_postgres as vpg
-          from datetime import datetime
+          def sig(value):
+              value = str(value or "")
+              return hashlib.sha256(value.encode()).hexdigest()[:12] if value else "empty"
 
-          print("base=", ts.BASE_URL)
-          print("credentials_ready=", bool(ts.USERNAME and ts.PASSWORD))
-          session = requests.Session()
-          session.headers.update({
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
-              "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
-          })
-          report_url = urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/"))
-          login_page = session.get(report_url, timeout=20, allow_redirects=True)
-          print("login_page=", login_page.status_code, login_page.url, "cookies=", len(session.cookies))
+          current_u = env.get("TIMESOFT_USERNAME", "")
+          current_p = env.get("TIMESOFT_PASSWORD", "")
+          print("release_dir=", release_dir)
+          print("current_username_meta=", {"length": len(current_u), "sha12": sig(current_u), "trimmed_same": current_u == current_u.strip(), "quoted": current_u[:1] in "\"'" or current_u[-1:] in "\"'"})
+          print("current_password_meta=", {"length": len(current_p), "sha12": sig(current_p), "trimmed_same": current_p == current_p.strip(), "quoted": current_p[:1] in "\"'" or current_p[-1:] in "\"'"})
 
-          login_url = urljoin(ts.BASE_URL + "/", "User/ValidateUser")
-          headers = {
-              "Accept": "application/json, text/javascript, */*; q=0.01",
-              "X-Requested-With": "XMLHttpRequest",
-              "Referer": login_page.url,
-              "Origin": ts.BASE_URL,
-          }
-          response = session.post(
-              login_url,
-              data={"userName": ts.USERNAME, "password": ts.PASSWORD, "sendOne": ""},
-              headers=headers,
-              timeout=20,
-              allow_redirects=False,
-          )
-          print("login_post_status=", response.status_code, "content_type=", response.headers.get("content-type", ""), "cookies=", len(session.cookies))
-          payload = None
-          try:
-              payload = response.json()
-          except Exception:
-              print("login_post_non_json_prefix=", response.text[:240].replace("\n", " ").replace("\r", " "))
-          if isinstance(payload, dict):
-              safe = {key: payload.get(key) for key in ("valid", "ErrorCode", "Message", "linkRedirect") if key in payload}
-              print("login_result=", safe)
-          else:
-              safe = {}
-
-          verify = session.get(report_url, timeout=20, allow_redirects=False)
-          print("report_after_login=", verify.status_code, "location=", verify.headers.get("location", ""), "content_type=", verify.headers.get("content-type", ""))
-          authenticated = verify.status_code == 200 and "/User/Login" not in str(verify.url)
-          if verify.is_redirect:
-              authenticated = "/User/Login" not in str(verify.headers.get("location") or "")
-          print("authenticated=", authenticated)
-
-          if authenticated:
-              today = datetime.now(ts.VN_TZ).date()
-              try:
-                  df, meta = ts.fetch_checkin(session, today)
-                  print("fetch_today_rows=", len(df), "meta=", meta)
-                  if not df.empty:
-                      cols = [str(c) for c in df.columns]
-                      print("fetch_today_columns=", cols)
-              except Exception as exc:
-                  print("fetch_today_error=", type(exc).__name__, str(exc)[:1200])
-                  traceback.print_exc(limit=2)
-
-          try:
-              with vpg.get_engine().connect() as conn:
-                  from sqlalchemy import text
-                  rows = conn.execute(text("""
-                      SELECT dataset_key, source_version, updated_at,
-                             CASE WHEN jsonb_typeof(payload)='array' THEN jsonb_array_length(payload) ELSE NULL END AS row_count
-                      FROM vera_dataset_cache
-                      WHERE dataset_key='timesoft_employee_checkin_today'
-                         OR dataset_key LIKE 'timesoft_employee_checkin_2026090%'
-                      ORDER BY updated_at DESC LIMIT 20
-                  """)).mappings().all()
-                  print("attendance_cache_rows=")
-                  for row in rows:
-                      print(dict(row))
-          except Exception as exc:
-              print("cache_probe_error=", type(exc).__name__, str(exc)[:500])
+          roots = [pathlib.Path('/opt/vera-spa'), pathlib.Path.home()]
+          seen = set()
+          candidates = []
+          key_pattern = re.compile(r'^\s*(?:export\s+)?(TIMESOFT_USERNAME|TIMESOFT_PASSWORD)\s*=\s*(.*)\s*$')
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob('*'):
+                  try:
+                      if not path.is_file() or path.stat().st_size > 2_000_000:
+                          continue
+                      if any(part in {'.git', 'node_modules', '.venv', 'releases'} for part in path.parts):
+                          continue
+                      text = path.read_text(encoding='utf-8', errors='ignore')
+                  except Exception:
+                      continue
+                  if 'TIMESOFT_USERNAME' not in text and 'TIMESOFT_PASSWORD' not in text:
+                      continue
+                  values = {}
+                  for line in text.splitlines():
+                      match = key_pattern.match(line)
+                      if not match:
+                          continue
+                      value = match.group(2).strip()
+                      if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                          value = value[1:-1]
+                      values[match.group(1)] = value
+                  if values:
+                      key = (values.get('TIMESOFT_USERNAME',''), values.get('TIMESOFT_PASSWORD',''))
+                      if key in seen:
+                          continue
+                      seen.add(key)
+                      candidates.append((str(path), values))
+          print("credential_source_count=", len(candidates))
+          for path, values in candidates[:20]:
+              u = values.get('TIMESOFT_USERNAME','')
+              p = values.get('TIMESOFT_PASSWORD','')
+              print("credential_source=", path, {
+                  "username_length": len(u), "username_sha12": sig(u), "username_matches_current": bool(u) and u == current_u,
+                  "password_length": len(p), "password_sha12": sig(p), "password_matches_current": bool(p) and p == current_p,
+              })
           PY
 
-      - name: Probe TimeSoft browserless login and fetch
+      - name: Inspect credential sources without exposing secrets
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           scp -i ~/.ssh/id_ed25519 /tmp/vera_timesoft_diag.py "${VPS_USER}@${VPS_HOST}:/tmp/vera_timesoft_diag.py"
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
-            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python /tmp/vera_timesoft_diag.py "$pid" "$release_dir"; rm -f /tmp/vera_timesoft_diag.py'
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); echo "service_unit=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/${pid}/cgroup" | head -n 1)"; /opt/vera-spa/.venv/bin/python /tmp/vera_timesoft_diag.py "$pid" "$release_dir"; rm -f /tmp/vera_timesoft_diag.py'
