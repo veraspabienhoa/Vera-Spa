@@ -368,7 +368,7 @@ def _validate_and_prepare(
             ordinal, extra = progressive_for_request(live_df, body.leave_date, item["name"])
 
     accumulated = float(validation.get("accumulated_month", 0) or 0)
-    if not (is_video_reason(item["name"]) or is_long_sick_reason(item["name"])):
+    if not (is_video_reason(item["name"]) or is_long_sick_reason(item["name"]) or is_annual_reason(item["name"])):
         accumulated += days
 
     detail = body.detail.strip()
