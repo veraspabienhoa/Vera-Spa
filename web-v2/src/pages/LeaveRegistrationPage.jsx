@@ -108,6 +108,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [dailyStats, setDailyStats] = useState([])
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
+  const [recordReasonsByDate, setRecordReasonsByDate] = useState({})
   const [employeeSelfServicePolicy, setEmployeeSelfServicePolicy] = useState({
     enabled: true, regular_notice_days: 3, unpaid_notice_days: 1,
   })
@@ -219,6 +220,7 @@ export default function LeaveRegistrationPage({ user }) {
         setReasonDrafts(Object.fromEntries(loadedRecords.map((item) => [item.record_uid, item.leave_reason])))
         setSelectedUids([])
         setReasons(reasonData.reasons || [])
+        setRecordReasonsByDate({ [date]: reasonData.reasons || [] })
         setEmployeeSelfServicePolicy({
           enabled: reasonData.employee_self_service_policy?.enabled !== false,
           regular_notice_days: Number(reasonData.employee_self_service_policy?.regular_notice_days ?? 3),
@@ -257,6 +259,43 @@ export default function LeaveRegistrationPage({ user }) {
   }, [date, listRangeEnd, listRangeStart, rangeEnd, rangeStart, statsEmployeeFilter])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!isApiConfigured || !employeeSelfService) return undefined
+    let active = true
+    const editableDates = [...new Set(records
+      .filter((item) => canEditLeaveRecord({
+        role,
+        allowedByPermission: canEdit,
+        recordDate: item?.leave_date,
+        currentReason: item?.leave_reason,
+        currentLeaveType: item?.leave_type,
+        today: today(),
+        isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
+        employeeSelfServicePolicy,
+        letanLeavePolicy,
+      }))
+      .map((item) => item.leave_date))]
+      .filter((recordDate) => recordDate && recordDate !== date)
+
+    const loadEditableDateReasons = async () => {
+      const loaded = {}
+      // Keep these reads sequential because production uses a small PostgreSQL pool.
+      for (const recordDate of editableDates) {
+        try {
+          const result = await veraApi.leaveReasons(recordDate)
+          loaded[recordDate] = result.reasons || []
+        } catch {
+          loaded[recordDate] = []
+        }
+      }
+      if (active && Object.keys(loaded).length > 0) {
+        setRecordReasonsByDate((current) => ({ ...current, ...loaded }))
+      }
+    }
+    void loadEditableDateReasons()
+    return () => { active = false }
+  }, [canEdit, date, employeeSelfService, employeeSelfServicePolicy, letanLeavePolicy, records, role, user?.employee_username])
 
   useEffect(() => {
     refreshWatchDates()
@@ -333,9 +372,12 @@ export default function LeaveRegistrationPage({ user }) {
   })
 
   const reasonOptionsForRecord = (item) => {
+    const catalog = employeeSelfService && isApiConfigured
+      ? (recordReasonsByDate[item?.leave_date] || [])
+      : reasons
     const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
-    if (!group) return reasons
-    return group.map((name) => reasons.find((reason) => normalizeSearch(reason.name) === normalizeSearch(name)) || ({ name }))
+    if (!group) return catalog
+    return group.map((name) => catalog.find((reason) => normalizeSearch(reason.name) === normalizeSearch(name)) || ({ name }))
   }
 
   const reasonValueForRecord = (item) => {
@@ -1024,9 +1066,9 @@ export default function LeaveRegistrationPage({ user }) {
                     <td className="weekday-cell">{item.weekday_label || weekdayForDate(item.leave_date)}</td>
                     <td><strong>{shortEmployeeName(item.employee_name)}</strong></td>
                     <td className="reason-edit-cell">
-                      {canEditRecord(item) && item.leave_date === date ? (
+                      {canEditRecord(item) && (employeeSelfService || item.leave_date === date) ? (
                         <select value={reasonValueForRecord(item)} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing}>
-                          {!letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && !reasons.some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
+                          {!letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && !reasonOptionsForRecord(item).some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
                           {reasonOptionsForRecord(item).map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
                         </select>
                       ) : <span title={canEditRecord(item) ? 'Chọn ngày ở cột Ngày để sửa lý do.' : undefined}>{item.leave_reason}</span>}

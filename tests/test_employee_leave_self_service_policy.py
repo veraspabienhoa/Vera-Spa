@@ -46,6 +46,9 @@ def test_employee_can_edit_and_delete_only_own_rows_inside_notice_window():
     assert "employeeSelfServicePolicy?.enabled !== false" in ui
     assert "currentLeaveType: item?.leave_type" in page
     assert "isOwnRecord: normalizeSearch(item?.employee_name)" in page
+    assert "canEditRecord(item) && (employeeSelfService || item.leave_date === date)" in page
+    assert "canEditRecord(item) && item.leave_date === date" not in page
+    assert "recordReasonsByDate[item?.leave_date]" in page
 
 
 def test_leave_payloads_include_type_for_one_day_frontend_rule():
