@@ -116,10 +116,13 @@ async function refreshOpenProfile(button, panel) {
     const refresh = actionButtonByText(listPanel?.querySelector('.panel-title-row'), /^Làm mới$/i)
     if (!refresh) throw new Error('Không tìm thấy nút Làm mới danh sách.')
     refresh.click()
+    await waitFor(() => refresh.disabled ? true : null, 1800)
+    const finished = await waitFor(() => !refresh.disabled ? true : null, 9000)
+    if (!finished) throw new Error('Quá thời gian tải lại danh sách nhân viên.')
     const edit = await waitFor(() => {
       const candidate = editButtonForEmployee(username)
       return candidate && !candidate.disabled ? candidate : null
-    })
+    }, 2500)
     if (!edit) throw new Error(`Không tải lại được hồ sơ ${username}.`)
     edit.click()
     await waitFor(() => employeeUsernameFromPanel(profilePanel()) === username && profilePanel())
@@ -221,18 +224,27 @@ function commitOption(select, row) {
   return true
 }
 
-function rebuildDatalist(select, input, datalist) {
-  datalist.textContent = ''
-  optionRows(select).forEach((row) => {
-    if (!row.label) return
-    const option = document.createElement('option')
-    option.value = row.label
-    if (row.value && row.value !== row.label) option.label = row.value
-    datalist.appendChild(option)
-  })
-  input.disabled = select.disabled
-  input.placeholder = clean(select.getAttribute('aria-label')) || 'Gõ để tìm…'
-  if (document.activeElement !== input) input.value = selectedLabel(select)
+function rebuildDatalist(select, input, datalist, wrapper) {
+  const rows = optionRows(select)
+  const signature = rows.map((row) => `${row.value}\u0001${row.label}\u0001${row.disabled ? 1 : 0}`).join('\u0002')
+  if (wrapper.dataset.veraOptionsSignature !== signature) {
+    wrapper.dataset.veraOptionsSignature = signature
+    datalist.textContent = ''
+    rows.forEach((row) => {
+      if (!row.label) return
+      const option = document.createElement('option')
+      option.value = row.label
+      if (row.value && row.value !== row.label) option.label = row.value
+      datalist.appendChild(option)
+    })
+  }
+  if (input.disabled !== select.disabled) input.disabled = select.disabled
+  const placeholder = clean(select.getAttribute('aria-label')) || 'Gõ để tìm…'
+  if (input.placeholder !== placeholder) input.placeholder = placeholder
+  if (document.activeElement !== input) {
+    const label = selectedLabel(select)
+    if (input.value !== label) input.value = label
+  }
 }
 
 function enhanceSelect(select) {
@@ -240,10 +252,10 @@ function enhanceSelect(select) {
   if (!select.closest('.staff-page') || select.multiple || Number(select.size || 0) > 1) return
 
   if (select.dataset.veraTypingSearch === '1') {
-    const wrapper = select.nextElementSibling?.classList?.contains('vera-typing-select') ? select.nextElementSibling : null
+    const wrapper = select.__veraTypingWrapper || (select.nextElementSibling?.classList?.contains('vera-typing-select') ? select.nextElementSibling : null)
     const input = wrapper?.querySelector('input')
     const datalist = wrapper?.querySelector('datalist')
-    if (input && datalist) rebuildDatalist(select, input, datalist)
+    if (input && datalist) rebuildDatalist(select, input, datalist, wrapper)
     return
   }
 
@@ -263,8 +275,9 @@ function enhanceSelect(select) {
   input.setAttribute('list', listId)
   wrapper.append(input, datalist)
   select.insertAdjacentElement('afterend', wrapper)
+  select.__veraTypingWrapper = wrapper
 
-  const sync = () => rebuildDatalist(select, input, datalist)
+  const sync = () => rebuildDatalist(select, input, datalist, wrapper)
   sync()
 
   input.addEventListener('focus', () => {
