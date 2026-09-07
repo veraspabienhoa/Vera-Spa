@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 from datetime import date, datetime
 
 import timesoft_sync_job as ts
 from timesoft_detailed_checkin import install as install_detailed_checkin
+from timesoft_http_auth import install as install_http_auth
 
 
 TARGET_DATES = [date(2026, 9, 6), date(2026, 9, 7)]
@@ -12,6 +12,7 @@ TARGET_DATES = [date(2026, 9, 6), date(2026, 9, 7)]
 
 def main() -> int:
     install_detailed_checkin(ts)
+    install_http_auth(ts)
     session = ts.create_authenticated_session()
     today = datetime.now(ts.VN_TZ).date()
 
@@ -35,7 +36,8 @@ def main() -> int:
         ts._log(
             f"MANUAL ATTENDANCE RELOAD {target_date.isoformat()}: "
             f"rows={len(checkin_df)}; summary={int(meta.get('SummaryRows') or 0)}; "
-            f"raw={int(meta.get('RawLogRows') or 0)}; detailed_ready={bool(meta.get('DetailedLogReady'))}"
+            f"raw={int(meta.get('RawLogRows') or 0)}; detailed_ready={bool(meta.get('DetailedLogReady'))}; "
+            f"auth={getattr(session, '_vera_timesoft_auth_mode', 'unknown')}"
         )
 
     return 0
