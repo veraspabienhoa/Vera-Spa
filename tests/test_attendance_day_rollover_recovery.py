@@ -39,9 +39,12 @@ def test_scheduled_auto_check_keeps_today_only_safety_rule():
     assert "dates = [today - timedelta(days=i) for i in range(SYNC_DAYS)]" in source
 
 
-def test_auto_check_page_reports_runtime_config_mismatch():
+def test_auto_check_page_only_reports_real_run_failures():
     source = (ROOT / "web-v2/src/pages/AutoCheckPage.jsx").read_text(encoding="utf-8")
 
-    assert "runtimeStatus !== String(cfg.status || '').toUpperCase()" in source
-    assert "Tiến trình Auto Check gần nhất đang ở trạng thái" in source
+    assert "latestRun?.status || ''" in source
+    assert "latestRunFailed" in source
+    assert "Lần chạy Auto Check gần nhất gặp lỗi" in source
+    assert "runtimeStatus !== String(cfg.status || '').toUpperCase()" not in source
+    assert "Cần cập nhật tiến trình nền lên phiên bản mới trước khi xử lý dữ liệu." not in source
     assert "Không có vi phạm Auto Check trong khoảng thời gian đã chọn." in source
