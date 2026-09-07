@@ -1,6 +1,7 @@
 import { BellRing, CheckCircle2, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
+import { refreshProfileReferenceData } from '../lib/profileReferenceRefresh'
 import EmployeeIdentityPanel from './EmployeeIdentityPanel'
 import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
 import VeraDateInput from '../components/VeraDateInput'
@@ -22,6 +23,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   const [notice, setNotice] = useState(null)
   const [push, setPush] = useState({ loading: true, supported: false, subscribed: false })
   const [pushBusy, setPushBusy] = useState(false)
+  const [referenceBusy, setReferenceBusy] = useState('')
   const [adminUsername, setAdminUsername] = useState(user?.employee_username || '')
   const [renamingUsername, setRenamingUsername] = useState(false)
 
@@ -114,6 +116,25 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
     }
   }
 
+  const refreshReference = async (kind) => {
+    setReferenceBusy(kind); setNotice(null)
+    try {
+      const province = references.provinces.find((item) => item.name === form.province)
+      const result = await refreshProfileReferenceData(kind === 'wards' ? (province?.code ?? '') : '')
+      setReferences((current) => ({
+        provinces: result.provinces || current.provinces,
+        banks: result.banks || current.banks,
+        wards: kind === 'wards' ? (result.wards || []) : current.wards,
+      }))
+      const label = kind === 'provinces' ? 'Tỉnh/Thành phố' : kind === 'wards' ? 'Phường/Xã' : 'Ngân hàng'
+      setNotice({ status: 'success', message: `Đã cập nhật lại danh mục ${label}. ${result.administrative_standard || result.bank_standard || ''}`.trim() })
+    } catch (error) {
+      setNotice({ status: 'error', message: `Không cập nhật được danh mục (${error.message}).` })
+    } finally {
+      setReferenceBusy('')
+    }
+  }
+
   const passwordRequired = forcePasswordChange || Boolean(form.new_password)
 
   return <div className="feature-page">
@@ -133,11 +154,11 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <div className="profile-field-section wide-field">Thông tin liên hệ & Địa chỉ</div>
         <label>Điện thoại<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
         <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
-        <label>Tỉnh/Thành phố<select value={form.province} onChange={(e) => void changeProvince(e.target.value)}><option value="">-- Chọn Tỉnh/Thành phố --</option>{form.province && !references.provinces.some((item) => item.name === form.province) && <option>{form.province}</option>}{references.provinces.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}</select></label>
-        <label>Phường/Xã<select value={form.ward} onChange={(e) => setForm({ ...form, ward: e.target.value })} disabled={!form.province}><option value="">-- Chọn Phường/Xã --</option>{form.ward && !references.wards.includes(form.ward) && <option>{form.ward}</option>}{references.wards.map((ward) => <option key={ward}>{ward}</option>)}</select></label>
+        <label>Tỉnh/Thành phố<select value={form.province} onChange={(e) => void changeProvince(e.target.value)}><option value="">-- Chọn Tỉnh/Thành phố --</option>{form.province && !references.provinces.some((item) => item.name === form.province) && <option>{form.province}</option>}{references.provinces.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('provinces')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'provinces' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
+        <label>Phường/Xã<select value={form.ward} onChange={(e) => setForm({ ...form, ward: e.target.value })} disabled={!form.province}><option value="">-- Chọn Phường/Xã --</option>{form.ward && !references.wards.includes(form.ward) && <option>{form.ward}</option>}{references.wards.map((ward) => <option key={ward}>{ward}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('wards')} disabled={Boolean(referenceBusy) || !form.province}><RefreshCw size={14} className={referenceBusy === 'wards' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
         <label className="wide-field">Địa chỉ cụ thể (Số nhà, tên đường...)<input value={form.address_detail} onChange={(e) => setForm({ ...form, address_detail: e.target.value })} placeholder="Số nhà, tên đường, ấp/khu phố" /></label>
         <div className="profile-field-section wide-field">Thông tin thanh toán/Ngân hàng</div>
-        <label>Tên ngân hàng<select value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{form.bank_name && !references.banks.includes(form.bank_name) && <option>{form.bank_name}</option>}{references.banks.map((bank) => <option key={bank}>{bank}</option>)}</select></label>
+        <label>Tên ngân hàng<select value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{form.bank_name && !references.banks.includes(form.bank_name) && <option>{form.bank_name}</option>}{references.banks.map((bank) => <option key={bank}>{bank}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('banks')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'banks' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value })} /></label>
         <div className="profile-password-box wide-field">
           <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3><p>{forcePasswordChange ? 'Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.' : 'Để trống cả hai ô nếu chỉ cập nhật hồ sơ. Hệ thống không yêu cầu đổi mật khẩu khi lưu thông tin cá nhân.'}</p>
