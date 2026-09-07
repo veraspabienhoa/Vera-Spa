@@ -14,6 +14,7 @@ import { startEmployeeDirectoryUx } from './lib/employeeDirectoryUx'
 import { startEmployeeMissingProfileFix } from './lib/employeeMissingProfileFix'
 import { startDepartmentSalaryAdvanceTransportGuard } from './lib/departmentSalaryAdvanceTransportGuard'
 import { startDepartmentSalaryAdvanceLedger } from './lib/departmentSalaryAdvanceLedger'
+import { startAttendanceTimesoftRefreshGuard } from './lib/attendanceTimesoftRefreshGuard'
 import './styles.css'
 import './visibility-cleanup.css'
 
@@ -29,6 +30,7 @@ startEmployeeDirectoryUx()
 startEmployeeMissingProfileFix()
 startDepartmentSalaryAdvanceTransportGuard()
 startDepartmentSalaryAdvanceLedger()
+startAttendanceTimesoftRefreshGuard()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
