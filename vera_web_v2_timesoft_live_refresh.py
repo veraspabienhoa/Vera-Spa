@@ -1,15 +1,15 @@
-"""Direct production TimeSoft -> PostgreSQL refresh for Web V2 attendance alerts.
+"""Direct production TimeSoft -> PostgreSQL refresh for Web V2 attendance.
 
-The alert endpoint may run every 15 seconds. To avoid false overdue decisions from
-stale PostgreSQL data, this module refreshes today's TimeSoft check-in dataset
-synchronously when the cached dataset is older than the configured freshness
-threshold. Concurrent requests share one refresh via a process lock.
+The Web V2 alert/snapshot flow can run frequently. To avoid false attendance
+results from stale PostgreSQL data, this module refreshes today's TimeSoft
+check-in dataset synchronously when the cached dataset is older than the
+configured freshness threshold. Concurrent requests share one refresh.
 
-Authentication uses the existing production TimeSoft secrets injected into the
-Web V2 Cloud Run API. A new authenticated session runs the existing
-"Tính lại ngày công" guard before SearchElastic is read. Every refresh also
-loads TimeSoft's ExportCheckinLogElastic workbook so intermediate FaceID events
-are preserved for break-out / break-return reconstruction.
+Normal authentication is browserless through TimeSoft /User/ValidateUser so a
+missing Chromium shared library cannot take Chấm công offline. Playwright is kept
+only as a compatibility fallback when the HTTP protocol itself changes.
+SearchElastic is the minimum authoritative attendance source. The detailed
+FaceID export is best-effort and may recover independently.
 """
 from __future__ import annotations
 
@@ -21,10 +21,11 @@ from typing import Any
 
 import timesoft_sync_job as ts
 from timesoft_detailed_checkin import install as install_detailed_checkin
+from timesoft_http_auth import install as install_http_auth
 from timesoft_recalculate_checkin import install as install_recalculate_checkin
 
 
-RELEASE = "timesoft-live-refresh-2026-09-02-v2-detailed-faceid"
+RELEASE = "timesoft-live-refresh-2026-09-07-v3-http-auth"
 MIN_INTERVAL_SECONDS = max(10, min(60, int(os.getenv("TIMESOFT_LIVE_REFRESH_SECONDS", "20") or 20)))
 
 _lock = threading.Lock()
@@ -33,12 +34,12 @@ _last_success_monotonic = 0.0
 _last_error = ""
 _last_meta: dict[str, Any] = {}
 
-# Every new login first asks TimeSoft to recalculate today's attendance so the
-# summary fields are fresh, then every read is augmented with the raw detailed
-# FaceID workbook. The detailed patch fails closed rather than overwriting a
-# good cache with a summary-only snapshot that would lose mid-shift punches.
+# Keep the legacy browser recalculation path available as fallback, preserve
+# detailed FaceID when TimeSoft serves it, then wrap session creation with the
+# HTTP-first login so production does not depend on Chromium system packages.
 install_recalculate_checkin(ts)
 install_detailed_checkin(ts)
+install_http_auth(ts)
 
 
 def _credentials_ready() -> bool:
@@ -64,6 +65,7 @@ def refresh_today(force: bool = False) -> dict[str, Any]:
             "ok": False,
             "refreshed": False,
             "release": RELEASE,
+            "error_code": "TIMESOFT_CREDENTIALS_MISSING",
             "error": "TimeSoft production credentials are not configured on Web V2 API.",
         }
 
@@ -77,7 +79,6 @@ def refresh_today(force: bool = False) -> dict[str, Any]:
             **_last_meta,
         }
 
-    # Do not let several Web V2 viewers log in/export TimeSoft simultaneously.
     with _lock:
         age = time.monotonic() - _last_success_monotonic if _last_success_monotonic else None
         if not force and age is not None and age < MIN_INTERVAL_SECONDS:
@@ -104,7 +105,11 @@ def refresh_today(force: bool = False) -> dict[str, Any]:
                 "raw_log_rows": int(meta.get("RawLogRows") or 0),
                 "combined_rows": int(meta.get("CombinedRows") or len(checkin_df)),
                 "detailed_log_ready": bool(meta.get("DetailedLogReady")),
+                "detailed_log_error": str(meta.get("DetailedLogError") or "")[:500],
                 "detailed_log_release": str(meta.get("DetailedLogRelease") or ""),
+                "auth_mode": str(getattr(_session, "_vera_timesoft_auth_mode", "unknown")),
+                "auth_release": str(getattr(_session, "_vera_timesoft_auth_release", "")),
+                "source_version": today.isoformat(),
             }
             return {
                 "ok": True,
@@ -113,14 +118,19 @@ def refresh_today(force: bool = False) -> dict[str, Any]:
                 **_last_meta,
             }
         except Exception as exc:
-            # The TimeSoft web session may have expired. Drop it so the next
-            # request performs a clean authenticated login + recalculation.
             _session = None
             _last_error = f"{type(exc).__name__}: {exc}"[:1000]
+            lower = _last_error.lower()
+            error_code = (
+                "TIMESOFT_AUTH_REJECTED"
+                if "tài khoản/mật khẩu" in lower or "us0006" in lower or "mật khẩu" in lower
+                else "TIMESOFT_REFRESH_FAILED"
+            )
             return {
                 "ok": False,
                 "refreshed": False,
                 "release": RELEASE,
+                "error_code": error_code,
                 "error": _last_error,
             }
 
@@ -136,8 +146,10 @@ def health() -> dict[str, Any]:
         "last_error": _last_error,
         "source": str(ts.BASE_URL),
         "target": "PostgreSQL vera_dataset_cache/timesoft_employee_checkin_today",
-        "recalculate_before_new_session": True,
-        "detailed_faceid_required": True,
+        "authentication": "HTTP /User/ValidateUser first; Playwright compatibility fallback",
+        "recalculate_policy": "Playwright fallback may recalculate; HTTP availability path reads SearchElastic directly",
+        "detailed_faceid_best_effort": True,
         "detailed_checkin_release": str(getattr(ts, "_detailed_checkin_patch_release", "")),
+        "http_auth_release": str(getattr(ts, "_timesoft_http_auth_release", "")),
         **_last_meta,
     }
