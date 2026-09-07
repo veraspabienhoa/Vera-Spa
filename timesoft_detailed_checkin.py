@@ -9,6 +9,11 @@ rows to the dataframe returned by ``timesoft_sync_job.fetch_checkin``.
 The TimeSoft workbook can publish a stale worksheet dimension. It must be read
 with a normal openpyxl worksheet (``read_only=False``), otherwise only the first
 few rows can be visible even when the XLSX contains the complete XML data.
+
+Availability rule: SearchElastic is the authoritative minimum attendance source.
+If the optional detailed FaceID export is temporarily unavailable, keep writing
+the summary snapshot so Chấm công still shows check-in/check-out. Detailed
+mid-shift FaceID information resumes automatically when the export recovers.
 """
 from __future__ import annotations
 
@@ -25,7 +30,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 
-RELEASE = "timesoft-detailed-checkin-2026-09-02-v1"
+RELEASE = "timesoft-detailed-checkin-2026-09-07-v2"
 EXPORT_PATH = "/Report/ReportEmployeeCheckin/ExportCheckinLogElastic"
 EXPORT_TIMEOUT_SECONDS = 120
 DETAIL_RETRIES = 2
@@ -202,15 +207,22 @@ def install(ts) -> None:
             if attempt < DETAIL_RETRIES:
                 time.sleep(1.0 * attempt)
 
-        if summary_rows > 0 and (not isinstance(raw_df, pd.DataFrame) or raw_df.empty):
-            raise RuntimeError(
-                "Không lấy được lịch sử FaceID chi tiết TimeSoft; từ chối ghi snapshot tổng hợp thiếu mốc giữa ca: "
-                f"{type(last_error).__name__ if last_error else 'RuntimeError'}: {last_error or 'raw log empty'}"
-            )
-
-        if not isinstance(summary_df, pd.DataFrame) or summary_df.empty:
+        detailed_ready = isinstance(raw_df, pd.DataFrame) and not raw_df.empty
+        if summary_rows > 0 and not detailed_ready:
+            # Do not let the optional detailed export take the whole attendance
+            # pipeline down. SearchElastic still contains the employee/day
+            # check-in and check-out required by the Chấm công screen.
+            combined = summary_df.copy()
+            log = getattr(ts, "_log", None)
+            if callable(log):
+                log(
+                    "TIMESOFT DETAIL FALLBACK: dùng SearchElastic để giữ Chấm công hoạt động; "
+                    f"chi tiết FaceID tạm thiếu: {type(last_error).__name__ if last_error else 'RuntimeError'}: "
+                    f"{last_error or 'raw log empty'}"
+                )
+        elif not isinstance(summary_df, pd.DataFrame) or summary_df.empty:
             combined = raw_df.copy() if isinstance(raw_df, pd.DataFrame) else pd.DataFrame()
-        elif not isinstance(raw_df, pd.DataFrame) or raw_df.empty:
+        elif not detailed_ready:
             combined = summary_df.copy()
         else:
             combined = pd.concat([summary_df, raw_df], ignore_index=True, sort=False)
@@ -220,7 +232,8 @@ def install(ts) -> None:
             "SummaryRows": summary_rows,
             "RawLogRows": int(len(raw_df)) if isinstance(raw_df, pd.DataFrame) else 0,
             "CombinedRows": int(len(combined)),
-            "DetailedLogReady": True,
+            "DetailedLogReady": bool(detailed_ready),
+            "DetailedLogError": "" if detailed_ready or last_error is None else f"{type(last_error).__name__}: {last_error}"[:500],
             "DetailedLogRelease": RELEASE,
         })
         return combined, out_meta
