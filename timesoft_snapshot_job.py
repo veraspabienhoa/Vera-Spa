@@ -1,16 +1,14 @@
-"""V85.0 - Đồng bộ TimeSoft và phạt chấm công trực tiếp trong PostgreSQL.
+"""V85.1 - Đồng bộ TimeSoft và phạt chấm công trực tiếp trong PostgreSQL.
 
 Cloud Scheduler hiện gọi job nền theo chu kỳ khoảng 5 phút. Sau lần snapshot đầy
-đủ (có Tính lại ngày công), tiến trình giữ sống thêm một cửa sổ ngắn và đọc cả
-SearchElastic lẫn ExportCheckinLogElastic của hôm nay mỗi 30 giây để đẩy đầy đủ
-FaceID vào PostgreSQL. Nhờ vậy Web V2 có thể xác định đúng cặp nghỉ giữa ca và
-xóa cảnh báo ngay sau khi nhân viên FaceID vào lại, thay vì chỉ thấy mốc đầu/cuối.
+đủ, tiến trình giữ sống thêm một cửa sổ ngắn và đọc cả SearchElastic lẫn
+ExportCheckinLogElastic của hôm nay mỗi 30 giây để đẩy đầy đủ FaceID vào
+PostgreSQL. Nhờ vậy Web V2 có thể xác định đúng cặp nghỉ giữa ca và xóa cảnh báo
+ngay sau khi nhân viên FaceID vào lại.
 
-Ngay sau snapshot đầy đủ, job đối chiếu đi trễ đầu ca và vào lại trễ sau nghỉ
-giữa ca, rồi ghi phạt trực tiếp vào PostgreSQL. Không cần chờ job Auto Check
-20:00. Fast tail sau đó chỉ cập nhật dataset
-`timesoft_employee_checkin_today`; không tải hóa đơn, không ghi thêm phạt và
-không đụng dữ liệu lịch sử.
+V85.1 ưu tiên đăng nhập HTTP /User/ValidateUser. Chromium/Playwright chỉ còn là
+fallback tương thích, vì vậy thiếu thư viện hệ điều hành của Chromium không còn
+được phép làm mất dữ liệu Chấm công.
 """
 from __future__ import annotations
 
@@ -21,19 +19,21 @@ from datetime import datetime
 
 import timesoft_sync_job as ts
 from timesoft_detailed_checkin import install as install_detailed_checkin
+from timesoft_http_auth import install as install_http_auth
 from timesoft_recalculate_checkin import install as install_recalculate_checkin
 from timesoft_tour_snapshot_cache import install as install_tour_snapshot_cache
 
 
-RELEASE = "timesoft-direct-attendance-penalty-2026-09-02-v2"
+RELEASE = "timesoft-direct-attendance-penalty-2026-09-07-v3-http-auth"
 FAST_INTERVAL_SECONDS = max(15, min(120, int(os.getenv("TIMESOFT_FAST_CHECKIN_SECONDS", "30") or 30)))
 FAST_WINDOW_SECONDS = max(60, min(360, int(os.getenv("TIMESOFT_FAST_CHECKIN_WINDOW_SECONDS", "240") or 240)))
 
-# Accuracy first: click TimeSoft "Tính lại ngày công" before the initial login
-# session is converted to requests cookies, and preserve every raw FaceID event
-# from TimeSoft's own detailed check-in export.
+# Preserve the legacy browser recalculation fallback and detailed FaceID merge,
+# then make the normal session browserless. Explicitly rejected credentials are
+# reported immediately instead of being retried through a broken Chromium.
 install_recalculate_checkin(ts)
 install_detailed_checkin(ts)
+install_http_auth(ts)
 # Performance: persist TourVera Input for Web V2 reads, unless Admin pauses it.
 install_tour_snapshot_cache(ts)
 
@@ -62,9 +62,10 @@ def _fast_checkin_tail() -> None:
         started = time.monotonic()
         try:
             if session is None:
-                # New login also runs the installed "Tính lại ngày công" guard,
-                # giving each fast-tail window a fresh authoritative baseline.
                 session = ts.create_authenticated_session()
+                ts._log(
+                    f"FAST CHECKIN AUTH: {getattr(session, '_vera_timesoft_auth_mode', 'unknown')}"
+                )
             today = datetime.now(ts.VN_TZ).date()
             checkin_df, meta = ts.fetch_checkin(session, today)
             _write_today_checkin(checkin_df)
@@ -94,15 +95,12 @@ def _fast_checkin_tail() -> None:
 
 
 def main() -> int:
-    # Every scheduled snapshot now writes eligible TimeSoft late penalties
-    # directly to PostgreSQL. Keep Tour penalty evaluation in its dedicated job;
-    # the installed cache wrapper still refreshes TourVera after this run.
     ts.process_tour_penalties = _skip_tour_penalties
     ts._log(
-        f"V85.0 DIRECT ATTENDANCE PENALTY: Tính lại ngày công -> TimeSoft -> PostgreSQL -> "
+        f"V85.1 DIRECT ATTENDANCE: HTTP auth -> TimeSoft -> PostgreSQL -> "
         "phạt đi trễ đầu ca/vào lại trễ sau nghỉ giữa ca; "
         f"fast check-in mỗi {FAST_INTERVAL_SECONDS}s trong {FAST_WINDOW_SECONDS}s; "
-        "không đợi Auto Check 20:00; TourVera cache theo công tắc Admin."
+        "Playwright chỉ fallback; TourVera cache theo công tắc Admin."
     )
     result = int(ts.run_sync())
     if result != 0:
@@ -110,8 +108,6 @@ def main() -> int:
     try:
         _fast_checkin_tail()
     except Exception as exc:
-        # Initial authoritative snapshot already succeeded. A fast-tail problem
-        # must not turn the whole scheduled execution into a failed sync.
         ts._log(f"FAST CHECKIN TAIL ABORTED: {type(exc).__name__}: {exc}")
     return 0
 
