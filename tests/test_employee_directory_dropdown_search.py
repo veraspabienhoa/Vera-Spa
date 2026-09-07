@@ -27,3 +27,10 @@ def test_employee_dropdown_menu_supports_mouse_and_keyboard_selection():
     assert "event.key !== 'Enter'" in source
     assert "event.key === 'Escape'" in source
     assert "event.key === 'ArrowDown'" in source
+
+
+def test_employee_list_rows_keep_native_selects_for_safe_react_filtering():
+    source = SOURCE.read_text(encoding="utf-8")
+    guard = "if (select.closest('.staff-list-panel')) return"
+    assert guard in source
+    assert source.index(guard) < source.index("if (select.dataset.veraTypingSearch === '1')")

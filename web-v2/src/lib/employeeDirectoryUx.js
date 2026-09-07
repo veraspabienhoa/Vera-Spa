@@ -333,6 +333,11 @@ function syncEnhancedSelect(select, input, wrapper) {
 function enhanceSelect(select) {
   if (!(select instanceof HTMLSelectElement)) return
   if (!select.closest('.staff-page') || select.multiple || Number(select.size || 0) > 1) return
+  // The employee list is React-owned and frequently adds/removes keyed rows
+  // while the user types in the name filter. Injecting proxy siblings beside
+  // selects in those rows corrupts React's expected DOM and can crash the
+  // whole page during reconciliation. Keep native selects inside the list.
+  if (select.closest('.staff-list-panel')) return
 
   if (select.dataset.veraTypingSearch === '1') {
     const wrapper = select.__veraTypingWrapper || (select.nextElementSibling?.classList?.contains('vera-typing-select') ? select.nextElementSibling : null)

@@ -17,3 +17,12 @@ def test_employee_toolbar_uses_single_react_filter_source():
     assert "dispatchEvent(new Event('input'" not in source
     assert "panel?.querySelector('.vera-list-name-search')?.remove()" in directory
     assert "wrap.innerHTML" not in directory
+
+
+def test_employee_search_waits_for_vietnamese_ime_composition():
+    page = (ROOT / "web-v2/src/pages/EmployeePage.jsx").read_text(encoding="utf-8")
+    assert "searchCompositionRef" in page
+    assert "onCompositionStart" in page
+    assert "onCompositionEnd={finishEmployeeSearchComposition}" in page
+    assert "setAppliedSearch(search), 180" in page
+    assert "const needle = searchKey(appliedSearch)" in page

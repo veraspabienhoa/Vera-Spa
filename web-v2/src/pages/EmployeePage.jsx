@@ -130,6 +130,7 @@ export default function EmployeePage({ user }) {
   const [drafts, setDrafts] = useState({})
   const [selected, setSelected] = useState([])
   const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [shiftFilter, setShiftFilter] = useState('')
@@ -144,6 +145,7 @@ export default function EmployeePage({ user }) {
   const [profileDraft, setProfileDraft] = useState({})
   const [profileScrollRequest, setProfileScrollRequest] = useState(0)
   const profileSectionRef = useRef(null)
+  const searchCompositionRef = useRef(false)
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true)
@@ -161,6 +163,12 @@ export default function EmployeePage({ user }) {
   }
 
   useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (searchCompositionRef.current) return undefined
+    const timer = window.setTimeout(() => setAppliedSearch(search), 180)
+    return () => window.clearTimeout(timer)
+  }, [search])
 
   useEffect(() => {
     if (!profileScrollRequest) return undefined
@@ -186,7 +194,7 @@ export default function EmployeePage({ user }) {
 
   const visible = useMemo(() => {
     const employees = data?.employees || []
-    const needle = searchKey(search)
+    const needle = searchKey(appliedSearch)
     const exact = needle ? employees.filter((employee) => [employee.username, employee.full_name].some((value) => searchKey(value) === needle)) : []
     const namePool = exact.length ? new Set(exact.map((employee) => employee.username)) : null
     return employees.filter((employee) => {
@@ -196,7 +204,7 @@ export default function EmployeePage({ user }) {
         && (!shiftFilter || employee.work_shift === shiftFilter)
         && (visibilityFilter === 'all' || (visibilityFilter === 'hidden' ? employee.profile_hidden : !employee.profile_hidden))
     })
-  }, [data, roleFilter, search, shiftFilter, statusFilter, visibilityFilter])
+  }, [appliedSearch, data, roleFilter, shiftFilter, statusFilter, visibilityFilter])
   const shiftOptions = useMemo(() => Array.from(new Set([
     ...(data?.employees || []).map((employee) => employee.work_shift),
     ...Object.values(data?.shifts_by_department || {}).flat(),
@@ -322,6 +330,13 @@ export default function EmployeePage({ user }) {
     setProfileDraft({})
   }
 
+  const finishEmployeeSearchComposition = (event) => {
+    searchCompositionRef.current = false
+    const value = event.currentTarget.value
+    changeEmployeeSearch(value)
+    setAppliedSearch(value)
+  }
+
   const saveProfile = () => run('profile', async () => {
     const payload = { ...profileDraft }
     payload.birth_date = datePayload(payload.birth_date)
@@ -406,7 +421,7 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-control-panel">
         <div className="staff-toolbar">
-          <div className="staff-search"><Search size={17} /><input value={search} onChange={(event) => changeEmployeeSearch(event.target.value)} placeholder="Tìm tên nhân viên hoặc họ tên" /></div>
+          <div className="staff-search"><Search size={17} /><input value={search} onCompositionStart={() => { searchCompositionRef.current = true }} onCompositionEnd={finishEmployeeSearchComposition} onChange={(event) => changeEmployeeSearch(event.target.value)} placeholder="Tìm tên nhân viên hoặc họ tên" /></div>
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Lọc phân quyền">
             <option value="">Tất cả phân quyền</option>
             {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
