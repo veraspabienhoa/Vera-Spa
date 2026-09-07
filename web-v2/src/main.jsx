@@ -3,11 +3,13 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import { startPurchaseReconcileAlertWatcher } from './lib/purchaseReconcileAlerts'
 import { registerVeraServiceWorker } from './lib/pushNotifications'
+import { startEmployeeProfileUxEnhancements } from './lib/employeeProfileUx'
 import './styles.css'
 import './visibility-cleanup.css'
 
 void registerVeraServiceWorker().catch(() => {})
 startPurchaseReconcileAlertWatcher()
+startEmployeeProfileUxEnhancements()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
