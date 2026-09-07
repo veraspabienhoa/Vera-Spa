@@ -1,0 +1,77 @@
+name: Hotfix TimeSoft Attendance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hotfix-timesoft-attendance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vera-spa-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy current main commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            "/opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+
+      - name: Configure PostgreSQL SSL environment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          test -n "$VERA_DB_PASS"
+          printf '%s\n' "$VERA_DB_PASS" | ssh -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; bash \"\${release_dir}/configure_vps_database.sh\" '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
+
+      - name: Verify production data sources
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python "${release_dir}/vera_vps_data_check.py"'
+
+      - name: Verify production local Auth health
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+          request = urllib.request.Request(
+              'https://api.veraspa.vn/v2/auth/health',
+              headers={'Accept': 'application/json', 'Cache-Control': 'no-cache', 'Origin': 'https://app.veraspa.vn'},
+          )
+          with urllib.request.urlopen(request, timeout=15) as response:
+              payload = json.load(response)
+          assert payload.get('ok') is True, payload
+          print('Production Auth health OK')
+          PY
