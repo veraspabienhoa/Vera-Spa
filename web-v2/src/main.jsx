@@ -10,6 +10,7 @@ import { startEmployeeCccdTabViewer } from './lib/employeeCccdTabViewer'
 import { startEmployeeProfileProductionFix } from './lib/employeeProfileProductionFix'
 import { startEmployeeProfileSwitchGuard } from './lib/employeeProfileSwitchGuard'
 import { startEmployeeProfileCompletionAndIssuerFix } from './lib/employeeProfileCompletionAndIssuerFix'
+import { startEmployeeDirectoryUx } from './lib/employeeDirectoryUx'
 import './styles.css'
 import './visibility-cleanup.css'
 
@@ -21,6 +22,7 @@ startEmployeeCccdTabViewer()
 startEmployeeProfileProductionFix()
 startEmployeeProfileSwitchGuard()
 startEmployeeProfileCompletionAndIssuerFix()
+startEmployeeDirectoryUx()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
