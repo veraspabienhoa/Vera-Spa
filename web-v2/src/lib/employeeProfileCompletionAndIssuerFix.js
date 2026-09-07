@@ -10,8 +10,12 @@ const CENTRAL_ISSUERS = [
   'Cục Cảnh sát đăng ký, quản lý cư trú và dữ liệu quốc gia về dân cư, Bộ Công an',
 ]
 const CENTRAL_CITIES = new Set([
-  'Hà Nội', 'Hải Phòng', 'Huế', 'Đà Nẵng', 'Cần Thơ', 'Thành phố Hồ Chí Minh',
+  'Hà Nội', 'Hải Phòng', 'Huế', 'Đà Nẵng', 'Cần Thơ', 'Hồ Chí Minh',
 ])
+
+function normalizeProvinceName(value) {
+  return clean(value).replace(/^Tỉnh\s+/i, '').replace(/^Thành phố\s+/i, '')
+}
 
 function profileRoots() {
   const roots = Array.from(document.querySelectorAll('.profile-form'))
@@ -117,11 +121,11 @@ function reconcileMissingBadges() {
 }
 
 function policeAuthorityForProvince(name) {
-  const province = clean(name)
+  const raw = clean(name)
+  const province = normalizeProvinceName(raw)
   if (!province) return ''
-  return CENTRAL_CITIES.has(province)
-    ? `Công an thành phố ${province.replace(/^Thành phố\s+/i, '')}`
-    : `Công an tỉnh ${province}`
+  const isCity = /^Thành phố\s+/i.test(raw) || CENTRAL_CITIES.has(province)
+  return isCity ? `Công an thành phố ${province}` : `Công an tỉnh ${province}`
 }
 
 function localPoliceAuthority(wardName) {
@@ -141,9 +145,9 @@ function issuerValues(catalogs, wards, currentValue = '') {
 }
 
 async function wardsForRoot(root, catalogs, refresh = false) {
-  const provinceName = currentFieldValue(root, 'Tỉnh/Thành phố')
+  const provinceName = normalizeProvinceName(currentFieldValue(root, 'Tỉnh/Thành phố'))
   if (!provinceName) return []
-  const province = (catalogs?.provinces || []).find((item) => clean(item?.name) === provinceName)
+  const province = (catalogs?.provinces || []).find((item) => normalizeProvinceName(item?.name) === provinceName)
   if (!province?.code) return []
   const data = refresh
     ? await refreshProfileReferenceData(province.code)
