@@ -16,6 +16,7 @@ export const LETAN_REASON_GROUPS = [
 ]
 
 const EDITOR_ROLES = new Set(['letan', 'quanly'])
+export const EMPLOYEE_SELF_SERVICE_ROLES = new Set(['nhanvien', 'leader', 'locker', 'tapvu'])
 const GROUP_BY_REASON = new Map(
   LETAN_REASON_GROUPS.flatMap((reasons, index) => reasons.map((reason) => [normalizeReason(reason), index])),
 )
@@ -32,18 +33,36 @@ export function letanReasonChoices(role, recordDate, currentReason, today) {
   return letanReasonGroup(currentReason)
 }
 
-export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, today }) {
+const employeeNoticeDays = (leaveType) => normalizeReason(leaveType).includes('khong phep') ? 1 : 3
+
+const addIsoDays = (value, days) => {
+  const [year, month, day] = String(value || '').split('-').map(Number)
+  if (!year || !month || !day) return ''
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+
+const employeeDateAllowed = (recordDate, leaveType, today) => (
+  Boolean(recordDate && today) && recordDate >= addIsoDays(today, employeeNoticeDays(leaveType))
+)
+
+export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
+  if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
+    return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today)
+  }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
   if (recordDate === today && letanReasonGroup(currentReason)) return true
   return Boolean(allowedByPermission)
 }
 
-export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, today }) {
+export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
+  if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
+    return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today)
+  }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
   if (recordDate === today && letanReasonGroup(currentReason)) return false

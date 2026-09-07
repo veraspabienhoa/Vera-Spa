@@ -6,7 +6,7 @@ mirror code.  This wrapper replaces policy/validation helpers only, then routes
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 
 import pandas as pd
@@ -286,6 +286,23 @@ def _validate_and_prepare(
 
     def validate_notice(reason, target_date, role=None, now_vn=None):
         if skip_registration_timing:
+            return True, ""
+        role_key = str(role or "").strip().lower()
+        if role_key in employee_like:
+            allowed = role_tokens(item.get("allowed_roles", ""))
+            if allowed and role_key not in allowed:
+                return False, f"Tài khoản {role_key} không được dùng lý do '{item['name']}'."
+            if not day_allowed(item.get("allowed_days", ""), target_date):
+                return False, f"'{item['name']}' không được nhập vào {weekday_label(target_date)} {target_date.strftime('%d/%m/%Y')}."
+            current_day = (now_vn or datetime.now(_api.VN_TZ)).astimezone(_api.VN_TZ).date()
+            days = 1 if "khong phep" in norm(item.get("leave_type", "")) else 3
+            earliest = current_day + timedelta(days=days)
+            if target_date < earliest:
+                leave_type = "Không phép" if days == 1 else "thông thường"
+                return False, (
+                    f"Lịch {leave_type} phải được đăng ký, sửa hoặc xóa trước ít nhất {days} ngày; "
+                    f"ngày sớm nhất là {earliest.strftime('%d/%m/%Y')}."
+                )
             return True, ""
         try:
             validate_registration_rule(_reason_item(conn, reason), str(role or ""), target_date, now=now_vn)

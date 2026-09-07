@@ -18,6 +18,7 @@ import {
 import {
   canDeleteLeaveRecord,
   canEditLeaveRecord,
+  EMPLOYEE_SELF_SERVICE_ROLES,
   letanReasonChoices,
 } from '../lib/leaveRecordPermissions'
 
@@ -128,6 +129,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [exporting, setExporting] = useState(false)
   const [syncingLeaveSource, setSyncingLeaveSource] = useState(false)
   const role = String(user?.role || '').toLowerCase()
+  const employeeSelfService = EMPLOYEE_SELF_SERVICE_ROLES.has(role)
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
   const canEdit = role === 'admin'
@@ -143,18 +145,22 @@ export default function LeaveRegistrationPage({ user }) {
     allowedByPermission: canEdit,
     recordDate: item?.leave_date,
     currentReason: item?.leave_reason,
+    currentLeaveType: item?.leave_type,
     today: today(),
+    isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
   })
   const canDeleteRecord = (item) => canDeleteLeaveRecord({
     role,
     allowedByPermission: canDelete,
     recordDate: item?.leave_date,
     currentReason: item?.leave_reason,
+    currentLeaveType: item?.leave_type,
     today: today(),
+    isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
   })
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
-    && user?.permissions?.leave_create !== false
+    && (employeeSelfService || user?.permissions?.leave_create !== false)
     && !user?.registration_locked
     && !dateIsPast
   const registrationEmployees = useMemo(() => employees.filter((employee) => {
@@ -614,7 +620,7 @@ export default function LeaveRegistrationPage({ user }) {
         <div className="warning-box"><strong>Đang khóa đăng ký.</strong> Admin đang tạm khóa quyền đăng ký nghỉ của vai trò {role}.</div>
       )}
 
-      {isApiConfigured && user?.permissions?.leave_create === false && (
+      {isApiConfigured && user?.permissions?.leave_create === false && !employeeSelfService && (
         <div className="warning-box"><strong>Chế độ chỉ xem.</strong> Tài khoản này chưa được cấp quyền ghi lịch nghỉ.</div>
       )}
 
@@ -692,6 +698,12 @@ export default function LeaveRegistrationPage({ user }) {
           <div className="panel-title-row">
             <div><h2>ĐĂNG KÝ MỚI</h2></div>
           </div>
+          {employeeSelfService && (
+            <div className="info-box">
+              Nhân viên được đăng ký, sửa và xóa lịch của chính mình trước ít nhất 3 ngày;
+              riêng Loại nghỉ Không phép trước ít nhất 1 ngày.
+            </div>
+          )}
           <form className="leave-form" onSubmit={submit}>
             <label>Tên nhân viên</label>
             <select

@@ -59,7 +59,9 @@ def install_leave_preview_routes(
         # registration that is being committed at the same moment.
         with engine_instance().begin() as conn:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
-            require_feature(conn, ident, "leave_create")
+            role = str(getattr(ident, "role", "") or "").strip().lower()
+            if role not in {"nhanvien", "leader", "locker", "tapvu"}:
+                require_feature(conn, ident, "leave_create")
             record, warnings = validate_and_prepare(conn, body, ident)
             can_view_penalty = (
                 str(getattr(ident, "role", "") or "").lower() == "admin"

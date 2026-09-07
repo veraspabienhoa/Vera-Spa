@@ -496,6 +496,8 @@ def _feature_allowed(
     role = str(ident.role or "").strip().lower()
     if role == "admin":
         return True
+    if role in _EMPLOYEE_SELF_SERVICE_ROLES and feature in _EMPLOYEE_SELF_SERVICE_FEATURES:
+        return True
 
     payload = permission_payload if isinstance(permission_payload, dict) else _permission_payload(conn)
 
@@ -720,7 +722,12 @@ class PushDispatch(BaseModel):
 
 _LEAVE_EDIT_FEATURES = ("leave_manage_edit", "leave_detail_edit")
 _LEAVE_DELETE_FEATURES = ("leave_manage_delete", "leave_detail_delete")
-_EMPLOYEE_LIKE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
+_EMPLOYEE_SELF_SERVICE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
+_EMPLOYEE_SELF_SERVICE_FEATURES = {
+    "leave", "leave_manage", "leave_create", "leave_detail_edit",
+    "leave_detail_delete", "leave_manage_edit", "leave_manage_delete",
+}
+_EMPLOYEE_LIKE_ROLES = set(_EMPLOYEE_SELF_SERVICE_ROLES)
 
 
 def _has_any_feature(conn, ident: Identity, features: tuple[str, ...]) -> bool:
@@ -1034,6 +1041,22 @@ def _catalog_rule_for_edit(conn, reason: str, target: date, role: str) -> dict:
     return item
 
 
+def _employee_self_service_notice_days(*items: dict) -> int:
+    return 1 if any("khong phep" in _norm(item.get("leave_type", "")) for item in items) else 3
+
+
+def _validate_employee_self_service_notice(target: date, *items: dict) -> None:
+    days = _employee_self_service_notice_days(*items)
+    earliest = datetime.now(VN_TZ).date() + timedelta(days=days)
+    if target < earliest:
+        leave_type = "Không phép" if days == 1 else "thông thường"
+        raise HTTPException(
+            403,
+            f"Lịch {leave_type} phải được đăng ký, sửa hoặc xóa trước ít nhất {days} ngày; "
+            f"ngày sớm nhất là {earliest.strftime('%d/%m/%Y')}.",
+        )
+
+
 def _validate_delete_permission(conn, row: dict, ident: Identity) -> None:
     role = ident.role
     if role == "admin":
@@ -1044,13 +1067,9 @@ def _validate_delete_permission(conn, row: dict, ident: Identity) -> None:
     if target < today:
         raise HTTPException(403, "Không được xóa lịch nghỉ của ngày trong quá khứ.")
     if role in _EMPLOYEE_LIKE_ROLES:
-        if not _has_any_feature(conn, ident, _LEAVE_DELETE_FEATURES):
-            raise HTTPException(403, "Tài khoản chưa được cấp quyền xóa lịch nghỉ.")
         if _norm(row["employee_name"]) != _norm(ident.employee_username):
             raise HTTPException(403, "Nhân viên chỉ được xóa lịch nghỉ của chính mình.")
-        if not (_is_video(reason) or "khong phep" in _norm(reason) or _is_employee_co_phep(reason) or (role == "leader" and "leader" in _norm(reason))):
-            raise HTTPException(403, "Lý do hiện tại không thuộc nhóm Nhân viên/Leader được phép hủy.")
-        _cancel_notice(conn, reason, target, role)
+        _validate_employee_self_service_notice(target, row)
         return
     if role in {"letan", "quanly"}:
         special = (
@@ -1091,27 +1110,12 @@ def _validate_edit_permission(conn, row: dict, new_reason: str, ident: Identity)
         and ("khong phep" in _norm(new_reason) or (_is_employee_co_phep(new_reason) and abs(float(item.get("days") or 0) - 0.5) < 1e-9))
     )
     if role in _EMPLOYEE_LIKE_ROLES:
-        if not _has_any_feature(conn, ident, _LEAVE_EDIT_FEATURES):
-            raise HTTPException(403, "Tài khoản chưa được cấp quyền sửa lịch nghỉ.")
         if _norm(row["employee_name"]) != _norm(ident.employee_username):
             raise HTTPException(403, "Nhân viên chỉ được sửa lịch nghỉ của chính mình.")
-        if not future_conversion:
-            _cancel_notice(conn, old_reason, target, role)
-        old_video, new_video = _is_video(old_reason), _is_video(new_reason)
-        old_unpaid, new_unpaid = "khong phep" in _norm(old_reason), "khong phep" in _norm(new_reason)
-        old_paid, new_paid = _is_employee_co_phep(old_reason), _is_employee_co_phep(new_reason)
-        leader_policy = role == "leader" and "leader" in _norm(old_reason)
-        valid = (
-            (leader_policy and ("leader" in _norm(new_reason) or new_video))
-            or (old_unpaid and (new_unpaid or new_video or new_paid))
-            or (old_paid and (new_paid or new_video or new_unpaid))
-            or old_video
-        )
-        if not valid:
-            raise HTTPException(403, "Lý do hiện tại không thuộc nhóm Nhân viên/Leader được phép sửa sang lý do đã chọn.")
-        if not future_conversion:
-            _registration_rule(item, role, target)
-        return item, future_conversion
+        _validate_employee_self_service_notice(target, row, item)
+        # The fixed employee notice policy was validated above. Avoid applying
+        # the catalog's legacy registration/cancellation timing a second time.
+        return item, True
     if role in {"letan", "quanly"}:
         special = (
             _feature_allowed(conn, ident, "leave_today_khong_phep_edit_delete")
@@ -1699,7 +1703,7 @@ def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(cu
             if not _day_allowed(item["allowed_days"], date_value):
                 continue
             output.append({
-                "name": item["name"], "days": item["days"],
+                "name": item["name"], "leave_type": item["leave_type"], "days": item["days"],
                 "penalty": item["penalty"] if can_view_penalty else None,
                 "requires_manual_penalty": item["requires_manual_penalty"],
             })
@@ -1817,7 +1821,7 @@ def leave_records(
         _require_feature(conn, ident, "leave")
         can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
         rows = conn.execute(text("""
-            SELECT record_uid, leave_date, weekday_label, employee_name, leave_reason,
+            SELECT record_uid, leave_date, weekday_label, employee_name, leave_reason, leave_type,
                    detail, penalty, updated_by, updated_at
             FROM leave_records
             WHERE leave_date BETWEEN :start_date AND :end_date

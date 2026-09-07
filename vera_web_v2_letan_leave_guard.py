@@ -193,6 +193,7 @@ def _install_admin_reason_catalog(app, api_module) -> None:
                     item = api_module._reason_item(conn, name)
                     output.append({
                         "name": item["name"],
+                        "leave_type": item["leave_type"],
                         "days": item["days"],
                         "penalty": item["penalty"] if can_view_penalty else None,
                         "requires_manual_penalty": item["requires_manual_penalty"],
