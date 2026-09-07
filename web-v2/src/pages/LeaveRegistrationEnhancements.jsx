@@ -7,7 +7,6 @@ import { getCurrentSession } from '../lib/supabase'
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const VIOLATION_ENTRY_ROLES = new Set(['admin', 'quanly', 'letan'])
 const PAST_VIOLATION_ROLES = new Set(['quanly', 'letan'])
-const EMPLOYEE_SELF_SERVICE_ROLES = new Set(['nhanvien', 'leader', 'locker', 'tapvu'])
 
 function todayInput() {
   const now = new Date()
@@ -176,7 +175,7 @@ export default function LeaveRegistrationEnhancements({ user }) {
         } else if (current.submitButton.dataset.pastViolationEntry === 'true') {
           delete current.submitButton.dataset.pastViolationEntry
           current.submitButton.disabled = !apiBase
-            || (user?.permissions?.leave_create === false && !EMPLOYEE_SELF_SERVICE_ROLES.has(role))
+            || user?.permissions?.leave_create === false
             || Boolean(user?.registration_locked)
             || (role !== 'admin' && isPastDate(current.date))
         }
@@ -285,7 +284,7 @@ export default function LeaveRegistrationEnhancements({ user }) {
       if (pastSubmitBusy) return
 
       setPastSubmitNotice(null)
-      if (!apiBase || (user?.permissions?.leave_create === false && !EMPLOYEE_SELF_SERVICE_ROLES.has(role)) || user?.registration_locked) {
+      if (!apiBase || user?.permissions?.leave_create === false || user?.registration_locked) {
         setPastSubmitNotice({ type: 'error', message: 'Tài khoản hiện tại chưa được phép ghi lịch nghỉ.' })
         return
       }

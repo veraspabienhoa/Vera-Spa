@@ -14,6 +14,8 @@ from fastapi import HTTPException
 from sqlalchemy import text
 
 import vera_web_v2_api as _api
+from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
+from vera_employee_self_service_policy import notice_days as employee_self_service_notice_days
 from vera_leave_registration_shared import (
     LeaveRuleError,
     day_allowed,
@@ -288,17 +290,18 @@ def _validate_and_prepare(
         if skip_registration_timing:
             return True, ""
         role_key = str(role or "").strip().lower()
-        if role_key in employee_like:
+        employee_policy = load_employee_self_service_policy(conn)
+        if role_key in employee_like and employee_policy["enabled"]:
             allowed = role_tokens(item.get("allowed_roles", ""))
             if allowed and role_key not in allowed:
                 return False, f"Tài khoản {role_key} không được dùng lý do '{item['name']}'."
             if not day_allowed(item.get("allowed_days", ""), target_date):
                 return False, f"'{item['name']}' không được nhập vào {weekday_label(target_date)} {target_date.strftime('%d/%m/%Y')}."
             current_day = (now_vn or datetime.now(_api.VN_TZ)).astimezone(_api.VN_TZ).date()
-            days = 1 if "khong phep" in norm(item.get("leave_type", "")) else 3
+            days = employee_self_service_notice_days(employee_policy, item)
             earliest = current_day + timedelta(days=days)
             if target_date < earliest:
-                leave_type = "Không phép" if days == 1 else "thông thường"
+                leave_type = "Không phép" if "khong phep" in norm(item.get("leave_type", "")) else "thông thường"
                 return False, (
                     f"Lịch {leave_type} phải được đăng ký, sửa hoặc xóa trước ít nhất {days} ngày; "
                     f"ngày sớm nhất là {earliest.strftime('%d/%m/%Y')}."

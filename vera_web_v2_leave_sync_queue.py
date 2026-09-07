@@ -214,7 +214,8 @@ def install_leave_sync_queue(app, *, engine_instance, current_identity, require_
         try:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
             role = str(getattr(ident, "role", "") or "").strip().lower()
-            if role not in api_module._EMPLOYEE_SELF_SERVICE_ROLES:
+            employee_policy = api_module.load_employee_self_service_policy(conn)
+            if role not in api_module._EMPLOYEE_SELF_SERVICE_ROLES or not employee_policy["enabled"]:
                 require_feature(conn, ident, "leave_create")
             if api_module._registration_role_locked(conn, ident.role):
                 raise HTTPException(403, "Quyền đăng ký nghỉ của vai trò này đang bị Admin tạm khóa.")

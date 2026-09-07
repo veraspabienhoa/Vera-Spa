@@ -41,6 +41,8 @@ from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import URL
 
 from vera_google_credentials import google_credentials
+from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
+from vera_employee_self_service_policy import notice_days as employee_self_service_notice_days
 from vera_leave_registration_shared import summarize_leave_day
 from vera_json import json_safe, json_text
 from vera_progressive_penalty import (
@@ -496,7 +498,11 @@ def _feature_allowed(
     role = str(ident.role or "").strip().lower()
     if role == "admin":
         return True
-    if role in _EMPLOYEE_SELF_SERVICE_ROLES and feature in _EMPLOYEE_SELF_SERVICE_FEATURES:
+    if (
+        role in _EMPLOYEE_SELF_SERVICE_ROLES
+        and feature in _EMPLOYEE_SELF_SERVICE_FEATURES
+        and load_employee_self_service_policy(conn)["enabled"]
+    ):
         return True
 
     payload = permission_payload if isinstance(permission_payload, dict) else _permission_payload(conn)
@@ -1041,15 +1047,14 @@ def _catalog_rule_for_edit(conn, reason: str, target: date, role: str) -> dict:
     return item
 
 
-def _employee_self_service_notice_days(*items: dict) -> int:
-    return 1 if any("khong phep" in _norm(item.get("leave_type", "")) for item in items) else 3
-
-
-def _validate_employee_self_service_notice(target: date, *items: dict) -> None:
-    days = _employee_self_service_notice_days(*items)
+def _validate_employee_self_service_notice(conn, target: date, *items: dict) -> None:
+    policy = load_employee_self_service_policy(conn)
+    days = employee_self_service_notice_days(policy, *items)
     earliest = datetime.now(VN_TZ).date() + timedelta(days=days)
     if target < earliest:
-        leave_type = "Không phép" if days == 1 else "thông thường"
+        leave_type = "Không phép" if any(
+            "khong phep" in _norm(item.get("leave_type", "")) for item in items
+        ) else "thông thường"
         raise HTTPException(
             403,
             f"Lịch {leave_type} phải được đăng ký, sửa hoặc xóa trước ít nhất {days} ngày; "
@@ -1069,7 +1074,13 @@ def _validate_delete_permission(conn, row: dict, ident: Identity) -> None:
     if role in _EMPLOYEE_LIKE_ROLES:
         if _norm(row["employee_name"]) != _norm(ident.employee_username):
             raise HTTPException(403, "Nhân viên chỉ được xóa lịch nghỉ của chính mình.")
-        _validate_employee_self_service_notice(target, row)
+        policy = load_employee_self_service_policy(conn)
+        if policy["enabled"]:
+            _validate_employee_self_service_notice(conn, target, row)
+        else:
+            if not _has_any_feature(conn, ident, _LEAVE_DELETE_FEATURES):
+                raise HTTPException(403, "Tài khoản chưa được cấp quyền xóa lịch nghỉ.")
+            _cancel_notice(conn, reason, target, role)
         return
     if role in {"letan", "quanly"}:
         special = (
@@ -1112,10 +1123,17 @@ def _validate_edit_permission(conn, row: dict, new_reason: str, ident: Identity)
     if role in _EMPLOYEE_LIKE_ROLES:
         if _norm(row["employee_name"]) != _norm(ident.employee_username):
             raise HTTPException(403, "Nhân viên chỉ được sửa lịch nghỉ của chính mình.")
-        _validate_employee_self_service_notice(target, row, item)
-        # The fixed employee notice policy was validated above. Avoid applying
-        # the catalog's legacy registration/cancellation timing a second time.
-        return item, True
+        policy = load_employee_self_service_policy(conn)
+        if policy["enabled"]:
+            _validate_employee_self_service_notice(conn, target, row, item)
+            # The dynamic employee policy was validated above. Avoid applying
+            # the catalog's legacy registration/cancellation timing twice.
+            return item, True
+        if not _has_any_feature(conn, ident, _LEAVE_EDIT_FEATURES):
+            raise HTTPException(403, "Tài khoản chưa được cấp quyền sửa lịch nghỉ.")
+        _cancel_notice(conn, old_reason, target, role)
+        _registration_rule(item, role, target)
+        return item, False
     if role in {"letan", "quanly"}:
         special = (
             _feature_allowed(conn, ident, "leave_today_khong_phep_edit_delete")
@@ -1707,7 +1725,8 @@ def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(cu
                 "penalty": item["penalty"] if can_view_penalty else None,
                 "requires_manual_penalty": item["requires_manual_penalty"],
             })
-    return {"reasons": output}
+        employee_self_service_policy = load_employee_self_service_policy(conn)
+    return {"reasons": output, "employee_self_service_policy": employee_self_service_policy}
 
 
 @app.get("/v2/leave/watch-dates")

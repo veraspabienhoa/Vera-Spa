@@ -15,6 +15,8 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
+
 
 LEAVE_PREVIEW_RELEASE = "leave-progressive-preview-v1"
 
@@ -60,7 +62,8 @@ def install_leave_preview_routes(
         with engine_instance().begin() as conn:
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
             role = str(getattr(ident, "role", "") or "").strip().lower()
-            if role not in {"nhanvien", "leader", "locker", "tapvu"}:
+            employee_policy = load_employee_self_service_policy(conn)
+            if role not in {"nhanvien", "leader", "locker", "tapvu"} or not employee_policy["enabled"]:
                 require_feature(conn, ident, "leave_create")
             record, warnings = validate_and_prepare(conn, body, ident)
             can_view_penalty = (

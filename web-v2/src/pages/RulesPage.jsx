@@ -49,6 +49,10 @@ export default function RulesPage() {
   const [lateThreshold, setLateThreshold] = useState(5)
   const [lateThresholdOriginal, setLateThresholdOriginal] = useState(5)
   const [weekendUnpaidNthPenalty, setWeekendUnpaidNthPenalty] = useState({ enabled: false, revision: 0 })
+  const [employeeSelfServicePolicy, setEmployeeSelfServicePolicy] = useState({
+    enabled: true, regular_notice_days: 3, unpaid_notice_days: 1, revision: 0,
+  })
+  const [employeeSelfServiceOriginal, setEmployeeSelfServiceOriginal] = useState('')
   const [departmentRules, setDepartmentRules] = useState({ locker: [], letan: [] })
   const [departmentRulesOriginal, setDepartmentRulesOriginal] = useState({ locker: '[]', letan: '[]' })
   const [selected, setSelected] = useState([])
@@ -81,6 +85,14 @@ export default function RulesPage() {
       enabled: result.weekend_unpaid_nth_penalty?.enabled === true,
       revision: Number(result.weekend_unpaid_nth_penalty?.revision || 0),
     })
+    const nextEmployeeSelfServicePolicy = {
+      enabled: result.employee_self_service_policy?.enabled !== false,
+      regular_notice_days: Number(result.employee_self_service_policy?.regular_notice_days ?? 3),
+      unpaid_notice_days: Number(result.employee_self_service_policy?.unpaid_notice_days ?? 1),
+      revision: Number(result.employee_self_service_policy?.revision || 0),
+    }
+    setEmployeeSelfServicePolicy(nextEmployeeSelfServicePolicy)
+    setEmployeeSelfServiceOriginal(JSON.stringify(nextEmployeeSelfServicePolicy))
     const nextDepartmentRules = Object.fromEntries(Object.keys(departmentRuleLabels).map((department) => [
       department,
       (result.department_rules?.[department]?.rules || []).map((item) => ({ ...item })),
@@ -114,10 +126,12 @@ export default function RulesPage() {
   const canEditDailyQuota = data?.can_edit_daily_quota === true
   const canEditLateThreshold = data?.can_edit_late_threshold === true
   const canEditWeekendUnpaidNthPenalty = data?.can_edit_weekend_unpaid_nth_penalty === true
+  const canEditEmployeeSelfServicePolicy = data?.can_edit_employee_self_service_policy === true
   const canEditDepartmentRules = data?.can_edit_department_rules === true
   const dirty = documentSignature(columns, rows) !== originalSignature
   const quotaDirty = JSON.stringify(quotaRows) !== quotaOriginalSignature
   const lateThresholdDirty = Number(lateThreshold) !== Number(lateThresholdOriginal)
+  const employeeSelfServiceDirty = JSON.stringify(employeeSelfServicePolicy) !== employeeSelfServiceOriginal
   const departmentRulesDirty = (department) => JSON.stringify(departmentRules[department] || []) !== departmentRulesOriginal[department]
   const requiredColumns = new Set(data?.required_columns || [])
   const deletableColumns = columns.filter((column) => !requiredColumns.has(column))
@@ -284,6 +298,22 @@ export default function RulesPage() {
     setNotice({ type: 'success', message: result.message })
   })
 
+  const saveEmployeeSelfServicePolicy = (enabled = employeeSelfServicePolicy.enabled) => run('employee-self-service-policy', async () => {
+    const regularNoticeDays = Number.parseInt(employeeSelfServicePolicy.regular_notice_days || '0', 10)
+    const unpaidNoticeDays = Number.parseInt(employeeSelfServicePolicy.unpaid_notice_days || '0', 10)
+    if (![regularNoticeDays, unpaidNoticeDays].every((value) => Number.isInteger(value) && value >= 0 && value <= 60)) {
+      throw new Error('Số ngày báo trước phải từ 0 đến 60 ngày.')
+    }
+    const result = await veraApi.saveEmployeeSelfServicePolicy({
+      enabled,
+      regular_notice_days: regularNoticeDays,
+      unpaid_notice_days: unpaidNoticeDays,
+      expected_revision: Number(employeeSelfServicePolicy.revision || 0),
+    })
+    await load(true)
+    setNotice({ type: 'success', message: result.message })
+  })
+
   const saveDepartmentRules = (department) => run(`department-${department}`, async () => {
     if (!departmentRulesDirty(department)) throw new Error(`Nội quy ${departmentRuleLabels[department]} chưa có thay đổi cần áp dụng.`)
     const result = await veraApi.saveDepartmentRules(department, {
@@ -409,6 +439,54 @@ export default function RulesPage() {
           </button>}
         </div>
         {!canEditWeekendUnpaidNthPenalty && <p className="weekend-unpaid-nth-admin-note"><ShieldCheck size={15} /> Chỉ Admin được thay đổi công tắc này.</p>}
+      </section>
+
+      <section className="panel employee-self-service-panel">
+        <div className="panel-title-row">
+          <div>
+            <h2>NHÂN VIÊN TỰ ĐĂNG KÝ / SỬA / XÓA LỊCH NGHỈ</h2>
+            <p>Áp dụng cho tài khoản Nhân viên, Leader, Locker và Tạp vụ đối với lịch nghỉ của chính mình.</p>
+          </div>
+          <span className={`weekend-unpaid-nth-state ${employeeSelfServicePolicy.enabled ? 'enabled' : 'disabled'}`}>
+            {employeeSelfServicePolicy.enabled ? 'ĐANG KÍCH HOẠT' : 'ĐANG TẠM DỪNG'}
+          </span>
+        </div>
+        <div className="rules-filter-row" style={{ gridTemplateColumns: 'minmax(180px, 1fr) minmax(180px, 1fr)' }}>
+          <label>Lịch nghỉ thông thường – báo trước (ngày)
+            {canEditEmployeeSelfServicePolicy
+              ? <input type="number" min="0" max="60" inputMode="numeric" value={numberInputDisplayValue(employeeSelfServicePolicy.regular_notice_days)} onChange={(event) => setEmployeeSelfServicePolicy((current) => ({ ...current, regular_notice_days: event.target.value }))} />
+              : <strong>{employeeSelfServicePolicy.regular_notice_days} ngày</strong>}
+          </label>
+          <label>Loại nghỉ Không phép – báo trước (ngày)
+            {canEditEmployeeSelfServicePolicy
+              ? <input type="number" min="0" max="60" inputMode="numeric" value={numberInputDisplayValue(employeeSelfServicePolicy.unpaid_notice_days)} onChange={(event) => setEmployeeSelfServicePolicy((current) => ({ ...current, unpaid_notice_days: event.target.value }))} />
+              : <strong>{employeeSelfServicePolicy.unpaid_notice_days} ngày</strong>}
+          </label>
+        </div>
+        <div className="daily-quota-footer">
+          <span><ShieldCheck size={15} /> Khi tạm dừng, hệ thống quay lại áp dụng Phân quyền và các cột đăng ký/hủy trong Bảng nội quy hiện hành.</span>
+          {canEditEmployeeSelfServicePolicy && <div className="rules-toolbar">
+            <button
+              type="button"
+              className={employeeSelfServicePolicy.enabled ? 'danger-button' : 'primary-button'}
+              disabled={busy === 'employee-self-service-policy'}
+              onClick={() => saveEmployeeSelfServicePolicy(!employeeSelfServicePolicy.enabled)}
+            >
+              {busy === 'employee-self-service-policy' ? <LoaderCircle size={17} className="spin" /> : <Power size={17} />}
+              {employeeSelfServicePolicy.enabled ? 'Tạm dừng nội quy' : 'Kích hoạt nội quy'}
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={!employeeSelfServiceDirty || busy === 'employee-self-service-policy'}
+              onClick={() => saveEmployeeSelfServicePolicy()}
+            >
+              {busy === 'employee-self-service-policy' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
+              Lưu thay đổi
+            </button>
+          </div>}
+        </div>
+        {!canEditEmployeeSelfServicePolicy && <p className="weekend-unpaid-nth-admin-note"><ShieldCheck size={15} /> Chỉ Admin được kích hoạt, tạm dừng hoặc thay đổi nội quy này.</p>}
       </section>
 
       <section className="panel daily-quota-panel">

@@ -33,7 +33,11 @@ export function letanReasonChoices(role, recordDate, currentReason, today) {
   return letanReasonGroup(currentReason)
 }
 
-const employeeNoticeDays = (leaveType) => normalizeReason(leaveType).includes('khong phep') ? 1 : 3
+const employeeNoticeDays = (leaveType, policy = {}) => (
+  normalizeReason(leaveType).includes('khong phep')
+    ? Number(policy.unpaid_notice_days ?? 1)
+    : Number(policy.regular_notice_days ?? 3)
+)
 
 const addIsoDays = (value, days) => {
   const [year, month, day] = String(value || '').split('-').map(Number)
@@ -41,15 +45,18 @@ const addIsoDays = (value, days) => {
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
 }
 
-const employeeDateAllowed = (recordDate, leaveType, today) => (
-  Boolean(recordDate && today) && recordDate >= addIsoDays(today, employeeNoticeDays(leaveType))
+const employeeDateAllowed = (recordDate, leaveType, today, policy) => (
+  Boolean(recordDate && today) && recordDate >= addIsoDays(today, employeeNoticeDays(leaveType, policy))
 )
 
-export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord }) {
+export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
-    return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today)
+    if (employeeSelfServicePolicy?.enabled !== false) {
+      return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today, employeeSelfServicePolicy)
+    }
+    return Boolean(isOwnRecord) && Boolean(allowedByPermission)
   }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
@@ -57,11 +64,14 @@ export function canEditLeaveRecord({ role, allowedByPermission, recordDate, curr
   return Boolean(allowedByPermission)
 }
 
-export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord }) {
+export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
-    return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today)
+    if (employeeSelfServicePolicy?.enabled !== false) {
+      return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today, employeeSelfServicePolicy)
+    }
+    return Boolean(isOwnRecord) && Boolean(allowedByPermission)
   }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false

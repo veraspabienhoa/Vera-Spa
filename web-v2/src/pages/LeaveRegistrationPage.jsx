@@ -108,6 +108,9 @@ export default function LeaveRegistrationPage({ user }) {
   const [dailyStats, setDailyStats] = useState([])
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
+  const [employeeSelfServicePolicy, setEmployeeSelfServicePolicy] = useState({
+    enabled: true, regular_notice_days: 3, unpaid_notice_days: 1,
+  })
   const [employees, setEmployees] = useState([])
   const [selectedUids, setSelectedUids] = useState([])
   const [reasonDrafts, setReasonDrafts] = useState({})
@@ -129,7 +132,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [exporting, setExporting] = useState(false)
   const [syncingLeaveSource, setSyncingLeaveSource] = useState(false)
   const role = String(user?.role || '').toLowerCase()
-  const employeeSelfService = EMPLOYEE_SELF_SERVICE_ROLES.has(role)
+  const employeeSelfService = EMPLOYEE_SELF_SERVICE_ROLES.has(role) && employeeSelfServicePolicy.enabled !== false
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
   const canEdit = role === 'admin'
@@ -148,6 +151,7 @@ export default function LeaveRegistrationPage({ user }) {
     currentLeaveType: item?.leave_type,
     today: today(),
     isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
+    employeeSelfServicePolicy,
   })
   const canDeleteRecord = (item) => canDeleteLeaveRecord({
     role,
@@ -157,6 +161,7 @@ export default function LeaveRegistrationPage({ user }) {
     currentLeaveType: item?.leave_type,
     today: today(),
     isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
+    employeeSelfServicePolicy,
   })
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
@@ -211,6 +216,11 @@ export default function LeaveRegistrationPage({ user }) {
         setReasonDrafts(Object.fromEntries(loadedRecords.map((item) => [item.record_uid, item.leave_reason])))
         setSelectedUids([])
         setReasons(reasonData.reasons || [])
+        setEmployeeSelfServicePolicy({
+          enabled: reasonData.employee_self_service_policy?.enabled !== false,
+          regular_notice_days: Number(reasonData.employee_self_service_policy?.regular_notice_days ?? 3),
+          unpaid_notice_days: Number(reasonData.employee_self_service_policy?.unpaid_notice_days ?? 1),
+        })
         setEmployees(employeeData.employees || [])
       } else {
         const dailyData = await loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
@@ -700,8 +710,8 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
           {employeeSelfService && (
             <div className="info-box">
-              Nhân viên được đăng ký, sửa và xóa lịch của chính mình trước ít nhất 3 ngày;
-              riêng Loại nghỉ Không phép trước ít nhất 1 ngày.
+              Nhân viên được đăng ký, sửa và xóa lịch của chính mình trước ít nhất {employeeSelfServicePolicy.regular_notice_days} ngày;
+              riêng Loại nghỉ Không phép trước ít nhất {employeeSelfServicePolicy.unpaid_notice_days} ngày.
             </div>
           )}
           <form className="leave-form" onSubmit={submit}>
