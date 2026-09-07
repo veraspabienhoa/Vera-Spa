@@ -29,6 +29,7 @@ from vera_web_v2_attendance_break_dispatch import install_attendance_break_dispa
 from vera_web_v2_attendance_policy_patch import install_attendance_policy_patch
 from vera_web_v2_department_attendance import install_department_attendance_routes
 from vera_web_v2_department_payroll import install_department_payroll_routes
+from vera_web_v2_salary_advances import install_salary_advance_routes
 from vera_web_v2_contracts import install_contract_1_routes
 from vera_web_v2_break_alert_control import install_break_alert_control
 from vera_web_v2_break_return_penalty import install_break_return_penalty
@@ -169,6 +170,7 @@ install_auth_gateway(
 
 install_payroll_v38_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity, google_client=_api._google_client)
 install_department_payroll_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm)
+install_salary_advance_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_payroll_timesoft_auto_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm)
 install_payroll_debt_sync_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, google_client=_api._google_client)
 install_payroll_enhancement_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
