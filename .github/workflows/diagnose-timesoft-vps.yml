@@ -26,81 +26,102 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Decode TimeSoft login JavaScript
-        run: |
-          python - <<'PY'
-          import requests
-          js = requests.get('https://vera.timesoft.vn/Scripts/User/gym-login-ofs.js?v1=171', timeout=30).text
-          stub = r'''
-          const chain = new Proxy(function(){ return chain; }, {
-            get(target, prop) {
-              if (prop === 'length') return 0;
-              if (prop === 'ready' || prop === 'click' || prop === 'keyup' || prop === 'keydown' || prop === 'change' || prop === 'on') return function(){ return chain; };
-              if (prop === 'val') return function(){ return ''; };
-              if (prop === 'is') return function(){ return false; };
-              if (prop === 'attr' || prop === 'prop' || prop === 'css' || prop === 'show' || prop === 'hide' || prop === 'focus' || prop === 'each') return function(){ return chain; };
-              return chain;
-            }, apply(){ return chain; }
-          });
-          global.$ = chain; global.jQuery = chain; global.document = {};
-          global.window = { location: { href:'', search:'' }, localStorage:{setItem(){},removeItem(){},getItem(){return null;}}, setTimeout(){}, top:null, self:null };
-          global.top = global.window; global.self = global.window; global.metroDialog = chain;
-          global.$CustomAjax = function(){ return { done(){ return this; }, then(){ return this; } }; };
-          global.getQuerystring = function(){ return ''; }; global.encrypt = function(v){ return v; }; global.sendOne = '';
-          '''
-          with open('/tmp/timesoft_decode.js', 'w', encoding='utf-8') as fh:
-              fh.write(stub + '\n' + js)
-              fh.write("\nconsole.log('---DECODE---');\nfor (let i=0x160;i<=0x280;i++){try{console.log(i.toString(16)+'='+_0x225b(i));}catch(e){}}\n")
-          PY
-          node /tmp/timesoft_decode.js 2>/tmp/timesoft_decode.err | sed -n '/---DECODE---/,$p' | grep -E '^(188|1b9|1dc|20a|258|263)=' || true
-
-      - name: Build diagnostic script
+      - name: Build browserless login probe
         run: |
           cat > /tmp/vera_timesoft_diag.py <<'PY'
-          import os, re, sys
+          import json, os, sys, traceback
           from urllib.parse import urljoin
           import requests
+
           pid, release_dir = sys.argv[1], sys.argv[2]
           raw = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
           for item in raw:
-              if b"=" not in item: continue
+              if b"=" not in item:
+                  continue
               key, value = item.split(b"=", 1)
               os.environ[key.decode("utf-8", "ignore")] = value.decode("utf-8", "ignore")
-          os.chdir(release_dir); sys.path.insert(0, release_dir)
+          os.chdir(release_dir)
+          sys.path.insert(0, release_dir)
+
           import timesoft_sync_job as ts
           import vera_postgres as vpg
+          from datetime import datetime
+
+          print("base=", ts.BASE_URL)
+          print("credentials_ready=", bool(ts.USERNAME and ts.PASSWORD))
           session = requests.Session()
-          report = session.get(urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/")), timeout=20, allow_redirects=True)
-          print("report_redirect=", report.status_code, report.url)
-          html = report.text
-          pos = html.find('$CustomAjax')
-          if pos >= 0: print('inline_custom_ajax=', re.sub(r'\s+', ' ', html[max(0,pos-1200):pos+3000])[:4200])
-          scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)', html, flags=re.I)
-          for src in scripts:
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+              "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+          })
+          report_url = urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/"))
+          login_page = session.get(report_url, timeout=20, allow_redirects=True)
+          print("login_page=", login_page.status_code, login_page.url, "cookies=", len(session.cookies))
+
+          login_url = urljoin(ts.BASE_URL + "/", "User/ValidateUser")
+          headers = {
+              "Accept": "application/json, text/javascript, */*; q=0.01",
+              "X-Requested-With": "XMLHttpRequest",
+              "Referer": login_page.url,
+              "Origin": ts.BASE_URL,
+          }
+          response = session.post(
+              login_url,
+              data={"userName": ts.USERNAME, "password": ts.PASSWORD, "sendOne": ""},
+              headers=headers,
+              timeout=20,
+              allow_redirects=False,
+          )
+          print("login_post_status=", response.status_code, "content_type=", response.headers.get("content-type", ""), "cookies=", len(session.cookies))
+          payload = None
+          try:
+              payload = response.json()
+          except Exception:
+              print("login_post_non_json_prefix=", response.text[:240].replace("\n", " ").replace("\r", " "))
+          if isinstance(payload, dict):
+              safe = {key: payload.get(key) for key in ("valid", "ErrorCode", "Message", "linkRedirect") if key in payload}
+              print("login_result=", safe)
+          else:
+              safe = {}
+
+          verify = session.get(report_url, timeout=20, allow_redirects=False)
+          print("report_after_login=", verify.status_code, "location=", verify.headers.get("location", ""), "content_type=", verify.headers.get("content-type", ""))
+          authenticated = verify.status_code == 200 and "/User/Login" not in str(verify.url)
+          if verify.is_redirect:
+              authenticated = "/User/Login" not in str(verify.headers.get("location") or "")
+          print("authenticated=", authenticated)
+
+          if authenticated:
+              today = datetime.now(ts.VN_TZ).date()
               try:
-                  js_url = urljoin(report.url, src)
-                  js = session.get(js_url, timeout=15).text
-                  pos = js.find('$CustomAjax')
-                  if pos >= 0 and 'gym-login-ofs' not in js_url:
-                      print('custom_ajax_script=', js_url)
-                      print('custom_ajax_context=', re.sub(r'\s+', ' ', js[max(0,pos-1600):pos+3500])[:5200])
-              except Exception: pass
+                  df, meta = ts.fetch_checkin(session, today)
+                  print("fetch_today_rows=", len(df), "meta=", meta)
+                  if not df.empty:
+                      cols = [str(c) for c in df.columns]
+                      print("fetch_today_columns=", cols)
+              except Exception as exc:
+                  print("fetch_today_error=", type(exc).__name__, str(exc)[:1200])
+                  traceback.print_exc(limit=2)
+
           try:
               with vpg.get_engine().connect() as conn:
-                  from sqlalchemy import text as sql_text
-                  rows = conn.execute(sql_text("""
+                  from sqlalchemy import text
+                  rows = conn.execute(text("""
                       SELECT dataset_key, source_version, updated_at,
                              CASE WHEN jsonb_typeof(payload)='array' THEN jsonb_array_length(payload) ELSE NULL END AS row_count
                       FROM vera_dataset_cache
-                      WHERE dataset_key='timesoft_employee_checkin_today' OR dataset_key LIKE 'timesoft_employee_checkin_2026090%'
+                      WHERE dataset_key='timesoft_employee_checkin_today'
+                         OR dataset_key LIKE 'timesoft_employee_checkin_2026090%'
                       ORDER BY updated_at DESC LIMIT 20
                   """)).mappings().all()
                   print("attendance_cache_rows=")
-                  for row in rows: print(dict(row))
-          except Exception as exc: print("cache_probe_error=", type(exc).__name__, str(exc)[:500])
+                  for row in rows:
+                      print(dict(row))
+          except Exception as exc:
+              print("cache_probe_error=", type(exc).__name__, str(exc)[:500])
           PY
 
-      - name: Diagnose TimeSoft ajax protocol and cache
+      - name: Probe TimeSoft browserless login and fetch
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
