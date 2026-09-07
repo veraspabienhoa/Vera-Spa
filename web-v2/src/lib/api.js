@@ -221,6 +221,7 @@ export const veraApi = {
   saveLateThreshold: (body) => request('/v2/rules/late-threshold', { method: 'PUT', body: JSON.stringify(body) }),
   saveWeekendUnpaidNthPenalty: (body) => request('/v2/rules/weekend-unpaid-nth-penalty', { method: 'PUT', body: JSON.stringify(body) }),
   saveEmployeeSelfServicePolicy: (body) => request('/v2/rules/employee-self-service-policy', { method: 'PUT', body: JSON.stringify(body) }),
+  saveLetanLeavePolicy: (body) => request('/v2/rules/letan-leave-policy', { method: 'PUT', body: JSON.stringify(body) }),
   exportRulesExcel: () => download('/v2/rules/export.xlsx', 'NoiQuy_VeraSpa.xlsx'),
   importRulesExcel: (file) => upload('/v2/rules/import.xlsx', file),
   longLeaveOverview: () => request('/v2/long-leave/overview'),

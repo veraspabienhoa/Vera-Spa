@@ -32,6 +32,13 @@ from typing import Any
 import pandas as pd
 from fastapi import HTTPException
 
+from vera_letan_leave_policy import (
+    DEFAULT_GROUPS,
+    load_policy as load_letan_leave_policy,
+    normalize_policy as normalize_letan_leave_policy,
+    reason_group as letan_reason_group,
+)
+
 
 RELEASE = "operations-leave-guard-2026-09-07-v5"
 EDITOR_ROLES = {
@@ -39,51 +46,7 @@ EDITOR_ROLES = {
     "quanly": "Quản lý",
 }
 
-LETAN_REASON_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "Nhóm 1",
-        (
-            "Nghỉ CÓ phép",
-            "Đi trễ CÓ phép",
-            "Về sớm CÓ phép",
-        ),
-    ),
-    (
-        "Nhóm 2",
-        (
-            "Nghỉ KHÔNG phép",
-            "Đi trễ KHÔNG phép",
-            "Về sớm KHÔNG phép",
-        ),
-    ),
-    (
-        "Nhóm 3",
-        (
-            "Nghỉ CUỐI TUẦN CÓ phép",
-            "Đi trễ CUỐI TUẦN CÓ phép",
-            "Về sớm CUỐI TUẦN CÓ phép",
-        ),
-    ),
-    (
-        "Nhóm 4",
-        (
-            "Nghỉ CUỐI TUẦN KHÔNG phép",
-            "Đi trễ CUỐI TUẦN KHÔNG phép",
-            "Về sớm CUỐI TUẦN KHÔNG phép",
-        ),
-    ),
-    (
-        "Nhóm 5",
-        (
-            "Leader nghỉ phép theo chính sách",
-            "Leader đi trễ sớm theo chính sách",
-            "Leader về sớm về sớm theo chính sách",
-            # Compatibility alias for existing Nội quy rows that may use the
-            # corrected wording without the duplicated "về sớm".
-            "Leader về sớm theo chính sách",
-        ),
-    ),
-)
+LETAN_REASON_GROUPS = tuple((group["name"], tuple(group["reasons"])) for group in DEFAULT_GROUPS)
 
 
 def _role(ident: Any) -> str:
@@ -94,14 +57,8 @@ def _role_label(role: str) -> str:
     return EDITOR_ROLES.get(role, role or "Tài khoản")
 
 
-def _reason_group(reason: Any, norm) -> str:
-    key = norm(reason)
-    if not key:
-        return ""
-    for group_name, reasons in LETAN_REASON_GROUPS:
-        if any(norm(item) == key for item in reasons):
-            return group_name
-    return ""
+def _reason_group(reason: Any, norm, policy: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    return letan_reason_group(policy or normalize_letan_leave_policy(None), reason, norm)
 
 
 def _install_admin_unrestricted_validator() -> None:
@@ -198,7 +155,13 @@ def _install_admin_reason_catalog(app, api_module) -> None:
                         "penalty": item["penalty"] if can_view_penalty else None,
                         "requires_manual_penalty": item["requires_manual_penalty"],
                     })
-            return {"reasons": output}
+                letan_policy = load_letan_leave_policy(conn)
+                employee_policy = api_module.load_employee_self_service_policy(conn)
+            return {
+                "reasons": output,
+                "letan_leave_policy": letan_policy,
+                "employee_self_service_policy": employee_policy,
+            }
 
         route.endpoint = admin_reason_catalog
         route.dependant.call = admin_reason_catalog
@@ -224,6 +187,10 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             # timing restrictions for Admin before consulting the catalog rule.
             return original_edit(conn, row, new_reason, ident)
 
+        policy = load_letan_leave_policy(conn)
+        if not policy["enabled"]:
+            return original_edit(conn, row, new_reason, ident)
+
         label = _role_label(role)
         target = row["leave_date"]
         today = datetime.now(vn_tz).date()
@@ -235,7 +202,7 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
 
         if target == today:
             old_reason = str(row.get("leave_reason") or "").strip()
-            old_group = _reason_group(old_reason, norm)
+            old_group = _reason_group(old_reason, norm, policy)
 
             # The five named groups are the only same-day rows with the special
             # lock. Every other reason/type falls back to the canonical rules,
@@ -244,11 +211,11 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             if not old_group:
                 return original_edit(conn, row, new_reason, ident)
 
-            new_group = _reason_group(new_reason, norm)
-            if new_group != old_group:
+            new_group = _reason_group(new_reason, norm, policy)
+            if not new_group or new_group["id"] != old_group["id"]:
                 raise HTTPException(
                     403,
-                    f"Ngày hiện tại {label} chỉ được đổi Lý do nghỉ trong cùng {old_group}.",
+                    f"Ngày hiện tại {label} chỉ được đổi Lý do nghỉ trong cùng {old_group['name']}.",
                 )
 
             # Explicit same-day/same-group exception restored from the original
@@ -268,6 +235,10 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             # Includes Admin: canonical delete already returns immediately.
             return original_delete(conn, row, ident)
 
+        policy = load_letan_leave_policy(conn)
+        if not policy["enabled"]:
+            return original_delete(conn, row, ident)
+
         label = _role_label(role)
         target = row["leave_date"]
         today = datetime.now(vn_tz).date()
@@ -278,7 +249,7 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             )
 
         reason = str(row.get("leave_reason") or "").strip()
-        if target == today and _reason_group(reason, norm):
+        if target == today and _reason_group(reason, norm, policy):
             raise HTTPException(
                 403,
                 f"Tài khoản {label} không được xóa đăng ký ngày hiện tại thuộc Nhóm 1–5; chỉ được đổi Lý do nghỉ trong cùng nhóm.",
@@ -293,6 +264,8 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
 
     @app.get("/v2/letan-leave-policy/health")
     def letan_leave_policy_health():
+        with api_module._engine_instance().connect() as conn:
+            policy = load_letan_leave_policy(conn)
         return {
             "ok": True,
             "release": RELEASE,
@@ -301,10 +274,8 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             "managed_roles": sorted(EDITOR_ROLES),
             "today_special_scope": "groups_1_to_5_only",
             "other_today_reasons": "canonical_edit_delete",
-            "groups": [
-                {"name": name, "reasons": list(reasons[:3])}
-                for name, reasons in LETAN_REASON_GROUPS
-            ],
+            "enabled": policy["enabled"],
+            "groups": policy["groups"],
         }
 
     app.state.letan_leave_guard_installed = True

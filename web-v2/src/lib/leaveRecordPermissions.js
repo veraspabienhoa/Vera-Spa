@@ -17,20 +17,21 @@ export const LETAN_REASON_GROUPS = [
 
 const EDITOR_ROLES = new Set(['letan', 'quanly'])
 export const EMPLOYEE_SELF_SERVICE_ROLES = new Set(['nhanvien', 'leader', 'locker', 'tapvu'])
-const GROUP_BY_REASON = new Map(
-  LETAN_REASON_GROUPS.flatMap((reasons, index) => reasons.map((reason) => [normalizeReason(reason), index])),
-)
-GROUP_BY_REASON.set(normalizeReason('Leader về sớm theo chính sách'), 4)
-
-export function letanReasonGroup(reason) {
-  const index = GROUP_BY_REASON.get(normalizeReason(reason))
-  return Number.isInteger(index) ? LETAN_REASON_GROUPS[index] : null
+export function letanReasonGroup(reason, groups = LETAN_REASON_GROUPS) {
+  const key = normalizeReason(reason)
+  const matched = groups.find((reasons) => reasons.some((item) => normalizeReason(item) === key))
+  if (matched) return matched
+  if (key === normalizeReason('Leader về sớm theo chính sách')) {
+    return groups.find((reasons) => reasons.some((item) => normalizeReason(item) === normalizeReason('Leader về sớm về sớm theo chính sách'))) || null
+  }
+  return null
 }
 
-export function letanReasonChoices(role, recordDate, currentReason, today) {
+export function letanReasonChoices(role, recordDate, currentReason, today, letanLeavePolicy) {
   const roleKey = String(role || '').trim().toLowerCase()
-  if (!EDITOR_ROLES.has(roleKey) || recordDate !== today) return null
-  return letanReasonGroup(currentReason)
+  if (!EDITOR_ROLES.has(roleKey) || recordDate !== today || letanLeavePolicy?.enabled === false) return null
+  const groups = letanLeavePolicy?.groups?.map((group) => group.reasons) || LETAN_REASON_GROUPS
+  return letanReasonGroup(currentReason, groups)
 }
 
 const employeeNoticeDays = (leaveType, policy = {}) => (
@@ -49,7 +50,7 @@ const employeeDateAllowed = (recordDate, leaveType, today, policy) => (
   Boolean(recordDate && today) && recordDate >= addIsoDays(today, employeeNoticeDays(leaveType, policy))
 )
 
-export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy }) {
+export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
@@ -60,11 +61,12 @@ export function canEditLeaveRecord({ role, allowedByPermission, recordDate, curr
   }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
-  if (recordDate === today && letanReasonGroup(currentReason)) return true
+  const letanGroups = letanLeavePolicy?.groups?.map((group) => group.reasons) || LETAN_REASON_GROUPS
+  if (recordDate === today && letanLeavePolicy?.enabled !== false && letanReasonGroup(currentReason, letanGroups)) return true
   return Boolean(allowedByPermission)
 }
 
-export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy }) {
+export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
@@ -75,6 +77,7 @@ export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, cu
   }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
-  if (recordDate === today && letanReasonGroup(currentReason)) return false
+  const letanGroups = letanLeavePolicy?.groups?.map((group) => group.reasons) || LETAN_REASON_GROUPS
+  if (recordDate === today && letanLeavePolicy?.enabled !== false && letanReasonGroup(currentReason, letanGroups)) return false
   return Boolean(allowedByPermission)
 }

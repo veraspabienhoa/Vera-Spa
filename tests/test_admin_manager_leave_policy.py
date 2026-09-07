@@ -30,14 +30,14 @@ def test_letan_and_quanly_share_the_restored_edit_delete_guard():
     assert '"quanly": "Quản lý"' in guard
     assert "if target < today:" in guard
     assert "role not in EDITOR_ROLES" in guard
-    assert "new_group != old_group" in guard
-    assert "target == today and _reason_group(reason, norm)" in guard
+    assert 'new_group["id"] != old_group["id"]' in guard
+    assert "target == today and _reason_group(reason, norm, policy)" in guard
     assert "return original_edit(conn, row, new_reason, ident)" in guard
     assert "return original_delete(conn, row, ident)" in guard
 
 
 def test_all_five_same_day_reason_groups_are_preserved():
-    guard = (ROOT / "vera_web_v2_letan_leave_guard.py").read_text(encoding="utf-8")
+    policy = (ROOT / "vera_letan_leave_policy.py").read_text(encoding="utf-8")
 
     expected = (
         "Nghỉ CÓ phép",
@@ -56,4 +56,4 @@ def test_all_five_same_day_reason_groups_are_preserved():
         "Leader đi trễ sớm theo chính sách",
         "Leader về sớm về sớm theo chính sách",
     )
-    assert all(reason in guard for reason in expected)
+    assert all(reason in policy for reason in expected)

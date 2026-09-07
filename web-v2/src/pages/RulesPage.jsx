@@ -5,6 +5,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { numberInputDisplayValue } from '../lib/numberInput'
+import LetanLeavePolicyRules from './LetanLeavePolicyRules'
 
 let nextRowId = 1
 const makeRows = (rows = []) => rows.map((values) => ({ id: `rule-${nextRowId++}`, values: { ...values } }))
@@ -53,6 +54,8 @@ export default function RulesPage() {
     enabled: true, regular_notice_days: 3, unpaid_notice_days: 1, revision: 0,
   })
   const [employeeSelfServiceOriginal, setEmployeeSelfServiceOriginal] = useState('')
+  const [letanLeavePolicy, setLetanLeavePolicy] = useState({ enabled: true, groups: [], revision: 0 })
+  const [letanLeavePolicyOriginal, setLetanLeavePolicyOriginal] = useState('')
   const [departmentRules, setDepartmentRules] = useState({ locker: [], letan: [] })
   const [departmentRulesOriginal, setDepartmentRulesOriginal] = useState({ locker: '[]', letan: '[]' })
   const [selected, setSelected] = useState([])
@@ -93,6 +96,16 @@ export default function RulesPage() {
     }
     setEmployeeSelfServicePolicy(nextEmployeeSelfServicePolicy)
     setEmployeeSelfServiceOriginal(JSON.stringify(nextEmployeeSelfServicePolicy))
+    const nextLetanLeavePolicy = {
+      enabled: result.letan_leave_policy?.enabled !== false,
+      groups: (result.letan_leave_policy?.groups || []).map((group) => ({
+        ...group,
+        reasons: [...(group.reasons || [])],
+      })),
+      revision: Number(result.letan_leave_policy?.revision || 0),
+    }
+    setLetanLeavePolicy(nextLetanLeavePolicy)
+    setLetanLeavePolicyOriginal(JSON.stringify(nextLetanLeavePolicy))
     const nextDepartmentRules = Object.fromEntries(Object.keys(departmentRuleLabels).map((department) => [
       department,
       (result.department_rules?.[department]?.rules || []).map((item) => ({ ...item })),
@@ -127,11 +140,13 @@ export default function RulesPage() {
   const canEditLateThreshold = data?.can_edit_late_threshold === true
   const canEditWeekendUnpaidNthPenalty = data?.can_edit_weekend_unpaid_nth_penalty === true
   const canEditEmployeeSelfServicePolicy = data?.can_edit_employee_self_service_policy === true
+  const canEditLetanLeavePolicy = data?.can_edit_letan_leave_policy === true
   const canEditDepartmentRules = data?.can_edit_department_rules === true
   const dirty = documentSignature(columns, rows) !== originalSignature
   const quotaDirty = JSON.stringify(quotaRows) !== quotaOriginalSignature
   const lateThresholdDirty = Number(lateThreshold) !== Number(lateThresholdOriginal)
   const employeeSelfServiceDirty = JSON.stringify(employeeSelfServicePolicy) !== employeeSelfServiceOriginal
+  const letanLeavePolicyDirty = JSON.stringify(letanLeavePolicy) !== letanLeavePolicyOriginal
   const departmentRulesDirty = (department) => JSON.stringify(departmentRules[department] || []) !== departmentRulesOriginal[department]
   const requiredColumns = new Set(data?.required_columns || [])
   const deletableColumns = columns.filter((column) => !requiredColumns.has(column))
@@ -314,6 +329,29 @@ export default function RulesPage() {
     setNotice({ type: 'success', message: result.message })
   })
 
+  const saveLetanLeavePolicy = (enabled = letanLeavePolicy.enabled) => run('letan-leave-policy', async () => {
+    if (letanLeavePolicy.groups.length !== 5 || letanLeavePolicy.groups.some((group) => (
+      !group.name.trim() || group.reasons.length !== 3 || group.reasons.some((reason) => !reason.trim())
+    ))) {
+      throw new Error('Phải ghi rõ đúng 5 nhóm; mỗi nhóm có tên và 3 Lý do nghỉ.')
+    }
+    const normalizedReasons = letanLeavePolicy.groups.flatMap((group) => group.reasons.map((reason) => reason.trim().toLocaleLowerCase('vi')))
+    if (new Set(normalizedReasons).size !== normalizedReasons.length) {
+      throw new Error('Mỗi Lý do nghỉ chỉ được xuất hiện trong một nhóm.')
+    }
+    const result = await veraApi.saveLetanLeavePolicy({
+      enabled,
+      groups: letanLeavePolicy.groups.map((group) => ({
+        id: group.id,
+        name: group.name.trim(),
+        reasons: group.reasons.map((reason) => reason.trim()),
+      })),
+      expected_revision: Number(letanLeavePolicy.revision || 0),
+    })
+    await load(true)
+    setNotice({ type: 'success', message: result.message })
+  })
+
   const saveDepartmentRules = (department) => run(`department-${department}`, async () => {
     if (!departmentRulesDirty(department)) throw new Error(`Nội quy ${departmentRuleLabels[department]} chưa có thay đổi cần áp dụng.`)
     const result = await veraApi.saveDepartmentRules(department, {
@@ -488,6 +526,15 @@ export default function RulesPage() {
         </div>
         {!canEditEmployeeSelfServicePolicy && <p className="weekend-unpaid-nth-admin-note"><ShieldCheck size={15} /> Chỉ Admin được kích hoạt, tạm dừng hoặc thay đổi nội quy này.</p>}
       </section>
+
+      <LetanLeavePolicyRules
+        policy={letanLeavePolicy}
+        canEdit={canEditLetanLeavePolicy}
+        dirty={letanLeavePolicyDirty}
+        busy={busy === 'letan-leave-policy'}
+        onChange={setLetanLeavePolicy}
+        onSave={saveLetanLeavePolicy}
+      />
 
       <section className="panel daily-quota-panel">
         <div className="panel-title-row">

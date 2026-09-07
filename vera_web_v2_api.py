@@ -43,6 +43,7 @@ from sqlalchemy.engine import URL
 from vera_google_credentials import google_credentials
 from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
 from vera_employee_self_service_policy import notice_days as employee_self_service_notice_days
+from vera_letan_leave_policy import load_policy as load_letan_leave_policy
 from vera_leave_registration_shared import summarize_leave_day
 from vera_json import json_safe, json_text
 from vera_progressive_penalty import (
@@ -1726,7 +1727,12 @@ def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(cu
                 "requires_manual_penalty": item["requires_manual_penalty"],
             })
         employee_self_service_policy = load_employee_self_service_policy(conn)
-    return {"reasons": output, "employee_self_service_policy": employee_self_service_policy}
+        letan_leave_policy = load_letan_leave_policy(conn)
+    return {
+        "reasons": output,
+        "employee_self_service_policy": employee_self_service_policy,
+        "letan_leave_policy": letan_leave_policy,
+    }
 
 
 @app.get("/v2/leave/watch-dates")

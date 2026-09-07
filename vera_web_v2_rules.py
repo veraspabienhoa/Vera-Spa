@@ -30,6 +30,12 @@ from vera_employee_self_service_policy import (
     load_policy as load_employee_self_service_policy,
     normalize_policy as normalize_employee_self_service_policy,
 )
+from vera_letan_leave_policy import (
+    CATEGORY as LETAN_LEAVE_POLICY_CATEGORY,
+    SETTING_KEY as LETAN_LEAVE_POLICY_KEY,
+    load_policy as load_letan_leave_policy,
+    normalize_policy as normalize_letan_leave_policy,
+)
 
 from vera_progressive_penalty import (
     CONFIG_SHEET_KEY as WEEKEND_UNPAID_NTH_CONFIG_SHEET_KEY,
@@ -115,6 +121,18 @@ class EmployeeSelfServicePolicyUpdate(BaseModel):
     enabled: bool
     regular_notice_days: int = Field(ge=0, le=EMPLOYEE_SELF_SERVICE_MAX_NOTICE_DAYS)
     unpaid_notice_days: int = Field(ge=0, le=EMPLOYEE_SELF_SERVICE_MAX_NOTICE_DAYS)
+    expected_revision: int = Field(ge=0)
+
+
+class LetanLeavePolicyGroupUpdate(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=100)
+    reasons: list[str] = Field(min_length=3, max_length=3)
+
+
+class LetanLeavePolicyUpdate(BaseModel):
+    enabled: bool
+    groups: list[LetanLeavePolicyGroupUpdate] = Field(min_length=5, max_length=5)
     expected_revision: int = Field(ge=0)
 
 
@@ -631,6 +649,7 @@ def install_rules_routes(
         late_threshold = _load_late_threshold(conn)
         weekend_unpaid_nth_penalty = _load_weekend_unpaid_nth_penalty(conn)
         employee_self_service_policy = load_employee_self_service_policy(conn)
+        letan_leave_policy = load_letan_leave_policy(conn)
         is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         return {
             **document,
@@ -640,6 +659,7 @@ def install_rules_routes(
             "late_threshold": late_threshold,
             "weekend_unpaid_nth_penalty": weekend_unpaid_nth_penalty,
             "employee_self_service_policy": employee_self_service_policy,
+            "letan_leave_policy": letan_leave_policy,
             "department_rules": {
                 department: _load_department_rules(conn, department)
                 for department in DEPARTMENT_RULES
@@ -648,6 +668,7 @@ def install_rules_routes(
             "can_edit_late_threshold": is_admin,
             "can_edit_weekend_unpaid_nth_penalty": is_admin,
             "can_edit_employee_self_service_policy": is_admin,
+            "can_edit_letan_leave_policy": is_admin,
             "can_edit_department_rules": is_admin,
         }
 
@@ -894,6 +915,84 @@ def install_rules_routes(
             if tx.is_active:
                 tx.rollback()
             raise HTTPException(500, f"Không thể áp dụng nội quy tự phục vụ: {type(exc).__name__}: {exc}") from exc
+        finally:
+            conn.close()
+
+    @app.put("/v2/rules/letan-leave-policy")
+    def save_letan_leave_policy(
+        body: LetanLeavePolicyUpdate,
+        ident: identity_type = Depends(current_identity),
+    ):
+        if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được thay đổi nội quy sửa/xóa đăng ký của Lễ tân.")
+        raw_value = {
+            "enabled": body.enabled,
+            "groups": [group.model_dump() for group in body.groups],
+        }
+        value = normalize_letan_leave_policy(raw_value)
+        if len(value["groups"]) != 5 or any(len(group["reasons"]) != 3 for group in value["groups"]):
+            raise HTTPException(400, "Phải có đúng 5 nhóm, mỗi nhóm gồm 3 Lý do nghỉ riêng biệt.")
+        conn = engine_instance().connect()
+        tx = conn.begin()
+        try:
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:web-v2:letan-leave-policy'))"))
+            require_feature(conn, ident, "official_rules_edit")
+            current = conn.execute(text("""
+                SELECT revision FROM vera_app_setting
+                WHERE category=:category AND setting_key=:setting_key
+                FOR UPDATE
+            """), {
+                "category": LETAN_LEAVE_POLICY_CATEGORY,
+                "setting_key": LETAN_LEAVE_POLICY_KEY,
+            }).scalar_one_or_none()
+            current_revision = int(current or 0)
+            if current_revision != body.expected_revision:
+                raise HTTPException(
+                    409,
+                    "Nội quy sửa/xóa của Lễ tân đã được cập nhật. Hãy bấm Làm mới trước khi áp dụng lại.",
+                )
+            params = {
+                "category": LETAN_LEAVE_POLICY_CATEGORY,
+                "setting_key": LETAN_LEAVE_POLICY_KEY,
+                "value_json": json.dumps(value, ensure_ascii=False),
+                "updated_by": ident.employee_username,
+            }
+            if current is None:
+                saved = conn.execute(text("""
+                    INSERT INTO vera_app_setting(
+                        category, setting_key, value_json, source, updated_by,
+                        revision, created_at, updated_at
+                    ) VALUES (
+                        :category, :setting_key, CAST(:value_json AS jsonb),
+                        'web_v2_rules', :updated_by, 1, now(), now()
+                    ) RETURNING revision, updated_at
+                """), params).mappings().one()
+            else:
+                saved = conn.execute(text("""
+                    UPDATE vera_app_setting
+                    SET value_json=CAST(:value_json AS jsonb), source='web_v2_rules',
+                        updated_by=:updated_by, revision=revision + 1, updated_at=now()
+                    WHERE category=:category AND setting_key=:setting_key
+                    RETURNING revision, updated_at
+                """), params).mappings().one()
+            tx.commit()
+            state = "kích hoạt" if value["enabled"] else "tạm ngưng"
+            return {
+                "ok": True,
+                "message": f"Đã {state} và áp dụng nội quy sửa/xóa đăng ký của Lễ tân.",
+                **value,
+                "revision": int(saved["revision"]),
+                "updated_at": saved["updated_at"].isoformat(),
+                "updated_by": ident.employee_username,
+            }
+        except HTTPException:
+            if tx.is_active:
+                tx.rollback()
+            raise
+        except Exception as exc:
+            if tx.is_active:
+                tx.rollback()
+            raise HTTPException(500, f"Không thể áp dụng nội quy Lễ tân: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
 

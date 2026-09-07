@@ -21,7 +21,8 @@ def test_manager_and_frontdesk_share_same_day_special_group_ui_rules():
 
     assert "new Set(['letan', 'quanly'])" in source
     assert "EDITOR_ROLES.has(roleKey)" in source
-    assert "recordDate === today && letanReasonGroup(currentReason)" in source
+    assert "recordDate === today && letanLeavePolicy?.enabled !== false" in source
+    assert "letanReasonGroup(currentReason, letanGroups)" in source
 
 
 def test_employee_toolbar_uses_real_react_selects_and_current_search_input():

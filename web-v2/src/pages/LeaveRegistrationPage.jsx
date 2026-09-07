@@ -111,6 +111,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [employeeSelfServicePolicy, setEmployeeSelfServicePolicy] = useState({
     enabled: true, regular_notice_days: 3, unpaid_notice_days: 1,
   })
+  const [letanLeavePolicy, setLetanLeavePolicy] = useState({ enabled: true })
   const [employees, setEmployees] = useState([])
   const [selectedUids, setSelectedUids] = useState([])
   const [reasonDrafts, setReasonDrafts] = useState({})
@@ -152,6 +153,7 @@ export default function LeaveRegistrationPage({ user }) {
     today: today(),
     isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
     employeeSelfServicePolicy,
+    letanLeavePolicy,
   })
   const canDeleteRecord = (item) => canDeleteLeaveRecord({
     role,
@@ -162,6 +164,7 @@ export default function LeaveRegistrationPage({ user }) {
     today: today(),
     isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
     employeeSelfServicePolicy,
+    letanLeavePolicy,
   })
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
@@ -220,6 +223,13 @@ export default function LeaveRegistrationPage({ user }) {
           enabled: reasonData.employee_self_service_policy?.enabled !== false,
           regular_notice_days: Number(reasonData.employee_self_service_policy?.regular_notice_days ?? 3),
           unpaid_notice_days: Number(reasonData.employee_self_service_policy?.unpaid_notice_days ?? 1),
+        })
+        setLetanLeavePolicy({
+          enabled: reasonData.letan_leave_policy?.enabled !== false,
+          groups: (reasonData.letan_leave_policy?.groups || []).map((group) => ({
+            ...group,
+            reasons: [...(group.reasons || [])],
+          })),
         })
         setEmployees(employeeData.employees || [])
       } else {
@@ -323,14 +333,14 @@ export default function LeaveRegistrationPage({ user }) {
   })
 
   const reasonOptionsForRecord = (item) => {
-    const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today())
+    const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
     if (!group) return reasons
     return group.map((name) => reasons.find((reason) => normalizeSearch(reason.name) === normalizeSearch(name)) || ({ name }))
   }
 
   const reasonValueForRecord = (item) => {
     if (reasonDrafts[item.record_uid]) return reasonDrafts[item.record_uid]
-    const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today())
+    const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
     if (!group) return item.leave_reason
     return group.find((reason) => normalizeSearch(reason) === normalizeSearch(item.leave_reason)) || group[2]
   }
@@ -1016,7 +1026,7 @@ export default function LeaveRegistrationPage({ user }) {
                     <td className="reason-edit-cell">
                       {canEditRecord(item) && item.leave_date === date ? (
                         <select value={reasonValueForRecord(item)} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing}>
-                          {!letanReasonChoices(role, item.leave_date, item.leave_reason, today()) && !reasons.some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
+                          {!letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && !reasons.some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
                           {reasonOptionsForRecord(item).map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
                         </select>
                       ) : <span title={canEditRecord(item) ? 'Chọn ngày ở cột Ngày để sửa lý do.' : undefined}>{item.leave_reason}</span>}
