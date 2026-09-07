@@ -24,7 +24,7 @@ import vera_web_v2_snapshot as snapshot
 from vera_attendance_rules import apply_break_restriction
 
 
-RELEASE = "attendance-date-key-query-2026-09-07-v3-active-roster"
+RELEASE = "attendance-date-key-query-2026-09-07-v4-role-department"
 
 ROLE_DEPARTMENT = {
     "nhanvien": "Nhân viên + Leader",
@@ -175,15 +175,10 @@ def _placeholder_record(
 
     if schedule:
         scheduled_shift = str(schedule.get("shift_code") or "").strip()
-        scheduled_department = str(schedule.get("department") or "").strip().lower()
         if scheduled_shift:
             shift_name = scheduled_shift
         shift_start = str(schedule.get("start_time") or shift_start or "").strip()
         shift_end = str(schedule.get("end_time") or shift_end or "").strip()
-        if scheduled_department:
-            department = ROLE_DEPARTMENT.get(scheduled_department, {
-                "quanly": "Quản lý", "letan": "Lễ tân", "locker": "Locker", "tapvu": "Tạp vụ",
-            }.get(scheduled_department, department))
         if v42._norm(scheduled_shift) == "nghi":
             attendance_expected = False
             attendance_note = "Nghỉ theo Lịch làm việc"
@@ -295,6 +290,7 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
     definitions, break_config = snapshot._shift_break_settings(conn)
     aliases, roles = v42._eligible_aliases(conn)
     datasets = _datasets(conn, start, end)
+    schedules = _schedule_map(conn, start, end)
 
     grouped: dict[tuple[date, str], dict[str, Any]] = defaultdict(
         lambda: {"rows": [], "punches": []}
@@ -349,8 +345,26 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
         base["date"] = work_day.strftime("%d/%m/%Y")
         base["employee_name"] = employee
         base["employee_role"] = roles.get(v42._norm(employee), "")
-        if not str(base.get("break_department") or "").strip():
-            base["break_department"] = ROLE_DEPARTMENT.get(base["employee_role"], base["employee_role"] or "Khác")
+
+        # Employee role in PostgreSQL is the authoritative department source.
+        # TimeSoft WorkTimeName can point at an old/legacy shift definition and
+        # must never reclassify a Locker/Lễ tân/etc. as Nhân viên + Leader.
+        role = str(base.get("employee_role") or "").strip().lower()
+        base["break_department"] = ROLE_DEPARTMENT.get(role, role or "Khác")
+        if role in {"quanly", "letan", "locker", "tapvu", "admin"}:
+            base["break_enabled"] = False
+            base["break_planned_minutes"] = 0
+
+        # For departments managed by the daily schedule, use that schedule for
+        # shift/time display while preserving TimeSoft as the punch source.
+        schedule = schedules.get((work_day, v42._norm(employee)))
+        if schedule:
+            scheduled_shift = str(schedule.get("shift_code") or "").strip()
+            if scheduled_shift and v42._norm(scheduled_shift) != "nghi":
+                base["shift"] = scheduled_shift
+                base["shift_start"] = str(schedule.get("start_time") or base.get("shift_start") or "").strip()
+                base["shift_end"] = str(schedule.get("end_time") or base.get("shift_end") or "").strip()
+
         raw_code = v42._first(representative, v42.CODE_ALIASES)
         if raw_code:
             base["employee_code"] = str(raw_code).strip()
