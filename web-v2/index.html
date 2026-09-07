@@ -13,6 +13,114 @@
     <link rel="icon" href="/Vera-Spa/icons/vera-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/Vera-Spa/icons/vera-icon-180.png" />
     <title>VERA SPA</title>
+    <style>
+      /* Keep the global header compact and stable on both desktop and mobile. */
+      .topbar {
+        min-width: 0;
+      }
+      .topbar > div:not(.topbar-actions) {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .topbar-title.vera-script-tagline {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .topbar-actions {
+        flex: 0 0 auto;
+      }
+
+      @media (min-width: 701px) {
+        .topbar {
+          padding-left: clamp(18px, 2.2vw, 32px) !important;
+          padding-right: clamp(18px, 2.2vw, 32px) !important;
+          gap: 12px !important;
+        }
+        .topbar-title.vera-script-tagline {
+          font-size: clamp(23px, 2vw, 28px) !important;
+        }
+        .topbar-actions {
+          gap: 7px !important;
+        }
+      }
+
+      @media (max-width: 700px) {
+        .topbar {
+          height: auto !important;
+          min-height: 66px;
+          padding: 8px 10px !important;
+          gap: 8px !important;
+          display: grid !important;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          align-items: center;
+        }
+        .topbar > div:not(.topbar-actions) {
+          min-width: 0;
+          width: 100%;
+          overflow: hidden;
+        }
+        .topbar-kicker {
+          font-size: 8px !important;
+          letter-spacing: .13em !important;
+          line-height: 1.1;
+        }
+        /* 28px -> 19.6px: reduce the mobile tagline rendered length by about 30%. */
+        .topbar-title.vera-script-tagline {
+          width: 100%;
+          font-size: 19.6px !important;
+          line-height: 1.05 !important;
+          letter-spacing: 0 !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis;
+        }
+        .topbar .mobile-menu,
+        .topbar .standalone-menu-toggle {
+          flex: 0 0 auto;
+          margin: 0 !important;
+        }
+        .topbar-actions {
+          min-width: 0;
+          margin-left: 0 !important;
+          gap: 5px !important;
+          justify-self: end;
+        }
+        .topbar-actions .topbar-refresh-button {
+          min-height: 38px;
+          padding: 7px 9px !important;
+          font-size: 10px !important;
+          gap: 4px !important;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .topbar {
+          min-height: 64px;
+          padding: 7px 8px !important;
+          gap: 7px !important;
+        }
+        .topbar-title.vera-script-tagline {
+          font-size: 19.6px !important;
+        }
+        /* On phone widths keep both actions accessible without squeezing the brand. */
+        .topbar-actions .topbar-refresh-button {
+          width: 38px;
+          height: 38px;
+          min-width: 38px;
+          min-height: 38px;
+          padding: 0 !important;
+          font-size: 0 !important;
+          gap: 0 !important;
+          border-radius: 12px !important;
+        }
+        .topbar-actions .topbar-refresh-button svg {
+          width: 18px;
+          height: 18px;
+        }
+      }
+    </style>
     <script>
       (() => {
         const pageTitles = {
