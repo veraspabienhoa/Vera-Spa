@@ -54,14 +54,42 @@ function refreshMissingProfileFields() {
   })
 }
 
+const parseMissingFromTitle = (element) => {
+  const title = normalizeText(element?.getAttribute('title'))
+  if (!title.startsWith('Hồ sơ còn thiếu:')) return []
+  return title
+    .slice('Hồ sơ còn thiếu:'.length)
+    .split(',')
+    .map((item) => normalizeText(item))
+    .filter((item) => item && item !== 'Quận/Huyện')
+}
+
+function refreshMissingBadges() {
+  document.querySelectorAll('.staff-table tbody tr, .staff-mobile-card').forEach((item) => {
+    const badge = item.querySelector('.staff-incomplete-badge')
+    if (!badge) return
+    const missing = parseMissingFromTitle(item)
+    if (!missing.length) {
+      badge.hidden = true
+      item.classList.remove('staff-incomplete-row', 'incomplete')
+      return
+    }
+    badge.hidden = false
+    badge.textContent = `Thiếu: ${missing.join(', ')}`
+    badge.title = `Hồ sơ còn thiếu: ${missing.join(', ')}`
+    item.setAttribute('title', badge.title)
+  })
+}
+
 function ensureStyles() {
   if (document.getElementById('vera-profile-ux-style')) return
   const style = document.createElement('style')
   style.id = 'vera-profile-ux-style'
   style.textContent = `
-    .vera-profile-field-missing{padding:8px;border:1px solid #e6b84d!important;border-radius:10px;background:#fff4c9!important;color:#6e4d00!important;box-shadow:0 0 0 2px rgba(230,184,77,.10)}
-    .vera-profile-field-missing input,.vera-profile-field-missing select,.vera-profile-field-missing textarea{border-color:#d8a62d!important;background:#fffdf2!important}
-    .vera-profile-field-missing::after{content:'Còn thiếu thông tin';font-size:10px;font-weight:900;color:#9a6200;letter-spacing:.01em}
+    .vera-profile-field-missing{padding:8px;border:2px solid #e1a51f!important;border-radius:10px;background:#fff0b3!important;color:#6e4d00!important;box-shadow:0 0 0 3px rgba(225,165,31,.12)}
+    .vera-profile-field-missing input,.vera-profile-field-missing select,.vera-profile-field-missing textarea{border:2px solid #d89a12!important;background:#fff9df!important;box-shadow:0 0 0 2px rgba(216,154,18,.10)!important}
+    .vera-profile-field-missing::after{content:'Thiếu: ' attr(data-missing-profile-field);font-size:10px;font-weight:900;color:#9a6200;letter-spacing:.01em}
+    .staff-incomplete-badge{display:block!important;max-width:280px;margin-top:3px;white-space:normal;line-height:1.25;background:#ffe59a!important;color:#6f4b00!important;border:1px solid #e2b13a;border-radius:6px;padding:2px 5px;font-size:10px;font-weight:900}
     .employee-id-preview[data-vera-cccd-clickable="true"]{cursor:zoom-in;position:relative;outline:1px dashed rgba(21,74,54,.25);outline-offset:-4px}
     .employee-id-preview[data-vera-cccd-clickable="true"]::after{content:'Bấm ảnh để xem lớn';position:absolute;right:7px;bottom:7px;padding:4px 7px;border-radius:999px;background:rgba(8,31,23,.78);color:#fff;font-size:10px;font-weight:800;pointer-events:none}
     .vera-cccd-viewer{position:fixed;inset:0;z-index:12000;background:rgba(5,18,14,.88);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -69,7 +97,7 @@ function ensureStyles() {
     .vera-cccd-viewer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.vera-cccd-viewer-head h3{margin:0;font-size:16px}.vera-cccd-viewer-close{border:1px solid #d6dfdb;background:#fff;border-radius:9px;padding:8px 12px;font-weight:800;cursor:pointer}
     .vera-cccd-viewer-image{min-height:260px;max-height:72vh;border-radius:13px;background:#101815;display:flex;align-items:center;justify-content:center;overflow:hidden}.vera-cccd-viewer-image img{display:block;max-width:100%;max-height:72vh;width:auto;height:auto;object-fit:contain}
     .vera-cccd-viewer-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.vera-cccd-viewer-actions button{min-height:36px;border:1px solid #ccd8d2;border-radius:9px;background:#fff;padding:7px 11px;font-weight:800;cursor:pointer}.vera-cccd-viewer-actions button.danger{border-color:#e6b4ae;color:#a62a20;background:#fff5f4}
-    @media(max-width:700px){.vera-profile-field-missing{padding:7px}.vera-cccd-viewer{padding:6px}.vera-cccd-viewer-card{padding:10px;border-radius:13px}.vera-cccd-viewer-image{min-height:180px}.vera-cccd-viewer-actions{display:grid;grid-template-columns:1fr 1fr}.vera-cccd-viewer-actions button{width:100%}}
+    @media(max-width:700px){.vera-profile-field-missing{padding:7px}.staff-incomplete-badge{max-width:100%}.vera-cccd-viewer{padding:6px}.vera-cccd-viewer-card{padding:10px;border-radius:13px}.vera-cccd-viewer-image{min-height:180px}.vera-cccd-viewer-actions{display:grid;grid-template-columns:1fr 1fr}.vera-cccd-viewer-actions button{width:100%}}
   `
   document.head.appendChild(style)
 }
@@ -159,6 +187,7 @@ function refresh() {
   window.requestAnimationFrame(() => {
     scheduled = false
     refreshMissingProfileFields()
+    refreshMissingBadges()
     refreshCccdCards()
   })
 }
