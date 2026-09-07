@@ -28,6 +28,7 @@ def test_room_is_not_available_when_any_slot_is_doing_or_waiting():
     assert result["occupied"] == ["1", "2"]
     assert result["available"] == ["3", "4"]
     assert result["available_count"] == 2
+    assert result["customer_counts"] == {"1": 1, "2": 1, "3": 0, "4": 0}
 
     workbook.close()
 
@@ -106,7 +107,8 @@ def test_desktop_employee_header_stays_fixed_without_vertical_table_scroll():
     source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
 
     assert "--tour-table-head-offset" in source
-    assert "stickyRect.bottom + 4 - tableRect.top" in source
+    assert "headerTop - tableRect.top" in source
+    assert "mobile ? Math.max(0, topbarBottom)" in source
     assert "ref={recordsTableRef}" in source
     assert ".tour-records-panel .tour-table{max-height:none" in source
 

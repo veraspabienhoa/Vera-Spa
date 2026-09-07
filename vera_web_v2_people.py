@@ -69,6 +69,7 @@ def _clean_cell(value: Any) -> Any:
 
 def _room_snapshot(sheet) -> dict[str, Any]:
     occupancy: dict[str, bool] = {}
+    customer_counts: dict[str, int] = {}
     for values in sheet.iter_rows(min_row=3, max_col=7, values_only=True):
         room_value = _clean_cell(values[2] if len(values) > 2 else "")
         room = str(room_value).strip()
@@ -77,6 +78,7 @@ def _room_snapshot(sheet) -> dict[str, Any]:
         status = _token(values[5] if len(values) > 5 else "")
         occupied = status in {"dang thuc hien", "dang cho"}
         occupancy[room] = occupancy.get(room, False) or occupied
+        customer_counts[room] = customer_counts.get(room, 0) + int(occupied)
     available = [room for room, occupied in occupancy.items() if not occupied]
     occupied = [room for room, is_occupied in occupancy.items() if is_occupied]
     return {
@@ -86,6 +88,7 @@ def _room_snapshot(sheet) -> dict[str, Any]:
         "total_count": len(occupancy),
         "available_count": len(available),
         "occupied_count": len(occupied),
+        "customer_counts": customer_counts,
         "source_sheet": "Room",
     }
 

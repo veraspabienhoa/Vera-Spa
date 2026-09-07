@@ -347,14 +347,17 @@ export default function TourPage({ user }) {
       frame = window.requestAnimationFrame(() => {
         const table = recordsTableRef.current
         const stickyTop = stickyTopRef.current
-        if (!table || !stickyTop || window.matchMedia('(max-width: 640px)').matches) {
+        if (!table || !stickyTop) {
           table?.style.removeProperty('--tour-table-head-offset')
           return
         }
         const tableRect = table.getBoundingClientRect()
         const stickyRect = stickyTop.getBoundingClientRect()
         const headerHeight = table.querySelector('thead')?.getBoundingClientRect().height || 0
-        const requestedOffset = Math.max(0, stickyRect.bottom + 4 - tableRect.top)
+        const mobile = window.matchMedia('(max-width: 640px)').matches
+        const topbarBottom = document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0
+        const headerTop = mobile ? Math.max(0, topbarBottom) : Math.max(topbarBottom, stickyRect.bottom + 4)
+        const requestedOffset = Math.max(0, headerTop - tableRect.top)
         const maximumOffset = Math.max(0, tableRect.height - headerHeight)
         table.style.setProperty(
           '--tour-table-head-offset',
@@ -467,6 +470,7 @@ export default function TourPage({ user }) {
       @keyframes tour-room-search-pulse{0%,100%{filter:brightness(1);transform:scale(1);box-shadow:0 0 0 2px #ee3f62,0 2px 6px rgba(28,52,42,.08)}50%{filter:brightness(1.13);transform:scale(1.025);background:#55f0cf;box-shadow:0 0 0 4px #ffd54a,0 7px 15px rgba(238,63,98,.34)}}.tour-room-card.search-match{position:relative;z-index:3;animation:tour-room-search-pulse .8s ease-in-out infinite}
       .tour-room-card.state-green{background:var(--tour-row-green)}.tour-room-card.state-yellow{background:var(--tour-row-yellow)}.tour-room-card.state-red{background:var(--tour-row-red)}.tour-room-card.state-break{background:var(--tour-row-break)}.tour-room-card.state-waiting{color:#3f245d;background:var(--tour-row-waiting)}.tour-room-card.state-idle{background:var(--tour-row-idle)}.tour-room-card.state-leave,.tour-room-card.state-work,.tour-room-card.state-default,.tour-room-card.state-blank{background:#fff}.tour-room-card.state-leave{color:#a6a6a6}
       .tour-room-card-head{display:flex;align-items:center;justify-content:space-between;gap:3px}.tour-room-card-head strong{min-width:0;font-size:9px;font-weight:950}.tour-room-type{border-radius:999px;padding:1px 4px;color:#fff;background:var(--room-segment);font-size:5px;font-weight:950;letter-spacing:.04em}.tour-room-countdown{display:flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums;font-size:10px;font-weight:950;white-space:nowrap}.tour-room-countdown svg{width:11px;height:11px;flex:0 0 auto}.tour-room-meta{min-height:8px;overflow:hidden;font-size:6px;font-weight:800;text-overflow:ellipsis;white-space:nowrap;opacity:.8}.tour-room-private-badge{position:absolute;right:4px;bottom:4px;width:21px;height:21px;display:grid;place-items:center;border:2px solid #fff;border-radius:50%;color:#fff;background:#e30057;box-shadow:0 0 0 2px #ffd447,0 4px 10px rgba(167,0,60,.38);font-size:9px;font-weight:950;line-height:1;letter-spacing:-.02em}
+      .tour-room-customer-count{color:#c52222;white-space:nowrap}
       .tour-room-empty{grid-column:1/-1;padding:6px;color:#5d7168;font-size:9px;text-align:center}
       .tour-room-detail{margin-top:5px;padding:6px;border:1px solid #d9e2dd;border-radius:8px;background:#fff}.tour-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.tour-room-detail-head strong{font-size:10px}.tour-room-detail-head small{color:#68776f;font-size:7px;font-weight:800}.tour-room-detail-list{display:grid;gap:3px}.tour-room-detail-row{min-width:0;display:grid;grid-template-columns:minmax(90px,.55fr) minmax(120px,1fr);gap:8px;padding:4px 6px;border-radius:6px;background:#f3f6f4;font-size:8px}.tour-room-detail-row strong,.tour-room-detail-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tour-room-detail-row span{color:#55665e}.tour-room-detail-empty{padding:4px;color:#68776f;font-size:8px}
       .tour-legend{padding:9px}.tour-legend .panel-title-row{margin-bottom:5px}.tour-legend .panel-title-row h2{font-size:14px}.tour-legend .panel-title-row p{font-size:9px}.tour-legend-grid{gap:4px}.tour-legend-grid span{padding:4px 7px;font-size:8px}
@@ -531,7 +535,7 @@ export default function TourPage({ user }) {
             const status = cellValue(record, statusColumn)
             const hasPrivateService = records.some((item) => isPrivateService(cellValue(item, serviceColumn)))
             return <button type="button" className={`tour-room-card ${isVipRoom(room) ? 'vip' : 'standard'} state-${state} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
-              <div className="tour-room-card-head"><strong>{roomLabel(room)}</strong><span className="tour-room-type">{isVipRoom(room) ? 'VIP' : 'STANDARD'}</span></div>
+              <div className="tour-room-card-head"><strong>{roomLabel(room)} <span className="tour-room-customer-count">- {data.rooms?.customer_counts?.[room] ?? records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{isVipRoom(room) ? 'VIP' : 'STANDARD'}</span></div>
               <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
               <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
               {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
