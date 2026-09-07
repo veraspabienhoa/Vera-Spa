@@ -1,7 +1,13 @@
-"""Lễ tân/Quản lý leave-edit/delete guard for VERA SPA Web V2.
+"""Admin + Lễ tân/Quản lý leave-operation policy for VERA SPA Web V2.
 
-Business rule (restored from the 2026-08-29 guard and applied equally to
-``letan`` and ``quanly``):
+Admin:
+- Admin is never blocked by leave-policy rules when adding, editing or deleting
+  leave records. Data-integrity requirements (valid employee/record/catalog
+  values required to persist a row) remain, but notice periods, quotas,
+  duplicate/same-day locks, cancellation timing and role/day rules do not block
+  Admin.
+
+Lễ tân / Quản lý (restored from the 2026-08-29 guard):
 - Records before today cannot be edited or deleted.
 - For records dated today whose current reason belongs to one of the five
   explicitly approved groups below, the editor cannot delete the row and may
@@ -11,18 +17,21 @@ Business rule (restored from the 2026-08-29 guard and applied equally to
 - Future-dated records continue through the existing canonical permission and
   cancellation rules unchanged.
 
-Admin is intentionally not handled by this guard. The canonical Admin path
-remains unrestricted by these editor-role locks.
+The edit/delete guard patches the canonical server-side helpers, so direct API,
+Admin archive wrappers and storage-side deletion use the same boundary. The
+Admin create/update validator is patched at the shared Web V2 validation layer,
+so every route using ``_validate_and_prepare`` receives the same Admin bypass.
 """
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
 
+import pandas as pd
 from fastapi import HTTPException
 
 
-RELEASE = "operations-leave-guard-2026-09-07-v3"
+RELEASE = "operations-leave-guard-2026-09-07-v4"
 EDITOR_ROLES = {
     "letan": "Lễ tân",
     "quanly": "Quản lý",
@@ -93,9 +102,70 @@ def _reason_group(reason: Any, norm) -> str:
     return ""
 
 
+def _install_admin_unrestricted_validator() -> None:
+    """Remove leave-policy locks for Admin across all shared Web V2 write routes."""
+    import vera_web_v2_api_shared as shared_api
+
+    if getattr(shared_api, "_admin_leave_unrestricted_installed", False):
+        return
+
+    original_validator = shared_api.validate_leave_registration_request_live
+
+    def admin_unrestricted_validator(payload, live_df, credentials_df, runtime):
+        role = str(payload.get("role", "") or "").strip().lower()
+        if role != "admin":
+            return original_validator(payload, live_df, credentials_df, runtime)
+
+        # Admin bypasses every Nội quy/registration restriction. We still
+        # calculate the informational monthly accumulation from historical data
+        # so persisted rows and statistics remain coherent.
+        accumulated_month = 0.0
+        try:
+            source = live_df.copy() if isinstance(live_df, pd.DataFrame) else pd.DataFrame()
+            quota_rows = runtime.get("leave_rows_counting_toward_quota")
+            normalize_name = runtime.get("normalize_login_name")
+            start_date = payload.get("start_date")
+            employee = str(payload.get("employee", "") or "").strip()
+            if callable(quota_rows):
+                source = quota_rows(source)
+            if (
+                isinstance(source, pd.DataFrame)
+                and not source.empty
+                and callable(normalize_name)
+                and {"Ngày", "Tên nhân viên"}.issubset(source.columns)
+                and start_date is not None
+            ):
+                dates = pd.to_datetime(source["Ngày"], errors="coerce", dayfirst=True)
+                names = source["Tên nhân viên"].astype(str).apply(normalize_name)
+                mask = (
+                    names.eq(normalize_name(employee))
+                    & dates.dt.month.eq(start_date.month)
+                    & dates.dt.year.eq(start_date.year)
+                )
+                days = pd.to_numeric(source.loc[mask].get("Số ngày tính", 0), errors="coerce").fillna(0.0)
+                accumulated_month = float(days.sum())
+        except Exception:
+            # Accumulation is display/accounting metadata only; it must never
+            # become a new policy lock on an Admin write.
+            accumulated_month = 0.0
+
+        return {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "accumulated_month": accumulated_month,
+            "admin_unrestricted": True,
+        }
+
+    shared_api.validate_leave_registration_request_live = admin_unrestricted_validator
+    shared_api._admin_leave_unrestricted_installed = True
+
+
 def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
     if getattr(app.state, "letan_leave_guard_installed", False):
         return
+
+    _install_admin_unrestricted_validator()
 
     original_edit = api_module._validate_edit_permission
     original_delete = api_module._validate_delete_permission
@@ -104,6 +174,8 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
     def validate_edit_permission(conn, row: dict, new_reason: str, ident):
         role = _role(ident)
         if role not in EDITOR_ROLES:
+            # Includes Admin: the canonical helper already bypasses role/day/
+            # timing restrictions for Admin before consulting the catalog rule.
             return original_edit(conn, row, new_reason, ident)
 
         label = _role_label(role)
@@ -134,10 +206,9 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
                 )
 
             # Explicit same-day/same-group exception restored from the original
-            # Lễ tân rule. The replacement reason must still exist in Nội quy,
-            # but editor-role/day/timing checks do not block switching among
-            # the three reasons of the same group. Remaining canonical update
-            # validation (duplicates, quotas, employee and persistence) stays on.
+            # Lễ tân rule and now shared with Quản lý. The replacement reason
+            # must exist in Nội quy, but editor-role/day/timing checks do not
+            # block switching among the three reasons of the same group.
             item = api_module._reason_item(conn, new_reason)
             return item, True
 
@@ -148,6 +219,7 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
     def validate_delete_permission(conn, row: dict, ident) -> None:
         role = _role(ident)
         if role not in EDITOR_ROLES:
+            # Includes Admin: canonical delete already returns immediately.
             return original_delete(conn, row, ident)
 
         label = _role_label(role)
@@ -178,6 +250,7 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
         return {
             "ok": True,
             "release": RELEASE,
+            "admin": "unrestricted_leave_add_edit_delete",
             "managed_roles": sorted(EDITOR_ROLES),
             "today_special_scope": "groups_1_to_5_only",
             "other_today_reasons": "canonical_edit_delete",
