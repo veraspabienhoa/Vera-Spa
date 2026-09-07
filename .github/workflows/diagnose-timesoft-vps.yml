@@ -26,12 +26,9 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Diagnose TimeSoft and attendance cache
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
+      - name: Build diagnostic script
         run: |
-          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python - "$pid" "$release_dir" <<'"'"'PY'"'"'
+          cat > /tmp/vera_timesoft_diag.py <<'PY'
           import os, re, sys, traceback
           from urllib.parse import urljoin
           import requests
@@ -64,18 +61,20 @@ jobs:
               print("public_report_get=", r.status_code, r.url, r.headers.get("content-type", ""), len(r.content))
               text = r.text[:500000]
               print("login_has_ValidateUser=", "ValidateUser" in text)
-              forms = re.findall(r"<form[^>]+action=[\"']([^\"']+)", text, flags=re.I)
+              forms = re.findall(r'<form[^>]+action=["\']([^"\']+)', text, flags=re.I)
               print("login_form_actions=", forms[:10])
-              scripts = re.findall(r"<script[^>]+src=[\"']([^\"']+)", text, flags=re.I)
+              scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)', text, flags=re.I)
               print("login_scripts=", scripts[-20:])
               for src in scripts[-20:]:
                   try:
                       js_url = urljoin(r.url, src)
                       js = requests.get(js_url, timeout=15).text
                       if "ValidateUser" in js or "validateUser" in js:
-                          pos = max(js.find("ValidateUser"), js.find("validateUser"))
+                          pos = js.find("ValidateUser")
+                          if pos < 0:
+                              pos = js.find("validateUser")
                           print("validate_user_script=", js_url)
-                          print("validate_user_context=", re.sub(r"\\s+", " ", js[max(0,pos-700):pos+1400])[:2100])
+                          print("validate_user_context=", re.sub(r"\s+", " ", js[max(0,pos-700):pos+1400])[:2100])
                   except Exception as exc:
                       print("script_probe_error=", type(exc).__name__, str(exc)[:180])
           except Exception as exc:
@@ -83,8 +82,8 @@ jobs:
 
           try:
               with vpg.get_engine().connect() as conn:
-                  from sqlalchemy import text
-                  rows = conn.execute(text("""
+                  from sqlalchemy import text as sql_text
+                  rows = conn.execute(sql_text("""
                       SELECT dataset_key, source_version, updated_at,
                              CASE WHEN jsonb_typeof(payload)='array' THEN jsonb_array_length(payload) ELSE NULL END AS row_count
                       FROM vera_dataset_cache
@@ -116,4 +115,13 @@ jobs:
           except Exception as exc:
               print("authenticated_session_or_fetch=ERROR", type(exc).__name__, str(exc)[:1500])
               traceback.print_exc(limit=3)
-          PY'
+          PY
+
+      - name: Diagnose TimeSoft and attendance cache
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          scp -i ~/.ssh/id_ed25519 /tmp/vera_timesoft_diag.py "${VPS_USER}@${VPS_HOST}:/tmp/vera_timesoft_diag.py"
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python /tmp/vera_timesoft_diag.py "$pid" "$release_dir"; rm -f /tmp/vera_timesoft_diag.py'
