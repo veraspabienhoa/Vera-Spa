@@ -115,7 +115,7 @@ async function copyPlainText(value) {
       await navigator.clipboard.writeText(text)
       return true
     }
-  } catch (_) {
+  } catch {
     // Fall back to the legacy copy path below (Safari/private browsing can deny clipboard access).
   }
   const textarea = document.createElement('textarea')
@@ -125,7 +125,7 @@ async function copyPlainText(value) {
   document.body.appendChild(textarea)
   textarea.select()
   let copied = false
-  try { copied = document.execCommand('copy') } catch (_) { copied = false }
+  try { copied = document.execCommand('copy') } catch { copied = false }
   textarea.remove()
   return copied
 }
