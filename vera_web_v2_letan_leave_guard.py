@@ -6,6 +6,8 @@ Admin:
   values required to persist a row) remain, but notice periods, quotas,
   duplicate/same-day locks, cancellation timing and role/day rules do not block
   Admin.
+- The Admin reason selector exposes the complete Nội quy reason catalog for any
+  selected date; allowed-role and allowed-day filters are not applied to Admin.
 
 Lễ tân / Quản lý (restored from the 2026-08-29 guard):
 - Records before today cannot be edited or deleted.
@@ -31,7 +33,7 @@ import pandas as pd
 from fastapi import HTTPException
 
 
-RELEASE = "operations-leave-guard-2026-09-07-v4"
+RELEASE = "operations-leave-guard-2026-09-07-v5"
 EDITOR_ROLES = {
     "letan": "Lễ tân",
     "quanly": "Quản lý",
@@ -142,8 +144,10 @@ def _install_admin_unrestricted_validator() -> None:
                     & dates.dt.month.eq(start_date.month)
                     & dates.dt.year.eq(start_date.year)
                 )
-                days = pd.to_numeric(source.loc[mask].get("Số ngày tính", 0), errors="coerce").fillna(0.0)
-                accumulated_month = float(days.sum())
+                days = pd.to_numeric(source.loc[mask].get("Số ngày tính", 0), errors="coerce")
+                if hasattr(days, "fillna"):
+                    days = days.fillna(0.0)
+                    accumulated_month = float(days.sum())
         except Exception:
             # Accumulation is display/accounting metadata only; it must never
             # become a new policy lock on an Admin write.
@@ -161,11 +165,52 @@ def _install_admin_unrestricted_validator() -> None:
     shared_api._admin_leave_unrestricted_installed = True
 
 
+def _install_admin_reason_catalog(app, api_module) -> None:
+    """Make GET /v2/leave/reasons return every catalog reason for Admin."""
+    if getattr(app.state, "admin_leave_reason_catalog_unrestricted", False):
+        return
+
+    for route in getattr(app, "routes", []):
+        if getattr(route, "path", "") != "/v2/leave/reasons" or "GET" not in (getattr(route, "methods", set()) or set()):
+            continue
+        dependant = getattr(route, "dependant", None)
+        original_call = getattr(dependant, "call", None)
+        if not callable(original_call):
+            continue
+
+        def admin_reason_catalog(date_value, ident):
+            if _role(ident) != "admin":
+                return original_call(date_value=date_value, ident=ident)
+
+            with api_module._engine_instance().connect() as conn:
+                api_module._require_feature(conn, ident, "leave")
+                can_view_penalty = api_module._feature_allowed(conn, ident, "employee_penalty_view")
+                output = []
+                for policy_row in api_module._policy_rows(conn):
+                    name = str(api_module._field(policy_row, "Lý do nghỉ", default="") or "").strip()
+                    if not name:
+                        continue
+                    item = api_module._reason_item(conn, name)
+                    output.append({
+                        "name": item["name"],
+                        "days": item["days"],
+                        "penalty": item["penalty"] if can_view_penalty else None,
+                        "requires_manual_penalty": item["requires_manual_penalty"],
+                    })
+            return {"reasons": output}
+
+        route.endpoint = admin_reason_catalog
+        route.dependant.call = admin_reason_catalog
+        app.state.admin_leave_reason_catalog_unrestricted = True
+        return
+
+
 def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
     if getattr(app.state, "letan_leave_guard_installed", False):
         return
 
     _install_admin_unrestricted_validator()
+    _install_admin_reason_catalog(app, api_module)
 
     original_edit = api_module._validate_edit_permission
     original_delete = api_module._validate_delete_permission
@@ -251,6 +296,7 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             "ok": True,
             "release": RELEASE,
             "admin": "unrestricted_leave_add_edit_delete",
+            "admin_reason_catalog": "all_reasons_all_dates",
             "managed_roles": sorted(EDITOR_ROLES),
             "today_special_scope": "groups_1_to_5_only",
             "other_today_reasons": "canonical_edit_delete",
