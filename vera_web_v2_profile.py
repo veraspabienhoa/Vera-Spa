@@ -39,6 +39,10 @@ class ProfileUpdate(BaseModel):
     cccd_issue_place: str = Field(default="", max_length=500)
 
 
+# Official administrative baseline: Decision 19/2025/QD-TTg, effective 01/07/2025,
+# defines 34 province-level units and 3,321 commune-level units. The public
+# machine-readable feed below is refreshed on demand and validated against that
+# baseline before it is exposed to Web V2.
 FALLBACK_PROVINCES = [
     "An Giang", "Bắc Ninh", "Cà Mau", "Cao Bằng", "Cần Thơ", "Đà Nẵng",
     "Đắk Lắk", "Điện Biên", "Đồng Nai", "Đồng Tháp", "Gia Lai", "Hà Nội",
@@ -55,11 +59,17 @@ FALLBACK_BANKS = [
     "Saigonbank", "BVBank", "BaoViet Bank", "PGBank", "GPBank", "Co-opBank",
     "Shinhan Bank Việt Nam", "Woori Bank Việt Nam", "UOB Việt Nam", "CIMB Việt Nam",
 ]
-_reference_cache: dict[str, Any] = {"loaded_at": 0.0, "provinces": [], "banks": [], "wards": {}}
+_reference_cache: dict[str, Any] = {
+    "loaded_at": 0.0,
+    "provinces": [],
+    "banks": [],
+    "wards": {},
+    "last_refresh": "",
+}
 
 
-def _reference_catalogs() -> tuple[list[dict[str, Any]], list[str]]:
-    if _reference_cache["provinces"] and time.monotonic() - float(_reference_cache["loaded_at"]) < 12 * 3600:
+def _reference_catalogs(force: bool = False) -> tuple[list[dict[str, Any]], list[str]]:
+    if not force and _reference_cache["provinces"] and time.monotonic() - float(_reference_cache["loaded_at"]) < 12 * 3600:
         return list(_reference_cache["provinces"]), list(_reference_cache["banks"])
     provinces: list[dict[str, Any]] = []
     banks: list[str] = []
@@ -70,6 +80,10 @@ def _reference_catalogs() -> tuple[list[dict[str, Any]], list[str]]:
             {"code": int(item["code"]), "name": str(item["name"]).strip()}
             for item in response.json() if item.get("code") is not None and str(item.get("name") or "").strip()
         ]
+        # Do not accept stale pre-merger catalogs. Vietnam has 34 province-level
+        # units under Decision 19/2025/QD-TTg.
+        if len(provinces) != 34:
+            raise RuntimeError(f"Danh mục tỉnh/thành không đúng chuẩn 34 đơn vị: {len(provinces)}")
     except Exception:
         provinces = [{"code": -(index + 1), "name": name} for index, name in enumerate(FALLBACK_PROVINCES)]
     try:
@@ -80,15 +94,24 @@ def _reference_catalogs() -> tuple[list[dict[str, Any]], list[str]]:
             for item in (response.json().get("data") or [])
             if str(item.get("shortName") or item.get("name") or "").strip()
         }, key=str.casefold)
+        if not banks:
+            raise RuntimeError("Danh mục ngân hàng trả về rỗng")
     except Exception:
         banks = list(FALLBACK_BANKS)
-    _reference_cache.update({"loaded_at": time.monotonic(), "provinces": provinces, "banks": banks})
+    _reference_cache.update({
+        "loaded_at": time.monotonic(),
+        "provinces": provinces,
+        "banks": banks,
+        "last_refresh": datetime.now().astimezone().isoformat(timespec="seconds"),
+    })
+    if force:
+        _reference_cache["wards"] = {}
     return list(provinces), list(banks)
 
 
-def _wards(province_code: int) -> list[str]:
+def _wards(province_code: int, force: bool = False) -> list[str]:
     cached = _reference_cache["wards"].get(province_code)
-    if cached is not None:
+    if cached is not None and not force:
         return list(cached)
     if province_code < 0:
         return []
@@ -100,7 +123,7 @@ def _wards(province_code: int) -> list[str]:
             for item in (response.json().get("wards") or []) if str(item.get("name") or "").strip()
         }, key=str.casefold)
     except Exception:
-        values = []
+        values = list(cached or [])
     _reference_cache["wards"][province_code] = values
     return list(values)
 
@@ -160,16 +183,21 @@ def install_profile_routes(
     @app.get("/v2/profile/reference-data")
     def profile_reference_data(
         province_code: int | None = Query(default=None),
+        refresh: bool = Query(default=False),
         ident: identity_type = Depends(current_identity),
     ):
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "profile")
-        provinces, banks = _reference_catalogs()
+        provinces, banks = _reference_catalogs(force=refresh)
         return {
             "provinces": provinces,
             "banks": banks,
-            "wards": _wards(province_code) if province_code is not None else [],
+            "wards": _wards(province_code, force=refresh) if province_code is not None else [],
             "province_code": province_code,
+            "refreshed": bool(refresh),
+            "last_refresh": _reference_cache.get("last_refresh") or "",
+            "administrative_standard": "Quyết định 19/2025/QĐ-TTg - 34 tỉnh/thành, 3321 xã/phường/đặc khu",
+            "bank_standard": "Danh mục tổ chức cung ứng dịch vụ thanh toán đang hoạt động; đối chiếu NHNN Việt Nam",
         }
 
     @app.patch("/v2/profile")
