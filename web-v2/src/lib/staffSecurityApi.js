@@ -85,6 +85,16 @@ export const staffSecurityApi = {
     if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
     return payload
   },
+  extractImageText: async (blob) => {
+    const response = await authorizedFetch('/v2/staff/image-text', {
+      method: 'POST',
+      headers: { 'Content-Type': blob.type || 'image/webp' },
+      body: blob,
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+    return payload
+  },
   identityBlob: async (username, side) => {
     const response = await authorizedFetch(`/v2/staff/${encodeURIComponent(username)}/identity/${encodeURIComponent(side)}`)
     if (!response.ok) {
