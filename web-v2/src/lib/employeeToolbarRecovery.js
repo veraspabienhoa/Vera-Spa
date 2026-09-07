@@ -1,19 +1,3 @@
-function forceReactControlValue(control, value) {
-  if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLSelectElement)) return
-  const proto = control instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
-  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
-  if (setter) setter.call(control, value)
-  else control.value = value
-
-  // React tracks controlled form values internally. Make the tracker differ
-  // from the DOM value so the synthetic event is always observed, including
-  // after an imperative enhancer previously changed the element outside React.
-  const tracker = control._valueTracker
-  if (tracker?.setValue) tracker.setValue(`__vera_stale_${Date.now()}__`)
-  control.dispatchEvent(new Event('input', { bubbles: true }))
-  control.dispatchEvent(new Event('change', { bubbles: true }))
-}
-
 function removeToolbarProxy(select) {
   if (!(select instanceof HTMLSelectElement)) return
   const wrapper = select.__veraTypingWrapper
@@ -34,52 +18,19 @@ function restoreToolbar() {
   const toolbar = document.querySelector('.staff-control-panel .staff-toolbar')
   if (!toolbar) return
 
-  toolbar.querySelectorAll('select').forEach((select) => {
-    removeToolbarProxy(select)
-    if (select.dataset.veraToolbarStateSynced === '1') return
-    select.dataset.veraToolbarStateSynced = '1'
-    forceReactControlValue(select, select.value)
-  })
+  toolbar.querySelectorAll('select').forEach(removeToolbarProxy)
 
   const search = toolbar.querySelector('.staff-search input')
-  if (search instanceof HTMLInputElement && search.dataset.veraToolbarStateSynced !== '1') {
-    search.dataset.veraToolbarStateSynced = '1'
-    forceReactControlValue(search, search.value)
-  }
+  if (search instanceof HTMLInputElement) search.dataset.veraToolbarStateSynced = '1'
 }
 
-function hideDuplicateListSearch() {
+function removeDuplicateListSearch() {
   // EmployeePage already owns the canonical search box in the top toolbar.
   // employeeDirectoryUx historically injected a second proxy below the list;
-  // keeping two imperative inputs caused stale closures after refresh. Leave
-  // the node present so the old enhancer does not recreate it, but never expose
-  // or use it as a second source of filter state.
+  // keeping two imperative inputs caused stale closures and could break React
+  // DOM reconciliation while filtering rows.
   const wrapper = document.querySelector('.staff-list-panel .vera-list-name-search')
-  if (!(wrapper instanceof HTMLElement)) return
-  wrapper.hidden = true
-  wrapper.setAttribute('aria-hidden', 'true')
-  wrapper.style.setProperty('display', 'none', 'important')
-}
-
-function resyncToolbarAfterNativeChange(event) {
-  const target = event.target
-  if (!(target instanceof HTMLSelectElement) && !(target instanceof HTMLInputElement)) return
-  if (!target.closest('.staff-control-panel .staff-toolbar')) return
-
-  // Native user interaction normally reaches React directly. Queue one guarded
-  // replay only when the DOM control survives the React turn; this repairs the
-  // rare Safari/imperative-enhancer case where the visible value changed but
-  // React state did not.
-  const value = target.value
-  window.setTimeout(() => {
-    if (!target.isConnected || target.value !== value) return
-    if (target.dataset.veraToolbarReplay === value) return
-    target.dataset.veraToolbarReplay = value
-    forceReactControlValue(target, value)
-    window.setTimeout(() => {
-      if (target.dataset.veraToolbarReplay === value) delete target.dataset.veraToolbarReplay
-    }, 0)
-  }, 0)
+  wrapper?.remove()
 }
 
 export function startEmployeeToolbarRecovery() {
@@ -88,14 +39,11 @@ export function startEmployeeToolbarRecovery() {
 
   const reconcile = () => {
     restoreToolbar()
-    hideDuplicateListSearch()
+    removeDuplicateListSearch()
   }
 
   const observer = new MutationObserver(() => window.requestAnimationFrame(reconcile))
   observer.observe(document.body, { childList: true, subtree: true })
-
-  document.addEventListener('change', resyncToolbarAfterNativeChange, true)
-  document.addEventListener('search', resyncToolbarAfterNativeChange, true)
 
   // Keep protection active because employeeDirectoryUx still reconciles profile
   // controls periodically and can recreate legacy toolbar wrappers after a page

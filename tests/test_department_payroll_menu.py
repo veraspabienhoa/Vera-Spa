@@ -59,3 +59,17 @@ def test_employee_config_supports_department_search_and_explicit_rows():
     assert "removeEmployeeRow" in panel
     assert ".department-config-table{display:block;width:100%;max-width:100%;overflow-x:auto" in styles
     assert ".department-payroll-page{order:880;min-width:0;max-width:100%;overflow:hidden}" in styles
+
+
+def test_salary_advance_form_has_searchable_employee_date_and_valid_amount_input():
+    ledger = (ROOT / "web-v2/src/lib/departmentSalaryAdvanceLedger.js").read_text(encoding="utf-8")
+    assert 'type="search" autocomplete="off" role="combobox"' in ledger
+    assert 'placeholder="Tìm và chọn nhân viên trong danh sách…"' in ledger
+    assert "renderEmployeeSuggestions" in ledger
+    assert "data-advance-employee-option" in ledger
+    assert "records.every((record) => existingPanel.contains(record.target))" in ledger
+    assert "<datalist" not in ledger
+    assert 'placeholder="dd/mm/yyyy"' in ledger
+    assert "parseDisplayDate" in ledger
+    assert 'type="number" min="1" step="1"' in ledger
+    assert 'step="1000"' not in ledger

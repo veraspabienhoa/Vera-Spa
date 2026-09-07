@@ -50,30 +50,13 @@ function ensureStyles() {
   document.head.appendChild(style)
 }
 
-function originalEmployeeSearch() {
-  return document.querySelector('.staff-control-panel .staff-search input')
-}
-
 function ensureListSearch() {
   const panel = document.querySelector('.staff-list-panel')
-  const original = originalEmployeeSearch()
-  if (!panel || !original) return
-
-  let wrap = panel.querySelector('.vera-list-name-search')
-  if (!wrap) {
-    wrap = document.createElement('label')
-    wrap.className = 'vera-list-name-search'
-    wrap.innerHTML = '<span aria-hidden="true">⌕</span><input type="search" autocomplete="off" placeholder="Tìm tên nhân viên hoặc họ tên ngay trong danh sách" aria-label="Tìm tên nhân viên trong danh sách">'
-    const titleRow = panel.querySelector('.panel-title-row')
-    if (titleRow) titleRow.insertAdjacentElement('afterend', wrap)
-    else panel.prepend(wrap)
-
-    const proxy = wrap.querySelector('input')
-    proxy.addEventListener('input', () => setNativeValue(originalEmployeeSearch(), proxy.value))
-    proxy.addEventListener('search', () => setNativeValue(originalEmployeeSearch(), proxy.value))
-  }
-  const proxy = wrap.querySelector('input')
-  if (proxy && document.activeElement !== proxy && proxy.value !== original.value) proxy.value = original.value
+  // EmployeePage owns one React-controlled search field in the toolbar.
+  // Never inject a second input into React's list subtree: when filtering
+  // removes rows, that unmanaged sibling can break DOM reconciliation and
+  // leave the application on a blank screen.
+  panel?.querySelector('.vera-list-name-search')?.remove()
 }
 
 function profilePanel() {

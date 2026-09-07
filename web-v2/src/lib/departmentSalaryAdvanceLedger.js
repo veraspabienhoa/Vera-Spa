@@ -28,8 +28,28 @@ function defaultAdvanceDate(month) {
 }
 
 function formatDate(value) {
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(String(value || ''))) return String(value)
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
   return match ? `${match[3]}/${match[2]}/${match[1]}` : clean(value) || '—'
+}
+
+function parseDisplayDate(value) {
+  const match = clean(value).match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!match) return ''
+  const [, day, month, year] = match
+  const iso = `${year}-${month}-${day}`
+  const date = new Date(`${iso}T00:00:00`)
+  return !Number.isNaN(date.getTime())
+    && date.getFullYear() === Number(year)
+    && date.getMonth() + 1 === Number(month)
+    && date.getDate() === Number(day)
+    ? iso
+    : ''
+}
+
+function maskDisplayDate(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 8)
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('/')
 }
 
 async function apiRequest(path, options = {}) {
@@ -55,6 +75,7 @@ function ensureStyles() {
     #${PANEL_ID} .advance-ledger-summary{display:flex;gap:8px;flex-wrap:wrap}#${PANEL_ID} .advance-ledger-summary span{display:grid;gap:2px;min-width:145px;padding:9px 12px;border:1px solid #eadfc8;border-radius:10px;background:#fff;color:#746b5b;font-size:11px;font-weight:700}#${PANEL_ID} .advance-ledger-summary strong{font-size:16px;color:#193d31}
     #${PANEL_ID} .advance-ledger-form{display:grid;grid-template-columns:minmax(220px,1.4fr) 160px 180px minmax(220px,1.5fr) auto;gap:8px;align-items:end}
     #${PANEL_ID} .advance-ledger-form label{display:grid;gap:5px;font-size:11px;font-weight:800;color:#4d5f56}#${PANEL_ID} .advance-ledger-form input{width:100%;min-height:38px;padding:8px 10px;border:1px solid #cfdad4;border-radius:9px;background:#fff;color:#1f342b;font:inherit}
+    #${PANEL_ID} .advance-employee-field{position:relative}#${PANEL_ID} .advance-employee-options{position:absolute;z-index:30;top:100%;left:0;right:0;display:grid;max-height:260px;overflow:auto;margin-top:4px;padding:4px;border:1px solid #cfdad4;border-radius:10px;background:#fff;box-shadow:0 10px 26px rgba(25,61,49,.16)}#${PANEL_ID} .advance-employee-options[hidden]{display:none}#${PANEL_ID} .advance-employee-options button{display:grid;gap:2px;width:100%;min-height:0;padding:9px 10px;border:0;border-radius:7px;background:#fff;color:#273f35;text-align:left;cursor:pointer}#${PANEL_ID} .advance-employee-options button:hover,#${PANEL_ID} .advance-employee-options button:focus{background:#edf7f2;outline:none}#${PANEL_ID} .advance-employee-options strong{font-size:12px}#${PANEL_ID} .advance-employee-options small{font-size:10px;color:#6c7a73}#${PANEL_ID} .advance-employee-empty{padding:10px;color:#7b857f;font-size:11px;font-weight:600}
     #${PANEL_ID} .advance-ledger-form button{min-height:38px}
     #${PANEL_ID} .advance-ledger-table-wrap{max-width:100%;overflow:auto;border:1px solid #eadfc8;border-radius:10px;background:#fff}
     #${PANEL_ID} table{width:100%;min-width:900px;border-collapse:collapse}#${PANEL_ID} th,#${PANEL_ID} td{padding:8px 9px;border-bottom:1px solid #eee7d8;text-align:left;vertical-align:middle;font-size:12px}#${PANEL_ID} th{position:sticky;top:0;background:#f6f1e7;color:#5a5142;font-size:10px;text-transform:uppercase;letter-spacing:.03em}#${PANEL_ID} td.money{text-align:right;font-weight:900;color:#193d31}#${PANEL_ID} td small{display:block;color:#7b857f;margin-top:2px}
@@ -72,10 +93,46 @@ function employeeOptionLabel(item) {
   return `${clean(item.employee_name)} · ${clean(item.department_label)} · ${clean(item.employee_username)}`
 }
 
-function resolveEmployee(value) {
+function searchable(value) {
+  return clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('vi-VN')
+}
+
+function resolveEmployee(value, selectedUsername = '') {
   const needle = clean(value)
+  const username = clean(selectedUsername)
+  if (username) return (currentPayload.employee_catalog || []).find((item) => clean(item.employee_username) === username)
   return (currentPayload.employee_catalog || []).find((item) => employeeOptionLabel(item) === needle)
     || (currentPayload.employee_catalog || []).find((item) => clean(item.employee_username) === needle)
+}
+
+function renderEmployeeSuggestions(panel, value = '', showAll = false) {
+  const menu = panel?.querySelector('[data-advance-employee-options]')
+  if (!menu) return
+  const needle = searchable(value)
+  const matches = (currentPayload.employee_catalog || []).filter((item) => {
+    if (showAll && !needle) return true
+    return searchable(`${item.employee_name} ${item.employee_username} ${item.department_label}`).includes(needle)
+  }).slice(0, 30)
+  menu.replaceChildren()
+  if (!matches.length) {
+    const empty = document.createElement('div')
+    empty.className = 'advance-employee-empty'
+    empty.textContent = 'Không tìm thấy nhân viên phù hợp.'
+    menu.appendChild(empty)
+  } else {
+    matches.forEach((item) => {
+      const option = document.createElement('button')
+      option.type = 'button'
+      option.dataset.advanceEmployeeOption = clean(item.employee_username)
+      const name = document.createElement('strong')
+      name.textContent = clean(item.employee_name)
+      const detail = document.createElement('small')
+      detail.textContent = `${clean(item.department_label)} · ${clean(item.employee_username)}`
+      option.append(name, detail)
+      menu.appendChild(option)
+    })
+  }
+  menu.hidden = false
 }
 
 function panelHtml(month) {
@@ -90,9 +147,9 @@ function panelHtml(month) {
       <span>Đã trừ vào lương<strong data-advance-settled>0đ</strong></span>
     </div>
     <form class="advance-ledger-form" data-advance-form>
-      <label>Tên nhân viên<input type="text" list="vera-salary-advance-employees" autocomplete="off" placeholder="Gõ tên nhân viên…" data-advance-employee required><datalist id="vera-salary-advance-employees"></datalist></label>
-      <label>Ngày<input type="date" value="${defaultAdvanceDate(month)}" data-advance-date required></label>
-      <label>Số tiền<input type="number" min="1" step="1000" inputmode="numeric" placeholder="0" data-advance-amount required></label>
+      <label class="advance-employee-field">Tên nhân viên<input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="vera-salary-advance-employees" aria-expanded="false" aria-label="Tìm kiếm tên nhân viên" placeholder="Tìm và chọn nhân viên trong danh sách…" data-advance-employee required><div class="advance-employee-options" id="vera-salary-advance-employees" data-advance-employee-options hidden></div></label>
+      <label>Ngày<input type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="dd/mm/yyyy" value="${formatDate(defaultAdvanceDate(month))}" aria-label="Ngày ứng lương, định dạng dd/mm/yyyy" data-advance-date required></label>
+      <label>Số tiền<input type="number" min="1" step="1" inputmode="numeric" placeholder="0" data-advance-amount required></label>
       <label>Ghi chú<input type="text" maxlength="1000" placeholder="Nội dung ứng lương…" data-advance-note></label>
       <button type="submit" class="primary-button" data-advance-add>+ Thêm khoản ứng</button>
     </form>
@@ -116,15 +173,38 @@ function ensurePanel() {
   toolbar.insertAdjacentElement('afterend', panel)
 
   panel.querySelector('[data-advance-refresh]')?.addEventListener('click', () => scheduleRefresh(true))
+  const employeeSearch = panel.querySelector('[data-advance-employee]')
+  employeeSearch?.addEventListener('focus', () => {
+    renderEmployeeSuggestions(panel, employeeSearch.value, true)
+    employeeSearch.setAttribute('aria-expanded', 'true')
+  })
+  employeeSearch?.addEventListener('input', () => {
+    employeeSearch.dataset.selectedUsername = ''
+    renderEmployeeSuggestions(panel, employeeSearch.value)
+    employeeSearch.setAttribute('aria-expanded', 'true')
+  })
+  employeeSearch?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return
+    panel.querySelector('[data-advance-employee-options]')?.setAttribute('hidden', '')
+    employeeSearch.setAttribute('aria-expanded', 'false')
+  })
+  employeeSearch?.addEventListener('blur', () => window.setTimeout(() => {
+    panel.querySelector('[data-advance-employee-options]')?.setAttribute('hidden', '')
+    employeeSearch.setAttribute('aria-expanded', 'false')
+  }))
+  panel.querySelector('[data-advance-date]')?.addEventListener('input', (event) => {
+    event.target.value = maskDisplayDate(event.target.value)
+  })
   panel.querySelector('[data-advance-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
     const employeeInput = panel.querySelector('[data-advance-employee]')
-    const employee = resolveEmployee(employeeInput?.value)
+    const employee = resolveEmployee(employeeInput?.value, employeeInput?.dataset.selectedUsername)
     if (!employee) return showMessage('Vui lòng gõ và chọn đúng nhân viên trong danh sách.', 'error')
-    const advanceDate = panel.querySelector('[data-advance-date]')?.value
+    const advanceDate = parseDisplayDate(panel.querySelector('[data-advance-date]')?.value)
     const amount = Number(panel.querySelector('[data-advance-amount]')?.value || 0)
     const note = panel.querySelector('[data-advance-note]')?.value || ''
-    if (!advanceDate || amount <= 0) return showMessage('Vui lòng nhập ngày và số tiền ứng lớn hơn 0.', 'error')
+    if (!advanceDate) return showMessage('Ngày ứng lương phải đúng định dạng dd/mm/yyyy.', 'error')
+    if (!Number.isFinite(amount) || amount <= 0) return showMessage('Số tiền ứng phải lớn hơn 0.', 'error')
     const button = panel.querySelector('[data-advance-add]')
     button.disabled = true
     try {
@@ -132,7 +212,10 @@ function ensurePanel() {
         method: 'POST',
         body: JSON.stringify({ employee_username: employee.employee_username, advance_date: advanceDate, amount, note }),
       })
-      if (employeeInput) employeeInput.value = ''
+      if (employeeInput) {
+        employeeInput.value = ''
+        employeeInput.dataset.selectedUsername = ''
+      }
       const amountInput = panel.querySelector('[data-advance-amount]')
       const noteInput = panel.querySelector('[data-advance-note]')
       if (amountInput) amountInput.value = ''
@@ -148,6 +231,18 @@ function ensurePanel() {
   })
 
   panel.addEventListener('click', async (event) => {
+    const employeeOption = event.target.closest('[data-advance-employee-option]')
+    if (employeeOption) {
+      const employeeInput = panel.querySelector('[data-advance-employee]')
+      const employee = resolveEmployee('', employeeOption.dataset.advanceEmployeeOption)
+      if (employeeInput && employee) {
+        employeeInput.value = employeeOptionLabel(employee)
+        employeeInput.dataset.selectedUsername = clean(employee.employee_username)
+        employeeInput.setAttribute('aria-expanded', 'false')
+      }
+      panel.querySelector('[data-advance-employee-options]')?.setAttribute('hidden', '')
+      return
+    }
     const button = event.target.closest('[data-advance-delete]')
     if (!button) return
     if (!window.confirm('Xóa khoản ứng lương này?')) return
@@ -185,9 +280,6 @@ function renderLedger() {
   setText('[data-advance-pending]', summary.pending_total)
   setText('[data-advance-settled]', summary.settled_total)
 
-  const list = panel.querySelector('#vera-salary-advance-employees')
-  if (list) list.innerHTML = (currentPayload.employee_catalog || []).map((item) => `<option value="${employeeOptionLabel(item).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></option>`).join('')
-
   const body = panel.querySelector('[data-advance-tbody]')
   if (!body) return
   const items = currentPayload.items || []
@@ -215,7 +307,7 @@ async function refreshLedger(force = false) {
   currentMonth = month
   const panel = ensurePanel()
   const dateInput = panel?.querySelector('[data-advance-date]')
-  if (dateInput && !String(dateInput.value || '').startsWith(`${month}-`)) dateInput.value = defaultAdvanceDate(month)
+  if (dateInput && !parseDisplayDate(dateInput.value).startsWith(`${month}-`)) dateInput.value = formatDate(defaultAdvanceDate(month))
   try {
     currentPayload = await apiRequest(`/v2/department-payroll/advances?month=${encodeURIComponent(month)}`)
     renderLedger()
@@ -316,7 +408,9 @@ export function startDepartmentSalaryAdvanceLedger() {
   window.addEventListener('vera-salary-advances-settled', () => scheduleRefresh(true))
   window.addEventListener('vera-salary-advances-settle-error', (event) => showMessage(`Bảng lương đã hoàn thành nhưng chưa cập nhật được trạng thái ứng lương: ${event.detail?.message || ''}`, 'error'))
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((records) => {
+    const existingPanel = document.getElementById(PANEL_ID)
+    if (existingPanel && records.every((record) => existingPanel.contains(record.target))) return
     const panel = ensurePanel()
     if (!panel) return
     const month = selectedMonth()

@@ -30,6 +30,8 @@ def test_employee_toolbar_uses_real_react_selects_and_current_search_input():
 
     assert "select.classList.remove('vera-typing-select-source')" in source
     assert "select.dataset.veraTypingSearch = '1'" in source
-    assert ".staff-control-panel .staff-search input" in source
-    assert ".staff-list-panel .vera-list-name-search input" in source
+    assert ".staff-control-panel .staff-toolbar" in source
+    assert ".staff-search input" in source
+    assert ".staff-list-panel .vera-list-name-search" in source
+    assert "removeDuplicateListSearch" in source
     assert "startEmployeeToolbarRecovery()" in main
