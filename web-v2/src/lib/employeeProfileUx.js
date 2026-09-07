@@ -1,3 +1,5 @@
+import { staffSecurityApi } from './staffSecurityApi'
+
 const REQUIRED_PROFILE_LABELS = [
   'Họ và tên đầy đủ',
   'Ngày sinh',
@@ -97,12 +99,78 @@ function ensureStyles() {
     .vera-cccd-viewer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.vera-cccd-viewer-head h3{margin:0;font-size:16px}.vera-cccd-viewer-close{border:1px solid #d6dfdb;background:#fff;border-radius:9px;padding:8px 12px;font-weight:800;cursor:pointer}
     .vera-cccd-viewer-image{min-height:260px;max-height:72vh;border-radius:13px;background:#101815;display:flex;align-items:center;justify-content:center;overflow:hidden}.vera-cccd-viewer-image img{display:block;max-width:100%;max-height:72vh;width:auto;height:auto;object-fit:contain}
     .vera-cccd-viewer-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.vera-cccd-viewer-actions button{min-height:36px;border:1px solid #ccd8d2;border-radius:9px;background:#fff;padding:7px 11px;font-weight:800;cursor:pointer}.vera-cccd-viewer-actions button.danger{border-color:#e6b4ae;color:#a62a20;background:#fff5f4}
-    @media(max-width:700px){.vera-profile-field-missing{padding:7px}.staff-incomplete-badge{max-width:100%}.vera-cccd-viewer{padding:6px}.vera-cccd-viewer-card{padding:10px;border-radius:13px}.vera-cccd-viewer-image{min-height:180px}.vera-cccd-viewer-actions{display:grid;grid-template-columns:1fr 1fr}.vera-cccd-viewer-actions button{width:100%}}
+    .vera-cccd-text-panel{display:grid;gap:8px;margin-top:12px;padding:12px;border:1px solid #cfdcd6;border-radius:12px;background:#f6faf8}.vera-cccd-text-panel strong{font-size:12px;color:#173d2f}.vera-cccd-text-panel textarea{width:100%;min-height:160px;resize:vertical;border:1px solid #c8d6d0;border-radius:9px;background:#fff;padding:10px;font:500 13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#17251f;user-select:text;-webkit-user-select:text}.vera-cccd-text-panel-actions{display:flex;justify-content:flex-end;gap:8px}.vera-cccd-text-status{font-size:11px;color:#4c6259}.vera-cccd-text-status.ok{color:#17603b;font-weight:800}.vera-cccd-text-status.error{color:#a62a20;font-weight:800}
+    @media(max-width:700px){.vera-profile-field-missing{padding:7px}.staff-incomplete-badge{max-width:100%}.vera-cccd-viewer{padding:6px}.vera-cccd-viewer-card{padding:10px;border-radius:13px}.vera-cccd-viewer-image{min-height:180px}.vera-cccd-viewer-actions{display:grid;grid-template-columns:1fr 1fr}.vera-cccd-viewer-actions button{width:100%}.vera-cccd-text-panel textarea{min-height:130px}.vera-cccd-text-panel-actions{display:grid;grid-template-columns:1fr}.vera-cccd-text-panel-actions button{width:100%}}
   `
   document.head.appendChild(style)
 }
 
 const actionText = (button) => normalizeText(button.textContent)
+
+async function copyPlainText(value) {
+  const text = String(value || '')
+  if (!text) return false
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch (_) {
+    // Fall back to the legacy copy path below (Safari/private browsing can deny clipboard access).
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;'
+  document.body.appendChild(textarea)
+  textarea.select()
+  let copied = false
+  try { copied = document.execCommand('copy') } catch (_) { copied = false }
+  textarea.remove()
+  return copied
+}
+
+function renderImageTextPanel(overlay, text, statusText, statusType = '') {
+  const card = overlay.querySelector('.vera-cccd-viewer-card')
+  if (!card) return
+  let panel = card.querySelector('.vera-cccd-text-panel')
+  if (!panel) {
+    panel = document.createElement('div')
+    panel.className = 'vera-cccd-text-panel'
+    card.appendChild(panel)
+  }
+  panel.textContent = ''
+
+  const heading = document.createElement('strong')
+  heading.textContent = 'CHỮ NHẬN DẠNG TỪ ẢNH'
+  const status = document.createElement('div')
+  status.className = `vera-cccd-text-status ${statusType}`.trim()
+  status.textContent = statusText
+  panel.append(heading, status)
+
+  if (!text) return
+  const textarea = document.createElement('textarea')
+  textarea.readOnly = true
+  textarea.value = text
+  textarea.setAttribute('aria-label', 'Chữ nhận dạng từ ảnh CCCD')
+  textarea.addEventListener('focus', () => textarea.select())
+
+  const actions = document.createElement('div')
+  actions.className = 'vera-cccd-text-panel-actions'
+  const copyButton = document.createElement('button')
+  copyButton.type = 'button'
+  copyButton.textContent = 'Sao chép toàn bộ'
+  copyButton.addEventListener('click', async () => {
+    const copied = await copyPlainText(text)
+    status.className = `vera-cccd-text-status ${copied ? 'ok' : 'error'}`
+    status.textContent = copied
+      ? 'Đã sao chép toàn bộ chữ vào clipboard.'
+      : 'Không tự sao chép được. Hãy chọn văn bản phía trên rồi dùng Ctrl/Cmd+C.'
+    textarea.focus()
+  })
+  actions.appendChild(copyButton)
+  panel.append(textarea, actions)
+}
 
 function closeViewer() {
   document.querySelector('.vera-cccd-viewer')?.remove()
@@ -125,6 +193,41 @@ function openViewer(card, image) {
   overlay.addEventListener('click', (event) => { if (event.target === overlay) closeViewer() })
 
   const actions = overlay.querySelector('.vera-cccd-viewer-actions')
+  const textButton = document.createElement('button')
+  textButton.type = 'button'
+  textButton.textContent = 'Sao chép chữ'
+  textButton.title = 'Nhận dạng chữ trên ảnh CCCD, cho phép chọn và sao chép trực tiếp'
+  textButton.addEventListener('click', async () => {
+    const originalText = textButton.textContent
+    textButton.disabled = true
+    textButton.textContent = 'Đang đọc chữ…'
+    renderImageTextPanel(overlay, '', 'Đang nhận dạng chữ trên ảnh…')
+    try {
+      const response = await fetch(image.src)
+      if (!response.ok) throw new Error(`Không đọc được ảnh (HTTP ${response.status}).`)
+      const blob = await response.blob()
+      const result = await staffSecurityApi.extractImageText(blob)
+      const text = String(result?.text || '').trim()
+      if (!text) {
+        renderImageTextPanel(overlay, '', 'Không nhận dạng được chữ. Hãy thử ảnh rõ hơn hoặc crop sát CCCD hơn.', 'error')
+        return
+      }
+      const copied = await copyPlainText(text)
+      renderImageTextPanel(
+        overlay,
+        text,
+        copied ? 'Đã nhận dạng và sao chép toàn bộ chữ vào clipboard.' : 'Đã nhận dạng. Có thể chọn từng phần văn bản bên dưới để sao chép.',
+        copied ? 'ok' : '',
+      )
+    } catch (error) {
+      renderImageTextPanel(overlay, '', `Không đọc được chữ từ ảnh: ${error?.message || 'lỗi OCR'}`, 'error')
+    } finally {
+      textButton.disabled = false
+      textButton.textContent = originalText
+    }
+  })
+  actions.appendChild(textButton)
+
   const originals = Array.from(card.querySelectorAll('.employee-id-actions button'))
     .filter((button) => !/^Xem$/i.test(actionText(button)))
   originals.forEach((original) => {
