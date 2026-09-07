@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
+import { displayLeaveType } from '../lib/leaveStats'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
@@ -101,7 +102,8 @@ export default function LeaveListTypeColumn() {
 
         const reason = String(reasonCell.querySelector('select')?.value || reasonCell.textContent || '').trim()
         const leaveType = catalog[normalizeReason(reason)] || '—'
-        if (typeCell.textContent !== leaveType) typeCell.textContent = leaveType
+        const displayType = displayLeaveType(leaveType, reason)
+        if (typeCell.textContent !== displayType) typeCell.textContent = displayType
         typeCell.title = leaveType === '—'
           ? 'Chưa tìm thấy Loại nghỉ tương ứng trong BẢNG NỘI QUY.'
           : `Theo BẢNG NỘI QUY: ${leaveType}`

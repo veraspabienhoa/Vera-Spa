@@ -238,6 +238,8 @@ def summarize_leave_day(rows, active_employee_count: int) -> dict[str, int]:
 def _row_leave_group(row) -> str:
     """Resolve the canonical leave group for API/statistics rows."""
     type_key = norm(row.get("leave_type", ""))
+    if type_key in {"leader", "duoc duyet", "phep nam"}:
+        return "co_phep"
     if "khong phep" in type_key:
         return "khong_phep"
     if "phat sinh" in type_key:
