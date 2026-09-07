@@ -36,11 +36,12 @@ jobs:
             pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app")
             unit=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/$pid/cgroup" | head -n 1)
             echo "unit=$unit"
-            systemctl show "$unit" -p FragmentPath -p DropInPaths -p EnvironmentFiles --no-pager
-            fragment=$(systemctl show "$unit" -p FragmentPath --value)
-            if [ -n "$fragment" ]; then stat -c "fragment=%n owner=%U group=%G mode=%a" "$fragment"; fi
-            for path in $(systemctl show "$unit" -p DropInPaths --value); do
-              [ -e "$path" ] && stat -c "dropin=%n owner=%U group=%G mode=%a" "$path"
-            done
-            echo "can_restart_without_sudo=$(systemctl restart "$unit" >/dev/null 2>&1 && echo yes || echo no)"
+            envfile=$(systemctl show "$unit" -p EnvironmentFiles --value | awk "{print \$1}")
+            echo "envfile=$envfile"
+            if [ -n "$envfile" ] && [ -e "$envfile" ]; then
+              stat -c "envfile=%n owner=%U group=%G mode=%a" "$envfile"
+              echo "envfile_writable_by_deploy_user=$([ -w "$envfile" ] && echo yes || echo no)"
+            fi
+            echo "sudo_noninteractive_available=$(sudo -n true >/dev/null 2>&1 && echo yes || echo no)"
+            echo "deploy_script_owner=$(stat -c "%U:%G %a" /opt/vera-spa/deploy.sh)"
           '
