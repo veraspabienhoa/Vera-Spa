@@ -87,7 +87,10 @@ def rows_counting_toward_quota(df):
     if not isinstance(df, pd.DataFrame) or df.empty or "Lý do nghỉ" not in df.columns:
         return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
     reasons = df["Lý do nghỉ"].astype(str)
-    exempt = reasons.apply(is_video_reason) | reasons.apply(is_long_sick_reason)
+    # Phép năm has its own annual allowance and must never consume the separate
+    # monthly/daily CÓ phép quota. Video and approved long sick leave remain
+    # quota-exempt as before.
+    exempt = reasons.apply(is_video_reason) | reasons.apply(is_long_sick_reason) | reasons.apply(is_annual_reason)
     return df[~exempt].copy()
 
 
@@ -128,7 +131,7 @@ def monthly_weekend_registration_limit(all_leave_df, employee_name, start_date, 
     quota_df = all_leave_df.copy() if isinstance(all_leave_df, pd.DataFrame) else pd.DataFrame()
     if not quota_df.empty and "Lý do nghỉ" in quota_df.columns:
         mask = quota_df["Lý do nghỉ"].astype(str).apply(
-            lambda x: "khong phep" in norm(x) or is_video_reason(x) or is_long_sick_reason(x)
+            lambda x: "khong phep" in norm(x) or is_video_reason(x) or is_long_sick_reason(x) or is_annual_reason(x)
         )
         quota_df = quota_df[~mask].copy()
 
@@ -408,8 +411,17 @@ def validate_leave_registration_request_live(payload, live_df, credentials_df, r
     source_df = live_df.copy() if isinstance(live_df, pd.DataFrame) else pd.DataFrame()
     norm_reason = normalize_leave(reason)
 
+    # Canonical quota source: annual leave is isolated from all ordinary paid
+    # leave quotas, regardless of whether a legacy runtime callback knows that
+    # rule yet. This makes Streamlit, Web V2, preview, sync queue and long-leave
+    # admin routes converge on the same behavior.
+    quota_source_df = quota_rows(source_df)
+    if isinstance(quota_source_df, pd.DataFrame) and not quota_source_df.empty and "Lý do nghỉ" in quota_source_df.columns:
+        annual_mask = quota_source_df["Lý do nghỉ"].astype(str).apply(is_annual)
+        quota_source_df = quota_source_df[~annual_mask].copy()
+
     if not is_admin and not (is_annual_range_reason or is_long_sick_range_reason):
-        weekend_ok, weekend_msg = validate_weekend(source_df, employee, start_date, end_date, reason=reason, max_weekend_dates=2)
+        weekend_ok, weekend_msg = validate_weekend(quota_source_df, employee, start_date, end_date, reason=reason, max_weekend_dates=2)
         if not weekend_ok:
             result["errors"].append(weekend_msg)
             return result
@@ -436,7 +448,12 @@ def validate_leave_registration_request_live(payload, live_df, credentials_df, r
         user_hist = source_df[source_df["Tên nhân viên"].astype(str).apply(normalize_name).eq(normalize_name(employee))].copy()
     else:
         user_hist = pd.DataFrame(columns=["Ngày", "Lý do nghỉ", "Số ngày tính"])
-    user_hist_quota = quota_rows(user_hist)
+    if isinstance(quota_source_df, pd.DataFrame) and not quota_source_df.empty and "Tên nhân viên" in quota_source_df.columns:
+        user_hist_quota = quota_source_df[
+            quota_source_df["Tên nhân viên"].astype(str).apply(normalize_name).eq(normalize_name(employee))
+        ].copy()
+    else:
+        user_hist_quota = pd.DataFrame(columns=["Ngày", "Lý do nghỉ", "Số ngày tính"])
 
     for frame in (user_hist, user_hist_quota):
         if "Ngày" not in frame.columns:
@@ -461,7 +478,9 @@ def validate_leave_registration_request_live(payload, live_df, credentials_df, r
             for annual_year in sorted({d.year for d in selected_dates}):
                 annual_dates = [d for d in selected_dates if d.year == annual_year]
                 annual_required = val_songay * len(annual_dates)
-                year_hist = user_hist_quota[user_hist_quota["Y"] == annual_year]
+                # Annual allowance must be checked against annual history itself,
+                # not the monthly paid-leave quota history (which now excludes it).
+                year_hist = user_hist[user_hist["Y"] == annual_year]
                 used_pn = (
                     float(pd.to_numeric(year_hist[year_hist["Lý do nghỉ"].astype(str).str.lower().str.contains("phép năm", na=False)].get("Số ngày tính", 0), errors="coerce").fillna(0).sum())
                     if not year_hist.empty and "Lý do nghỉ" in year_hist.columns else 0.0
@@ -499,7 +518,7 @@ def validate_leave_registration_request_live(payload, live_df, credentials_df, r
                 result["errors"].append(f"{employee} · {target_date.strftime('%d/%m/%Y')}: {daily_msg}")
                 return result
             if not special_day_exempt and not is_nghi_ly_do_khac and "phép năm" not in norm_reason and not is_loi_vi_pham:
-                quota_ok, quota_msg = validate_daily_quota(source_df, target_date, reason, is_zero_day_co_phep=is_zero_day_co_phep)
+                quota_ok, quota_msg = validate_daily_quota(quota_source_df, target_date, reason, is_zero_day_co_phep=is_zero_day_co_phep)
                 if not quota_ok:
                     result["errors"].append(quota_msg)
                     return result
