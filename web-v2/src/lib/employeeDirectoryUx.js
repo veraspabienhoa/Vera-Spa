@@ -1,4 +1,10 @@
 const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+const searchKey = (value) => clean(value)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd')
+  .replace(/Đ/g, 'D')
+  .toLocaleLowerCase('vi')
 
 let dropdownId = 0
 let scheduled = false
@@ -29,11 +35,17 @@ function ensureStyles() {
     .vera-profile-header-actions .vera-profile-save-top,.vera-profile-header-actions .vera-profile-refresh-top{min-height:42px!important;padding:9px 14px!important;font-size:12px!important;font-weight:900!important}
     .vera-typing-select-source{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
     .vera-typing-select{position:relative;display:flex;align-items:center;flex:1;min-width:0}
-    .vera-typing-select input{width:100%;min-width:0;padding-right:30px!important}
+    .vera-typing-select input{width:100%;min-width:0;padding-right:30px!important;cursor:text}
     .vera-typing-select::after{content:'⌄';position:absolute;right:9px;top:50%;transform:translateY(-52%);font-size:14px;font-weight:900;color:#496158;pointer-events:none}
     .vera-typing-select input:disabled{opacity:.62;cursor:not-allowed}
+    .vera-typing-menu{position:fixed;z-index:30000;display:none;overflow:auto;padding:5px;background:#fff;border:1px solid #c8d7d0;border-radius:10px;box-shadow:0 12px 34px rgba(11,42,29,.18)}
+    .vera-typing-menu.open{display:block}
+    .vera-typing-option{display:block;width:100%;border:0;background:#fff;color:#142a21;text-align:left;padding:9px 10px;border-radius:7px;font:inherit;line-height:1.25;cursor:pointer;white-space:normal}
+    .vera-typing-option:hover,.vera-typing-option:focus{background:#eef6f2;outline:none}
+    .vera-typing-option.selected{font-weight:800;background:#e8f3ed}
+    .vera-typing-empty{padding:10px;color:#6c7d75;font-size:12px}
     .staff-table td .vera-typing-select input{font-size:10px;padding:6px 22px 6px 5px!important;min-height:31px}
-    @media(max-width:700px){.vera-profile-header-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}.vera-profile-header-actions .vera-profile-top-close{grid-column:1/-1;width:100%}.vera-list-name-search{margin-top:8px}.vera-typing-select{width:100%}}
+    @media(max-width:700px){.vera-profile-header-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}.vera-profile-header-actions .vera-profile-top-close{grid-column:1/-1;width:100%}.vera-list-name-search{margin-top:8px}.vera-typing-select{width:100%}.vera-typing-menu{max-width:calc(100vw - 16px)}}
   `
   document.head.appendChild(style)
 }
@@ -206,44 +218,131 @@ function selectedLabel(select) {
 }
 
 function exactOption(select, query) {
-  const key = clean(query).toLocaleLowerCase('vi')
+  const key = searchKey(query)
   if (!key) return optionRows(select).find((item) => item.value === '') || null
   return optionRows(select).find((item) =>
-    item.label.toLocaleLowerCase('vi') === key || String(item.value).toLocaleLowerCase('vi') === key) || null
+    searchKey(item.label) === key || searchKey(item.value) === key) || null
 }
 
 function firstMatchingOption(select, query) {
-  const key = clean(query).toLocaleLowerCase('vi')
+  const key = searchKey(query)
   if (!key) return null
-  return optionRows(select).find((item) => !item.disabled && item.label.toLocaleLowerCase('vi').includes(key)) || null
+  return optionRows(select).find((item) => !item.disabled && (
+    searchKey(item.label).includes(key) || searchKey(item.value).includes(key)
+  )) || null
 }
 
-function commitOption(select, row) {
+function commitOption(select, row, input) {
   if (!row || row.disabled) return false
   setNativeValue(select, row.value)
+  if (input) input.value = row.label
   return true
 }
 
-function rebuildDatalist(select, input, datalist, wrapper) {
-  const rows = optionRows(select)
-  const signature = rows.map((row) => `${row.value}\u0001${row.label}\u0001${row.disabled ? 1 : 0}`).join('\u0002')
-  if (wrapper.dataset.veraOptionsSignature !== signature) {
-    wrapper.dataset.veraOptionsSignature = signature
-    datalist.textContent = ''
-    rows.forEach((row) => {
-      if (!row.label) return
-      const option = document.createElement('option')
-      option.value = row.label
-      if (row.value && row.value !== row.label) option.label = row.value
-      datalist.appendChild(option)
+function menuFor(wrapper) {
+  let menu = wrapper.__veraTypingMenu
+  if (menu?.isConnected) return menu
+  menu = document.createElement('div')
+  menu.className = 'vera-typing-menu'
+  menu.dataset.veraTypingMenu = wrapper.dataset.veraTypingId || ''
+  menu.addEventListener('pointerdown', (event) => event.preventDefault())
+  document.body.appendChild(menu)
+  wrapper.__veraTypingMenu = menu
+  return menu
+}
+
+function closeMenu(wrapper) {
+  if (!wrapper) return
+  wrapper.classList.remove('vera-open')
+  const menu = wrapper.__veraTypingMenu
+  if (menu) menu.classList.remove('open')
+}
+
+function closeAllMenus(except = null) {
+  document.querySelectorAll('.vera-typing-select.vera-open').forEach((wrapper) => {
+    if (wrapper !== except) closeMenu(wrapper)
+  })
+}
+
+function positionMenu(input, menu) {
+  if (!input?.isConnected || !menu) return
+  const rect = input.getBoundingClientRect()
+  const gap = 4
+  const below = Math.max(80, window.innerHeight - rect.bottom - gap - 8)
+  const above = Math.max(80, rect.top - gap - 8)
+  const useAbove = below < 150 && above > below
+  const maxHeight = Math.min(280, useAbove ? above : below)
+  menu.style.left = `${Math.max(8, rect.left)}px`
+  menu.style.width = `${Math.min(rect.width, window.innerWidth - Math.max(8, rect.left) - 8)}px`
+  menu.style.maxHeight = `${maxHeight}px`
+  if (useAbove) {
+    menu.style.top = 'auto'
+    menu.style.bottom = `${Math.max(8, window.innerHeight - rect.top + gap)}px`
+  } else {
+    menu.style.bottom = 'auto'
+    menu.style.top = `${Math.min(window.innerHeight - 8, rect.bottom + gap)}px`
+  }
+}
+
+function filteredRows(select, query) {
+  const key = searchKey(query)
+  const rows = optionRows(select).filter((row) => !row.disabled && row.label)
+  if (!key) return rows
+  return rows.filter((row) => searchKey(row.label).includes(key) || searchKey(row.value).includes(key))
+}
+
+function renderMenu(select, input, wrapper, query = input.value) {
+  if (!select?.isConnected || !input?.isConnected || select.disabled) {
+    closeMenu(wrapper)
+    return
+  }
+  const menu = menuFor(wrapper)
+  const rows = filteredRows(select, query)
+  menu.textContent = ''
+
+  if (!rows.length) {
+    const empty = document.createElement('div')
+    empty.className = 'vera-typing-empty'
+    empty.textContent = 'Không có lựa chọn phù hợp.'
+    menu.appendChild(empty)
+  } else {
+    rows.slice(0, 120).forEach((row) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = `vera-typing-option${String(row.value) === String(select.value) ? ' selected' : ''}`
+      button.textContent = row.label
+      button.dataset.value = row.value
+      button.addEventListener('click', () => {
+        if (commitOption(select, row, input)) {
+          closeMenu(wrapper)
+          input.focus({ preventScroll: true })
+          input.select()
+        }
+      })
+      menu.appendChild(button)
     })
+  }
+
+  closeAllMenus(wrapper)
+  wrapper.classList.add('vera-open')
+  menu.classList.add('open')
+  positionMenu(input, menu)
+}
+
+function syncEnhancedSelect(select, input, wrapper) {
+  if (!select?.isConnected) {
+    wrapper.__veraTypingMenu?.remove()
+    return
   }
   if (input.disabled !== select.disabled) input.disabled = select.disabled
   const placeholder = clean(select.getAttribute('aria-label')) || 'Gõ để tìm…'
   if (input.placeholder !== placeholder) input.placeholder = placeholder
-  if (document.activeElement !== input) {
+  if (document.activeElement !== input && !wrapper.classList.contains('vera-open')) {
     const label = selectedLabel(select)
     if (input.value !== label) input.value = label
+  }
+  if (wrapper.classList.contains('vera-open')) {
+    renderMenu(select, input, wrapper, document.activeElement === input ? input.value : '')
   }
 }
 
@@ -254,8 +353,7 @@ function enhanceSelect(select) {
   if (select.dataset.veraTypingSearch === '1') {
     const wrapper = select.__veraTypingWrapper || (select.nextElementSibling?.classList?.contains('vera-typing-select') ? select.nextElementSibling : null)
     const input = wrapper?.querySelector('input')
-    const datalist = wrapper?.querySelector('datalist')
-    if (input && datalist) rebuildDatalist(select, input, datalist, wrapper)
+    if (input && wrapper) syncEnhancedSelect(select, input, wrapper)
     return
   }
 
@@ -263,53 +361,87 @@ function enhanceSelect(select) {
   select.classList.add('vera-typing-select-source')
   const wrapper = document.createElement('span')
   wrapper.className = 'vera-typing-select'
+  wrapper.dataset.veraTypingId = `vera-typing-select-${++dropdownId}`
   const input = document.createElement('input')
-  input.type = 'text'
+  input.type = 'search'
   input.autocomplete = 'off'
   input.spellcheck = false
   input.setAttribute('role', 'combobox')
   input.setAttribute('aria-autocomplete', 'list')
-  const datalist = document.createElement('datalist')
-  const listId = `vera-typing-select-${++dropdownId}`
-  datalist.id = listId
-  input.setAttribute('list', listId)
-  wrapper.append(input, datalist)
+  input.setAttribute('aria-expanded', 'false')
+  wrapper.appendChild(input)
   select.insertAdjacentElement('afterend', wrapper)
   select.__veraTypingWrapper = wrapper
 
-  const sync = () => rebuildDatalist(select, input, datalist, wrapper)
+  const sync = () => syncEnhancedSelect(select, input, wrapper)
   sync()
 
+  wrapper.addEventListener('click', (event) => {
+    if (event.target === wrapper && !input.disabled) input.focus()
+  })
   input.addEventListener('focus', () => {
     sync()
-    window.setTimeout(() => input.select(), 0)
+    window.setTimeout(() => {
+      input.select()
+      renderMenu(select, input, wrapper, '')
+      input.setAttribute('aria-expanded', 'true')
+    }, 0)
   })
-  input.addEventListener('input', () => {
-    const exact = exactOption(select, input.value)
-    if (exact) commitOption(select, exact)
+  input.addEventListener('click', () => {
+    if (!wrapper.classList.contains('vera-open')) renderMenu(select, input, wrapper, '')
   })
-  input.addEventListener('change', () => {
-    const exact = exactOption(select, input.value)
-    if (exact && commitOption(select, exact)) input.value = exact.label
-  })
+  input.addEventListener('input', () => renderMenu(select, input, wrapper, input.value))
   input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeMenu(wrapper)
+      input.setAttribute('aria-expanded', 'false')
+      input.value = selectedLabel(select)
+      return
+    }
+    if (event.key === 'ArrowDown' && !wrapper.classList.contains('vera-open')) {
+      event.preventDefault()
+      renderMenu(select, input, wrapper, input.value)
+      return
+    }
     if (event.key !== 'Enter') return
     const row = exactOption(select, input.value) || firstMatchingOption(select, input.value)
     if (!row) return
     event.preventDefault()
-    if (commitOption(select, row)) {
-      input.value = row.label
-      input.blur()
+    if (commitOption(select, row, input)) {
+      closeMenu(wrapper)
+      input.setAttribute('aria-expanded', 'false')
+      input.select()
     }
   })
   input.addEventListener('blur', () => {
-    window.setTimeout(() => { input.value = selectedLabel(select) }, 80)
+    window.setTimeout(() => {
+      if (!wrapper.classList.contains('vera-open')) input.value = selectedLabel(select)
+    }, 100)
   })
-  select.addEventListener('change', sync)
+  select.addEventListener('change', () => {
+    input.value = selectedLabel(select)
+    closeMenu(wrapper)
+    input.setAttribute('aria-expanded', 'false')
+  })
 }
 
 function enhanceAllSelects() {
   document.querySelectorAll('.staff-page select').forEach(enhanceSelect)
+  document.querySelectorAll('.vera-typing-select').forEach((wrapper) => {
+    const source = wrapper.previousElementSibling
+    if (!(source instanceof HTMLSelectElement) || !source.isConnected) {
+      wrapper.__veraTypingMenu?.remove()
+      wrapper.remove()
+    }
+  })
+}
+
+function repositionOpenMenus() {
+  document.querySelectorAll('.vera-typing-select.vera-open').forEach((wrapper) => {
+    const input = wrapper.querySelector('input')
+    const menu = wrapper.__veraTypingMenu
+    if (input && menu?.classList.contains('open')) positionMenu(input, menu)
+  })
 }
 
 function reconcile() {
@@ -337,6 +469,13 @@ export function startEmployeeDirectoryUx() {
   document.addEventListener('click', schedule, true)
   document.addEventListener('input', schedule, true)
   document.addEventListener('change', schedule, true)
+  document.addEventListener('pointerdown', (event) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('.vera-typing-select') || target?.closest('.vera-typing-menu')) return
+    closeAllMenus()
+  }, true)
+  window.addEventListener('resize', repositionOpenMenus)
+  window.addEventListener('scroll', repositionOpenMenus, true)
   window.setInterval(reconcile, 1200)
   schedule()
 }
