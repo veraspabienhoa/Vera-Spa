@@ -284,25 +284,13 @@ def _weekday_short_label(d: date) -> str:
 def _stats_group(leave_type: str, reason: str) -> str:
     """Match the canonical daily-stat grouping used by the current app."""
     type_key = _norm(leave_type)
-    reason_key = _norm(reason)
     if type_key in {"leader", "duoc duyet", "phep nam"}:
         return "co_phep"
-    if "khong phep" in type_key:
+    if type_key == "khong phep":
         return "khong_phep"
     if "phat sinh" in type_key:
         return "phat_sinh"
     if "co phep" in type_key:
-        return "co_phep"
-    if "khong phep" in reason_key:
-        return "khong_phep"
-    if "phat sinh" in reason_key:
-        return "phat_sinh"
-    if (
-        "co phep" in reason_key
-        or "nghi phep" in reason_key
-        or "nghi dam hieu" in reason_key
-        or re.search(r"(^|\s)cp($|\s)", reason_key)
-    ):
         return "co_phep"
     return ""
 

@@ -16,17 +16,14 @@ const matchesEmployee = (employeeName, searchValue) => {
 
 const leaveGroup = (row) => {
   if (['leader', 'duoc duyet', 'phep nam'].includes(normalizeText(row.leave_type))) return 'paid'
-  const key = normalizeText(`${row.leave_type || ''} ${row.leave_reason || ''}`)
-  if (key.includes('khong phep')) return 'unpaid'
+  const key = normalizeText(row.leave_type)
+  if (key === 'khong phep') return 'unpaid'
   if (key.includes('phat sinh')) return 'generated'
   if (key.includes('co phep') || key.includes('phep nam')) return 'paid'
   return ''
 }
 
-export function displayLeaveType(leaveType, reason) {
-  if (normalizeText(leaveType) === 'vi pham' && normalizeText(reason).includes('khong phep')) {
-    return 'Không phép (Vi phạm)'
-  }
+export function displayLeaveType(leaveType) {
   return leaveType
 }
 

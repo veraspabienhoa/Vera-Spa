@@ -240,13 +240,13 @@ def _row_leave_group(row) -> str:
     type_key = norm(row.get("leave_type", ""))
     if type_key in {"leader", "duoc duyet", "phep nam"}:
         return "co_phep"
-    if "khong phep" in type_key:
+    if type_key == "khong phep":
         return "khong_phep"
     if "phat sinh" in type_key:
         return "phat_sinh"
     if "co phep" in type_key:
         return "co_phep"
-    return group(str(row.get("leave_reason", "") or ""))
+    return ""
 
 
 def count_unique_leave_people(rows) -> dict[str, int]:
