@@ -1,0 +1,119 @@
+name: Diagnose TimeSoft Attendance VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-timesoft-vps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Diagnose TimeSoft and attendance cache
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python - "$pid" "$release_dir" <<'"'"'PY'"'"'
+          import os, re, sys, traceback
+          from urllib.parse import urljoin
+          import requests
+
+          pid, release_dir = sys.argv[1], sys.argv[2]
+          raw = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
+          for item in raw:
+              if b"=" not in item:
+                  continue
+              key, value = item.split(b"=", 1)
+              os.environ[key.decode("utf-8", "ignore")] = value.decode("utf-8", "ignore")
+          os.chdir(release_dir)
+          sys.path.insert(0, release_dir)
+
+          print("release_dir=", release_dir)
+          for key in ("TIMESOFT_BASE_URL", "TIMESOFT_USERNAME", "TIMESOFT_PASSWORD", "DB_HOST", "DB_NAME", "DB_USER"):
+              value = os.getenv(key, "")
+              if key in {"TIMESOFT_USERNAME", "TIMESOFT_PASSWORD"}:
+                  print(f"{key}_configured={bool(value)} length={len(value)}")
+              else:
+                  print(f"{key}={value}")
+
+          import timesoft_sync_job as ts
+          import vera_postgres as vpg
+          print("timesoft_base=", ts.BASE_URL)
+          print("timesoft_credentials_ready=", bool(ts.USERNAME and ts.PASSWORD))
+
+          try:
+              r = requests.get(urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/")), timeout=20, allow_redirects=True)
+              print("public_report_get=", r.status_code, r.url, r.headers.get("content-type", ""), len(r.content))
+              text = r.text[:500000]
+              print("login_has_ValidateUser=", "ValidateUser" in text)
+              forms = re.findall(r"<form[^>]+action=[\"']([^\"']+)", text, flags=re.I)
+              print("login_form_actions=", forms[:10])
+              scripts = re.findall(r"<script[^>]+src=[\"']([^\"']+)", text, flags=re.I)
+              print("login_scripts=", scripts[-20:])
+              for src in scripts[-20:]:
+                  try:
+                      js_url = urljoin(r.url, src)
+                      js = requests.get(js_url, timeout=15).text
+                      if "ValidateUser" in js or "validateUser" in js:
+                          pos = max(js.find("ValidateUser"), js.find("validateUser"))
+                          print("validate_user_script=", js_url)
+                          print("validate_user_context=", re.sub(r"\\s+", " ", js[max(0,pos-700):pos+1400])[:2100])
+                  except Exception as exc:
+                      print("script_probe_error=", type(exc).__name__, str(exc)[:180])
+          except Exception as exc:
+              print("public_report_error=", type(exc).__name__, str(exc)[:500])
+
+          try:
+              with vpg.get_engine().connect() as conn:
+                  from sqlalchemy import text
+                  rows = conn.execute(text("""
+                      SELECT dataset_key, source_version, updated_at,
+                             CASE WHEN jsonb_typeof(payload)='array' THEN jsonb_array_length(payload) ELSE NULL END AS row_count
+                      FROM vera_dataset_cache
+                      WHERE dataset_key='timesoft_employee_checkin_today'
+                         OR dataset_key LIKE 'timesoft_employee_checkin_2026090%'
+                      ORDER BY updated_at DESC
+                      LIMIT 20
+                  """)).mappings().all()
+                  print("attendance_cache_rows=")
+                  for row in rows:
+                      print(dict(row))
+          except Exception as exc:
+              print("cache_probe_error=", type(exc).__name__, str(exc)[:500])
+
+          try:
+              from playwright.sync_api import sync_playwright
+              with sync_playwright() as p:
+                  print("chromium_executable=", p.chromium.executable_path)
+          except Exception as exc:
+              print("playwright_probe_error=", type(exc).__name__, str(exc)[:500])
+
+          try:
+              session = ts.create_authenticated_session()
+              print("authenticated_session=OK cookies=", len(session.cookies))
+              from datetime import datetime
+              today = datetime.now(ts.VN_TZ).date()
+              df, meta = ts.fetch_checkin(session, today)
+              print("fetch_checkin=OK rows=", len(df), "meta=", meta)
+          except Exception as exc:
+              print("authenticated_session_or_fetch=ERROR", type(exc).__name__, str(exc)[:1500])
+              traceback.print_exc(limit=3)
+          PY'
