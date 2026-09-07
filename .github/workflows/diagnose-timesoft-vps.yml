@@ -26,6 +26,24 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Decode TimeSoft login JavaScript
+        run: |
+          python - <<'PY'
+          import requests
+          url = 'https://vera.timesoft.vn/Scripts/User/gym-login-ofs.js?v1=171'
+          js = requests.get(url, timeout=30).text
+          marker = js.find(',$(document)')
+          if marker < 0:
+              marker = js.find('$(document)')
+          if marker < 0:
+              raise SystemExit('decoder prefix marker not found')
+          prefix = js[:marker].rstrip(',')
+          with open('/tmp/timesoft_decode.js', 'w', encoding='utf-8') as fh:
+              fh.write(prefix)
+              fh.write("\nfor (let i=0x160;i<=0x280;i++){try{console.log(i.toString(16)+'='+_0x225b(i));}catch(e){}}\n")
+          PY
+          node /tmp/timesoft_decode.js | grep -E '^(189|19a|1c2|193|21c|22e|1a3|1a5|258|263|252|1ed|1f9|22b|23d|266|217|268)=' || true
+
       - name: Build diagnostic script
         run: |
           cat > /tmp/vera_timesoft_diag.py <<'PY'
@@ -53,25 +71,7 @@ jobs:
           inputs = re.findall(r'<input\b[^>]*>', html, flags=re.I)
           print("login_inputs=")
           for tag in inputs[:40]:
-              # login page contains no credentials yet, safe to print input metadata.
               print(re.sub(r'\s+', ' ', tag)[:600])
-
-          scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)', html, flags=re.I)
-          print("login_scripts=", scripts)
-          for src in scripts:
-              js_url = urljoin(report.url, src)
-              try:
-                  response = login.get(js_url, timeout=20)
-                  js = response.text
-              except Exception as exc:
-                  print("script_error=", js_url, type(exc).__name__, str(exc)[:180])
-                  continue
-              print("script=", js_url, "status=", response.status_code, "len=", len(js))
-              lowered = js.lower()
-              if any(token in lowered for token in ("validateuser", "ajax", "password", "username", "redirecturl", "encrypt")):
-                  # JS is public application code and contains no configured credentials.
-                  compact = re.sub(r'\s+', ' ', js)
-                  print("interesting_script_content=", compact[:16000])
 
           try:
               with vpg.get_engine().connect() as conn:
