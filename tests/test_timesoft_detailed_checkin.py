@@ -88,3 +88,38 @@ def test_install_combines_summary_and_raw_faceid_rows():
     assert meta["RawLogRows"] == 5
     assert meta["CombinedRows"] == 6
     assert meta["DetailedLogReady"] is True
+
+
+def test_install_keeps_summary_when_detail_export_fails():
+    class Session:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("detail endpoint unavailable")
+
+    summary_df = pd.DataFrame([
+        {
+            "EmployeeName": "Tiên Tiên",
+            "WorkDateStr": "01/09/2026",
+            "MachineTimeCheckInStr": "01/09/2026 09:57:17",
+            "MachineTimeCheckOutStr": "01/09/2026 17:20:07",
+        }
+    ])
+    logs = []
+    ts = SimpleNamespace(
+        BASE_URL="https://vera.timesoft.vn",
+        REPORT_CHECKIN_PAGE="/Report/ReportEmployeeCheckin/Index",
+        _date_range_text=lambda start, end: f"{start:%d/%m/%Y} - {end:%d/%m/%Y}",
+        fetch_checkin=lambda session, target_date: (summary_df.copy(), {"Total": 1}),
+        _log=logs.append,
+    )
+
+    detail.install(ts)
+    combined, meta = ts.fetch_checkin(Session(), date(2026, 9, 1))
+
+    assert len(combined) == 1
+    assert combined.iloc[0]["MachineTimeCheckInStr"] == "01/09/2026 09:57:17"
+    assert meta["SummaryRows"] == 1
+    assert meta["RawLogRows"] == 0
+    assert meta["CombinedRows"] == 1
+    assert meta["DetailedLogReady"] is False
+    assert "detail endpoint unavailable" in meta["DetailedLogError"]
+    assert any("TIMESOFT DETAIL FALLBACK" in line for line in logs)
