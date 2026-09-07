@@ -40,8 +40,7 @@ jobs:
               if (prop === 'is') return function(){ return false; };
               if (prop === 'attr' || prop === 'prop' || prop === 'css' || prop === 'show' || prop === 'hide' || prop === 'focus' || prop === 'each') return function(){ return chain; };
               return chain;
-            },
-            apply(){ return chain; }
+            }, apply(){ return chain; }
           });
           global.$ = chain; global.jQuery = chain; global.document = {};
           global.window = { location: { href:'', search:'' }, localStorage:{setItem(){},removeItem(){},getItem(){return null;}}, setTimeout(){}, top:null, self:null };
@@ -53,8 +52,7 @@ jobs:
               fh.write(stub + '\n' + js)
               fh.write("\nconsole.log('---DECODE---');\nfor (let i=0x160;i<=0x280;i++){try{console.log(i.toString(16)+'='+_0x225b(i));}catch(e){}}\n")
           PY
-          node /tmp/timesoft_decode.js 2>/tmp/timesoft_decode.err | sed -n '/---DECODE---/,$p' | grep -E '^(188|189|19a|1ad|1b9|1c2|1dc|193|20a|20c|218|261|246|21c|22e|1a3|1a5|258|263|252|1ed|1f9|22b|23d|266|217|268|1be|1b7|180|1e6|1f1|24b)=' || true
-          if [ -s /tmp/timesoft_decode.err ]; then tail -n 20 /tmp/timesoft_decode.err; fi
+          node /tmp/timesoft_decode.js 2>/tmp/timesoft_decode.err | sed -n '/---DECODE---/,$p' | grep -E '^(188|1b9|1dc|20a|258|263)=' || true
 
       - name: Build diagnostic script
         run: |
@@ -71,12 +69,22 @@ jobs:
           os.chdir(release_dir); sys.path.insert(0, release_dir)
           import timesoft_sync_job as ts
           import vera_postgres as vpg
-          login = requests.Session()
-          report = login.get(urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/")), timeout=20, allow_redirects=True)
+          session = requests.Session()
+          report = session.get(urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/")), timeout=20, allow_redirects=True)
           print("report_redirect=", report.status_code, report.url)
           html = report.text
-          print("login_inputs=")
-          for tag in re.findall(r'<input\b[^>]*>', html, flags=re.I)[:40]: print(re.sub(r'\s+', ' ', tag)[:600])
+          pos = html.find('$CustomAjax')
+          if pos >= 0: print('inline_custom_ajax=', re.sub(r'\s+', ' ', html[max(0,pos-1200):pos+3000])[:4200])
+          scripts = re.findall(r'<script[^>]+src=["\']([^"\']+)', html, flags=re.I)
+          for src in scripts:
+              try:
+                  js_url = urljoin(report.url, src)
+                  js = session.get(js_url, timeout=15).text
+                  pos = js.find('$CustomAjax')
+                  if pos >= 0 and 'gym-login-ofs' not in js_url:
+                      print('custom_ajax_script=', js_url)
+                      print('custom_ajax_context=', re.sub(r'\s+', ' ', js[max(0,pos-1600):pos+3500])[:5200])
+              except Exception: pass
           try:
               with vpg.get_engine().connect() as conn:
                   from sqlalchemy import text as sql_text
@@ -92,7 +100,7 @@ jobs:
           except Exception as exc: print("cache_probe_error=", type(exc).__name__, str(exc)[:500])
           PY
 
-      - name: Diagnose TimeSoft login protocol and cache
+      - name: Diagnose TimeSoft ajax protocol and cache
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
