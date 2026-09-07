@@ -256,6 +256,8 @@ function closeMenu(wrapper) {
   wrapper.classList.remove('vera-open')
   const menu = wrapper.__veraTypingMenu
   if (menu) menu.classList.remove('open')
+  const input = wrapper.querySelector('input')
+  if (input) input.setAttribute('aria-expanded', 'false')
 }
 
 function closeAllMenus(except = null) {
@@ -272,8 +274,9 @@ function positionMenu(input, menu) {
   const above = Math.max(80, rect.top - gap - 8)
   const useAbove = below < 150 && above > below
   const maxHeight = Math.min(280, useAbove ? above : below)
-  menu.style.left = `${Math.max(8, rect.left)}px`
-  menu.style.width = `${Math.min(rect.width, window.innerWidth - Math.max(8, rect.left) - 8)}px`
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - 168))
+  menu.style.left = `${left}px`
+  menu.style.width = `${Math.max(160, Math.min(rect.width, window.innerWidth - left - 8))}px`
   menu.style.maxHeight = `${maxHeight}px`
   if (useAbove) {
     menu.style.top = 'auto'
@@ -325,6 +328,7 @@ function renderMenu(select, input, wrapper, query = input.value) {
 
   closeAllMenus(wrapper)
   wrapper.classList.add('vera-open')
+  input.setAttribute('aria-expanded', 'true')
   menu.classList.add('open')
   positionMenu(input, menu)
 }
@@ -340,9 +344,6 @@ function syncEnhancedSelect(select, input, wrapper) {
   if (document.activeElement !== input && !wrapper.classList.contains('vera-open')) {
     const label = selectedLabel(select)
     if (input.value !== label) input.value = label
-  }
-  if (wrapper.classList.contains('vera-open')) {
-    renderMenu(select, input, wrapper, document.activeElement === input ? input.value : '')
   }
 }
 
@@ -384,7 +385,6 @@ function enhanceSelect(select) {
     window.setTimeout(() => {
       input.select()
       renderMenu(select, input, wrapper, '')
-      input.setAttribute('aria-expanded', 'true')
     }, 0)
   })
   input.addEventListener('click', () => {
@@ -394,7 +394,6 @@ function enhanceSelect(select) {
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       closeMenu(wrapper)
-      input.setAttribute('aria-expanded', 'false')
       input.value = selectedLabel(select)
       return
     }
@@ -409,7 +408,6 @@ function enhanceSelect(select) {
     event.preventDefault()
     if (commitOption(select, row, input)) {
       closeMenu(wrapper)
-      input.setAttribute('aria-expanded', 'false')
       input.select()
     }
   })
@@ -421,7 +419,6 @@ function enhanceSelect(select) {
   select.addEventListener('change', () => {
     input.value = selectedLabel(select)
     closeMenu(wrapper)
-    input.setAttribute('aria-expanded', 'false')
   })
 }
 
