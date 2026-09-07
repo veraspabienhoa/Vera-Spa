@@ -43,25 +43,17 @@ jobs:
             },
             apply(){ return chain; }
           });
-          global.$ = chain;
-          global.jQuery = chain;
-          global.document = {};
+          global.$ = chain; global.jQuery = chain; global.document = {};
           global.window = { location: { href:'', search:'' }, localStorage:{setItem(){},removeItem(){},getItem(){return null;}}, setTimeout(){}, top:null, self:null };
-          global.top = global.window;
-          global.self = global.window;
-          global.metroDialog = chain;
+          global.top = global.window; global.self = global.window; global.metroDialog = chain;
           global.$CustomAjax = function(){ return { done(){ return this; }, then(){ return this; } }; };
-          global.getQuerystring = function(){ return ''; };
-          global.encrypt = function(v){ return v; };
-          global.sendOne = '';
+          global.getQuerystring = function(){ return ''; }; global.encrypt = function(v){ return v; }; global.sendOne = '';
           '''
           with open('/tmp/timesoft_decode.js', 'w', encoding='utf-8') as fh:
-              fh.write(stub)
-              fh.write('\n')
-              fh.write(js)
+              fh.write(stub + '\n' + js)
               fh.write("\nconsole.log('---DECODE---');\nfor (let i=0x160;i<=0x280;i++){try{console.log(i.toString(16)+'='+_0x225b(i));}catch(e){}}\n")
           PY
-          node /tmp/timesoft_decode.js 2>/tmp/timesoft_decode.err | sed -n '/---DECODE---/,$p' | grep -E '^(189|19a|1c2|193|21c|22e|1a3|1a5|258|263|252|1ed|1f9|22b|23d|266|217|268|1be|1b7|180|1e6|1f1|24b)=' || true
+          node /tmp/timesoft_decode.js 2>/tmp/timesoft_decode.err | sed -n '/---DECODE---/,$p' | grep -E '^(188|189|19a|1ad|1b9|1c2|1dc|193|20a|20c|218|261|246|21c|22e|1a3|1a5|258|263|252|1ed|1f9|22b|23d|266|217|268|1be|1b7|180|1e6|1f1|24b)=' || true
           if [ -s /tmp/timesoft_decode.err ]; then tail -n 20 /tmp/timesoft_decode.err; fi
 
       - name: Build diagnostic script
@@ -70,29 +62,21 @@ jobs:
           import os, re, sys
           from urllib.parse import urljoin
           import requests
-
           pid, release_dir = sys.argv[1], sys.argv[2]
           raw = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
           for item in raw:
-              if b"=" not in item:
-                  continue
+              if b"=" not in item: continue
               key, value = item.split(b"=", 1)
               os.environ[key.decode("utf-8", "ignore")] = value.decode("utf-8", "ignore")
-          os.chdir(release_dir)
-          sys.path.insert(0, release_dir)
-
+          os.chdir(release_dir); sys.path.insert(0, release_dir)
           import timesoft_sync_job as ts
           import vera_postgres as vpg
-
           login = requests.Session()
           report = login.get(urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/")), timeout=20, allow_redirects=True)
           print("report_redirect=", report.status_code, report.url)
           html = report.text
-          inputs = re.findall(r'<input\b[^>]*>', html, flags=re.I)
           print("login_inputs=")
-          for tag in inputs[:40]:
-              print(re.sub(r'\s+', ' ', tag)[:600])
-
+          for tag in re.findall(r'<input\b[^>]*>', html, flags=re.I)[:40]: print(re.sub(r'\s+', ' ', tag)[:600])
           try:
               with vpg.get_engine().connect() as conn:
                   from sqlalchemy import text as sql_text
@@ -100,15 +84,12 @@ jobs:
                       SELECT dataset_key, source_version, updated_at,
                              CASE WHEN jsonb_typeof(payload)='array' THEN jsonb_array_length(payload) ELSE NULL END AS row_count
                       FROM vera_dataset_cache
-                      WHERE dataset_key='timesoft_employee_checkin_today'
-                         OR dataset_key LIKE 'timesoft_employee_checkin_2026090%'
+                      WHERE dataset_key='timesoft_employee_checkin_today' OR dataset_key LIKE 'timesoft_employee_checkin_2026090%'
                       ORDER BY updated_at DESC LIMIT 20
                   """)).mappings().all()
                   print("attendance_cache_rows=")
-                  for row in rows:
-                      print(dict(row))
-          except Exception as exc:
-              print("cache_probe_error=", type(exc).__name__, str(exc)[:500])
+                  for row in rows: print(dict(row))
+          except Exception as exc: print("cache_probe_error=", type(exc).__name__, str(exc)[:500])
           PY
 
       - name: Diagnose TimeSoft login protocol and cache
