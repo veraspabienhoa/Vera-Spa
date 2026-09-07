@@ -12,7 +12,9 @@ import { startEmployeeProfileSwitchGuard } from './lib/employeeProfileSwitchGuar
 import { startEmployeeProfileCompletionAndIssuerFix } from './lib/employeeProfileCompletionAndIssuerFix'
 import { startEmployeeDirectoryUx } from './lib/employeeDirectoryUx'
 import { startEmployeeProfileHeaderSaveFix } from './lib/employeeProfileHeaderSaveFix'
+import { startEmployeeToolbarRecovery } from './lib/employeeToolbarRecovery'
 import { startEmployeeMissingProfileFix } from './lib/employeeMissingProfileFix'
+import { startLeaveListDateFilterSync } from './lib/leaveListDateFilterSync'
 import { startDepartmentSalaryAdvanceTransportGuard } from './lib/departmentSalaryAdvanceTransportGuard'
 import { startDepartmentSalaryAdvanceLedger } from './lib/departmentSalaryAdvanceLedger'
 import { startAttendanceTimesoftRefreshGuard } from './lib/attendanceTimesoftRefreshGuard'
@@ -29,7 +31,9 @@ startEmployeeProfileSwitchGuard()
 startEmployeeProfileCompletionAndIssuerFix()
 startEmployeeDirectoryUx()
 startEmployeeProfileHeaderSaveFix()
+startEmployeeToolbarRecovery()
 startEmployeeMissingProfileFix()
+startLeaveListDateFilterSync()
 startDepartmentSalaryAdvanceTransportGuard()
 startDepartmentSalaryAdvanceLedger()
 startAttendanceTimesoftRefreshGuard()
