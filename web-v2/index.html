@@ -66,15 +66,18 @@
           letter-spacing: .13em !important;
           line-height: 1.1;
         }
-        /* 28px -> 19.6px: reduce the mobile tagline rendered length by about 30%. */
+        /* Mobile only: make the slogan line visually 30% shorter without reducing its height again. */
         .topbar-title.vera-script-tagline {
-          width: 100%;
+          width: 142.857%;
+          max-width: 142.857%;
           font-size: 19.6px !important;
           line-height: 1.05 !important;
           letter-spacing: 0 !important;
           white-space: nowrap !important;
           overflow: hidden !important;
           text-overflow: ellipsis;
+          transform: scaleX(.7);
+          transform-origin: left center;
         }
         .topbar .mobile-menu,
         .topbar .standalone-menu-toggle {
