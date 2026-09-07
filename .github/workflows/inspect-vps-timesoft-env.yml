@@ -26,7 +26,7 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Inspect service environment wiring without values
+      - name: Inspect service permissions without values
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -35,13 +35,16 @@ jobs:
             set -e
             pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app")
             unit=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/$pid/cgroup" | head -n 1)
-            echo "unit=$unit"
             envfile=$(systemctl show "$unit" -p EnvironmentFiles --value | awk "{print \$1}")
+            echo "unit=$unit"
             echo "envfile=$envfile"
             if [ -n "$envfile" ] && [ -e "$envfile" ]; then
               stat -c "envfile=%n owner=%U group=%G mode=%a" "$envfile"
-              echo "envfile_writable_by_deploy_user=$([ -w "$envfile" ] && echo yes || echo no)"
             fi
-            echo "sudo_noninteractive_available=$(sudo -n true >/dev/null 2>&1 && echo yes || echo no)"
-            echo "deploy_script_owner=$(stat -c "%U:%G %a" /opt/vera-spa/deploy.sh)"
+            echo "sudo_list_begin"
+            sudo -n -l || true
+            echo "sudo_list_end"
+            echo "deploy_script_begin"
+            sed -n "1,220p" /opt/vera-spa/deploy.sh
+            echo "deploy_script_end"
           '
