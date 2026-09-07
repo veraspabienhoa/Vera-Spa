@@ -11,6 +11,7 @@ import { startEmployeeProfileProductionFix } from './lib/employeeProfileProducti
 import { startEmployeeProfileSwitchGuard } from './lib/employeeProfileSwitchGuard'
 import { startEmployeeProfileCompletionAndIssuerFix } from './lib/employeeProfileCompletionAndIssuerFix'
 import { startEmployeeDirectoryUx } from './lib/employeeDirectoryUx'
+import { startEmployeeMissingProfileFix } from './lib/employeeMissingProfileFix'
 import './styles.css'
 import './visibility-cleanup.css'
 
@@ -23,6 +24,7 @@ startEmployeeProfileProductionFix()
 startEmployeeProfileSwitchGuard()
 startEmployeeProfileCompletionAndIssuerFix()
 startEmployeeDirectoryUx()
+startEmployeeMissingProfileFix()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
