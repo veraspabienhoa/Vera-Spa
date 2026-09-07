@@ -5,9 +5,11 @@ let scheduled = false
 
 function setNativeValue(control, value) {
   if (!control) return
-  const proto = control instanceof HTMLTextAreaElement
-    ? HTMLTextAreaElement.prototype
-    : HTMLInputElement.prototype
+  const proto = control instanceof HTMLSelectElement
+    ? HTMLSelectElement.prototype
+    : control instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype
   const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
   if (setter) setter.call(control, value)
   else control.value = value
@@ -218,9 +220,7 @@ function firstMatchingOption(select, query) {
 
 function commitOption(select, row) {
   if (!row || row.disabled) return false
-  select.value = row.value
-  select.dispatchEvent(new Event('input', { bubbles: true }))
-  select.dispatchEvent(new Event('change', { bubbles: true }))
+  setNativeValue(select, row.value)
   return true
 }
 
