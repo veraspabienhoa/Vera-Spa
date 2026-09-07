@@ -26,3 +26,15 @@ def test_employee_search_waits_for_vietnamese_ime_composition():
     assert "onCompositionEnd={finishEmployeeSearchComposition}" in page
     assert "setAppliedSearch(search), 180" in page
     assert "const needle = searchKey(appliedSearch)" in page
+
+
+def test_employee_list_has_search_directly_below_heading():
+    page = (ROOT / "web-v2/src/pages/EmployeePage.jsx").read_text(encoding="utf-8")
+    heading = page.index("<h2>DANH SÁCH NHÂN VIÊN</h2>")
+    search = page.index('className="staff-search staff-list-search"', heading)
+    actions = page.index('className="staff-list-selection-actions"', heading)
+
+    assert heading < search < actions
+    assert 'aria-label="Tìm kiếm trong danh sách nhân viên"' in page[search:actions]
+    assert 'placeholder="Tìm kiếm theo tên nhân viên"' in page[search:actions]
+    assert "onCompositionEnd={finishEmployeeSearchComposition}" in page[search:actions]

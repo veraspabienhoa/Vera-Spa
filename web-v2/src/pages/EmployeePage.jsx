@@ -487,6 +487,18 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-list-panel">
         <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /> Làm mới</button></div>
+        <div className="staff-search staff-list-search">
+          <Search size={17} />
+          <input
+            type="search"
+            value={search}
+            aria-label="Tìm kiếm trong danh sách nhân viên"
+            placeholder="Tìm kiếm theo tên nhân viên"
+            onCompositionStart={() => { searchCompositionRef.current = true }}
+            onCompositionEnd={finishEmployeeSearchComposition}
+            onChange={(event) => changeEmployeeSearch(event.target.value)}
+          />
+        </div>
         {canSelectRows && <div className="staff-list-selection-actions">
           <button className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/> Chọn tất cả</button>
           <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}>Bỏ chọn</button>
