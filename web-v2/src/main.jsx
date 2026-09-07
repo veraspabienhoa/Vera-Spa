@@ -11,6 +11,7 @@ import { startEmployeeProfileProductionFix } from './lib/employeeProfileProducti
 import { startEmployeeProfileSwitchGuard } from './lib/employeeProfileSwitchGuard'
 import { startEmployeeProfileCompletionAndIssuerFix } from './lib/employeeProfileCompletionAndIssuerFix'
 import { startEmployeeDirectoryUx } from './lib/employeeDirectoryUx'
+import { startEmployeeProfileHeaderSaveFix } from './lib/employeeProfileHeaderSaveFix'
 import { startEmployeeMissingProfileFix } from './lib/employeeMissingProfileFix'
 import { startDepartmentSalaryAdvanceTransportGuard } from './lib/departmentSalaryAdvanceTransportGuard'
 import { startDepartmentSalaryAdvanceLedger } from './lib/departmentSalaryAdvanceLedger'
@@ -27,6 +28,7 @@ startEmployeeProfileProductionFix()
 startEmployeeProfileSwitchGuard()
 startEmployeeProfileCompletionAndIssuerFix()
 startEmployeeDirectoryUx()
+startEmployeeProfileHeaderSaveFix()
 startEmployeeMissingProfileFix()
 startDepartmentSalaryAdvanceTransportGuard()
 startDepartmentSalaryAdvanceLedger()
