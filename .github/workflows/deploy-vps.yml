@@ -2,11 +2,6 @@ name: Deploy VPS Production
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - "VERA SPA CI"
-    types:
-      - completed
 
 permissions:
   contents: read
@@ -17,13 +12,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       (vars.AUTO_DEPLOY_VPS == 'true' ||
-        contains(github.event.workflow_run.head_commit.message, '[deploy-vps]')))
     runs-on: ubuntu-latest
 
     steps:
@@ -39,11 +27,11 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Deploy tested commit
+      - name: Deploy selected main commit
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          DEPLOY_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
@@ -54,7 +42,7 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
-          DEPLOY_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
           test -n "$VERA_DB_PASS"
           if [[ "$VERA_DB_PASS" == *$'\n'* || "$VERA_DB_PASS" == *$'\r'* ]]; then
