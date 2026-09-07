@@ -6,6 +6,7 @@ import { startPurchaseReconcileAlertWatcher } from './lib/purchaseReconcileAlert
 import { registerVeraServiceWorker } from './lib/pushNotifications'
 import { startEmployeeProfileUxEnhancements } from './lib/employeeProfileUx'
 import { startEmployeeCccdFieldExtract } from './lib/employeeCccdFieldExtract'
+import { startEmployeeCccdTabViewer } from './lib/employeeCccdTabViewer'
 import './styles.css'
 import './visibility-cleanup.css'
 
@@ -13,6 +14,7 @@ void registerVeraServiceWorker().catch(() => {})
 startPurchaseReconcileAlertWatcher()
 startEmployeeProfileUxEnhancements()
 startEmployeeCccdFieldExtract()
+startEmployeeCccdTabViewer()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
