@@ -26,6 +26,57 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Test GitHub TimeSoft secrets without exposing values
+        env:
+          GH_TIMESOFT_USERNAME: ${{ secrets.TIMESOFT_USERNAME }}
+          GH_TIMESOFT_PASSWORD: ${{ secrets.TIMESOFT_PASSWORD }}
+          GH_VERA_TIMESOFT_USERNAME: ${{ secrets.VERA_TIMESOFT_USERNAME }}
+          GH_VERA_TIMESOFT_PASSWORD: ${{ secrets.VERA_TIMESOFT_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import hashlib, os
+          from urllib.parse import urljoin
+          import requests
+
+          def sig(value):
+              value = str(value or '')
+              return hashlib.sha256(value.encode()).hexdigest()[:12] if value else 'empty'
+
+          pairs = [
+              ('TIMESOFT_*', os.getenv('GH_TIMESOFT_USERNAME',''), os.getenv('GH_TIMESOFT_PASSWORD','')),
+              ('VERA_TIMESOFT_*', os.getenv('GH_VERA_TIMESOFT_USERNAME',''), os.getenv('GH_VERA_TIMESOFT_PASSWORD','')),
+          ]
+          for label, username, password in pairs:
+              print(label, {'username_available': bool(username), 'username_length': len(username), 'username_sha12': sig(username), 'password_available': bool(password), 'password_length': len(password), 'password_sha12': sig(password)})
+              if not username or not password:
+                  continue
+              session = requests.Session()
+              session.headers.update({'User-Agent':'Mozilla/5.0 Chrome/140 Safari/537.36','Accept-Language':'vi-VN,vi;q=0.9'})
+              base='https://vera.timesoft.vn'
+              report=urljoin(base+'/', 'Report/ReportEmployeeCheckin/Index')
+              page=session.get(report,timeout=20,allow_redirects=True)
+              response=session.post(urljoin(base+'/', 'User/ValidateUser'), data={'userName':username,'password':password,'sendOne':''}, headers={'Accept':'application/json, text/javascript, */*; q=0.01','X-Requested-With':'XMLHttpRequest','Referer':str(page.url),'Origin':base}, timeout=20, allow_redirects=False)
+              payload=response.json() if 'json' in str(response.headers.get('content-type','')).lower() else {}
+              print(label+'_login_test', {key: payload.get(key) for key in ('valid','ErrorCode','Message','linkRedirect') if key in payload})
+          PY
+
+      - name: Probe legacy Cloud Run attendance health
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          url='https://vera-spa-api-589916994342.asia-southeast1.run.app/v2/attendance/break-alerts/health'
+          try:
+              req=urllib.request.Request(url,headers={'Accept':'application/json','User-Agent':'Mozilla/5.0 Chrome/140'})
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  payload=json.load(response)
+              live=payload.get('live_timesoft') or {}
+              safe={key:live.get(key) for key in ('release','credentials_ready','last_success_age_seconds','last_error','source','rows','total','summary_rows','raw_log_rows','combined_rows','detailed_log_ready') if key in live}
+              print('legacy_cloud_run_http=',200)
+              print('legacy_cloud_run_live_timesoft=',safe)
+          except Exception as exc:
+              print('legacy_cloud_run_error=',type(exc).__name__,str(exc)[:500])
+          PY
+
       - name: Build Secret Manager comparison diagnostic
         run: |
           cat > /tmp/vera_timesoft_diag.py <<'PY'
