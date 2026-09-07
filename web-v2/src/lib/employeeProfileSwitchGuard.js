@@ -45,6 +45,36 @@ function ensureTopClose(panel) {
   header.appendChild(button)
 }
 
+function sourceControl(label) {
+  return label.querySelector('[data-vera-national-source="1"]')
+    || label.querySelector('input:not([type="file"]):not([type="password"]), textarea')
+}
+
+function syncEnhancedSelect(label) {
+  const source = sourceControl(label)
+  const select = label.querySelector('select[data-vera-national-select="1"], .vera-reference-row select')
+  if (!source || !select) return
+  const value = clean(source.value)
+  if (value && !Array.from(select.options).some((option) => option.value === value)) {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = value
+    select.appendChild(option)
+  }
+  select.value = value
+}
+
+function resetProfileControls(panel, username) {
+  if (panel.dataset.veraProfileFieldsOwner === username) return
+  panel.dataset.veraProfileFieldsOwner = username
+
+  panel.querySelectorAll('label').forEach((label) => {
+    label.classList.remove('vera-profile-missing', 'vera-required-missing')
+    delete label.dataset.veraMissingLabel
+    syncEnhancedSelect(label)
+  })
+}
+
 function mediaPreview(card) {
   return card.querySelector('.employee-portrait-preview, .employee-id-preview')
 }
@@ -126,6 +156,7 @@ function reconcileProfile() {
   const username = profileUsername(panel)
   if (!username) return
   ensureTopClose(panel)
+  resetProfileControls(panel, username)
   panel.querySelectorAll('.employee-portrait-side, .employee-id-side').forEach((card) => {
     reconcileMediaCard(card, username)
   })
@@ -143,8 +174,10 @@ export function startEmployeeProfileSwitchGuard() {
   }
 
   const observer = new MutationObserver(schedule)
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'class'] })
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'class', 'value'] })
   document.addEventListener('click', schedule, true)
+  document.addEventListener('input', schedule, true)
+  document.addEventListener('change', schedule, true)
   const interval = window.setInterval(reconcileProfile, 700)
   schedule()
 
