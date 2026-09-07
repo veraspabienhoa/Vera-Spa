@@ -32,7 +32,7 @@ function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error('Không chuyển được ảnh CCCD để mở tab mới.'))
+    reader.onerror = () => reject(new Error('Không chuyển được ảnh CCCD để mở Window mới.'))
     reader.readAsDataURL(blob)
   })
 }
@@ -102,12 +102,16 @@ function renderTab(tab, employee, frontUrl, backUrl) {
 }
 
 async function openBothSides(panel) {
-  const tab = window.open('', '_blank')
-  if (!tab) {
-    window.alert('Trình duyệt đang chặn tab mới. Hãy cho phép pop-up cho app.veraspa.vn rồi thử lại.')
+  const popup = window.open(
+    '',
+    '_blank',
+    'popup=yes,width=1280,height=900,left=80,top=60,resizable=yes,scrollbars=yes',
+  )
+  if (!popup) {
+    window.alert('Trình duyệt đang chặn Window mới. Hãy cho phép pop-up cho app.veraspa.vn rồi thử lại.')
     return
   }
-  tab.document.write('<!doctype html><meta charset="utf-8"><title>VERA SPA - CCCD</title><p style="font-family:Arial;padding:20px">Đang tải CCCD...</p>')
+  popup.document.write('<!doctype html><meta charset="utf-8"><title>VERA SPA - CCCD</title><p style="font-family:Arial;padding:20px">Đang tải CCCD...</p>')
 
   const cards = Array.from(panel.querySelectorAll('.employee-identity-grid .employee-id-side')).slice(0, 2)
   const [frontCard, backCard] = cards
@@ -120,10 +124,10 @@ async function openBothSides(panel) {
       imageToPortableUrl(frontImage),
       imageToPortableUrl(backImage),
     ])
-    renderTab(tab, employeeLabel(panel), frontUrl, backUrl)
+    renderTab(popup, employeeLabel(panel), frontUrl, backUrl)
   } catch (error) {
-    if (!tab.closed) {
-      tab.document.body.innerHTML = `<p style="font-family:Arial;padding:20px;color:#a62a20">Không mở được CCCD: ${escapeHtml(error?.message || 'Lỗi không xác định')}</p>`
+    if (!popup.closed) {
+      popup.document.body.innerHTML = `<p style="font-family:Arial;padding:20px;color:#a62a20">Không mở được CCCD: ${escapeHtml(error?.message || 'Lỗi không xác định')}</p>`
     }
   }
 }
@@ -140,8 +144,8 @@ function enhancePanel(panel) {
   button.type = 'button'
   button.className = 'secondary-button'
   button.dataset.openCccdTab = 'true'
-  button.textContent = 'Mở CCCD trong tab mới'
-  button.title = 'Mở cùng lúc mặt trước và mặt sau CCCD trong một tab mới'
+  button.textContent = 'Mở CCCD trong Window mới'
+  button.title = 'Mở cùng lúc mặt trước và mặt sau CCCD trong một Window mới'
   button.addEventListener('click', () => void openBothSides(panel))
   host.insertBefore(button, host.firstChild)
 }
