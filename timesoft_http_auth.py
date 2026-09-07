@@ -1,23 +1,32 @@
 """Browserless TimeSoft authentication for attendance sync.
 
-TimeSoft validates the login form with POST /User/ValidateUser.  Using that
+TimeSoft validates the login form with POST /User/ValidateUser. Using that
 first avoids making attendance availability depend on Chromium shared libraries
-on the VPS.  The existing Playwright login remains a compatibility fallback for
+on the VPS. The existing Playwright login remains a compatibility fallback for
 unexpected protocol changes, but an explicit invalid-credential response is
 never retried in a browser with the same credentials.
+
+Production VPS credentials may be supplied through a private runtime JSON file
+written by the manual Deploy VPS Production workflow. This avoids storing the
+TimeSoft username/password in source code or requiring write access to the
+root-owned systemd EnvironmentFile.
 """
 from __future__ import annotations
 
+import json
 import os
+import stat
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
 import requests
 
 
-RELEASE = "timesoft-http-auth-2026-09-07-v1"
+RELEASE = "timesoft-http-auth-2026-09-07-v2-runtime-file"
 LOGIN_PATH = "/User/ValidateUser"
 INVALID_CREDENTIAL_CODES = {"US0006"}
+DEFAULT_RUNTIME_CREDENTIAL_FILE = "/opt/vera-spa/timesoft-credentials.json"
 
 
 class TimeSoftAuthenticationError(RuntimeError):
@@ -46,9 +55,51 @@ def _is_true(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "ok"}
 
 
+def refresh_runtime_credentials(ts) -> tuple[str, str]:
+    """Refresh ts.USERNAME/PASSWORD from the private VPS runtime file when present.
+
+    The file is intentionally outside the Git checkout. It must be a regular
+    file and must not be readable by other users. If the file does not exist,
+    the existing environment-backed values remain available for compatibility.
+    """
+    path = Path(
+        str(os.getenv("TIMESOFT_RUNTIME_CREDENTIAL_FILE", DEFAULT_RUNTIME_CREDENTIAL_FILE) or DEFAULT_RUNTIME_CREDENTIAL_FILE)
+    )
+    try:
+        file_stat = path.stat()
+    except FileNotFoundError:
+        return (
+            str(getattr(ts, "USERNAME", "") or "").strip(),
+            str(getattr(ts, "PASSWORD", "") or ""),
+        )
+    except OSError as exc:
+        raise RuntimeError("Không đọc được file credential TimeSoft trên VPS.") from exc
+
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise RuntimeError("File credential TimeSoft trên VPS không hợp lệ.")
+    if stat.S_IMODE(file_stat.st_mode) & 0o007:
+        raise RuntimeError("File credential TimeSoft trên VPS đang cho phép user khác đọc; yêu cầu chmod 640/600.")
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError("File credential TimeSoft trên VPS không phải JSON hợp lệ.") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("File credential TimeSoft trên VPS có cấu trúc không hợp lệ.")
+
+    username = str(payload.get("username") or "").strip()
+    password = str(payload.get("password") or "")
+    if not username or not password:
+        raise TimeSoftAuthenticationError("File credential TimeSoft trên VPS đang thiếu username hoặc password.")
+
+    ts.USERNAME = username
+    ts.PASSWORD = password
+    ts._timesoft_runtime_credentials_source = str(path)
+    return username, password
+
+
 def create_http_authenticated_session(ts) -> requests.Session:
-    username = str(getattr(ts, "USERNAME", "") or "").strip()
-    password = str(getattr(ts, "PASSWORD", "") or "")
+    username, password = refresh_runtime_credentials(ts)
     if not username or not password:
         raise TimeSoftAuthenticationError("Thiếu TIMESOFT_USERNAME/TIMESOFT_PASSWORD trên máy chủ VERA.")
 
@@ -131,6 +182,7 @@ def install(ts) -> None:
 
     def create_authenticated_session():
         if not http_enabled:
+            refresh_runtime_credentials(ts)
             return original_create_session()
         try:
             session = create_http_authenticated_session(ts)
@@ -149,6 +201,9 @@ def install(ts) -> None:
                     f"{type(http_error).__name__}: {_safe_text(ts, http_error)}; thử Playwright fallback"
                 )
             try:
+                # Refresh again immediately before browser fallback so both
+                # authentication modes use the same current runtime credentials.
+                refresh_runtime_credentials(ts)
                 session = original_create_session()
                 setattr(session, "_vera_timesoft_auth_mode", "playwright-fallback")
                 setattr(session, "_vera_timesoft_auth_release", RELEASE)
