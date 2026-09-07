@@ -18,6 +18,13 @@ function findActionButton(side, text) {
     .find((button) => String(button.textContent || '').trim().includes(text)) || null
 }
 
+function currentPortraitUsername(side) {
+  const panel = side?.closest('.staff-form-panel')
+  const heading = String(panel?.querySelector('h2')?.textContent || '')
+  if (heading.includes('·')) return heading.split('·').slice(1).join('·').trim()
+  return String(side?.dataset?.portraitUsername || '').trim()
+}
+
 function openPortraitViewer(image, side, username) {
   if (!image?.src || document.querySelector('[data-portrait-viewer="true"]')) return
 
@@ -68,7 +75,7 @@ function openPortraitViewer(image, side, username) {
   download.type = 'button'
   download.className = 'secondary-button compact'
   download.textContent = 'Tải ảnh'
-  download.onclick = () => downloadPortrait(image, username)
+  download.onclick = () => downloadPortrait(image, currentPortraitUsername(side) || username)
   actions.appendChild(download)
 
   addAction('Crop / Xoay', 'Crop / Xoay')
@@ -126,16 +133,18 @@ export default function EmployeeManagementEnhancements({ user }) {
       document.querySelectorAll('.employee-portrait-side').forEach((side) => {
         const image = side.querySelector('.employee-portrait-preview img')
         const actions = side.querySelector('.employee-id-actions')
-        const panel = side.closest('.staff-form-panel')
-        const heading = String(panel?.querySelector('h2')?.textContent || '')
-        const username = heading.includes('·') ? heading.split('·').slice(1).join('·').trim() : ''
+        const username = currentPortraitUsername(side)
+        side.dataset.portraitUsername = username
 
         if (image) {
           image.style.cursor = 'zoom-in'
           image.title = 'Bấm để phóng to ảnh nhân viên'
           if (!image.dataset.portraitViewerBound) {
             image.dataset.portraitViewerBound = 'true'
-            image.addEventListener('click', () => openPortraitViewer(image, side, username))
+            image.addEventListener('click', () => {
+              const liveUsername = currentPortraitUsername(side)
+              openPortraitViewer(image, side, liveUsername)
+            })
           }
         }
 
@@ -145,7 +154,7 @@ export default function EmployeeManagementEnhancements({ user }) {
           button.className = 'secondary-button compact'
           button.dataset.portraitDownload = 'true'
           button.textContent = 'Tải ảnh'
-          button.addEventListener('click', () => downloadPortrait(image, username))
+          button.addEventListener('click', () => downloadPortrait(image, currentPortraitUsername(side)))
           const cropButton = findActionButton(side, 'Crop / Xoay')
           if (cropButton) actions.insertBefore(button, cropButton)
           else actions.appendChild(button)
