@@ -21,11 +21,11 @@ from typing import Any
 
 import timesoft_sync_job as ts
 from timesoft_detailed_checkin import install as install_detailed_checkin
-from timesoft_http_auth import install as install_http_auth
+from timesoft_http_auth import install as install_http_auth, refresh_runtime_credentials
 from timesoft_recalculate_checkin import install as install_recalculate_checkin
 
 
-RELEASE = "timesoft-live-refresh-2026-09-07-v3-http-auth"
+RELEASE = "timesoft-live-refresh-2026-09-07-v4-runtime-credentials"
 MIN_INTERVAL_SECONDS = max(10, min(60, int(os.getenv("TIMESOFT_LIVE_REFRESH_SECONDS", "20") or 20)))
 
 _lock = threading.Lock()
@@ -43,7 +43,11 @@ install_http_auth(ts)
 
 
 def _credentials_ready() -> bool:
-    return bool(str(ts.USERNAME or "").strip() and str(ts.PASSWORD or ""))
+    try:
+        username, password = refresh_runtime_credentials(ts)
+    except Exception:
+        return False
+    return bool(str(username or "").strip() and str(password or ""))
 
 
 def _write_today(checkin_df) -> None:
@@ -91,6 +95,15 @@ def refresh_today(force: bool = False) -> dict[str, Any]:
             }
 
         try:
+            # Always refresh credentials before establishing/reusing a session.
+            # If the runtime credential file changed, discard the old session so
+            # the next request authenticates with the new account immediately.
+            before = (str(ts.USERNAME or ""), str(ts.PASSWORD or ""))
+            refresh_runtime_credentials(ts)
+            after = (str(ts.USERNAME or ""), str(ts.PASSWORD or ""))
+            if before != after:
+                _session = None
+
             if _session is None:
                 _session = ts.create_authenticated_session()
             today = datetime.now(ts.VN_TZ).date()
@@ -141,6 +154,7 @@ def health() -> dict[str, Any]:
         "ok": True,
         "release": RELEASE,
         "credentials_ready": _credentials_ready(),
+        "credentials_source": str(getattr(ts, "_timesoft_runtime_credentials_source", "environment")),
         "min_interval_seconds": MIN_INTERVAL_SECONDS,
         "last_success_age_seconds": round(age, 3) if age is not None else None,
         "last_error": _last_error,
