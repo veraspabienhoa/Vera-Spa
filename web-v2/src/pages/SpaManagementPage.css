@@ -1,0 +1,62 @@
+.spa-management{display:grid; gap:18px}
+.spa-management .page-heading{display:flex; justify-content:space-between; align-items:center; gap:14px}
+.spa-management h1{margin:8px 0; font-family:Georgia,serif; font-size:42px; color:var(--green-950,#173329)}
+.spa-management p{color:var(--muted,#6c7c76)}
+.spa-tabs{display:flex; gap:8px; flex-wrap:wrap}
+.spa-tabs button{padding:12px 18px; border:1px solid #d6e3dc; border-radius:12px; background:white; font:inherit; font-weight:750; color:#244f40; cursor:pointer}
+.spa-tabs button[aria-selected=true]{background:#204e3e; color:white; border-color:#204e3e}
+.spa-content{padding:20px; min-width:0}
+.spa-toolbar{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:18px}
+.spa-toolbar>input{flex:1; min-width:180px; max-width:420px}
+.spa-toolbar>span{font-size:13px; color:#65796e}
+.spa-toolbar>.spa-actions{margin-left:auto}
+.spa-actions{display:flex; gap:8px; flex-wrap:wrap}
+.spa-management table{width:100%; border-collapse:collapse; text-align:left}
+.spa-management th,.spa-management td{padding:14px 12px; border-bottom:1px solid #e4ece7}
+.spa-management th{font-size:13px; color:#536a5e; background:#f4f8f5}
+.spa-management td small{display:block; color:#6c7c76}
+.spa-card-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr)); gap:14px}
+.spa-card{border:1px solid #dce6df; border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:10px; min-width:0}
+.spa-card h3,.spa-card p{margin:0}
+.spa-card-heading{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.spa-card-heading h3{overflow-wrap:anywhere}
+.spa-badge{display:inline-block; padding:4px 8px; margin-left:6px; font-size:11px; font-weight:800; border-radius:20px; background:#e7f0e9; color:#285441; white-space:nowrap}
+.spa-bed-list{list-style:none; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; padding:0}
+.spa-bed-list li{background:#f3f6f4; padding:6px 9px; border-radius:7px; font-size:13px}
+.spa-card>.spa-actions{margin-top:auto}
+.spa-empty{padding:28px 0; text-align:center}
+.spa-editor{width:min(780px,calc(100vw - 28px)); max-height:calc(100dvh - 32px); border:1px solid #d5e0d9; border-radius:20px; padding:24px; color:#173329; box-shadow:0 18px 70px #17332935; overflow:auto}
+.spa-editor::backdrop{background:#102b2266}
+.spa-editor-heading{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px}
+.spa-editor-heading h2{margin:0; font-size:23px}
+.spa-form{border:0; padding:0; margin:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px}
+.spa-field{display:grid; gap:7px; align-content:start}
+.spa-field>span{font-size:13px; font-weight:700}
+.spa-management input:not([type=checkbox]),.spa-editor input:not([type=checkbox]),.spa-editor select{width:100%; box-sizing:border-box; padding:11px 13px; border:1px solid #cbdcd1; border-radius:9px; font:inherit; background:#fff; color:#173329}
+.spa-editor input:focus,.spa-editor select:focus,.spa-management input:focus{outline:2px solid #568a68; outline-offset:2px}
+.spa-checks,.spa-beds-editor,.spa-editor-footer{grid-column:1/-1}
+.spa-checks{display:grid; gap:10px}
+.spa-checks label{display:flex; align-items:center; gap:8px; font-size:14px}
+.spa-checks input{accent-color:#204e3e; width:17px; height:17px}
+.spa-bed-row{display:flex; gap:8px; margin-bottom:9px}
+.spa-editor-footer{display:flex; justify-content:flex-end; gap:10px; border-top:1px solid #e1e9e4; padding-top:18px; margin-top:5px}
+.spa-summary{display:flex; gap:12px; flex-wrap:wrap; padding:12px; background:#edf5ee; border-radius:10px}
+.spa-history table{width:100%; border-collapse:collapse; white-space:nowrap}
+.spa-history td,.spa-history th{text-align:left; padding:10px; border-bottom:1px solid #e1e9e4}
+.spa-history td small{display:block}
+.spa-history .responsive-data-table{overflow-x:auto}
+.spa-editor .error-box{margin-bottom:16px}
+.spa-management button:disabled,.spa-editor button:disabled{opacity:.55; cursor:default}
+@media(max-width:650px){.spa-management h1{font-size:34px}
+.spa-management .page-heading{align-items:flex-start}
+.spa-content{padding:14px}
+.spa-form{grid-template-columns:1fr}
+.spa-editor{padding:18px}
+.spa-toolbar>input{max-width:none}
+.spa-toolbar>.spa-actions{width:100%; margin-left:0}
+.spa-management th,.spa-management td{padding:11px 8px}
+.spa-management td .spa-actions{min-width:135px}
+.spa-tabs button{flex:1}
+.spa-management .responsive-data-table{overflow-x:auto}
+}
+

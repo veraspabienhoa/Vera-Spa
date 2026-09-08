@@ -27,8 +27,8 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
     "Live Tour": {
         "live_tour_view": "Xem Live Tour",
         "live_tour_operate": "Xếp tua và vận hành",
-        "live_tour_payment": "Thanh toán và quản lý combo",
-        "live_tour_admin": "Quản trị nhân viên, danh mục và sao lưu",
+        "live_tour_payment": "Thanh toán, Khách hàng và quản lý combo",
+        "live_tour_admin": "Cài đặt dịch vụ, khu vực, quản trị nhân viên và sao lưu",
         "live_tour_export": "Xuất Excel / PNG",
     },
     "Lịch nghỉ": {

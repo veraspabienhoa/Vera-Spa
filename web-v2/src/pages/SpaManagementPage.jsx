@@ -1,0 +1,178 @@
+import { Download, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { veraApi } from '../lib/api'
+import './SpaManagementPage.css'
+
+const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' ₫'
+const searchKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().trim()
+const areaLabels = { room: 'Phòng', bed: 'Giường', table: 'Bàn' }
+const blankService = { name: '', duration: '90', price: '0', ticket_units: '1', request_duration: '', private: false, request_eligible: true, non_request_eligible: true, active: true }
+const blankArea = () => ({ name: '', kind: 'room', beds: [{ name: 'Giường 1' }] })
+
+function Editor({ title, onClose, busy, children }) {
+  const dialog = useRef(null)
+  useEffect(() => {
+    const previous = document.activeElement
+    dialog.current.showModal()
+    return () => previous?.focus?.()
+  }, [])
+  return <dialog ref={dialog} className="spa-editor" aria-label={title} onCancel={(event) => { event.preventDefault(); if (!busy) onClose() }}>
+    <div className="spa-editor-heading"><h2>{title}</h2><button className="icon-button" type="button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={20}/></button></div>
+    {children}
+  </dialog>
+}
+
+function Field({ label, children }) {
+  return <label className="spa-field"><span>{label}</span>{children}</label>
+}
+
+function CustomerHistory({ value }) {
+  return <div className="spa-history">
+    <div className="spa-summary"><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span><span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
+    <h3>Dịch vụ đã sử dụng</h3>
+    <div className="responsive-data-table"><table><thead><tr><th>Ngày / hóa đơn</th><th>Dịch vụ</th><th>Nhân viên</th><th>Vị trí</th><th>Giá dịch vụ</th></tr></thead><tbody>{value.services.map((item) => <tr key={item.id}><td>{item.business_date}<small>{item.bill_no}</small></td><td>{item.service}</td><td>{item.employee_name}</td><td>{item.room}</td><td>{money(item.price)}</td></tr>)}</tbody></table></div>
+    {!value.services.length && <p>Chưa có dịch vụ đã thanh toán.</p>}
+    <h3>Combo đã mua</h3>
+    <div className="spa-card-grid">{value.combo_purchases.map((item, index) => <article className="spa-card" key={item.id || index}><strong>{item.combo_name}</strong><span>{item.purchased_at || item.created_at || item.lk}</span><span>Đã dùng {item.used || 0} / {item.total || 0} vé · Còn {item.remaining || 0} vé</span></article>)}</div>
+    {!value.combo_purchases.length && <p>Chưa mua combo.</p>}
+    <h3>Chờ thanh toán ({value.pending.length})</h3>
+    {value.pending.map((item) => <p key={item.id}>{item.created_at} · {(item.entries || []).map((entry) => entry.service).join(', ')}</p>)}
+  </div>
+}
+
+export default function SpaManagementPage({ user, mode }) {
+  const customersPage = mode === 'customers'
+  const allowed = user?.role === 'admin' || user?.permissions?.[customersPage ? 'live_tour_payment' : 'live_tour_admin'] === true
+  const [data, setData] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [tab, setTab] = useState('services')
+  const [search, setSearch] = useState('')
+  const [editor, setEditor] = useState(null)
+  const [form, setForm] = useState({})
+  const requests = useRef(new Map())
+  const running = useRef(false)
+  const read = useCallback(() => customersPage ? veraApi.spaCustomers() : veraApi.spaSettings(), [customersPage])
+
+  useEffect(() => {
+    if (!allowed) return undefined
+    let active = true
+    setBusy(true)
+    read().then((result) => { if (active) setData(result) }).catch((err) => { if (active) setError(err.message) }).finally(() => { if (active) setBusy(false) })
+    return () => { active = false }
+  }, [allowed, read])
+
+  const refresh = async () => {
+    if (busy || running.current) return
+    setBusy(true); setError('')
+    try { setData(await read()) }
+    catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  const openEditor = (kind, item) => {
+    setError(''); setNotice('')
+    setForm(kind === 'customer' ? { customer_id: item?.id || '', customer_name: item?.name || '', customer_phone: item?.phone || '' }
+      : kind === 'area' ? structuredClone(item || blankArea()) : { ...blankService, ...item })
+    setEditor({ kind, existing: Boolean(item) })
+  }
+
+  const mutate = async (action, payload) => {
+    if (running.current || data?.revision == null) return
+    running.current = true
+    setBusy(true); setError(''); setNotice('')
+    // Retry the same intent with the same key if the response was lost.
+    const signature = JSON.stringify([action, payload])
+    if (!requests.current.has(signature)) requests.current.set(signature, crypto.randomUUID())
+    try {
+      const result = await veraApi.liveTourAction({ action, payload, expected_revision: data.revision, idempotency_key: requests.current.get(signature) })
+      requests.current.delete(signature)
+      setData(customersPage ? { revision: result.revision, customers: result.customers, can_export: result.capabilities.export }
+        : { revision: result.revision, services: result.services, service_areas: result.service_areas })
+      setEditor(null)
+      setNotice('Đã lưu thay đổi.')
+    } catch (err) {
+      let message = err.message || 'Không lưu được thay đổi.'
+      if (err.status === 409 && /Live Tour đã thay đổi ở thiết bị khác/i.test(message)) {
+        try { setData(await read()); message = 'Dữ liệu đã thay đổi ở thiết bị khác. Đã tải bản mới nhất; hãy kiểm tra lại nội dung rồi bấm Lưu.' }
+        catch { message += ' Không tải được bản mới nhất; hãy thử Làm mới.' }
+      }
+      setError(message)
+    } finally { running.current = false; setBusy(false) }
+  }
+
+  const submit = (event) => {
+    event.preventDefault()
+    if (editor.kind === 'customer') void mutate('customer_upsert', form)
+    if (editor.kind === 'area') void mutate('service_area_upsert', { id: form.id, name: form.name, kind: form.kind, beds: form.beds })
+    if (editor.kind === 'service') void mutate('service_upsert', {
+      create_only: !editor.existing,
+      id: form.id, name: form.name, price: Number(form.price), duration: form.duration === '' || form.duration == null ? null : Number(form.duration),
+      ticket_units: Number(form.ticket_units), request_duration: form.request_duration === '' || form.request_duration == null ? null : Number(form.request_duration),
+      private: form.private, request_eligible: form.request_eligible, non_request_eligible: form.non_request_eligible, active: form.active,
+    })
+  }
+
+  const remove = (kind, item) => {
+    if (window.confirm(`Xóa ${kind === 'area' ? 'khu vực' : 'dịch vụ'} “${item.name}”${kind === 'area' && item.kind === 'room' ? ' cùng các giường bên trong' : ''}?`)) void mutate(kind === 'area' ? 'service_area_delete' : 'service_delete', { id: item.id })
+  }
+
+  const history = async (customer) => {
+    setBusy(true); setError('')
+    try { const value = await veraApi.liveTourCustomerHistory(customer.id); setEditor({ kind: 'history', value }) }
+    catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  const exportCustomers = async () => {
+    setBusy(true); setError('')
+    try { await veraApi.exportLiveTourExcel('customers') }
+    catch (err) { setError(err.message) }
+    finally { setBusy(false) }
+  }
+
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
+  const rows = (customersPage ? data?.customers : tab === 'services' ? data?.services : data?.service_areas) || []
+  const filtered = rows.filter((item) => searchKey(`${item.name} ${item.phone || ''}`).includes(searchKey(search)))
+  const title = customersPage ? 'Khách hàng' : 'Cài đặt'
+  const addKind = customersPage ? 'customer' : tab === 'services' ? 'service' : 'area'
+  const editTitle = editor?.kind === 'history' ? `Lịch sử · ${editor.value.customer.name}` : `${editor?.existing ? 'Sửa' : 'Thêm'} ${editor?.kind === 'customer' ? 'khách hàng' : editor?.kind === 'area' ? 'khu vực dịch vụ' : 'dịch vụ'}`
+
+  if (!allowed) return <div className="error-box" role="alert">Tài khoản chưa được cấp quyền mở {title}.</div>
+
+  return <div className="feature-page spa-management">
+    <div className="page-heading"><div><span className="eyebrow">{customersPage ? <Users size={14}/> : <Settings2 size={14}/>} VERA SPA</span><h1>{title}</h1><p>{customersPage ? 'Hồ sơ khách hàng, lịch sử dịch vụ và số vé combo còn lại.' : 'Quản lý dịch vụ và vị trí phục vụ dùng chung với Live Tour.'}</p></div><button className="secondary-button" onClick={refresh} disabled={busy}><RefreshCw size={16}/> Làm mới</button></div>
+    {error && !editor && <div className="error-box" role="alert">{error}</div>}
+    {notice && <div className="success-box" role="status">{notice}</div>}
+    {!customersPage && <div className="spa-tabs" role="tablist" aria-label="Cài đặt"><button role="tab" aria-selected={tab === 'services'} aria-controls="spa-settings-content" id="spa-services-tab" disabled={busy} onClick={() => { setTab('services'); setSearch('') }}>Cài đặt dịch vụ</button><button role="tab" aria-selected={tab === 'areas'} aria-controls="spa-settings-content" id="spa-areas-tab" disabled={busy} onClick={() => { setTab('areas'); setSearch('') }}>Cài đặt khu vực dịch vụ</button></div>}
+    <section className="panel spa-content" id="spa-settings-content" role={customersPage ? undefined : 'tabpanel'} aria-labelledby={customersPage ? undefined : `spa-${tab}-tab`}>
+      <div className="spa-toolbar"><input type="search" aria-label="Tìm kiếm" placeholder={customersPage ? 'Tìm tên hoặc số điện thoại…' : 'Tìm theo tên…'} value={search} onChange={(event) => setSearch(event.target.value)}/><span>{filtered.length} / {rows.length}</span><div className="spa-actions">{customersPage && data?.can_export && <button className="secondary-button" disabled={busy} onClick={exportCustomers}><Download size={16}/> Xuất Excel</button>}<button className="primary-button" disabled={busy || !data} onClick={() => openEditor(addKind)}><Plus size={16}/> Thêm {customersPage ? 'khách hàng' : tab === 'services' ? 'dịch vụ' : 'khu vực'}</button></div></div>
+      {busy && !data && <p role="status">Đang tải dữ liệu…</p>}
+      {data && !filtered.length && <p className="spa-empty">{rows.length ? 'Không có kết quả phù hợp.' : 'Chưa có dữ liệu. Bấm Thêm để tạo mới.'}</p>}
+      {customersPage ? <div className="responsive-data-table"><table><thead><tr><th>Khách hàng</th><th>Điện thoại</th><th>Combo còn lại</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.name || 'Chưa có tên'}</strong></td><td>{item.phone || '—'}</td><td>{(item.combo_purchases || []).reduce((sum, purchase) => sum + Number(purchase.remaining || 0), 0)} vé</td><td><div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor('customer', item)}>Sửa</button><button className="secondary-button" disabled={busy} onClick={() => history(item)}><History size={14}/> Lịch sử</button></div></td></tr>)}</tbody></table></div>
+        : tab === 'services' ? <div className="responsive-data-table"><table><thead><tr><th>Dịch vụ</th><th>Thời lượng</th><th>Giá</th><th>Vé combo</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.name}</strong>{item.private && <span className="spa-badge">PR</span>}{item.active === false && <small>Ngừng sử dụng</small>}</td><td>{item.duration == null ? 'Không giới hạn' : `${item.duration} phút`}</td><td>{money(item.price)}</td><td>{item.ticket_units ?? 1}</td><td><div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor('service', item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove('service', item)}><Trash2 size={14}/> Xóa</button></div></td></tr>)}</tbody></table></div>
+          : <div className="spa-card-grid">{filtered.map((item) => <article className="spa-card" key={item.id}><div className="spa-card-heading"><h3>{item.name}</h3><span className="spa-badge">{areaLabels[item.kind]}</span></div>{item.kind === 'room' ? <><p>{item.beds.length} giường</p><ul className="spa-bed-list">{item.beds.map((bed) => <li key={bed.id}>{bed.name}{bed.active === false ? ' · Ngừng sử dụng' : ''}</li>)}</ul></> : <p>Vị trí phục vụ độc lập</p>}<div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor('area', item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove('area', item)}><Trash2 size={14}/> Xóa</button></div></article>)}</div>}
+    </section>
+    {editor && <Editor title={editTitle} onClose={() => { setEditor(null); setError('') }} busy={busy}>
+      {error && <div className="error-box" role="alert">{error}</div>}
+      {editor.kind === 'history' ? <CustomerHistory value={editor.value}/> : <form onSubmit={submit}><fieldset disabled={busy} className="spa-form">
+        {editor.kind === 'customer' && <><Field label="Tên khách hàng"><input required maxLength={150} value={form.customer_name} onChange={(event) => set('customer_name', event.target.value)}/></Field><Field label="Số điện thoại"><input type="tel" maxLength={30} value={form.customer_phone} onChange={(event) => set('customer_phone', event.target.value)}/></Field></>}
+        {editor.kind === 'service' && <>
+          <Field label="Tên dịch vụ"><input required maxLength={150} value={form.name} onChange={(event) => set('name', event.target.value)}/></Field>
+          <Field label="Giá dịch vụ (đ)"><input type="number" min="0" max="10000000000" step="1" required value={form.price} onChange={(event) => set('price', event.target.value)}/></Field>
+          <Field label="Thời lượng (phút, để trống nếu không giới hạn)"><input type="number" min="0" max="1440" value={form.duration ?? ''} onChange={(event) => set('duration', event.target.value)}/></Field>
+          <Field label="Số vé combo cần trừ"><input type="number" min="0" max="100000" step="1" required value={form.ticket_units} onChange={(event) => set('ticket_units', event.target.value)}/></Field>
+          <Field label="Thời lượng khi khách yêu cầu (phút, để trống dùng mặc định)"><input type="number" min="0" max="1440" value={form.request_duration ?? ''} onChange={(event) => set('request_duration', event.target.value)}/></Field>
+          <div className="spa-checks">{[['private', 'Dịch vụ phòng riêng (PR)'], ['request_eligible', 'Cho phép khách yêu cầu KTV'], ['non_request_eligible', 'Cho phép không yêu cầu KTV'], ['active', 'Đang sử dụng']].map(([key, label]) => <label key={key}><input type="checkbox" checked={form[key]} onChange={(event) => set(key, event.target.checked)}/>{label}</label>)}</div>
+        </>}
+        {editor.kind === 'area' && <>
+          <Field label="Loại khu vực"><select value={form.kind} onChange={(event) => set('kind', event.target.value)}>{Object.entries(areaLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
+          <Field label={`Tên ${areaLabels[form.kind].toLowerCase()}`}><input required maxLength={100} value={form.name} onChange={(event) => set('name', event.target.value)}/></Field>
+          {form.kind === 'room' && <div className="spa-beds-editor"><h3>Giường trong phòng ({form.beds.length})</h3>{form.beds.map((bed, index) => <div className="spa-bed-row" key={bed.id || index}><input aria-label={`Tên giường ${index + 1}`} required maxLength={100} value={bed.name} onChange={(event) => set('beds', form.beds.map((value, i) => i === index ? { ...value, name: event.target.value } : value))}/><button className="icon-button" type="button" aria-label={`Bỏ giường ${index + 1}`} disabled={form.beds.length <= 1} onClick={() => set('beds', form.beds.filter((_, i) => i !== index))}><Trash2 size={16}/></button></div>)}<button className="secondary-button" type="button" disabled={form.beds.length >= 100} onClick={() => { let n = form.beds.length + 1; while (form.beds.some((bed) => bed.name === `Giường ${n}`)) n += 1; set('beds', [...form.beds, { name: `Giường ${n}` }]) }}><Plus size={14}/> Thêm giường</button></div>}
+        </>}
+        <div className="spa-editor-footer"><button className="secondary-button" type="button" onClick={() => setEditor(null)}>Hủy</button><button className="primary-button" type="submit"><Save size={16}/>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
+      </fieldset></form>}
+    </Editor>}
+  </div>
+}

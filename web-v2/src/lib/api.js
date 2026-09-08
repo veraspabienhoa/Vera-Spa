@@ -338,6 +338,8 @@ export const veraApi = {
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
   liveTour: (refresh = false, includeHidden = false) => request(`/v2/live-tour?refresh=${refresh ? 'true' : 'false'}&include_hidden=${includeHidden ? 'true' : 'false'}`),
   liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
+  spaCustomers: () => request('/v2/live-tour/customers'),
+  spaSettings: () => request('/v2/live-tour/settings'),
   liveTourCustomerHistory: (customerId) => request(`/v2/live-tour/customers/${encodeURIComponent(customerId)}/history`),
   exportLiveTourExcel: (kind = 'board', query = {}) => {
     const params = liveTourExportParams(kind, query)
