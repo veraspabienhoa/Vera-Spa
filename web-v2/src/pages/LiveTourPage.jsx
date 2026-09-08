@@ -206,11 +206,13 @@ function shiftBucket(record, columns) {
 }
 
 function roomKey(value) {
+  if (typeof value === 'object' && value?.area_id) return normalizedColumn(value.name)
   const raw = typeof value === 'object' && value ? value.code ?? value.name ?? value.room ?? value.id : value
   return normalizedColumn(raw).replace(/^PHONG\s*/, '').replace(/\s+/g, ' ').trim()
 }
 
 function roomValue(value) {
+  if (typeof value === 'object' && value?.area_id) return String(value.name || '').trim()
   if (typeof value === 'object' && value) return String(value.code ?? value.name ?? value.room ?? value.id ?? '').replace(/^phòng\s*/i, '').trim()
   return String(value ?? '').replace(/^phòng\s*/i, '').trim()
 }
@@ -917,47 +919,63 @@ export default function LiveTourPage({ user }) {
   }, [columns, employeeColumn, form.employee_search, validRecords])
   const selectedQuickCheckoutRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickCheckoutEligible(record, columns)) || null
   const appointmentOptions = useMemo(() => [...new Set(validRecords.map((record) => cellValue(record, appointmentColumn)).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'vi', { numeric: true, sensitivity: 'base' })), [appointmentColumn, validRecords])
+  const areaGroups = useMemo(() => new Map(Object.entries(data.room_groups || {}).map(([name, group]) => [normalizedColumn(name), group])), [data.room_groups])
+  const areaKey = useCallback((value) => {
+    const group = typeof value === 'object' && value ? value.area_name ?? value.group ?? roomValue(value) : value
+    return data.service_areas ? normalizedColumn(group).replace(/\s+/g, ' ').trim() : physicalRoomKey(value)
+  }, [data.service_areas])
+  const assignmentAreaKey = useCallback((value) => areaGroups.has(normalizedColumn(value)) ? areaKey(areaGroups.get(normalizedColumn(value))) : physicalRoomKey(value), [areaGroups, areaKey])
+  const areaKind = (value) => asArray(data.service_areas).find((item) => areaKey(item.name) === areaKey(value))?.kind || 'room'
+  const isVipArea = (value) => areaKind(value) === 'room' && isVipRoom(value)
+  const areaLabel = (value) => {
+    const area = asArray(data.service_areas).find((item) => areaKey(item.name) === areaKey(value))
+    if (area?.kind === 'bed') return /^giường\s/i.test(area.name) ? area.name : `Giường ${area.name}`
+    if (area?.kind === 'table') return /^bàn\s/i.test(area.name) ? area.name : `Bàn ${area.name}`
+    if (area?.kind === 'room') return /^(phòng|vip)\s/i.test(area.name) ? area.name : roomLabel(area.name)
+    return roomLabel(value)
+  }
   const roomRecords = useMemo(() => {
     const grouped = new Map()
     validRecords.forEach((record) => {
       if (!isRoomAssignmentActive(record)) return
-      const key = physicalRoomKey(cellValue(record, roomColumn))
+      const key = assignmentAreaKey(cellValue(record, roomColumn))
       if (key) grouped.set(key, [...(grouped.get(key) || []), record])
     })
     return grouped
-  }, [roomColumn, validRecords])
+  }, [assignmentAreaKey, roomColumn, validRecords])
   const availableRooms = useMemo(() => asArray(data.available_rooms), [data.available_rooms])
   const catalogRooms = asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms)
   const rawRooms = useMemo(() => asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms).length ? asArray(data.state.rooms) : Array.isArray(data.rooms) ? data.rooms : asArray(data.rooms?.all), [data.catalogs?.rooms, data.rooms, data.state?.rooms])
   const serverRoomGroups = useMemo(() => asArray(data.rooms?.all), [data.rooms])
   const bookableRooms = useMemo(() => {
     const availableBeds = asArray(data.available_beds)
-    const unique = new Map(rawRooms.map((room) => [roomKey(room), room]))
+    const placeKey = (room) => normalizedColumn(typeof room === 'object' && room ? room.name : room)
+    const unique = new Map(rawRooms.map((room) => [placeKey(room), room]))
     if (availableBeds.length) {
-      const allowed = new Set(availableBeds.map(roomKey))
-      return [...unique.values()].filter((room) => room.active !== false && allowed.has(roomKey(room))).sort(compareRooms)
+      const allowed = new Set(availableBeds.map(placeKey))
+      return [...unique.values()].filter((room) => room.active !== false && allowed.has(placeKey(room))).sort(compareRooms)
     }
     if (Array.isArray(data.available_beds)) return []
     return [...unique.values()].filter((room) => roomKey(room)).sort(compareRooms)
   }, [data.available_beds, rawRooms])
   const roomCatalog = useMemo(() => {
     const fallbackGroups = [...rawRooms, ...validRecords.map((record) => cellValue(record, roomColumn))]
-    const groupSource = serverRoomGroups.length ? serverRoomGroups : fallbackGroups
-    const unique = new Map(groupSource.map((room) => [physicalRoomKey(room), physicalRoomValue(room)]))
-    VIP_ROOMS.forEach((room) => unique.set(room, room))
+    const groupSource = data.service_areas || serverRoomGroups.length ? serverRoomGroups : fallbackGroups
+    const unique = new Map(groupSource.map((room) => data.service_areas ? [areaKey(room), String(room)] : [physicalRoomKey(room), physicalRoomValue(room)]))
+    if (!data.service_areas) VIP_ROOMS.forEach((room) => unique.set(room, room))
     return [...unique.values()].sort(compareRooms)
-  }, [rawRooms, roomColumn, serverRoomGroups, validRecords])
-  const standardRooms = roomCatalog.filter((room) => !isVipRoom(room))
-  const vipRooms = roomCatalog.filter(isVipRoom)
+  }, [areaKey, data.service_areas, rawRooms, roomColumn, serverRoomGroups, validRecords])
+  const standardRooms = roomCatalog.filter((room) => !isVipArea(room))
+  const vipRooms = roomCatalog.filter(isVipArea)
   const displayedRooms = roomSegment === 'vip' ? vipRooms : roomSegment === 'standard' ? standardRooms : roomCatalog
-  const availableRoomKeys = new Set(availableRooms.map(physicalRoomKey))
-  const occupiedRoomKeys = new Set(asArray(data.rooms?.occupied).map(physicalRoomKey))
-  const selectedRoom = roomCatalog.find((room) => physicalRoomKey(room) === selectedRoomKey) || ''
+  const availableRoomKeys = new Set(availableRooms.map(areaKey))
+  const occupiedRoomKeys = new Set(asArray(data.rooms?.occupied).map(areaKey))
+  const selectedRoom = roomCatalog.find((room) => areaKey(room) === selectedRoomKey) || ''
   const selectedRoomRecords = selectedRoomKey ? roomRecords.get(selectedRoomKey) || [] : []
   const searchedRoomKeys = useMemo(() => {
     const needle = normalizedColumn(employeeSearch)
-    return new Set(needle ? shiftRecords.flatMap((record) => normalizedColumn(cellValue(record, employeeColumn)).includes(needle) ? [physicalRoomKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
-  }, [employeeColumn, employeeSearch, roomColumn, shiftRecords])
+    return new Set(needle ? shiftRecords.flatMap((record) => normalizedColumn(cellValue(record, employeeColumn)).includes(needle) ? [assignmentAreaKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
+  }, [assignmentAreaKey, employeeColumn, employeeSearch, roomColumn, shiftRecords])
 
   const retainedMetric = data.metric_snapshots?.[shiftFilter] || null
   const breakTotal = retainedMetric?.break_total_count ?? retainedMetric?.break_count ?? groupCount(shiftRecords, 'break')
@@ -1313,10 +1331,10 @@ export default function LiveTourPage({ user }) {
       </div>
       <section className="panel tour-table-panel tour-room-table-panel">
         <div className={`tour-room-panel ${roomSegment}`}>
-          <div className="tour-room-panel-head"><div className="tour-room-panel-title">{roomSegment === 'vip' ? <Crown size={16}/> : roomSegment === 'standard' ? <DoorOpen size={16}/> : <LayoutGrid size={16}/>} {roomSegment === 'vip' ? 'Phòng VIP' : roomSegment === 'standard' ? 'Phòng Standard' : 'Tất cả phòng'}</div><small>{displayedRooms.filter((room) => availableRoomKeys.has(physicalRoomKey(room))).length} phòng đang trống</small></div>
+          <div className="tour-room-panel-head"><div className="tour-room-panel-title">{roomSegment === 'vip' ? <Crown size={16}/> : roomSegment === 'standard' ? <DoorOpen size={16}/> : <LayoutGrid size={16}/>} {roomSegment === 'vip' ? 'Phòng VIP' : roomSegment === 'standard' ? 'Phòng Standard' : 'Tất cả phòng'}</div><small>{displayedRooms.filter((room) => availableRoomKeys.has(areaKey(room))).length} phòng đang trống</small></div>
           <div className="tour-room-grid">
             {displayedRooms.map((room) => {
-              const key = physicalRoomKey(room)
+              const key = areaKey(room)
               const records = roomRecords.get(key) || []
               const record = pickRoomRecord(records, remainingColumn)
               const available = availableRoomKeys.has(key)
@@ -1324,8 +1342,8 @@ export default function LiveTourPage({ user }) {
               const employee = cellValue(record, employeeColumn)
               const status = cellValue(record, statusColumn)
               const hasPrivateService = records.some((item) => item._private_service || isPrivateService(cellValue(item, serviceColumn)))
-              return <button type="button" className={`tour-room-card ${isVipRoom(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
-                <div className="tour-room-card-head"><strong>{roomLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{isVipRoom(room) ? 'VIP' : 'STANDARD'}</span></div>
+              return <button type="button" className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
+                <div className="tour-room-card-head"><strong>{areaLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
                 <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
                 {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
@@ -1333,8 +1351,8 @@ export default function LiveTourPage({ user }) {
             })}
             {!displayedRooms.length && <div className="tour-room-empty">Chưa có dữ liệu phòng.</div>}
           </div>
-          {selectedRoomKey && selectedRoom && <div className={`tour-room-detail ${physicalRoomKey(selectedRoom) === '19' ? 'vip-19' : ''}`.trim()} role="region" aria-label={`Chi tiết ${roomLabel(selectedRoom)}`}>
-            <div className="tour-room-detail-head"><strong>{roomLabel(selectedRoom)} · Danh sách nhân viên</strong><small>{selectedRoomRecords.length} nhân viên · Bấm lại phòng để đóng</small></div>
+          {selectedRoomKey && selectedRoom && <div className={`tour-room-detail ${areaKey(selectedRoom) === '19' ? 'vip-19' : ''}`.trim()} role="region" aria-label={`Chi tiết ${areaLabel(selectedRoom)}`}>
+            <div className="tour-room-detail-head"><strong>{areaLabel(selectedRoom)} · Danh sách nhân viên</strong><small>{selectedRoomRecords.length} nhân viên · Bấm lại phòng để đóng</small></div>
             {selectedRoomRecords.length ? <div className="tour-room-detail-list">{selectedRoomRecords.map((item, index) => {
               const employee = cellValue(item, employeeColumn) || 'Chưa có tên nhân viên'
               const service = cellValue(item, serviceColumn) || 'Chưa có dịch vụ'

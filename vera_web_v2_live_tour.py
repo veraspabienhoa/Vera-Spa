@@ -55,7 +55,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "reorder", "hide_employee", "show_employee", "show_all", "add_employee", "delete_employee",
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
-    "restore", "clear_expired",
+    "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -466,6 +466,97 @@ def _room_group(value: Any) -> str:
     return room.split(".", 1)[0]
 
 
+def _catalog_room_group(state: dict[str, Any], name: Any) -> str:
+    item = next((row for row in state["rooms"] if _norm(row.get("name")) == _norm(name)), {})
+    return str(item.get("area_name") or _room_group(name))
+
+
+def _service_areas(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project existing booking places into areas without changing their IDs."""
+    areas: dict[str, dict[str, Any]] = {}
+    for room in state["rooms"]:
+        group = _catalog_room_group(state, room.get("name"))
+        area_id = str(room.get("area_id") or f"legacy:{group}")
+        area = areas.setdefault(area_id, {
+            "id": area_id, "name": group, "kind": room.get("area_kind", "room"), "beds": [],
+        })
+        area["beds"].append({
+            "id": room["id"], "name": room.get("bed_name") or room.get("name", ""),
+            "booking_name": room.get("name", ""), "active": room.get("active", True),
+        })
+    for name in state.get("physical_rooms", []):
+        if not any(_norm(area["name"]) == _norm(name) for area in areas.values()):
+            areas[f"legacy:{name}"] = {"id": f"legacy:{name}", "name": name, "kind": "room", "beds": []}
+    return list(areas.values())
+
+
+def _service_area_change(state: dict[str, Any], payload: dict[str, Any], *, delete: bool = False) -> dict[str, Any]:
+    areas = _service_areas(state)
+    area_id = str(payload.get("id") or "").strip()
+    current = _find_by_id(areas, area_id, "khu vực dịch vụ") if area_id else None
+    old_ids = {bed["id"] for bed in (current or {}).get("beds", [])}
+    old_rooms = [row for row in state["rooms"] if row["id"] in old_ids]
+    if any(_catalog_referenced(state, "rooms", row) for row in old_rooms):
+        raise HTTPException(409, "Khu vực còn dịch vụ chưa thanh toán; hãy hoàn tất trước khi thay đổi hoặc xóa.")
+    if delete:
+        if current is None:
+            raise HTTPException(400, "Thiếu mã khu vực dịch vụ.")
+        state["rooms"] = [row for row in state["rooms"] if row["id"] not in old_ids]
+        if current and "physical_rooms" in state:
+            state["physical_rooms"] = [name for name in state["physical_rooms"] if _norm(name) != _norm(current["name"])]
+        return {"deleted_id": area_id}
+    name = str(payload.get("name") or "").strip()
+    kind = payload.get("kind")
+    if not name or len(name) > 100:
+        raise HTTPException(400, "Tên khu vực cần từ 1 đến 100 ký tự.")
+    if kind not in {"room", "bed", "table"}:
+        raise HTTPException(400, "Loại khu vực chỉ nhận Phòng, Giường hoặc Bàn.")
+    if any(area["id"] != area_id and _norm(area["name"]) == _norm(name) for area in areas):
+        raise HTTPException(409, "Tên khu vực dịch vụ đã tồn tại.")
+    beds = payload.get("beds") if kind == "room" else [{"name": name}]
+    if not isinstance(beds, list) or not 1 <= len(beds) <= 100:
+        raise HTTPException(400, "Mỗi phòng cần từ 1 đến 100 giường.")
+    area_id = area_id or str(uuid4())
+    remaining = [row for row in state["rooms"] if row["id"] not in old_ids]
+    names = {_norm(row["name"]) for row in remaining}
+    bed_names: set[str] = set()
+    used_ids: set[str] = set()
+    replacements = []
+    for bed in beds:
+        if not isinstance(bed, dict):
+            raise HTTPException(400, "Thông tin giường không hợp lệ.")
+        bed_name = str(bed.get("name") or "").strip()
+        if not bed_name or len(bed_name) > 100 or _norm(bed_name) in bed_names:
+            raise HTTPException(400, "Tên giường cần từ 1 đến 100 ký tự và không được trùng trong phòng.")
+        bed_names.add(_norm(bed_name))
+        bed_id = str(bed.get("id") or "")
+        if kind != "room" and current and current["kind"] == kind:
+            bed_id = current["beds"][0]["id"]
+        if bed_id and (bed_id not in old_ids or bed_id in used_ids):
+            raise HTTPException(400, "Mã giường không thuộc khu vực hoặc bị trùng.")
+        bed_id = bed_id or str(uuid4())
+        used_ids.add(bed_id)
+        old = next((row for row in old_rooms if row["id"] == bed_id), {})
+        old_bed = next((row for row in (current or {}).get("beds", []) if row["id"] == bed_id), {})
+        booking_name = f"{name} · {bed_name}" if kind == "room" else name
+        # A no-op edit of a legacy room must keep existing booking names.
+        if current and current["name"] == name and current["kind"] == kind and old_bed.get("name") == bed_name:
+            booking_name = old["name"]
+        if _norm(booking_name) in names:
+            raise HTTPException(409, "Tên vị trí phục vụ đã tồn tại.")
+        names.add(_norm(booking_name))
+        replacements.append({
+            **old, "id": bed_id, "name": booking_name, "group": name,
+            "area_id": area_id, "area_name": name, "area_kind": kind, "bed_name": bed_name,
+            "type": "vip" if kind == "room" and _room_group(name) in {str(n) for n in range(16, 22)} else "standard",
+            "active": old.get("active", True),
+        })
+    state["rooms"] = remaining + replacements
+    if current and "physical_rooms" in state:
+        state["physical_rooms"] = [value for value in state["physical_rooms"] if _norm(value) != _norm(current["name"])]
+    return {"service_area": next(area for area in _service_areas(state) if area["id"] == area_id)}
+
+
 def _is_private_service(value: Any) -> bool:
     token = _norm(value)
     return bool(
@@ -521,12 +612,7 @@ def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
     for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups"):
         if not isinstance(state.get(key), list):
             state[key] = deepcopy(defaults[key])
-    if not state["rooms"]:
-        state["rooms"] = defaults["rooms"]
-    if not state["services"]:
-        state["services"] = defaults["services"]
-    if not state["combos"]:
-        state["combos"] = defaults["combos"]
+    # An explicitly empty catalog is a saved choice, not an uninitialized state.
     state["version"] = STATE_VERSION
     state.setdefault("business_date", _business_date(now).isoformat())
     state.setdefault("created_at", _iso(now))
@@ -741,14 +827,14 @@ def _catalog_referenced(state: dict[str, Any], kind: str, item: dict[str, Any]) 
 
 def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room: str, service: str) -> None:
     wanted_room = _norm(room)
-    wanted_group = _room_group(room)
+    wanted_group = _norm(_catalog_room_group(state, room))
     wanted_private = _catalog_private_service(state, service)
     for employee in state["employees"]:
         if employee is candidate or not _active_booking(employee):
             continue
         current_room = str(employee.get("room") or "")
         same_bed = _norm(current_room) == wanted_room
-        same_group = _room_group(current_room) == wanted_group
+        same_group = _norm(_catalog_room_group(state, current_room)) == wanted_group
         current_private = _catalog_private_service(state, employee.get("service"))
         if same_bed or (same_group and (wanted_private or current_private)):
             if wanted_private or current_private:
@@ -778,7 +864,7 @@ def _audit(
     })
     if action in {
         "booking", "multi_booking", "checkout", "quick_checkout",
-        "move_pending", "combo_purchase", "combo_import",
+        "move_pending", "combo_purchase", "combo_import", "customer_upsert",
     }:
         safe_payload = _redact_customer_name_alias(safe_payload)
     try:
@@ -883,6 +969,8 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
         raise HTTPException(400, "Vui lòng chọn phòng/giường.")
     if room_item is None:
         raise HTTPException(400, f"Phòng/giường '{room}' chưa có trong danh mục.")
+    if room_item.get("active") is False:
+        raise HTTPException(400, "Vị trí phục vụ đã ngừng sử dụng.")
     request, auto_request = _auto_yc_ca1(now, employee, payload.get("request"), bool(payload.get("auto_yc_ca1")))
     service, duration, price = _service_values(state, {**payload, "request": request})
     _check_room_collision(state, employee, room, service)
@@ -1204,12 +1292,12 @@ def _snapshot_for_backup(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _required_action_feature(action: str) -> str:
-    if action in {"checkout", "quick_checkout", "move_pending", "combo_purchase"}:
+    if action in {"checkout", "quick_checkout", "move_pending", "combo_purchase", "customer_upsert"}:
         return "live_tour_payment"
     if action in {
         "add_employee", "delete_employee", "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
-        "clear_expired", "clear_expired_preview", "combo_import", "set_vip",
+        "clear_expired", "clear_expired_preview", "combo_import", "set_vip", "service_area_upsert", "service_area_delete",
     }:
         return "live_tour_admin"
     return "live_tour_operate"
@@ -1516,6 +1604,26 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         if employee.get("room"):
             _check_room_collision(state, employee, str(employee["room"]), str(employee["service"]))
         result["employee"] = employee
+    elif action == "customer_upsert":
+        name = str(payload.get("customer_name") or "").strip()
+        phone = str(payload.get("customer_phone") or "").strip()
+        if not name or len(name) > 150 or len(phone) > 30:
+            raise HTTPException(400, "Tên khách hàng cần từ 1 đến 150 ký tự; điện thoại tối đa 30 ký tự.")
+        if phone and not 6 <= len(_phone_key(phone)) <= 15:
+            raise HTTPException(400, "Số điện thoại cần từ 6 đến 15 chữ số.")
+        customer_id = str(payload.get("customer_id") or "").strip()
+        if not customer_id and phone and any(_phone_key(row.get("phone")) == _phone_key(phone) for row in state["customers"]):
+            raise HTTPException(409, "Số điện thoại đã tồn tại. Hãy mở khách hàng đó để sửa.")
+        customer = _customer(state, {"customer_id": customer_id, "customer_name": name, "customer_phone": phone}, allow_identity_update=True)
+        customer.update(name=name, phone=phone, updated_at=_iso(now))
+        # Keep open transactions usable after contact edits; paid ledgers remain historical.
+        open_entries = state["employees"] + state["pending"] + [entry for row in state["pending"] for entry in row.get("entries", [])]
+        for entry in open_entries:
+            if entry.get("customer_id") == customer["id"]:
+                entry.update(customer_name=name, customer_phone=phone)
+        result = {"customer": deepcopy(customer)}
+    elif action in {"service_area_upsert", "service_area_delete"}:
+        result = _service_area_change(state, payload, delete=action == "service_area_delete")
     elif action in {"room_upsert", "service_upsert", "combo_upsert"}:
         kind = {"room_upsert": "rooms", "service_upsert": "services", "combo_upsert": "combos"}[action]
         singular = kind[:-1]
@@ -1525,9 +1633,19 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             raise HTTPException(400, "Thiếu tên danh mục.")
         item_id = str(incoming.get("id") or incoming.get(f"{singular}_id") or "")
         current = next((item for item in state[kind] if item_id and str(item.get("id")) == item_id), None)
+        if item_id and current is None:
+            raise HTTPException(404, "Danh mục đã bị xóa; hãy làm mới danh sách.")
         current = current or next((item for item in state[kind] if _norm(item.get("name")) == _norm(name)), None)
+        if incoming.pop("create_only", False) and current is not None:
+            raise HTTPException(409, "Tên danh mục đã tồn tại. Hãy mở danh mục đó để sửa.")
+        if kind == "rooms" and (current or {}).get("area_id"):
+            raise HTTPException(409, "Vị trí này thuộc khu vực dịch vụ. Hãy sửa trong Cài đặt → Cài đặt khu vực dịch vụ.")
         if any(item is not current and _norm(item.get("name")) == _norm(name) for item in state[kind]):
             raise HTTPException(409, "Tên danh mục đã tồn tại.")
+        if "active" in incoming and not isinstance(incoming["active"], bool):
+            raise HTTPException(400, "Trạng thái sử dụng phải là giá trị đúng/sai.")
+        if kind == "rooms" and any(key in incoming for key in ("area_id", "area_name", "area_kind", "bed_name")):
+            raise HTTPException(400, "Hãy dùng Cài đặt khu vực dịch vụ để quản lý phòng, giường và bàn.")
         validated_fields: dict[str, Any] = {}
         if kind == "services":
             duration_value = _bounded_number(
@@ -1593,6 +1711,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         kind = {"room_delete": "rooms", "service_delete": "services", "combo_delete": "combos"}[action]
         singular = kind[:-1]
         item = _find_by_id(state[kind], payload.get(f"{singular}_id") or payload.get("id"), singular)
+        if kind == "rooms" and item.get("area_id"):
+            raise HTTPException(409, "Hãy quản lý vị trí này trong Cài đặt → Cài đặt khu vực dịch vụ.")
         if kind in {"rooms", "services"} and _catalog_referenced(state, kind, item):
             raise HTTPException(409, "Không thể xóa danh mục còn gắn với dịch vụ chưa thanh toán.")
         state[kind] = [row for row in state[kind] if row is not item]
@@ -2021,9 +2141,9 @@ def _state_response(
     occupied = sorted({str(item.get("room")) for item in state["employees"] if _active_booking(item) and item.get("room")})
     all_rooms = [str(item.get("name")) for item in state["rooms"] if item.get("active", True)]
     available = [room for room in all_rooms if _room_available(state, room)]
-    physical_rooms = sorted(set(state.get("physical_rooms", [])) | {_room_group(room) for room in all_rooms})
-    occupied_groups = sorted({_room_group(room) for room in occupied})
-    available_groups = sorted({_room_group(room) for room in available})
+    physical_rooms = sorted(set(state.get("physical_rooms", [])) | {_catalog_room_group(state, room) for room in all_rooms})
+    occupied_groups = sorted({_catalog_room_group(state, room) for room in occupied})
+    available_groups = sorted({_catalog_room_group(state, room) for room in available})
     active_records = [record for record in records if not record.get("_hidden")]
     groups = lambda key: sum(key in (item.get("_tour_groups") or []) for item in active_records)
     metrics = {
@@ -2065,6 +2185,8 @@ def _state_response(
         "break_count": groups("break"), "stats": [{"label": "Có thể lên tua", "value": groups("available"), "detail": "Sắp xong + Đang rảnh"}],
         "rooms": {"all": physical_rooms, "available": available_groups, "occupied": occupied_groups, "total_count": len(physical_rooms), "available_count": len(available_groups), "occupied_count": len(occupied_groups), "source_sheet": "Live Tour"},
         "available_rooms": available_groups, "available_beds": available, "metric_snapshots": metrics,
+        "room_groups": {room["name"]: _catalog_room_group(state, room["name"]) for room in state["rooms"]},
+        "service_areas": _service_areas(state),
         "metrics_business_date": state.get("counter_business_date"), "metrics_retained_until_10": now.astimezone(VN_TZ).hour < 10,
         "metrics_rollover_hour": 10, "metrics_rollover_minute": 0,
         "break_metrics_business_date": state.get("counter_business_date"), "break_metrics_format": "cumulative-active",
@@ -2101,7 +2223,7 @@ def _state_response(
 
 
 def _room_available(state: dict[str, Any], room: str) -> bool:
-    wanted_group = _room_group(room)
+    wanted_group = _norm(_catalog_room_group(state, room))
     wanted = _norm(room)
     for employee in state["employees"]:
         if not _active_booking(employee):
@@ -2109,7 +2231,7 @@ def _room_available(state: dict[str, Any], room: str) -> bool:
         current_room = str(employee.get("room") or "")
         if _norm(current_room) == wanted:
             return False
-        if _room_group(current_room) == wanted_group and _catalog_private_service(state, employee.get("service")):
+        if _norm(_catalog_room_group(state, current_room)) == wanted_group and _catalog_private_service(state, employee.get("service")):
             return False
     return True
 
@@ -2546,6 +2668,25 @@ def install_live_tour_routes(
             can_admin=can_admin, can_operate=can_operate,
             can_payment=can_payment, can_export=can_export,
         )
+
+    @app.get("/v2/live-tour/customers")
+    def spa_customers(ident: identity_type = Depends(current_identity)):
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_payment")
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            state, revision = _read_state(conn, now)
+            can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
+        return {"revision": revision, "customers": deepcopy(state["customers"]), "can_export": can_export}
+
+    @app.get("/v2/live-tour/settings")
+    def spa_settings(ident: identity_type = Depends(current_identity)):
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_admin")
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            state, revision = _read_state(conn, now)
+        return {"revision": revision, "services": deepcopy(state["services"]), "service_areas": _service_areas(state)}
 
     @app.get("/v2/live-tour/customers/{customer_id}/history")
     def live_tour_customer_history(
