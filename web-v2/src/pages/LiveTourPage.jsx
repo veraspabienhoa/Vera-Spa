@@ -546,6 +546,8 @@ export default function LiveTourPage({ user }) {
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [mergePreview, setMergePreview] = useState(null)
+  const [expiredPreview, setExpiredPreview] = useState(null)
+  const [expiredGrace, setExpiredGrace] = useState('15')
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerHistoryModal, setCustomerHistoryModal] = useState(null)
   const [customerHistoryBusy, setCustomerHistoryBusy] = useState(false)
@@ -710,6 +712,25 @@ export default function LiveTourPage({ user }) {
     } finally {
       setActionBusy('')
     }
+  }
+
+  const previewExpired = async () => {
+    if (!canAdmin || actionBusy || data.revision == null) return
+    setActionBusy('clear_expired_preview')
+    setExpiredPreview(null)
+    setError('')
+    try {
+      setExpiredPreview(await veraApi.liveTourAction({ action: 'clear_expired_preview', expected_revision: data.revision, payload: { grace_minutes: expiredGrace } }))
+    } catch (err) {
+      setError(liveTourErrorDetail(err))
+    } finally { setActionBusy('') }
+  }
+
+  const confirmExpired = async () => {
+    if (!canAdmin || !expiredPreview || actionBusy || expiredPreview.base_revision !== data.revision) return
+    const result = await executeAction('clear_expired', { grace_minutes: expiredPreview.grace_minutes, confirm_token: expiredPreview.preview_token }, [])
+    setExpiredPreview(null)
+    if (result) setNotice(`Đã chuyển ${result.result?.marked_for_payment ?? expiredPreview.count} phiên sang chờ thanh toán.`)
   }
 
   const runSelected = (action, payload = {}) => {
@@ -1557,7 +1578,20 @@ export default function LiveTourPage({ user }) {
       </div>}
 
       {activePanel === 'catalog' && <div className="live-tour-panel-body">
-        <div className="live-tour-panel-toolbar"><h2>DANH MỤC LIVE TOUR</h2>{canManageCatalog && <div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={previewRosterMerge}>Xem trước danh sách từ Bảng tua</button><button type="button" className="secondary-button" onClick={() => executeAction('clear_expired', {}, [])}>Chuyển phiên quá hạn sang chờ thanh toán</button></div>}</div>
+        <div className="live-tour-panel-toolbar"><h2>DANH MỤC LIVE TOUR</h2>{canManageCatalog && <div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={previewRosterMerge}>Xem trước danh sách từ Bảng tua</button></div>}</div>
+        {canAdmin && <div className="live-tour-catalog-section">
+          <h3>Chuyển phiên quá hạn sang chờ thanh toán</h3>
+          <label>Quá giờ dịch vụ ít nhất (phút)<input type="number" min="0" max="1440" step="1" value={expiredGrace} disabled={Boolean(actionBusy)} onChange={(event) => { setExpiredGrace(event.target.value); setExpiredPreview(null) }}/></label>
+          <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={previewExpired}>Xem trước phiên quá hạn</button>
+          {expiredPreview && <div className="warning-box">
+            <strong>{expiredPreview.count} phiên quá hạn từ {expiredPreview.grace_minutes} phút</strong>
+            <p>Các phiên được chuyển sang chờ thanh toán; chưa ghi nhận thu tiền.</p>
+            <div className="live-tour-history-list">{asArray(expiredPreview.employees).map((item) => <article key={item.employee_id}><strong>{item.employee_name}</strong><span>{item.service} · Phòng {item.room}</span><small>Hết giờ: {item.ends_at}</small></article>)}</div>
+            {expiredPreview.base_revision !== data.revision && <p>Bảng đã thay đổi. Hãy xem trước lại.</p>}
+            <button type="button" className="primary-button" disabled={Boolean(actionBusy) || !expiredPreview.count || expiredPreview.base_revision !== data.revision} onClick={confirmExpired}>Xác nhận chuyển {expiredPreview.count} phiên</button>
+            <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => setExpiredPreview(null)}>Hủy</button>
+          </div>}
+        </div>}
         {canManageCatalog && mergePreview && <div className="warning-box">
           <p>Chỉ bổ sung danh sách nhân viên và đánh dấu VIP; không nhập lại dịch vụ, thanh toán hoặc trạng thái làm việc. Nhân viên mới mặc định Nghỉ, chưa vào ca.</p>
           <p>Thêm {mergePreview.merge?.created || 0} nhân viên · Đối chiếu {mergePreview.merge?.updated || 0} · Bỏ qua {mergePreview.merge?.conflict_count || 0} dòng dịch vụ.</p>

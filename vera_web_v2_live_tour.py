@@ -1521,7 +1521,7 @@ def _required_action_feature(action: str) -> str:
     if action in {
         "add_employee", "delete_employee", "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
-        "merge_current_tour", "merge_current_tour_preview", "clear_expired", "combo_import", "set_vip",
+        "merge_current_tour", "merge_current_tour_preview", "clear_expired", "clear_expired_preview", "combo_import", "set_vip",
     }:
         return "live_tour_admin"
     return "live_tour_operate"
@@ -2195,17 +2195,16 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             result.update(merge_result)
             state["physical_rooms"] = sorted(set(state.get("physical_rooms", [])) | set(payload.get("_physical_rooms", [])))
     elif action == "clear_expired":
-        marked_for_payment = 0
+        preview = _expired_preview(state, payload, now)
+        if payload.get("confirm_token") != preview["preview_token"]:
+            raise HTTPException(409, "Danh sách phiên quá hạn đã thay đổi. Hãy xem trước và xác nhận lại.")
+        ids = {item["employee_id"] for item in preview["employees"]}
         for employee in state["employees"]:
-            started = _parse_datetime(employee.get("started_at"))
-            duration = employee.get("duration")
-            if _norm(employee.get("status")) in {"dang thuc hien", "dang su dung"} and started and duration not in (None, ""):
-                if now.astimezone(VN_TZ) >= started + timedelta(minutes=float(duration) + 15):
-                    employee["status"] = "CHO THANH TOÁN"
-                    employee["payment_status"] = "CHO THANH TOÁN"
-                    employee["completed_at"] = _iso(now)
-                    marked_for_payment += 1
-        result["marked_for_payment"] = marked_for_payment
+            if str(employee.get("id")) in ids:
+                employee["status"] = "CHO THANH TOÁN"
+                employee["payment_status"] = "CHO THANH TOÁN"
+                employee["completed_at"] = _iso(now)
+        result.update({"marked_for_payment": len(ids), "grace_minutes": preview["grace_minutes"], "employee_ids": sorted(ids)})
     else:
         raise HTTPException(400, f"Thao tác Live Tour không hợp lệ: {action}")
 
@@ -2213,6 +2212,22 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
     state["business_date"] = _business_date(now).isoformat()
     _audit(state, action, payload, actor, now, timing=financial_timing)
     return result
+
+
+def _expired_preview(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> dict[str, Any]:
+    grace = _bounded_number(payload.get("grace_minutes", 15), label="Ngưỡng quá hạn", minimum=0, maximum=1440, integer=True)
+    employees = []
+    for employee in state["employees"]:
+        started = _parse_datetime(employee.get("started_at"))
+        duration = employee.get("duration")
+        if _norm(employee.get("status")) not in {"dang thuc hien", "dang su dung"} or not started or duration in (None, ""):
+            continue
+        ends_at = started + timedelta(minutes=float(duration))
+        if now.astimezone(VN_TZ) >= ends_at + timedelta(minutes=grace):
+            employees.append({"employee_id": str(employee.get("id")), "employee_name": employee.get("name", ""),
+                              "room": employee.get("room", ""), "service": employee.get("service", ""), "ends_at": _iso(ends_at)})
+    token = _canonical_payload_hash("clear_expired", {"grace_minutes": grace, "employees": employees})
+    return {"grace_minutes": grace, "employees": employees, "count": len(employees), "preview_token": token}
 
 
 def _remaining(employee: dict[str, Any], now: datetime) -> tuple[int | None, str]:
@@ -3443,6 +3458,8 @@ def install_live_tour_routes(
                 raise HTTPException(428, "Thiếu phiên bản Live Tour. Hãy tải lại bảng trước khi thao tác.")
             if body.expected_revision != revision:
                 raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.")
+            if action == "clear_expired_preview":
+                return {"ok": True, "base_revision": revision, **_expired_preview(state, payload, now)}
             if action in {"merge_current_tour", "merge_current_tour_preview"}:
                 preview_token = _canonical_payload_hash("roster_only", {
                     "revision": revision, "records": payload["_source_records"], "physical_rooms": payload["_physical_rooms"],
