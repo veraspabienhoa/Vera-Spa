@@ -17,7 +17,7 @@ def test_auto_event_has_retryable_employee_notification_outbox():
     assert "employee_notified_at" in core
     assert "WHERE status='added' AND employee_notified_at IS NULL" in notifier
     assert "FOR UPDATE SKIP LOCKED" in notifier
-    assert "employee_notified_at=CASE WHEN :sent > 0 THEN NOW()" in notifier
+    assert "employee_notified_at=CASE WHEN :sent > 0 OR :suppressed THEN NOW()" in notifier
 
 
 def test_every_current_automatic_penalty_path_dispatches_employee_push():

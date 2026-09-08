@@ -46,7 +46,7 @@ jobs:
   verify:
     name: Verify penalty notification outbox
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -56,6 +56,13 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      - name: Install pytest dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "pytest==8.4.2" \
+            "pandas>=2.2,<4" \
+            "SQLAlchemy>=2.0,<3"
 
       - name: Compile affected Python modules
         run: |
@@ -148,3 +155,9 @@ jobs:
           if failed:
               raise SystemExit('Invariant failures: ' + ', '.join(failed))
           PY
+
+      - name: Run notification pytest suite
+        run: |
+          python -m pytest -q \
+            tests/test_auto_penalty_employee_notifications.py \
+            tests/test_missing_checkin_notifications.py
