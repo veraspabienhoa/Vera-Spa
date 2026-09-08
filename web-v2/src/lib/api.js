@@ -41,7 +41,12 @@ async function request(path, options = {}) {
   }
   if (!response) throw new Error(`Không kết nối được máy chủ VERA sau ${attempts} lần thử. Vui lòng bấm Làm mới. (${lastError?.message || 'Lỗi mạng'})`)
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(apiErrorMessage(payload, response.status))
+  if (!response.ok) {
+    const error = new Error(apiErrorMessage(payload, response.status))
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
   return payload
 }
 
@@ -131,6 +136,15 @@ function datesBetween(start, end) {
     cursor.setDate(cursor.getDate() + 1)
   }
   return dates
+}
+
+function liveTourExportParams(kind, query = {}) {
+  const params = new URLSearchParams({ kind })
+  for (const key of ['date_from', 'date_to', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
+    const value = String(query?.[key] ?? '').trim()
+    if (value) params.set(key, value)
+  }
+  return params
 }
 
 export const veraApi = {
@@ -319,6 +333,17 @@ export const veraApi = {
   }),
   birthdays: (month = new Date().getMonth() + 1) => request(`/v2/birthdays?month=${encodeURIComponent(month)}`),
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
+  liveTour: (refresh = false, includeHidden = false) => request(`/v2/live-tour?refresh=${refresh ? 'true' : 'false'}&include_hidden=${includeHidden ? 'true' : 'false'}`),
+  liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
+  liveTourCustomerHistory: (customerId) => request(`/v2/live-tour/customers/${encodeURIComponent(customerId)}/history`),
+  exportLiveTourExcel: (kind = 'board', query = {}) => {
+    const params = liveTourExportParams(kind, query)
+    return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)
+  },
+  exportLiveTourPng: (query = {}) => {
+    const params = liveTourExportParams('board', query)
+    return download(`/v2/live-tour/export.png?${params}`, 'VeraSpa_LiveTour.png')
+  },
   tourSource: () => request('/v2/tour/source'),
   saveTourSource: (body) => request('/v2/tour/source', { method: 'PUT', body: JSON.stringify(body) }),
   syncTourLeave: (action) => request('/v2/tour-leave-sync', {

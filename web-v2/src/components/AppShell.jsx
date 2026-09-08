@@ -1,4 +1,4 @@
-import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
@@ -7,6 +7,7 @@ const items = [
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker'] },
   { id: 'tour', label: 'Bảng tua', icon: Compass, ready: true, permission: 'tour' },
+  { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true, permission: 'live_tour_view' },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Lương KTV', icon: WalletCards, ready: true, permission: 'payroll_history' },
@@ -333,11 +334,11 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             : <button className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu"><Menu size={22} /></button>}
           <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
           <div className="topbar-actions">
-            {currentPage !== 'tour' && <button type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /> Mở tab mới</button>}
+            {currentPage !== 'tour' && currentPage !== 'live-tour' && <button type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /> Mở tab mới</button>}
             <button type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /> Làm mới</button>
           </div>
         </header>
-        <div className={`page-wrap ${currentPage === 'tour' ? 'tour-page-wrap' : ''}`.trim()}>
+        <div className={`page-wrap ${currentPage === 'tour' ? 'tour-page-wrap' : currentPage === 'live-tour' ? 'tour-page-wrap' : ''}`.trim()}>
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
 
           {isAdmin && breakAlertControl.disabled && <div className="break-alert-global-off"><span>Thông báo nghỉ giữa ca đang TẮT cho mọi tài khoản.</span><button type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(false)}>{breakAlertControl.busy ? 'Đang bật…' : 'Bật lại'}</button></div>}

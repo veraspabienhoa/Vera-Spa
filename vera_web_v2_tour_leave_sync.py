@@ -6,12 +6,12 @@ of TourVera.xlsm remain byte-for-byte unchanged.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import date, datetime, timedelta
 from functools import cmp_to_key
 from hashlib import sha256
 from io import BytesIO
-import json
 import os
 import posixpath
 import re
@@ -85,10 +85,10 @@ def _vn_key(value: Any) -> str:
 
 
 def _employee_key(value: Any) -> str:
-    raw = _clean(value)
-    if raw.endswith("*"):
-        raw = raw[:-1].strip()
-    return raw.lower()
+    raw = re.sub(r"\s*\*+\s*$", "", _clean(value)).strip().lower()
+    raw = unicodedata.normalize("NFD", raw)
+    raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn").replace("đ", "d")
+    return " ".join(raw.split())
 
 
 def _same_date(value: Any, target: date) -> bool:
@@ -640,6 +640,7 @@ def _apply_action(
         "matched": 0,
         "reason_updated": 0,
         "status_updated": 0,
+        "affected_rows": [],
     }
     last_row = editor.last_input_row()
 
@@ -656,6 +657,7 @@ def _apply_action(
             if action == "clear_leave_status":
                 if current_status.lower() != "nghi phep":
                     continue
+                stats["affected_rows"].append(row)
                 if not reason:
                     if editor.set_input_text(row, 16, "Di lam"):
                         stats["status_updated"] += 1
@@ -670,6 +672,7 @@ def _apply_action(
 
             if not reason:
                 continue
+            stats["affected_rows"].append(row)
             stats["matched"] += 1
             if editor.set_input_text(row, 3, reason):
                 stats["reason_updated"] += 1
@@ -692,6 +695,7 @@ def _apply_action(
         for row in range(21, last_row + 1):
             reason = _clean(editor.input_value(row, 3))
             if reason and _should_use_leave_status(reason):
+                stats["affected_rows"].append(row)
                 stats["matched"] += 1
                 if editor.set_input_text(row, 16, "Nghi phep"):
                     stats["status_updated"] += 1
@@ -703,6 +707,7 @@ def _apply_action(
         reason = _clean(editor.input_value(row, 3))
         # Application.Match in the VBA is case-insensitive but otherwise exact.
         if reason and any(reason.lower() == item.lower() for item in accepted):
+            stats["affected_rows"].append(row)
             stats["matched"] += 1
             if editor.set_input_text(row, 16, status):
                 stats["status_updated"] += 1
@@ -758,6 +763,33 @@ def _upload_and_verify(session: AuthorizedSession, payload: bytes, etag: str, fi
         return {}
 
 
+@contextmanager
+def _sync_session_lock(engine: Any):
+    """Share one cross-worker lock with Live Tour without a long DB transaction."""
+    raw = engine.connect()
+    connection = raw.execution_options(isolation_level="AUTOCOMMIT")
+    acquired = False
+    try:
+        result = connection.execute(
+            text("SELECT pg_try_advisory_lock(hashtext(:key))"),
+            {"key": "vera:v2:tour_leave_sync"},
+        )
+        acquired = bool(result.scalar())
+        if not acquired:
+            raise HTTPException(423, "Một lượt đồng bộ lịch nghỉ khác đang chạy. Hãy thử lại sau.")
+        yield
+    finally:
+        if acquired:
+            try:
+                connection.execute(
+                    text("SELECT pg_advisory_unlock(hashtext(:key))"),
+                    {"key": "vera:v2:tour_leave_sync"},
+                )
+            except Exception:
+                pass
+        raw.close()
+
+
 def install_tour_leave_sync_routes(
     app,
     *,
@@ -790,10 +822,13 @@ def install_tour_leave_sync_routes(
         body: TourLeaveSyncRequest,
         ident: identity_type = Depends(current_identity),
     ):
-        with engine_instance().begin() as conn:
-            require_feature(conn, ident, "tour_leave_sync")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:tour_leave_sync'))"))
-
+        live_service = getattr(app.state, "live_tour_leave_sync_service", None)
+        # Every permission check is complete before Sheets/Drive I/O begins.
+        with engine_instance().begin() as auth_conn:
+            require_feature(auth_conn, ident, "tour_leave_sync")
+            if live_service:
+                live_service["authorize"](auth_conn, ident)
+        with _sync_session_lock(engine_instance()):
             source_rows = catalog = None
             if body.action in SOURCE_ACTIONS:
                 source_rows, catalog = _load_source(google_client, leave_sheet_id)
@@ -820,8 +855,34 @@ def install_tour_leave_sync_routes(
                     503, f"Không cập nhật được TourVera: {type(exc).__name__}: {str(exc)[:300]}"
                 ) from exc
 
+            live_merge = None
+            if live_service:
+                try:
+                    live_merge = live_service["merge_verified"](
+                        workbook_bytes=updated, original_bytes=original,
+                        action=body.action, stats=stats,
+                        source_rows=source_rows,
+                        metadata=metadata, target_date=target_date, ident=ident,
+                    )
+                except HTTPException:
+                    raise
+                except Exception as exc:
+                    raise HTTPException(
+                        503,
+                        detail={
+                            "code": "TOUR_LEAVE_SYNC_LIVE_TOUR_PARTIAL",
+                            "ok": False, "recovery_required": True,
+                            "message": "TourVera đã cập nhật nhưng chưa hợp nhất được vào Live Tour.",
+                        },
+                    ) from exc
+
         if invalidate_tour_cache is not None:
-            invalidate_tour_cache()
+            try:
+                invalidate_tour_cache()
+            except Exception:
+                # Drive and Live Tour are already committed; cache refresh is
+                # best effort and must never make the client repeat the write.
+                pass
         changed_count = int(stats.get("reason_updated") or 0) + int(stats.get("status_updated") or 0)
         return {
             "ok": True,
@@ -834,6 +895,7 @@ def install_tour_leave_sync_routes(
                 f"Thay đổi {changed_count} ô trong TourVera."
             ),
             "stats": stats,
+            "live_tour": live_merge,
             "target": {
                 "name": str(metadata.get("name") or "TourVera.xlsm"),
                 "modified_time": str(metadata.get("modifiedTime") or ""),
