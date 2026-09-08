@@ -8,11 +8,13 @@ on:
       - "vera_attendance_rules.py"
       - "vera_auto_check.py"
       - "vera_auto_penalty_notifications.py"
+      - "vera_missing_checkin_notifications.py"
       - "vera_web_v2_break_return_penalty.py"
       - "vera_web_v2_attendance_break_alerts.py"
       - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
+      - "tests/test_missing_checkin_notifications.py"
       - "tests/test_outside_leave_rule.py"
       - ".github/workflows/auto-penalty-notification.yml"
   pull_request:
@@ -22,11 +24,13 @@ on:
       - "vera_attendance_rules.py"
       - "vera_auto_check.py"
       - "vera_auto_penalty_notifications.py"
+      - "vera_missing_checkin_notifications.py"
       - "vera_web_v2_break_return_penalty.py"
       - "vera_web_v2_attendance_break_alerts.py"
       - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
+      - "tests/test_missing_checkin_notifications.py"
       - "tests/test_outside_leave_rule.py"
       - ".github/workflows/auto-penalty-notification.yml"
   workflow_dispatch:
@@ -59,6 +63,7 @@ jobs:
             vera_attendance_rules.py \
             vera_auto_check.py \
             vera_auto_penalty_notifications.py \
+            vera_missing_checkin_notifications.py \
             timesoft_sync_job.py \
             vera_web_v2_break_return_penalty.py \
             vera_web_v2_attendance_break_alerts.py \
@@ -78,6 +83,7 @@ jobs:
                   'vera_attendance_rules.py',
                   'vera_auto_check.py',
                   'vera_auto_penalty_notifications.py',
+                  'vera_missing_checkin_notifications.py',
                   'vera_web_v2_break_return_penalty.py',
                   'vera_web_v2_attendance_break_alerts.py',
                   'vera_web_v2_attendance_break_window.py',
@@ -99,6 +105,20 @@ jobs:
                   and "INTERVAL '5 minutes'" in sources['vera_auto_penalty_notifications.py'],
               'background sync dispatches pending notifications':
                   'penalty_notifications.notify_pending(engine)' in sources['timesoft_sync_job.py'],
+              'missing FaceID alert is independent from Auto Check':
+                  'import vera_auto_check' not in sources['vera_missing_checkin_notifications.py']
+                  and 'import vera_auto_penalty_notifications' not in sources['vera_missing_checkin_notifications.py']
+                  and 'auto_check.' not in sources['vera_missing_checkin_notifications.py'],
+              'missing FaceID alert requires leave FaceID and 15 minute conditions':
+                  'def _alert_ready' in sources['vera_missing_checkin_notifications.py']
+                  and 'not has_leave' in sources['vera_missing_checkin_notifications.py']
+                  and 'not has_faceid' in sources['vera_missing_checkin_notifications.py']
+                  and 'current > shift_start + timedelta(minutes=THRESHOLD_MINUTES)'
+                  in sources['vera_missing_checkin_notifications.py'],
+              'missing FaceID alert targets employee reception manager and Admin':
+                  'REQUIRED_AUDIENCES = frozenset({"employee", "letan", "quanly", "admin"})'
+                  in sources['vera_missing_checkin_notifications.py']
+                  and "('admin','letan','quanly')" in sources['vera_missing_checkin_notifications.py'],
               'attendance penalty paths dispatch immediately':
                   'penalty_notifications.notify_pending(engine_instance())'
                   in sources['vera_web_v2_break_return_penalty.py']
