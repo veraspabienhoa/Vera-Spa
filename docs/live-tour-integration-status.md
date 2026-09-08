@@ -1,25 +1,27 @@
-# Live Tour — bàn giao tích hợp ngày 08/09/2026
+# Live Tour — lưu trữ hoàn toàn trên máy chủ (08/09/2026)
 
-## Nền mã
+## Phạm vi hiện tại
 
-Nhánh Live Tour được ghép từ `main` tại commit `873ecbb` (Update employee schedule and timekeeping controls). Các cập nhật chấm công, lịch nghỉ, lương và tìm nhân viên trên main được giữ nguyên. Không sửa `TourPage.jsx`, không thay thế Bảng tua gốc.
+Theo yêu cầu mới nhất, Live Tour không liên kết, đọc, cập nhật hay đồng bộ bất kỳ file Excel/.xlsb/Google Sheets nào. Workbook VBA là tài liệu tham khảo nghiệp vụ. Các hướng dẫn cũ về nhập TourVera, đồng bộ Sheets, phục hồi Drive hoặc mở báo cáo mua hàng ngoài đã hết hiệu lực đối với Live Tour.
 
-Live Tour là trang vận hành riêng: booking đơn/nhanh/nhiều nhân viên, bắt đầu/hoàn thành, thêm/đổi dịch vụ, nghỉ giữa ca, chờ thanh toán, thanh toán/combo, lịch sử khách hàng, báo cáo và danh mục. Bản đối chiếu VBA đầy đủ nằm trong `live-tour-vba-parity.md`, bao gồm 55 module và 18 UserForm.
+- Khởi tạo lần đầu từ danh sách KTV/Leader đang làm việc trong bảng `employees` trên PostgreSQL. Nhân viên trong Live Tour mặc định **Nghỉ**, chưa vào ca; người vận hành chọn trạng thái/ca trực tiếp. Lỗi truy vấn nhân viên hủy khởi tạo, không ghi một bảng rỗng thay thế.
+- Booking, phòng/dịch vụ, trạng thái/ca/break, hóa đơn, khách hàng/combo, lịch sử và bản sao lưu đều nằm trong `vera_app_setting` (`live_tour/state`). Mỗi thay đổi dùng giao dịch PostgreSQL, khóa, revision và mã chống ghi trùng.
+- Giữ dữ liệu Live Tour đã lưu, kể cả giao dịch, danh mục, ID và dấu vết nguồn cũ. Các dấu đồng bộ chưa hoàn tất chỉ còn dữ liệu lưu trữ; không chạy tiếp lên file ngoài.
+- Gỡ API đồng bộ/merge file, trình tải/ghi Drive, cấu hình link TourVera, nút đồng bộ và đường dẫn báo cáo mua hàng ngoài. Tab cũ gọi các lệnh `sync_leaves`, `merge_current_tour`, `merge_current_tour_preview` nhận HTTP 410 trước khi đọc/ghi dữ liệu.
+- Gỡ callback từ Bảng tua cũ sang Live Tour. Chức năng đồng bộ của Bảng tua cũ vẫn độc lập, không thay đổi Live Tour. `TourPage.jsx` giữ nguyên so với main `873ecbb`.
+- Excel/PNG chỉ là bản xuất tải xuống từ dữ liệu máy chủ, không phải nguồn vận hành hoặc phương tiện lưu trữ chính. Nhập số dư combo cũ là nhập tay trên web.
 
-## Các chặn an toàn mới
+## Chức năng đã có
 
-- Nhập danh sách từ Bảng tua phải xem trước và xác nhận đúng phiên bản/nguồn. Chỉ lần khởi tạo đầu tiên lấy trạng thái dịch vụ; lần nhập sau không khôi phục dịch vụ đã thu tiền.
-- Không khôi phục bản sao khi bản hiện tại hoặc bản sao có dịch vụ, khoản chờ thanh toán hoặc nghỉ giữa ca.
-- Không đổi/xóa quy tắc dịch vụ hoặc phòng còn gắn với khoản chưa thanh toán.
-- Mỗi thay đổi mới cần revision và mã chống ghi trùng; phản hồi thanh toán và mã đồng bộ được giữ để đối soát.
-- Doanh thu dự kiến chưa xuất bill tách khỏi doanh thu đã thu, cả trên giao diện và Excel.
-- Bộ đếm chuyển ngày lúc 10:00; ngày tài chính chuyển lúc 11:10 theo giờ Việt Nam.
+Trang/menu riêng, tab mới/ẩn-hiện menu, lọc ca/nhân viên, phòng VIP/PR, booking đơn/nhanh/hàng loạt, bắt đầu/hoàn thành/thêm/đổi dịch vụ, nghỉ giữa ca, thanh toán/combo, lịch sử khách hàng, danh mục và sao lưu server. Báo cáo tách doanh thu đã thu với dự kiến chưa xuất bill. Xuất tùy chỉnh chọn cột và phạm vi nhân viên. Chuyển phiên quá hạn có ngưỡng 0–1440 phút, xem trước và xác nhận đúng danh sách/phiên bản.
 
 ## Kiểm chứng
 
-Chạy nhóm kiểm thử `test_live_tour*.py`, `test_tour_leave_sync.py`, `test_global_open_new_tab.py`, `test_tour_room_availability.py`; đồng thời compile Python, kiểm tra whitespace, lint và build React.
+**202 test đạt** trong nhóm `test_live_tour*.py`, `test_tour_leave_sync.py`, `test_global_open_new_tab.py`, `test_tour_room_availability.py`. Số lượng thay đổi so với 210 trước đó vì bỏ 17 kiểm thử chỉ dành cho các luồng file vừa gỡ, thêm 9 kiểm thử server-only. Không bỏ qua kiểm thử đang thất bại để thay thế bằng số đếm cũ.
 
-Kết quả sau cùng: **210 test đạt**; compile Python và `git diff --check` đạt; React lint không có lỗi (3 cảnh báo sẵn có ngoài Live Tour), build thành công. Không có thay đổi trong `TourPage.jsx` so với main.
+Kiểm thử mới chặn yêu cầu mạng ngoài, kiểm tra khởi tạo/refresh từ DB, không ghi bảng rỗng khi DB lỗi, booking được đọc lại bởi một instance ứng dụng khác dùng cùng DB fixture, giữ dữ liệu cũ, và HTTP 410 cho tab cũ trước bất kỳ thao tác dữ liệu nào. Đây là kiểm thử hợp đồng SQL với DB fixture, chưa phải nghiệm thu PostgreSQL thật.
+
+React lint: 0 lỗi, 3 cảnh báo sẵn có; build thành công. Python compile và whitespace đạt. Bộ xem thử chỉ đọc tại `web-v2/dev/live-tour-preview.mjs` vẫn dùng DTO thật và dữ liệu giả; không gọi API sản phẩm. Trình duyệt phiên làm việc chặn localhost nên chưa xác nhận ảnh/tương tác responsive.
 
 Khi chạy suite rộng hơn (bỏ hai file mua hàng do môi trường thiếu `pyxlsb`), 380 test đạt trước khi dừng ở 5 lỗi. Đã chạy đúng 5 test đó trên worktree sạch của `main` tại `873ecbb` và chúng cũng thất bại:
 
@@ -31,30 +33,9 @@ Khi chạy suite rộng hơn (bỏ hai file mua hàng do môi trường thiếu 
 
 Hai lỗi auth yêu cầu cấu hình PostgreSQL chưa có trong môi trường kiểm thử. Không sửa các chức năng không liên quan chỉ để làm suite xanh.
 
-## Chưa xác nhận hoàn tất 100% VBA
+## Còn cần nghiệm thu trước phát hành
 
-- Chưa nghiệm thu đa trình duyệt, tài khoản thật và khóa giao dịch trên PostgreSQL thật.
-- Chưa so ảnh responsive/pixel với Excel/Bảng tua đang vận hành.
-- Chưa di chuyển lịch sử Report/KhachHang ở các file ngoài. `Bao_cao_mua_hang.bas` chỉ mở/activate `BaoCaoMuaHang.xlsb`; không chứa mã tính toán báo cáo đó. Live Tour mở trang đối chiếu mua hàng hiện có bằng quyền `revenue_view`. Cần file ngoài nếu muốn đối chiếu thêm các nghiệp vụ bên trong nó.
-- Cột AF:AH dành cho nhật ký sửa hóa đơn không đủ để xác định quy trình sửa hóa đơn cũ; chưa thấy UserForm thực hiện quy trình đó trong 18 form đã trích xuất. Không coi các cột dự phòng là bằng chứng đã đọc được toàn bộ nghiệp vụ sửa bill.
-- Cần chốt thiết kế lưu trữ/retention: hiện sử dụng JSON giao dịch trong `vera_app_setting`, chưa tách các sổ tài chính/khách hàng thành bảng chuyên biệt.
-- Chưa chạy Deploy VPS Production. Chỉ xem xét merge/phát hành sau khi nghiệm thu các mục trên; không chạy song song Excel và Live Tour để thu tiền cho cùng một dịch vụ.
-
-## Phần tiếp tục: báo cáo và nghỉ giữa ca
-
-- Xuất bảng tùy chỉnh cho phép chọn các cột Bảng tua và phạm vi tất cả/đang hiển thị/đã chọn. Không chọn cột hoặc phạm vi không có nhân viên thì không xuất. Backend kiểm tra whitelist cột, dòng đã xóa/ẩn và quyền khôi phục dòng ẩn; không cho dùng bộ chọn này để xuất lẫn dữ liệu tài chính. Kiểm thử mở lại XLSX xác nhận đúng cột, đúng nhân viên và không thực thi chuỗi công thức.
-
-- Hoàn thiện chuyển phiên quá hạn: Admin chọn ngưỡng 0–1440 phút (mặc định 15), xem trước nhân viên/dịch vụ/phòng/giờ kết thúc rồi xác nhận. Preview không ghi dữ liệu. Thay đổi revision hoặc có thêm phiên vừa quá hạn sẽ yêu cầu xem trước lại. Xác nhận chỉ chuyển trạng thái sang chờ thanh toán, giữ dịch vụ và không tạo doanh thu; gửi lại cùng mã yêu cầu không lặp cập nhật.
-
-- Thêm nút **Mở báo cáo mua hàng** trong Live Tour; mở tab mới vào đúng khu vực đối chiếu của Doanh thu. Kiểm tra quyền cả khi hiện nút lẫn xử lý bấm; tài khoản chỉ có quyền xem Doanh thu cũng mở được tab Báo cáo.
-- Admin xem lịch sử bắt đầu/vào lại, thời gian nghỉ, kết quả đúng giờ/quá 90 phút và người thao tác. Xuất Excel nghỉ giữa ca dùng cùng bộ lọc ngày/giờ và cần đồng thời quyền admin + export.
-- Kiểm thử thực thi JavaScript đối chiếu ma trận quyền export: quyền xuất bảng không mở quyền xem lịch sử hoặc tài chính.
-- Có bộ xem thử độc lập, dùng DTO thật và 12 nhân viên giả lập, phòng PR, danh sách phòng 4 người và lượt nghỉ 95 phút. Tất cả hàm API bị thay bằng dữ liệu chỉ đọc; các đường dẫn API chưa giả lập bị chặn. Không đưa bộ xem thử vào entry/build sản phẩm.
-
-Chạy từ `web-v2`:
-
-```sh
-LIVE_TOUR_TEST_PYTHON=/path/to/python-with-project-dependencies node dev/live-tour-preview.mjs
-```
-
-Mở `http://127.0.0.1:5174/preview`, thêm `?role=viewer` để kiểm tra người chỉ xem, hoặc `/preview-mobile` cho khung 390px. Thêm `--check` vào lệnh để kiểm tra server phục vụ HTML/JS/DTO và chặn API; bước này đã đạt. Trình duyệt kiểm thử của phiên làm việc chặn localhost (`ERR_BLOCKED_BY_CLIENT`), nên chưa có kết quả tương tác/ảnh desktop-mobile; không dùng kiểm tra server làm bằng chứng giao diện đã đạt.
+- Giao diện desktop/mobile, phân quyền tài khoản thật và nhiều người cùng thao tác trên PostgreSQL thật.
+- Cấu hình giá dịch vụ/combo phù hợp dữ liệu vận hành; giá chưa xác định không được coi là doanh thu đã thu.
+- Backup/retention và hiệu năng aggregate JSON theo quy mô sử dụng; không cần file nguồn để vận hành.
+- Chưa merge hoặc chạy Deploy VPS Production. Không kết luận đã hoàn tất 100% mọi nghiệp vụ VBA chỉ từ kiểm thử tự động.

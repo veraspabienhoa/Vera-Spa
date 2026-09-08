@@ -40,53 +40,9 @@ def api_client(monkeypatch, state=None):
     live.install_live_tour_routes(
         app, engine_instance=RouteEngine, current_identity=lambda: RouteIdentity(),
         require_feature=lambda *_args: None, feature_allowed=lambda *_args: True,
-        identity_type=RouteIdentity, google_client=lambda: object(), leave_sheet_id="test-sheet",
+        identity_type=RouteIdentity,
     )
     return TestClient(app), shared
-
-
-def test_paid_service_cannot_be_resurrected_by_ongoing_merge():
-    state = payable_state()
-    live._apply_action(state, "checkout", {"employee_id": "e1", "payment_method": "TIỀN MẶT"}, "admin", NOW)
-    before = deepcopy(state["employees"][0])
-    result = live._apply_action(state, "merge_current_tour", {"_source_records": [source_record()]}, "admin", NOW)
-    assert state["employees"][0] == before
-    assert result["policy"] == "roster_only"
-    assert result["conflict_count"] == 1
-    with pytest.raises(HTTPException):
-        live._apply_action(state, "checkout", {"employee_id": "e1", "payment_method": "TIỀN MẶT"}, "admin", NOW)
-    assert len(state["invoices"]) == 1
-
-
-def test_merge_new_employee_is_idle_off_duty_even_if_source_contains_unpaid_service():
-    state = state_with()
-    live._merge_source_records(state, [source_record()], NOW, include_assignments=True)
-    worker = state["employees"][0]
-    assert worker["work_status"] == "Nghỉ"
-    assert worker["shift"] == worker["service"] == worker["room"] == ""
-    assert not live._has_unsettled_work(worker)
-
-
-def test_leave_sync_never_creates_unknown_employee_or_replaces_active_notes():
-    state = payable_state()
-    worker = state["employees"][0]
-    worker.update(appointment="Khách đã hẹn", note="Giữ ghi chú")
-    result = live._merge_source_records(state, [
-        {**source_record(), "Đi làm": "Nghỉ phép", "Lịch hẹn": "Lý do mới", "Ghi chú": "Ghi chú nguồn"},
-        source_record("Người chưa có"),
-    ], NOW, include_assignments=False, sync_action="sync_all")
-    assert len(state["employees"]) == 1
-    assert result["conflict_count"] == 2
-    assert worker["appointment"] == "Khách đã hẹn" and worker["note"] == "Giữ ghi chú"
-
-
-def test_special_sync_does_not_overwrite_unowned_appointment():
-    state = state_with(employee("e1", "An"))
-    worker = state["employees"][0]
-    worker["appointment"] = "Hẹn Live"
-    live._merge_source_records(state, [source_record()], NOW, include_assignments=False,
-                               sync_action="late_to_leave", field_manifest={"an": {"work_status": True}})
-    assert worker["appointment"] == "Hẹn Live"
 
 
 def test_restore_rejects_paid_service_replay_and_preserves_ledger():
@@ -185,36 +141,6 @@ def test_actual_http_requires_revision_and_validates_nested_idempotency(monkeypa
     replay = client.post("/v2/live-tour/action", json=body)
     assert replay.status_code == 200 and replay.json()["duplicate"] is True
     assert shared["revision"] == 2
-
-
-def test_merge_preview_is_read_only_and_source_change_invalidates_confirmation(monkeypatch):
-    client, shared = api_client(monkeypatch)
-    records = [source_record(), source_record("Bình")]
-    monkeypatch.setattr(live, "_download_current_tour", lambda: ([], deepcopy(records), "source-time"))
-    preview = client.post("/v2/live-tour/action", json={"action": "merge_current_tour_preview", "expected_revision": 1}).json()
-    assert preview["merge"]["created"] == 1 and shared["revision"] == 1
-    body = {"action": "merge_current_tour", "expected_revision": 1, "idempotency_key": "merge-request",
-            "payload": {"confirm_token": preview["preview_token"]}}
-    records.append(source_record("Chi"))
-    assert client.post("/v2/live-tour/action", json=body).status_code == 409
-    records.pop()
-    assert client.post("/v2/live-tour/action", json=body).status_code == 200
-    assert shared["revision"] == 2
-    monkeypatch.setattr(live, "_download_current_tour", lambda: pytest.fail("Replay must not download again"))
-    assert client.post("/v2/live-tour/action", json=body).json()["duplicate"] is True
-
-
-def test_sync_preflight_failure_retains_exact_action_for_recovery(monkeypatch):
-    client, shared = api_client(monkeypatch)
-
-    def unavailable(**_kwargs):
-        raise RuntimeError("Test source unavailable before preparation")
-
-    monkeypatch.setattr(live, "_run_leave_sync", unavailable)
-    response = client.post("/v2/live-tour/action", json={"action": "sync_leaves", "expected_revision": 1,
-                           "idempotency_key": "sync-specific", "payload": {"sync_action": "late_to_leave"}})
-    assert response.status_code == 503
-    assert shared["state"]["sync_status"]["action"] == "late_to_leave"
 
 
 def test_failed_sync_idempotency_markers_are_prunable_without_evicting_new_key(monkeypatch):

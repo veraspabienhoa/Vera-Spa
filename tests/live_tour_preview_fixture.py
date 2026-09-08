@@ -25,7 +25,7 @@ def preview_response(admin=True):
     live._apply_action(state, "start_break", {"employee_id": "demo-6"}, "Tài khoản mẫu", now - timedelta(minutes=95))
     live._apply_action(state, "end_break", {"employee_id": "demo-6"}, "Tài khoản mẫu", now)
     return live._state_response(state, 1, now, can_admin=admin, can_operate=admin,
-                                can_payment=admin, can_export=admin, can_sync=admin)
+                                can_payment=admin, can_export=admin)
 
 
 if __name__ == "__main__":

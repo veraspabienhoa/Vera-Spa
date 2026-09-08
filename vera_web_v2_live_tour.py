@@ -1,6 +1,6 @@
 """Independent, transactional Live Tour board for Web V2.
 
-The legacy ``/v2/tour`` endpoint remains a read-only view of TourVera.xlsm.
+No workbook, filesystem or Google service is used as an operational data source.
 Live Tour keeps its own canonical state in ``vera_app_setting`` so a whole
 booking/payment operation is committed as one PostgreSQL transaction.
 """
@@ -12,7 +12,6 @@ import math
 import re
 import unicodedata
 from collections.abc import Callable
-from contextlib import contextmanager
 from copy import deepcopy
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
@@ -23,14 +22,13 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
-TOUR_XLSM_MIME = "application/vnd.ms-excel.sheet.macroenabled.12"
 STATE_CATEGORY = "live_tour"
 STATE_KEY = "state"
 STATE_LOCK = "vera:v2:live_tour:state"
@@ -39,7 +37,6 @@ BUSINESS_DAY_CUTOFF = time(11, 10)
 MAX_AUDIT = 3000
 MAX_BACKUPS = 20
 MAX_IDEMPOTENCY = 3000
-SYNC_LEASE_MINUTES = 15
 MAX_MONEY = 10_000_000_000
 MAX_SERVICE_DURATION_MINUTES = 1_440
 MAX_TICKET_UNITS = 100_000
@@ -58,22 +55,8 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "reorder", "hide_employee", "show_employee", "show_all", "add_employee", "delete_employee",
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
-    "restore", "merge_current_tour", "sync_leaves", "clear_expired",
+    "restore", "clear_expired",
 }
-LIVE_SYNC_LOCK = "vera:v2:tour_leave_sync"
-SYNC_ACTION_ALIASES = {
-    "sync_all": "sync_all", "sync": "sync_all",
-    "check": "check_source", "kiem_tra": "check_source", "check_source": "check_source",
-    "cleanup": "clear_leave_status", "xoa": "clear_leave_status",
-    "clear_leave_status": "clear_leave_status",
-    "reason-only": "update_reasons", "reason_only": "update_reasons",
-    "ly_do": "update_reasons", "update_reasons": "update_reasons",
-    "late_to_working": "late_to_working", "late_to_leave": "late_to_leave",
-    "early_to_leave": "early_to_leave", "early_to_working": "early_to_working",
-    "leave_group_to_leave": "leave_group_to_leave",
-    "support_to_working": "support_to_working",
-}
-
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
     "Lịch hẹn", "Dịch vụ", "Thời lượng", "TG bắt đầu thực hiện",
@@ -213,17 +196,6 @@ def _canonical_payload_hash(action: str, payload: dict[str, Any]) -> str:
         ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str,
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _canonical_sync_action(value: Any) -> str:
-    token = str(value or "sync_all").strip().lower()
-    canonical = SYNC_ACTION_ALIASES.get(token)
-    if not canonical:
-        raise HTTPException(
-            400,
-            "sync_action chỉ nhận sync_all, check/kiem_tra, cleanup/xoa hoặc reason-only/ly_do.",
-        )
-    return canonical
 
 
 def _common_customer_identity(items: list[dict[str, Any]]) -> dict[str, str]:
@@ -390,277 +362,6 @@ def _source_start(value: Any, now: datetime, duration: float | None) -> datetime
             parsed -= timedelta(days=1)
         return parsed
     return _parse_datetime(value)
-
-
-def _download_current_tour() -> tuple[list[str], list[dict[str, Any]], str]:
-    # Lazy import keeps pure state-machine tests independent from the optional
-    # Google Drive HTTP dependency.
-    from vera_web_v2_people import _download_tour
-
-    return _download_tour()
-
-
-def _source_physical_rooms() -> list[str]:
-    from vera_web_v2_people import _tour_cache
-
-    return sorted({_room_group(item) for item in (_tour_cache.get("rooms") or {}).get("all", []) if str(item or "").strip()})
-
-
-def _tour_records_from_xlsm(payload: bytes) -> tuple[list[str], list[dict[str, Any]]]:
-    """Read the same 24-column Input snapshot used by the legacy Tour API."""
-    try:
-        workbook = load_workbook(BytesIO(payload), read_only=True, data_only=True)
-        if "Input" not in workbook.sheetnames:
-            raise ValueError("thiếu sheet Input")
-        sheet = workbook["Input"]
-        raw_headers = [cell.value for cell in next(sheet.iter_rows(min_row=20, max_row=20, max_col=24))]
-        columns: list[str] = []
-        used: dict[str, int] = {}
-        for index, value in enumerate(raw_headers, start=1):
-            label = str(value or "").strip() or f"Cột {index}"
-            used[label] = used.get(label, 0) + 1
-            columns.append(label if used[label] == 1 else f"{label} ({used[label]})")
-        records = []
-        for row_number, values in enumerate(
-            sheet.iter_rows(min_row=21, max_col=24, values_only=True), start=21,
-        ):
-            if not any(value not in (None, "") for value in values):
-                continue
-            record = {columns[index]: _json_safe_cell(value) for index, value in enumerate(values)}
-            record["_source_row"] = row_number
-            records.append(record)
-            if len(records) >= 500:
-                break
-        workbook.close()
-        return columns, records
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(503, f"TourVera sau đồng bộ không đọc được: {type(exc).__name__}: {str(exc)[:240]}") from exc
-
-
-def _json_safe_cell(value: Any) -> Any:
-    """Normalize openpyxl scalars before storing a prepared sync in JSONB."""
-    if isinstance(value, (datetime, date, time)):
-        return value.isoformat()
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    return str(value)
-
-
-def _tour_field_manifest(
-    before_records: list[dict[str, Any]], after_records: list[dict[str, Any]],
-) -> dict[str, dict[str, bool]]:
-    before_by_name = {
-        _norm(re.sub(r"\s*\*+\s*$", "", str(_source_value(row, "Tên nhân viên") or ""))): row
-        for row in before_records if _source_value(row, "Tên nhân viên")
-    }
-    manifest: dict[str, dict[str, bool]] = {}
-    for row in after_records:
-        name_key = _norm(re.sub(r"\s*\*+\s*$", "", str(_source_value(row, "Tên nhân viên") or "")))
-        before = before_by_name.get(name_key)
-        if not name_key or before is None:
-            continue
-        manifest[name_key] = {
-            "appointment": str(_source_value(before, "Lịch hẹn") or "") != str(_source_value(row, "Lịch hẹn") or ""),
-            "work_status": _norm(_source_value(before, "Đi làm")) != _norm(_source_value(row, "Đi làm")),
-        }
-    return manifest
-
-
-class LiveTourSyncUncertain(RuntimeError):
-    """Drive may have committed, but the uploaded bytes could not be verified."""
-
-    def __init__(self, message: str, *, prepared: dict[str, Any]):
-        super().__init__(message)
-        self.prepared = deepcopy(prepared)
-
-
-def _upload_live_tour_and_verify(
-    session: Any, payload: bytes, etag: str, file_id: str, *, prepared: dict[str, Any],
-) -> dict[str, Any]:
-    """Upload with ETag protection and surface every post-PATCH ambiguity."""
-    try:
-        response = session.patch(
-            f"https://www.googleapis.com/upload/drive/v3/files/{file_id}"
-            "?uploadType=media&supportsAllDrives=true&fields=id,name,mimeType,modifiedTime,size,md5Checksum",
-            headers={"Content-Type": TOUR_XLSM_MIME, "If-Match": etag}, data=payload, timeout=120,
-        )
-    except Exception as exc:
-        raise LiveTourSyncUncertain(
-            f"Không nhận được kết quả ghi TourVera: {type(exc).__name__}: {str(exc)[:240]}",
-            prepared=prepared,
-        ) from exc
-    if response.status_code in {409, 412}:
-        raise HTTPException(409, "TourVera vừa được thay đổi ở nơi khác. Hãy đồng bộ lại bằng mã yêu cầu mới.")
-    if response.status_code not in {200, 201}:
-        raise LiveTourSyncUncertain(
-            f"Drive trả HTTP {response.status_code} sau khi thử ghi TourVera.", prepared=prepared,
-        )
-    try:
-        metadata = dict(response.json() or {})
-    except Exception:
-        metadata = {}
-    try:
-        verify = session.get(
-            f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media&supportsAllDrives=true",
-            timeout=90,
-        )
-    except Exception as exc:
-        raise LiveTourSyncUncertain(
-            f"Drive đã nhận PATCH nhưng bước xác minh lỗi: {type(exc).__name__}: {str(exc)[:240]}",
-            prepared=prepared,
-        ) from exc
-    verified_payload = bytes(verify.content or b"")
-    if verify.status_code != 200 or hashlib.sha256(verified_payload).hexdigest() != prepared["target_sha256"]:
-        raise LiveTourSyncUncertain(
-            "Drive đã nhận PATCH nhưng nội dung hiện tại chưa khớp bản dự kiến.", prepared=prepared,
-        )
-    return metadata
-
-
-def _filter_sync_records(
-    records: list[dict[str, Any]], *, sync_action: str,
-    source_rows: list[list[Any]] | None, target_date: date,
-    stats: dict[str, Any], field_manifest: dict[str, dict[str, bool]],
-) -> tuple[list[dict[str, Any]], dict[str, dict[str, bool]]]:
-    """Limit a leave sync merge to rows that action actually owns."""
-    if sync_action in {"sync_all", "update_reasons"}:
-        from vera_web_v2_tour_leave_sync import _same_date
-
-        selected_keys = {
-            _norm(re.sub(r"\s*\*+\s*$", "", str((row + ["", "", ""])[2] or "")))
-            for row in (source_rows or []) if _same_date((row + [None])[0], target_date)
-        }
-        filtered = [
-            row for row in records
-            if _norm(re.sub(r"\s*\*+\s*$", "", str(_source_value(row, "Tên nhân viên") or "")))
-            in selected_keys
-        ]
-    else:
-        affected_rows = {
-            int(value) for value in (stats.get("affected_rows") or [])
-            if str(value).strip().isdigit()
-        }
-        if affected_rows:
-            filtered = [row for row in records if int(row.get("_source_row") or 0) in affected_rows]
-        else:
-            # Compatibility for an older legacy writer that does not yet
-            # return affected rows. This only imports concrete C/P diffs.
-            filtered = [
-                row for row in records
-                if any(field_manifest.get(
-                    _norm(re.sub(r"\s*\*+\s*$", "", str(_source_value(row, "Tên nhân viên") or ""))),
-                    {},
-                ).values())
-            ]
-    selected_keys = {
-        _norm(re.sub(r"\s*\*+\s*$", "", str(_source_value(row, "Tên nhân viên") or "")))
-        for row in filtered
-    }
-    return filtered, {
-        key: value for key, value in field_manifest.items() if key in selected_keys
-    }
-
-
-def _run_leave_sync(
-    *, google_client: Callable[[], Any], leave_sheet_id: str, timezone,
-    sync_action: str, before_upload: Callable[[dict[str, Any]], None] | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Update TourVera and return the exact verified snapshot for Live Tour merge."""
-    from vera_web_v2_tour_leave_sync import (
-        ACTION_LABELS,
-        RELEASE,
-        SOURCE_ACTIONS,
-        TOUR_FILE_ID,
-        _TourWorkbook,
-        get_tour_file_id,
-    )
-    from vera_web_v2_tour_leave_sync import _apply_action as apply_leave_action
-    from vera_web_v2_tour_leave_sync import _download_tour as download_tour
-    from vera_web_v2_tour_leave_sync import _drive_session as drive_session
-    from vera_web_v2_tour_leave_sync import _load_source as load_source
-
-    if sync_action == "check_source":
-        source_rows, catalog = load_source(google_client, leave_sheet_id)
-        target_date = datetime.now(timezone).date()
-        return [], {
-            "release": RELEASE, "action": sync_action,
-            "action_label": "Kiểm tra nguồn lịch nghỉ", "date": target_date.isoformat(),
-            "stats": {"source_rows": len(source_rows or []), "catalog_items": len(catalog or [])},
-            "message": "Nguồn lịch nghỉ hợp lệ; TourVera và trạng thái Live Tour không bị thay đổi.",
-            "read_only": True,
-            "target": {"name": "TourVera.xlsm", "verified": False, "untouched": True},
-        }
-    if sync_action not in ACTION_LABELS:
-        raise HTTPException(400, "Hành động đồng bộ lịch nghỉ không hợp lệ.")
-    source_rows = catalog = None
-    if sync_action in SOURCE_ACTIONS:
-        source_rows, catalog = load_source(google_client, leave_sheet_id)
-    try:
-        session = drive_session()
-        file_id = get_tour_file_id(TOUR_FILE_ID)
-        original, etag = download_tour(session, file_id)
-        _, original_records = _tour_records_from_xlsm(original)
-        editor = _TourWorkbook(original)
-        target_date = datetime.now(timezone).date()
-        stats = apply_leave_action(
-            editor, sync_action, target_date, source_rows=source_rows, catalog=catalog,
-        )
-        updated = editor.to_bytes()
-        # Parse before uploading: once Drive has accepted the file, only the
-        # transactional state write remains and any failure can be marked for recovery.
-        _, records = _tour_records_from_xlsm(updated)
-        field_manifest = _tour_field_manifest(original_records, records)
-        records, field_manifest = _filter_sync_records(
-            records, sync_action=sync_action, source_rows=source_rows,
-            target_date=target_date, stats=stats, field_manifest=field_manifest,
-        )
-        changed_count = int(stats.get("reason_updated") or 0) + int(stats.get("status_updated") or 0)
-        target_sha256 = hashlib.sha256(updated).hexdigest()
-        sync_result = {
-            "release": RELEASE, "action": sync_action, "action_label": ACTION_LABELS[sync_action],
-            "date": target_date.isoformat(), "stats": stats,
-            "message": (
-                f"Đã chạy {ACTION_LABELS[sync_action]} cho ngày {target_date.strftime('%d/%m/%Y')}. "
-                f"Thay đổi {changed_count} ô trong TourVera và hợp nhất vào Live Tour."
-            ),
-            "target": {
-                "name": "TourVera.xlsm", "modified_time": "", "verified": False,
-                "snapshot_sha256": target_sha256,
-            },
-            "field_manifest": field_manifest,
-        }
-        prepared = {
-            "target_sha256": target_sha256,
-            "original_sha256": hashlib.sha256(original).hexdigest(),
-            "source_etag": etag,
-            "file_id": file_id,
-            "records": deepcopy(records),
-            "sync_result": deepcopy(sync_result),
-        }
-        # Persist the exact target and parsed rows before the first byte is sent.
-        # If the process disappears during PATCH, the same key can reconcile by hash.
-        if before_upload is not None:
-            before_upload(deepcopy(prepared))
-        metadata = _upload_live_tour_and_verify(
-            session, updated, etag, file_id, prepared=prepared,
-        )
-        sync_result["target"].update({
-            "name": str(metadata.get("name") or "TourVera.xlsm"),
-            "modified_time": str(metadata.get("modifiedTime") or ""), "verified": True,
-        })
-    except LiveTourSyncUncertain:
-        raise
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(503, f"Không cập nhật được TourVera: {type(exc).__name__}: {str(exc)[:300]}") from exc
-    return records, sync_result
 
 
 def _iso(now: datetime) -> str:
@@ -951,21 +652,17 @@ def _source_employee(record: dict[str, Any], index: int, now: datetime) -> dict[
 
 
 def _database_employees(conn) -> list[dict[str, Any]]:
-    try:
-        rows = conn.execute(text("""
-            SELECT username, COALESCE(full_name, username) AS full_name,
-                   lower(COALESCE(role,'')) AS role, COALESCE(payload,'{}'::jsonb) AS payload
-            FROM employees
-            WHERE COALESCE(payload->>'__deleted','false') <> 'true'
-              AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc')='Đang làm việc'
-              AND lower(COALESCE(role,'')) IN ('nhanvien','leader')
-            ORDER BY lower(COALESCE(full_name,username))
-        """)).mappings().all()
-    except Exception:
-        return []
+    rows = conn.execute(text("""
+        SELECT username, COALESCE(full_name, username) AS full_name,
+               lower(COALESCE(role,'')) AS role, COALESCE(payload,'{}'::jsonb) AS payload
+        FROM employees
+        WHERE COALESCE(payload->>'__deleted','false') <> 'true'
+          AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc')='Đang làm việc'
+          AND lower(COALESCE(role,'')) IN ('nhanvien','leader')
+        ORDER BY lower(COALESCE(full_name,username))
+    """)).mappings().all()
     output = []
     for index, row in enumerate(rows):
-        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
         output.append({
             "id": _stable_id("employee", row.get("username") or row.get("full_name")),
             "username": str(row.get("username") or ""), "stt": str(index + 1),
@@ -975,8 +672,7 @@ def _database_employees(conn) -> list[dict[str, Any]]:
             "completed_at": "", "payment_status": "", "wait_minutes": None,
             "completion_delta_minutes": None, "steam_elapsed_minutes": None,
             "tour_count": 0, "request_count": 0,
-            "work_status": str(payload.get("Đi làm") or payload.get("work_status") or "Đi làm"),
-            "shift": str(payload.get("Vào ca") or payload.get("shift") or ""),
+            "work_status": "Nghỉ", "shift": "",
             "break_started_at": "", "clock_out": "", "clock_in": "", "note": "",
             "hidden": False, "vip": False, "sort_index": index,
         })
@@ -985,15 +681,9 @@ def _database_employees(conn) -> list[dict[str, Any]]:
 
 def _bootstrap_state(conn, now: datetime) -> dict[str, Any]:
     state = _empty_state(now)
-    try:
-        _, records, _ = _download_current_tour()
-        state["physical_rooms"] = _source_physical_rooms()
-    except Exception as exc:
-        state["bootstrap_warning"] = f"Không đọc được TourVera; đã dùng danh sách nhân viên hệ thống ({type(exc).__name__})."
-        records = []
-    employees = [item for index, record in enumerate(records) if (item := _source_employee(record, index, now))]
-    state["employees"] = employees or _database_employees(conn)
-    state["bootstrap_source"] = "TourVera" if employees else "employees"
+    state["employees"] = _database_employees(conn)
+    state["bootstrap_source"] = "employees"
+    state["storage_mode"] = "server"
     return state
 
 
@@ -1514,141 +1204,28 @@ def _snapshot_for_backup(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _required_action_feature(action: str) -> str:
-    if action == "sync_leaves":
-        return "tour_leave_sync"
     if action in {"checkout", "quick_checkout", "move_pending", "combo_purchase"}:
         return "live_tour_payment"
     if action in {
         "add_employee", "delete_employee", "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
-        "merge_current_tour", "merge_current_tour_preview", "clear_expired", "clear_expired_preview", "combo_import", "set_vip",
+        "clear_expired", "clear_expired_preview", "combo_import", "set_vip",
     }:
         return "live_tour_admin"
     return "live_tour_operate"
 
 
-def _merge_source_records(
-    state: dict[str, Any], records: list[dict[str, Any]], now: datetime,
-    *, include_assignments: bool, sync_action: str = "",
-    field_manifest: dict[str, dict[str, bool]] | None = None,
-) -> dict[str, Any]:
-    """Merge roster or explicitly owned leave fields, never operational jobs.
-
-    ``include_assignments`` is retained as a legacy internal call argument;
-    True now selects roster-only mode. Full assignment import is bootstrap-only.
-    """
-    existing = {_norm(item.get("name")): item for item in state["employees"]}
-    created = updated = 0
-    conflicts: list[dict[str, Any]] = []
-    for index, record in enumerate(records):
-        source = _source_employee(record, index, now)
-        if not source:
-            continue
-        catalog_duration = _service_catalog_duration(state, source.get("service"))
-        if catalog_duration is not None:
-            source["duration"] = catalog_duration
-        key = _norm(source.get("name"))
-        current = existing.get(key)
-        if current is None:
-            if sync_action:
-                conflicts.append({"name": source["name"], "reason": "Nhân viên chưa có trong Live Tour; lịch nghỉ không tạo nhân viên."})
-                continue
-            # Only the initial bootstrap may import operational assignments.
-            # An old workbook can still contain already-paid services, even
-            # for an employee who was deleted and later re-added here.
-            _clear_assignment(source)
-            source.update({"work_status": "Nghỉ", "shift": "", "tour_count": 0,
-                           "request_count": 0, "break_started_at": "", "clock_in": "", "clock_out": ""})
-            source["sort_index"] = len(state["employees"])
-            state["employees"].append(source)
-            existing[key] = source
-            created += 1
-            continue
-        if include_assignments:
-            # Ongoing roster merge is not a second bootstrap. Never replace
-            # service, payment, counters, appointments or attendance state.
-            if _has_unsettled_work(source):
-                conflicts.append({"employee_id": current["id"], "name": current["name"],
-                                  "reason": "Bỏ qua dịch vụ từ TourVera; giữ nguyên trạng thái Live Tour để tránh thu tiền trùng."})
-            current["vip"] = bool(current.get("vip") or source.get("vip"))
-            updated += 1
-            continue
-        requested_work = source["work_status"]
-        requested_shift = source.get("shift") or current.get("shift", "")
-        current_work = _norm(current.get("work_status"))
-        requested_work_key = _norm(requested_work)
-        action_key = str(sync_action or "").strip().lower()
-        if action_key == "sync_all":
-            # Reconcile Live drift even when TourVera already held the target
-            # value and therefore produced no cell diff in this request.
-            apply_work = requested_work_key == "nghi phep"
-            apply_shift = False
-        elif action_key == "update_reasons":
-            apply_work = apply_shift = False
-        elif action_key == "clear_leave_status":
-            apply_work = current_work == "nghi phep" and requested_work_key == "di lam"
-            apply_shift = False
-        elif action_key.endswith("_to_working"):
-            apply_work = current_work != "di lam" and requested_work_key == "di lam"
-            apply_shift = False
-        elif action_key.endswith("_to_leave") or action_key == "leave_group_to_leave":
-            apply_work = requested_work_key == "nghi phep"
-            apply_shift = False
-        else:
-            # Unknown legacy variants may update appointment text but cannot
-            # silently rewrite attendance/shift state.
-            apply_work = apply_shift = False
-        has_live_work = bool(
-            current.get("service")
-            or current.get("break_started_at")
-            or _norm(current.get("status")) in {"dang cho", "dang thuc hien", "dang su dung", "cho thanh toan"}
-            or _norm(current.get("payment_status")) == "cho thanh toan"
-        )
-        wants_change = (
-            (apply_work and current_work != requested_work_key)
-            or (apply_shift and source.get("shift") and _shift_bucket(current) != _shift_bucket(source))
-        )
-        if not has_live_work:
-            if apply_work:
-                current["work_status"] = requested_work
-            if apply_shift:
-                current["shift"] = requested_shift
-        elif wants_change:
-            conflicts.append({
-                "employee_id": str(current.get("id") or ""),
-                "name": str(current.get("name") or ""),
-                "requested_work_status": requested_work,
-                "requested_shift": source.get("shift") or "",
-                "reason": "Nhân viên đang có dịch vụ, nghỉ giữa ca hoặc khoản chưa thanh toán.",
-            })
-        owns_appointment = action_key in {"sync_all", "update_reasons"} or bool(
-            (field_manifest or {}).get(key, {}).get("appointment")
-        )
-        if owns_appointment and not has_live_work:
-            current["appointment"] = source.get("appointment", "")
-        # A trailing * in TourVera is the canonical VIP marker. VIP remains
-        # sticky when a source without a marker is merged later.
-        current["vip"] = bool(current.get("vip") or source.get("vip"))
-        if action_key == "update_reasons":
-            # Reason-only owns Input/C (appointment) and never rewrites the
-            # separate Live leave-reason lifecycle.
-            pass
-        elif not has_live_work and _norm(current.get("work_status")) == "nghi phep":
-            current["leave_reason"] = source.get("appointment") or source.get("note") or current.get("leave_reason", "")
-            if source.get("note"):
-                current["note"] = source["note"]
-        elif not has_live_work and apply_work:
-            current.pop("leave_reason", None)
-        updated += 1
-    return {
-        "created": created, "updated": updated,
-        "conflicts": conflicts, "conflict_count": len(conflicts),
-        "policy": "roster_only" if include_assignments else "leave_fields_only",
-    }
+def _reject_external_action(action: str) -> None:
+    if action in {"sync_leaves", "merge_current_tour", "merge_current_tour_preview"}:
+        raise HTTPException(410, detail={
+            "code": "LIVE_TOUR_SERVER_ONLY",
+            "message": "Live Tour chỉ sử dụng dữ liệu trên máy chủ. Kết nối file và đồng bộ nguồn ngoài đã được gỡ bỏ.",
+        })
 
 
 def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime) -> dict[str, Any]:
     action = str(action or "").strip().lower()
+    _reject_external_action(action)
     _ensure_counter_day(state, now)
     financial_timing = _financial_timing(payload, now) if action in BACKDATE_ACTIONS else None
     batch_actions = {
@@ -2171,29 +1748,6 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         state.clear()
         state.update(restored)
         result["restored_backup_id"] = backup.get("id")
-    elif action in {"merge_current_tour", "sync_leaves"}:
-        records = payload.get("_source_records")
-        if not isinstance(records, list):
-            raise HTTPException(503, "Chưa tải được dữ liệu Bảng tua hiện tại.")
-        sync_result = deepcopy(payload.get("_sync_result") or {}) if action == "sync_leaves" else {}
-        if action == "sync_leaves" and sync_result.get("read_only"):
-            merge_result = {"created": 0, "updated": 0, "conflicts": [], "conflict_count": 0}
-        else:
-            merge_result = _merge_source_records(
-                state, records, now, include_assignments=action == "merge_current_tour",
-                sync_action=str(payload.get("sync_action") or "") if action == "sync_leaves" else "",
-                field_manifest=sync_result.get("field_manifest") if action == "sync_leaves" else None,
-            )
-        if action == "sync_leaves":
-            result.update({"sync": sync_result, "merge": merge_result})
-            state["sync_status"] = {
-                "status": "ok", "at": _iso(now), "actor": actor,
-                "action": sync_result.get("action", payload.get("sync_action", "sync_all")),
-                "target": deepcopy(sync_result.get("target") or {}), "merge": merge_result,
-            }
-        else:
-            result.update(merge_result)
-            state["physical_rooms"] = sorted(set(state.get("physical_rooms", [])) | set(payload.get("_physical_rooms", [])))
     elif action == "clear_expired":
         preview = _expired_preview(state, payload, now)
         if payload.get("confirm_token") != preview["preview_token"]:
@@ -2454,7 +2008,7 @@ def _unbilled_entries(state: dict[str, Any], bounds: dict[str, Any] | None = Non
 def _state_response(
     state: dict[str, Any], revision: int, now: datetime, *, include_hidden: bool = False,
     can_admin: bool = False, can_operate: bool = False,
-    can_payment: bool = False, can_export: bool = False, can_sync: bool = False,
+    can_payment: bool = False, can_export: bool = False,
 ) -> dict[str, Any]:
     state = deepcopy(state)
     _ensure_counter_day(state, now)
@@ -2504,12 +2058,8 @@ def _state_response(
     public_audit = _redact_customer_pii(state["audit"][-1000:]) if can_admin else []
     public_break_events = _redact_customer_pii(state["break_events"]) if can_admin else []
     public_employees = deepcopy(visible) if can_payment else _redact_customer_pii(visible)
-    public_sync_status = deepcopy(state.get("sync_status") or {})
-    if not can_admin:
-        public_sync_status.pop("actor", None)
-        public_sync_status.pop("error", None)
     return {
-        "columns": BOARD_COLUMNS, "records": records, "count": len(records), "employee_count": len(records),
+        "storage_mode": "server", "columns": BOARD_COLUMNS, "records": records, "count": len(records), "employee_count": len(records),
         "available": groups("available"), "working_count": groups("working"), "leave_count": groups("leave"),
         "doing_count": groups("doing"), "waiting_count": groups("waiting"), "finishing_count": groups("finishing"),
         "break_count": groups("break"), "stats": [{"label": "Có thể lên tua", "value": groups("available"), "detail": "Sắp xong + Đang rảnh"}],
@@ -2531,9 +2081,7 @@ def _state_response(
         "catalogs": {"rooms": state["rooms"], "services": state["services"], "combos": state["combos"]},
         "state": {
             "version": state.get("version"), "business_date": state.get("business_date"),
-            "updated_at": state.get("updated_at"), "bootstrap_source": state.get("bootstrap_source", ""),
-            "bootstrap_warning": state.get("bootstrap_warning", ""),
-            "sync_status": public_sync_status,
+            "updated_at": state.get("updated_at"), "storage_mode": "server",
             "employees": public_employees, "hidden_count": sum(bool(item.get("hidden")) for item in ordered),
             "rooms": state["rooms"], "services": state["services"], "combos": state["combos"],
             "customers": customers,
@@ -2547,7 +2095,7 @@ def _state_response(
         "capabilities": {
             "admin": can_admin, "catalog_admin": can_admin, "manage_catalog": can_admin,
             "operate": can_operate, "payment": can_payment, "export": can_export,
-            "sync": can_sync, "hide_recovery": can_recover_hidden,
+            "hide_recovery": can_recover_hidden,
         },
     }
 
@@ -2898,27 +2446,6 @@ def _idempotency_status(entry: dict[str, Any] | None) -> str:
     return "completed"
 
 
-def _sync_idempotency_entry(
-    state: dict[str, Any], key: str, *, actor: str, payload_hash: str,
-    can_admin_takeover: bool,
-) -> tuple[dict[str, Any] | None, bool]:
-    """Allow an admin to resume a non-final sync owned by another actor."""
-    try:
-        return _idempotency_entry(
-            state, key, action="sync_leaves", actor=actor, payload_hash=payload_hash,
-        ), False
-    except HTTPException:
-        previous = state.get("idempotency", {}).get(key) if key else None
-        if (
-            can_admin_takeover and previous
-            and previous.get("action") == "sync_leaves"
-            and previous.get("payload_hash") == payload_hash
-            and _idempotency_status(previous) != "completed"
-        ):
-            return previous, True
-        raise
-
-
 def _idempotency_replay(
     state: dict[str, Any], key: str, *, action: str, actor: str, payload_hash: str,
 ) -> dict[str, Any] | None:
@@ -2971,66 +2498,9 @@ def _remember_idempotency(
         # is a soft cap; durable financial receipts share the ledger lifetime.
 
 
-@contextmanager
-def _session_advisory_lock(engine: Any, key: str):
-    """Serialize external syncs without keeping a PostgreSQL transaction open."""
-    raw = engine.connect()
-    connection = raw.execution_options(isolation_level="AUTOCOMMIT")
-    acquired = False
-    try:
-        result = connection.execute(
-            text("SELECT pg_try_advisory_lock(hashtext(:key))"), {"key": key},
-        )
-        acquired = bool(result.scalar())
-        if not acquired:
-            raise HTTPException(
-                423,
-                detail={
-                    "code": "LIVE_TOUR_SYNC_IN_PROGRESS",
-                    "message": "Một lượt đồng bộ lịch nghỉ khác đang chạy. Hãy thử lại sau.",
-                    "retriable": True,
-                },
-            )
-        yield connection
-    finally:
-        if acquired:
-            try:
-                connection.execute(
-                    text("SELECT pg_advisory_unlock(hashtext(:key))"), {"key": key},
-                )
-            except Exception:
-                pass
-        raw.close()
-
-
-def _current_tour_sha256() -> tuple[str, bytes]:
-    """Read the authoritative Drive bytes for same-key uncertain-write recovery."""
-    from vera_web_v2_tour_leave_sync import TOUR_FILE_ID, _download_tour, _drive_session, get_tour_file_id
-
-    session = _drive_session()
-    payload, _ = _download_tour(session, get_tour_file_id(TOUR_FILE_ID))
-    return hashlib.sha256(payload).hexdigest(), payload
-
-
-def _sync_http_error(
-    *, code: str, message: str, marker_persisted: bool,
-    status: str = "recovery_required", target_sha256: str = "",
-) -> HTTPException:
-    return HTTPException(
-        503,
-        detail={
-            "code": code, "status": status, "message": message,
-            "ok": False, "retriable": True, "retry_same_key": True,
-            "marker_persisted": bool(marker_persisted), "target_sha256": target_sha256,
-        },
-    )
-
-
 def install_live_tour_routes(
     app, *, engine_instance: Callable[[], Any], current_identity, require_feature,
     feature_allowed: Callable[..., bool], identity_type, vn_tz=VN_TZ,
-    google_client: Callable[[], Any] | None = None, leave_sheet_id: str = "",
-    invalidate_tour_cache: Callable[[], None] | None = None,
 ) -> None:
     if getattr(app.state, "live_tour_installed", False):
         return
@@ -3039,12 +2509,10 @@ def install_live_tour_routes(
     def permissions(conn, ident) -> dict[str, bool]:
         can_admin = bool(feature_allowed(conn, ident, "live_tour_admin"))
         can_operate = bool(feature_allowed(conn, ident, "live_tour_operate"))
-        can_sync = can_operate and bool(feature_allowed(conn, ident, "tour_leave_sync"))
         return {
             "can_admin": can_admin, "can_operate": can_operate,
             "can_payment": bool(feature_allowed(conn, ident, "live_tour_payment")),
             "can_export": bool(feature_allowed(conn, ident, "live_tour_export")),
-            "can_sync": can_sync,
         }
 
     def action_response(
@@ -3057,86 +2525,6 @@ def install_live_tour_routes(
             "revision": revision, "result": public_result,
             **_state_response(state, revision, now, **grants),
         }
-
-    def persist_sync_phase(
-        *, now: datetime, actor: str, key: str, payload_hash: str,
-        status: str, prepared: dict[str, Any] | None = None,
-        error: Exception | str | None = None,
-    ) -> bool:
-        """Persist a durable sync phase in a short, isolated transaction."""
-        try:
-            with engine_instance().begin() as recovery_conn:
-                recovery_conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-                recovery_state, recovery_revision = _read_state(recovery_conn, now, for_update=True)
-                entry = _idempotency_entry(
-                    recovery_state, key, action="sync_leaves", actor=actor,
-                    payload_hash=payload_hash,
-                )
-                if entry is not None and _idempotency_status(entry) == "completed":
-                    # Never downgrade a transaction that may have committed even
-                    # when its client connection reported an error afterward.
-                    return True
-                if entry is None:
-                    entry = {
-                        "action": "sync_leaves", "actor": actor, "payload_hash": payload_hash,
-                        "at": _iso(now), "result": {},
-                    }
-                    recovery_state.setdefault("idempotency", {})[key] = entry
-                if prepared:
-                    entry["prepared"] = deepcopy(prepared)
-                entry.update({
-                    "status": status, "phase": status, "updated_at": _iso(now),
-                    "patch_attempted": bool(
-                        status in {"patch_attempted", "recovery_required"}
-                        or entry.get("patch_attempted")
-                    ),
-                })
-                entry["lease_expires_at"] = (
-                    _iso(now + timedelta(minutes=SYNC_LEASE_MINUTES))
-                    if status in {"in_progress", "patch_attempted"} else ""
-                )
-                if error:
-                    entry["error"] = f"{type(error).__name__}: {str(error)[:300]}" if isinstance(error, Exception) else str(error)[:340]
-                target = deepcopy((entry.get("prepared") or {}).get("sync_result", {}).get("target") or {})
-                recovery_state["sync_status"] = {
-                    "status": status, "at": _iso(now), "actor": actor, "idempotency_key": key,
-                    "action": ((entry.get("prepared") or {}).get("sync_result") or {}).get("action") or entry.get("sync_action", "sync_all"),
-                    "target": target, "error": entry.get("error", ""),
-                    "lease_expires_at": entry.get("lease_expires_at", ""),
-                }
-                _write_state(recovery_conn, recovery_state, recovery_revision, actor)
-            return True
-        except Exception:
-            return False
-
-    def finalize_sync(
-        *, now: datetime, actor: str, key: str, payload_hash: str,
-        records: list[dict[str, Any]], sync_result: dict[str, Any], ident,
-    ) -> tuple[dict[str, Any], int, dict[str, Any], dict[str, bool]]:
-        """Merge into the latest board state; board writes may continue during Drive I/O."""
-        with engine_instance().begin() as final_conn:
-            require_feature(final_conn, ident, "tour_leave_sync")
-            require_feature(final_conn, ident, "live_tour_operate")
-            final_conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            latest, latest_revision = _read_state(final_conn, now, for_update=True)
-            entry = _idempotency_entry(
-                latest, key, action="sync_leaves", actor=actor, payload_hash=payload_hash,
-            )
-            if entry and _idempotency_status(entry) == "completed":
-                return latest, latest_revision, deepcopy(entry.get("result") or {}), permissions(final_conn, ident)
-            internal_payload = {
-                "sync_action": sync_result.get("action", "sync_all"),
-                "_source_records": deepcopy(records), "_sync_result": deepcopy(sync_result),
-            }
-            working = deepcopy(latest)
-            result = _apply_action(working, "sync_leaves", internal_payload, actor, now)
-            _remember_idempotency(
-                working, key, action="sync_leaves", actor=actor,
-                payload_hash=payload_hash, result=result, now=now,
-            )
-            next_revision = _write_state(final_conn, working, latest_revision, actor)
-            grants = permissions(final_conn, ident)
-        return working, next_revision, result, grants
 
     @app.get("/v2/live-tour")
     def live_tour(
@@ -3153,11 +2541,10 @@ def install_live_tour_routes(
             can_operate = feature_allowed(conn, ident, "live_tour_operate")
             can_payment = feature_allowed(conn, ident, "live_tour_payment")
             can_export = feature_allowed(conn, ident, "live_tour_export")
-            can_sync = can_operate and feature_allowed(conn, ident, "tour_leave_sync")
         return _state_response(
             state, revision, now, include_hidden=include_hidden,
             can_admin=can_admin, can_operate=can_operate,
-            can_payment=can_payment, can_export=can_export, can_sync=can_sync,
+            can_payment=can_payment, can_export=can_export,
         )
 
     @app.get("/v2/live-tour/customers/{customer_id}/history")
@@ -3176,6 +2563,7 @@ def install_live_tour_routes(
     def live_tour_action(body: LiveTourAction, ident: identity_type = Depends(current_identity)):
         now = datetime.now(timezone)
         action = body.action.strip().lower()
+        _reject_external_action(action)
         payload = deepcopy(body.payload)
         actor = str(ident.employee_username or ident.full_name or "web_v2")
         idempotency_key = str(body.idempotency_key or payload.get("idempotency_key") or "").strip()
@@ -3183,270 +2571,7 @@ def install_live_tour_routes(
             raise HTTPException(400, "idempotency_key phải có từ 8 đến 160 ký tự.")
         if action in IDEMPOTENCY_REQUIRED_ACTIONS and not idempotency_key:
             raise HTTPException(400, "Mọi thao tác thay đổi Live Tour cần idempotency_key để chống ghi trùng.")
-        if action == "sync_leaves":
-            payload["sync_action"] = _canonical_sync_action(payload.get("sync_action"))
         payload_hash = _canonical_payload_hash(action, payload)
-
-        if action == "sync_leaves":
-            # Authorization and completed-key replay happen before any Sheets or
-            # Drive access. No state transaction remains open across external I/O.
-            with engine_instance().begin() as auth_conn:
-                require_feature(auth_conn, ident, "tour_leave_sync")
-                require_feature(auth_conn, ident, "live_tour_operate")
-                auth_state, auth_revision = _read_state(auth_conn, now)
-                grants = permissions(auth_conn, ident)
-                existing, _ = _sync_idempotency_entry(
-                    auth_state, idempotency_key, actor=actor, payload_hash=payload_hash,
-                    can_admin_takeover=grants["can_admin"],
-                )
-                if existing and _idempotency_status(existing) == "completed":
-                    return action_response(
-                        state=auth_state, revision=auth_revision, now=now, action=action,
-                        result=deepcopy(existing.get("result") or {}), grants=grants, duplicate=True,
-                    )
-            if google_client is None or not leave_sheet_id:
-                raise HTTPException(503, "Máy chủ chưa cấu hình nguồn lịch nghỉ cho Live Tour.")
-
-            with _session_advisory_lock(engine_instance(), LIVE_SYNC_LOCK):
-                # Claim/recover this idempotency key in a short transaction.
-                with engine_instance().begin() as preflight_conn:
-                    require_feature(preflight_conn, ident, "tour_leave_sync")
-                    require_feature(preflight_conn, ident, "live_tour_operate")
-                    preflight_conn.execute(
-                        text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK},
-                    )
-                    state, revision = _read_state(preflight_conn, now, for_update=True)
-                    preflight_grants = permissions(preflight_conn, ident)
-                    entry, takeover = _sync_idempotency_entry(
-                        state, idempotency_key, actor=actor, payload_hash=payload_hash,
-                        can_admin_takeover=preflight_grants["can_admin"],
-                    )
-                    if entry and _idempotency_status(entry) == "completed":
-                        return action_response(
-                            state=state, revision=revision, now=now, action=action,
-                            result=deepcopy(entry.get("result") or {}),
-                            grants=permissions(preflight_conn, ident), duplicate=True,
-                        )
-                    if entry is None:
-                        current_sync = state.get("sync_status") or {}
-                        blocked_by_other = (
-                            current_sync.get("status") in {"in_progress", "patch_attempted", "recovery_required"}
-                            and str(current_sync.get("idempotency_key") or "") != idempotency_key
-                        )
-                        working = deepcopy(state)
-                        if blocked_by_other:
-                            old_key = str(current_sync.get("idempotency_key") or "")
-                            old_entry = working.get("idempotency", {}).get(old_key) or {}
-                            lease_expires = _parse_datetime(old_entry.get("lease_expires_at"))
-                            safely_expired = bool(
-                                current_sync.get("status") == "in_progress"
-                                and not old_entry.get("patch_attempted")
-                                and lease_expires and now.astimezone(VN_TZ) >= lease_expires
-                            )
-                            if safely_expired:
-                                old_entry.update({
-                                    "status": "abandoned", "phase": "abandoned",
-                                    "updated_at": _iso(now), "lease_expires_at": "",
-                                })
-                                _audit(working, "sync_leaves_abandoned_expired_preflight", {
-                                    "idempotency_key": old_key,
-                                }, actor, now)
-                                working["sync_status"] = {}
-                            else:
-                                raise _sync_http_error(
-                                    code="LIVE_TOUR_SYNC_RECOVERY_REQUIRED",
-                                    message="Một lượt đồng bộ chưa được đối soát; quản trị viên phải thử lại bằng đúng mã yêu cầu cũ.",
-                                    marker_persisted=True,
-                                )
-                        if body.expected_revision is None:
-                            raise HTTPException(428, "Thiếu phiên bản Live Tour. Hãy tải lại bảng trước khi thao tác.")
-                        if body.expected_revision != revision:
-                            raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.")
-                        entry = {
-                            "action": action, "actor": actor, "payload_hash": payload_hash,
-                            "at": _iso(now), "updated_at": _iso(now), "status": "in_progress",
-                            "phase": "preflight", "patch_attempted": False, "result": {},
-                            "sync_action": payload["sync_action"],
-                            "lease_expires_at": _iso(now + timedelta(minutes=SYNC_LEASE_MINUTES)),
-                        }
-                        working.setdefault("idempotency", {})[idempotency_key] = entry
-                        working["sync_status"] = {
-                            "status": "in_progress", "at": _iso(now), "actor": actor,
-                            "idempotency_key": idempotency_key,
-                            "action": str(payload.get("sync_action") or "sync_all"),
-                            "lease_expires_at": entry["lease_expires_at"],
-                        }
-                        _write_state(preflight_conn, working, revision, actor)
-                    elif takeover:
-                        working = deepcopy(state)
-                        owned_entry = working["idempotency"][idempotency_key]
-                        previous_actor = str(owned_entry.get("actor") or "")
-                        owned_entry["actor"] = actor
-                        owned_entry["updated_at"] = _iso(now)
-                        working.setdefault("sync_status", {})["actor"] = actor
-                        _audit(working, "sync_leaves_admin_takeover", {
-                            "idempotency_key": idempotency_key,
-                            "previous_actor": previous_actor,
-                        }, actor, now)
-                        _write_state(preflight_conn, working, revision, actor)
-                        entry = owned_entry
-                    entry = deepcopy(entry)
-
-                prepared = deepcopy(entry.get("prepared") or {})
-                records: list[dict[str, Any]] | None = None
-                sync_result: dict[str, Any] | None = None
-                if entry.get("patch_attempted") and prepared.get("target_sha256"):
-                    try:
-                        current_sha, current_payload = _current_tour_sha256()
-                    except Exception as exc:
-                        persisted = persist_sync_phase(
-                            now=now, actor=actor, key=idempotency_key,
-                            payload_hash=payload_hash, status="recovery_required",
-                            prepared=prepared, error=exc,
-                        )
-                        raise _sync_http_error(
-                            code="LIVE_TOUR_SYNC_RECOVERY_REQUIRED",
-                            message="Chưa thể đọc TourVera để đối soát lượt đồng bộ trước.",
-                            marker_persisted=persisted,
-                            target_sha256=str(prepared.get("target_sha256") or ""),
-                        ) from exc
-                    if current_sha == str(prepared.get("target_sha256") or ""):
-                        records = deepcopy(prepared.get("records") or [])
-                        if not records:
-                            _, records = _tour_records_from_xlsm(current_payload)
-                        sync_result = deepcopy(prepared.get("sync_result") or {})
-                        sync_result.setdefault("target", {}).update({"verified": True, "recovered": True})
-                    elif current_sha != str(prepared.get("original_sha256") or ""):
-                        persisted = persist_sync_phase(
-                            now=now, actor=actor, key=idempotency_key,
-                            payload_hash=payload_hash, status="recovery_required",
-                            prepared=prepared,
-                            error="TourVera hiện tại không khớp bản gốc hoặc bản đích đã lưu.",
-                        )
-                        raise _sync_http_error(
-                            code="LIVE_TOUR_SYNC_RECOVERY_REQUIRED",
-                            message="TourVera đã thay đổi ngoài dự kiến; quản trị viên cần đối soát thủ công.",
-                            marker_persisted=persisted,
-                            target_sha256=str(prepared.get("target_sha256") or ""),
-                        )
-
-                if records is None or sync_result is None:
-                    def mark_patch_attempt(prepared_target: dict[str, Any]) -> None:
-                        if not persist_sync_phase(
-                            now=now, actor=actor, key=idempotency_key,
-                            payload_hash=payload_hash, status="patch_attempted",
-                            prepared=prepared_target,
-                        ):
-                            raise _sync_http_error(
-                                code="LIVE_TOUR_SYNC_PREFLIGHT_PERSIST_FAILED",
-                                message="Không lưu được thông tin đối soát nên chưa gửi dữ liệu lên Drive.",
-                                marker_persisted=False,
-                                target_sha256=str(prepared_target.get("target_sha256") or ""),
-                            )
-
-                    try:
-                        records, sync_result = _run_leave_sync(
-                            google_client=google_client, leave_sheet_id=leave_sheet_id,
-                            timezone=timezone,
-                            sync_action=str(payload.get("sync_action") or "sync_all"),
-                            before_upload=mark_patch_attempt,
-                        )
-                    except LiveTourSyncUncertain as exc:
-                        persisted = persist_sync_phase(
-                            now=now, actor=actor, key=idempotency_key,
-                            payload_hash=payload_hash, status="recovery_required",
-                            prepared=exc.prepared, error=exc,
-                        )
-                        raise _sync_http_error(
-                            code="LIVE_TOUR_SYNC_COMMIT_UNCERTAIN",
-                            message="Drive có thể đã ghi TourVera nhưng chưa xác minh được; hãy thử lại cùng mã yêu cầu.",
-                            marker_persisted=persisted,
-                            target_sha256=str(exc.prepared.get("target_sha256") or ""),
-                        ) from exc
-                    except HTTPException as exc:
-                        persist_sync_phase(
-                            now=now, actor=actor, key=idempotency_key,
-                            payload_hash=payload_hash, status="failed_before_patch", error=exc,
-                        )
-                        raise
-                    except Exception as exc:
-                        persist_sync_phase(
-                            now=now, actor=actor, key=idempotency_key,
-                            payload_hash=payload_hash, status="failed_before_patch", error=exc,
-                        )
-                        raise HTTPException(
-                            503, f"Không cập nhật được TourVera: {type(exc).__name__}: {str(exc)[:300]}",
-                        ) from exc
-
-                try:
-                    working, next_revision, result, grants = finalize_sync(
-                        now=now, actor=actor, key=idempotency_key,
-                        payload_hash=payload_hash, records=records,
-                        sync_result=sync_result, ident=ident,
-                    )
-                except Exception as exc:
-                    # A driver can report failure after COMMIT actually succeeded.
-                    # Re-read before writing a recovery marker so success is never overwritten.
-                    try:
-                        with engine_instance().begin() as check_conn:
-                            checked, checked_revision = _read_state(check_conn, now)
-                            checked_entry = _idempotency_entry(
-                                checked, idempotency_key, action=action, actor=actor,
-                                payload_hash=payload_hash,
-                            )
-                            if checked_entry and _idempotency_status(checked_entry) == "completed":
-                                return action_response(
-                                    state=checked, revision=checked_revision, now=now, action=action,
-                                    result=deepcopy(checked_entry.get("result") or {}),
-                                    grants=permissions(check_conn, ident), duplicate=True,
-                                )
-                    except HTTPException:
-                        raise
-                    except Exception:
-                        pass
-                    persisted = persist_sync_phase(
-                        now=now, actor=actor, key=idempotency_key,
-                        payload_hash=payload_hash, status="recovery_required",
-                        prepared={"records": records, "sync_result": sync_result,
-                                  "target_sha256": (sync_result.get("target") or {}).get("snapshot_sha256", "")},
-                        error=exc,
-                    )
-                    raise _sync_http_error(
-                        code="LIVE_TOUR_SYNC_DB_COMMIT_UNCERTAIN",
-                        message="TourVera đã xác minh nhưng Live Tour chưa xác nhận hợp nhất.",
-                        marker_persisted=persisted,
-                        target_sha256=str((sync_result.get("target") or {}).get("snapshot_sha256") or ""),
-                    ) from exc
-
-                if invalidate_tour_cache is not None:
-                    try:
-                        invalidate_tour_cache()
-                    except Exception:
-                        pass
-                return action_response(
-                    state=working, revision=next_revision, now=now, action=action,
-                    result=result, grants=grants,
-                )
-
-        # Manual/full merge is admin-only. Authorization deliberately happens
-        # before any public/Drive download, and is checked again on write.
-        if action in {"merge_current_tour", "merge_current_tour_preview"}:
-            with engine_instance().begin() as auth_conn:
-                require_feature(auth_conn, ident, "live_tour_admin")
-                if action == "merge_current_tour":
-                    prior_state, prior_revision = _read_state(auth_conn, now)
-                    prior = _idempotency_replay(prior_state, idempotency_key, action=action, actor=actor, payload_hash=payload_hash)
-                    if prior:
-                        return action_response(state=prior_state, revision=prior_revision, now=now, action=action,
-                                               result=deepcopy(prior.get("result") or {}), grants=permissions(auth_conn, ident), duplicate=True)
-            try:
-                _, records, source_updated_at = _download_current_tour()
-            except Exception as exc:
-                raise HTTPException(503, f"Không đọc được Bảng tua hiện tại: {exc}") from exc
-            payload["_source_records"] = records
-            payload["_source_updated_at"] = source_updated_at
-            payload["_physical_rooms"] = _source_physical_rooms()
-
         with engine_instance().begin() as conn:
             if action == "show_all" and feature_allowed(conn, ident, "live_tour_admin"):
                 pass
@@ -3477,17 +2602,6 @@ def install_live_tour_routes(
                 raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.")
             if action == "clear_expired_preview":
                 return {"ok": True, "base_revision": revision, **_expired_preview(state, payload, now)}
-            if action in {"merge_current_tour", "merge_current_tour_preview"}:
-                preview_token = _canonical_payload_hash("roster_only", {
-                    "revision": revision, "records": payload["_source_records"], "physical_rooms": payload["_physical_rooms"],
-                })
-                if action == "merge_current_tour_preview":
-                    preview = _merge_source_records(deepcopy(state), payload["_source_records"], now, include_assignments=True)
-                    return {"ok": True, "preview_token": preview_token, "base_revision": revision,
-                            "merge": preview, "requires_confirmation": True,
-                            "source_updated_at": payload["_source_updated_at"]}
-                if payload.get("confirm_token") != preview_token:
-                    raise HTTPException(409, "Cần xem trước và xác nhận lại nguồn TourVera trước khi nhập danh sách.")
             # A defensive copy guarantees multi-step actions never leak a partial
             # mutation into the value written after an exception.
             working = deepcopy(state)
@@ -3567,81 +2681,4 @@ def install_live_tour_routes(
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
         )
 
-    def authorize_legacy_sync(conn, ident) -> None:
-        require_feature(conn, ident, "live_tour_operate")
-
-    def merge_verified_legacy_sync(
-        *, workbook_bytes: bytes, original_bytes: bytes, action: str, stats: dict[str, Any],
-        source_rows: list[list[Any]] | None,
-        metadata: dict[str, Any], target_date: date, ident,
-    ) -> dict[str, Any]:
-        now = datetime.now(timezone)
-        actor = str(ident.employee_username or ident.full_name or "web_v2")
-        snapshot_sha = hashlib.sha256(workbook_bytes).hexdigest()
-        key = f"legacy-sync:{action}:{snapshot_sha[:40]}"
-        payload_hash = _canonical_payload_hash(
-            "sync_leaves", {"sync_action": action, "snapshot_sha256": snapshot_sha},
-        )
-        _, original_records = _tour_records_from_xlsm(original_bytes)
-        _, records = _tour_records_from_xlsm(workbook_bytes)
-        field_manifest = _tour_field_manifest(original_records, records)
-        records, field_manifest = _filter_sync_records(
-            records, sync_action=action, source_rows=source_rows,
-            target_date=target_date, stats=stats, field_manifest=field_manifest,
-        )
-        changed_count = int(stats.get("reason_updated") or 0) + int(stats.get("status_updated") or 0)
-        sync_result = {
-            "action": action, "action_label": action, "date": target_date.isoformat(),
-            "stats": deepcopy(stats),
-            "message": f"Đã hợp nhất {changed_count} thay đổi từ TourVera vào Live Tour.",
-            "source": "legacy_tour_leave_sync",
-            "field_manifest": field_manifest,
-            "target": {
-                "name": str(metadata.get("name") or "TourVera.xlsm"),
-                "modified_time": str(metadata.get("modifiedTime") or ""),
-                "verified": True, "snapshot_sha256": snapshot_sha,
-            },
-        }
-        try:
-            state, revision, result, _ = finalize_sync(
-                now=now, actor=actor, key=key, payload_hash=payload_hash,
-                records=records, sync_result=sync_result, ident=ident,
-            )
-        except Exception as exc:
-            # Re-read first: COMMIT may have succeeded even if the driver failed.
-            try:
-                with engine_instance().begin() as check_conn:
-                    checked, checked_revision = _read_state(check_conn, now)
-                    checked_entry = _idempotency_entry(
-                        checked, key, action="sync_leaves", actor=actor,
-                        payload_hash=payload_hash,
-                    )
-                    if checked_entry and _idempotency_status(checked_entry) == "completed":
-                        return {
-                            "ok": True, "duplicate": True, "revision": checked_revision,
-                            "result": deepcopy(checked_entry.get("result") or {}),
-                        }
-            except Exception:
-                pass
-            prepared = {
-                "records": records, "sync_result": sync_result,
-                "target_sha256": snapshot_sha,
-            }
-            persisted = persist_sync_phase(
-                now=now, actor=actor, key=key, payload_hash=payload_hash,
-                status="recovery_required", prepared=prepared, error=exc,
-            )
-            raise _sync_http_error(
-                code="TOUR_LEAVE_SYNC_LIVE_TOUR_PARTIAL",
-                message="TourVera đã cập nhật nhưng Live Tour chưa xác nhận hợp nhất.",
-                marker_persisted=persisted, target_sha256=snapshot_sha,
-            ) from exc
-        return {"ok": True, "duplicate": False, "revision": revision, "result": result}
-
-    # The legacy route resolves this callback at request time, so registration
-    # order does not matter and both endpoints converge on one Live Tour merge.
-    app.state.live_tour_leave_sync_service = {
-        "authorize": authorize_legacy_sync,
-        "merge_verified": merge_verified_legacy_sync,
-    }
     app.state.live_tour_installed = True

@@ -1,7 +1,7 @@
 import {
   BellRing, CheckCircle2, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
-  ExternalLink, FileImage, History, LayoutGrid, Link2, Menu, PauseCircle, Play, Plus,
-  RefreshCw, Save, Search, Share2, Trash2, UserPlus, WalletCards, X,
+  ExternalLink, FileImage, History, LayoutGrid, Menu, PauseCircle, Play, Plus,
+  RefreshCw, Search, Share2, Trash2, UserPlus, WalletCards, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -445,24 +445,14 @@ function isRevisionConflict(error) {
 }
 
 const PAYMENT_ACTIONS = new Set(['checkout', 'quick_checkout', 'move_pending', 'combo_purchase'])
-const SYNC_ACTIONS = new Set(['sync_leaves'])
 const HIDDEN_RECOVERY_ACTIONS = new Set(['show_all'])
-const LIVE_TOUR_SYNC_TRANSITIONS = [
-  ['late_to_working', 'Đi trễ → Đi làm'],
-  ['late_to_leave', 'Đi trễ → Nghỉ'],
-  ['early_to_leave', 'Về sớm → Nghỉ'],
-  ['early_to_working', 'Về sớm → Đi làm'],
-  ['leave_group_to_leave', 'Nhóm nghỉ → Nghỉ'],
-  ['support_to_working', 'Hỗ trợ → Đi làm'],
-]
 const ADMIN_ACTIONS = new Set([
   'add_employee', 'delete_employee', 'room_upsert', 'room_delete', 'service_upsert', 'service_delete',
-  'combo_upsert', 'combo_delete', 'combo_import', 'backup', 'restore', 'merge_current_tour', 'clear_expired',
+  'combo_upsert', 'combo_delete', 'combo_import', 'backup', 'restore', 'clear_expired',
   'set_vip',
 ])
 
 function canRunAction(action, capabilities) {
-  if (SYNC_ACTIONS.has(action)) return capabilities.sync
   if (HIDDEN_RECOVERY_ACTIONS.has(action)) return capabilities.hideRecovery
   if (ADMIN_ACTIONS.has(action)) return capabilities.admin
   if (PAYMENT_ACTIONS.has(action)) return capabilities.payment
@@ -534,10 +524,6 @@ export default function LiveTourPage({ user }) {
   const [roomSegment, setRoomSegment] = useState('all')
   const [showHidden, setShowHidden] = useState(false)
   const [showAdminTools, setShowAdminTools] = useState(false)
-  const [tourSource, setTourSource] = useState(null)
-  const [tourSourceDraft, setTourSourceDraft] = useState('')
-  const [tourSourceBusy, setTourSourceBusy] = useState(false)
-  const [tourSourceNotice, setTourSourceNotice] = useState({ text: '', error: false })
   const [selectedRoomKey, setSelectedRoomKey] = useState('')
   const [clockMs, setClockMs] = useState(Date.now())
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -545,14 +531,11 @@ export default function LiveTourPage({ user }) {
   const [reorderSteps, setReorderSteps] = useState('1')
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [mergePreview, setMergePreview] = useState(null)
   const [expiredPreview, setExpiredPreview] = useState(null)
   const [expiredGrace, setExpiredGrace] = useState('15')
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerHistoryModal, setCustomerHistoryModal] = useState(null)
   const [customerHistoryBusy, setCustomerHistoryBusy] = useState(false)
-  const [syncOutcome, setSyncOutcome] = useState(null)
-  const [syncTransitionAction, setSyncTransitionAction] = useState('late_to_working')
   const [exportFilters, setExportFilters] = useState(EMPTY_EXPORT_FILTERS)
   const [customColumns, setCustomColumns] = useState(null)
   const [customScope, setCustomScope] = useState('displayed')
@@ -571,20 +554,9 @@ export default function LiveTourPage({ user }) {
   const canPayment = capability('payment', isAdmin || user?.permissions?.live_tour_payment === true)
   const canAdmin = capability('admin', isAdmin || user?.permissions?.live_tour_admin === true)
   const canExport = capability('export', isAdmin || user?.permissions?.live_tour_export === true)
-  const canSyncLeave = capability('sync', isAdmin || user?.permissions?.tour_leave_sync === true)
   const canRecoverHidden = capability('hide_recovery', canAdmin || canOperate)
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
   const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, payment: canPayment, admin: canAdmin })
-  const canViewPurchaseReport = isAdmin || user?.permissions?.revenue_view === true
-  const openPurchaseReport = () => {
-    if (!canViewPurchaseReport) return
-    const url = new URL(window.location.href)
-    url.searchParams.set('page', 'revenue')
-    url.searchParams.set('standalone', '1')
-    url.hash = 'purchase-reconcile'
-    window.open(url.toString(), '_blank', 'noopener,noreferrer')
-  }
-
   const load = useCallback(async (refresh = false, quiet = false) => {
     if (!quiet) setBusy(true)
     setError('')
@@ -620,30 +592,17 @@ export default function LiveTourPage({ user }) {
   }, [canRecoverHidden, showHidden])
 
   useEffect(() => {
-    if (!canAdmin || !showAdminTools) return undefined
-    let mounted = true
-    veraApi.tourSource().then((source) => {
-      if (!mounted) return
-      setTourSource(source)
-      setTourSourceDraft(source?.url || '')
-    }).catch((err) => {
-      if (mounted) setTourSourceNotice({ text: err.message || 'Không đọc được link TourVera hiện tại.', error: true })
-    })
-    return () => { mounted = false }
-  }, [canAdmin, showAdminTools])
-
-  useEffect(() => {
     const allowed = {
       pending: canPayment,
       customers: canPayment,
-      reports: canPayment || canExport || canViewPurchaseReport,
+      reports: canPayment || canExport,
       history: canAdmin,
       catalog: canAdmin,
     }
     if (allowed[activePanel]) return
     const fallback = ['pending', 'reports', 'history', 'catalog'].find((panel) => allowed[panel]) || ''
     setActivePanel(fallback)
-  }, [activePanel, canAdmin, canExport, canPayment, canViewPurchaseReport])
+  }, [activePanel, canAdmin, canExport, canPayment])
 
   const executeAction = useCallback(async (action, payload = {}, ids = [...selectedIds], options = {}) => {
     if (actionBusy) return null
@@ -651,7 +610,7 @@ export default function LiveTourPage({ user }) {
       setError('Hãy tải Live Tour thành công trước khi thực hiện thao tác.')
       return null
     }
-    if (!canRunAction(action, { operate: canOperate, payment: canPayment, admin: canAdmin, sync: canSyncLeave, hideRecovery: canRecoverHidden })) {
+    if (!canRunAction(action, { operate: canOperate, payment: canPayment, admin: canAdmin, hideRecovery: canRecoverHidden })) {
       setError('Tài khoản chưa được cấp quyền thực hiện thao tác này trên Live Tour.')
       return null
     }
@@ -684,10 +643,6 @@ export default function LiveTourPage({ user }) {
       return result
     } catch (err) {
       const message = liveTourErrorDetail(err)
-      if (action === 'sync_leaves' && err?.payload?.detail && typeof err.payload.detail === 'object') {
-        setSyncOutcome({ sync: null, merge: null, status: err.payload.detail })
-        await load(true, true)
-      }
       if (isRevisionConflict(err)) {
         setSelectedIds(new Set())
         await load(true, true)
@@ -700,21 +655,7 @@ export default function LiveTourPage({ user }) {
     } finally {
       setActionBusy('')
     }
-  }, [actionBusy, cacheKey, canAdmin, canOperate, canPayment, canRecoverHidden, canSyncLeave, data.revision, load, selectedIds])
-
-  const previewRosterMerge = async () => {
-    if (!canAdmin || actionBusy || data.revision === null || data.revision === undefined) return
-    setActionBusy('merge_current_tour_preview')
-    setMergePreview(null)
-    setError('')
-    try {
-      setMergePreview(await veraApi.liveTourAction({ action: 'merge_current_tour_preview', expected_revision: data.revision, payload: {} }))
-    } catch (err) {
-      setError(liveTourErrorDetail(err))
-    } finally {
-      setActionBusy('')
-    }
-  }
+  }, [actionBusy, cacheKey, canAdmin, canOperate, canPayment, canRecoverHidden, data.revision, load, selectedIds])
 
   const previewExpired = async () => {
     if (!canAdmin || actionBusy || data.revision == null) return
@@ -1198,21 +1139,6 @@ export default function LiveTourPage({ user }) {
     }
   }
 
-  const syncLeaves = async (syncAction = 'sync_all', recoveryKey = '') => {
-    if (!canSyncLeave) {
-      setError('Tài khoản chưa được cấp quyền đồng bộ lịch nghỉ vào Live Tour.')
-      return
-    }
-    setNotice('Đang đồng bộ lịch nghỉ và cập nhật Live Tour…')
-    const result = await executeAction('sync_leaves', { sync_action: syncAction }, [], { idempotencyKey: recoveryKey })
-    if (!result) return
-    const actionResult = result?.result || result
-    const syncStatus = result?.state?.sync_status || actionResult?.state?.sync_status
-    const statusMessage = typeof syncStatus === 'string' ? syncStatus : syncStatus?.message
-    setSyncOutcome({ sync: actionResult?.sync || null, merge: actionResult?.merge || null, status: syncStatus || null })
-    setNotice(result?.message || actionResult?.sync?.message || actionResult?.merge?.message || statusMessage || 'Đã đồng bộ lịch nghỉ và cập nhật Live Tour.')
-  }
-
   const exportData = async (kind, png = false) => {
     if (actionBusy) return
     if (!canExportKind(kind)) {
@@ -1289,24 +1215,6 @@ export default function LiveTourPage({ user }) {
     }
   }
 
-  const saveTourSource = async (event) => {
-    event.preventDefault()
-    if (!tourSourceDraft.trim() || tourSourceBusy) return
-    setTourSourceBusy(true)
-    setTourSourceNotice({ text: '', error: false })
-    try {
-      const source = await veraApi.saveTourSource({ url: tourSourceDraft.trim() })
-      setTourSource(source)
-      setTourSourceDraft(source?.url || tourSourceDraft.trim())
-      setTourSourceNotice({ text: 'Đã lưu link TourVera dùng chung. Hãy đồng bộ/khởi tạo Live Tour khi cần lấy thay đổi.', error: false })
-      await load(true, true)
-    } catch (err) {
-      setTourSourceNotice({ text: err.message || 'Không lưu được link TourVera.', error: true })
-    } finally {
-      setTourSourceBusy(false)
-    }
-  }
-
   const removeSelectedEmployees = () => {
     if (!selectedIds.size) return setNotice('Hãy chọn nhân viên cần xóa.')
     if (window.confirm(`Xóa ${selectedIds.size} nhân viên đã chọn khỏi Live Tour?`)) void runSelected('delete_employee')
@@ -1350,11 +1258,10 @@ export default function LiveTourPage({ user }) {
       .live-tour-page .tour-room-card.state-green{background:var(--tour-row-green)}.live-tour-page .tour-room-card.state-yellow{background:var(--tour-row-yellow)}.live-tour-page .tour-room-card.state-red{background:var(--tour-row-red)}.live-tour-page .tour-room-card.state-break{background:var(--tour-row-break)}.live-tour-page .tour-room-card.state-waiting{color:#3f245d;background:var(--tour-row-waiting)}.live-tour-page .tour-room-card.state-idle{background:var(--tour-row-idle)}.live-tour-page .tour-room-card.state-leave,.live-tour-page .tour-room-card.state-work,.live-tour-page .tour-room-card.state-default,.live-tour-page .tour-room-card.state-blank{background:#fff}.live-tour-page .tour-room-card.state-leave{color:#a6a6a6}
       .live-tour-page .tour-room-card-head{display:flex;align-items:center;justify-content:space-between;gap:3px}.live-tour-page .tour-room-card-head strong{min-width:0;font-size:9px;font-weight:950}.live-tour-page .tour-room-type{border-radius:999px;padding:1px 4px;color:#fff;background:var(--room-segment);font-size:5px;font-weight:950;letter-spacing:.04em}.live-tour-page .tour-room-countdown{display:flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums;font-size:10px;font-weight:950;white-space:nowrap}.live-tour-page .tour-room-countdown svg{width:11px;height:11px;flex:0 0 auto}.live-tour-page .tour-room-meta{min-height:8px;overflow:hidden;font-size:6px;font-weight:800;text-overflow:ellipsis;white-space:nowrap;opacity:.8}.live-tour-page .tour-room-private-badge{position:absolute;right:4px;bottom:4px;width:21px;height:21px;display:grid;place-items:center;border:2px solid #fff;border-radius:50%;color:#fff;background:#e30057;box-shadow:0 0 0 2px #ffd447,0 4px 10px rgba(167,0,60,.38);font-size:9px;font-weight:950;line-height:1;letter-spacing:-.02em}.live-tour-page .tour-room-empty{grid-column:1/-1;padding:6px;color:#5d7168;font-size:9px;text-align:center}.live-tour-page .tour-room-detail{margin-top:5px;padding:6px;border:1px solid #d9e2dd;border-radius:8px;background:#fff}.live-tour-page .tour-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.live-tour-page .tour-room-detail-head strong{font-size:10px}.live-tour-page .tour-room-detail-head small{color:#68776f;font-size:7px;font-weight:800}.live-tour-page .tour-room-detail-list{display:grid;gap:3px}.live-tour-page .tour-room-detail-row{min-width:0;display:grid;grid-template-columns:minmax(90px,.55fr) minmax(120px,1fr);gap:8px;padding:4px 6px;border-radius:6px;background:#f3f6f4;font-size:8px}.live-tour-page .tour-room-detail-row strong,.live-tour-page .tour-room-detail-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.live-tour-page .tour-room-detail-row span{color:#55665e}.live-tour-page .tour-room-detail-empty{padding:4px;color:#68776f;font-size:8px}.live-tour-page .tour-room-detail.vip-19{max-height:none;overflow:visible}
       .live-tour-page .tour-legend{padding:9px}.live-tour-page .tour-legend .panel-title-row{margin-bottom:5px}.live-tour-page .tour-legend .panel-title-row h2{font-size:14px}.live-tour-page .tour-legend .panel-title-row p{font-size:9px}.live-tour-page .tour-legend-grid{gap:4px}.live-tour-page .tour-legend-grid span{padding:4px 7px;font-size:8px}
-      .live-tour-page .tour-source-panel{padding:8px}.live-tour-page .tour-source-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}.live-tour-page .tour-source-head strong{display:flex;align-items:center;gap:5px;font-size:11px}.live-tour-page .tour-source-head small{color:#65756e;font-size:8px}.live-tour-page .tour-source-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}.live-tour-page .tour-source-form input{min-width:0;height:32px;padding:5px 9px;font-size:10px}.live-tour-page .tour-source-form button{min-height:32px;padding:5px 10px}.live-tour-page .tour-source-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:5px;color:#65756e;font-size:8px}.live-tour-page .tour-source-meta a{color:#155b78;font-weight:850}.live-tour-page .tour-source-notice{font-weight:800;color:#247146}.live-tour-page .tour-source-notice.error{color:#a52a22}
       .live-tour-operator{padding:10px;overflow:hidden}.live-tour-operator-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.live-tour-operator-title{display:flex;align-items:center;gap:7px}.live-tour-operator-title strong{font-size:14px}.live-tour-pending-badge{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:999px;padding:4px 8px;color:#8c271f;background:#ffe7e3;font-family:inherit;font-size:9px;font-weight:900;cursor:pointer}.live-tour-pending-badge:focus-visible{outline:2px solid #8c271f;outline-offset:2px}.live-tour-pending-badge:disabled{cursor:default;opacity:.65}.live-tour-pending-badge.has-items{animation:live-tour-pulse 1.5s ease-in-out infinite}@keyframes live-tour-pulse{50%{box-shadow:0 0 0 5px rgba(198,53,40,.12)}}.live-tour-drawer-toggle{display:none}.live-tour-operator-drawer{display:grid;gap:8px;margin-top:8px}.live-tour-action-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:6px;border:1px solid #dce6e1;border-radius:9px;background:#f8fbf9}.live-tour-action-group>strong{margin-right:3px;color:#416056;font-size:8px;text-transform:uppercase;letter-spacing:.05em}.live-tour-action-group button,.live-tour-action-group select{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-action-group button.active{color:#fff;background:#173c30}.live-tour-action-group .danger-button{color:#a02b24;border-color:#e4b3af;background:#fff7f6}.live-tour-panel-tabs{display:flex;gap:5px;overflow-x:auto;padding:3px 0}.live-tour-panel-tabs button{flex:0 0 auto;min-height:31px;padding:5px 10px;font-size:9px}.live-tour-export-filters{display:grid;grid-template-columns:auto repeat(4,minmax(105px,1fr)) auto;align-items:end;gap:6px;margin:7px 0;padding:8px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-export-filters>strong{align-self:center;font-size:9px}.live-tour-export-filters label{display:grid;gap:3px;color:#526a60;font-size:8px;font-weight:800}.live-tour-export-filters input{width:100%;min-width:0;box-sizing:border-box;padding:5px 6px;font-size:9px}.live-tour-export-filters small{grid-column:1/-1;color:#6d7e76;font-size:8px}.live-tour-export-filters button{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-panel-body{margin-top:4px;padding:9px;border:1px solid #d9e4de;border-radius:10px;background:#fff}.live-tour-panel-toolbar{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap;margin-bottom:8px}.live-tour-panel-toolbar h2{margin:0;font-size:14px}.live-tour-panel-toolbar-actions{display:flex;gap:5px;flex-wrap:wrap}.live-tour-panel-toolbar button{min-height:30px;padding:5px 8px;font-size:9px}.live-tour-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:7px}.live-tour-data-card{display:grid;gap:4px;padding:8px;border:1px solid #dbe5df;border-radius:9px;background:#f8faf9;font-size:9px}.live-tour-data-card strong{font-size:11px}.live-tour-data-card small{color:#66776f}.live-tour-card-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}.live-tour-card-actions button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-empty{padding:14px;color:#687970;background:#f6f8f7;border-radius:8px;font-size:10px;text-align:center}.live-tour-report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:6px;margin-bottom:8px}.live-tour-report-metric{padding:9px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-report-metric span{display:block;color:#65766e;font-size:8px}.live-tour-report-metric strong{display:block;margin-top:3px;font-size:14px}.live-tour-catalog-section{margin-top:10px}.live-tour-catalog-section h3{margin:0 0 6px;font-size:11px}.live-tour-customer-search{position:relative;min-width:min(300px,100%)}.live-tour-customer-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%)}.live-tour-customer-search input{width:100%;height:30px;padding:5px 7px 5px 27px;font-size:9px}
       .live-tour-modal-backdrop{position:fixed;inset:0;z-index:1600;display:grid;place-items:center;padding:12px;background:rgba(14,31,25,.55)}.live-tour-modal{width:min(760px,100%);max-height:calc(100vh - 24px);overflow:auto;border-radius:14px;padding:13px;background:#fff;box-shadow:0 18px 55px rgba(0,0,0,.28)}.live-tour-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.live-tour-modal-head strong{font:700 18px Georgia,serif;color:#173c30}.live-tour-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.live-tour-form-grid>.wide{grid-column:1/-1}.live-tour-field{display:grid;gap:4px}.live-tour-field.wide{grid-column:1/-1}.live-tour-field span{font-size:9px;font-weight:850;color:#435d52}.live-tour-field input,.live-tour-field select,.live-tour-field textarea{width:100%;min-width:0;box-sizing:border-box;padding:7px 8px;font-size:10px}.live-tour-field textarea{min-height:62px;resize:vertical}.live-tour-check-field{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:800}.live-tour-multi-booking{grid-column:1/-1;display:grid;gap:6px}.live-tour-multi-row{display:grid;grid-template-columns:minmax(105px,.7fr) repeat(3,minmax(95px,1fr));gap:5px;align-items:center;padding:6px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-multi-row strong{font-size:9px}.live-tour-multi-row input,.live-tour-multi-row select{width:100%;min-width:0;padding:6px;font-size:9px}.live-tour-modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:12px}.live-tour-modal-actions button{min-height:34px}
       .live-tour-employee-picker{grid-column:1/-1;display:grid;gap:5px;max-height:220px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-employee-picker button{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(150px,1fr);gap:3px 9px;padding:7px 9px;border:1px solid #d9e3dd;border-radius:8px;color:#173c30;background:#fff;text-align:left}.live-tour-employee-picker button.selected{border-color:#173c30;background:#e7f3ed;box-shadow:inset 3px 0 #173c30}.live-tour-employee-picker button strong{font-size:10px}.live-tour-employee-picker button span,.live-tour-employee-picker button small{font-size:8px}.live-tour-employee-picker button small{grid-column:1/-1;color:#697b72}.live-tour-employee-picked{grid-column:1/-1;padding:6px 8px;border-radius:7px;color:#185238;background:#e3f4ea;font-size:9px;font-weight:850}
-      .live-tour-checkout-preview{display:grid;gap:6px;padding:9px;border:1px solid #cfe0d7;border-radius:9px;background:#f6faf8}.live-tour-checkout-preview>strong{color:#173c30;font-size:10px}.live-tour-checkout-preview>small{color:#65766e;font-size:8px}.live-tour-checkout-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:6px;border-radius:7px;background:#fff;font-size:9px}.live-tour-checkout-entry span{overflow:hidden;text-overflow:ellipsis}.live-tour-checkout-entry small{grid-column:1/-1;color:#697b72;font-size:8px}.live-tour-checkout-total{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding-top:6px;border-top:1px solid #d8e4de;font-size:9px}.live-tour-combo-deduction{padding:7px;border-radius:8px;color:#4c3b0c;background:#fff4cf;font-size:9px}.live-tour-customer-selected{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;background:#e6f4ec;font-size:9px}.live-tour-customer-selected button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-customer-picker{display:grid;gap:4px;max-height:150px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-customer-picker button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid #dce6e1;border-radius:7px;color:#173c30;background:#fff;text-align:left}.live-tour-customer-picker button span{color:#64776e;font-size:8px}.live-tour-correction{display:grid;gap:7px;padding:9px;border:1px solid #e8c985;border-radius:9px;background:#fff9e9}.live-tour-sync-outcome{flex:1 1 100%;display:grid;gap:3px;padding:7px;border-radius:8px;color:#244d3d;background:#e7f3ed;font-size:8px}.live-tour-sync-outcome>strong{font-size:9px}.live-tour-sync-outcome ul{margin:2px 0 0;padding-left:17px}.live-tour-history-sections{display:grid;gap:10px}.live-tour-history-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}.live-tour-history-list{display:grid;gap:5px;max-height:260px;overflow:auto}.live-tour-history-list article{padding:7px;border:1px solid #dce6e1;border-radius:8px;background:#f8faf9;font-size:9px}.live-tour-history-list article strong,.live-tour-history-list article span,.live-tour-history-list article small{display:block;margin-top:2px}
+      .live-tour-checkout-preview{display:grid;gap:6px;padding:9px;border:1px solid #cfe0d7;border-radius:9px;background:#f6faf8}.live-tour-checkout-preview>strong{color:#173c30;font-size:10px}.live-tour-checkout-preview>small{color:#65766e;font-size:8px}.live-tour-checkout-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:6px;border-radius:7px;background:#fff;font-size:9px}.live-tour-checkout-entry span{overflow:hidden;text-overflow:ellipsis}.live-tour-checkout-entry small{grid-column:1/-1;color:#697b72;font-size:8px}.live-tour-checkout-total{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding-top:6px;border-top:1px solid #d8e4de;font-size:9px}.live-tour-combo-deduction{padding:7px;border-radius:8px;color:#4c3b0c;background:#fff4cf;font-size:9px}.live-tour-customer-selected{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;background:#e6f4ec;font-size:9px}.live-tour-customer-selected button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-customer-picker{display:grid;gap:4px;max-height:150px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-customer-picker button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid #dce6e1;border-radius:7px;color:#173c30;background:#fff;text-align:left}.live-tour-customer-picker button span{color:#64776e;font-size:8px}.live-tour-correction{display:grid;gap:7px;padding:9px;border:1px solid #e8c985;border-radius:9px;background:#fff9e9}.live-tour-history-sections{display:grid;gap:10px}.live-tour-history-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}.live-tour-history-list{display:grid;gap:5px;max-height:260px;overflow:auto}.live-tour-history-list article{padding:7px;border:1px solid #dce6e1;border-radius:8px;background:#f8faf9;font-size:9px}.live-tour-history-list article strong,.live-tour-history-list article span,.live-tour-history-list article small{display:block;margin-top:2px}
       @media(min-width:641px){.live-tour-page .tour-sticky-top{position:sticky;top:74px;z-index:18;padding:3px 0 2px;box-shadow:0 6px 12px rgba(25,58,46,.04)}.live-tour-page .tour-records-panel .tour-table th{top:0}.live-tour-page .tour-room-detail{max-height:100px;overflow:auto}.live-tour-page .tour-room-detail.vip-19{max-height:none;overflow:visible}}
       @media(prefers-reduced-motion:reduce){.live-tour-page .tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
       @media(max-width:760px){.live-tour-drawer-toggle{display:inline-flex}.live-tour-operator-drawer{display:none}.live-tour-operator-drawer.open{display:grid}.live-tour-export-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.live-tour-export-filters>strong,.live-tour-export-filters small{grid-column:1/-1}.live-tour-form-grid{grid-template-columns:1fr}.live-tour-field.wide{grid-column:auto}.live-tour-action-group>strong{width:100%}.live-tour-multi-row{grid-template-columns:1fr 1fr}.live-tour-multi-row strong{grid-column:1/-1}}
@@ -1364,7 +1271,7 @@ export default function LiveTourPage({ user }) {
         .live-tour-page .tour-heading-actions{width:100%;justify-content:stretch}.live-tour-page .tour-heading-actions button{flex:1}
         .live-tour-page .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:31px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:2px;text-align:center}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;line-height:1.05}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:14px}
         .live-tour-page .tour-control-layout{grid-template-columns:1fr;gap:4px}.live-tour-page .tour-room-segment-button{min-height:42px;padding:3px 2px}.live-tour-page .tour-room-segment-button svg{width:12px;height:12px}.live-tour-page .tour-room-segment-button span{font-size:7px}.live-tour-page .tour-room-segment-button small{font-size:6px}
-        .live-tour-page .tour-table-panel{padding:5px}.live-tour-page .tour-quick-tools{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin:4px 0}.live-tour-page .tour-employee-search{min-width:0;max-width:none}.live-tour-page .tour-employee-search input{min-width:0;height:29px;padding:5px 5px 5px 27px;font-size:8px}.live-tour-page .tour-employee-search svg{left:8px;width:14px}.live-tour-selection-summary{font-size:8px}.live-tour-select-col{width:24px;min-width:24px}.live-tour-select-col input{width:12px;height:12px}.live-tour-page .tour-source-head{align-items:flex-start;flex-direction:column}.live-tour-page .tour-source-form{grid-template-columns:1fr}.live-tour-page .tour-source-form button{width:100%}
+        .live-tour-page .tour-table-panel{padding:5px}.live-tour-page .tour-quick-tools{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin:4px 0}.live-tour-page .tour-employee-search{min-width:0;max-width:none}.live-tour-page .tour-employee-search input{min-width:0;height:29px;padding:5px 5px 5px 27px;font-size:8px}.live-tour-page .tour-employee-search svg{left:8px;width:14px}.live-tour-selection-summary{font-size:8px}.live-tour-select-col{width:24px;min-width:24px}.live-tour-select-col input{width:12px;height:12px}
         .live-tour-page .tour-room-panel{padding:5px}.live-tour-page .tour-room-panel-head{grid-template-columns:1fr;margin-bottom:4px}.live-tour-page .tour-room-panel-title{font-size:9px}.live-tour-page .tour-room-panel-head small{justify-self:start;min-width:125px;font-size:12px}.live-tour-page .tour-room-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}.live-tour-page .tour-room-card{min-height:58px;padding:4px}.live-tour-page .tour-room-card.vip{padding:2px}.live-tour-page .tour-room-card-head strong{font-size:8px}.live-tour-page .tour-room-type{padding:2px 3px;font-size:4px}.live-tour-page .tour-room-countdown{font-size:9px}.live-tour-page .tour-room-countdown svg{width:10px;height:10px}.live-tour-page .tour-room-meta{font-size:6px}.live-tour-page .tour-room-detail-row{grid-template-columns:minmax(75px,.55fr) minmax(0,1fr);gap:4px;padding:4px;font-size:7px}
       }
       @media(max-width:420px){.live-tour-page .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -1379,10 +1286,10 @@ export default function LiveTourPage({ user }) {
           <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
         </div>
         <div className="tour-heading-actions">
-          {canAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><Link2 size={16}/> {showAdminTools ? 'Ẩn Link & màu dòng' : 'Hiện Link & màu dòng'}</button>}
+          {canAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><LayoutGrid size={16}/> {showAdminTools ? 'Ẩn màu dòng' : 'Hiện màu dòng'}</button>}
           {canRecoverHidden && <button type="button" className="secondary-button" onClick={() => setShowHidden((current) => !current)}>{showHidden ? 'Ẩn lại nhân viên đã ẩn' : `Hiện nhân viên đã ẩn (${data.state?.hidden_count || 0})`}</button>}
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
-          {user?.permissions?.tour_refresh && <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới Live Tour</button>}
+          <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới Live Tour</button>
         </div>
       </div>
       {error && <div className="error-box">{error}</div>}
@@ -1476,22 +1383,6 @@ export default function LiveTourPage({ user }) {
           <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('set_shift', { shift: 'Ca 2' })}>Ca 2</button>
           <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Bắt đầu break</button>
           <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc break</button>
-          <button type="button" className="secondary-button" onClick={() => syncLeaves('check')} disabled={!canSyncLeave || actionBusy === 'sync_leaves'}>Kiểm tra nguồn lịch nghỉ</button>
-          <button type="button" className="secondary-button" onClick={() => syncLeaves('reason-only')} disabled={!canSyncLeave || actionBusy === 'sync_leaves'}>Cập nhật lý do nghỉ</button>
-          <button type="button" className="secondary-button" onClick={() => syncLeaves('cleanup')} disabled={!canSyncLeave || actionBusy === 'sync_leaves'}>Dọn trạng thái nghỉ (Xóa)</button>
-          <button type="button" className="primary-button" onClick={() => syncLeaves('sync_all')} disabled={!canSyncLeave || actionBusy === 'sync_leaves'}>Đồng bộ toàn bộ lịch nghỉ</button>
-          <select value={syncTransitionAction} onChange={(event) => setSyncTransitionAction(event.target.value)} disabled={!canSyncLeave || actionBusy === 'sync_leaves'} aria-label="Chọn chuyển trạng thái lịch nghỉ">{LIVE_TOUR_SYNC_TRANSITIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
-          <button type="button" className="secondary-button" onClick={() => syncLeaves(syncTransitionAction)} disabled={!canSyncLeave || actionBusy === 'sync_leaves'}>Chạy chuyển trạng thái</button>
-          {canAdmin && ['in_progress', 'patch_attempted', 'recovery_required'].includes(data.state?.sync_status?.status) && data.state.sync_status.idempotency_key && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => syncLeaves(data.state.sync_status.action || 'sync_all', data.state.sync_status.idempotency_key)}>Đối soát lượt đồng bộ trước (giữ nguyên mã yêu cầu)</button>}
-          {(syncOutcome || data.state?.sync_status) && <div className="live-tour-sync-outcome" role="status" aria-live="polite">
-            <strong>{syncOutcome?.sync?.action_label || 'Trạng thái đồng bộ'}</strong>
-            <span>{syncOutcome?.sync?.message || syncOutcome?.status?.message || (typeof data.state?.sync_status === 'string' ? data.state.sync_status : data.state?.sync_status?.message) || 'Đã nhận trạng thái mới nhất từ server.'}</span>
-            {syncOutcome?.sync?.stats && <small>{Object.entries(syncOutcome.sync.stats).map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`).join(' · ')}</small>}
-            {syncOutcome?.sync?.target && <small>Đích: {syncOutcome.sync.target.verified ? 'đã xác minh' : 'chưa xác minh'}{syncOutcome.sync.target.snapshot_sha256 ? ` · ${String(syncOutcome.sync.target.snapshot_sha256).slice(0, 12)}…` : ''}</small>}
-            {syncOutcome?.merge && <small>Live Tour: tạo {syncOutcome.merge.created || 0} · cập nhật {syncOutcome.merge.updated || 0} · xung đột {syncOutcome.merge.conflict_count || 0}</small>}
-            {syncOutcome?.status?.code && <small>Mã trạng thái: {syncOutcome.status.code} · {syncOutcome.status.retriable ? 'có thể thử lại cùng yêu cầu' : 'cần kiểm tra trước khi thử lại'}{syncOutcome.status.marker_persisted ? ' · đã lưu dấu phục hồi' : ''}{syncOutcome.status.target_sha256 ? ` · đích ${String(syncOutcome.status.target_sha256).slice(0, 12)}…` : ''}</small>}
-            {asArray(syncOutcome?.merge?.conflicts).length > 0 && <ul>{asArray(syncOutcome.merge.conflicts).slice(0, 5).map((conflict, index) => <li key={index}>{typeof conflict === 'string' ? conflict : conflict?.message || conflict?.employee_name || JSON.stringify(conflict)}</li>)}</ul>}
-          </div>}
         </div>
         <div className="live-tour-action-group"><strong>Thứ tự</strong>
           <select value={reorderSteps} onChange={(event) => setReorderSteps(event.target.value)} aria-label="Số vị trí di chuyển"><option value="1">1 dòng</option><option value="3">3 dòng</option><option value="5">5 dòng</option></select>
@@ -1517,7 +1408,7 @@ export default function LiveTourPage({ user }) {
     <section className="panel live-tour-operator live-tour-workspace" ref={workspaceRef}>
       <div className="live-tour-panel-tabs" role="tablist" aria-label="Không gian vận hành Live Tour">
         {PANEL_TABS.map(([key, label]) => {
-          const disabled = (['pending', 'customers'].includes(key) && !canPayment) || (key === 'reports' && !canPayment && !canExport && !canViewPurchaseReport) || (['history', 'catalog'].includes(key) && !canAdmin)
+          const disabled = (['pending', 'customers'].includes(key) && !canPayment) || (key === 'reports' && !canPayment && !canExport) || (['history', 'catalog'].includes(key) && !canAdmin)
           return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => setActivePanel(key)} key={key}>{label}{key === 'pending' && pendingPayments.length ? ` (${pendingPayments.length})` : ''}</button>
         })}
       </div>
@@ -1573,7 +1464,6 @@ export default function LiveTourPage({ user }) {
           <button type="button" className="secondary-button" disabled={!canExportKind('custom') || Boolean(actionBusy)} onClick={() => exportData('custom')}><Download size={13}/> Xuất Excel tùy chỉnh</button>
           <p>Dòng ẩn chỉ được xuất khi đang bật Hiện nhân viên đã ẩn và có quyền tương ứng. Bộ lọc ngày/giờ báo cáo không áp dụng cho bảng hiện tại.</p>
         </details>
-        {canViewPurchaseReport && <button type="button" className="secondary-button" onClick={openPurchaseReport}><ExternalLink size={13}/> Mở báo cáo mua hàng</button>}
         <div className="live-tour-panel-toolbar"><h2>BÁO CÁO · DOANH THU · TIỀN TIP</h2><div className="live-tour-panel-toolbar-actions">{EXPORT_KINDS.map(([kind, label]) => <button type="button" className="secondary-button" disabled={!canExportKind(kind)} onClick={() => exportData(kind)} key={kind}><Download size={13}/> {label}</button>)}<button type="button" className="secondary-button" disabled={!canExportKind('board')} onClick={() => exportData('board', true)}><FileImage size={13}/> Xuất PNG</button></div></div>
         <div className="live-tour-report-metrics">
           {Object.entries(data.reports && !Array.isArray(data.reports) ? data.reports : {}).filter(([, value]) => ['string', 'number'].includes(typeof value)).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{REPORT_LABELS[key] || key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}
@@ -1597,7 +1487,7 @@ export default function LiveTourPage({ user }) {
       </div>}
 
       {activePanel === 'catalog' && <div className="live-tour-panel-body">
-        <div className="live-tour-panel-toolbar"><h2>DANH MỤC LIVE TOUR</h2>{canManageCatalog && <div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={previewRosterMerge}>Xem trước danh sách từ Bảng tua</button></div>}</div>
+        <div className="live-tour-panel-toolbar"><h2>DANH MỤC LIVE TOUR</h2></div>
         {canAdmin && <div className="live-tour-catalog-section">
           <h3>Chuyển phiên quá hạn sang chờ thanh toán</h3>
           <label>Quá giờ dịch vụ ít nhất (phút)<input type="number" min="0" max="1440" step="1" value={expiredGrace} disabled={Boolean(actionBusy)} onChange={(event) => { setExpiredGrace(event.target.value); setExpiredPreview(null) }}/></label>
@@ -1610,17 +1500,6 @@ export default function LiveTourPage({ user }) {
             <button type="button" className="primary-button" disabled={Boolean(actionBusy) || !expiredPreview.count || expiredPreview.base_revision !== data.revision} onClick={confirmExpired}>Xác nhận chuyển {expiredPreview.count} phiên</button>
             <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => setExpiredPreview(null)}>Hủy</button>
           </div>}
-        </div>}
-        {canManageCatalog && mergePreview && <div className="warning-box">
-          <p>Chỉ bổ sung danh sách nhân viên và đánh dấu VIP; không nhập lại dịch vụ, thanh toán hoặc trạng thái làm việc. Nhân viên mới mặc định Nghỉ, chưa vào ca.</p>
-          <p>Thêm {mergePreview.merge?.created || 0} nhân viên · Đối chiếu {mergePreview.merge?.updated || 0} · Bỏ qua {mergePreview.merge?.conflict_count || 0} dòng dịch vụ.</p>
-          {asArray(mergePreview.merge?.conflicts).map((item, index) => <p key={item.employee_id || index}>{item.name}: {item.reason}</p>)}
-          <button type="button" className="primary-button" disabled={Boolean(actionBusy) || mergePreview.base_revision !== data.revision} onClick={async () => {
-            if (!window.confirm('Xác nhận chỉ nhập danh sách nhân viên? Trạng thái vận hành Live Tour sẽ được giữ nguyên.')) return
-            const result = await executeAction('merge_current_tour', { confirm_token: mergePreview.preview_token }, [])
-            if (result) setMergePreview(null)
-          }}>Xác nhận nhập danh sách</button>
-          {mergePreview.base_revision !== data.revision && <p>Bảng đã thay đổi. Hãy xem trước lại.</p>}
         </div>}
         {!canManageCatalog && <div className="live-tour-empty">Chỉ Admin hoặc tài khoản được cấp quyền mới được sửa danh mục.</div>}
         {canManageCatalog && <>
@@ -1788,17 +1667,9 @@ export default function LiveTourPage({ user }) {
     </LiveTourModal>}
 
     {canAdmin && showAdminTools && <>
-      <section className="panel tour-source-panel">
-        <div className="tour-source-head"><strong><Link2 size={15}/> Link file TourVera</strong><small>Chỉ Admin · cấu hình dùng chung; Live Tour chỉ nhập lại khi bạn chủ động đồng bộ/khởi tạo</small></div>
-        <form className="tour-source-form" onSubmit={saveTourSource}>
-          <input type="url" value={tourSourceDraft} onChange={(event) => setTourSourceDraft(event.target.value)} placeholder="Dán link Google Drive của TourVera.xlsm" aria-label="Link Google Drive của TourVera" required/>
-          <button type="submit" className="primary-button" disabled={tourSourceBusy || !tourSourceDraft.trim()}><Save size={15}/> {tourSourceBusy ? 'Đang kiểm tra…' : 'Lưu link'}</button>
-        </form>
-        <div className="tour-source-meta">{tourSource?.name && <span>File hiện tại: <strong>{tourSource.name}</strong></span>}{tourSource?.url && <a href={tourSource.url} target="_blank" rel="noreferrer">Mở trên Google Drive</a>}{tourSourceNotice.text && <span className={`tour-source-notice ${tourSourceNotice.error ? 'error' : ''}`}>{tourSourceNotice.text}</span>}</div>
-      </section>
       <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu trạng thái Live Tour; Break được ưu tiên hiển thị cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
     </>}
 
-    <div className="setup-note tour-countdown-note">Live Tour lưu trực tiếp trên hệ thống, kiểm tra phiên bản trước mỗi thao tác và tự tải lại khi có người dùng khác cập nhật.</div>
+    <div className="setup-note tour-countdown-note">Live Tour lưu trực tiếp trên máy chủ, kiểm tra phiên bản trước mỗi thao tác và tự tải lại khi có người dùng khác cập nhật.</div>
   </div>
 }

@@ -96,9 +96,7 @@ def test_live_tour_wires_every_vba_equivalent_action_to_the_backend():
         "combo_import",
         "backup",
         "restore",
-        "merge_current_tour",
         "clear_expired",
-        "sync_leaves",
     }
 
     missing = sorted(action for action in expected_actions if not _has_quoted_literal(source, action))
@@ -142,7 +140,6 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Xuất chờ thanh toán",
         "Xuất lịch sử",
         "Xuất PNG",
-        "Đồng bộ toàn bộ lịch nghỉ",
     }
 
     missing = sorted(label for label in expected_labels if label not in source)
@@ -215,7 +212,6 @@ def test_live_tour_guards_controls_and_requests_with_server_capabilities():
         "canPayment",
         "canAdmin",
         "canExport",
-        "canSyncLeave",
         "canRecoverHidden",
     ):
         assert f"const {capability}" in source
@@ -224,36 +220,16 @@ def test_live_tour_guards_controls_and_requests_with_server_capabilities():
     assert "capability('payment'" in source
     assert "capability('admin'" in source
     assert "capability('export'" in source
-    assert "capability('sync'" in source
     assert "capability('hide_recovery'" in source
     assert "const canOperate = capability('operate', isAdmin ||" in source
     assert "const canPayment = capability('payment', isAdmin ||" in source
     assert "const canAdmin = capability('admin', isAdmin ||" in source
     assert "const canExport = capability('export', isAdmin ||" in source
-    assert "const canSyncLeave = capability('sync', isAdmin ||" in source
     assert "isAdmin || capability('operate'" not in source
-    assert "const SYNC_ACTIONS = new Set(['sync_leaves'])" in source
-    assert "if (SYNC_ACTIONS.has(action)) return capabilities.sync" in source
     assert "if (HIDDEN_RECOVERY_ACTIONS.has(action)) return capabilities.hideRecovery" in source
     assert "if (!canRunAction(action" in source
     assert "disabled={!canRecoverHidden}" in source
     assert "if (!canExportKind(kind))" in source
-    assert "if (!canSyncLeave)" in source
-
-
-def test_live_tour_syncs_leaves_atomically_through_the_live_tour_action():
-    source = _source(LIVE_TOUR)
-    sync_flow = source[
-        source.index("const syncLeaves") : source.index("const exportData")
-    ]
-
-    assert "executeAction('sync_leaves', { sync_action: syncAction }, [], { idempotencyKey: recoveryKey })" in sync_flow
-    assert "const syncLeaves = async (syncAction = 'sync_all', recoveryKey = '')" in sync_flow
-    assert "result?.state?.sync_status" in sync_flow
-    assert "actionResult?.sync?.message" in sync_flow
-    assert "actionResult?.merge?.message" in sync_flow
-    assert "syncTourLeave" not in sync_flow
-    assert "merge_current_tour" not in sync_flow
 
 
 def test_live_tour_leaves_auto_yc_timing_to_the_server():
@@ -313,19 +289,6 @@ def test_export_permission_matrix_includes_breaks_without_escalation():
     script += "console.log(JSON.stringify(" + json.dumps([case[0] for case in cases]) + ".map(c => kinds.filter(k => hasLiveTourExportAccess(k, c)))));"
     result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
     assert json.loads(result.stdout) == [case[1] for case in cases]
-
-
-def test_purchase_report_link_uses_existing_authorized_revenue_destination():
-    source = _source(LIVE_TOUR)
-    revenue = _source(ROOT / "web-v2/src/pages/RevenuePage.jsx")
-    assert "const canViewPurchaseReport = isAdmin || user?.permissions?.revenue_view === true" in source
-    assert "if (!canViewPurchaseReport) return" in source
-    assert "url.searchParams.set('page', 'revenue')" in source
-    assert "url.hash = 'purchase-reconcile'" in source
-    assert "reports: canPayment || canExport || canViewPurchaseReport" in source
-    assert "key === 'reports' && !canPayment && !canExport && !canViewPurchaseReport" in source
-    assert 'id="purchase-reconcile"' in revenue
-    assert "document.getElementById('purchase-reconcile')?.scrollIntoView" in revenue
 
 
 def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
@@ -577,18 +540,3 @@ def test_live_tour_quick_checkout_is_independent_and_uses_stable_employee_ids():
     assert "Tìm nhân viên chờ thanh toán" in source
     assert "customer_id: employee?.customer_id || ''" in source
     assert "phone: employee?.customer_phone || ''" in source
-
-
-def test_live_tour_exposes_all_supported_leave_sync_modes_and_structured_recovery():
-    source = _source(LIVE_TOUR)
-    sync_ui = source[source.index("onClick={() => syncLeaves('check')") : source.index("<div className=\"live-tour-action-group\"><strong>Thứ tự")]
-
-    for sync_action in ("'check'", "'reason-only'", "'cleanup'", "'sync_all'"):
-        assert f"syncLeaves({sync_action})" in sync_ui
-    assert "Kiểm tra nguồn lịch nghỉ" in sync_ui
-    assert "Dọn trạng thái nghỉ (Xóa)" in sync_ui
-    assert "syncOutcome.sync.stats" in sync_ui
-    assert "syncOutcome.sync.target.verified" in sync_ui
-    assert "syncOutcome.merge.conflict_count" in sync_ui
-    assert "syncOutcome.status.retriable" in sync_ui
-    assert "syncOutcome.status.marker_persisted" in sync_ui

@@ -765,7 +765,7 @@ def _upload_and_verify(session: AuthorizedSession, payload: bytes, etag: str, fi
 
 @contextmanager
 def _sync_session_lock(engine: Any):
-    """Share one cross-worker lock with Live Tour without a long DB transaction."""
+    """Serialize legacy workbook updates without a long DB transaction."""
     raw = engine.connect()
     connection = raw.execution_options(isolation_level="AUTOCOMMIT")
     acquired = False
@@ -822,12 +822,9 @@ def install_tour_leave_sync_routes(
         body: TourLeaveSyncRequest,
         ident: identity_type = Depends(current_identity),
     ):
-        live_service = getattr(app.state, "live_tour_leave_sync_service", None)
         # Every permission check is complete before Sheets/Drive I/O begins.
         with engine_instance().begin() as auth_conn:
             require_feature(auth_conn, ident, "tour_leave_sync")
-            if live_service:
-                live_service["authorize"](auth_conn, ident)
         with _sync_session_lock(engine_instance()):
             source_rows = catalog = None
             if body.action in SOURCE_ACTIONS:
@@ -855,32 +852,11 @@ def install_tour_leave_sync_routes(
                     503, f"Không cập nhật được TourVera: {type(exc).__name__}: {str(exc)[:300]}"
                 ) from exc
 
-            live_merge = None
-            if live_service:
-                try:
-                    live_merge = live_service["merge_verified"](
-                        workbook_bytes=updated, original_bytes=original,
-                        action=body.action, stats=stats,
-                        source_rows=source_rows,
-                        metadata=metadata, target_date=target_date, ident=ident,
-                    )
-                except HTTPException:
-                    raise
-                except Exception as exc:
-                    raise HTTPException(
-                        503,
-                        detail={
-                            "code": "TOUR_LEAVE_SYNC_LIVE_TOUR_PARTIAL",
-                            "ok": False, "recovery_required": True,
-                            "message": "TourVera đã cập nhật nhưng chưa hợp nhất được vào Live Tour.",
-                        },
-                    ) from exc
-
         if invalidate_tour_cache is not None:
             try:
                 invalidate_tour_cache()
             except Exception:
-                # Drive and Live Tour are already committed; cache refresh is
+                # The workbook update is already committed; cache refresh is
                 # best effort and must never make the client repeat the write.
                 pass
         changed_count = int(stats.get("reason_updated") or 0) + int(stats.get("status_updated") or 0)
@@ -895,7 +871,6 @@ def install_tour_leave_sync_routes(
                 f"Thay đổi {changed_count} ô trong TourVera."
             ),
             "stats": stats,
-            "live_tour": live_merge,
             "target": {
                 "name": str(metadata.get("name") or "TourVera.xlsm"),
                 "modified_time": str(metadata.get("modifiedTime") or ""),

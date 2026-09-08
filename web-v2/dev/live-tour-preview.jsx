@@ -10,7 +10,6 @@ const blocked = async () => { throw new Error('Dữ liệu mẫu chỉ đọc: c
 // Override every API entry before rendering. No credentials or production requests.
 for (const key of Object.keys(veraApi)) veraApi[key] = blocked
 veraApi.liveTour = async () => structuredClone(fixtures[viewer ? 'viewer' : 'admin'])
-veraApi.tourSource = async () => ({ url: '', filename: 'Dữ liệu mẫu' })
 sessionStorage.removeItem('vera-live-tour-cache:preview-only')
 const user = { employee_username: 'preview-only', role: viewer ? 'staff' : 'admin', permissions: {} }
 createRoot(document.getElementById('root')).render(<React.StrictMode>
