@@ -19,7 +19,7 @@ Live Tour là trang vận hành riêng: booking đơn/nhanh/nhiều nhân viên,
 
 Chạy nhóm kiểm thử `test_live_tour*.py`, `test_tour_leave_sync.py`, `test_global_open_new_tab.py`, `test_tour_room_availability.py`; đồng thời compile Python, kiểm tra whitespace, lint và build React.
 
-Kết quả sau cùng: **201 test đạt**; compile Python và `git diff --check` đạt; React lint không có lỗi (3 cảnh báo sẵn có ngoài Live Tour), build thành công. Không có thay đổi trong `TourPage.jsx` so với main.
+Kết quả sau cùng: **210 test đạt**; compile Python và `git diff --check` đạt; React lint không có lỗi (3 cảnh báo sẵn có ngoài Live Tour), build thành công. Không có thay đổi trong `TourPage.jsx` so với main.
 
 Khi chạy suite rộng hơn (bỏ hai file mua hàng do môi trường thiếu `pyxlsb`), 380 test đạt trước khi dừng ở 5 lỗi. Đã chạy đúng 5 test đó trên worktree sạch của `main` tại `873ecbb` và chúng cũng thất bại:
 
@@ -41,6 +41,8 @@ Hai lỗi auth yêu cầu cấu hình PostgreSQL chưa có trong môi trường 
 - Chưa chạy Deploy VPS Production. Chỉ xem xét merge/phát hành sau khi nghiệm thu các mục trên; không chạy song song Excel và Live Tour để thu tiền cho cùng một dịch vụ.
 
 ## Phần tiếp tục: báo cáo và nghỉ giữa ca
+
+- Xuất bảng tùy chỉnh cho phép chọn các cột Bảng tua và phạm vi tất cả/đang hiển thị/đã chọn. Không chọn cột hoặc phạm vi không có nhân viên thì không xuất. Backend kiểm tra whitelist cột, dòng đã xóa/ẩn và quyền khôi phục dòng ẩn; không cho dùng bộ chọn này để xuất lẫn dữ liệu tài chính. Kiểm thử mở lại XLSX xác nhận đúng cột, đúng nhân viên và không thực thi chuỗi công thức.
 
 - Hoàn thiện chuyển phiên quá hạn: Admin chọn ngưỡng 0–1440 phút (mặc định 15), xem trước nhân viên/dịch vụ/phòng/giờ kết thúc rồi xác nhận. Preview không ghi dữ liệu. Thay đổi revision hoặc có thêm phiên vừa quá hạn sẽ yêu cầu xem trước lại. Xác nhận chỉ chuyển trạng thái sang chờ thanh toán, giữ dịch vụ và không tạo doanh thu; gửi lại cùng mã yêu cầu không lặp cập nhật.
 

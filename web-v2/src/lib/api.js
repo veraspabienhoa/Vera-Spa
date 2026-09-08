@@ -140,6 +140,9 @@ function datesBetween(start, end) {
 
 function liveTourExportParams(kind, query = {}) {
   const params = new URLSearchParams({ kind })
+  for (const key of ['columns', 'employee_ids']) {
+    if (Array.isArray(query[key])) query[key].forEach((value) => params.append(key, String(value)))
+  }
   for (const key of ['date_from', 'date_to', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
     const value = String(query?.[key] ?? '').trim()
     if (value) params.set(key, value)

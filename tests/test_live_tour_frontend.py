@@ -286,7 +286,7 @@ def test_live_tour_export_access_depends_on_the_requested_data_kind():
     ]
 
     assert "if (!capabilities.export) return false" in helper
-    assert "if (kind === 'board') return true" in helper
+    assert "if (kind === 'board' || kind === 'custom') return true" in helper
     assert "if (kind === 'history' || kind === 'breaks') return capabilities.admin" in helper
     assert "PAYMENT_EXPORT_KINDS.has(kind) && capabilities.payment" in helper
     assert "new Set(['revenue', 'tip', 'customers', 'pending', 'customer_detail'])" in source
@@ -304,9 +304,9 @@ def test_export_permission_matrix_includes_breaks_without_escalation():
     kinds = ["board", "custom", "history", "breaks", "revenue", "tip", "customers", "pending", "customer_detail", "unknown"]
     cases = [
         ({"export": False, "admin": True, "payment": True}, []),
-        ({"export": True, "admin": False, "payment": False}, ["board"]),
-        ({"export": True, "admin": True, "payment": False}, ["board", "history", "breaks"]),
-        ({"export": True, "admin": False, "payment": True}, ["board", "revenue", "tip", "customers", "pending", "customer_detail"]),
+        ({"export": True, "admin": False, "payment": False}, ["board", "custom"]),
+        ({"export": True, "admin": True, "payment": False}, ["board", "custom", "history", "breaks"]),
+        ({"export": True, "admin": False, "payment": True}, ["board", "custom", "revenue", "tip", "customers", "pending", "customer_detail"]),
     ]
     prelude = re.search(r"const PAYMENT_EXPORT_KINDS = .*", source).group(0)
     script = prelude + "\n" + helper + "\nconst kinds=" + json.dumps(kinds) + ";\n"

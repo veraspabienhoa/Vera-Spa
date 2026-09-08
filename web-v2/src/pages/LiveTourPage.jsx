@@ -41,7 +41,7 @@ const REPORT_LABELS = {
 
 function hasLiveTourExportAccess(kind, capabilities) {
   if (!capabilities.export) return false
-  if (kind === 'board') return true
+  if (kind === 'board' || kind === 'custom') return true
   if (kind === 'history' || kind === 'breaks') return capabilities.admin
   return PAYMENT_EXPORT_KINDS.has(kind) && capabilities.payment
 }
@@ -554,6 +554,8 @@ export default function LiveTourPage({ user }) {
   const [syncOutcome, setSyncOutcome] = useState(null)
   const [syncTransitionAction, setSyncTransitionAction] = useState('late_to_working')
   const [exportFilters, setExportFilters] = useState(EMPTY_EXPORT_FILTERS)
+  const [customColumns, setCustomColumns] = useState(null)
+  const [customScope, setCustomScope] = useState('displayed')
   const stickyTopRef = useRef(null)
   const recordsTableRef = useRef(null)
   const requestEntriesRef = useRef(new Map())
@@ -1219,6 +1221,15 @@ export default function LiveTourPage({ user }) {
     }
     const query = FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery(exportFilters) : {}
     if (kind === 'board' && showHidden && canRecoverHidden) query.include_hidden = 'true'
+    if (kind === 'custom') {
+      query.columns = (customColumns ?? columns).filter((column) => columns.includes(column))
+      if (!query.columns.length) { setError('Hãy chọn ít nhất một cột để xuất.'); return }
+      if (showHidden && canRecoverHidden) query.include_hidden = 'true'
+      if (customScope !== 'all') {
+        query.employee_ids = customScope === 'selected' ? [...selectedIds] : displayedRecords.map(stableEmployeeId).filter(Boolean)
+        if (!query.employee_ids.length) { setError('Không có nhân viên trong phạm vi xuất đã chọn.'); return }
+      }
+    }
     if (query.date_from && query.date_to && query.date_from > query.date_to) {
       setError('Ngày bắt đầu của bộ lọc xuất dữ liệu không được sau ngày kết thúc.')
       return
@@ -1554,6 +1565,14 @@ export default function LiveTourPage({ user }) {
       </div>}
 
       {activePanel === 'reports' && <div className="live-tour-panel-body">
+        <details className="live-tour-catalog-section">
+          <summary>Xuất bảng tùy chỉnh</summary>
+          <label>Phạm vi nhân viên<select value={customScope} onChange={(event) => setCustomScope(event.target.value)}><option value="displayed">Đang hiển thị</option><option value="selected">Đã chọn</option><option value="all">Tất cả</option></select></label>
+          <div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" onClick={() => setCustomColumns(null)}>Chọn tất cả cột</button><button type="button" className="secondary-button" onClick={() => setCustomColumns([])}>Bỏ chọn cột</button></div>
+          <div className="live-tour-card-grid">{columns.map((column) => <label key={column}><input type="checkbox" checked={(customColumns ?? columns).includes(column)} onChange={(event) => setCustomColumns((previous) => event.target.checked ? columns.filter((item) => item === column || (previous ?? columns).includes(item)) : (previous ?? columns).filter((item) => item !== column))}/>{column}</label>)}</div>
+          <button type="button" className="secondary-button" disabled={!canExportKind('custom') || Boolean(actionBusy)} onClick={() => exportData('custom')}><Download size={13}/> Xuất Excel tùy chỉnh</button>
+          <p>Dòng ẩn chỉ được xuất khi đang bật Hiện nhân viên đã ẩn và có quyền tương ứng. Bộ lọc ngày/giờ báo cáo không áp dụng cho bảng hiện tại.</p>
+        </details>
         {canViewPurchaseReport && <button type="button" className="secondary-button" onClick={openPurchaseReport}><ExternalLink size={13}/> Mở báo cáo mua hàng</button>}
         <div className="live-tour-panel-toolbar"><h2>BÁO CÁO · DOANH THU · TIỀN TIP</h2><div className="live-tour-panel-toolbar-actions">{EXPORT_KINDS.map(([kind, label]) => <button type="button" className="secondary-button" disabled={!canExportKind(kind)} onClick={() => exportData(kind)} key={kind}><Download size={13}/> {label}</button>)}<button type="button" className="secondary-button" disabled={!canExportKind('board')} onClick={() => exportData('board', true)}><FileImage size={13}/> Xuất PNG</button></div></div>
         <div className="live-tour-report-metrics">

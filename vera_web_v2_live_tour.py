@@ -2807,10 +2807,27 @@ def _customer_detail_excel_bytes(
 def _excel_bytes(
     state: dict[str, Any], kind: str, now: datetime, *, include_hidden: bool = False,
     bounds: dict[str, Any] | None = None, customer_id: Any = "",
+    selected_columns: list[str] | None = None, employee_ids: list[str] | None = None,
 ) -> tuple[bytes, str]:
+    if kind == "custom":
+        if selected_columns is not None and (not selected_columns or len(selected_columns) != len(set(selected_columns)) or any(column not in BOARD_COLUMNS for column in selected_columns)):
+            raise HTTPException(400, "Danh sách cột xuất phải thuộc Bảng tua, không trùng và không rỗng.")
+        if employee_ids is not None:
+            if not employee_ids or len(employee_ids) > 5000:
+                raise HTTPException(400, "Hãy chọn từ 1 đến 5000 nhân viên để xuất.")
+            allowed = {str(item.get("id")) for item in state["employees"] if include_hidden or not item.get("hidden")}
+            if not set(employee_ids).issubset(allowed):
+                raise HTTPException(409, "Danh sách nhân viên đã thay đổi hoặc có dòng đang ẩn. Hãy tải lại và chọn lại.")
+            state = {**state, "employees": [item for item in state["employees"] if str(item.get("id")) in set(employee_ids)]}
+    elif selected_columns is not None or employee_ids is not None:
+        raise HTTPException(400, "Chọn cột/nhân viên chỉ áp dụng cho xuất tùy chỉnh.")
     if kind == "customer_detail":
         return _customer_detail_excel_bytes(state, customer_id, now, bounds=bounds)
     title, headers, rows = _export_rows(state, kind, now, include_hidden=include_hidden, bounds=bounds)
+    if kind == "custom" and selected_columns is not None:
+        indices = [headers.index(column) for column in selected_columns]
+        rows = [[row[index] for index in indices] for row in rows]
+        headers = selected_columns
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = title[:31]
@@ -3492,6 +3509,8 @@ def install_live_tour_routes(
         date_from: str = Query(default=""), date_to: str = Query(default=""),
         time_from: str = Query(default=""), time_to: str = Query(default=""),
         customer_id: str = Query(default=""),
+        columns: list[str] | None = Query(default=None),
+        employee_ids: list[str] | None = Query(default=None),
         ident: identity_type = Depends(current_identity),
     ):
         now = datetime.now(timezone)
@@ -3520,7 +3539,7 @@ def install_live_tour_routes(
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
         content, filename = _excel_bytes(
             state, export_kind, now, include_hidden=bool(include_hidden and can_recover_hidden),
-            bounds=bounds, customer_id=customer_id_value,
+            bounds=bounds, customer_id=customer_id_value, selected_columns=columns, employee_ids=employee_ids,
         )
         return StreamingResponse(
             BytesIO(content),
