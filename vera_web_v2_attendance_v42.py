@@ -358,6 +358,7 @@ def _representative_score(item: dict[str, Any]) -> int:
 
 def _records_v42(conn, start: date, end: date) -> list[dict[str, Any]]:
     definitions, break_config = snapshot._shift_break_settings(conn)
+    department_controls = department_attendance.controls(conn)
     aliases, roles = _eligible_aliases(conn)
     datasets = conn.execute(text("""
         SELECT dataset_key, payload
@@ -391,7 +392,13 @@ def _records_v42(conn, start: date, end: date) -> list[dict[str, Any]]:
         if not rows:
             continue
         representative = max(rows, key=_representative_score)
-        cfg = snapshot._shift_config(representative, definitions, break_config)
+        role = roles.get(_norm(employee), "")
+        cfg = department_attendance.apply_midshift_break_control(
+            snapshot._shift_config(representative, definitions, break_config),
+            role,
+            break_config,
+            department_controls,
+        )
         arrival_status = _norm(representative.get("GoWorkTypeName"))
         departure_status = _norm(representative.get("LastCheckInTypeName"))
         restricted_reasons = []
@@ -411,11 +418,14 @@ def _records_v42(conn, start: date, end: date) -> list[dict[str, Any]]:
             representative=representative,
             cfg=cfg,
         )
+        faceid = department_attendance.apply_midshift_break_result_control(
+            faceid, role, department_controls,
+        )
         base = snapshot._record(representative, definitions, break_config)
         base.update(faceid)
         base["date"] = work_day.strftime("%d/%m/%Y")
         base["employee_name"] = employee
-        base["employee_role"] = roles.get(_norm(employee), "")
+        base["employee_role"] = role
         raw_code = _first(representative, CODE_ALIASES)
         if raw_code:
             base["employee_code"] = str(raw_code).strip()

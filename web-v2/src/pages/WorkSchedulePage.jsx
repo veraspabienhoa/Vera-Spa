@@ -24,7 +24,9 @@ const DEPARTMENT_INFO = {
   quanly: { label: 'Quản lý', mode: 'time' },
 }
 const RANGE_FILTERS = [
+  ['yesterday', 'Hôm qua'],
   ['today', 'Hôm nay'],
+  ['last_week', 'Tuần trước'],
   ['week', 'Tuần này'],
   ['next_week', 'Tuần sau'],
   ['month', 'Tháng này'],
@@ -299,7 +301,12 @@ export default function WorkSchedulePage({ user }) {
 
   const days = useMemo(() => {
     const base = atNoon()
+    if (rangeMode === 'yesterday') {
+      base.setDate(base.getDate() - 1)
+      return [base]
+    }
     if (rangeMode === 'today') return [base]
+    if (rangeMode === 'last_week') return weekDays(base, -1)
     if (rangeMode === 'week') return weekDays(base)
     if (rangeMode === 'next_week') return weekDays(base, 1)
     if (rangeMode === 'next_month') return monthDays(moveMonth(currentMonthValue(), 1))
@@ -314,7 +321,7 @@ export default function WorkSchedulePage({ user }) {
   const rangeStart = isoDate(days[0])
   const rangeEnd = isoDate(days[days.length - 1])
   const rangeKey = `${rangeStart}_${rangeEnd}`
-  const isWeekView = ['week', 'next_week'].includes(rangeMode) && days.length === 7
+  const isWeekView = ['last_week', 'week', 'next_week'].includes(rangeMode) && days.length === 7
   const isMonthView = ['month', 'next_month', 'selected_month'].includes(rangeMode) && days.length >= 28
 
   const availableDepartments = useMemo(() => {

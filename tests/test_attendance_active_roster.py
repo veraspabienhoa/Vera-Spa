@@ -24,7 +24,11 @@ def test_attendance_roster_covers_every_vera_department():
 
 def test_timesoft_shift_cannot_override_postgres_employee_department():
     source = (ROOT / "vera_web_v2_attendance_query_perf.py").read_text(encoding="utf-8")
+    controls = (ROOT / "vera_web_v2_department_attendance.py").read_text(encoding="utf-8")
     assert 'base["break_department"] = ROLE_DEPARTMENT.get(role, role or "Khác")' in source
     assert 'if not str(base.get("break_department") or "").strip()' not in source
-    assert 'role in {"quanly", "letan", "locker", "tapvu", "admin"}' in source
+    assert 'role in {"quanly", "admin"}' in source
+    assert 'BREAK_DEPARTMENTS = ("letan", "locker", "tapvu")' in controls
+    assert "apply_midshift_break_control" in source
+    assert "apply_midshift_break_result_control" in source
     assert 'schedules = _schedule_map(conn, start, end)' in source

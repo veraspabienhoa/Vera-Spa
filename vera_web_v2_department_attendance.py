@@ -1,4 +1,4 @@
-"""Attendance controls and work-schedule rules for Locker and Lễ tân."""
+"""Attendance and mid-shift-break controls for scheduled departments."""
 from __future__ import annotations
 
 from datetime import date
@@ -12,10 +12,18 @@ from sqlalchemy import text
 from vera_department_attendance_rules import schedule_late_minutes
 
 
-RELEASE = "department-attendance-2026-09-03-v2"
-DEPARTMENTS = ("locker", "letan")
-LABELS = {"locker": "Locker", "letan": "Lễ tân"}
-DEFAULT_CONTROL = {"attendance_enabled": True, "notifications_enabled": True}
+RELEASE = "department-attendance-2026-09-08-v3-break-role-toggles"
+ATTENDANCE_DEPARTMENTS = ("locker", "letan")
+BREAK_DEPARTMENTS = ("letan", "locker", "tapvu")
+# Kept for existing attendance/penalty callers: Tạp vụ only joins the break-rule controls.
+DEPARTMENTS = ATTENDANCE_DEPARTMENTS
+CONTROL_DEPARTMENTS = tuple(dict.fromkeys((*ATTENDANCE_DEPARTMENTS, *BREAK_DEPARTMENTS)))
+LABELS = {"locker": "Locker", "letan": "Lễ tân", "tapvu": "Tạp vụ"}
+DEFAULT_CONTROL = {
+    "attendance_enabled": True,
+    "notifications_enabled": True,
+    "midshift_break_enabled": False,
+}
 CATEGORY = "department_attendance_control"
 
 
@@ -38,15 +46,16 @@ def _json(value: Any) -> dict[str, Any]:
 def controls(conn) -> dict[str, dict[str, bool]]:
     rows = conn.execute(text("""
         SELECT setting_key,value_json FROM vera_app_setting
-        WHERE category=:category AND setting_key IN ('locker','letan')
+        WHERE category=:category AND setting_key IN ('locker','letan','tapvu')
     """), {"category": CATEGORY}).mappings().all()
     stored = {str(row.get("setting_key") or ""): _json(row.get("value_json")) for row in rows}
     result: dict[str, dict[str, bool]] = {}
-    for department in DEPARTMENTS:
+    for department in CONTROL_DEPARTMENTS:
         value = {**DEFAULT_CONTROL, **stored.get(department, {})}
         result[department] = {
             "attendance_enabled": bool(value.get("attendance_enabled", True)),
             "notifications_enabled": bool(value.get("notifications_enabled", True)),
+            "midshift_break_enabled": bool(value.get("midshift_break_enabled", False)),
         }
     return result
 
@@ -55,10 +64,74 @@ def control_for(conn, department: str) -> dict[str, bool]:
     return controls(conn).get(str(department or "").lower(), {**DEFAULT_CONTROL})
 
 
+def apply_midshift_break_control(
+    cfg: dict[str, Any],
+    role: str,
+    break_config: dict[str, Any],
+    control_values: dict[str, dict[str, bool]],
+) -> dict[str, Any]:
+    """Apply the role switch before FaceID break pairing and time calculations."""
+    role = str(role or "").strip().lower()
+    if role not in BREAK_DEPARTMENTS:
+        return dict(cfg)
+    enabled = bool((control_values.get(role) or DEFAULT_CONTROL).get("midshift_break_enabled", False))
+    department = LABELS[role]
+    department_cfg = break_config.get(department) if isinstance(break_config.get(department), dict) else {}
+    try:
+        duration = max(0, int(float(department_cfg.get("duration_minutes", 0) or 0)))
+    except (TypeError, ValueError):
+        duration = 0
+    if enabled and duration <= 0:
+        try:
+            duration = max(0, int(float(cfg.get("break_planned_minutes", 0) or 0)))
+        except (TypeError, ValueError):
+            duration = 0
+    if enabled and duration <= 0:
+        duration = 60
+    return {
+        **cfg,
+        "break_enabled": enabled,
+        "break_planned_minutes": duration if enabled else 0,
+        "break_department": department,
+    }
+
+
+def apply_midshift_break_result_control(
+    item: dict[str, Any],
+    role: str,
+    control_values: dict[str, dict[str, bool]],
+) -> dict[str, Any]:
+    """Remove break-pair calculations when a controlled role switch is off."""
+    role = str(role or "").strip().lower()
+    if role not in BREAK_DEPARTMENTS:
+        return dict(item)
+    enabled = bool((control_values.get(role) or DEFAULT_CONTROL).get("midshift_break_enabled", False))
+    if enabled:
+        return dict(item)
+    return {
+        **item,
+        "break_enabled": False,
+        "break_planned_minutes": 0,
+        "break_actual_minutes": 0,
+        "break_over_minutes": 0,
+        "break_count": 0,
+        "break_out": "",
+        "break_in": "",
+        "break_detail": "",
+        "break_source": "",
+        "break_method": "Không áp dụng cho bộ phận",
+        "break_status": f"{LABELS[role]} không áp dụng chính sách nghỉ giữa ca",
+        "break_restricted_reason": "",
+        "break_return_late_minutes": 0,
+        "break_return_deadline": "",
+        "break_return_deadline_iso": "",
+    }
+
+
 def save_control(conn, department: str, updates: dict[str, Any], actor: str) -> dict[str, bool]:
     department = str(department or "").strip().lower()
-    if department not in DEPARTMENTS:
-        raise ValueError("Bộ phận chỉ hỗ trợ Locker hoặc Lễ tân.")
+    if department not in CONTROL_DEPARTMENTS:
+        raise ValueError("Bộ phận chỉ hỗ trợ Lễ tân, Locker hoặc Tạp vụ.")
     value = control_for(conn, department)
     for key in DEFAULT_CONTROL:
         if key in updates:
@@ -125,9 +198,10 @@ def apply_schedule_to_record(conn, item: dict[str, Any], work_day: date, employe
     role = str(role or "").lower()
     schedule = scheduled_assignment(conn, work_day, employee)
     department = str((schedule or {}).get("department") or role).lower()
-    if department not in DEPARTMENTS:
+    if department not in ATTENDANCE_DEPARTMENTS:
         return item
-    if not control_for(conn, department)["attendance_enabled"]:
+    control = control_for(conn, department)
+    if not control["attendance_enabled"]:
         return None
     if not schedule or schedule.get("is_off"):
         return None
@@ -137,23 +211,26 @@ def apply_schedule_to_record(conn, item: dict[str, Any], work_day: date, employe
         "shift_start": str(schedule.get("start_time") or ""),
         "shift_end": str(schedule.get("end_time") or ""),
         "break_department": LABELS[department],
-        "break_enabled": False,
-        "break_planned_minutes": 0,
-        "break_actual_minutes": 0,
-        "break_over_minutes": 0,
-        "break_count": 0,
-        "break_out": "",
-        "break_in": "",
-        "break_detail": "",
-        "break_source": "",
-        "break_method": "Không áp dụng cho bộ phận",
-        "break_status": f"{LABELS[department]} không áp dụng chính sách nghỉ giữa ca",
-        "break_restricted_reason": "",
-        "break_return_late_minutes": 0,
-        "break_return_deadline": "",
-        "break_return_deadline_iso": "",
         "attendance_schedule_source": "Lịch làm việc",
     })
+    if not control["midshift_break_enabled"]:
+        result.update({
+            "break_enabled": False,
+            "break_planned_minutes": 0,
+            "break_actual_minutes": 0,
+            "break_over_minutes": 0,
+            "break_count": 0,
+            "break_out": "",
+            "break_in": "",
+            "break_detail": "",
+            "break_source": "",
+            "break_method": "Không áp dụng cho bộ phận",
+            "break_status": f"{LABELS[department]} không áp dụng chính sách nghỉ giữa ca",
+            "break_restricted_reason": "",
+            "break_return_late_minutes": 0,
+            "break_return_deadline": "",
+            "break_return_deadline_iso": "",
+        })
     calculated = schedule_late_minutes(result.get("check_in"), result.get("shift_start"))
     result["late_minutes"] = int(round(calculated)) if calculated is not None else 0
     result["arrival_status"] = "Đi trễ" if result["late_minutes"] > 0 else "Đúng giờ"
@@ -180,8 +257,8 @@ def install_department_attendance_routes(
         if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được tắt/mở chấm công và thông báo theo bộ phận.")
         department = department.strip().lower()
-        if department not in DEPARTMENTS:
-            raise HTTPException(400, "Bộ phận chỉ hỗ trợ Locker hoặc Lễ tân.")
+        if department not in CONTROL_DEPARTMENTS:
+            raise HTTPException(400, "Bộ phận chỉ hỗ trợ Lễ tân, Locker hoặc Tạp vụ.")
         actor = str(getattr(ident, "employee_username", "") or "admin").strip()
         with engine_instance().begin() as conn:
             value = save_control(conn, department, payload, actor)
@@ -190,8 +267,9 @@ def install_department_attendance_routes(
     @app.get("/v2/attendance/department-controls/health")
     def department_attendance_health():
         return {
-            "ok": True, "release": RELEASE, "departments": list(DEPARTMENTS),
-            "schedule_source": "vera_work_schedule", "midshift_break": False,
+            "ok": True, "release": RELEASE, "departments": list(CONTROL_DEPARTMENTS),
+            "schedule_source": "vera_work_schedule",
+            "midshift_break_roles": list(BREAK_DEPARTMENTS),
             "notification_audience": ["employee", "quanly", "admin"],
         }
 

@@ -27,13 +27,15 @@ def test_new_employee_form_only_contains_the_seven_requested_fields():
         assert omitted not in form
 
 
-def test_new_employee_defaults_and_server_requirements_match():
+def test_new_employee_requires_an_explicit_password_and_server_requirements_match():
     page = (ROOT / "web-v2/src/pages/EmployeePage.jsx").read_text(encoding="utf-8")
     api = (ROOT / "vera_web_v2_staff.py").read_text(encoding="utf-8")
 
-    assert "password: 'Vera123456'" in page
+    assert "password: ''" in page
     assert "role: 'nhanvien'" in page
-    assert 'password: str = Field(default="Vera123456", min_length=8' in api
+    assert 'password: str = Field(min_length=8' in api
+    assert 'password_error = password_policy_error(body.password' in api
+    assert 'password_error = "" if body.password' not in api
     assert 'field_name="Ngày bắt đầu làm", allow_blank=False' in api
     assert 'field_name="Ngày sinh", allow_blank=False' in api
     assert "Giới tính không được để trống." in api

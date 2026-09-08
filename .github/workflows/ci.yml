@@ -28,6 +28,15 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python and pytest dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "pytest==8.4.2" \
+            "httpx2>=2,<3" \
+            -r requirements.txt
 
       - name: Compile Python sources
         shell: bash
@@ -86,7 +95,7 @@ jobs:
               'camera can switch front and rear': all(key in identity_ui for key in ('Camera trước', 'Camera sau', 'facingMode: { ideal: facingMode }')),
               'PDF uses full address and conditional end date': '_full_employee_address(row, payload)' in security and 'rows.insert(11, ("Ngày nghỉ việc"' in security,
               'PDF omits internal and bank fields': all(key not in security.split('def _build_employee_profile_pdf', 1)[1].split('def install_staff_security_routes', 1)[0] for key in ('("Tên đăng nhập",', '("Phân quyền",', '("Ca làm việc",', '("Số tài khoản",', '("Ngân hàng",')),
-              'new employee form only asks for mandatory account fields': all(key in employee_ui for key in ("password: 'Vera123456'", 'createPasswordVisible', 'Mật khẩu ban đầu (tối thiểu 8 ký tự)', 'Ngày bắt đầu làm', 'Họ và tên đầy đủ', 'Ngày sinh', 'Giới tính', 'required-star')) and '<EmployeeMediaDraftPanel' not in employee_ui,
+              'new employee form only asks for mandatory account fields': all(key in employee_ui for key in ("password: ''", 'createPasswordVisible', 'Mật khẩu ban đầu (tối thiểu 8 ký tự)', 'Ngày bắt đầu làm', 'Họ và tên đầy đủ', 'Ngày sinh', 'Giới tính', 'required-star')) and '<EmployeeMediaDraftPanel' not in employee_ui,
               'profile has ordered demographic and district fields': all(key in profile for key in ('gender', 'ethnicity', 'district')) and all(label in employee_ui for label in ('Thông tin cá nhân', 'Thông tin định danh', 'Thông tin liên hệ & Địa chỉ', 'Thông tin thanh toán/Ngân hàng')),
               'runtime includes Vietnamese OCR and imaging': 'Pillow' in requirements and 'tesseract-ocr-vie' in dockerfile,
           }
@@ -670,7 +679,7 @@ jobs:
               'staff list/create/update/delete endpoints exist': all(route in staff_api for route in ('@app.get("/v2/staff")', '@app.post("/v2/staff")', '@app.patch("/v2/staff/{username}")', '@app.delete("/v2/staff")')),
               'staff Excel endpoints exist': '@app.get("/v2/staff/export.xlsx")' in staff_api and '@app.post("/v2/staff/import.xlsx")' in staff_api,
               'password and token columns are not exported': 'STAFF_EXPORT_COLUMNS' in staff_api and 'Mật khẩu' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0] and 'Remember Token' not in staff_api.split('STAFF_EXPORT_COLUMNS = [', 1)[1].split(']', 1)[0],
-              'new employees use the requested default and eight-character minimum': 'password: str = Field(default="Vera123456", min_length=8' in staff_api and "password: 'Vera123456'" in page and 'minLength={8}' in page,
+              'new employees require an explicit password with the eight-character minimum': 'password: str = Field(min_length=8' in staff_api and "password: ''" in page and 'password_error = password_policy_error(body.password' in staff_api and 'minLength={8}' in page,
               'import updates existing accounts only': 'Không tìm thấy trong hệ thống' in staff_api and 'update_database_row(conn, ident, row, values' in staff_api,
               'employee deletion permanently removes the account and preserves business history': 'Đã xóa vĩnh viễn' in delete_staff_route and 'Toàn bộ lịch sử nghiệp vụ được giữ nguyên' in delete_staff_route and 'DELETE FROM employees WHERE username=:username' in delete_staff_route and '"__deleted": True' not in delete_staff_route and 'DELETE FROM leave_records' not in delete_staff_route,
               'employee deletion is Admin role controlled without hidden permission denial': 'output["employee_delete"] = is_admin' in staff_api and 'output["employee_delete_confirm"] = is_admin' in staff_api and 'require_feature(conn, ident, "employee_delete")' not in delete_staff_route and 'require_feature(conn, ident, "employee_delete_confirm")' not in delete_staff_route,
@@ -1043,7 +1052,7 @@ jobs:
               'current outside penalty catalog uses inclusive minute bands': all(label in auto_check_core for label in ('nhỏ hơn hoặc bằng 30 phút', 'nhỏ hơn hoặc bằng 60 phút', 'nhỏ hơn hoặc bằng 120 phút', 'trên 120 phút')) and all(boundary in auto_check_core for boundary in ('minutes <= 30', 'minutes <= 60', 'minutes <= 120')),
               'Tour Break metric uses attendance events and shows cumulative-active': all(token in people for token in ("'tour_break_event_counter'", 'attendance_snapshot._records', 'next_break_event_state(previous, observed_events, active_employees)', 'break_metrics_source', 'attendance_faceid')) and all(token in tour_break_counter for token in ('observed_events.keys() - prior_seen.keys()', 'break_total_count', 'break_active_count', 'now.hour < 10')) and '`${breakTotal}-${breakActive}`' in tour_page,
               'Locker and Lễ tân attendance uses only Web V2 work schedule': all(token in department_attendance for token in ('vera_work_schedule', 'vera_work_shift_definition', 'schedule_late_minutes', 'attendance_schedule_source', 'Lịch làm việc')) and all(token in timesoft_job for token in ('department_attendance.scheduled_shift', 'department_attendance.schedule_late_minutes', 'CHẤM CÔNG BỘ PHẬN')),
-              'Locker and Lễ tân never use mid-shift break policy': all(token in department_attendance for token in ('"break_enabled": False', '"break_out": ""', '"break_in": ""', 'không áp dụng chính sách nghỉ giữa ca')) and 'not bool(item.get("break_enabled"))' in Path('vera_web_v2_attendance_break_alerts.py').read_text(encoding='utf-8'),
+              'Lễ tân Locker and Tạp vụ use switchable mid-shift break policy': all(token in department_attendance for token in ('BREAK_DEPARTMENTS = ("letan", "locker", "tapvu")', 'midshift_break_enabled', 'apply_midshift_break_control', 'apply_midshift_break_result_control')) and all(token in snapshot_page for token in ('midshift_break_enabled', 'Quy tắc nghỉ giữa ca ${label}', "['letan', 'Lễ tân']", "['locker', 'Locker']", "['tapvu', 'Tạp vụ']")) and 'not bool(item.get("break_enabled"))' in Path('vera_web_v2_attendance_break_alerts.py').read_text(encoding='utf-8'),
               'Department attendance and notifications have independent Admin switches': all(token in department_attendance for token in ('attendance_enabled', 'notifications_enabled', '/v2/attendance/department-controls/{department}')) and all(token in snapshot_page for token in ('Chấm công: {control.attendance_enabled', 'Thông báo: {control.notifications_enabled', 'CHẤM CÔNG THEO BỘ PHẬN')),
               'Break alert control preserves TimeSoft freshness guard': all(token in Path('vera_web_v2_break_alert_control.py').read_text(encoding='utf-8') for token in ('def viewer_alerts_guarded(facts, ident, now, source_fresh):', 'original_viewer_alerts(facts, ident, now, source_fresh)')),
               'Revenue uses fixed period and official Report summary cells': all(token in revenue for token in ('REVENUE_PERIOD_START = date(2025, 9, 5)', 'REVENUE_REPORT_WORKSHEET', 'worksheet.get("B2:B3")', '"range": "B2:B3"', 'summary.update(_report_totals(_read_revenue_report_values(google_client)))', '"total_income_cell": f"{REVENUE_REPORT_WORKSHEET}!B2"', '"total_expense_cell": f"{REVENUE_REPORT_WORKSHEET}!B3"')),
@@ -1117,6 +1126,10 @@ jobs:
           for name, ok in checks.items(): print(('PASS' if ok else 'FAIL') + ': ' + name)
           if failed: raise SystemExit('Failed operational invariants: ' + ', '.join(failed))
           PY
+
+      - name: Run pytest suite
+        if: always()
+        run: python -m pytest -q
 
   web-v2:
     name: React Web V2 build

@@ -25,14 +25,13 @@ def test_manager_and_frontdesk_share_same_day_special_group_ui_rules():
     assert "letanReasonGroup(currentReason, letanGroups)" in source
 
 
-def test_employee_toolbar_uses_real_react_selects_and_current_search_input():
+def test_employee_toolbar_keeps_native_name_dropdown_and_other_filters():
     source = (ROOT / "web-v2/src/lib/employeeToolbarRecovery.js").read_text(encoding="utf-8")
     main = (ROOT / "web-v2/src/main.jsx").read_text(encoding="utf-8")
 
-    assert "select.classList.remove('vera-typing-select-source')" in source
-    assert "select.dataset.veraTypingSearch = '1'" in source
+    assert "toolbar.querySelectorAll('select').forEach(removeToolbarProxy)" in source
+    assert "select[data-employee-name-dropdown]" in source
     assert ".staff-control-panel .staff-toolbar" in source
-    assert ".staff-search input" in source
     assert ".staff-list-panel .vera-list-name-search" in source
     assert "removeDuplicateListSearch" in source
     assert "startEmployeeToolbarRecovery()" in main

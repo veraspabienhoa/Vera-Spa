@@ -1,6 +1,6 @@
 import {
   BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
-  PencilLine, Plus, RefreshCw, Save, Search, Trash2, UserCheck, UserRoundCog, UsersRound,
+  PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
@@ -17,7 +17,7 @@ const ROLE_LABELS = {
 }
 
 const EMPTY_CREATE = {
-  username: '', password: 'Vera123456', role: 'nhanvien', full_name: '', birth_date: '',
+  username: '', password: '', role: 'nhanvien', full_name: '', birth_date: '',
   gender: '', ethnicity: '', phone: '', email: '', province: '', district: '', ward: '', address_detail: '',
   address: '', bank_account: '', bank_name: '', employment_start_date: '',
   cccd_number: '', cccd_issue_date: '', cccd_issue_place: '',
@@ -71,6 +71,12 @@ function datePayload(value) {
 function searchKey(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ')
 }
+
+const shortEmployeeName = (value) => String(value || '')
+  .split(/\s*[-–—]\s*/, 1)[0]
+  .trim()
+  .toLocaleLowerCase('vi-VN')
+  .replace(/(^|\s)\S/g, (letter) => letter.toLocaleUpperCase('vi-VN'))
 
 function departmentForRole(role) {
   if (role === 'nhanvien' || role === 'leader') return 'Nhân viên + Leader'
@@ -130,7 +136,6 @@ export default function EmployeePage({ user }) {
   const [drafts, setDrafts] = useState({})
   const [selected, setSelected] = useState([])
   const [search, setSearch] = useState('')
-  const [appliedSearch, setAppliedSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [shiftFilter, setShiftFilter] = useState('')
@@ -145,7 +150,6 @@ export default function EmployeePage({ user }) {
   const [profileDraft, setProfileDraft] = useState({})
   const [profileScrollRequest, setProfileScrollRequest] = useState(0)
   const profileSectionRef = useRef(null)
-  const searchCompositionRef = useRef(false)
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true)
@@ -163,12 +167,6 @@ export default function EmployeePage({ user }) {
   }
 
   useEffect(() => { load() }, [])
-
-  useEffect(() => {
-    if (searchCompositionRef.current) return undefined
-    const timer = window.setTimeout(() => setAppliedSearch(search), 180)
-    return () => window.clearTimeout(timer)
-  }, [search])
 
   useEffect(() => {
     if (!profileScrollRequest) return undefined
@@ -194,7 +192,7 @@ export default function EmployeePage({ user }) {
 
   const visible = useMemo(() => {
     const employees = data?.employees || []
-    const needle = searchKey(appliedSearch)
+    const needle = searchKey(search)
     const exact = needle ? employees.filter((employee) => [employee.username, employee.full_name].some((value) => searchKey(value) === needle)) : []
     const namePool = exact.length ? new Set(exact.map((employee) => employee.username)) : null
     return employees.filter((employee) => {
@@ -204,7 +202,7 @@ export default function EmployeePage({ user }) {
         && (!shiftFilter || employee.work_shift === shiftFilter)
         && (visibilityFilter === 'all' || (visibilityFilter === 'hidden' ? employee.profile_hidden : !employee.profile_hidden))
     })
-  }, [appliedSearch, data, roleFilter, shiftFilter, statusFilter, visibilityFilter])
+  }, [data, roleFilter, search, shiftFilter, statusFilter, visibilityFilter])
   const shiftOptions = useMemo(() => Array.from(new Set([
     ...(data?.employees || []).map((employee) => employee.work_shift),
     ...Object.values(data?.shifts_by_department || {}).flat(),
@@ -330,13 +328,6 @@ export default function EmployeePage({ user }) {
     setProfileDraft({})
   }
 
-  const finishEmployeeSearchComposition = (event) => {
-    searchCompositionRef.current = false
-    const value = event.currentTarget.value
-    changeEmployeeSearch(value)
-    setAppliedSearch(value)
-  }
-
   const saveProfile = () => run('profile', async () => {
     const payload = { ...profileDraft }
     payload.birth_date = datePayload(payload.birth_date)
@@ -421,7 +412,20 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-control-panel">
         <div className="staff-toolbar">
-          <div className="staff-search"><Search size={17} /><input value={search} onCompositionStart={() => { searchCompositionRef.current = true }} onCompositionEnd={finishEmployeeSearchComposition} onChange={(event) => changeEmployeeSearch(event.target.value)} placeholder="Tìm tên nhân viên hoặc họ tên" /></div>
+          <select
+            className="staff-employee-name-dropdown"
+            data-employee-name-dropdown="true"
+            value={search}
+            onChange={(event) => changeEmployeeSearch(event.target.value)}
+            aria-label="Tên nhân viên"
+          >
+            <option value="">-- Chọn nhân viên --</option>
+            {(data?.employees || []).map((employee) => (
+              <option key={employee.username} value={employee.username}>
+                {shortEmployeeName(employee.username)}
+              </option>
+            ))}
+          </select>
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Lọc phân quyền">
             <option value="">Tất cả phân quyền</option>
             {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -487,18 +491,6 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-list-panel">
         <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /> Làm mới</button></div>
-        <div className="staff-search staff-list-search">
-          <Search size={17} />
-          <input
-            type="search"
-            value={search}
-            aria-label="Tìm kiếm trong danh sách nhân viên"
-            placeholder="Tìm kiếm theo tên nhân viên"
-            onCompositionStart={() => { searchCompositionRef.current = true }}
-            onCompositionEnd={finishEmployeeSearchComposition}
-            onChange={(event) => changeEmployeeSearch(event.target.value)}
-          />
-        </div>
         {canSelectRows && <div className="staff-list-selection-actions">
           <button className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/> Chọn tất cả</button>
           <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}>Bỏ chọn</button>

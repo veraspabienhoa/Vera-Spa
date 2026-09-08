@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import text
 
 import vera_web_v2_attendance_v42 as v42
+import vera_web_v2_department_attendance as department_attendance
 import vera_web_v2_snapshot as snapshot
 from vera_attendance_rules import apply_break_restriction
 
@@ -163,6 +164,7 @@ def _placeholder_record(
     work_day: date,
     definitions: list[dict[str, Any]],
     break_config: dict[str, Any],
+    department_controls: dict[str, dict[str, bool]],
     schedule: dict[str, Any] | None,
 ) -> dict[str, Any]:
     username = str(roster.get("username") or "").strip()
@@ -203,8 +205,13 @@ def _placeholder_record(
         "employeeInfo.Name": username,
         "EmployeeName": username,
     }
-    cfg = snapshot._shift_config(representative, definitions, break_config)
-    if role in {"quanly", "letan", "locker", "tapvu", "admin"}:
+    cfg = department_attendance.apply_midshift_break_control(
+        snapshot._shift_config(representative, definitions, break_config),
+        role,
+        break_config,
+        department_controls,
+    )
+    if role in {"quanly", "admin"}:
         cfg = {
             **cfg,
             "break_enabled": False,
@@ -260,6 +267,7 @@ def _append_missing_active_employees(
     end: date,
     definitions: list[dict[str, Any]],
     break_config: dict[str, Any],
+    department_controls: dict[str, dict[str, bool]],
 ) -> list[dict[str, Any]]:
     roster = _active_roster(conn)
     schedules = _schedule_map(conn, start, end)
@@ -280,7 +288,9 @@ def _append_missing_active_employees(
                 full_name = v42._norm(employee.get("full_name"))
                 if full_name:
                     schedule = schedules.get((day, full_name))
-            output.append(_placeholder_record(employee, day, definitions, break_config, schedule))
+            output.append(_placeholder_record(
+                employee, day, definitions, break_config, department_controls, schedule,
+            ))
             present.add(key)
         day += timedelta(days=1)
     return output
@@ -288,6 +298,7 @@ def _append_missing_active_employees(
 
 def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
     definitions, break_config = snapshot._shift_break_settings(conn)
+    department_controls = department_attendance.controls(conn)
     aliases, roles = v42._eligible_aliases(conn)
     datasets = _datasets(conn, start, end)
     schedules = _schedule_map(conn, start, end)
@@ -320,7 +331,13 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
         if not rows:
             continue
         representative = max(rows, key=v42._representative_score)
-        cfg = snapshot._shift_config(representative, definitions, break_config)
+        role = roles.get(v42._norm(employee), "")
+        cfg = department_attendance.apply_midshift_break_control(
+            snapshot._shift_config(representative, definitions, break_config),
+            role,
+            break_config,
+            department_controls,
+        )
         arrival_status = v42._norm(representative.get("GoWorkTypeName"))
         departure_status = v42._norm(representative.get("LastCheckInTypeName"))
         restricted_reasons = []
@@ -340,18 +357,21 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
             representative=representative,
             cfg=cfg,
         )
+        faceid = department_attendance.apply_midshift_break_result_control(
+            faceid, role, department_controls,
+        )
         base = snapshot._record(representative, definitions, break_config)
         base.update(faceid)
         base["date"] = work_day.strftime("%d/%m/%Y")
         base["employee_name"] = employee
-        base["employee_role"] = roles.get(v42._norm(employee), "")
+        base["employee_role"] = role
 
         # Employee role in PostgreSQL is the authoritative department source.
         # TimeSoft WorkTimeName can point at an old/legacy shift definition and
         # must never reclassify a Locker/Lễ tân/etc. as Nhân viên + Leader.
         role = str(base.get("employee_role") or "").strip().lower()
         base["break_department"] = ROLE_DEPARTMENT.get(role, role or "Khác")
-        if role in {"quanly", "letan", "locker", "tapvu", "admin"}:
+        if role in {"quanly", "admin"}:
             base["break_enabled"] = False
             base["break_planned_minutes"] = 0
 
@@ -381,7 +401,9 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
         base["attendance_roster_only"] = False
         output.append(base)
 
-    _append_missing_active_employees(conn, output, start, end, definitions, break_config)
+    _append_missing_active_employees(
+        conn, output, start, end, definitions, break_config, department_controls,
+    )
     return sorted(
         output,
         key=lambda item: (

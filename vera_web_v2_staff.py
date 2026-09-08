@@ -51,7 +51,7 @@ CYCLE_OPTIONS = ["Luân phiên (14 ngày)", "Theo chu kỳ Tháng", "Cố địn
 DEPARTMENT_ORDER = ["Nhân viên + Leader", "Lễ tân", "Quản lý", "Locker", "Tạp vụ"]
 class StaffCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
-    password: str = Field(default="Vera123456", min_length=8, max_length=300)
+    password: str = Field(min_length=8, max_length=300)
     role: str = Field(default="nhanvien", min_length=1, max_length=50)
     full_name: str = Field(min_length=1, max_length=300)
     birth_date: str = Field(default="", max_length=30)
@@ -724,7 +724,7 @@ def install_staff_routes(
                 raise HTTPException(400, "Tên nhân viên không được để trống.")
             if not full_name:
                 raise HTTPException(400, "Họ và tên không được để trống.")
-            password_error = "" if body.password == "Vera123456" else password_policy_error(body.password, username=username, full_name=full_name)
+            password_error = password_policy_error(body.password, username=username, full_name=full_name)
             if password_error:
                 raise HTTPException(400, password_error)
             if norm(username) in {"quan tri vien", "admin"}:
