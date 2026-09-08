@@ -97,7 +97,7 @@ jobs:
               'safe cache fallback avoids silently dropping debt': 'cache_exists' in debt_sync and 'Đã dừng tính lương để tránh bỏ sót khấu trừ' in debt_sync,
               'saved payroll list endpoint exists': '/v2/payroll/saved-batches' in enhancements,
               'history batch delete endpoint exists': '@app.delete("/v2/payroll/history/{batch_id}")' in enhancements,
-              'completion marks applied obligations done': '_mark_applied_custom_obligations_completed' in enhancements and 'completed_obligations' in enhancements,
+              'completion reports applied obligation reconciliation': 'debt_reconciliation' in enhancements and 'completed_obligations' in enhancements,
               'admin can defer current penalty': '/v2/payroll/penalties/defer' in enhancements and 'Tạm hoãn vi phạm' in enhancements,
               'deferred penalty starts next period': 'period_end + timedelta(days=1)' in enhancements,
               'saved batch can reopen as editable draft': '/v2/payroll/saved-batches/{batch_id}/edit' in saved_edit and '_draft_key(start, end)' in saved_edit,
