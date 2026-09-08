@@ -1,3 +1,5 @@
+import EmployeeSelector from '../components/EmployeeSelector'
+import { matchesEmployeeName } from '../lib/employeeSearch'
 import {
   BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
   PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound,
@@ -67,16 +69,6 @@ function datePayload(value) {
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/)
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value
 }
-
-function searchKey(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ')
-}
-
-const shortEmployeeName = (value) => String(value || '')
-  .split(/\s*[-–—]\s*/, 1)[0]
-  .trim()
-  .toLocaleLowerCase('vi-VN')
-  .replace(/(^|\s)\S/g, (letter) => letter.toLocaleUpperCase('vi-VN'))
 
 function departmentForRole(role) {
   if (role === 'nhanvien' || role === 'leader') return 'Nhân viên + Leader'
@@ -192,11 +184,8 @@ export default function EmployeePage({ user }) {
 
   const visible = useMemo(() => {
     const employees = data?.employees || []
-    const needle = searchKey(search)
-    const exact = needle ? employees.filter((employee) => [employee.username, employee.full_name].some((value) => searchKey(value) === needle)) : []
-    const namePool = exact.length ? new Set(exact.map((employee) => employee.username)) : null
     return employees.filter((employee) => {
-      const matchesName = !needle || (namePool ? namePool.has(employee.username) : searchKey(`${employee.username} ${employee.full_name}`).includes(needle))
+      const matchesName = matchesEmployeeName(employee.username, search)
       return matchesName && (!roleFilter || employee.role === roleFilter)
         && (!statusFilter || employee.employment_status === statusFilter)
         && (!shiftFilter || employee.work_shift === shiftFilter)
@@ -412,20 +401,7 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-control-panel">
         <div className="staff-toolbar">
-          <select
-            className="staff-employee-name-dropdown"
-            data-employee-name-dropdown="true"
-            value={search}
-            onChange={(event) => changeEmployeeSearch(event.target.value)}
-            aria-label="Tên nhân viên"
-          >
-            <option value="">-- Chọn nhân viên --</option>
-            {(data?.employees || []).map((employee) => (
-              <option key={employee.username} value={employee.username}>
-                {shortEmployeeName(employee.username)}
-              </option>
-            ))}
-          </select>
+          <EmployeeSelector employees={data?.employees || []} value={search} onChange={changeEmployeeSearch} />
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Lọc phân quyền">
             <option value="">Tất cả phân quyền</option>
             {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

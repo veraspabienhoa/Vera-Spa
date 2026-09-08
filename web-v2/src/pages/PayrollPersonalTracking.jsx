@@ -1,4 +1,6 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Search, Trash2, WalletCards } from 'lucide-react'
+import EmployeeSelector from '../components/EmployeeSelector'
+import { matchesEmployeeName } from '../lib/employeeSearch'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Trash2, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 
@@ -6,15 +8,6 @@ const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`
 const trackedRoles = new Set(['leader', 'nhanvien'])
 
-function searchKey(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase()
-    .trim()
-}
 
 function roleLabel(value) {
   return String(value || '').toLowerCase() === 'leader' ? 'Leader' : 'Nhân viên'
@@ -167,9 +160,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
 
   const visible = useMemo(() => {
     const rows = (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
-    const needle = searchKey(search)
-    if (!needle) return rows
-    return rows.filter((item) => searchKey(`${item.employee_name} ${item.full_name} ${item.role}`).includes(needle))
+    return rows.filter((item) => matchesEmployeeName(item.employee_name, search))
   }, [data, search])
 
   const activeRows = useMemo(() => visible.filter((item) => !item.completed && Number(item.remaining || 0) > 0), [visible])
@@ -220,7 +211,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
             <div className="payroll-personal-metric"><span>TỔNG CÒN LẠI</span><strong>{money(totals.remaining_total)}</strong></div>
             <div className="payroll-personal-metric warning"><span>NGHĨA VỤ CHƯA HOÀN THÀNH</span><strong>{money(totals.obligation_total)}</strong></div>
           </div>
-          <label className="payroll-personal-search"><Search size={16}/><input type="search" value={search} placeholder="Tìm Leader / Nhân viên" onChange={(event) => setSearch(event.target.value)} /></label>
+          <EmployeeSelector employees={(data?.employees || []).filter((item) => trackedRoles.has(String(item.role || "").toLowerCase()))} value={search} onChange={setSearch} />
 
           <div className="payroll-personal-section-title"><h3>ĐANG CÒN ĐÓNG TIỀN TÍCH LŨY ({activeRows.length})</h3></div>
           <AdminTrackingTable rows={activeRows} editable onAdd={addAccumulation} onEdit={editAccumulation} onDelete={deleteAccumulation} busyEmployee={busyEmployee} emptyText="Không có Leader/Nhân viên đang còn đóng tiền tích lũy." />

@@ -615,7 +615,7 @@ jobs:
               'Web V2 update accepts PostgreSQL-only Auto Check rows': 'Bản ghi không có vị trí MainData hợp lệ' not in update_leave_route and 'if has_main_mirror or rebalanced:' in update_leave_route and update_leave_route.index('tx.commit()') < update_leave_route.index('_google_client().open_by_key'),
               'Web V2 delete accepts Auto Check rows without MainData position': 'Có bản ghi không có vị trí MainData hợp lệ' not in delete_leave_route and delete_leave_route.index('tx.commit()') < delete_leave_route.index('_google_client().open_by_key') and 'mirror_pending' in delete_leave_route,
               'Web V2 list supports range queries': 'start_date: date | None = Query(default=None, alias="start")' in api and 'WHERE leave_date BETWEEN :start_date AND :end_date' in api and 'Khoảng danh sách tối đa là 366 ngày' in api,
-              'Web V2 list has time and employee filters': 'aria-label="Lọc thời gian danh sách"' in leave_page and 'employeeSearch' in leave_page and 'aria-label="Tìm kiếm tên nhân viên"' in leave_page,
+              'Web V2 list has time and employee filters': 'aria-label="Lọc thời gian danh sách"' in leave_page and 'employeeSearch' in leave_page and '<EmployeeSelector employees={employees} value={employeeSearch}' in leave_page,
               'Web V2 list checkbox date and weekday stay first': '<th className="select-column">Chọn</th><th>Ngày</th><th>Thứ</th><th>Nhân viên</th>' in leave_page,
               'Web V2 range edit keeps selected-date reasons': 'canEditRecord(item) && item.leave_date === date' in leave_page,
               'Web V2 registration uses requested result messages': 'Đã ghi lịch nghỉ THÀNH CÔNG' in leave_page and 'KHÔNG THÀNH CÔNG (' in leave_page and 'PostgreSQL và MainData mirror' not in api,
@@ -697,7 +697,7 @@ jobs:
               'employee page covers all requested operations': all(label in page for label in ('THÊM NHÂN VIÊN', 'DANH SÁCH NHÂN VIÊN', 'Export Excel', 'Xóa đã chọn', 'Lưu thay đổi')),
               'employee list hides legacy import and keeps refresh in list header': 'Import Excel' not in page and 'importStaffExcel' not in page and page.index('DANH SÁCH NHÂN VIÊN') < page.index('Làm mới'),
               'employee list filters and exports by shift': 'shiftFilter' in page and "params.set('shift', shift)" in client and 'shift: str = Query' in staff_api,
-              'changing employee search closes stale profile': 'const changeEmployeeSearch = (value) =>' in page and "setProfileDraft({})" in page and 'onChange={(event) => changeEmployeeSearch(event.target.value)}' in page,
+              'changing employee search closes stale profile': 'const changeEmployeeSearch = (value) =>' in page and "setProfileDraft({})" in page and 'onChange={changeEmployeeSearch}' in page,
               'employee ordering is role then employment status': 'role_rank.get(row["role"], 99)' in staff_api and 'status_rank.get(row["employment_status"], 99)' in staff_api,
               'mobile employee cards avoid table overflow': 'staff-mobile-list' in page and '.staff-desktop-table { display: none; }' in styles and '.staff-mobile-fields' in styles,
               'employee list fits without horizontal overflow and marks incomplete profiles': 'missingEmployeeProfileFields' in page and 'staff-incomplete-row' in page and '.staff-table { width: 100%; min-width: 0; table-layout: fixed;' in styles and '.staff-col-role { width: 8%; }' in styles and 'min-width: 1220px' not in styles,
@@ -1062,7 +1062,7 @@ jobs:
               'department hourly rates match attached Locker and Lễ tân formulas': all(token in department_payroll for token in ('"locker": {', '"letan": {', '"calculation_mode": "hourly"', '"rate_ca1": 27000', '"rate_ca2_before_22": 30000', '"rate_ca2_after_22": 33000', '"full_day_allowance": 30000')),
               'department salary configuration has a separate Admin menu': all(token in shell for token in ("id: 'payroll-config'", "label: 'Cấu hình lương'", "adminOnly: true")) and "page === 'payroll-config'" in app and 'settingsOnly' in department_payroll_settings_page and all(token in department_payroll for token in ('CALCULATION_MODES', '"tapvu": "monthly"', '"standard_month_days": 26')),
               'Admin can configure former employee accumulation refunds': all(token in payroll for token in ('AccumulationRefundCreate', '/v2/payroll/accumulation-refunds', '_accumulation_refund_map', 'Chỉ Admin được cài đặt hoàn trả tiền tích lũy', 'Tạm thời nghỉ việc hoặc Đã nghỉ việc')) and all(token in payroll_enhanced_page for token in ('HOÀN TRẢ TIỀN TÍCH LŨY – NHÂN VIÊN NGHỈ VIỆC', 'addAccumulationRefund', 'removeAccumulationRefund')) and all(token in api_client for token in ('payrollAccumulationRefunds', 'createPayrollAccumulationRefund', 'deletePayrollAccumulationRefund')),
-              'payroll employee filtering is exact': 'needle in {norm(item.get("Tên Hệ thống")), norm(item.get("Họ và tên"))}' in payroll,
+              'payroll employee filtering is exact': 'employee_name_matches(item.get("Tên Hệ thống"), search)' in payroll,
               'payroll legacy history and obligation sync are wired': all(token in payroll for token in ('/v2/payroll/history/sync-legacy', 'LEGACY_PAYROLL_WORKSHEET', 'LEGACY_OBLIGATION_WORKSHEET', '_obligation_group')) and 'syncLegacyPayroll' in api_client and 'Tải dữ liệu hệ thống cũ' in payroll_page,
               'payroll legacy obligation groups are visible to Admin': all(token in payroll_page for token in ('Nợ do Thực nhận âm', 'Nghĩa vụ Vi phạm Admin chủ động tạm hoãn', 'canManageObligations', 'isAdmin')),
               'payroll upload validates xlsx and reports network failures': all(token in payroll for token in ('content.startswith(b"PK")', 'File Excel đang trống', '15 * 1024 * 1024')) and all(token in api_client for token in ('Không gửi được file Excel tới máy chủ VERA', 'Không kết nối được máy chủ VERA')),
@@ -1156,6 +1156,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Verify shared employee search rules
+        run: node --test tests/employeeSearch.test.mjs
 
       - name: Build
         run: npm run build

@@ -1,3 +1,5 @@
+import EmployeeSelector from '../components/EmployeeSelector'
+import { matchesEmployeeName, normalizeEmployeeSearch as normalizeSearch, shortEmployeeName } from '../lib/employeeSearch'
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
@@ -74,24 +76,6 @@ const rangeForFilter = (filter) => {
   return [today(), today()]
 }
 const emptyForm = { employee_name: '', leave_reason: '', detail: '', manual_penalty: '' }
-const shortEmployeeName = (value) => String(value || '')
-  .split(/\s*[-–—]\s*/, 1)[0]
-  .trim()
-  .toLocaleLowerCase('vi-VN')
-  .replace(/(^|\s)\S/g, (letter) => letter.toLocaleUpperCase('vi-VN'))
-const normalizeSearch = (value) => String(value || '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/đ/g, 'd')
-  .replace(/Đ/g, 'D')
-  .toLocaleLowerCase('vi-VN')
-  .replace(/\s+/g, ' ')
-  .trim()
-const matchesEmployeeName = (employeeName, searchValue) => {
-  const needle = normalizeSearch(searchValue)
-  if (!needle) return true
-  return [employeeName, shortEmployeeName(employeeName)].some((name) => normalizeSearch(name) === needle)
-}
 
 export default function LeaveRegistrationPage({ user }) {
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
@@ -767,20 +751,9 @@ export default function LeaveRegistrationPage({ user }) {
             </div>
           )}
           <form className="leave-form" onSubmit={submit}>
-            <label>Tên nhân viên</label>
-            <select
-              value={form.employee_name}
-              onChange={(e) => setForm((current) => ({ ...current, employee_name: e.target.value }))}
-              disabled={!canChooseEmployee}
-              required
-            >
-              <option value="">-- Chọn nhân viên --</option>
-              {registrationEmployees.map((employee) => (
-                <option key={employee.username} value={employee.username}>
-                  {shortEmployeeName(employee.username)}
-                </option>
-              ))}
-            </select>
+            <EmployeeSelector employees={registrationEmployees} value={form.employee_name}
+              onChange={(value) => setForm((current) => ({ ...current, employee_name: value }))}
+              selectionOnly disabled={!canChooseEmployee} required />
 
             <label>Lý do nghỉ</label>
             <select
@@ -866,26 +839,10 @@ export default function LeaveRegistrationPage({ user }) {
               </div>
             )}
             <div className="statistics-employee-search">
-              <label className="employee-search-field statistics-employee-search-field">
-                <span><Search size={15} aria-hidden="true" /> Tên nhân viên</span>
-                <input
-                  type="search"
-                  value={statsEmployeeSearch}
-                  onChange={(event) => setStatsEmployeeSearch(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      setStatsEmployeeFilter(statsEmployeeSearch.trim())
-                    }
-                  }}
-                  placeholder="Nhập tên nhân viên"
-                  aria-label="Tìm kiếm tên nhân viên trong thống kê"
-                  list="statistics-employee-options"
-                />
-              </label>
-              <datalist id="statistics-employee-options">
-                {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
-              </datalist>
+              <EmployeeSelector employees={employees} value={statsEmployeeSearch}
+                onChange={(value) => { setStatsEmployeeSearch(value); setStatsEmployeeFilter(value) }}
+                className="statistics-employee-search-field"
+                inputProps={{ 'aria-label': 'Tìm kiếm tên nhân viên trong thống kê' }} />
               <div className="statistics-search-actions">
                 <button type="button" className="secondary-button compact" onClick={() => setStatsEmployeeFilter(statsEmployeeSearch.trim())} disabled={busy}>
                   <Search size={14} /> Tìm
@@ -1026,23 +983,9 @@ export default function LeaveRegistrationPage({ user }) {
                 <DatePickerControl label="Đến ngày" value={listRangeEnd} onChange={changeListCustomEnd} />
               </div>
             )}
-            <label className="employee-search-field">
-              <span><Search size={15} aria-hidden="true" /> Tên nhân viên</span>
-              <input
-                type="search"
-                value={employeeSearch}
-                onChange={(event) => {
-                  setEmployeeSearch(event.target.value)
-                  setSelectedUids([])
-                }}
-                placeholder="Chọn hoặc nhập đúng tên nhân viên"
-                aria-label="Tìm kiếm tên nhân viên"
-                list="list-employee-options"
-              />
-            </label>
-            <datalist id="list-employee-options">
-              {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
-            </datalist>
+            <EmployeeSelector employees={employees} value={employeeSearch}
+              onChange={(value) => { setEmployeeSearch(value); setSelectedUids([]) }}
+              inputProps={{ 'aria-label': 'Tìm kiếm tên nhân viên' }} />
           </div>
           <div className="table-wrap leave-list-wrap">
             <table className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>

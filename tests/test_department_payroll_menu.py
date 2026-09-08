@@ -53,8 +53,8 @@ def test_employee_config_supports_department_search_and_explicit_rows():
     styles = (ROOT / "web-v2/src/styles.css").read_text(encoding="utf-8")
     assert "salary_employee_catalog" in backend
     assert "employeeCandidates" in panel
-    assert "Tìm nhân viên" in panel
-    assert "-- Chọn nhân viên --" in panel
+    assert "<EmployeeSelector employees={candidates}" in panel
+    assert "selectionOnly" in panel
     assert "Thêm dòng" in panel
     assert "removeEmployeeRow" in panel
     assert ".department-config-table{display:block;width:100%;max-width:100%;overflow-x:auto" in styles
@@ -63,10 +63,10 @@ def test_employee_config_supports_department_search_and_explicit_rows():
 
 def test_salary_advance_form_has_searchable_employee_date_and_valid_amount_input():
     ledger = (ROOT / "web-v2/src/lib/departmentSalaryAdvanceLedger.js").read_text(encoding="utf-8")
-    assert 'type="search" autocomplete="off" role="combobox"' in ledger
-    assert 'placeholder="Tìm và chọn nhân viên trong danh sách…"' in ledger
-    assert "renderEmployeeSuggestions" in ledger
-    assert "data-advance-employee-option" in ledger
+    assert "createElement(EmployeeSelector" in ledger
+    assert "resolveEmployeeName(currentPayload.employee_catalog" in ledger
+    assert "renderEmployeePicker" in ledger
+    assert "data-advance-employee-host" in ledger
     assert "records.every((record) => existingPanel.contains(record.target))" in ledger
     assert "<datalist" not in ledger
     assert 'placeholder="dd/mm/yyyy"' in ledger

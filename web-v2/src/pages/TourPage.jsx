@@ -1,3 +1,5 @@
+import EmployeeSelector from '../components/EmployeeSelector'
+import { matchesEmployeeName } from '../lib/employeeSearch'
 import { Clock3, Crown, DoorOpen, ExternalLink, LayoutGrid, Link2, RefreshCw, Save, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -334,7 +336,7 @@ export default function TourPage({ user }) {
     const needle = normalizedColumn(employeeSearch)
     if (!needle) return shiftRecords
     const nameColumn = employeeNameColumn(columns)
-    return shiftRecords.filter((record) => normalizedColumn(cellValue(record, nameColumn)).includes(needle))
+    return shiftRecords.filter((record) => matchesEmployeeName(cellValue(record, nameColumn), employeeSearch))
   }, [columns, employeeSearch, shiftRecords])
   const displayedRecords = useMemo(
     () => prioritizeRecords(searchedRecords, columns, activeFilter),
@@ -414,9 +416,9 @@ export default function TourPage({ user }) {
     const needle = normalizedColumn(employeeSearch)
     if (!needle || !employeeColumn || !roomColumn) return new Set()
     return new Set(shiftRecords.flatMap((record) => {
-      const employee = normalizedColumn(cellValue(record, employeeColumn))
+      const employee = cellValue(record, employeeColumn)
       const key = roomKey(cellValue(record, roomColumn))
-      return employee.includes(needle) && key ? [key] : []
+      return matchesEmployeeName(employee, employeeSearch) && key ? [key] : []
     }))
   }, [employeeColumn, employeeSearch, roomColumn, shiftRecords])
   const statusColumn = findColumn(columns, ['TRANG THAI'])
@@ -553,7 +555,7 @@ export default function TourPage({ user }) {
         </div>}
       </div>
       <div className="tour-quick-tools">
-        <label className="tour-employee-search" aria-label="Tìm nhanh tên nhân viên"><Search size={16}/><input type="search" value={employeeSearch} placeholder="Tìm nhanh tên nhân viên…" onChange={(event) => setEmployeeSearch(event.target.value)} /></label>
+        <EmployeeSelector employees={shiftRecords.map((record) => cellValue(record, employeeColumn))} value={employeeSearch} onChange={setEmployeeSearch} />
       </div>
       </section>
     </div>

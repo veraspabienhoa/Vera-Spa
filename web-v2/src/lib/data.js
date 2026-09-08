@@ -1,3 +1,4 @@
+import { matchesEmployeeName, normalizeEmployeeSearch as normalizeSearch } from './employeeSearch'
 import { supabase } from './supabase'
 
 async function rpc(name, args = {}) {
@@ -11,21 +12,6 @@ export async function loadLeaveSummary(date) {
   const rows = await rpc('vera_v2_leave_summary', { p_date: date })
   const row = Array.isArray(rows) ? rows[0] : rows
   return row || { working: 0, leave: 0, paid: 0, unpaid: 0 }
-}
-
-const normalizeSearch = (value) => String(value || '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/đ/g, 'd')
-  .replace(/Đ/g, 'D')
-  .toLocaleLowerCase('vi-VN')
-  .replace(/\s+/g, ' ')
-  .trim()
-const matchesEmployeeName = (employeeName, searchValue) => {
-  const needle = normalizeSearch(searchValue)
-  if (!needle) return true
-  const shortName = String(employeeName || '').split(/\s*[-–—]\s*/, 1)[0]
-  return [employeeName, shortName].some((name) => normalizeSearch(name) === needle)
 }
 
 const leaveStatsGroup = (row) => {

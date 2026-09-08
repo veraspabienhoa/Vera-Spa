@@ -333,9 +333,6 @@ function syncEnhancedSelect(select, input, wrapper) {
 function enhanceSelect(select) {
   if (!(select instanceof HTMLSelectElement)) return
   if (!select.closest('.staff-page') || select.multiple || Number(select.size || 0) > 1) return
-  // This filter deliberately copies the native employee dropdown used by
-  // Đăng ký lịch; keep its React-owned select UI unchanged.
-  if (select.matches('[data-employee-name-dropdown]')) return
   // The employee list is React-owned and frequently adds/removes keyed rows
   // while the user types in the name filter. Injecting proxy siblings beside
   // selects in those rows corrupts React's expected DOM and can crash the

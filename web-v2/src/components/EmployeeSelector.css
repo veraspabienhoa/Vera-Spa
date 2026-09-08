@@ -1,0 +1,45 @@
+/* Extracted from the Leave Registration / List reference. Keep identical
+   controls even inside toolbars with their own generic input/label rules. */
+label.employee-search-field.vera-employee-selector {
+  width: min(380px, 100%);
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+label.employee-search-field.vera-employee-selector > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #4b5b53;
+  font-size: 11px;
+  font-weight: 800;
+}
+label.employee-search-field.vera-employee-selector > input.vera-employee-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #dce4df;
+  border-radius: 11px;
+  padding: 11px 12px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  outline: none;
+  transition: .15s ease;
+}
+label.employee-search-field.vera-employee-selector > input.vera-employee-input:focus {
+  border-color: #8bad9a;
+  box-shadow: 0 0 0 3px rgba(79,120,98,.1);
+}
+label.employee-search-field.vera-employee-selector > input:disabled { cursor: not-allowed; opacity: .6; }
+@media (max-width: 820px) {
+  label.employee-search-field.vera-employee-selector { width: 100%; }
+  label.employee-search-field.vera-employee-selector > input.vera-employee-input { padding: 8px 9px; font-size: 12px; }
+}

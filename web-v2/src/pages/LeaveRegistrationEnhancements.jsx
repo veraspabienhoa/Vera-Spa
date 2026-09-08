@@ -26,8 +26,8 @@ function readRegistrationForm() {
   const originalSelects = form
     ? Array.from(form.querySelectorAll('select')).filter((select) => select.dataset.customReasonSelect !== 'true')
     : []
-  const employeeSelect = originalSelects[0] || null
-  const reasonSelect = form?.querySelector('select[data-original-leave-reason="true"]') || originalSelects[1] || null
+  const employeeSelect = form?.querySelector('[data-employee-value]') || null
+  const reasonSelect = form?.querySelector('select[data-original-leave-reason="true"]') || originalSelects[0] || null
   const reasonLabel = form
     ? Array.from(form.querySelectorAll('label')).find((label) => String(label.textContent || '').trim() === 'Lý do nghỉ') || null
     : null

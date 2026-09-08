@@ -1,3 +1,4 @@
+import EmployeeSelector from '../components/EmployeeSelector'
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -143,7 +144,7 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
 
     <form className="payroll-obligation-form" onSubmit={addDebt}>
       <label>Loại nợ<select value={form.debt_type} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, debt_type: event.target.value })}><option>Âm thực nhận</option><option>Tạm hoãn vi phạm</option></select></label>
-      <label>Nhân viên<input required list="payroll-admin-debt-employees" value={form.employee_name} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, employee_name: event.target.value })} /></label>
+      <EmployeeSelector employees={employeeOptions} value={form.employee_name} disabled={Boolean(busy)} onChange={(value) => setForm({ ...form, employee_name: value })} selectionOnly required />
       <label>Số tiền<input required type="number" min="1" inputMode="numeric" value={numberInputDisplayValue(form.amount)} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
       <label>Kỳ phát sinh từ<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.period_start} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_start: event.target.value })} /></label>
       <label>Kỳ phát sinh đến<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.period_end} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_end: event.target.value })} /></label>
@@ -151,7 +152,6 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
       <label>Nội dung<input required value={form.content} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, content: event.target.value })} /></label>
       <button className="primary-button" type="submit" disabled={Boolean(busy)}><Plus size={16} /> {busy === 'add' ? 'Đang thêm…' : 'Thêm mới'}</button>
     </form>
-    <datalist id="payroll-admin-debt-employees">{employeeOptions.map((name) => <option key={name}>{name}</option>)}</datalist>
 
     <div className="responsive-data-table" style={{ marginTop: 12 }}><table><thead><tr><th>Tên nhân viên</th><th>Số tiền</th><th>Loại</th><th>Kỳ phát sinh</th><th>Bắt đầu trừ</th><th>Nguồn</th><th></th></tr></thead><tbody>{rows.map((item) => <tr key={item.debt_key}><td><strong>{item.employee_name}</strong></td><td>{money(item.amount)}</td><td>{item.type}</td><td>{item.period_start} – {item.period_end}</td><td>{item.due_from}</td><td>{item.source}</td><td><button className="danger-button compact" type="button" disabled={Boolean(busy)} onClick={() => deleteDebt(item)}><Trash2 size={14} /> Xóa</button></td></tr>)}</tbody></table></div>
     {!rows.length && <div className="setup-note">Không có Nợ vi phạm đang mở.</div>}
