@@ -45,9 +45,33 @@ test('Lễ tân today non-group and future records follow permissions', () => {
   }
 })
 
-test('Quản lý follows the configured permissions without frontend type locking', () => {
-  assert.equal(canEditLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', true)), true)
-  assert.equal(canDeleteLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', true)), true)
-  assert.equal(canEditLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', false)), false)
-  assert.equal(canDeleteLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', false)), false)
+test('Quản lý follows the same-day group rule from Nội quy', () => {
+  for (const group of LETAN_REASON_GROUPS) {
+    for (const allowed of [true, false]) {
+      const current = row('quanly', today, group[0], allowed)
+      assert.equal(canEditLeaveRecord(current), true)
+      assert.equal(canDeleteLeaveRecord(current), false)
+      assert.deepEqual(letanReasonChoices('quanly', today, group[0], today), group)
+    }
+  }
+})
+
+test('Employee roles can edit only their own rows within the configured notice period', () => {
+  for (const role of ['nhanvien', 'leader', 'locker', 'tapvu']) {
+    for (const [leaveType, days] of [['Có phép', 3], ['Không phép', 1]]) {
+      for (const isOwnRecord of [true, false]) {
+        for (const offset of [days - 1, days]) {
+          const target = `2026-09-${String(4 + offset).padStart(2, '0')}`
+          const current = {
+            ...row(role, target, 'Lý do theo nội quy'),
+            currentLeaveType: leaveType,
+            isOwnRecord,
+            employeeSelfServicePolicy: { enabled: true, regular_notice_days: 3, unpaid_notice_days: 1 },
+          }
+          assert.equal(canEditLeaveRecord(current), isOwnRecord && offset >= days)
+          assert.equal(canDeleteLeaveRecord(current), isOwnRecord && offset >= days)
+        }
+      }
+    }
+  }
 })
