@@ -1,4 +1,6 @@
 import re
+import json
+import subprocess
 from pathlib import Path
 
 
@@ -285,7 +287,7 @@ def test_live_tour_export_access_depends_on_the_requested_data_kind():
 
     assert "if (!capabilities.export) return false" in helper
     assert "if (kind === 'board') return true" in helper
-    assert "if (kind === 'history') return capabilities.admin" in helper
+    assert "if (kind === 'history' || kind === 'breaks') return capabilities.admin" in helper
     assert "PAYMENT_EXPORT_KINDS.has(kind) && capabilities.payment" in helper
     assert "new Set(['revenue', 'tip', 'customers', 'pending', 'customer_detail'])" in source
 
@@ -294,6 +296,36 @@ def test_live_tour_export_access_depends_on_the_requested_data_kind():
     assert "disabled={!canExportKind(kind)}" in source
     assert "disabled={!canExportKind('board')}" in source
     assert "disabled={!canExportKind('history')}" in source
+
+
+def test_export_permission_matrix_includes_breaks_without_escalation():
+    source = _source(LIVE_TOUR)
+    helper = source[source.index("function hasLiveTourExportAccess"):source.index("function compactExportQuery")]
+    kinds = ["board", "custom", "history", "breaks", "revenue", "tip", "customers", "pending", "customer_detail", "unknown"]
+    cases = [
+        ({"export": False, "admin": True, "payment": True}, []),
+        ({"export": True, "admin": False, "payment": False}, ["board"]),
+        ({"export": True, "admin": True, "payment": False}, ["board", "history", "breaks"]),
+        ({"export": True, "admin": False, "payment": True}, ["board", "revenue", "tip", "customers", "pending", "customer_detail"]),
+    ]
+    prelude = re.search(r"const PAYMENT_EXPORT_KINDS = .*", source).group(0)
+    script = prelude + "\n" + helper + "\nconst kinds=" + json.dumps(kinds) + ";\n"
+    script += "console.log(JSON.stringify(" + json.dumps([case[0] for case in cases]) + ".map(c => kinds.filter(k => hasLiveTourExportAccess(k, c)))));"
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [case[1] for case in cases]
+
+
+def test_purchase_report_link_uses_existing_authorized_revenue_destination():
+    source = _source(LIVE_TOUR)
+    revenue = _source(ROOT / "web-v2/src/pages/RevenuePage.jsx")
+    assert "const canViewPurchaseReport = isAdmin || user?.permissions?.revenue_view === true" in source
+    assert "if (!canViewPurchaseReport) return" in source
+    assert "url.searchParams.set('page', 'revenue')" in source
+    assert "url.hash = 'purchase-reconcile'" in source
+    assert "reports: canPayment || canExport || canViewPurchaseReport" in source
+    assert "key === 'reports' && !canPayment && !canExport && !canViewPurchaseReport" in source
+    assert 'id="purchase-reconcile"' in revenue
+    assert "document.getElementById('purchase-reconcile')?.scrollIntoView" in revenue
 
 
 def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():

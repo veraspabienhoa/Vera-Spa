@@ -28,8 +28,9 @@ const EXPORT_KINDS = [
   ['customers', 'Xuất khách hàng'],
   ['pending', 'Xuất chờ thanh toán'],
   ['history', 'Xuất lịch sử'],
+  ['breaks', 'Xuất nghỉ giữa ca'],
 ]
-const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'history'])
+const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'history', 'breaks'])
 const PAYMENT_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'customer_detail'])
 const EMPTY_EXPORT_FILTERS = { date_from: '', date_to: '', time_from: '', time_to: '' }
 const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone'])
@@ -41,7 +42,7 @@ const REPORT_LABELS = {
 function hasLiveTourExportAccess(kind, capabilities) {
   if (!capabilities.export) return false
   if (kind === 'board') return true
-  if (kind === 'history') return capabilities.admin
+  if (kind === 'history' || kind === 'breaks') return capabilities.admin
   return PAYMENT_EXPORT_KINDS.has(kind) && capabilities.payment
 }
 
@@ -570,6 +571,15 @@ export default function LiveTourPage({ user }) {
   const canRecoverHidden = capability('hide_recovery', canAdmin || canOperate)
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
   const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, payment: canPayment, admin: canAdmin })
+  const canViewPurchaseReport = isAdmin || user?.permissions?.revenue_view === true
+  const openPurchaseReport = () => {
+    if (!canViewPurchaseReport) return
+    const url = new URL(window.location.href)
+    url.searchParams.set('page', 'revenue')
+    url.searchParams.set('standalone', '1')
+    url.hash = 'purchase-reconcile'
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
 
   const load = useCallback(async (refresh = false, quiet = false) => {
     if (!quiet) setBusy(true)
@@ -622,14 +632,14 @@ export default function LiveTourPage({ user }) {
     const allowed = {
       pending: canPayment,
       customers: canPayment,
-      reports: canPayment || canExport,
+      reports: canPayment || canExport || canViewPurchaseReport,
       history: canAdmin,
       catalog: canAdmin,
     }
     if (allowed[activePanel]) return
     const fallback = ['pending', 'reports', 'history', 'catalog'].find((panel) => allowed[panel]) || ''
     setActivePanel(fallback)
-  }, [activePanel, canAdmin, canExport, canPayment])
+  }, [activePanel, canAdmin, canExport, canPayment, canViewPurchaseReport])
 
   const executeAction = useCallback(async (action, payload = {}, ids = [...selectedIds], options = {}) => {
     if (actionBusy) return null
@@ -1475,7 +1485,7 @@ export default function LiveTourPage({ user }) {
     <section className="panel live-tour-operator live-tour-workspace" ref={workspaceRef}>
       <div className="live-tour-panel-tabs" role="tablist" aria-label="Không gian vận hành Live Tour">
         {PANEL_TABS.map(([key, label]) => {
-          const disabled = (['pending', 'customers'].includes(key) && !canPayment) || (key === 'reports' && !canPayment && !canExport) || (['history', 'catalog'].includes(key) && !canAdmin)
+          const disabled = (['pending', 'customers'].includes(key) && !canPayment) || (key === 'reports' && !canPayment && !canExport && !canViewPurchaseReport) || (['history', 'catalog'].includes(key) && !canAdmin)
           return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => setActivePanel(key)} key={key}>{label}{key === 'pending' && pendingPayments.length ? ` (${pendingPayments.length})` : ''}</button>
         })}
       </div>
@@ -1486,7 +1496,7 @@ export default function LiveTourPage({ user }) {
         <label><span>Từ giờ</span><input type="time" value={exportFilters.time_from} onChange={(event) => setExportFilters((current) => ({ ...current, time_from: event.target.value }))}/></label>
         <label><span>Đến giờ</span><input type="time" value={exportFilters.time_to} onChange={(event) => setExportFilters((current) => ({ ...current, time_to: event.target.value }))}/></label>
         <button type="button" className="secondary-button" disabled={!Object.values(exportFilters).some(Boolean)} onClick={() => setExportFilters(EMPTY_EXPORT_FILTERS)}>Xóa bộ lọc</button>
-        <small>Áp dụng cho doanh thu, TIP, khách hàng, chờ thanh toán và lịch sử; không áp dụng cho Bảng tua/PNG.</small>
+        <small>Áp dụng cho doanh thu, TIP, khách hàng, chờ thanh toán, lịch sử và nghỉ giữa ca; không áp dụng cho Bảng tua/PNG.</small>
       </div>}
       {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
 
@@ -1523,6 +1533,7 @@ export default function LiveTourPage({ user }) {
       </div>}
 
       {activePanel === 'reports' && <div className="live-tour-panel-body">
+        {canViewPurchaseReport && <button type="button" className="secondary-button" onClick={openPurchaseReport}><ExternalLink size={13}/> Mở báo cáo mua hàng</button>}
         <div className="live-tour-panel-toolbar"><h2>BÁO CÁO · DOANH THU · TIỀN TIP</h2><div className="live-tour-panel-toolbar-actions">{EXPORT_KINDS.map(([kind, label]) => <button type="button" className="secondary-button" disabled={!canExportKind(kind)} onClick={() => exportData(kind)} key={kind}><Download size={13}/> {label}</button>)}<button type="button" className="secondary-button" disabled={!canExportKind('board')} onClick={() => exportData('board', true)}><FileImage size={13}/> Xuất PNG</button></div></div>
         <div className="live-tour-report-metrics">
           {Object.entries(data.reports && !Array.isArray(data.reports) ? data.reports : {}).filter(([, value]) => ['string', 'number'].includes(typeof value)).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{REPORT_LABELS[key] || key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}
@@ -1532,6 +1543,14 @@ export default function LiveTourPage({ user }) {
       </div>}
 
       {activePanel === 'history' && <div className="live-tour-panel-body">
+        <div className="live-tour-catalog-section">
+          <div className="live-tour-panel-toolbar"><h3>LỊCH SỬ NGHỈ GIỮA CA</h3><button type="button" className="secondary-button" disabled={!canExportKind('breaks')} onClick={() => exportData('breaks')}><Download size={13}/> Xuất nghỉ giữa ca</button></div>
+          <div className="live-tour-history-list">{asArray(data.break_events).slice().reverse().map((event, index) => <article key={event.id || index}>
+            <strong>{event.employee_name} · {event.event_type === 'start' ? 'Bắt đầu nghỉ' : 'Vào lại'}</strong>
+            <span>{event.at} · {event.outcome || 'Định mức 90 phút'}{event.minutes != null ? ` · ${event.minutes} phút` : ''}</span>
+            <small>{event.actor}</small>
+          </article>)}{!asArray(data.break_events).length && <div className="live-tour-empty">Chưa có lịch sử nghỉ giữa ca.</div>}</div>
+        </div>
         <div className="live-tour-panel-toolbar"><h2>LỊCH SỬ & SAO LƯU</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => executeAction('backup', { name: `Backup ${new Date().toLocaleString('vi-VN')}` }, [])}><History size={13}/> Tạo bản sao lưu</button><button type="button" className="secondary-button" disabled={!canExportKind('history')} onClick={() => exportData('history')}><Download size={13}/> Xuất lịch sử</button></div></div>
         <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{item?.created_at || item?.timestamp || ''}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => { if (window.confirm('Khôi phục bản sao này? Dữ liệu Live Tour hiện tại sẽ được thay thế.')) void executeAction('restore', { backup_id: item?._id ?? item?.id }, []) }}>Khôi phục</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có bản sao lưu.</div>}</div>
         <div className="live-tour-catalog-section"><h3>Nhật ký thao tác</h3>{audit.length ? <div className="live-tour-card-grid">{audit.slice(0, 100).map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.action_label || item?.action || itemLabel(item, `Sự kiện ${index + 1}`)}</strong><span>{item?.employee_name || item?.actor || item?.created_by || ''}</span><small>{item?.at || item?.created_at || item?.timestamp || ''}</small><small>{item?.note || item?.message || (item?.detail ? JSON.stringify(item.detail) : '')}</small></article>)}</div> : <div className="live-tour-empty">Chưa có lịch sử thao tác.</div>}</div>

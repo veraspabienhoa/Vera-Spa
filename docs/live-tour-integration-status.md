@@ -19,7 +19,7 @@ Live Tour là trang vận hành riêng: booking đơn/nhanh/nhiều nhân viên,
 
 Chạy nhóm kiểm thử `test_live_tour*.py`, `test_tour_leave_sync.py`, `test_global_open_new_tab.py`, `test_tour_room_availability.py`; đồng thời compile Python, kiểm tra whitespace, lint và build React.
 
-Kết quả sau cùng: **186 test đạt**; compile Python và `git diff --check` đạt; React lint không có lỗi (3 cảnh báo sẵn có ngoài Live Tour), build thành công. Không có thay đổi trong `TourPage.jsx` so với main.
+Kết quả sau cùng: **188 test đạt**; compile Python và `git diff --check` đạt; React lint không có lỗi (3 cảnh báo sẵn có ngoài Live Tour), build thành công. Không có thay đổi trong `TourPage.jsx` so với main.
 
 Khi chạy suite rộng hơn (bỏ hai file mua hàng do môi trường thiếu `pyxlsb`), 380 test đạt trước khi dừng ở 5 lỗi. Đã chạy đúng 5 test đó trên worktree sạch của `main` tại `873ecbb` và chúng cũng thất bại:
 
@@ -35,6 +35,22 @@ Hai lỗi auth yêu cầu cấu hình PostgreSQL chưa có trong môi trường 
 
 - Chưa nghiệm thu đa trình duyệt, tài khoản thật và khóa giao dịch trên PostgreSQL thật.
 - Chưa so ảnh responsive/pixel với Excel/Bảng tua đang vận hành.
-- Chưa di chuyển lịch sử Report/KhachHang ở các file ngoài, chưa tái tạo nguyên mẫu báo cáo MuaDo và quy trình sửa hóa đơn cũ.
+- Chưa di chuyển lịch sử Report/KhachHang ở các file ngoài. `Bao_cao_mua_hang.bas` chỉ mở/activate `BaoCaoMuaHang.xlsb`; không chứa mã tính toán báo cáo đó. Live Tour mở trang đối chiếu mua hàng hiện có bằng quyền `revenue_view`. Cần file ngoài nếu muốn đối chiếu thêm các nghiệp vụ bên trong nó.
+- Cột AF:AH dành cho nhật ký sửa hóa đơn không đủ để xác định quy trình sửa hóa đơn cũ; chưa thấy UserForm thực hiện quy trình đó trong 18 form đã trích xuất. Không coi các cột dự phòng là bằng chứng đã đọc được toàn bộ nghiệp vụ sửa bill.
 - Cần chốt thiết kế lưu trữ/retention: hiện sử dụng JSON giao dịch trong `vera_app_setting`, chưa tách các sổ tài chính/khách hàng thành bảng chuyên biệt.
 - Chưa chạy Deploy VPS Production. Chỉ xem xét merge/phát hành sau khi nghiệm thu các mục trên; không chạy song song Excel và Live Tour để thu tiền cho cùng một dịch vụ.
+
+## Phần tiếp tục: báo cáo và nghỉ giữa ca
+
+- Thêm nút **Mở báo cáo mua hàng** trong Live Tour; mở tab mới vào đúng khu vực đối chiếu của Doanh thu. Kiểm tra quyền cả khi hiện nút lẫn xử lý bấm; tài khoản chỉ có quyền xem Doanh thu cũng mở được tab Báo cáo.
+- Admin xem lịch sử bắt đầu/vào lại, thời gian nghỉ, kết quả đúng giờ/quá 90 phút và người thao tác. Xuất Excel nghỉ giữa ca dùng cùng bộ lọc ngày/giờ và cần đồng thời quyền admin + export.
+- Kiểm thử thực thi JavaScript đối chiếu ma trận quyền export: quyền xuất bảng không mở quyền xem lịch sử hoặc tài chính.
+- Có bộ xem thử độc lập, dùng DTO thật và 12 nhân viên giả lập, phòng PR, danh sách phòng 4 người và lượt nghỉ 95 phút. Tất cả hàm API bị thay bằng dữ liệu chỉ đọc; các đường dẫn API chưa giả lập bị chặn. Không đưa bộ xem thử vào entry/build sản phẩm.
+
+Chạy từ `web-v2`:
+
+```sh
+LIVE_TOUR_TEST_PYTHON=/path/to/python-with-project-dependencies node dev/live-tour-preview.mjs
+```
+
+Mở `http://127.0.0.1:5174/preview`, thêm `?role=viewer` để kiểm tra người chỉ xem, hoặc `/preview-mobile` cho khung 390px. Thêm `--check` vào lệnh để kiểm tra server phục vụ HTML/JS/DTO và chặn API; bước này đã đạt. Trình duyệt kiểm thử của phiên làm việc chặn localhost (`ERR_BLOCKED_BY_CLIENT`), nên chưa có kết quả tương tác/ảnh desktop-mobile; không dùng kiểm tra server làm bằng chứng giao diện đã đạt.

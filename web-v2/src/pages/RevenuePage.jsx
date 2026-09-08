@@ -104,6 +104,12 @@ export default function RevenuePage() {
   const [statusFilter, setStatusFilter] = useState('all')
 
   useEffect(() => {
+    if (window.location.hash === '#purchase-reconcile') {
+      document.getElementById('purchase-reconcile')?.scrollIntoView({ block: 'start' })
+    }
+  }, [])
+
+  useEffect(() => {
     const controller = new AbortController()
     const run = async () => {
       setBusy(true)
@@ -246,7 +252,7 @@ export default function RevenuePage() {
     {data && <div className="revenue-formula">{money(data.total_income)} - {money(data.total_expense)} - {money(data.period_tip)} = {money(data.balance)} · Tổng thu - Tổng chi - Tiền TIP trong kỳ = Còn lại</div>}
     {data && <div className="revenue-meta">Nguồn: <strong>{data.source || 'Quản lý Thu Chi'}</strong> · Sheet: <strong>{data.worksheet || 'Input'}</strong>{' · '}Số giao dịch Thu/Chi đã tính: <strong>{Number(data.transaction_count || 0).toLocaleString('vi-VN')}</strong>.</div>}
 
-    <section className="reconcile-panel">
+    <section className="reconcile-panel" id="purchase-reconcile" style={{ scrollMarginTop: '90px' }}>
       <div className="reconcile-head">
         <div><span className="eyebrow"><FileSpreadsheet size={14}/> Đối chiếu chi mua hàng</span><h2>BÁO CÁO MUA HÀNG ↔ QUẢN LÝ THU CHI</h2><p>So sánh từng ngày: tổng cột Thành Tiền của BaoCaoMuaHang với các dòng Input có B = Chi và nội dung mua hàng, số tiền lấy từ cột C. Chênh lệch từ 1đ đến 5.000đ được xếp GẦN KHỚP; trên 5.000đ là KHÔNG KHỚP.</p></div>
         <div className="reconcile-filter">
