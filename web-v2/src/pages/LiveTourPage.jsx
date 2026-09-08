@@ -1,0 +1,1675 @@
+import {
+  BellRing, CheckCircle2, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
+  ExternalLink, FileImage, History, LayoutGrid, Menu, PauseCircle, Play, Plus,
+  RefreshCw, Search, Share2, Trash2, UserPlus, WalletCards, X,
+} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { veraApi } from '../lib/api'
+
+const EMPTY_LIVE_TOUR = {
+  columns: [], records: [], rooms: {}, available_rooms: [], services: [], combo_catalog: [],
+  customers: [], pending_payments: [], reports: {}, audit: [], backups: [], capabilities: {}, revision: null,
+}
+const LIVE_TOUR_CACHE_MAX_AGE = 10 * 60 * 1000
+const PENDING_REMINDER_INTERVAL_MS = 15 * 60 * 1000
+const VIP_ROOMS = ['16', '17', '18', '19', '20', '21']
+const VIP_ROOM_KEYS = new Set(VIP_ROOMS)
+const PANEL_TABS = [
+  ['pending', 'Chờ thanh toán'],
+  ['customers', 'Khách hàng & combo'],
+  ['reports', 'Báo cáo'],
+  ['history', 'Lịch sử & sao lưu'],
+  ['catalog', 'Danh mục'],
+]
+const EXPORT_KINDS = [
+  ['board', 'Xuất bảng tua'],
+  ['revenue', 'Xuất doanh thu'],
+  ['tip', 'Xuất tiền TIP'],
+  ['customers', 'Xuất khách hàng'],
+  ['pending', 'Xuất chờ thanh toán'],
+  ['history', 'Xuất lịch sử'],
+  ['breaks', 'Xuất nghỉ giữa ca'],
+]
+const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'history', 'breaks'])
+const PAYMENT_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'customer_detail'])
+const EMPTY_EXPORT_FILTERS = { date_from: '', date_to: '', time_from: '', time_to: '' }
+const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone'])
+const REPORT_LABELS = {
+  invoice_count: 'Số hóa đơn', pending_count: 'Phiếu chờ thanh toán', total_revenue: 'Doanh thu đã ghi nhận', total_tip: 'Tổng TIP',
+  expected_unbilled_revenue: 'Doanh thu dự kiến chưa xuất bill', unbilled_count: 'Dịch vụ chưa xuất bill', unbilled_unpriced_count: 'Dịch vụ chưa xác định giá',
+}
+
+function hasLiveTourExportAccess(kind, capabilities) {
+  if (!capabilities.export) return false
+  if (kind === 'board' || kind === 'custom') return true
+  if (kind === 'history' || kind === 'breaks') return capabilities.admin
+  return PAYMENT_EXPORT_KINDS.has(kind) && capabilities.payment
+}
+
+function compactExportQuery(filters) {
+  return Object.fromEntries(Object.entries(filters).filter(([, value]) => String(value || '').trim()))
+}
+
+function liveTourCacheKey(user) {
+  const identity = user?.employee_username || user?.email || 'viewer'
+  return `vera-live-tour-cache:${identity}`
+}
+
+function readCachedLiveTour(key) {
+  try {
+    const cached = JSON.parse(window.sessionStorage.getItem(key) || 'null')
+    if (!cached?.savedAt || Date.now() - cached.savedAt > LIVE_TOUR_CACHE_MAX_AGE) return EMPTY_LIVE_TOUR
+    if (!Array.isArray(cached.data?.columns) || !Array.isArray(cached.data?.records)) return EMPTY_LIVE_TOUR
+    return { ...EMPTY_LIVE_TOUR, ...cacheSafeLiveTour(cached.data) }
+  } catch {
+    return EMPTY_LIVE_TOUR
+  }
+}
+
+function sanitizeLiveTourCacheValue(value) {
+  if (Array.isArray(value)) return value.map(sanitizeLiveTourCacheValue)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).flatMap(([key, nested]) => (
+    PRIVATE_CACHE_KEYS.has(key.replace(/^_/, '').toLowerCase()) ? [] : [[key, sanitizeLiveTourCacheValue(nested)]]
+  )))
+}
+
+function cacheSafeLiveTour(data) {
+  const safeData = sanitizeLiveTourCacheValue(data && typeof data === 'object' ? data : {})
+  // Action responses can contain a financial result alongside the refreshed state.
+  // Never persist that result (or its nested customer identity) in sessionStorage.
+  delete safeData.result
+  const records = asArray(safeData.records)
+  const state = safeData.state && typeof safeData.state === 'object'
+    ? { ...safeData.state, employees: [], customers: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], reports: [], audit: [], backups: [] }
+    : undefined
+  return {
+    ...safeData,
+    records,
+    customers: [], pending_payments: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], report_rows: [], reports: {},
+    audit: [], history: [], backups: [],
+    ...(state ? { state } : {}),
+  }
+}
+
+function saveCachedLiveTour(key, data) {
+  try { window.sessionStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), data: cacheSafeLiveTour(data) })) } catch { /* cache is optional */ }
+}
+
+function normalizedColumn(column) {
+  return String(column || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toUpperCase()
+}
+
+function findColumn(columns, acceptedNames) {
+  const wanted = new Set(acceptedNames)
+  return columns.find((column) => wanted.has(normalizedColumn(column))) || ''
+}
+
+function cellValue(record, column) {
+  return column ? String(record?.[column] ?? '').trim() : ''
+}
+
+function sttColumn(columns) {
+  return findColumn(columns, ['STT', 'SO THU TU'])
+}
+
+function employeeNameColumn(columns) {
+  return findColumn(columns, ['TEN NHAN VIEN', 'NHAN VIEN', 'HO VA TEN', 'HO TEN'])
+}
+
+function serviceNameColumn(columns) {
+  return columns.find((column) => {
+    const key = normalizedColumn(column)
+    return key === 'DICH VU' || key.startsWith('DICH VU (')
+  }) || ''
+}
+
+function validLiveTourRecord(record, columns) {
+  return Boolean(cellValue(record, sttColumn(columns)) && cellValue(record, employeeNameColumn(columns)))
+}
+
+function stableEmployeeId(record) {
+  return String(record?._employee_id ?? record?.employee_id ?? record?._id ?? record?.id ?? '').trim()
+}
+
+function recordId(record, index = 0) {
+  return stableEmployeeId(record) || String(record?.username ?? `row-${index}`)
+}
+
+function columnClass(column) {
+  const key = normalizedColumn(column)
+  if (key === 'STT' || key === 'SO THU TU') return 'tour-col-stt center'
+  if (['TEN NHAN VIEN', 'NHAN VIEN', 'HO VA TEN', 'HO TEN'].includes(key)) return 'tour-col-employee'
+  if (key === 'TRANG THAI') return 'tour-col-status center'
+  if (key === 'TG CON LAI' || key === 'THOI GIAN CON LAI') return 'tour-col-remaining center'
+  if (key === 'PHONG' || key.startsWith('PHONG (')) return 'tour-col-room center'
+  if (key === 'YEU CAU' || key.startsWith('YEU CAU (')) return 'tour-col-request center'
+  if (key.includes('LICH HEN')) return 'tour-col-appointment'
+  return 'tour-col-mobile-hidden'
+}
+
+function rowClass(record, selected) {
+  const base = `tour-row-${record?._row_style || 'default'}`
+  const waiting = Array.isArray(record?._tour_groups) && record._tour_groups.includes('waiting')
+  return `${base}${waiting ? ' tour-row-waiting' : ''}${selected ? ' live-tour-selected' : ''}`
+}
+
+function isCurrentlyOnBreak(record) {
+  return record?._attendance_break_active === true || record?.break_active === true
+}
+
+function hasGroup(record, key) {
+  if (key === 'break') return isCurrentlyOnBreak(record)
+  return Array.isArray(record?._tour_groups) && record._tour_groups.includes(key)
+}
+
+function groupCount(records, key) {
+  return records.reduce((count, record) => count + (hasGroup(record, key) ? 1 : 0), 0)
+}
+
+function prioritizeRecords(records, columns, activeFilter) {
+  if (activeFilter === 'all') return records
+  const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
+  const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
+  const remainingOrder = (record) => {
+    const raw = cellValue(record, remainingColumn)
+    if (raw === '') return [0, 0]
+    const value = Number(raw.replace(',', '.'))
+    return Number.isFinite(value) ? [1, value] : [2, 0]
+  }
+  return records.map((record, index) => ({ record, index })).sort((left, right) => {
+    const leftMatches = hasGroup(left.record, priorityGroup)
+    const rightMatches = hasGroup(right.record, priorityGroup)
+    if (leftMatches !== rightMatches) return leftMatches ? -1 : 1
+    if (leftMatches && rightMatches) {
+      const [leftRank, leftTime] = remainingOrder(left.record)
+      const [rightRank, rightTime] = remainingOrder(right.record)
+      if (leftRank !== rightRank) return leftRank - rightRank
+      if (leftTime !== rightTime) return leftTime - rightTime
+    }
+    return left.index - right.index
+  }).map(({ record }) => record)
+}
+
+function shiftBucket(record, columns) {
+  const raw = cellValue(record, findColumn(columns, ['VAO CA', 'GIO VAO CA', 'THOI GIAN VAO CA']))
+  if (!raw) return ''
+  const normalized = normalizedColumn(raw).replace(/\s+/g, ' ')
+  if (/(^|\s)CA\s*1(\s|$)/.test(normalized) || normalized === 'CA1') return 'ca1'
+  if (/(^|\s)CA\s*2(\s|$)/.test(normalized) || normalized === 'CA2') return 'ca2'
+  const match = raw.match(/(?:^|\s)(\d{1,2})\s*[:Hh]\s*(\d{2})?/)
+  if (match && Number.isFinite(Number(match[1]))) return Number(match[1]) < 12 ? 'ca1' : 'ca2'
+  const compact = normalized.replace(/\s+/g, '')
+  if (['10', '10H', '10H00'].includes(compact)) return 'ca1'
+  if (['12', '12H', '12H00', '14', '14H', '14H00'].includes(compact)) return 'ca2'
+  return ''
+}
+
+function roomKey(value) {
+  const raw = typeof value === 'object' && value ? value.code ?? value.name ?? value.room ?? value.id : value
+  return normalizedColumn(raw).replace(/^PHONG\s*/, '').replace(/\s+/g, ' ').trim()
+}
+
+function roomValue(value) {
+  if (typeof value === 'object' && value) return String(value.code ?? value.name ?? value.room ?? value.id ?? '').replace(/^phòng\s*/i, '').trim()
+  return String(value ?? '').replace(/^phòng\s*/i, '').trim()
+}
+
+function physicalRoomValue(value) {
+  const explicitGroup = typeof value === 'object' && value
+    ? value.group ?? value.room_group ?? value.physical_room ?? value.parent_room
+    : ''
+  const raw = roomValue(explicitGroup || value).replace(/^VIP\s*/i, '').trim()
+  return raw.replace(/\.\d+$/, '')
+}
+
+function physicalRoomKey(value) {
+  return normalizedColumn(physicalRoomValue(value)).replace(/^PHONG\s*/, '').replace(/\s+/g, ' ').trim()
+}
+
+function compareRooms(left, right) {
+  return roomKey(left).localeCompare(roomKey(right), 'vi', { numeric: true, sensitivity: 'base' })
+}
+
+function isVipRoom(room) {
+  return VIP_ROOM_KEYS.has(roomKey(room))
+}
+
+function roomLabel(room) {
+  return isVipRoom(room) ? `VIP ${roomValue(room)}` : `Phòng ${roomValue(room)}`
+}
+
+function roomRecordPriority(record) {
+  if (isCurrentlyOnBreak(record)) return 5
+  if (hasGroup(record, 'doing')) return 4
+  if (hasGroup(record, 'waiting')) return 3
+  if (record?._countdown_deadline) return 2
+  return 1
+}
+
+function pickRoomRecord(records, remainingColumn) {
+  return [...records].sort((left, right) => {
+    const priority = roomRecordPriority(right) - roomRecordPriority(left)
+    if (priority) return priority
+    const leftValue = Number(cellValue(left, remainingColumn))
+    const rightValue = Number(cellValue(right, remainingColumn))
+    return Number.isFinite(leftValue) && Number.isFinite(rightValue) ? leftValue - rightValue : 0
+  })[0] || null
+}
+
+function roomState(record, available, clockMs) {
+  if (!record) return available ? 'blank' : 'default'
+  if (isCurrentlyOnBreak(record)) return 'break'
+  if (hasGroup(record, 'waiting')) return 'waiting'
+  const deadlineMs = record._countdown_deadline ? new Date(record._countdown_deadline).getTime() : NaN
+  if (Number.isFinite(deadlineMs) && Math.ceil((deadlineMs - clockMs) / 1000) <= -15 * 60) return 'red'
+  return ['green', 'yellow', 'red', 'break', 'idle', 'leave', 'work'].includes(record._row_style) ? record._row_style : 'default'
+}
+
+function durationText(seconds) {
+  const total = Math.max(0, Math.floor(Math.abs(Number(seconds || 0))))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  return `${hours ? `${hours}:` : ''}${`${minutes}`.padStart(2, '0')}:${`${secs}`.padStart(2, '0')}`
+}
+
+function roomCountdown(record, remainingColumn, clockMs, available, occupied) {
+  if (!record) return available ? 'Đang trống' : occupied ? 'Đang sử dụng' : 'Chưa có dữ liệu'
+  const deadlineMs = record._countdown_deadline ? new Date(record._countdown_deadline).getTime() : NaN
+  if (Number.isFinite(deadlineMs)) {
+    const delta = Math.ceil((deadlineMs - clockMs) / 1000)
+    if (delta <= -15 * 60) return 'Đã hết giờ'
+    return delta >= 0 ? `Còn ${durationText(delta)}` : `Trễ ${durationText(-delta)}`
+  }
+  const remainingRaw = cellValue(record, remainingColumn)
+  const remaining = remainingRaw === '' ? null : Number(remainingRaw)
+  if (Number.isFinite(remaining)) return remaining >= 0 ? `Còn ${remaining} phút` : `Trễ ${Math.abs(remaining)} phút`
+  if (hasGroup(record, 'waiting')) return 'Đang chờ'
+  if (hasGroup(record, 'doing')) return 'Đang thực hiện'
+  return 'Chưa có thời gian'
+}
+
+function isPrivateService(value) {
+  const normalized = normalizedColumn(value).replace(/\s+/g, ' ')
+  return /(^|[^A-Z0-9])PR(?=$|[^A-Z0-9])/.test(normalized) || /(^|[^A-Z0-9])P\s*\.?\s*RIENG(?=$|[^A-Z0-9])/.test(normalized)
+}
+
+function isRoomAssignmentActive(record) {
+  if (record?._active_booking !== undefined) return Boolean(record._active_booking)
+  return ['DANG CHO', 'DANG THUC HIEN'].includes(normalizedColumn(record?.['Trạng thái'] ?? record?.status))
+}
+
+function isQuickBookingEligible(record, columns) {
+  if (!stableEmployeeId(record) || record?._hidden || isCurrentlyOnBreak(record) || isRoomAssignmentActive(record)) return false
+  if (normalizedColumn(cellValue(record, findColumn(columns, ['DI LAM']))) !== 'DI LAM') return false
+  if (!shiftBucket(record, columns) || cellValue(record, serviceNameColumn(columns))) return false
+  const status = normalizedColumn(cellValue(record, findColumn(columns, ['TRANG THAI'])))
+  return !['DANG CHO', 'DANG THUC HIEN', 'DANG SU DUNG', 'CHO THANH TOAN'].includes(status)
+}
+
+function isQuickCheckoutEligible(record, columns) {
+  if (!stableEmployeeId(record) || record?._hidden) return false
+  if (record?._payment_pending === true) return true
+  const status = normalizedColumn(cellValue(record, findColumn(columns, ['TRANG THAI'])))
+  return status === 'CHO THANH TOAN'
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function itemId(item, index = 0) {
+  return String(item?._id ?? item?.id ?? item?.code ?? item?.name ?? item?.customer_id ?? `item-${index}`)
+}
+
+function stableCustomerId(customer) {
+  return String(customer?._id ?? customer?.id ?? customer?.customer_id ?? '').trim()
+}
+
+function customerComboPurchases(customer) {
+  const purchases = asArray(customer?.combo_purchases)
+  return purchases.length ? purchases : asArray(customer?.combos)
+}
+
+function customerComboBalance(customer) {
+  return customerComboPurchases(customer).reduce((total, purchase) => {
+    const remaining = Number(purchase?.remaining ?? purchase?.balance ?? 0)
+    return total + (Number.isFinite(remaining) ? Math.max(0, remaining) : 0)
+  }, 0)
+}
+
+function itemLabel(item, fallback = 'Chưa đặt tên') {
+  if (typeof item !== 'object' || !item) return String(item || fallback)
+  return String(item.name ?? item.label ?? item.code ?? item.room ?? item.service_name ?? item.combo_name ?? item.customer_name ?? item.full_name ?? fallback)
+}
+
+function formatMoney(value) {
+  const amount = Number(value)
+  return Number.isFinite(amount) ? `${amount.toLocaleString('vi-VN')} đ` : String(value ?? '')
+}
+
+function catalogServiceMetric(services, serviceName, field, unknownValue) {
+  const name = String(serviceName || '').trim()
+  if (!name) return unknownValue
+  const exact = services.find((item) => normalizedColumn(itemLabel(item)) === normalizedColumn(name))
+  if (exact) {
+    const value = Number(exact?.[field])
+    return Number.isFinite(value) ? value : field === 'ticket_units' ? 1 : unknownValue
+  }
+  const parts = name.split(/\s*&\s*/).map((part) => part.trim()).filter(Boolean)
+  if (parts.length <= 1) return field === 'ticket_units' ? 1 : unknownValue
+  const values = parts.map((part) => catalogServiceMetric(services, part, field, unknownValue))
+  return values.every((value) => Number.isFinite(value)) ? values.reduce((sum, value) => sum + value, 0) : unknownValue
+}
+
+function previewEntryPrice(entry, services) {
+  const storedRaw = entry?.price ?? entry?.service_price
+  const stored = Number(storedRaw)
+  const source = String(entry?.price_source ?? entry?.service_price_source ?? '')
+  const catalogPrice = catalogServiceMetric(services, entry?.service, 'price', null)
+  const needsCatalog = source === 'tour_import' || storedRaw === null || storedRaw === undefined || storedRaw === '' || (!source && stored === 0)
+  if (needsCatalog) return catalogPrice
+  return Number.isFinite(stored) ? stored : catalogPrice
+}
+
+function previewEntryTicketUnits(entry, services) {
+  return catalogServiceMetric(services, entry?.service, 'ticket_units', 1)
+}
+
+function newIdempotencyKey(action) {
+  const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `live-tour:${action}:${suffix}`
+}
+
+function stableSerialize(value) {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`
+  }
+  if (value === undefined) return 'null'
+  return JSON.stringify(value)
+}
+
+function requestSignature(action, payload) {
+  return stableSerialize({ action, payload })
+}
+
+function signatureHash(value) {
+  let first = 2166136261
+  let second = 2246822519
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    first = Math.imul(first ^ code, 16777619)
+    second = Math.imul(second ^ code, 3266489917)
+  }
+  return `${(first >>> 0).toString(36)}-${(second >>> 0).toString(36)}-${value.length.toString(36)}`
+}
+
+function requestStorageKey(cacheKey, signature) {
+  return `${cacheKey}:request:${signatureHash(signature)}`
+}
+
+function requestIdempotencyEntry(entries, cacheKey, action, payload, preferredKey = '') {
+  const signature = requestSignature(action, payload)
+  const existing = entries.get(signature)
+  if (existing && !preferredKey) return existing
+  const storageKey = requestStorageKey(cacheKey, signature)
+  let key = preferredKey
+  if (!key) {
+    try { key = window.sessionStorage.getItem(storageKey) || '' } catch { /* session persistence is optional */ }
+  }
+  const entry = { key: key || newIdempotencyKey(action), signature, storageKey }
+  entries.set(signature, entry)
+  try { window.sessionStorage.setItem(storageKey, entry.key) } catch { /* in-memory retry still works */ }
+  return entry
+}
+
+function releaseIdempotencyEntry(entries, entry) {
+  entries.delete(entry.signature)
+  try { window.sessionStorage.removeItem(entry.storageKey) } catch { /* ignore storage failures */ }
+}
+
+function liveTourErrorDetail(error) {
+  const detail = error?.payload?.detail
+  if (typeof detail === 'string') return detail
+  return detail?.message || error?.payload?.message || error?.message || 'Không cập nhật được Live Tour.'
+}
+
+function isRevisionConflict(error) {
+  if (error?.status !== 409) return false
+  const detail = error?.payload?.detail
+  const code = String(detail?.code || error?.payload?.code || error?.payload?.error_code || '').toLowerCase()
+  if (['revision_conflict', 'live_tour_revision_conflict', 'stale_revision'].includes(code)) return true
+  return /live tour đã thay đổi ở thiết bị khác[.!]? hãy làm mới rồi thao tác lại/i.test(String(typeof detail === 'string' ? detail : detail?.message || error?.message || ''))
+}
+
+const PAYMENT_ACTIONS = new Set(['checkout', 'quick_checkout', 'move_pending', 'combo_purchase'])
+const HIDDEN_RECOVERY_ACTIONS = new Set(['show_all'])
+const ADMIN_ACTIONS = new Set([
+  'add_employee', 'delete_employee', 'room_upsert', 'room_delete', 'service_upsert', 'service_delete',
+  'combo_upsert', 'combo_delete', 'combo_import', 'backup', 'restore', 'clear_expired',
+  'set_vip',
+])
+
+function canRunAction(action, capabilities) {
+  if (HIDDEN_RECOVERY_ACTIONS.has(action)) return capabilities.hideRecovery
+  if (ADMIN_ACTIONS.has(action)) return capabilities.admin
+  if (PAYMENT_ACTIONS.has(action)) return capabilities.payment
+  return capabilities.operate
+}
+
+function LiveTourModal({ title, onClose, children }) {
+  const dialogRef = useRef(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+
+  useEffect(() => {
+    const previousFocus = document.activeElement
+    const dialog = dialogRef.current
+    const focusableSelector = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    const focusable = () => [...(dialog?.querySelectorAll(focusableSelector) || [])]
+    const frame = window.requestAnimationFrame(() => (dialog?.querySelector('[autofocus]') || focusable()[0] || dialog)?.focus())
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      if (!items.length) { event.preventDefault(); dialog?.focus(); return }
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', onKeyDown)
+      previousFocus?.focus?.()
+    }
+  }, [])
+
+  return <div className="live-tour-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section ref={dialogRef} tabIndex="-1" className="live-tour-modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="live-tour-modal-head"><strong>{title}</strong><button type="button" className="icon-button" onClick={onClose} aria-label="Đóng"><X size={18}/></button></div>
+      {children}
+    </section>
+  </div>
+}
+
+const EMPTY_FORM = {
+  employee_id: '', employee_search: '', room: '', service: '', request: '', appointment: '', customer_id: '', customer_name: '', phone: '',
+  discount: '0', tip: '0', ticket_price: '', payment_method: 'TIỀN MẶT', bill_no: '', ticket_no: '',
+  pending_id: '', combo_purchase_id: '', bookings: [], auto_yc_ca1: false, note: '', name: '', shift: '', combo_id: '', quantity: '1', remaining: '', amount: '0', code: '', duration: '60', vip: false,
+  backdate_one_day: false, correction_reason: '',
+  ticket_units: '1', private_service: false, request_eligible: true, non_request_eligible: true, request_duration: '',
+}
+
+export default function LiveTourPage({ user }) {
+  const cacheKey = liveTourCacheKey(user)
+  const [data, setData] = useState(() => readCachedLiveTour(cacheKey))
+  const initiallyCached = useRef(Boolean(data.records.length))
+  const [busy, setBusy] = useState(false)
+  const [actionBusy, setActionBusy] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [pendingReminder, setPendingReminder] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [activeFilter, setActiveFilter] = useState('all')
+  const [shiftFilter, setShiftFilter] = useState('all')
+  const [employeeSearch, setEmployeeSearch] = useState('')
+  const [roomSegment, setRoomSegment] = useState('all')
+  const [showHidden, setShowHidden] = useState(false)
+  const [showAdminTools, setShowAdminTools] = useState(false)
+  const [selectedRoomKey, setSelectedRoomKey] = useState('')
+  const [clockMs, setClockMs] = useState(Date.now())
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [activePanel, setActivePanel] = useState('pending')
+  const [reorderSteps, setReorderSteps] = useState('1')
+  const [modal, setModal] = useState(null)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [expiredPreview, setExpiredPreview] = useState(null)
+  const [expiredGrace, setExpiredGrace] = useState('15')
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerHistoryModal, setCustomerHistoryModal] = useState(null)
+  const [customerHistoryBusy, setCustomerHistoryBusy] = useState(false)
+  const [exportFilters, setExportFilters] = useState(EMPTY_EXPORT_FILTERS)
+  const [customColumns, setCustomColumns] = useState(null)
+  const [customScope, setCustomScope] = useState('displayed')
+  const stickyTopRef = useRef(null)
+  const recordsTableRef = useRef(null)
+  const requestEntriesRef = useRef(new Map())
+  const pendingCountRef = useRef(0)
+  const previousPendingCountRef = useRef(0)
+  const pendingAnnouncementSequenceRef = useRef(0)
+  const pendingReminderTimerRef = useRef(null)
+  const workspaceRef = useRef(null)
+  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
+  const capabilities = data.capabilities && typeof data.capabilities === 'object' ? data.capabilities : {}
+  const capability = (name, fallback) => Object.prototype.hasOwnProperty.call(capabilities, name) ? capabilities[name] === true : fallback
+  const canOperate = capability('operate', isAdmin || user?.permissions?.live_tour_operate === true)
+  const canPayment = capability('payment', isAdmin || user?.permissions?.live_tour_payment === true)
+  const canAdmin = capability('admin', isAdmin || user?.permissions?.live_tour_admin === true)
+  const canExport = capability('export', isAdmin || user?.permissions?.live_tour_export === true)
+  const canRecoverHidden = capability('hide_recovery', canAdmin || canOperate)
+  const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
+  const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, payment: canPayment, admin: canAdmin })
+  const load = useCallback(async (refresh = false, quiet = false) => {
+    if (!quiet) setBusy(true)
+    setError('')
+    try {
+      const next = { ...EMPTY_LIVE_TOUR, ...await veraApi.liveTour(refresh, showHidden) }
+      setData(next)
+      saveCachedLiveTour(cacheKey, next)
+      setSelectedIds((current) => {
+        const valid = new Set(asArray(next.records).map((record, index) => recordId(record, index)))
+        return new Set([...current].filter((id) => valid.has(id)))
+      })
+    } catch (err) {
+      setData((current) => cacheSafeLiveTour(current))
+      setError(err.message || 'Không tải được Live Tour.')
+    } finally {
+      if (!quiet) setBusy(false)
+    }
+  }, [cacheKey, showHidden])
+
+  useEffect(() => {
+    void load(false, initiallyCached.current)
+    const interval = window.setInterval(() => { if (!actionBusy && !modal) void load(false, true) }, 10000)
+    return () => window.clearInterval(interval)
+  }, [actionBusy, load, modal])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setClockMs(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (!canRecoverHidden && showHidden) setShowHidden(false)
+  }, [canRecoverHidden, showHidden])
+
+  useEffect(() => {
+    const allowed = {
+      pending: canPayment,
+      customers: canPayment,
+      reports: canPayment || canExport,
+      history: canAdmin,
+      catalog: canAdmin,
+    }
+    if (allowed[activePanel]) return
+    const fallback = ['pending', 'reports', 'history', 'catalog'].find((panel) => allowed[panel]) || ''
+    setActivePanel(fallback)
+  }, [activePanel, canAdmin, canExport, canPayment])
+
+  const executeAction = useCallback(async (action, payload = {}, ids = [...selectedIds], options = {}) => {
+    if (actionBusy) return null
+    if (data.revision === null || data.revision === undefined) {
+      setError('Hãy tải Live Tour thành công trước khi thực hiện thao tác.')
+      return null
+    }
+    if (!canRunAction(action, { operate: canOperate, payment: canPayment, admin: canAdmin, hideRecovery: canRecoverHidden })) {
+      setError('Tài khoản chưa được cấp quyền thực hiện thao tác này trên Live Tour.')
+      return null
+    }
+    setActionBusy(action)
+    setError('')
+    setNotice('')
+    const rowIds = ids.filter(Boolean)
+    const actionPayload = { ...payload }
+    if (rowIds.length) {
+      actionPayload.employee_ids = rowIds
+      if (rowIds.length === 1) actionPayload.employee_id = rowIds[0]
+    }
+    const requestEntry = requestIdempotencyEntry(requestEntriesRef.current, cacheKey, action, actionPayload, options.idempotencyKey)
+    try {
+      const body = { action, payload: actionPayload, idempotency_key: requestEntry.key }
+      if (data.revision !== null && data.revision !== undefined) body.expected_revision = data.revision
+      if (rowIds.length) body.row_ids = rowIds
+      if (rowIds.length === 1) body.row_id = rowIds[0]
+      const result = await veraApi.liveTourAction(body)
+      releaseIdempotencyEntry(requestEntriesRef.current, requestEntry)
+      if (Array.isArray(result?.records) && Array.isArray(result?.columns)) {
+        const next = { ...EMPTY_LIVE_TOUR, ...result }
+        setData(next)
+        saveCachedLiveTour(cacheKey, next)
+      } else {
+        await load(true, true)
+      }
+      setSelectedIds(new Set())
+      setNotice(result?.message || 'Đã cập nhật Live Tour.')
+      return result
+    } catch (err) {
+      const message = liveTourErrorDetail(err)
+      if (isRevisionConflict(err)) {
+        setSelectedIds(new Set())
+        await load(true, true)
+        setError(message)
+        setNotice(`${message} Dữ liệu mới nhất đã được tải lại; bạn có thể thử lại thao tác.`)
+      } else {
+        setError(message)
+      }
+      return null
+    } finally {
+      setActionBusy('')
+    }
+  }, [actionBusy, cacheKey, canAdmin, canOperate, canPayment, canRecoverHidden, data.revision, load, selectedIds])
+
+  const previewExpired = async () => {
+    if (!canAdmin || actionBusy || data.revision == null) return
+    setActionBusy('clear_expired_preview')
+    setExpiredPreview(null)
+    setError('')
+    try {
+      setExpiredPreview(await veraApi.liveTourAction({ action: 'clear_expired_preview', expected_revision: data.revision, payload: { grace_minutes: expiredGrace } }))
+    } catch (err) {
+      setError(liveTourErrorDetail(err))
+    } finally { setActionBusy('') }
+  }
+
+  const confirmExpired = async () => {
+    if (!canAdmin || !expiredPreview || actionBusy || expiredPreview.base_revision !== data.revision) return
+    const result = await executeAction('clear_expired', { grace_minutes: expiredPreview.grace_minutes, confirm_token: expiredPreview.preview_token }, [])
+    setExpiredPreview(null)
+    if (result) setNotice(`Đã chuyển ${result.result?.marked_for_payment ?? expiredPreview.count} phiên sang chờ thanh toán.`)
+  }
+
+  const runSelected = (action, payload = {}) => {
+    if (!selectedIds.size) {
+      setNotice('Hãy chọn ít nhất một nhân viên trong bảng.')
+      return Promise.resolve(null)
+    }
+    return executeAction(action, payload)
+  }
+
+  const runSingleSelected = (action, payload = {}) => {
+    if (selectedIds.size !== 1) {
+      setNotice('Thao tác sắp xếp yêu cầu chọn đúng một nhân viên.')
+      return Promise.resolve(null)
+    }
+    return executeAction(action, payload)
+  }
+
+  const openLiveTourInNewTab = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('page', 'live-tour')
+    url.searchParams.set('standalone', '1')
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
+
+  const openModal = (kind, context = {}) => {
+    const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
+    const capturedEmployees = capturedRowIds?.length
+      ? asArray(data.state?.employees).filter((employee) => capturedRowIds.includes(stableEmployeeId(employee)))
+      : []
+    const capturedCustomerIds = new Set(capturedEmployees.map((employee) => String(employee?.customer_id || '')).filter(Boolean))
+    const capturedCustomer = capturedCustomerIds.size <= 1
+      ? capturedEmployees.find((employee) => employee?.customer_id) || capturedEmployees[0]
+      : null
+    const source = context.item || capturedCustomer || {}
+    const sourceIsCapturedEmployee = !context.item && Boolean(capturedCustomer)
+    setError('')
+    setForm({
+      ...EMPTY_FORM,
+      ...context.defaults,
+      room: source.room ?? (kind === 'room_upsert' ? source.name : source.code) ?? context.defaults?.room ?? '',
+      service: source.service ?? source.name ?? context.defaults?.service ?? '',
+      customer_id: source.customer_id ?? context.defaults?.customer_id ?? '',
+      customer_name: source.customer_name ?? context.defaults?.customer_name ?? '',
+      phone: (sourceIsCapturedEmployee ? source.customer_phone : source.customer_phone ?? source.phone) ?? context.defaults?.phone ?? '',
+      combo_id: source.combo_id ?? context.defaults?.combo_id ?? '',
+      code: source.code ?? (kind === 'room_upsert' ? source.name : '') ?? context.defaults?.code ?? '',
+      duration: String(source.duration ?? source.minutes ?? context.defaults?.duration ?? '60'),
+      ticket_units: String(source.ticket_units ?? '1'), private_service: Boolean(source.private ?? isPrivateService(source.name)),
+      request_eligible: source.request_eligible !== false, non_request_eligible: source.non_request_eligible !== false,
+      request_duration: String(source.request_duration ?? ''),
+      remaining: String(source.remaining ?? source.balance ?? context.defaults?.remaining ?? ''),
+      pending_id: source.pending_id ?? (['checkout', 'quick_checkout'].includes(kind) && context.item ? context.item?._id ?? context.item?.id : '') ?? context.defaults?.pending_id ?? '',
+      combo_purchase_id: source.combo_purchase_id ?? context.defaults?.combo_purchase_id ?? '',
+      bookings: kind === 'multi_booking' ? selectedRecords.map((record, index) => ({
+        employee_id: recordId(record, index), employee_name: cellValue(record, employeeColumn),
+        room: cellValue(record, roomColumn), service: cellValue(record, serviceColumn),
+        request: cellValue(record, requestColumn), appointment: '', shift: cellValue(record, findColumn(columns, ['VAO CA', 'GIO VAO CA', 'THOI GIAN VAO CA'])),
+      })) : [],
+      amount: kind === 'combo_purchase' ? '' : String(source.amount ?? source.price ?? context.defaults?.amount ?? '0'),
+      quantity: String(source.quantity ?? source.tickets ?? context.defaults?.quantity ?? '1'),
+      vip: Boolean(source.is_vip ?? (source.type ? normalizedColumn(source.type) === 'VIP' : context.defaults?.vip)),
+    })
+    setModal({ kind, ...context, ...(capturedRowIds !== undefined ? { rowIds: capturedRowIds } : {}) })
+  }
+
+  const closeModal = () => { if (!actionBusy) setModal(null) }
+
+  const submitModal = async (event) => {
+    event.preventDefault()
+    if (!modal) return
+    if (modal.kind === 'quick_checkout' && !form.pending_id && !selectedQuickCheckoutRecord) {
+      setError('Hãy tìm và chọn đúng một nhân viên đang chờ thanh toán.')
+      return
+    }
+    const modalIds = modal.kind === 'quick_checkout' && !form.pending_id
+      ? [stableEmployeeId(selectedQuickCheckoutRecord)]
+      : modal.rowIds || [...selectedIds]
+    let action = modal.kind
+    let payload = { ...form }
+    if (modal.kind === 'quick_booking') {
+      if (!selectedQuickBookingRecord) {
+        setError('Hãy tìm và chọn đúng một nhân viên trước khi đặt lịch nhanh.')
+        return
+      }
+      action = 'booking'
+      payload = {
+        employee_id: stableEmployeeId(selectedQuickBookingRecord), room: form.room, service: form.service,
+        appointment: form.appointment, request: form.request, auto_yc_ca1: Boolean(form.auto_yc_ca1),
+        ...(canPayment ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
+        note: form.note,
+      }
+    } else if (modal.kind === 'booking') {
+      payload = {
+        room: form.room, service: form.service, appointment: form.appointment, request: form.request,
+        ...(canPayment ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
+        note: form.note,
+      }
+    } else if (modal.kind === 'multi_booking') {
+      payload = {
+        bookings: form.bookings.map((row) => ({
+          employee_id: row.employee_id, room: row.room, service: row.service,
+          request: row.request,
+          appointment: row.appointment,
+          ...(canPayment ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
+          note: form.note,
+        })),
+        auto_yc_ca1: Boolean(form.auto_yc_ca1),
+      }
+    } else if (['checkout', 'quick_checkout'].includes(modal.kind)) {
+      const paymentMethod = form.combo_purchase_id ? 'COMBO' : form.payment_method === 'COMBO' ? 'TIỀN MẶT' : form.payment_method
+      const ticketPrice = Number(form.ticket_price)
+      if (!form.combo_purchase_id && checkoutHasUnresolvedPricing) {
+        setError('Có dịch vụ chưa khớp danh mục giá. Hãy sửa dịch vụ hoặc cấu hình giá trước khi thanh toán.')
+        return
+      }
+      if (!form.combo_purchase_id && checkoutHasMixedPricing) {
+        setError('Không thể thanh toán chung dịch vụ đã có giá với dịch vụ giá 0. Hãy cấu hình giá hoặc tách lần thanh toán.')
+        return
+      }
+      if (checkoutRequiresTicketPrice && (!Number.isFinite(ticketPrice) || ticketPrice <= 0 || ticketPrice > 1_000_000_000)) {
+        setError('Giá vé phải lớn hơn 0 và không vượt quá 1.000.000.000 đ khi dịch vụ chưa có giá danh mục.')
+        return
+      }
+      payload = {
+        pending_id: form.pending_id || null, customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone,
+        payment_method: paymentMethod, bill_no: form.bill_no,
+        ticket_no: form.ticket_no, discount: Number(form.discount || 0), tip: Number(form.tip || 0),
+        combo_purchase_id: form.combo_purchase_id || null,
+        ...(checkoutRequiresTicketPrice ? { ticket_price: ticketPrice } : {}),
+        note: form.note,
+      }
+    } else if (modal.kind === 'add_employee') {
+      payload = { name: form.name, shift: form.shift, vip: form.vip }
+    } else if (['replace_service', 'add_service'].includes(modal.kind)) {
+      payload = { service: form.service, note: form.note }
+    } else if (modal.kind === 'combo_purchase') {
+      payload = {
+        customer_id: form.customer_id, customer_name: form.customer_name, customer_phone: form.phone,
+        combo_id: form.combo_id, quantity: Number(form.quantity || 1), payment_method: form.payment_method,
+        bill_no: form.bill_no, note: form.note,
+      }
+    } else if (modal.kind === 'combo_import') {
+      payload = { purchases: [{ customer_name: form.customer_name, customer_phone: form.phone, combo_id: form.combo_id, total: Number(form.remaining || 0), used: 0, note: form.note }] }
+    } else if (modal.kind === 'room_upsert') {
+      payload = { id: modal.item?._id ?? modal.item?.id, name: form.room || form.code }
+    } else if (modal.kind === 'service_upsert') {
+      payload = { id: modal.item?._id ?? modal.item?.id, name: form.service, duration: form.duration === '' ? null : Number(form.duration), price: Number(form.amount || 0),
+        ticket_units: Number(form.ticket_units), private: form.private_service, request_eligible: form.request_eligible,
+        non_request_eligible: form.non_request_eligible, request_duration: form.request_duration === '' ? null : Number(form.request_duration) }
+    } else if (modal.kind === 'combo_upsert') {
+      payload = { id: modal.item?._id ?? modal.item?.id, name: form.service, tickets: Number(form.quantity || 1), price: Number(form.amount || 0) }
+    }
+    if (['checkout', 'quick_checkout', 'combo_purchase'].includes(action) && form.backdate_one_day) {
+      const correctionReason = form.correction_reason.trim()
+      if (!canAdmin) {
+        setError('Chỉ Admin được phép ghi nhận giao dịch lùi một ngày.')
+        return
+      }
+      if (correctionReason.length < 3) {
+        setError('Hãy nhập lý do điều chỉnh khi lùi ngày giao dịch.')
+        return
+      }
+      payload.backdate_one_day = true
+      payload.correction_reason = correctionReason
+    }
+    const result = await executeAction(action, payload, modalIds)
+    if (result) {
+      if (modal.kind === 'quick_booking') setNotice(`Đã đặt lịch nhanh cho ${form.employee_search}${form.appointment ? ` · Lịch hẹn ${form.appointment.replace('T', ' ')}` : ''}.`)
+      setModal(null)
+    }
+  }
+
+  const columns = useMemo(() => asArray(data.columns), [data.columns])
+  const validRecords = useMemo(() => asArray(data.records).filter((record) => (showHidden || !record?._hidden) && validLiveTourRecord(record, columns)), [columns, data.records, showHidden])
+  const shiftRecords = useMemo(() => validRecords.filter((record) => shiftFilter === 'all' || shiftBucket(record, columns) === shiftFilter), [columns, shiftFilter, validRecords])
+  const searchedRecords = useMemo(() => {
+    const needle = normalizedColumn(employeeSearch)
+    const employeeColumn = employeeNameColumn(columns)
+    return needle ? shiftRecords.filter((record) => normalizedColumn(cellValue(record, employeeColumn)).includes(needle)) : shiftRecords
+  }, [columns, employeeSearch, shiftRecords])
+  const displayedRecords = useMemo(() => prioritizeRecords(searchedRecords, columns, activeFilter), [activeFilter, columns, searchedRecords])
+
+  useEffect(() => {
+    let frame = 0
+    const updateStickyTableHeader = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        const table = recordsTableRef.current
+        const stickyTop = stickyTopRef.current
+        if (!table || !stickyTop) {
+          table?.style.removeProperty('--tour-table-head-offset')
+          return
+        }
+        const tableRect = table.getBoundingClientRect()
+        const stickyRect = stickyTop.getBoundingClientRect()
+        const headerHeight = table.querySelector('thead')?.getBoundingClientRect().height || 0
+        const mobile = window.matchMedia('(max-width: 640px)').matches
+        const topbarBottom = document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0
+        const headerTop = mobile ? Math.max(0, topbarBottom) : Math.max(topbarBottom, stickyRect.bottom + 4)
+        const requestedOffset = Math.max(0, headerTop - tableRect.top)
+        table.style.setProperty('--tour-table-head-offset', `${Math.min(requestedOffset, Math.max(0, tableRect.height - headerHeight))}px`)
+      })
+    }
+    if (typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(updateStickyTableHeader)
+    if (recordsTableRef.current) observer.observe(recordsTableRef.current)
+    if (stickyTopRef.current) observer.observe(stickyTopRef.current)
+    window.addEventListener('scroll', updateStickyTableHeader, { passive: true })
+    window.addEventListener('resize', updateStickyTableHeader)
+    updateStickyTableHeader()
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('scroll', updateStickyTableHeader)
+      window.removeEventListener('resize', updateStickyTableHeader)
+    }
+  }, [columns, displayedRecords.length])
+
+  const roomColumn = findColumn(columns, ['PHONG'])
+  const employeeColumn = employeeNameColumn(columns)
+  const serviceColumn = serviceNameColumn(columns)
+  const statusColumn = findColumn(columns, ['TRANG THAI'])
+  const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
+  const requestColumn = findColumn(columns, ['YEU CAU'])
+  const appointmentColumn = findColumn(columns, ['LICH HEN'])
+  const quickBookingMatches = useMemo(() => {
+    const needle = normalizedColumn(form.employee_search)
+    return validRecords.filter((record) => {
+      if (!isQuickBookingEligible(record, columns)) return false
+      return !needle || normalizedColumn(cellValue(record, employeeColumn)).includes(needle)
+    }).slice(0, 20)
+  }, [columns, employeeColumn, form.employee_search, validRecords])
+  const selectedQuickBookingRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickBookingEligible(record, columns)) || null
+  const quickCheckoutMatches = useMemo(() => {
+    const needle = normalizedColumn(form.employee_search)
+    return validRecords.filter((record) => {
+      if (!isQuickCheckoutEligible(record, columns)) return false
+      return !needle || normalizedColumn(cellValue(record, employeeColumn)).includes(needle)
+    }).slice(0, 20)
+  }, [columns, employeeColumn, form.employee_search, validRecords])
+  const selectedQuickCheckoutRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickCheckoutEligible(record, columns)) || null
+  const appointmentOptions = useMemo(() => [...new Set(validRecords.map((record) => cellValue(record, appointmentColumn)).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'vi', { numeric: true, sensitivity: 'base' })), [appointmentColumn, validRecords])
+  const roomRecords = useMemo(() => {
+    const grouped = new Map()
+    validRecords.forEach((record) => {
+      if (!isRoomAssignmentActive(record)) return
+      const key = physicalRoomKey(cellValue(record, roomColumn))
+      if (key) grouped.set(key, [...(grouped.get(key) || []), record])
+    })
+    return grouped
+  }, [roomColumn, validRecords])
+  const availableRooms = useMemo(() => asArray(data.available_rooms), [data.available_rooms])
+  const catalogRooms = asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms)
+  const rawRooms = useMemo(() => asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms).length ? asArray(data.state.rooms) : Array.isArray(data.rooms) ? data.rooms : asArray(data.rooms?.all), [data.catalogs?.rooms, data.rooms, data.state?.rooms])
+  const serverRoomGroups = useMemo(() => asArray(data.rooms?.all), [data.rooms])
+  const bookableRooms = useMemo(() => {
+    const availableBeds = asArray(data.available_beds)
+    const unique = new Map(rawRooms.map((room) => [roomKey(room), room]))
+    if (availableBeds.length) {
+      const allowed = new Set(availableBeds.map(roomKey))
+      return [...unique.values()].filter((room) => room.active !== false && allowed.has(roomKey(room))).sort(compareRooms)
+    }
+    if (Array.isArray(data.available_beds)) return []
+    return [...unique.values()].filter((room) => roomKey(room)).sort(compareRooms)
+  }, [data.available_beds, rawRooms])
+  const roomCatalog = useMemo(() => {
+    const fallbackGroups = [...rawRooms, ...validRecords.map((record) => cellValue(record, roomColumn))]
+    const groupSource = serverRoomGroups.length ? serverRoomGroups : fallbackGroups
+    const unique = new Map(groupSource.map((room) => [physicalRoomKey(room), physicalRoomValue(room)]))
+    VIP_ROOMS.forEach((room) => unique.set(room, room))
+    return [...unique.values()].sort(compareRooms)
+  }, [rawRooms, roomColumn, serverRoomGroups, validRecords])
+  const standardRooms = roomCatalog.filter((room) => !isVipRoom(room))
+  const vipRooms = roomCatalog.filter(isVipRoom)
+  const displayedRooms = roomSegment === 'vip' ? vipRooms : roomSegment === 'standard' ? standardRooms : roomCatalog
+  const availableRoomKeys = new Set(availableRooms.map(physicalRoomKey))
+  const occupiedRoomKeys = new Set(asArray(data.rooms?.occupied).map(physicalRoomKey))
+  const selectedRoom = roomCatalog.find((room) => physicalRoomKey(room) === selectedRoomKey) || ''
+  const selectedRoomRecords = selectedRoomKey ? roomRecords.get(selectedRoomKey) || [] : []
+  const searchedRoomKeys = useMemo(() => {
+    const needle = normalizedColumn(employeeSearch)
+    return new Set(needle ? shiftRecords.flatMap((record) => normalizedColumn(cellValue(record, employeeColumn)).includes(needle) ? [physicalRoomKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
+  }, [employeeColumn, employeeSearch, roomColumn, shiftRecords])
+
+  const retainedMetric = data.metric_snapshots?.[shiftFilter] || null
+  const breakTotal = retainedMetric?.break_total_count ?? retainedMetric?.break_count ?? groupCount(shiftRecords, 'break')
+  const breakActive = retainedMetric?.break_active_count ?? groupCount(shiftRecords, 'break')
+  const metrics = [
+    { key: 'available', label: 'Có thể lên tua', value: groupCount(shiftRecords, 'available'), className: 'tour-available-metric' },
+    { key: 'doing', label: 'Đang thực hiện', value: groupCount(shiftRecords, 'doing'), className: '' },
+    { key: 'all', label: 'Số nhân viên', value: new Set(shiftRecords.map((record, index) => recordId(record, index))).size, className: '' },
+    { key: 'leave', label: 'Nghỉ phép', value: groupCount(shiftRecords, 'leave'), className: '' },
+    { key: 'finishing', label: 'Sắp xong', value: groupCount(shiftRecords, 'finishing'), className: '' },
+    { key: 'waiting', label: 'Đang chờ', value: groupCount(shiftRecords, 'waiting'), className: '' },
+    { key: 'working', label: 'Đi làm', value: groupCount(shiftRecords, 'working'), className: '' },
+    { key: 'break', label: 'Nghỉ giữa Ca', value: `${breakTotal}-${breakActive}`, className: 'tour-break-metric' },
+  ]
+  const chooseFilter = (key) => setActiveFilter((current) => key === 'all' || current === key ? 'all' : key)
+  const pendingPayments = asArray(data.pending_payments).length ? asArray(data.pending_payments) : asArray(data.pending).length ? asArray(data.pending) : asArray(data.state?.pending)
+  const customers = asArray(data.customers).length ? asArray(data.customers) : asArray(data.state?.customers)
+  const services = asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services)
+  const combos = asArray(data.combo_catalog).length ? asArray(data.combo_catalog) : asArray(data.catalogs?.combos).length ? asArray(data.catalogs?.combos) : asArray(data.state?.combos)
+  const reports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
+  const audit = asArray(data.audit).length ? asArray(data.audit) : asArray(data.history).length ? asArray(data.history) : asArray(data.state?.audit)
+  const backups = asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)
+  const filteredCustomers = customers.filter((customer) => normalizedColumn(`${itemLabel(customer)} ${customer?.phone || ''}`).includes(normalizedColumn(customerSearch)))
+  const bookingCustomerNeedles = normalizedColumn(`${form.customer_name} ${form.phone}`).split(/\s+/).filter(Boolean)
+  const bookingCustomerMatches = ['quick_booking', 'booking', 'multi_booking'].includes(modal?.kind) && canPayment && !form.customer_id && bookingCustomerNeedles.length
+    ? customers.filter((customer) => {
+      if (!stableCustomerId(customer)) return false
+      const haystack = normalizedColumn(`${itemLabel(customer)} ${customer?.phone || customer?.customer_phone || ''}`)
+      return bookingCustomerNeedles.every((needle) => haystack.includes(needle))
+    }).slice(0, 8)
+    : []
+  const checkoutCustomerNeedles = normalizedColumn(`${form.customer_name} ${form.phone}`).split(/\s+/).filter(Boolean)
+  const checkoutCustomerMatches = ['checkout', 'quick_checkout'].includes(modal?.kind) && !form.customer_id && checkoutCustomerNeedles.length
+    ? customers.filter((customer) => {
+      const haystack = normalizedColumn(`${itemLabel(customer)} ${customer?.phone || customer?.customer_phone || ''}`)
+      return checkoutCustomerNeedles.every((needle) => haystack.includes(needle))
+    }).slice(0, 8)
+    : []
+  const purchasedCombos = customers.flatMap((customer) => customerComboPurchases(customer).map((purchase) => ({ customer, purchase })))
+  const eligibleCheckoutCombos = purchasedCombos.filter(({ customer, purchase }) => {
+    const customerId = String(customer?._id ?? customer?.id ?? customer?.customer_id ?? '')
+    return customerId && customerId === String(form.customer_id || '') && Number(purchase?.remaining || 0) > 0
+  })
+  const checkoutSourceEntries = (() => {
+    if (!['checkout', 'quick_checkout'].includes(modal?.kind)) return []
+    const pendingEntries = asArray(modal?.item?.entries)
+    if (pendingEntries.length) return pendingEntries
+    const modalRowIds = asArray(modal?.rowIds)
+    const ids = modalRowIds.length
+      ? modalRowIds
+      : modal?.kind === 'quick_checkout' && selectedQuickCheckoutRecord
+        ? [stableEmployeeId(selectedQuickCheckoutRecord)]
+        : []
+    return ids.map((id) => {
+      const employee = asArray(data.state?.employees).find((item) => stableEmployeeId(item) === id)
+      if (employee) return {
+        employee_id: id, employee_name: employee.name, service: employee.service, room: employee.room,
+        price: employee.service_price, price_source: employee.service_price_source,
+      }
+      const record = asArray(data.records).find((item) => stableEmployeeId(item) === id)
+      return record ? { employee_id: id, employee_name: cellValue(record, employeeColumn), service: cellValue(record, serviceColumn), room: cellValue(record, roomColumn) } : null
+    }).filter((entry) => entry?.service)
+  })()
+  const checkoutPreviewEntries = checkoutSourceEntries.map((entry) => ({
+    ...entry,
+    preview_price: previewEntryPrice(entry, services),
+    ticket_units: previewEntryTicketUnits(entry, services),
+  }))
+  const checkoutPreviewSubtotal = checkoutPreviewEntries.length && checkoutPreviewEntries.every((entry) => Number.isFinite(entry.preview_price))
+    ? checkoutPreviewEntries.reduce((sum, entry) => sum + entry.preview_price, 0)
+    : null
+  const checkoutUsesCombo = Boolean(form.combo_purchase_id)
+  const checkoutHasUnresolvedPricing = checkoutPreviewEntries.some((entry) => !Number.isFinite(entry.preview_price))
+  const checkoutHasZeroPricing = checkoutPreviewEntries.some((entry) => entry.preview_price === 0)
+  const checkoutHasPositivePricing = checkoutPreviewEntries.some((entry) => Number.isFinite(entry.preview_price) && entry.preview_price > 0)
+  const checkoutHasMixedPricing = checkoutHasZeroPricing && checkoutHasPositivePricing
+  const checkoutAllZeroPricing = checkoutPreviewEntries.length > 0 && checkoutPreviewEntries.every((entry) => entry.preview_price === 0)
+  const checkoutRequiresTicketPrice = ['checkout', 'quick_checkout'].includes(modal?.kind)
+    && !checkoutUsesCombo && checkoutAllZeroPricing
+  const checkoutEffectiveSubtotal = checkoutRequiresTicketPrice && Number(form.ticket_price) > 0
+    ? Number(form.ticket_price)
+    : checkoutPreviewSubtotal
+  const checkoutPreviewTotal = Number.isFinite(checkoutEffectiveSubtotal)
+    ? Math.max(0, checkoutEffectiveSubtotal - Math.max(0, Number(form.discount || 0))) + Math.max(0, Number(form.tip || 0))
+    : null
+  const checkoutPreviewComboUnits = checkoutPreviewEntries.reduce((sum, entry) => sum + Number(entry.ticket_units || 0), 0)
+  const selectedComboCatalogItem = combos.find((item, index) => itemId(item, index) === form.combo_id) || null
+  const comboPurchasePreviewAmount = selectedComboCatalogItem
+    ? Number(selectedComboCatalogItem?.price || 0) * Math.max(1, Number(form.quantity || 1))
+    : null
+  const customerHistoryData = customerHistoryModal?.data || {}
+  const customerComboPurchaseHistory = asArray(customerHistoryData.combo_purchases).length
+    ? asArray(customerHistoryData.combo_purchases)
+    : asArray(customerHistoryData.purchases)
+  const customerHistorySections = [
+    ['Hóa đơn', asArray(customerHistoryData.invoices)],
+    ['Dịch vụ / doanh thu', asArray(customerHistoryData.reports)],
+    ['Lịch sử mua combo', customerComboPurchaseHistory],
+    ['Lượt combo đã dùng', asArray(customerHistoryData.combo_usage)],
+    ['Phiếu chờ thanh toán', asArray(customerHistoryData.pending)],
+  ]
+  const selectedRecords = validRecords.filter((record, index) => selectedIds.has(recordId(record, index)))
+  const allDisplayedSelected = displayedRecords.length > 0 && displayedRecords.every((record, index) => selectedIds.has(recordId(record, index)))
+
+  const pendingReminderCount = canPayment ? pendingPayments.length : 0
+  const hasPendingReminder = pendingReminderCount > 0
+  const announcePendingPayments = useCallback((count) => {
+    if (count <= 0) return
+    setPendingReminder({
+      id: ++pendingAnnouncementSequenceRef.current,
+      count,
+      text: `Có ${count} phiếu chờ thanh toán.`,
+    })
+  }, [])
+
+  useEffect(() => {
+    const previousCount = previousPendingCountRef.current
+    previousPendingCountRef.current = pendingReminderCount
+    pendingCountRef.current = pendingReminderCount
+    if (previousCount === 0 && pendingReminderCount > 0) announcePendingPayments(pendingReminderCount)
+    if (pendingReminderCount === 0) setPendingReminder(null)
+  }, [announcePendingPayments, pendingReminderCount])
+
+  useEffect(() => {
+    if (!hasPendingReminder) return undefined
+    pendingReminderTimerRef.current = window.setInterval(() => {
+      announcePendingPayments(pendingCountRef.current)
+    }, PENDING_REMINDER_INTERVAL_MS)
+    return () => {
+      window.clearInterval(pendingReminderTimerRef.current)
+      pendingReminderTimerRef.current = null
+    }
+  }, [announcePendingPayments, hasPendingReminder])
+
+  const toggleRow = (id) => setSelectedIds((current) => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const toggleDisplayed = () => setSelectedIds((current) => {
+    const next = new Set(current)
+    displayedRecords.forEach((record, index) => {
+      const id = recordId(record, index)
+      if (allDisplayedSelected) next.delete(id); else next.add(id)
+    })
+    return next
+  })
+  const updateBookingRow = (index, key, value) => setForm((current) => ({
+    ...current,
+    bookings: current.bookings.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row),
+  }))
+
+  const openPendingPanel = () => {
+    if (!canPayment) return
+    setActivePanel('pending')
+    setPendingReminder(null)
+    window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+
+  const selectedSummary = () => selectedRecords.map((record) => [
+    cellValue(record, employeeColumn), cellValue(record, serviceColumn), cellValue(record, requestColumn), cellValue(record, roomColumn),
+  ].filter(Boolean).join(' | ')).join('\n')
+
+  const copySelectedSummary = async () => {
+    if (!selectedRecords.length) return setNotice('Hãy chọn nhân viên cần sao chép.')
+    try {
+      await navigator.clipboard.writeText(selectedSummary())
+      setNotice(`Đã sao chép ${selectedRecords.length} dòng Live Tour.`)
+    } catch {
+      setError('Trình duyệt không cho phép sao chép. Hãy cấp quyền Clipboard và thử lại.')
+    }
+  }
+
+  const shareSelectedSummary = async () => {
+    if (!selectedRecords.length) return setNotice('Hãy chọn nhân viên cần chia sẻ.')
+    if (!navigator.share) return copySelectedSummary()
+    try { await navigator.share({ title: 'Live Tour · VERA SPA', text: selectedSummary() }) } catch (err) {
+      if (err?.name !== 'AbortError') setError('Không chia sẻ được dữ liệu đã chọn.')
+    }
+  }
+
+  const exportData = async (kind, png = false) => {
+    if (actionBusy) return
+    if (!canExportKind(kind)) {
+      setError('Tài khoản chưa được cấp đủ quyền để xuất loại dữ liệu Live Tour này.')
+      return
+    }
+    const query = FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery(exportFilters) : {}
+    if (kind === 'board' && showHidden && canRecoverHidden) query.include_hidden = 'true'
+    if (kind === 'custom') {
+      query.columns = (customColumns ?? columns).filter((column) => columns.includes(column))
+      if (!query.columns.length) { setError('Hãy chọn ít nhất một cột để xuất.'); return }
+      if (showHidden && canRecoverHidden) query.include_hidden = 'true'
+      if (customScope !== 'all') {
+        query.employee_ids = customScope === 'selected' ? [...selectedIds] : displayedRecords.map(stableEmployeeId).filter(Boolean)
+        if (!query.employee_ids.length) { setError('Không có nhân viên trong phạm vi xuất đã chọn.'); return }
+      }
+    }
+    if (query.date_from && query.date_to && query.date_from > query.date_to) {
+      setError('Ngày bắt đầu của bộ lọc xuất dữ liệu không được sau ngày kết thúc.')
+      return
+    }
+    setActionBusy(`export-${kind}`)
+    setError('')
+    try {
+      if (png) await veraApi.exportLiveTourPng(query)
+      else await veraApi.exportLiveTourExcel(kind, query)
+      setNotice('Đã tạo file xuất Live Tour.')
+    } catch (err) {
+      setError(err.message || 'Không xuất được dữ liệu Live Tour.')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  const openCustomerHistory = async (customer) => {
+    if (!canPayment) {
+      setError('Tài khoản chưa được cấp quyền xem lịch sử khách hàng.')
+      return
+    }
+    const customerId = stableCustomerId(customer)
+    if (!customerId) {
+      setError('Khách hàng này chưa có mã ổn định để xem lịch sử.')
+      return
+    }
+    setCustomerHistoryModal({ customerId, customer, data: null, error: '' })
+    setCustomerHistoryBusy(true)
+    try {
+      const history = await veraApi.liveTourCustomerHistory(customerId)
+      setCustomerHistoryModal((current) => current?.customerId === customerId ? { ...current, data: history, error: '' } : current)
+    } catch (err) {
+      setCustomerHistoryModal((current) => current?.customerId === customerId ? { ...current, error: err.message || 'Không tải được lịch sử khách hàng.' } : current)
+    } finally {
+      setCustomerHistoryBusy(false)
+    }
+  }
+
+  const exportCustomerHistory = async () => {
+    const customerId = customerHistoryModal?.customerId
+    if (!customerId || !canPayment || !canExport || actionBusy) return
+    const query = compactExportQuery(exportFilters)
+    if (query.date_from && query.date_to && query.date_from > query.date_to) {
+      setError('Ngày bắt đầu của bộ lọc xuất dữ liệu không được sau ngày kết thúc.')
+      return
+    }
+    setActionBusy('export-customer-detail')
+    setError('')
+    try {
+      await veraApi.exportLiveTourExcel('customer_detail', { ...query, customer_id: customerId })
+      setNotice('Đã tạo file lịch sử chi tiết khách hàng.')
+    } catch (err) {
+      setError(err.message || 'Không xuất được lịch sử khách hàng.')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  const removeSelectedEmployees = () => {
+    if (!selectedIds.size) return setNotice('Hãy chọn nhân viên cần xóa.')
+    if (window.confirm(`Xóa ${selectedIds.size} nhân viên đã chọn khỏi Live Tour?`)) void runSelected('delete_employee')
+  }
+
+  const removeCatalogItem = (action, item) => {
+    if (window.confirm(`Xóa “${itemLabel(item)}” khỏi danh mục?`)) void executeAction(action, { id: item?._id ?? item?.id, code: item?.code }, [])
+  }
+
+  const renderBookingCustomerPicker = (label = 'Khách hàng') => {
+    if (!canPayment) return null
+    const linkedCustomer = customers.find((customer) => stableCustomerId(customer) === String(form.customer_id || ''))
+    return <>
+      <label className="live-tour-field"><span>{label}</span><input type="search" role="combobox" aria-controls="live-tour-booking-customers" aria-expanded={!form.customer_id && bookingCustomerMatches.length > 0} value={form.customer_name} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', customer_name: event.target.value }))} placeholder="Tìm tên khách (có thể nhập không dấu)" autoComplete="off"/></label>
+      <label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', phone: event.target.value }))} placeholder="Tìm theo số điện thoại"/></label>
+      {form.customer_id && <div className="live-tour-customer-selected wide" aria-live="polite"><span>Đã chọn đúng khách: <strong>{itemLabel(linkedCustomer, form.customer_name || form.customer_id)}</strong> · {customerComboBalance(linkedCustomer)} vé combo còn lại</span><button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, customer_id: '', customer_name: '', phone: '' }))}>Đổi khách hàng</button></div>}
+      {!form.customer_id && bookingCustomerMatches.length > 0 && <div className="live-tour-customer-picker wide" id="live-tour-booking-customers" role="listbox" aria-label="Kết quả tìm khách hàng cho đặt lịch">{bookingCustomerMatches.map((customer, index) => {
+        const id = stableCustomerId(customer)
+        return <button type="button" role="option" aria-selected="false" onClick={() => setForm((current) => ({ ...current, customer_id: id, customer_name: itemLabel(customer), phone: customer?.phone || customer?.customer_phone || '' }))} key={`${id}:${index}`}><strong>{itemLabel(customer)}</strong><span>{customer?.phone || customer?.customer_phone || 'Chưa có số điện thoại'} · còn {customerComboBalance(customer)} vé combo</span></button>
+      })}</div>}
+    </>
+  }
+
+  return <div className="feature-page tour-page live-tour-page">
+    <style>{`
+      .tour-page{gap:5px}.page-wrap.tour-page-wrap{padding-top:4px}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
+      .live-tour-page .tour-sticky-top{display:grid;gap:4px;background:var(--paper,#f7faf8)}
+      .live-tour-page .tour-topbar{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(330px,1fr) auto;align-items:center;gap:10px}
+      .live-tour-page .tour-heading-title{min-width:0;display:flex;align-items:center;gap:8px}.live-tour-page .tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:18px;line-height:.95}.live-tour-status{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 7px;color:#17603f;background:#dff4e8;font-size:8px;font-weight:900}.live-tour-status:before{content:'';width:7px;height:7px;border-radius:50%;background:#23a861;box-shadow:0 0 0 3px rgba(35,168,97,.16)}
+      .live-tour-page .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}.live-tour-page .tour-table tr.live-tour-selected td{box-shadow:inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-table tr.live-tour-selected td:first-child{box-shadow:inset 2px 0 #173c30,inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
+      .live-tour-page .tour-shift-filter{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;margin:0}.live-tour-page .tour-shift-filter button{min-width:66px;padding:5px 9px;border-radius:8px;font-size:10px}
+      .live-tour-page .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.live-tour-page .tour-heading-actions button{min-height:34px;padding:6px 10px;font-size:10px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
+      .live-tour-payment-reminder{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #e9ad57;border-radius:9px;color:#64350d;background:#fff3d7;box-shadow:0 3px 12px rgba(124,73,17,.12);font-size:10px}.live-tour-payment-reminder strong{font-size:11px}.live-tour-payment-reminder span{flex:1}.live-tour-payment-reminder button{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
+      .live-tour-page .tour-control-layout{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);gap:4px;align-items:stretch}.live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:27px;gap:3px;border-radius:7px;padding:2px 6px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:7px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:15px}
+      .live-tour-page .tour-room-segment-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.live-tour-page .tour-room-segment-button{min-width:0;min-height:100%;border:1px solid transparent;border-radius:8px;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#fff;font-weight:900;text-align:center;letter-spacing:.02em}.live-tour-page .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.live-tour-page .tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.live-tour-page .tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}.live-tour-page .tour-room-segment-button svg{width:15px;height:15px}.live-tour-page .tour-room-segment-button span{font-size:9px;line-height:1}.live-tour-page .tour-room-segment-button small{color:inherit;font-size:7px;opacity:.88}.live-tour-page .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
+      .live-tour-page .tour-table-panel{padding:5px}.live-tour-page .tour-table th,.live-tour-page .tour-table td{padding-top:5px;padding-bottom:5px}.live-tour-page .tour-records-panel{min-height:0}.live-tour-page .tour-records-panel .tour-table{max-height:none;overflow-x:auto;overflow-y:visible}.live-tour-page .tour-records-panel .tour-table thead{position:relative;z-index:7;transform:translateY(var(--tour-table-head-offset,0));will-change:transform}.live-tour-page .tour-records-panel .tour-table th{position:static}.live-tour-select-col{width:28px;min-width:28px;text-align:center}.live-tour-select-col input{width:13px;height:13px;accent-color:#173c30}
+      .live-tour-page .tour-quick-tools{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:3px 0 0}.live-tour-page .tour-employee-search{position:relative;flex:1 1 260px;max-width:360px}.live-tour-page .tour-employee-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.live-tour-page .tour-employee-search input{width:100%;height:27px;padding:4px 7px 4px 27px;box-sizing:border-box;font-size:9px}.live-tour-selection-summary{font-size:9px;font-weight:850;color:#3d5a4e}.live-tour-quick-button{min-height:27px;padding:4px 8px;font-size:9px}
+      .live-tour-page .tour-room-panel{margin:0;padding:5px;border:1px solid #cfe1d8;border-radius:9px;background:#f3faf6}.live-tour-page .tour-room-panel-head{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);align-items:center;gap:4px;margin-bottom:3px}.live-tour-page .tour-room-panel-title{display:flex;align-items:center;gap:4px;color:#173c30;font-size:11px;font-weight:900}.live-tour-page .tour-room-panel-head small{justify-self:center;min-width:160px;color:#3f574c;font-size:15px;font-weight:950;line-height:1;text-align:center}.live-tour-page .tour-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px}
+      .live-tour-page .tour-room-card{--room-segment:#155b78;position:relative;width:100%;min-width:0;min-height:53px;display:grid;align-content:space-between;gap:1px;border:1px solid rgba(0,0,0,.13);border-radius:7px;padding:4px;color:inherit;background:#fff;text-align:left;appearance:none;box-shadow:inset 0 2px 0 var(--room-segment),0 2px 5px rgba(28,52,42,.06);transition:transform .16s ease,box-shadow .16s ease}.live-tour-page .tour-room-card.vip{--room-segment:#b58a31;border:3px solid #c59a3d;padding:2px;box-shadow:inset 0 2px 0 #f3cf72,0 2px 7px rgba(130,92,19,.16)}.live-tour-page .tour-room-card.has-private-service{padding-right:29px}.live-tour-page .tour-room-card:hover{transform:translateY(-1px);box-shadow:inset 0 2px 0 var(--room-segment),0 5px 10px rgba(28,52,42,.11)}.live-tour-page .tour-room-card.vip:hover{box-shadow:inset 0 2px 0 #f3cf72,0 5px 11px rgba(130,92,19,.24)}.live-tour-page .tour-room-card.selected{outline:2px solid #173c30;outline-offset:1px}.live-tour-page .tour-room-card.vip.selected{outline-color:#9b6e16}
+      @keyframes live-tour-room-search-pulse{0%,100%{filter:brightness(1);transform:scale(1);box-shadow:0 0 0 2px #ee3f62,0 2px 6px rgba(28,52,42,.08)}50%{filter:brightness(1.13);transform:scale(1.025);background:#55f0cf;box-shadow:0 0 0 4px #ffd54a,0 7px 15px rgba(238,63,98,.34)}}.live-tour-page .tour-room-card.search-match{position:relative;z-index:3;animation:live-tour-room-search-pulse .8s ease-in-out infinite}
+      .live-tour-page .tour-room-card.state-green{background:var(--tour-row-green)}.live-tour-page .tour-room-card.state-yellow{background:var(--tour-row-yellow)}.live-tour-page .tour-room-card.state-red{background:var(--tour-row-red)}.live-tour-page .tour-room-card.state-break{background:var(--tour-row-break)}.live-tour-page .tour-room-card.state-waiting{color:#3f245d;background:var(--tour-row-waiting)}.live-tour-page .tour-room-card.state-idle{background:var(--tour-row-idle)}.live-tour-page .tour-room-card.state-leave,.live-tour-page .tour-room-card.state-work,.live-tour-page .tour-room-card.state-default,.live-tour-page .tour-room-card.state-blank{background:#fff}.live-tour-page .tour-room-card.state-leave{color:#a6a6a6}
+      .live-tour-page .tour-room-card-head{display:flex;align-items:center;justify-content:space-between;gap:3px}.live-tour-page .tour-room-card-head strong{min-width:0;font-size:9px;font-weight:950}.live-tour-page .tour-room-type{border-radius:999px;padding:1px 4px;color:#fff;background:var(--room-segment);font-size:5px;font-weight:950;letter-spacing:.04em}.live-tour-page .tour-room-countdown{display:flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums;font-size:10px;font-weight:950;white-space:nowrap}.live-tour-page .tour-room-countdown svg{width:11px;height:11px;flex:0 0 auto}.live-tour-page .tour-room-meta{min-height:8px;overflow:hidden;font-size:6px;font-weight:800;text-overflow:ellipsis;white-space:nowrap;opacity:.8}.live-tour-page .tour-room-private-badge{position:absolute;right:4px;bottom:4px;width:21px;height:21px;display:grid;place-items:center;border:2px solid #fff;border-radius:50%;color:#fff;background:#e30057;box-shadow:0 0 0 2px #ffd447,0 4px 10px rgba(167,0,60,.38);font-size:9px;font-weight:950;line-height:1;letter-spacing:-.02em}.live-tour-page .tour-room-empty{grid-column:1/-1;padding:6px;color:#5d7168;font-size:9px;text-align:center}.live-tour-page .tour-room-detail{margin-top:5px;padding:6px;border:1px solid #d9e2dd;border-radius:8px;background:#fff}.live-tour-page .tour-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.live-tour-page .tour-room-detail-head strong{font-size:10px}.live-tour-page .tour-room-detail-head small{color:#68776f;font-size:7px;font-weight:800}.live-tour-page .tour-room-detail-list{display:grid;gap:3px}.live-tour-page .tour-room-detail-row{min-width:0;display:grid;grid-template-columns:minmax(90px,.55fr) minmax(120px,1fr);gap:8px;padding:4px 6px;border-radius:6px;background:#f3f6f4;font-size:8px}.live-tour-page .tour-room-detail-row strong,.live-tour-page .tour-room-detail-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.live-tour-page .tour-room-detail-row span{color:#55665e}.live-tour-page .tour-room-detail-empty{padding:4px;color:#68776f;font-size:8px}.live-tour-page .tour-room-detail.vip-19{max-height:none;overflow:visible}
+      .live-tour-page .tour-legend{padding:9px}.live-tour-page .tour-legend .panel-title-row{margin-bottom:5px}.live-tour-page .tour-legend .panel-title-row h2{font-size:14px}.live-tour-page .tour-legend .panel-title-row p{font-size:9px}.live-tour-page .tour-legend-grid{gap:4px}.live-tour-page .tour-legend-grid span{padding:4px 7px;font-size:8px}
+      .live-tour-operator{padding:10px;overflow:hidden}.live-tour-operator-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.live-tour-operator-title{display:flex;align-items:center;gap:7px}.live-tour-operator-title strong{font-size:14px}.live-tour-pending-badge{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:999px;padding:4px 8px;color:#8c271f;background:#ffe7e3;font-family:inherit;font-size:9px;font-weight:900;cursor:pointer}.live-tour-pending-badge:focus-visible{outline:2px solid #8c271f;outline-offset:2px}.live-tour-pending-badge:disabled{cursor:default;opacity:.65}.live-tour-pending-badge.has-items{animation:live-tour-pulse 1.5s ease-in-out infinite}@keyframes live-tour-pulse{50%{box-shadow:0 0 0 5px rgba(198,53,40,.12)}}.live-tour-drawer-toggle{display:none}.live-tour-operator-drawer{display:grid;gap:8px;margin-top:8px}.live-tour-action-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:6px;border:1px solid #dce6e1;border-radius:9px;background:#f8fbf9}.live-tour-action-group>strong{margin-right:3px;color:#416056;font-size:8px;text-transform:uppercase;letter-spacing:.05em}.live-tour-action-group button,.live-tour-action-group select{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-action-group button.active{color:#fff;background:#173c30}.live-tour-action-group .danger-button{color:#a02b24;border-color:#e4b3af;background:#fff7f6}.live-tour-panel-tabs{display:flex;gap:5px;overflow-x:auto;padding:3px 0}.live-tour-panel-tabs button{flex:0 0 auto;min-height:31px;padding:5px 10px;font-size:9px}.live-tour-export-filters{display:grid;grid-template-columns:auto repeat(4,minmax(105px,1fr)) auto;align-items:end;gap:6px;margin:7px 0;padding:8px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-export-filters>strong{align-self:center;font-size:9px}.live-tour-export-filters label{display:grid;gap:3px;color:#526a60;font-size:8px;font-weight:800}.live-tour-export-filters input{width:100%;min-width:0;box-sizing:border-box;padding:5px 6px;font-size:9px}.live-tour-export-filters small{grid-column:1/-1;color:#6d7e76;font-size:8px}.live-tour-export-filters button{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-panel-body{margin-top:4px;padding:9px;border:1px solid #d9e4de;border-radius:10px;background:#fff}.live-tour-panel-toolbar{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap;margin-bottom:8px}.live-tour-panel-toolbar h2{margin:0;font-size:14px}.live-tour-panel-toolbar-actions{display:flex;gap:5px;flex-wrap:wrap}.live-tour-panel-toolbar button{min-height:30px;padding:5px 8px;font-size:9px}.live-tour-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:7px}.live-tour-data-card{display:grid;gap:4px;padding:8px;border:1px solid #dbe5df;border-radius:9px;background:#f8faf9;font-size:9px}.live-tour-data-card strong{font-size:11px}.live-tour-data-card small{color:#66776f}.live-tour-card-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}.live-tour-card-actions button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-empty{padding:14px;color:#687970;background:#f6f8f7;border-radius:8px;font-size:10px;text-align:center}.live-tour-report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:6px;margin-bottom:8px}.live-tour-report-metric{padding:9px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-report-metric span{display:block;color:#65766e;font-size:8px}.live-tour-report-metric strong{display:block;margin-top:3px;font-size:14px}.live-tour-catalog-section{margin-top:10px}.live-tour-catalog-section h3{margin:0 0 6px;font-size:11px}.live-tour-customer-search{position:relative;min-width:min(300px,100%)}.live-tour-customer-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%)}.live-tour-customer-search input{width:100%;height:30px;padding:5px 7px 5px 27px;font-size:9px}
+      .live-tour-modal-backdrop{position:fixed;inset:0;z-index:1600;display:grid;place-items:center;padding:12px;background:rgba(14,31,25,.55)}.live-tour-modal{width:min(760px,100%);max-height:calc(100vh - 24px);overflow:auto;border-radius:14px;padding:13px;background:#fff;box-shadow:0 18px 55px rgba(0,0,0,.28)}.live-tour-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.live-tour-modal-head strong{font:700 18px Georgia,serif;color:#173c30}.live-tour-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.live-tour-form-grid>.wide{grid-column:1/-1}.live-tour-field{display:grid;gap:4px}.live-tour-field.wide{grid-column:1/-1}.live-tour-field span{font-size:9px;font-weight:850;color:#435d52}.live-tour-field input,.live-tour-field select,.live-tour-field textarea{width:100%;min-width:0;box-sizing:border-box;padding:7px 8px;font-size:10px}.live-tour-field textarea{min-height:62px;resize:vertical}.live-tour-check-field{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:800}.live-tour-multi-booking{grid-column:1/-1;display:grid;gap:6px}.live-tour-multi-row{display:grid;grid-template-columns:minmax(105px,.7fr) repeat(3,minmax(95px,1fr));gap:5px;align-items:center;padding:6px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-multi-row strong{font-size:9px}.live-tour-multi-row input,.live-tour-multi-row select{width:100%;min-width:0;padding:6px;font-size:9px}.live-tour-modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:12px}.live-tour-modal-actions button{min-height:34px}
+      .live-tour-employee-picker{grid-column:1/-1;display:grid;gap:5px;max-height:220px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-employee-picker button{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(150px,1fr);gap:3px 9px;padding:7px 9px;border:1px solid #d9e3dd;border-radius:8px;color:#173c30;background:#fff;text-align:left}.live-tour-employee-picker button.selected{border-color:#173c30;background:#e7f3ed;box-shadow:inset 3px 0 #173c30}.live-tour-employee-picker button strong{font-size:10px}.live-tour-employee-picker button span,.live-tour-employee-picker button small{font-size:8px}.live-tour-employee-picker button small{grid-column:1/-1;color:#697b72}.live-tour-employee-picked{grid-column:1/-1;padding:6px 8px;border-radius:7px;color:#185238;background:#e3f4ea;font-size:9px;font-weight:850}
+      .live-tour-checkout-preview{display:grid;gap:6px;padding:9px;border:1px solid #cfe0d7;border-radius:9px;background:#f6faf8}.live-tour-checkout-preview>strong{color:#173c30;font-size:10px}.live-tour-checkout-preview>small{color:#65766e;font-size:8px}.live-tour-checkout-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:6px;border-radius:7px;background:#fff;font-size:9px}.live-tour-checkout-entry span{overflow:hidden;text-overflow:ellipsis}.live-tour-checkout-entry small{grid-column:1/-1;color:#697b72;font-size:8px}.live-tour-checkout-total{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding-top:6px;border-top:1px solid #d8e4de;font-size:9px}.live-tour-combo-deduction{padding:7px;border-radius:8px;color:#4c3b0c;background:#fff4cf;font-size:9px}.live-tour-customer-selected{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;background:#e6f4ec;font-size:9px}.live-tour-customer-selected button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-customer-picker{display:grid;gap:4px;max-height:150px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-customer-picker button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid #dce6e1;border-radius:7px;color:#173c30;background:#fff;text-align:left}.live-tour-customer-picker button span{color:#64776e;font-size:8px}.live-tour-correction{display:grid;gap:7px;padding:9px;border:1px solid #e8c985;border-radius:9px;background:#fff9e9}.live-tour-history-sections{display:grid;gap:10px}.live-tour-history-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}.live-tour-history-list{display:grid;gap:5px;max-height:260px;overflow:auto}.live-tour-history-list article{padding:7px;border:1px solid #dce6e1;border-radius:8px;background:#f8faf9;font-size:9px}.live-tour-history-list article strong,.live-tour-history-list article span,.live-tour-history-list article small{display:block;margin-top:2px}
+      @media(min-width:641px){.live-tour-page .tour-sticky-top{position:sticky;top:74px;z-index:18;padding:3px 0 2px;box-shadow:0 6px 12px rgba(25,58,46,.04)}.live-tour-page .tour-records-panel .tour-table th{top:0}.live-tour-page .tour-room-detail{max-height:100px;overflow:auto}.live-tour-page .tour-room-detail.vip-19{max-height:none;overflow:visible}}
+      @media(prefers-reduced-motion:reduce){.live-tour-page .tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
+      @media(max-width:760px){.live-tour-drawer-toggle{display:inline-flex}.live-tour-operator-drawer{display:none}.live-tour-operator-drawer.open{display:grid}.live-tour-export-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.live-tour-export-filters>strong,.live-tour-export-filters small{grid-column:1/-1}.live-tour-form-grid{grid-template-columns:1fr}.live-tour-field.wide{grid-column:auto}.live-tour-action-group>strong{width:100%}.live-tour-multi-row{grid-template-columns:1fr 1fr}.live-tour-multi-row strong{grid-column:1/-1}}
+      @media(max-width:640px){
+        .live-tour-page .tour-sticky-top{position:static}.live-tour-page .tour-topbar{grid-template-columns:1fr;gap:6px}.live-tour-page .tour-heading-title h1{font-size:14.5px}.live-tour-page .tour-shift-filter{order:3}.live-tour-page .tour-records-panel .tour-table{max-height:none;overflow-x:hidden;overflow-y:visible}
+        .live-tour-page .tour-shift-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-bottom:7px}.live-tour-page .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
+        .live-tour-page .tour-heading-actions{width:100%;justify-content:stretch}.live-tour-page .tour-heading-actions button{flex:1}
+        .live-tour-page .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:31px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:2px;text-align:center}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;line-height:1.05}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:14px}
+        .live-tour-page .tour-control-layout{grid-template-columns:1fr;gap:4px}.live-tour-page .tour-room-segment-button{min-height:42px;padding:3px 2px}.live-tour-page .tour-room-segment-button svg{width:12px;height:12px}.live-tour-page .tour-room-segment-button span{font-size:7px}.live-tour-page .tour-room-segment-button small{font-size:6px}
+        .live-tour-page .tour-table-panel{padding:5px}.live-tour-page .tour-quick-tools{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin:4px 0}.live-tour-page .tour-employee-search{min-width:0;max-width:none}.live-tour-page .tour-employee-search input{min-width:0;height:29px;padding:5px 5px 5px 27px;font-size:8px}.live-tour-page .tour-employee-search svg{left:8px;width:14px}.live-tour-selection-summary{font-size:8px}.live-tour-select-col{width:24px;min-width:24px}.live-tour-select-col input{width:12px;height:12px}
+        .live-tour-page .tour-room-panel{padding:5px}.live-tour-page .tour-room-panel-head{grid-template-columns:1fr;margin-bottom:4px}.live-tour-page .tour-room-panel-title{font-size:9px}.live-tour-page .tour-room-panel-head small{justify-self:start;min-width:125px;font-size:12px}.live-tour-page .tour-room-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}.live-tour-page .tour-room-card{min-height:58px;padding:4px}.live-tour-page .tour-room-card.vip{padding:2px}.live-tour-page .tour-room-card-head strong{font-size:8px}.live-tour-page .tour-room-type{padding:2px 3px;font-size:4px}.live-tour-page .tour-room-countdown{font-size:9px}.live-tour-page .tour-room-countdown svg{width:10px;height:10px}.live-tour-page .tour-room-meta{font-size:6px}.live-tour-page .tour-room-detail-row{grid-template-columns:minmax(75px,.55fr) minmax(0,1fr);gap:4px;padding:4px;font-size:7px}
+      }
+      @media(max-width:420px){.live-tour-page .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media(max-width:430px){.live-tour-selection-summary{grid-column:1/-1}.live-tour-card-grid{grid-template-columns:1fr}}
+    `}</style>
+    <div className="tour-sticky-top" ref={stickyTopRef}>
+      <div className="tour-topbar">
+        <div className="tour-heading-title"><h1>LIVE TOUR</h1><span className="live-tour-status">TRỰC TIẾP</span></div>
+        <div className="tour-shift-filter" aria-label="Lọc Live Tour theo ca">
+          <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
+          <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
+          <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
+        </div>
+        <div className="tour-heading-actions">
+          {canAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><LayoutGrid size={16}/> {showAdminTools ? 'Ẩn màu dòng' : 'Hiện màu dòng'}</button>}
+          {canRecoverHidden && <button type="button" className="secondary-button" onClick={() => setShowHidden((current) => !current)}>{showHidden ? 'Ẩn lại nhân viên đã ẩn' : `Hiện nhân viên đã ẩn (${data.state?.hidden_count || 0})`}</button>}
+          <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
+          <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới Live Tour</button>
+        </div>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      {notice && <div className="setup-note">{notice}</div>}
+      {pendingReminder && <div className="live-tour-payment-reminder">
+        <BellRing size={16} aria-hidden="true"/><strong>CHỜ THANH TOÁN</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>
+        <button type="button" className="secondary-button" onClick={openPendingPanel}>Mở danh sách</button>
+      </div>}
+      <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}
+      </div>
+      {data.countdown_error && <div className="warning-box">Countdown Live Tour: {data.countdown_error}</div>}
+      {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
+      <div className="tour-control-layout">
+        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
+        <div className="tour-room-segment-buttons" aria-label="Chọn phân khúc phòng">
+          <button type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ<br/>PHÒNG</span><small>{roomCatalog.length} phòng</small></button>
+          <button type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>STANDARD<br/>ROOM</span><small>{standardRooms.length} phòng</small></button>
+          <button type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP ROOM</span><small>{vipRooms.length} phòng</small></button>
+        </div>
+      </div>
+      <section className="panel tour-table-panel tour-room-table-panel">
+        <div className={`tour-room-panel ${roomSegment}`}>
+          <div className="tour-room-panel-head"><div className="tour-room-panel-title">{roomSegment === 'vip' ? <Crown size={16}/> : roomSegment === 'standard' ? <DoorOpen size={16}/> : <LayoutGrid size={16}/>} {roomSegment === 'vip' ? 'Phòng VIP' : roomSegment === 'standard' ? 'Phòng Standard' : 'Tất cả phòng'}</div><small>{displayedRooms.filter((room) => availableRoomKeys.has(physicalRoomKey(room))).length} phòng đang trống</small></div>
+          <div className="tour-room-grid">
+            {displayedRooms.map((room) => {
+              const key = physicalRoomKey(room)
+              const records = roomRecords.get(key) || []
+              const record = pickRoomRecord(records, remainingColumn)
+              const available = availableRoomKeys.has(key)
+              const occupied = occupiedRoomKeys.has(key)
+              const employee = cellValue(record, employeeColumn)
+              const status = cellValue(record, statusColumn)
+              const hasPrivateService = records.some((item) => item._private_service || isPrivateService(cellValue(item, serviceColumn)))
+              return <button type="button" className={`tour-room-card ${isVipRoom(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
+                <div className="tour-room-card-head"><strong>{roomLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{isVipRoom(room) ? 'VIP' : 'STANDARD'}</span></div>
+                <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
+                <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
+                {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
+              </button>
+            })}
+            {!displayedRooms.length && <div className="tour-room-empty">Chưa có dữ liệu phòng.</div>}
+          </div>
+          {selectedRoomKey && selectedRoom && <div className={`tour-room-detail ${physicalRoomKey(selectedRoom) === '19' ? 'vip-19' : ''}`.trim()} role="region" aria-label={`Chi tiết ${roomLabel(selectedRoom)}`}>
+            <div className="tour-room-detail-head"><strong>{roomLabel(selectedRoom)} · Danh sách nhân viên</strong><small>{selectedRoomRecords.length} nhân viên · Bấm lại phòng để đóng</small></div>
+            {selectedRoomRecords.length ? <div className="tour-room-detail-list">{selectedRoomRecords.map((item, index) => {
+              const employee = cellValue(item, employeeColumn) || 'Chưa có tên nhân viên'
+              const service = cellValue(item, serviceColumn) || 'Chưa có dịch vụ'
+              return <div className="tour-room-detail-row" key={`${recordId(item, index)}:${index}`}><strong title={employee}>{employee}</strong><span title={service}>{service}</span></div>
+            })}</div> : <div className="tour-room-detail-empty">Phòng đang trống, chưa có nhân viên và dịch vụ.</div>}
+          </div>}
+        </div>
+        <div className="tour-quick-tools">
+          <label className="tour-employee-search" aria-label="Tìm nhanh tên nhân viên"><Search size={16}/><input type="search" value={employeeSearch} placeholder="Tìm nhanh tên nhân viên…" onChange={(event) => setEmployeeSearch(event.target.value)}/></label>
+          <span className="live-tour-selection-summary">Đã chọn {selectedIds.size} nhân viên</span>
+          <button type="button" className="secondary-button live-tour-quick-button" onClick={copySelectedSummary}><ClipboardCopy size={14}/> Sao chép tóm tắt</button>
+          <button type="button" className="secondary-button live-tour-quick-button" onClick={shareSelectedSummary}><Share2 size={14}/> Chia sẻ</button>
+        </div>
+      </section>
+    </div>
+
+    <section className="panel tour-table-panel tour-records-panel">
+      <div className="responsive-data-table tour-table" ref={recordsTableRef} tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
+        const id = recordId(item, index)
+        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>
+      })}</tbody></table></div>
+      {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
+    </section>
+
+    <section className="panel live-tour-operator">
+      <div className="live-tour-operator-head">
+        <div className="live-tour-operator-title"><Menu size={18}/><strong>Điều khiển</strong><button type="button" className={`live-tour-pending-badge ${pendingPayments.length ? 'has-items' : ''}`} onClick={openPendingPanel} disabled={!canPayment} aria-controls="live-tour-pending-panel"><BellRing size={13} aria-hidden="true"/> {pendingPayments.length} chờ thanh toán</button></div>
+        <button type="button" className="secondary-button live-tour-drawer-toggle" onClick={() => setDrawerOpen((current) => !current)}>{drawerOpen ? 'Đóng điều khiển' : 'Mở điều khiển'}</button>
+      </div>
+      <div className={`live-tour-operator-drawer ${drawerOpen ? 'open' : ''}`}>
+        <div className="live-tour-action-group"><strong>Đặt lịch & tua</strong>
+          <button type="button" className="secondary-button" onClick={() => openModal('quick_booking', { rowIds: [] })} disabled={!canOperate}>Đặt lịch nhanh</button>
+          <button type="button" className="secondary-button" onClick={() => openModal('booking')} disabled={!canOperate || selectedIds.size !== 1}>Đặt lịch</button>
+          <button type="button" className="secondary-button" onClick={() => openModal('multi_booking')} disabled={!canOperate || !selectedIds.size}>Đặt lịch hàng loạt</button>
+          <button type="button" className="primary-button" onClick={() => runSelected('start')} disabled={!canOperate || !selectedIds.size}><Play size={13}/> Bắt đầu đã chọn</button>
+          <button type="button" className="secondary-button" onClick={() => runSelected('add_minutes', { minutes: 30 })} disabled={!canOperate || !selectedIds.size}>+30 phút</button>
+          <button type="button" className="secondary-button" onClick={() => runSelected('complete')} disabled={!canOperate || !selectedIds.size}><CheckCircle2 size={13}/> Hoàn thành</button>
+          <button type="button" className="secondary-button" onClick={() => runSelected('move_pending')} disabled={!canPayment || !selectedIds.size}>Chờ thanh toán</button>
+          <button type="button" className="secondary-button" onClick={() => openModal('checkout')} disabled={!canPayment || !selectedIds.size}><WalletCards size={13}/> Thanh toán</button>
+          <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [] })} disabled={!canPayment}>Thanh toán nhanh</button>
+        </div>
+        <div className="live-tour-action-group"><strong>Ca & trạng thái</strong>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('set_shift', { shift: 'Ca 1' })}>Ca 1</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('set_shift', { shift: 'Ca 2' })}>Ca 2</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Bắt đầu break</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc break</button>
+        </div>
+        <div className="live-tour-action-group"><strong>Thứ tự</strong>
+          <select value={reorderSteps} onChange={(event) => setReorderSteps(event.target.value)} aria-label="Số vị trí di chuyển"><option value="1">1 dòng</option><option value="3">3 dòng</option><option value="5">5 dòng</option></select>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSingleSelected('reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSingleSelected('reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSingleSelected('reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSingleSelected('reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
+        </div>
+        <div className="live-tour-action-group"><strong>Nhân viên & dịch vụ</strong>
+          <button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => openModal('add_employee')}><UserPlus size={13}/> Thêm nhân viên</button>
+          <button type="button" className="secondary-button danger-button" disabled={!canAdmin} onClick={removeSelectedEmployees}><Trash2 size={13}/> Xóa nhân viên</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('hide_employee')}>Ẩn đã chọn</button>
+          <button type="button" className="secondary-button" disabled={!canRecoverHidden} onClick={() => executeAction('show_all', {}, [])}>Hiện tất cả</button>
+          <button type="button" className="secondary-button" disabled={!canOperate} onClick={() => runSelected('show_employee')}>Hiện đã chọn</button>
+          <button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => runSelected('set_vip', { vip: true })}><Crown size={13}/> Đánh dấu VIP</button>
+          <button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => runSelected('set_vip', { vip: false })}>Bỏ VIP</button>
+          <button type="button" className="secondary-button" onClick={() => openModal('replace_service')} disabled={!canOperate || !selectedIds.size}>Đổi dịch vụ</button>
+          <button type="button" className="secondary-button" onClick={() => openModal('add_service')} disabled={!canOperate || !selectedIds.size}>Thêm dịch vụ</button>
+        </div>
+      </div>
+    </section>
+
+    <section className="panel live-tour-operator live-tour-workspace" ref={workspaceRef}>
+      <div className="live-tour-panel-tabs" role="tablist" aria-label="Không gian vận hành Live Tour">
+        {PANEL_TABS.map(([key, label]) => {
+          const disabled = (['pending', 'customers'].includes(key) && !canPayment) || (key === 'reports' && !canPayment && !canExport) || (['history', 'catalog'].includes(key) && !canAdmin)
+          return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => setActivePanel(key)} key={key}>{label}{key === 'pending' && pendingPayments.length ? ` (${pendingPayments.length})` : ''}</button>
+        })}
+      </div>
+      {canExport && (canPayment || canAdmin) && ['pending', 'customers', 'reports', 'history'].includes(activePanel) && <div className="live-tour-export-filters" aria-label="Bộ lọc thời gian xuất dữ liệu">
+        <strong>Bộ lọc xuất dữ liệu</strong>
+        <label><span>Từ ngày</span><input type="date" max={exportFilters.date_to || undefined} value={exportFilters.date_from} onChange={(event) => setExportFilters((current) => ({ ...current, date_from: event.target.value }))}/></label>
+        <label><span>Đến ngày</span><input type="date" min={exportFilters.date_from || undefined} value={exportFilters.date_to} onChange={(event) => setExportFilters((current) => ({ ...current, date_to: event.target.value }))}/></label>
+        <label><span>Từ giờ</span><input type="time" value={exportFilters.time_from} onChange={(event) => setExportFilters((current) => ({ ...current, time_from: event.target.value }))}/></label>
+        <label><span>Đến giờ</span><input type="time" value={exportFilters.time_to} onChange={(event) => setExportFilters((current) => ({ ...current, time_to: event.target.value }))}/></label>
+        <button type="button" className="secondary-button" disabled={!Object.values(exportFilters).some(Boolean)} onClick={() => setExportFilters(EMPTY_EXPORT_FILTERS)}>Xóa bộ lọc</button>
+        <small>Áp dụng cho doanh thu, TIP, khách hàng, chờ thanh toán, lịch sử và nghỉ giữa ca; không áp dụng cho Bảng tua/PNG.</small>
+      </div>}
+      {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
+
+      {activePanel === 'pending' && <div className="live-tour-panel-body" id="live-tour-pending-panel" role="tabpanel" aria-label="Chờ thanh toán">
+        <div className="live-tour-panel-toolbar"><h2>CHỜ THANH TOÁN</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={!canExportKind('pending')} onClick={() => exportData('pending')}><Download size={13}/> Xuất chờ thanh toán</button></div></div>
+        {pendingPayments.length ? <div className="live-tour-card-grid">{pendingPayments.map((item, index) => {
+          const id = String(item?._id ?? item?.id ?? '')
+          const entries = asArray(item?.entries)
+          const serviceSummary = entries.map((entry) => entry?.service).filter(Boolean).join(' & ') || item?.service || item?.services || 'Chưa ghi dịch vụ'
+          const roomSummary = entries.map((entry) => entry?.room).filter(Boolean).join(', ') || item?.room || 'Chưa có phòng'
+          return <article className="live-tour-data-card" key={itemId(item, index)}>
+            <strong>{item?.customer_name || itemLabel(item, `Phiếu chờ ${index + 1}`)}</strong>
+            <span>{serviceSummary} · {roomSummary}</span>
+            <small>{item?.customer_name || item?.customer || 'Khách lẻ'} {item?.customer_phone || item?.phone ? `· ${item?.customer_phone || item?.phone}` : ''}</small>
+            <small>{item?.created_at || item?.waiting_since || ''}</small>
+            <div className="live-tour-card-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('checkout', { item, rowIds: [], defaults: { pending_id: id } })}>Thanh toán</button><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openModal('quick_checkout', { item, rowIds: [], defaults: { pending_id: id } })}>Thanh toán nhanh</button></div>
+          </article>
+        })}</div> : <div className="live-tour-empty">Không có hóa đơn chờ thanh toán.</div>}
+      </div>}
+
+      {activePanel === 'customers' && <div className="live-tour-panel-body">
+        <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG & COMBO</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { newCustomer: true, rowIds: [] })}><Plus size={13}/> Mua combo cho khách mới</button><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => openModal('combo_import')}>Nhập combo cũ</button><button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
+        <label className="live-tour-customer-search"><Search size={14}/><input type="search" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
+        <div className="live-tour-card-grid" style={{ marginTop: 8 }}>
+          {filteredCustomers.map((customer, index) => <article className="live-tour-data-card" key={itemId(customer, index)}>
+            <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong>
+            <span>{customer?.phone || 'Chưa có số điện thoại'}</span>
+            <small>Số dư combo: {customer?.combo_balance ?? customer?.remaining_tickets ?? customer?.balance ?? 0}</small>
+            {customerComboPurchases(customer).map((combo, comboIndex) => <small key={itemId(combo, comboIndex)}>{itemLabel(combo)} · còn {combo?.remaining ?? combo?.balance ?? 0}</small>)}
+            <div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openCustomerHistory(customer)}><History size={12}/> Lịch sử</button><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { item: customer, rowIds: [], defaults: { customer_id: stableCustomerId(customer), customer_name: itemLabel(customer), phone: customer?.phone || customer?.customer_phone || '' } })}><Plus size={12}/> Mua combo</button></div>
+          </article>)}
+          {!filteredCustomers.length && <div className="live-tour-empty">Không tìm thấy khách hàng phù hợp.</div>}
+        </div>
+      </div>}
+
+      {activePanel === 'reports' && <div className="live-tour-panel-body">
+        <details className="live-tour-catalog-section">
+          <summary>Xuất bảng tùy chỉnh</summary>
+          <label>Phạm vi nhân viên<select value={customScope} onChange={(event) => setCustomScope(event.target.value)}><option value="displayed">Đang hiển thị</option><option value="selected">Đã chọn</option><option value="all">Tất cả</option></select></label>
+          <div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" onClick={() => setCustomColumns(null)}>Chọn tất cả cột</button><button type="button" className="secondary-button" onClick={() => setCustomColumns([])}>Bỏ chọn cột</button></div>
+          <div className="live-tour-card-grid">{columns.map((column) => <label key={column}><input type="checkbox" checked={(customColumns ?? columns).includes(column)} onChange={(event) => setCustomColumns((previous) => event.target.checked ? columns.filter((item) => item === column || (previous ?? columns).includes(item)) : (previous ?? columns).filter((item) => item !== column))}/>{column}</label>)}</div>
+          <button type="button" className="secondary-button" disabled={!canExportKind('custom') || Boolean(actionBusy)} onClick={() => exportData('custom')}><Download size={13}/> Xuất Excel tùy chỉnh</button>
+          <p>Dòng ẩn chỉ được xuất khi đang bật Hiện nhân viên đã ẩn và có quyền tương ứng. Bộ lọc ngày/giờ báo cáo không áp dụng cho bảng hiện tại.</p>
+        </details>
+        <div className="live-tour-panel-toolbar"><h2>BÁO CÁO · DOANH THU · TIỀN TIP</h2><div className="live-tour-panel-toolbar-actions">{EXPORT_KINDS.map(([kind, label]) => <button type="button" className="secondary-button" disabled={!canExportKind(kind)} onClick={() => exportData(kind)} key={kind}><Download size={13}/> {label}</button>)}<button type="button" className="secondary-button" disabled={!canExportKind('board')} onClick={() => exportData('board', true)}><FileImage size={13}/> Xuất PNG</button></div></div>
+        <div className="live-tour-report-metrics">
+          {Object.entries(data.reports && !Array.isArray(data.reports) ? data.reports : {}).filter(([, value]) => ['string', 'number'].includes(typeof value)).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{REPORT_LABELS[key] || key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}
+          {!Object.keys(data.reports && !Array.isArray(data.reports) ? data.reports : {}).length && <div className="live-tour-empty">Chưa có số liệu báo cáo.</div>}
+        </div>
+        {reports.length > 0 && <div className="live-tour-card-grid">{reports.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.employee_name || itemLabel(item, `Báo cáo ${index + 1}`)}</strong><span>{item?.service || 'Dịch vụ'} · {formatMoney(item?.total ?? item?.revenue ?? item?.amount)}</span><small>TIP: {formatMoney(item?.tip ?? 0)} · {item?.created_at || ''}</small></article>)}</div>}
+      </div>}
+
+      {activePanel === 'history' && <div className="live-tour-panel-body">
+        <div className="live-tour-catalog-section">
+          <div className="live-tour-panel-toolbar"><h3>LỊCH SỬ NGHỈ GIỮA CA</h3><button type="button" className="secondary-button" disabled={!canExportKind('breaks')} onClick={() => exportData('breaks')}><Download size={13}/> Xuất nghỉ giữa ca</button></div>
+          <div className="live-tour-history-list">{asArray(data.break_events).slice().reverse().map((event, index) => <article key={event.id || index}>
+            <strong>{event.employee_name} · {event.event_type === 'start' ? 'Bắt đầu nghỉ' : 'Vào lại'}</strong>
+            <span>{event.at} · {event.outcome || 'Định mức 90 phút'}{event.minutes != null ? ` · ${event.minutes} phút` : ''}</span>
+            <small>{event.actor}</small>
+          </article>)}{!asArray(data.break_events).length && <div className="live-tour-empty">Chưa có lịch sử nghỉ giữa ca.</div>}</div>
+        </div>
+        <div className="live-tour-panel-toolbar"><h2>LỊCH SỬ & SAO LƯU</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => executeAction('backup', { name: `Backup ${new Date().toLocaleString('vi-VN')}` }, [])}><History size={13}/> Tạo bản sao lưu</button><button type="button" className="secondary-button" disabled={!canExportKind('history')} onClick={() => exportData('history')}><Download size={13}/> Xuất lịch sử</button></div></div>
+        <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{item?.created_at || item?.timestamp || ''}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => { if (window.confirm('Khôi phục bản sao này? Dữ liệu Live Tour hiện tại sẽ được thay thế.')) void executeAction('restore', { backup_id: item?._id ?? item?.id }, []) }}>Khôi phục</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có bản sao lưu.</div>}</div>
+        <div className="live-tour-catalog-section"><h3>Nhật ký thao tác</h3>{audit.length ? <div className="live-tour-card-grid">{audit.slice(0, 100).map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.action_label || item?.action || itemLabel(item, `Sự kiện ${index + 1}`)}</strong><span>{item?.employee_name || item?.actor || item?.created_by || ''}</span><small>{item?.at || item?.created_at || item?.timestamp || ''}</small><small>{item?.note || item?.message || (item?.detail ? JSON.stringify(item.detail) : '')}</small></article>)}</div> : <div className="live-tour-empty">Chưa có lịch sử thao tác.</div>}</div>
+      </div>}
+
+      {activePanel === 'catalog' && <div className="live-tour-panel-body">
+        <div className="live-tour-panel-toolbar"><h2>DANH MỤC LIVE TOUR</h2></div>
+        {canAdmin && <div className="live-tour-catalog-section">
+          <h3>Chuyển phiên quá hạn sang chờ thanh toán</h3>
+          <label>Quá giờ dịch vụ ít nhất (phút)<input type="number" min="0" max="1440" step="1" value={expiredGrace} disabled={Boolean(actionBusy)} onChange={(event) => { setExpiredGrace(event.target.value); setExpiredPreview(null) }}/></label>
+          <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={previewExpired}>Xem trước phiên quá hạn</button>
+          {expiredPreview && <div className="warning-box">
+            <strong>{expiredPreview.count} phiên quá hạn từ {expiredPreview.grace_minutes} phút</strong>
+            <p>Các phiên được chuyển sang chờ thanh toán; chưa ghi nhận thu tiền.</p>
+            <div className="live-tour-history-list">{asArray(expiredPreview.employees).map((item) => <article key={item.employee_id}><strong>{item.employee_name}</strong><span>{item.service} · Phòng {item.room}</span><small>Hết giờ: {item.ends_at}</small></article>)}</div>
+            {expiredPreview.base_revision !== data.revision && <p>Bảng đã thay đổi. Hãy xem trước lại.</p>}
+            <button type="button" className="primary-button" disabled={Boolean(actionBusy) || !expiredPreview.count || expiredPreview.base_revision !== data.revision} onClick={confirmExpired}>Xác nhận chuyển {expiredPreview.count} phiên</button>
+            <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => setExpiredPreview(null)}>Hủy</button>
+          </div>}
+        </div>}
+        {!canManageCatalog && <div className="live-tour-empty">Chỉ Admin hoặc tài khoản được cấp quyền mới được sửa danh mục.</div>}
+        {canManageCatalog && <>
+          <div className="live-tour-catalog-section"><div className="live-tour-panel-toolbar"><h3>Phòng / giường</h3><button type="button" className="secondary-button" onClick={() => openModal('room_upsert')}><Plus size={12}/> Thêm phòng</button></div><div className="live-tour-card-grid">{catalogRooms.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{roomLabel(item)}</strong><small>{isVipRoom(item) ? 'VIP' : 'Standard'}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => openModal('room_upsert', { item })}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeCatalogItem('room_delete', item)}>Xóa</button></div></article>)}</div></div>
+          <div className="live-tour-catalog-section"><div className="live-tour-panel-toolbar"><h3>Dịch vụ</h3><button type="button" className="secondary-button" onClick={() => openModal('service_upsert')}><Plus size={12}/> Thêm dịch vụ</button></div>{services.length ? <div className="live-tour-card-grid">{services.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item)}</strong><span>{item?.duration ?? item?.minutes ?? 0} phút · {formatMoney(item?.price ?? item?.amount ?? 0)}</span><div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => openModal('service_upsert', { item })}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeCatalogItem('service_delete', item)}>Xóa</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có dịch vụ.</div>}</div>
+          <div className="live-tour-catalog-section"><div className="live-tour-panel-toolbar"><h3>Combo</h3><button type="button" className="secondary-button" onClick={() => openModal('combo_upsert')}><Plus size={12}/> Thêm combo</button></div>{combos.length ? <div className="live-tour-card-grid">{combos.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item)}</strong><span>{item?.quantity ?? item?.tickets ?? 0} lượt · {formatMoney(item?.price ?? item?.amount ?? 0)}</span><div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => openModal('combo_upsert', { item })}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeCatalogItem('combo_delete', item)}>Xóa</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có combo.</div>}</div>
+        </>}
+      </div>}
+    </section>
+
+    {customerHistoryModal && <LiveTourModal title={`Lịch sử khách hàng · ${itemLabel(customerHistoryData.customer || customerHistoryModal.customer, 'Khách hàng')}`} onClose={() => setCustomerHistoryModal(null)}>
+      {customerHistoryBusy && <div className="live-tour-empty">Đang tải lịch sử chính xác theo mã khách hàng…</div>}
+      {customerHistoryModal.error && <div className="error-box">{customerHistoryModal.error}</div>}
+      {!customerHistoryBusy && customerHistoryModal.data && <div className="live-tour-history-sections">
+        <div className="live-tour-history-summary">{Object.entries(customerHistoryData.summary || {}).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}</div>
+        {customerHistorySections.map(([label, items]) => <section className="live-tour-catalog-section" key={label}><h3>{label} ({items.length})</h3>{items.length ? <div className="live-tour-history-list">{items.slice(0, 100).map((item, index) => <article key={itemId(item, index)}><strong>{item?.service || item?.combo_name || item?.bill_no || item?.employee_name || `${label} ${index + 1}`}</strong><span>{item?.payment_method || item?.status || item?.room || ''}</span><small>{item?.business_date || item?.effective_at || item?.created_at || item?.at || ''}</small>{Number.isFinite(Number(item?.total ?? item?.amount)) && <small>{formatMoney(item?.total ?? item?.amount)}</small>}</article>)}</div> : <div className="live-tour-empty">Chưa có dữ liệu.</div>}</section>)}
+      </div>}
+      <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={() => setCustomerHistoryModal(null)}>Đóng</button><button type="button" className="primary-button" disabled={!canPayment || !canExport || customerHistoryBusy || Boolean(actionBusy)} onClick={exportCustomerHistory}><Download size={13}/> Xuất chi tiết khách hàng</button></div>
+    </LiveTourModal>}
+
+    {modal && <LiveTourModal title={{
+      quick_booking: 'Đặt lịch nhanh', booking: 'Đặt lịch', multi_booking: 'Đặt lịch hàng loạt', checkout: 'Thanh toán', quick_checkout: 'Thanh toán nhanh',
+      add_employee: 'Thêm nhân viên', replace_service: 'Đổi dịch vụ', add_service: 'Thêm dịch vụ',
+      combo_purchase: modal.newCustomer ? 'Mua combo cho khách mới' : 'Mua combo', combo_import: 'Nhập combo cũ', room_upsert: modal.item ? 'Sửa phòng' : 'Thêm phòng',
+      service_upsert: modal.item ? 'Sửa dịch vụ' : 'Thêm dịch vụ', combo_upsert: modal.item ? 'Sửa combo' : 'Thêm combo',
+    }[modal.kind] || 'Live Tour'} onClose={closeModal}>
+      <form onSubmit={submitModal}>
+        <div className="live-tour-form-grid">
+          {modal.kind === 'quick_booking' && <>
+            <label className="live-tour-field wide"><span>Tìm nhân viên (có thể nhập không dấu)</span><input type="search" role="combobox" aria-controls="live-tour-quick-employees" aria-expanded={quickBookingMatches.length > 0} autoComplete="off" autoFocus value={form.employee_search} onChange={(event) => setForm((current) => ({ ...current, employee_search: event.target.value, employee_id: '' }))} placeholder="Nhập tên nhân viên…" required/></label>
+            <div className="live-tour-employee-picker" id="live-tour-quick-employees" role="listbox" aria-label="Nhân viên có thể đặt lịch nhanh">
+              {quickBookingMatches.map((record) => {
+                const id = stableEmployeeId(record)
+                const name = cellValue(record, employeeColumn)
+                const appointment = cellValue(record, appointmentColumn)
+                return <button type="button" role="option" aria-selected={form.employee_id === id} className={form.employee_id === id ? 'selected' : ''} onClick={() => setForm((current) => ({ ...current, employee_id: id, employee_search: name, appointment }))} key={id}>
+                  <strong>{name}</strong><span>STT {cellValue(record, sttColumn(columns))} · {cellValue(record, findColumn(columns, ['VAO CA', 'GIO VAO CA', 'THOI GIAN VAO CA'])) || 'Chưa có ca'}</span><small>{appointment ? `Lịch hẹn hiện tại: ${appointment}` : 'Chưa có lịch hẹn'}</small>
+                </button>
+              })}
+              {!quickBookingMatches.length && <div className="live-tour-empty">Không tìm thấy nhân viên đang rảnh, đi làm và có ca phù hợp.</div>}
+            </div>
+            {selectedQuickBookingRecord && <div className="live-tour-employee-picked" aria-live="polite">Đã chọn: {cellValue(selectedQuickBookingRecord, employeeColumn)} · Lịch hẹn hiện tại: {cellValue(selectedQuickBookingRecord, appointmentColumn) || 'Không có lịch hẹn'}</div>}
+            <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-quick-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-quick-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-quick-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-quick-service-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Yêu cầu</span><select value={form.request} onChange={(event) => setForm((current) => ({ ...current, request: event.target.value }))}><option value="">Không yêu cầu</option><option value="YC">YC</option></select></label>
+            <label className="live-tour-field"><span>Lịch hẹn</span><input type="text" list="live-tour-appointment-options" value={form.appointment} onChange={(event) => setForm((current) => ({ ...current, appointment: event.target.value }))} placeholder="Chọn hoặc nhập nội dung tự do"/><datalist id="live-tour-appointment-options">{appointmentOptions.map((appointment) => <option value={appointment} key={appointment}/>)}</datalist></label>
+            <label className="live-tour-check-field wide"><input type="checkbox" checked={form.auto_yc_ca1} onChange={(event) => setForm((current) => ({ ...current, auto_yc_ca1: event.target.checked }))}/> Tự động gán YC cho Ca 1 từ 23:00–03:00</label>
+            {renderBookingCustomerPicker()}
+            <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
+          </>}
+
+          {modal.kind === 'booking' && <>
+            <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-service-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Yêu cầu</span><select value={form.request} onChange={(event) => setForm((current) => ({ ...current, request: event.target.value }))}><option value="">Không yêu cầu</option><option value="YC">YC</option></select></label>
+            <label className="live-tour-field"><span>Lịch hẹn</span><input type="text" list="live-tour-booking-appointment-options" value={form.appointment} onChange={(event) => setForm((current) => ({ ...current, appointment: event.target.value }))} placeholder="Chọn hoặc nhập nội dung tự do"/><datalist id="live-tour-booking-appointment-options">{appointmentOptions.map((appointment) => <option value={appointment} key={appointment}/>)}</datalist></label>
+            {renderBookingCustomerPicker()}
+            <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
+          </>}
+
+          {modal.kind === 'multi_booking' && <>
+            <div className="live-tour-multi-booking">
+              {form.bookings.map((row, index) => <div className="live-tour-multi-row" key={row.employee_id}>
+                <strong>{row.employee_name}</strong>
+                <input list="live-tour-multi-room-options" value={row.room} onChange={(event) => updateBookingRow(index, 'room', event.target.value)} placeholder="Phòng / giường" aria-label={`Phòng của ${row.employee_name}`} required/>
+                <input list="live-tour-multi-service-options" value={row.service} onChange={(event) => updateBookingRow(index, 'service', event.target.value)} placeholder="Dịch vụ" aria-label={`Dịch vụ của ${row.employee_name}`} required/>
+                <select value={row.request} onChange={(event) => updateBookingRow(index, 'request', event.target.value)} aria-label={`Yêu cầu của ${row.employee_name}`}><option value="">Không yêu cầu</option><option value="YC">YC</option></select>
+              </div>)}
+              <datalist id="live-tour-multi-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist>
+              <datalist id="live-tour-multi-service-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist>
+            </div>
+            <label className="live-tour-check-field wide"><input type="checkbox" checked={form.auto_yc_ca1} onChange={(event) => setForm((current) => ({ ...current, auto_yc_ca1: event.target.checked }))}/> Tự động gán YC cho Ca 1 từ 23:00–03:00</label>
+            {renderBookingCustomerPicker('Khách hàng dùng chung')}
+            <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
+          </>}
+
+          {['checkout', 'quick_checkout'].includes(modal.kind) && <>
+            {modal.kind === 'quick_checkout' && !form.pending_id && <>
+              <label className="live-tour-field wide"><span>Tìm nhân viên chờ thanh toán</span><input type="search" value={form.employee_search} onChange={(event) => setForm((current) => ({ ...current, employee_search: event.target.value, employee_id: '' }))} placeholder="Nhập tên không dấu hoặc có dấu…" autoFocus/></label>
+              <div className="live-tour-employee-picker" aria-label="Nhân viên chờ thanh toán">
+                {quickCheckoutMatches.map((record, index) => {
+                  const id = stableEmployeeId(record)
+                  const name = cellValue(record, employeeColumn)
+                  const employee = asArray(data.state?.employees).find((item) => stableEmployeeId(item) === id)
+                  return <button type="button" className={form.employee_id === id ? 'selected' : ''} onClick={() => setForm((current) => ({
+                    ...current, employee_id: id, employee_search: name,
+                    customer_id: employee?.customer_id || '', customer_name: employee?.customer_name || '', phone: employee?.customer_phone || '',
+                    combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
+                  }))} key={`${id}:${index}`}><strong>{name}</strong><span>{cellValue(record, serviceColumn) || 'Chưa có dịch vụ'}</span><small>{cellValue(record, roomColumn) || 'Chưa có phòng'} · CHỜ THANH TOÁN</small></button>
+                })}
+                {!quickCheckoutMatches.length && <div className="live-tour-empty">Không tìm thấy nhân viên đang chờ thanh toán.</div>}
+              </div>
+              {selectedQuickCheckoutRecord && <div className="live-tour-employee-picked" aria-live="polite">Đã chọn: {cellValue(selectedQuickCheckoutRecord, employeeColumn)} · {cellValue(selectedQuickCheckoutRecord, serviceColumn) || 'Chưa có dịch vụ'}</div>}
+            </>}
+            <label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', customer_name: event.target.value, combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))} placeholder="Tìm hoặc nhập khách mới"/></label>
+            <label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', phone: event.target.value, combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))} placeholder="Tìm theo số điện thoại"/></label>
+            {form.customer_id && <div className="live-tour-customer-selected wide"><span>Đã liên kết đúng mã khách hàng: <strong>{form.customer_id}</strong></span><button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, customer_id: '', combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))}>Đổi khách hàng</button></div>}
+            {!form.customer_id && checkoutCustomerMatches.length > 0 && <div className="live-tour-customer-picker wide" aria-label="Kết quả tìm khách hàng">{checkoutCustomerMatches.map((customer, index) => {
+              const id = stableCustomerId(customer)
+              return <button type="button" onClick={() => setForm((current) => ({ ...current, customer_id: id, customer_name: itemLabel(customer), phone: customer?.phone || customer?.customer_phone || '', combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))} key={`${id}:${index}`}><strong>{itemLabel(customer)}</strong><span>{customer?.phone || customer?.customer_phone || 'Chưa có số điện thoại'}</span></button>
+            })}</div>}
+            <div className="live-tour-checkout-preview wide">
+              <strong>Dịch vụ và giá dự kiến từ dữ liệu server</strong>
+              {checkoutPreviewEntries.map((entry, index) => <div className="live-tour-checkout-entry" key={`${entry.employee_id || 'entry'}:${index}`}><span>{entry.employee_name || `Dòng ${index + 1}`} · {entry.service || 'Chưa có dịch vụ'}{entry.room ? ` · ${entry.room}` : ''}</span><strong>{Number.isFinite(entry.preview_price) ? formatMoney(entry.preview_price) : 'Server sẽ xác nhận giá'}</strong><small>{entry.ticket_units} vé combo theo định mức dịch vụ</small></div>)}
+              {!checkoutPreviewEntries.length && <div className="live-tour-empty">Không có dịch vụ hợp lệ để xem trước thanh toán.</div>}
+              {!checkoutUsesCombo && checkoutHasUnresolvedPricing && <div className="warning-box">Có dịch vụ chưa khớp danh mục. Cần sửa dịch vụ hoặc danh mục trước khi thanh toán.</div>}
+              {!checkoutUsesCombo && checkoutHasMixedPricing && <div className="warning-box">Không thể gộp dịch vụ đã có giá và dịch vụ giá 0. Hãy cấu hình giá hoặc tách lần thanh toán.</div>}
+              <div className="live-tour-checkout-total"><span>Tạm tính dự kiến</span><strong>{Number.isFinite(checkoutEffectiveSubtotal) ? formatMoney(checkoutEffectiveSubtotal) : 'Chờ server xác nhận'}</strong><span>Thành tiền dự kiến sau giảm giá và TIP</span><strong>{Number.isFinite(checkoutPreviewTotal) ? formatMoney(checkoutPreviewTotal) : 'Chờ server xác nhận'}</strong></div>
+              <small>Giá, tổng tiền và số vé cuối cùng luôn do server tính lại khi lưu; giao diện không gửi các giá trị này.</small>
+            </div>
+            <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value, ...(event.target.value === 'COMBO' ? {} : { combo_purchase_id: '' }) }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option><option value="COMBO" disabled={!form.combo_purchase_id}>COMBO · chọn combo đã mua</option></select></label>
+            <label className="live-tour-field"><span>Trừ vé combo</span><select value={form.combo_purchase_id} onChange={(event) => {
+              setForm((current) => ({
+                ...current, combo_purchase_id: event.target.value,
+                payment_method: event.target.value ? 'COMBO' : current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
+              }))
+            }} disabled={!form.customer_id}><option value="">Không trừ combo</option>{eligibleCheckoutCombos.map(({ purchase }, index) => {
+              const purchaseId = String(purchase?._id ?? purchase?.id ?? '')
+              return <option value={purchaseId} key={purchaseId || index}>{purchase.combo_name || 'Combo'} · còn {purchase.remaining} vé</option>
+            })}</select></label>
+            {form.combo_purchase_id && <div className="live-tour-combo-deduction wide">Server sẽ trừ <strong>{checkoutPreviewComboUnits} vé combo</strong> theo định mức của các dịch vụ phía trên.</div>}
+            {checkoutRequiresTicketPrice && <label className="live-tour-field wide"><span>Giá vé (dịch vụ chưa có giá danh mục)</span><input type="number" min="1" max="1000000000" step="1000" value={form.ticket_price} onChange={(event) => setForm((current) => ({ ...current, ticket_price: event.target.value }))} required/><small>Chỉ gửi giá vé này cho thanh toán tiền/thẻ; không gửi tổng tiền và không dùng khi trừ combo.</small></label>}
+            <label className="live-tour-field"><span>Số hóa đơn</span><input value={form.bill_no} onChange={(event) => setForm((current) => ({ ...current, bill_no: event.target.value }))}/></label>
+            <label className="live-tour-field"><span>Số vé</span><input value={form.ticket_no} onChange={(event) => setForm((current) => ({ ...current, ticket_no: event.target.value }))}/></label>
+            <label className="live-tour-field"><span>Giảm giá</span><input type="number" min="0" value={form.discount} onChange={(event) => setForm((current) => ({ ...current, discount: event.target.value }))}/></label>
+            <label className="live-tour-field"><span>Tiền TIP</span><input type="number" min="0" value={form.tip} onChange={(event) => setForm((current) => ({ ...current, tip: event.target.value }))}/></label>
+            <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
+          </>}
+
+          {modal.kind === 'add_employee' && <><label className="live-tour-field wide"><span>Tên nhân viên</span><input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required autoFocus/></label><p className="wide">Nhân viên mới mặc định Nghỉ, chưa vào ca. Sau khi thêm, chọn Đi làm và Ca 1/Ca 2 khi nhân viên thực sự vào ca.</p><label className="live-tour-check-field"><input type="checkbox" checked={form.vip} onChange={(event) => setForm((current) => ({ ...current, vip: event.target.checked }))}/> Thêm nhân viên VIP</label></>}
+
+          {['replace_service', 'add_service'].includes(modal.kind) && <><label className="live-tour-field wide"><span>Dịch vụ</span><input list="live-tour-service-change-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required autoFocus/><datalist id="live-tour-service-change-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
+
+          {modal.kind === 'combo_purchase' && <>
+            <label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} readOnly={!modal.newCustomer} onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value }))} required autoFocus={Boolean(modal.newCustomer)}/></label>
+            <label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} readOnly={!modal.newCustomer} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}/></label>
+            <label className="live-tour-field"><span>Combo</span><select value={form.combo_id} onChange={(event) => setForm((current) => ({ ...current, combo_id: event.target.value }))} required><option value="">-- Chọn combo --</option>{combos.map((combo, index) => <option value={itemId(combo, index)} key={itemId(combo, index)}>{itemLabel(combo)}</option>)}</select></label>
+            <label className="live-tour-field"><span>Số combo</span><input type="number" min="1" max="1000" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} required/></label>
+            <label className="live-tour-field wide"><span>Thành tiền dự kiến theo danh mục</span><input type="text" value={comboPurchasePreviewAmount === null ? 'Chọn combo để xem giá' : formatMoney(comboPurchasePreviewAmount)} readOnly aria-readonly="true"/><small>Đây chỉ là số hiển thị. Server lấy giá danh mục hiện hành, tính và lưu số tiền chính thức.</small></label>
+            <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option></select></label>
+            <label className="live-tour-field"><span>Số hóa đơn</span><input value={form.bill_no} onChange={(event) => setForm((current) => ({ ...current, bill_no: event.target.value }))}/></label>
+            <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
+          </>}
+
+          {canAdmin && ['checkout', 'quick_checkout', 'combo_purchase'].includes(modal.kind) && <div className="live-tour-correction wide">
+            <label className="live-tour-check-field"><input type="checkbox" checked={form.backdate_one_day} onChange={(event) => setForm((current) => ({ ...current, backdate_one_day: event.target.checked, correction_reason: event.target.checked ? current.correction_reason : '' }))}/> Lùi 1 ngày (Admin)</label>
+            {form.backdate_one_day && <label className="live-tour-field"><span>Lý do điều chỉnh</span><textarea value={form.correction_reason} minLength="3" onChange={(event) => setForm((current) => ({ ...current, correction_reason: event.target.value }))} required placeholder="Bắt buộc ghi rõ lý do…"/></label>}
+          </div>}
+
+          {modal.kind === 'combo_import' && <><label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value }))} required/></label><label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}/></label><label className="live-tour-field"><span>Combo</span><select value={form.combo_id} onChange={(event) => setForm((current) => ({ ...current, combo_id: event.target.value }))} required><option value="">-- Chọn combo --</option>{combos.map((combo, index) => <option value={itemId(combo, index)} key={itemId(combo, index)}>{itemLabel(combo)}</option>)}</select></label><label className="live-tour-field"><span>Số lượt còn lại</span><input type="number" min="0" value={form.remaining} onChange={(event) => setForm((current) => ({ ...current, remaining: event.target.value }))} required/></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
+
+          {modal.kind === 'room_upsert' && <><label className="live-tour-field"><span>Mã phòng / giường</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value, room: event.target.value }))} required autoFocus/></label><p>Phòng 16–21 tự động thuộc nhóm VIP; các phòng khác là Standard.</p></>}
+          {modal.kind === 'service_upsert' && <><label className="live-tour-field"><span>Mã dịch vụ</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên dịch vụ</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Thời lượng (phút)</span><input type="number" min="0" value={form.duration} onChange={(event) => setForm((current) => ({ ...current, duration: event.target.value }))}/></label><label className="live-tour-field"><span>Đơn giá</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
+          {modal.kind === 'service_upsert' && <>
+            <label className="live-tour-field"><span>Số vé combo trừ</span><input type="number" min="0" max="100000" step="1" value={form.ticket_units} required onChange={(event) => setForm((current) => ({ ...current, ticket_units: event.target.value }))}/></label>
+            <label className="live-tour-field"><span>Thời lượng khi YC (để trống = mặc định)</span><input type="number" min="0" max="1440" value={form.request_duration} onChange={(event) => setForm((current) => ({ ...current, request_duration: event.target.value }))}/></label>
+            <label className="live-tour-check-field"><input type="checkbox" checked={form.private_service} onChange={(event) => setForm((current) => ({ ...current, private_service: event.target.checked }))}/> Khóa toàn phòng (PR)</label>
+            <label className="live-tour-check-field"><input type="checkbox" checked={form.request_eligible} onChange={(event) => setForm((current) => ({ ...current, request_eligible: event.target.checked }))}/> Cho phép YC</label>
+            <label className="live-tour-check-field"><input type="checkbox" checked={form.non_request_eligible} onChange={(event) => setForm((current) => ({ ...current, non_request_eligible: event.target.checked }))}/> Cho phép không YC</label>
+          </>}
+          {modal.kind === 'combo_upsert' && <><label className="live-tour-field"><span>Mã combo</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên combo</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Số lượt</span><input type="number" min="1" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="live-tour-field"><span>Giá combo</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
+        </div>
+        <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={closeModal}>Hủy</button><button type="submit" className="primary-button" disabled={Boolean(actionBusy) || (modal.kind === 'quick_booking' && !selectedQuickBookingRecord) || (modal.kind === 'quick_checkout' && !form.pending_id && !selectedQuickCheckoutRecord) || (['checkout', 'quick_checkout'].includes(modal.kind) && !checkoutUsesCombo && (checkoutHasUnresolvedPricing || checkoutHasMixedPricing))}>{actionBusy ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
+      </form>
+    </LiveTourModal>}
+
+    {canAdmin && showAdminTools && <>
+      <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu trạng thái Live Tour; Break được ưu tiên hiển thị cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
+    </>}
+
+    <div className="setup-note tour-countdown-note">Live Tour lưu trực tiếp trên máy chủ, kiểm tra phiên bản trước mỗi thao tác và tự tải lại khi có người dùng khác cập nhật.</div>
+  </div>
+}

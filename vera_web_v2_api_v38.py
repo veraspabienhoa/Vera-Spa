@@ -42,6 +42,7 @@ from vera_web_v2_leave_sync_queue import install_leave_sync_queue
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
 from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
+from vera_web_v2_live_tour import install_live_tour_routes
 from vera_web_v2_operations_v41 import install_operations_v41
 from vera_web_v2_outside_leave_rule import install_outside_leave_rule
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
@@ -184,6 +185,7 @@ install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_insta
 install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_tour_leave_sync_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, invalidate_tour_cache=invalidate_tour_cache)
 install_tour_source_routes(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity, invalidate_tour_cache=invalidate_tour_cache)
+install_live_tour_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, identity_type=_api.Identity, vn_tz=_api.VN_TZ)
 install_leave_source_export_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID)
 install_work_schedule_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, feature_allowed=_api._feature_allowed)
 install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)

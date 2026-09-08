@@ -105,6 +105,7 @@ def test_sync_all_matches_first_reason_and_vba_status_rules():
         "source_permit": 1,
         "source_no_permit": 0,
         "source_special": 3,
+        "affected_rows": [21, 22, 24],
     }
     assert rows["An"] == {"reason": "Nghỉ phép", "status": "Nghi phep"}
     assert rows["Bình"] == {
@@ -160,6 +161,7 @@ def test_xlsm_update_preserves_vba_and_drawings_exactly():
 
 
 def test_date_and_reason_aliases_match_vba():
+    assert sync._employee_key("Nguyễn   An") == sync._employee_key("Nguyen An *")
     assert sync._same_date("2026-08-31", date(2026, 8, 31))
     assert sync._same_date(46265, date(2026, 8, 31))
     assert sync._convert_reason("Nghỉ CUỐI TUẦN KHÔNG phép") == "Nghi khong phep CUOI TUAN"

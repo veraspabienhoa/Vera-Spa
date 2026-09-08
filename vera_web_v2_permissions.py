@@ -24,6 +24,13 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "tour": "Xem Bảng tua", "tour_refresh": "Làm mới Bảng tua",
         "tour_leave_sync": "Cập nhật lịch nghỉ vào TourVera",
     },
+    "Live Tour": {
+        "live_tour_view": "Xem Live Tour",
+        "live_tour_operate": "Xếp tua và vận hành",
+        "live_tour_payment": "Thanh toán và quản lý combo",
+        "live_tour_admin": "Quản trị nhân viên, danh mục và sao lưu",
+        "live_tour_export": "Xuất Excel / PNG",
+    },
     "Lịch nghỉ": {
         "leave": "Xem Đăng ký nghỉ", "leave_manage": "Xem Quản lý lịch nghỉ",
         "leave_create": "Đăng ký / ghi lịch nghỉ",
@@ -93,6 +100,7 @@ FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in gr
 
 FRONTDESK = {
     "tour", "tour_refresh", "tour_leave_sync", "leave", "leave_manage", "leave_create", "leave_export", "leave_email", "leave_detail_edit", "leave_detail_delete",
+    "live_tour_view", "live_tour_operate", "live_tour_payment", "live_tour_export",
     "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete",
     "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add",
     "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
@@ -103,6 +111,7 @@ FRONTDESK = {
 }
 EMPLOYEE = {
     "tour", "tour_refresh", "leave", "leave_manage", "leave_create", "leave_export", "leave_detail_edit", "leave_detail_delete",
+    "live_tour_view",
     "leave_manage_edit", "leave_manage_delete", "long_leave", "long_leave_form", "resignation_form",
     "long_leave_document", "profile", "profile_edit", "birthday", "birthday_check",
     "contract_1_view", "contract_1_export_self",
@@ -110,7 +119,7 @@ EMPLOYEE = {
 DEFAULT_ROLE_FEATURES = {
     "admin": set(FEATURES), "quanly": set(FRONTDESK), "letan": set(FRONTDESK),
     "leader": set(EMPLOYEE), "nhanvien": set(EMPLOYEE),
-    "locker": {"tour", "tour_refresh", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form", "contract_1_view", "contract_1_export_self"},
+    "locker": {"tour", "tour_refresh", "live_tour_view", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form", "contract_1_view", "contract_1_export_self"},
     "tapvu": {"profile", "profile_edit", "birthday", "birthday_check", "resignation_form", "contract_1_view", "contract_1_export_self"},
 }
 
