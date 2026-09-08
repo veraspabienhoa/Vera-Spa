@@ -18,7 +18,7 @@ from sqlalchemy import text
 import vera_web_v2_permissions as permissions
 
 
-RELEASE = "payroll-personal-tracking-2026-08-31-v2"
+RELEASE = "payroll-personal-tracking-refund-notes-2026-09-08-v3"
 _EMPLOYEE_PAYROLL_ROLES = ("nhanvien", "leader")
 _NON_TRACKED_ROLES = ("locker", "tapvu")
 _DEFAULT_ACCUMULATION_TARGET = 5_000_000
@@ -227,6 +227,7 @@ def install_payroll_personal_routes(
             history = _dataset(conn, "payroll_history")
             tichluy_rows = _dataset(conn, "tichluy")
             obligations = _obligation_rows(conn, norm)
+            refunds = _setting(conn, "accumulation_refunds")
 
         if not is_admin:
             employees = [
@@ -242,6 +243,12 @@ def install_payroll_personal_routes(
                 }]
 
         tichluy_by_key = {norm(item.get("Tên nhân viên")): item for item in tichluy_rows if norm(item.get("Tên nhân viên"))}
+        refund_notes_by_key: dict[str, list[str]] = {}
+        for refund in refunds:
+            refund_key = norm(refund.get("employee_name"))
+            note = str(refund.get("note") or "").strip()
+            if refund_key and note and note not in refund_notes_by_key.setdefault(refund_key, []):
+                refund_notes_by_key[refund_key].append(note)
         output = []
         for employee in employees:
             username = str(employee.get("username") or "").strip()
@@ -257,6 +264,11 @@ def install_payroll_personal_routes(
             remaining = max(0, target - paid_total)
             employee_obligations = [row for row in obligations if norm(row.get("employee_name")) in keys]
             obligation_total = sum(max(0, _number(row.get("amount"))) for row in employee_obligations)
+            refund_notes = []
+            for key in keys:
+                for note in refund_notes_by_key.get(key, []):
+                    if note not in refund_notes:
+                        refund_notes.append(note)
             output.append({
                 "employee_name": username,
                 "full_name": full_name,
@@ -273,6 +285,7 @@ def install_payroll_personal_routes(
                 "obligation_total": obligation_total,
                 "obligation_count": len(employee_obligations),
                 "obligations": employee_obligations,
+                "refund_note": " · ".join(refund_notes),
             })
 
         output.sort(key=lambda row: (0 if row.get("role") == "leader" else 1, norm(row.get("employee_name"))))

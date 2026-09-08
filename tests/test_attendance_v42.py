@@ -2,7 +2,7 @@ from datetime import date, datetime
 import unittest
 
 import vera_auto_check as auto_check
-from vera_web_v2_attendance_v42 import _looks_like_final_checkout, _work_day_for_row
+from vera_web_v2_attendance_v42 import _break_from_punches, _looks_like_final_checkout, _work_day_for_row
 
 from vera_attendance_rules import (
     apply_break_restriction,
@@ -122,6 +122,40 @@ class OvernightCheckoutBoundaryTests(unittest.TestCase):
             _work_day_for_row({}, [datetime(2026, 9, 4, 3, 0)]),
             date(2026, 9, 3),
         )
+
+    def test_checkout_window_is_excluded_from_checkin_and_break_pair(self):
+        result = _break_from_punches(
+            [
+                datetime(2026, 9, 3, 10, 0),
+                datetime(2026, 9, 3, 17, 0),
+                datetime(2026, 9, 3, 18, 0),
+                datetime(2026, 9, 3, 23, 0),
+                datetime(2026, 9, 4, 3, 0),
+            ],
+            work_day=self.work_day,
+            representative={"StartWorkTime": "10:00", "EndWorkTime": "03:00"},
+            cfg={
+                "faceid_cluster_minutes": 5,
+                "break_planned_minutes": 60,
+                "break_enabled": True,
+            },
+        )
+        self.assertEqual(result["faceid_check_in"], "10:00:00")
+        self.assertEqual(result["break_out"], "17:00:00")
+        self.assertEqual(result["break_in"], "18:00:00")
+        self.assertEqual(result["break_actual_minutes"], 60)
+        self.assertEqual(result["faceid_check_out"], "03:00:00")
+
+    def test_checkout_only_feed_never_becomes_checkin(self):
+        result = _break_from_punches(
+            [datetime(2026, 9, 4, 1, 30)],
+            work_day=self.work_day,
+            representative={},
+            cfg={"faceid_cluster_minutes": 5, "break_planned_minutes": 60, "break_enabled": True},
+        )
+        self.assertEqual(result["faceid_check_in"], "")
+        self.assertEqual(result["break_out"], "")
+        self.assertEqual(result["faceid_check_out"], "01:30:00")
 
 
 class SupportedLatePenaltyThresholdTests(unittest.TestCase):

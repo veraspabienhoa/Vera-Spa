@@ -82,10 +82,10 @@ function ObligationList({ obligations }) {
   </div>
 }
 
-function AdminTrackingTable({ rows, emptyText, editable = false, onAdd, onEdit, onDelete, busyEmployee }) {
+function AdminTrackingTable({ rows, emptyText, editable = false, showRefundNote = false, onAdd, onEdit, onDelete, busyEmployee }) {
   return <div className="responsive-data-table payroll-personal-admin-table">
     <table>
-      <thead><tr><th>Nhân viên</th><th>Chức vụ</th><th>Mục tiêu</th><th>Đã đóng</th><th>Còn lại</th><th>Số kỳ đã đóng</th><th>Nghĩa vụ chưa hoàn thành</th>{editable && <th>Điều chỉnh</th>}<th>Chi tiết</th></tr></thead>
+      <thead><tr><th>Nhân viên</th><th>Chức vụ</th><th>Mục tiêu</th><th>Đã đóng</th><th>Còn lại</th><th>Số kỳ đã đóng</th><th>Nghĩa vụ chưa hoàn thành</th>{showRefundNote && <th>Ghi chú hoàn trả</th>}{editable && <th>Điều chỉnh</th>}<th>Chi tiết</th></tr></thead>
       <tbody>{rows.map((item) => <tr key={item.employee_name}>
         <td><strong>{item.employee_name}</strong><small>{item.full_name || '—'}</small></td>
         <td>{roleLabel(item.role)}</td>
@@ -94,6 +94,7 @@ function AdminTrackingTable({ rows, emptyText, editable = false, onAdd, onEdit, 
         <td className="money-cell"><strong>{money(item.remaining)}</strong></td>
         <td className="center">{Number(item.period_count || 0).toLocaleString('vi-VN')}</td>
         <td className="money-cell">{money(item.obligation_total)}</td>
+        {showRefundNote && <td>{item.refund_note || '—'}</td>}
         {editable && <td><div className="payroll-personal-adjust-actions">
           <button type="button" className="secondary-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onAdd(item)}><Plus size={14}/> Thêm</button>
           <button type="button" className="secondary-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onEdit(item)}><Pencil size={14}/> Sửa</button>
@@ -229,7 +230,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
             <h3>ĐÃ HOÀN THÀNH ĐÓNG TIỀN TÍCH LŨY ({completedRows.length})</h3>
             <button className="secondary-button compact" type="button" onClick={() => setCompletedOpen((value) => !value)}>{completedOpen ? <ChevronDown size={15}/> : <ChevronRight size={15}/>} {completedOpen ? 'Ẩn' : 'Hiện'}</button>
           </div>
-          {completedOpen && <AdminTrackingTable rows={completedRows} emptyText="Chưa có Leader/Nhân viên hoàn thành đóng tiền tích lũy." />}
+          {completedOpen && <AdminTrackingTable rows={completedRows} showRefundNote emptyText="Chưa có Leader/Nhân viên hoàn thành đóng tiền tích lũy." />}
         </> : mine && <>
           <div className="payroll-personal-metrics">
             <div className="payroll-personal-metric"><span>MỤC TIÊU TÍCH LŨY</span><strong>{money(mine.target)}</strong></div>

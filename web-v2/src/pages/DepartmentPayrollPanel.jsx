@@ -1,5 +1,5 @@
 import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { numberInputDisplayValue } from '../lib/numberInput'
 
@@ -73,6 +73,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const isAdmin = role === 'admin'
   const permissions = user?.permissions || {}
   const canConfig = isAdmin && (permissions.payroll_config_edit !== false)
+  const canCalculate = isAdmin || permissions.payroll_calculate
   const canSave = isAdmin || permissions.payroll_save
   const canExport = isAdmin || permissions.payroll_export
   const canEmail = isAdmin || permissions.payroll_email
@@ -89,6 +90,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
+  const automaticDayRef = useRef('')
 
   const totalNet = rows.reduce((sum, row) => sum + Number(row.net_salary || 0), 0)
   const totalAdvance = rows.reduce((sum, row) => sum + Number(row.advance || 0), 0)
@@ -117,6 +119,24 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     setEditingHistoryId('')
     setNotice({ type: 'success', message: `Đã tính ${result.rows?.length || 0} nhân viên Quản lý, Locker, Lễ tân và Tạp vụ từ ${result.source_label}.` })
   })
+
+  useEffect(() => {
+    if (!canCalculate || settingsOnly || month !== monthNow()) return undefined
+    const refreshCompletedDays = () => {
+      const dayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+      if (automaticDayRef.current === dayKey) return
+      automaticDayRef.current = dayKey
+      void run('calculate-attendance', async () => {
+        const result = await request(`/v2/department-payroll/combined/calculate?month=${month}&source=attendance`)
+        setRows(result.rows || [])
+        setSelected([])
+        setEditingHistoryId('')
+      })
+    }
+    refreshCompletedDays()
+    const timer = window.setInterval(refreshCompletedDays, 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [canCalculate, month, settingsOnly])
 
   const loadDraft = () => run('draft-load', async () => {
     const result = await request(`/v2/department-payroll/combined/draft?month=${month}`)
@@ -250,10 +270,10 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 
   return <div className="feature-page department-payroll-page">
     <section className="panel department-payroll-panel">
-      <div className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Một bảng chung cho Quản lý, Locker, Lễ tân và Tạp vụ. Quản lý/Locker/Lễ tân tính theo giờ; Tạp vụ tính theo 26 ngày công.</p></div></div>
+      <div className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Mặc định hiển thị tháng hiện tại và tự cập nhật mỗi ngày, cộng dồn từ ngày 01 đến hết ngày hôm qua. Quản lý/Locker/Lễ tân tính theo giờ; Tạp vụ tính theo 26 ngày công.</p></div></div>
       {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
       <div className="department-payroll-toolbar">
-        <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]); setEditingHistoryId('') }} /></label>
+        <label>Tháng lương<input type="month" value={month} onChange={(event) => { automaticDayRef.current = ''; setMonth(event.target.value); setRows([]); setEditingHistoryId('') }} /></label>
         <button className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /> Tính từ chấm công</button>
         <button className="primary-button" disabled={Boolean(busy)} onClick={() => calculate('schedule')}><CalendarDays size={16} /> Tính từ lịch làm việc</button>
         <button className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}>Mở bảng nháp</button>

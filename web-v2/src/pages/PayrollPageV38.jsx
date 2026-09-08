@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
 import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
 import PayrollPersonalTracking from './PayrollPersonalTracking'
-import PayrollSavedAdminPanel from './PayrollSavedAdminPanel'
 import PayrollTimesoftAutoLoader from './PayrollTimesoftAutoLoader'
 import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
@@ -250,7 +249,6 @@ export default function PayrollPageV38({ user }) {
     <PayrollTimesoftAutoLoader enabled={canCalculate && canFullPayroll} />
     {canFullPayroll && <PayrollPage key={payrollVersion} user={user} />}
     {showPersonalTracking && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
-    {canFullPayroll && <PayrollSavedAdminPanel user={user} />}
     {isAdmin && canFullPayroll && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
     {canFullPayroll && canEditConfig && <div className="feature-page payroll-page payroll-v38-config">
       <section className="panel">

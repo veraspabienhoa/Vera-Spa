@@ -299,13 +299,24 @@ def _break_from_punches(
             "raw_faceid_count": 0,
         }
 
-    # First clustered event is shift check-in.  Only remove the last event when
-    # it is demonstrably final checkout.  Therefore the real Thiên Kim sequence
-    # 12:45 / 18:29 / 19:52 becomes the break pair 18:29 → 19:52 (83 minutes).
-    middle = list(clustered[1:])
-    final_checkout = None
-    if middle and _looks_like_final_checkout(middle[-1], work_day, representative, len(clustered)):
-        final_checkout = middle.pop()
+    # Every FaceID from 23:00 of the workday through 03:00 the following day is
+    # strictly a checkout.  Remove the whole window before selecting either the
+    # first check-in or a mid-shift break pair; this also handles feeds that only
+    # contain an overnight checkout record.
+    checkout_events = [
+        value for value in clustered
+        if _looks_like_final_checkout(value, work_day, representative, len(clustered))
+    ]
+    eligible = [
+        value for value in clustered
+        if not _looks_like_final_checkout(value, work_day, representative, len(clustered))
+    ]
+    final_checkout = max(checkout_events) if checkout_events else None
+
+    # First eligible event is shift check-in. Therefore the real Thiên Kim
+    # sequence 12:45 / 18:29 / 19:52 becomes 18:29 → 19:52 (83 minutes).
+    check_in = eligible[0] if eligible else None
+    middle = list(eligible[1:])
 
     chosen = _pick_break_pair(middle, planned, int(cfg.get("faceid_cluster_minutes") or 10))
     break_out, break_in, method = chosen if chosen else (None, None, "Chưa đủ FaceID")
@@ -341,7 +352,7 @@ def _break_from_punches(
         "break_status": status,
         "punch_times": [value.strftime("%H:%M:%S") for value in clustered],
         "raw_faceid_count": len(clustered),
-        "faceid_check_in": clustered[0].strftime("%H:%M:%S"),
+        "faceid_check_in": check_in.strftime("%H:%M:%S") if check_in else "",
         "faceid_check_out": final_checkout.strftime("%H:%M:%S") if final_checkout else "",
         "faceid_last": clustered[-1].strftime("%H:%M:%S"),
     }
