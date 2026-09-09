@@ -11,6 +11,7 @@ import LiveTourReceipt from '../components/LiveTourReceipt'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import LiveTourServiceActions from '../components/LiveTourServiceActions'
 import { discountAmount } from '../lib/liveTourBooking'
+import { availableBookingPurchase } from '../lib/liveTourComboBooking'
 import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, vietnamDate } from '../lib/serviceCatalog'
 
 const EMPTY_LIVE_TOUR = {
@@ -713,13 +714,15 @@ export default function LiveTourPage({ user }) {
   const openModal = (kind, context = {}) => {
     const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
     const capturedEmployees = capturedRowIds?.length
-      ? asArray(data.state?.employees).filter((employee) => capturedRowIds.includes(stableEmployeeId(employee)))
+      ? [...asArray(data.state?.employees), ...asArray(data.retained_assignments)].filter((employee) => capturedRowIds.includes(stableEmployeeId(employee)))
       : []
     const capturedCustomerIds = new Set(capturedEmployees.map((employee) => String(employee?.customer_id || '')).filter(Boolean))
     const capturedCustomer = capturedCustomerIds.size <= 1
       ? capturedEmployees.find((employee) => employee?.customer_id) || capturedEmployees[0]
       : null
     const source = context.item || capturedCustomer || {}
+    const capturedComboIds = new Set(capturedEmployees.map((employee) => employee.combo_purchase_id || ''))
+    const sourceComboId = context.item ? source.combo_purchase_id || '' : capturedComboIds.size === 1 ? [...capturedComboIds][0] : ''
     const sourceIsCapturedEmployee = !context.item && Boolean(capturedCustomer)
     setError('')
     setForm({
@@ -739,7 +742,8 @@ export default function LiveTourPage({ user }) {
       request_duration: String(source.request_duration ?? ''),
       remaining: String(source.remaining ?? source.balance ?? context.defaults?.remaining ?? ''),
       pending_id: source.pending_id ?? (['checkout', 'quick_checkout'].includes(kind) && context.item ? context.item?._id ?? context.item?.id : '') ?? context.defaults?.pending_id ?? '',
-      combo_purchase_id: source.combo_purchase_id ?? context.defaults?.combo_purchase_id ?? '',
+      combo_purchase_id: sourceComboId || context.defaults?.combo_purchase_id || '',
+      payment_method: sourceComboId ? 'COMBO' : context.defaults?.payment_method || EMPTY_FORM.payment_method,
       bookings: kind === 'multi_booking' ? selectedRecords.map((record, index) => ({
         employee_id: recordId(record, index), employee_name: cellValue(record, employeeColumn),
         room: cellValue(record, roomColumn), service: cellValue(record, serviceColumn),
@@ -1053,10 +1057,12 @@ export default function LiveTourPage({ user }) {
         ? [stableEmployeeId(selectedQuickCheckoutRecord)]
         : []
     return ids.map((id) => {
-      const employee = asArray(data.state?.employees).find((item) => stableEmployeeId(item) === id)
+      const employee = [...asArray(data.state?.employees), ...asArray(data.retained_assignments)].find((item) => stableEmployeeId(item) === id)
       if (employee) return {
         employee_id: id, employee_name: employee.name, service: employee.service, room: employee.room,
         price: employee.service_price, price_source: employee.service_price_source, service_items: employee.service_items,
+        combo_purchase_id: employee.combo_purchase_id, combo_reserved_units: employee.combo_reserved_units,
+        combo_reserved_components: employee.combo_reserved_components,
       }
       const record = asArray(data.records).find((item) => stableEmployeeId(item) === id)
       return record ? { employee_id: id, employee_name: cellValue(record, employeeColumn), service: cellValue(record, serviceColumn), room: cellValue(record, roomColumn) } : null
@@ -1065,7 +1071,7 @@ export default function LiveTourPage({ user }) {
   const effectiveCatalogDate = catalogTransactionDate(clockMs, form.backdate_one_day)
   const bookableServices = services.filter((item) => catalogIsAvailable(item, vietnamDate(clockMs)))
   const saleableCombos = combos.filter((item) => catalogIsAvailable(item, effectiveCatalogDate) && asArray(item.components).every((part) => services.some((service) => service.id === part.service_id && catalogIsAvailable(service, effectiveCatalogDate))))
-  const eligibleCheckoutCombos = purchasedCombos.filter(({ customer, purchase }) => {
+  const eligibleCheckoutCombos = purchasedCombos.map(({ customer, purchase }) => ({ customer, purchase: availableBookingPurchase(purchase, checkoutSourceEntries) })).filter(({ customer, purchase }) => {
     const customerId = String(customer?._id ?? customer?.id ?? customer?.customer_id ?? '')
     return customerId && customerId === String(form.customer_id || '') && comboUsagePreview(purchase, checkoutSourceEntries, services, effectiveCatalogDate).eligible
   })

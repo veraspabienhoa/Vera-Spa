@@ -44,7 +44,7 @@ MAX_MONEY = 10_000_000_000
 MAX_SERVICE_DURATION_MINUTES = 1_440
 MAX_TICKET_UNITS = 100_000
 MAX_PURCHASE_QUANTITY = 1_000
-CUSTOMER_PII_KEYS = frozenset({"customer_id", "customer_name", "customer_phone", "phone"})
+CUSTOMER_PII_KEYS = frozenset({"customer_id", "customer_name", "customer_phone", "phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components"})
 PROTECTED_IDEMPOTENCY_ACTIONS = frozenset({
     "checkout", "quick_checkout", "combo_purchase", "sync_leaves", "finish_to_pending", "start_room", "finish_room",
 })
@@ -873,6 +873,8 @@ def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room
 
 def _clear_assignment(employee: dict[str, Any]) -> None:
     employee.pop("service_items", None)
+    for key in ("combo_purchase_id", "combo_reserved_units", "combo_reserved_components"):
+        employee.pop(key, None)
     for key in (
         "appointment", "service", "request", "request_source", "room", "status", "booked_at",
         "started_at", "completed_at", "payment_status", "customer_id", "customer_name",
@@ -970,6 +972,58 @@ def _entry_ticket_units(state, entry):
     return _service_ticket_units(state, entry.get("service"))
 
 
+def _available_combo(state, customer_id, purchase, *, employee_ids=(), pending_id=""):
+    """Subtract open reservations without changing the purchased ticket ledger.
+
+    Called under the same state lock as booking/checkout. Include hidden and
+    retained assignments; exclude only the transaction currently being edited.
+    """
+    available = deepcopy(purchase)
+    reservations = [row for row in state["employees"]
+                    if row.get("service") and row.get("id") not in employee_ids
+                    and row.get("customer_id") == customer_id]
+    for pending in state["pending"]:
+        if pending.get("id") != pending_id and pending.get("customer_id") == customer_id:
+            reservations.extend(pending.get("entries") or [])
+    reserved = 0
+    by_service = {}
+    for row in reservations:
+        if row.get("combo_purchase_id") != purchase.get("id"):
+            continue
+        reserved += int(row.get("combo_reserved_units") or 0)
+        for part in row.get("combo_reserved_components") or []:
+            key = part["service_id"]
+            by_service[key] = by_service.get(key, 0) + part["units"]
+    available["booking_reserved"] = reserved
+    available["remaining"] = max(0, int(purchase.get("remaining") or 0) - reserved)
+    for part in available.get("component_balances") or []:
+        part["remaining"] = max(0, part["remaining"] - by_service.get(part["service_id"], 0))
+    return available
+
+
+def _booking_combo(state, customer, payload, entry, now, employee=None):
+    employee = employee or {}
+    purchase_id = payload.get("combo_purchase_id", employee.get("combo_purchase_id", ""))
+    if purchase_id is not None and not isinstance(purchase_id, str):
+        raise HTTPException(400, "Mã combo đã mua không hợp lệ.")
+    purchase_id = (purchase_id or "").strip()
+    if not purchase_id:
+        return {"combo_purchase_id": "", "combo_reserved_units": 0, "combo_reserved_components": []}
+    if not customer:
+        raise HTTPException(400, "Phải chọn khách hàng khi đặt lịch bằng combo.")
+    purchase = next((row for row in customer.get("combo_purchases", []) if row.get("id") == purchase_id), None)
+    if purchase is None:
+        raise HTTPException(404, "Không tìm thấy combo đã mua của khách hàng.")
+    available = _available_combo(state, customer["id"], purchase, employee_ids=[employee.get("id")])
+    if available["remaining"] <= 0:
+        raise HTTPException(409, "Combo còn 0 vé có thể đặt lịch (đã hết hoặc đã được giữ chỗ).")
+    plan = component_debits(available, [entry], state["services"], now.astimezone(VN_TZ).date())
+    units = sum(row["units"] for row in plan) if "component_balances" in purchase else _entry_ticket_units(state, entry)
+    if units <= 0 or units > available["remaining"] or units > MAX_TICKET_UNITS:
+        raise HTTPException(409, f"Combo chỉ còn {available['remaining']} vé có thể đặt lịch, không đủ dùng {units} vé.")
+    return {"combo_purchase_id": purchase_id, "combo_reserved_units": units, "combo_reserved_components": plan}
+
+
 def _service_catalog_price(state: dict[str, Any], service_name: Any) -> int | None:
     name = str(service_name or "").strip()
     if not name:
@@ -1042,7 +1096,9 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
     customer = None
     if any(payload.get(key) for key in ("customer_id", "customer_name", "customer_phone", "phone")):
         customer = _customer(state, payload)
+    combo = _booking_combo(state, customer, payload, {"service": service, "service_items": service_items}, now)
     employee.update({
+        **combo,
         "appointment": str(payload.get("appointment") or "").strip(),
         "service": service, "service_price": price, "service_items": service_items,
         "service_price_source": "catalog",
@@ -1071,6 +1127,9 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
     if _norm(employee.get("status")) != "dang cho":
         raise HTTPException(409, "Chỉ dịch vụ ở trạng thái Đang chờ mới được bắt đầu.")
     _check_room_collision(state, employee, str(employee["room"]), str(employee["service"]))
+    if employee.get("combo_purchase_id"):
+        customer = _customer(state, {"customer_id": employee.get("customer_id")}, create=False)
+        employee.update(_booking_combo(state, customer, {}, employee, now, employee))
     if _norm(employee.get("request")) == "yc":
         employee["request_count"] = int(employee.get("request_count") or 0) + 1
     else:
@@ -1185,6 +1244,9 @@ def _checkout_mutating(
             raise HTTPException(409, "Chỉ thanh toán dịch vụ đã Hoàn thành/CHO THANH TOÁN.")
         entries = [{
             "employee_id": item.get("id"), "employee_name": item.get("name"),
+            "combo_purchase_id": item.get("combo_purchase_id", ""),
+            "combo_reserved_units": item.get("combo_reserved_units", 0),
+            "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
             "service": item.get("service"), "room": item.get("room"), "service_items": deepcopy(item.get("service_items", [])),
             "request": item.get("request"), "duration": item.get("duration"),
             "completion_delta_minutes": item.get("completion_delta_minutes"),
@@ -1260,7 +1322,9 @@ def _checkout_mutating(
         combo_purchase = next((item for item in customer["combo_purchases"] if str(item.get("id")) == combo_purchase_id), None)
         if not combo_purchase:
             raise HTTPException(404, "Không tìm thấy combo đã mua của khách hàng.")
-        debit_plan = component_debits(combo_purchase, entries, state["services"], timing["effective_datetime"].astimezone(VN_TZ).date())
+        available_combo = _available_combo(state, customer["id"], combo_purchase,
+                                          employee_ids=direct_ids, pending_id=pending_id)
+        debit_plan = component_debits(available_combo, entries, state["services"], timing["effective_datetime"].astimezone(VN_TZ).date())
         if "component_balances" in combo_purchase:
             combo_units = sum(item["units"] for item in debit_plan)
             if discount:
@@ -1269,8 +1333,8 @@ def _checkout_mutating(
         if combo_units > MAX_TICKET_UNITS:
             raise HTTPException(400, f"Số lượt combo trừ không được vượt quá {MAX_TICKET_UNITS}.")
         remaining = int(combo_purchase.get("remaining") or 0)
-        if combo_units <= 0 or remaining < combo_units:
-            raise HTTPException(409, f"Combo chỉ còn {remaining} vé, không đủ trừ {combo_units} vé.")
+        if combo_units <= 0 or available_combo["remaining"] < combo_units:
+            raise HTTPException(409, f"Combo chỉ còn {available_combo['remaining']} vé chưa giữ chỗ cho booking khác, không đủ trừ {combo_units} vé.")
         for debit in debit_plan:
             balance = next(row for row in combo_purchase["component_balances"] if row["service_id"] == debit["service_id"])
             balance["used"] += debit["units"]
@@ -1449,8 +1513,9 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         identity = _common_customer_identity([employee])
         customer_payload = _protect_customer_identity(payload, identity)
         customer = _customer(state, customer_payload) if _contains_customer_pii(customer_payload) else None
+        combo = _booking_combo(state, customer, payload, {"service": name, "service_items": items}, now, employee)
         employee.update(service=name, duration=duration, service_price=price, service_price_source="catalog", service_items=items,
-                        room=room_item["name"], request=request, note=str(payload.get("note") or ""))
+                        room=room_item["name"], request=request, note=str(payload.get("note") or ""), **combo)
         if customer:
             employee.update(customer_id=customer["id"], customer_name=customer.get("name", ""), customer_phone=customer.get("phone", ""))
         if payload.get("start_now") and _norm(employee["status"]) == "dang cho":
@@ -1543,13 +1608,18 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         canonical_identity = _common_customer_identity(employees)
         protected_customer = _protect_customer_identity(payload, canonical_identity)
         customer = _customer(state, protected_customer)
+        combo_ids = {item.get("combo_purchase_id", "") for item in employees}
         pending = {
             "id": str(uuid4()), "created_at": _iso(now), "business_date": _business_date(now).isoformat(),
+            "combo_purchase_id": next(iter(combo_ids)) if len(combo_ids) == 1 else "",
             "customer_id": str((customer or {}).get("id") or canonical_identity.get("customer_id") or ""),
             "customer_name": str((customer or {}).get("name") or canonical_identity.get("customer_name") or ""),
             "customer_phone": str((customer or {}).get("phone") or canonical_identity.get("customer_phone") or ""),
             "entries": [{
                 "employee_id": item.get("id"), "employee_name": item.get("name"),
+                "combo_purchase_id": item.get("combo_purchase_id", ""),
+                "combo_reserved_units": item.get("combo_reserved_units", 0),
+                "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
                 "service": item.get("service"), "room": item.get("room"), "service_items": deepcopy(item.get("service_items", [])),
                 "request": item.get("request"), "duration": item.get("duration"),
                 "completion_delta_minutes": item.get("completion_delta_minutes"),
@@ -1726,7 +1796,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         employee["vip"] = bool(payload.get("vip", payload.get("enabled", True)))
         result["employee"] = employee
     elif action in {"replace_service", "add_service"}:
-        employee = _employee(state, payload.get("employee_id"))
+        original_employee = _employee(state, payload.get("employee_id"))
+        employee = deepcopy(original_employee)
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:
             raise HTTPException(409, "Chỉ sửa dịch vụ đang chờ hoặc đang thực hiện.")
         name, duration, price = _service_values(state, {**payload, "request": employee.get("request")}, now)
@@ -1744,7 +1815,13 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             "catalog" if _service_catalog_price(state, employee.get("service")) is not None else "custom"
         )
         if employee.get("room"):
-            _check_room_collision(state, employee, str(employee["room"]), str(employee["service"]))
+            _check_room_collision(state, original_employee, str(employee["room"]), str(employee["service"]))
+        if employee.get("combo_purchase_id"):
+            customer = _customer(state, {"customer_id": employee.get("customer_id")}, create=False)
+            employee.update(_booking_combo(state, customer, {}, employee, now, employee))
+        original_employee.update(employee)
+        original_employee.pop("service_items", None)
+        employee = original_employee
         result["employee"] = employee
     elif action == "customer_upsert":
         name = str(payload.get("customer_name") or "").strip()
@@ -2310,6 +2387,12 @@ def _state_response(
         for item in state["customers"]:
             customer = deepcopy(item)
             purchases = list(customer.get("combo_purchases") or [])
+            for purchase in purchases:
+                available_purchase = _available_combo(state, customer["id"], purchase)
+                purchase["booking_remaining"] = available_purchase["remaining"]
+                purchase["booking_reserved"] = available_purchase["booking_reserved"]
+                for part, available_part in zip(purchase.get("component_balances", []), available_purchase.get("component_balances", [])):
+                    part["booking_remaining"] = available_part["remaining"]
             customer["combos"] = purchases
             customer["combo_balance"] = sum(int(purchase.get("remaining") or 0) for purchase in purchases)
             customers.append(customer)
@@ -2884,7 +2967,10 @@ def install_live_tour_routes(
                 # Lùi ngày changes the financial ledger date and therefore
                 # requires both the normal payment grant and the admin grant.
                 require_feature(conn, ident, "live_tour_admin")
-            if action in {"booking", "multi_booking", "update_booking", "finish_to_pending"} and _contains_customer_pii(payload):
+            if action in {"booking", "multi_booking", "update_booking", "finish_to_pending"} and (
+                _contains_customer_pii(payload) or "combo_purchase_id" in payload
+                or any("combo_purchase_id" in row for row in (payload.get("bookings") or []) if isinstance(row, dict))
+            ):
                 require_feature(conn, ident, "live_tour_payment")
             if action == "combo_import":
                 require_feature(conn, ident, "live_tour_payment")
