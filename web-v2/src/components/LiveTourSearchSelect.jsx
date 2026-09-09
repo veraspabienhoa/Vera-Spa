@@ -24,7 +24,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
       }}/>
     {open && <div className="live-tour-select-options" role="listbox" id={`${id}-options`}>
       {!required && <button type="button" role="option" aria-selected={!value} onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(''); setQuery(''); setOpen(false) }}>Để trống</button>}
-      {matches.map((item, i) => <button type="button" role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={i === index ? 'highlighted' : ''} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(item)}><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</button>)}
+      {matches.map((item, i) => <button type="button" role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={i === index ? 'highlighted' : ''} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(item)}><span className="tour-select-option-heading"><strong>{item.label}</strong>{item.badge && <strong className="tour-ticket-badge">{item.badge}</strong>}</span>{item.detail && <small>{item.detail}</small>}</button>)}
       {!matches.length && <p>Không có kết quả phù hợp.</p>}
     </div>}
   </div>
