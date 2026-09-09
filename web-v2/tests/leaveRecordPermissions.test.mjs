@@ -45,9 +45,24 @@ test('Lễ tân today non-group and future records follow permissions', () => {
   }
 })
 
-test('Quản lý follows the configured permissions without frontend type locking', () => {
-  assert.equal(canEditLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', true)), true)
-  assert.equal(canDeleteLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', true)), true)
-  assert.equal(canEditLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', false)), false)
-  assert.equal(canDeleteLeaveRecord(row('quanly', today, 'Nghỉ CÓ phép', false)), false)
+test('Quản lý uses the same past-day and same-group boundaries as Lễ tân', () => {
+  for (const allowed of [true, false]) {
+    const past = row('quanly', '2026-09-03', 'Nghỉ CÓ phép', allowed)
+    assert.equal(canEditLeaveRecord(past), false)
+    assert.equal(canDeleteLeaveRecord(past), false)
+    for (const group of LETAN_REASON_GROUPS) {
+      const current = row('quanly', today, group[0], allowed)
+      assert.equal(canEditLeaveRecord(current), true)
+      assert.equal(canDeleteLeaveRecord(current), false)
+      assert.deepEqual(letanReasonChoices('quanly', today, group[0], today), group)
+    }
+    for (const date of [today, '2026-09-05']) {
+      const other = row('quanly', date, 'Nghỉ lý do khác', allowed)
+      assert.equal(canEditLeaveRecord(other), allowed)
+      assert.equal(canDeleteLeaveRecord(other), allowed)
+    }
+    const future = row('quanly', '2026-09-05', 'Nghỉ CÓ phép', allowed)
+    assert.equal(canEditLeaveRecord(future), allowed)
+    assert.equal(canDeleteLeaveRecord(future), allowed)
+  }
 })
