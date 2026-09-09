@@ -854,21 +854,27 @@ def _catalog_referenced(state: dict[str, Any], kind: str, item: dict[str, Any]) 
     return any(name == _norm(entry.get(field)) or name in {_norm(value) for value in str(entry.get(field) or "").split("&")} or (kind == "services" and any(part.get("service_id") == item["id"] for part in entry.get("service_items", []))) for entry in entries)
 
 
-def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room: str, service: str) -> None:
-    wanted_room = _norm(room)
-    wanted_group = _norm(_catalog_room_group(state, room))
-    wanted_private = _catalog_private_service(state, service)
-    for employee in state["employees"]:
-        if employee is candidate or not _active_booking(employee):
-            continue
-        current_room = str(employee.get("room") or "")
-        same_bed = _norm(current_room) == wanted_room
-        same_group = _norm(_catalog_room_group(state, current_room)) == wanted_group
-        current_private = _catalog_private_service(state, employee.get("service"))
-        if same_bed or (same_group and (wanted_private or current_private)):
-            if wanted_private or current_private:
-                raise HTTPException(409, f"Phòng {wanted_group} đang bị khóa toàn phòng bởi dịch vụ PR.")
-            raise HTTPException(409, f"Giường/phòng {room} đang được sử dụng.")
+def _booking_occupant(state, employee, now):
+    return {"employee_id": employee.get("id"), "room": employee.get("room", ""),
+            "group": _catalog_room_group(state, employee.get("room", "")),
+            "private": _catalog_private_service(state, employee.get("service")),
+            "status": employee.get("status", ""), "deadline": _remaining(employee, now)[1]}
+
+
+def _booking_occupancy(state, now):
+    return [_booking_occupant(state, row, now) for row in state["employees"] if _active_booking(row)]
+
+
+def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room: str, service: str,
+                          *, now: datetime | None = None, allow_queue: bool = False) -> None:
+    from vera_web_v2_live_tour_availability import place_status
+    now = now or datetime.now(VN_TZ)
+    result = place_status(_booking_occupancy(state, now), room=room, group=_catalog_room_group(state, room),
+                          private=_catalog_private_service(state, service), candidate=_booking_occupant(state, candidate, now),
+                          now=now, reserve=allow_queue)
+    if not result["allowed"]:
+        raise HTTPException(409, f"Giường/phòng {room} đang được sử dụng hoặc bị khóa bởi dịch vụ PR. "
+                            "Chỉ đặt lịch chờ khi còn dưới 30 phút; chỉ Thực hiện sau khi phiên trước hoàn thành.")
 
 
 def _clear_assignment(employee: dict[str, Any]) -> None:
@@ -1038,7 +1044,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
         raise HTTPException(400, "Vị trí phục vụ đã ngừng sử dụng.")
     request, auto_request = _auto_yc_ca1(now, employee, payload.get("request"), bool(payload.get("auto_yc_ca1")))
     service, duration, price, service_items = _service_selection(state, {**payload, "request": request}, now)
-    _check_room_collision(state, employee, room, service)
+    _check_room_collision(state, employee, room, service, now=now, allow_queue=not payload.get("start_now"))
     customer = None
     if any(payload.get(key) for key in ("customer_id", "customer_name", "customer_phone", "phone")):
         customer = _customer(state, payload)
@@ -1445,7 +1451,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         room_item = _catalog_item(state, "rooms", {"room": payload.get("room") or employee.get("room")})
         if room_item is None or room_item.get("active") is False:
             raise HTTPException(400, "Hãy chọn phòng/giường đang sử dụng.")
-        _check_room_collision(state, employee, room_item["name"], name)
+        _check_room_collision(state, employee, room_item["name"], name, now=now,
+                              allow_queue=_norm(employee.get("status")) == "dang cho" and not payload.get("start_now"))
         identity = _common_customer_identity([employee])
         customer_payload = _protect_customer_identity(payload, identity)
         customer = _customer(state, customer_payload) if _contains_customer_pii(customer_payload) else None
@@ -1729,6 +1736,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         employee = _employee(state, payload.get("employee_id"))
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:
             raise HTTPException(409, "Chỉ sửa dịch vụ đang chờ hoặc đang thực hiện.")
+        previous = deepcopy(employee)
         name, duration, price = _service_values(state, {**payload, "request": employee.get("request")}, now)
         if action == "replace_service" or not employee.get("service"):
             employee["service"] = name
@@ -1744,7 +1752,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             "catalog" if _service_catalog_price(state, employee.get("service")) is not None else "custom"
         )
         if employee.get("room"):
-            _check_room_collision(state, employee, str(employee["room"]), str(employee["service"]))
+            _check_room_collision(state, previous, str(employee["room"]), str(employee["service"]), now=now,
+                                  allow_queue=_norm(previous.get("status")) == "dang cho")
         result["employee"] = employee
     elif action == "customer_upsert":
         name = str(payload.get("customer_name") or "").strip()
@@ -2341,6 +2350,7 @@ def _state_response(
         "available_rooms": available_groups, "available_beds": available, "metric_snapshots": metrics,
         "room_groups": {room["name"]: _catalog_room_group(state, room["name"]) for room in state["rooms"]},
         "room_action_counts": _room_action_counts(state) if can_operate else {},
+        "booking_occupancy": _booking_occupancy(state, now) if can_operate else [],
         "service_areas": _service_areas(state),
         "metrics_business_date": state.get("counter_business_date"), "metrics_retained_until_10": now.astimezone(VN_TZ).hour < 10,
         "metrics_rollover_hour": 10, "metrics_rollover_minute": 0,
