@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
+import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, vietnamDate } from '../lib/serviceCatalog'
 
 const EMPTY_LIVE_TOUR = {
   columns: [], records: [], rooms: {}, available_rooms: [], services: [], combo_catalog: [],
@@ -1015,10 +1016,6 @@ export default function LiveTourPage({ user }) {
     }).slice(0, 8)
     : []
   const purchasedCombos = customers.flatMap((customer) => customerComboPurchases(customer).map((purchase) => ({ customer, purchase })))
-  const eligibleCheckoutCombos = purchasedCombos.filter(({ customer, purchase }) => {
-    const customerId = String(customer?._id ?? customer?.id ?? customer?.customer_id ?? '')
-    return customerId && customerId === String(form.customer_id || '') && Number(purchase?.remaining || 0) > 0
-  })
   const checkoutSourceEntries = (() => {
     if (!['checkout', 'quick_checkout'].includes(modal?.kind)) return []
     const pendingEntries = asArray(modal?.item?.entries)
@@ -1039,6 +1036,15 @@ export default function LiveTourPage({ user }) {
       return record ? { employee_id: id, employee_name: cellValue(record, employeeColumn), service: cellValue(record, serviceColumn), room: cellValue(record, roomColumn) } : null
     }).filter((entry) => entry?.service)
   })()
+  const effectiveCatalogDate = catalogTransactionDate(clockMs, form.backdate_one_day)
+  const bookableServices = services.filter((item) => catalogIsAvailable(item, vietnamDate(clockMs)))
+  const saleableCombos = combos.filter((item) => catalogIsAvailable(item, effectiveCatalogDate) && asArray(item.components).every((part) => services.some((service) => service.id === part.service_id && catalogIsAvailable(service, effectiveCatalogDate))))
+  const eligibleCheckoutCombos = purchasedCombos.filter(({ customer, purchase }) => {
+    const customerId = String(customer?._id ?? customer?.id ?? customer?.customer_id ?? '')
+    return customerId && customerId === String(form.customer_id || '') && comboUsagePreview(purchase, checkoutSourceEntries, services, effectiveCatalogDate).eligible
+  })
+  const selectedCheckoutCombo = eligibleCheckoutCombos.find(({ purchase }) => String(purchase.id ?? purchase._id) === form.combo_purchase_id)?.purchase
+  const selectedComboPreview = comboUsagePreview(selectedCheckoutCombo, checkoutSourceEntries, services, effectiveCatalogDate)
   const checkoutPreviewEntries = checkoutSourceEntries.map((entry) => ({
     ...entry,
     preview_price: previewEntryPrice(entry, services),
@@ -1058,10 +1064,10 @@ export default function LiveTourPage({ user }) {
   const checkoutEffectiveSubtotal = checkoutRequiresTicketPrice && Number(form.ticket_price) > 0
     ? Number(form.ticket_price)
     : checkoutPreviewSubtotal
-  const checkoutPreviewTotal = Number.isFinite(checkoutEffectiveSubtotal)
+  const checkoutPreviewTotal = selectedCheckoutCombo?.component_balances ? Math.max(0, Number(form.tip || 0)) : Number.isFinite(checkoutEffectiveSubtotal)
     ? Math.max(0, checkoutEffectiveSubtotal - Math.max(0, Number(form.discount || 0))) + Math.max(0, Number(form.tip || 0))
     : null
-  const checkoutPreviewComboUnits = checkoutPreviewEntries.reduce((sum, entry) => sum + Number(entry.ticket_units || 0), 0)
+  const checkoutPreviewComboUnits = selectedCheckoutCombo?.component_balances ? selectedComboPreview.units : checkoutPreviewEntries.reduce((sum, entry) => sum + Number(entry.ticket_units || 0), 0)
   const selectedComboCatalogItem = combos.find((item, index) => itemId(item, index) === form.combo_id) || null
   const comboPurchasePreviewAmount = selectedComboCatalogItem
     ? Number(selectedComboCatalogItem?.price || 0) * Math.max(1, Number(form.quantity || 1))
@@ -1561,7 +1567,7 @@ export default function LiveTourPage({ user }) {
             </div>
             {selectedQuickBookingRecord && <div className="live-tour-employee-picked" aria-live="polite">Đã chọn: {cellValue(selectedQuickBookingRecord, employeeColumn)} · Lịch hẹn hiện tại: {cellValue(selectedQuickBookingRecord, appointmentColumn) || 'Không có lịch hẹn'}</div>}
             <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-quick-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-quick-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist></label>
-            <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-quick-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-quick-service-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-quick-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-quick-service-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
             <label className="live-tour-field"><span>Yêu cầu</span><select value={form.request} onChange={(event) => setForm((current) => ({ ...current, request: event.target.value }))}><option value="">Không yêu cầu</option><option value="YC">YC</option></select></label>
             <label className="live-tour-field"><span>Lịch hẹn</span><input type="text" list="live-tour-appointment-options" value={form.appointment} onChange={(event) => setForm((current) => ({ ...current, appointment: event.target.value }))} placeholder="Chọn hoặc nhập nội dung tự do"/><datalist id="live-tour-appointment-options">{appointmentOptions.map((appointment) => <option value={appointment} key={appointment}/>)}</datalist></label>
             <label className="live-tour-check-field wide"><input type="checkbox" checked={form.auto_yc_ca1} onChange={(event) => setForm((current) => ({ ...current, auto_yc_ca1: event.target.checked }))}/> Tự động gán YC cho Ca 1 từ 23:00–03:00</label>
@@ -1571,7 +1577,7 @@ export default function LiveTourPage({ user }) {
 
           {modal.kind === 'booking' && <>
             <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist></label>
-            <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-service-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-service-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
             <label className="live-tour-field"><span>Yêu cầu</span><select value={form.request} onChange={(event) => setForm((current) => ({ ...current, request: event.target.value }))}><option value="">Không yêu cầu</option><option value="YC">YC</option></select></label>
             <label className="live-tour-field"><span>Lịch hẹn</span><input type="text" list="live-tour-booking-appointment-options" value={form.appointment} onChange={(event) => setForm((current) => ({ ...current, appointment: event.target.value }))} placeholder="Chọn hoặc nhập nội dung tự do"/><datalist id="live-tour-booking-appointment-options">{appointmentOptions.map((appointment) => <option value={appointment} key={appointment}/>)}</datalist></label>
             {renderBookingCustomerPicker()}
@@ -1587,7 +1593,7 @@ export default function LiveTourPage({ user }) {
                 <select value={row.request} onChange={(event) => updateBookingRow(index, 'request', event.target.value)} aria-label={`Yêu cầu của ${row.employee_name}`}><option value="">Không yêu cầu</option><option value="YC">YC</option></select>
               </div>)}
               <datalist id="live-tour-multi-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist>
-              <datalist id="live-tour-multi-service-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist>
+              <datalist id="live-tour-multi-service-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist>
             </div>
             <label className="live-tour-check-field wide"><input type="checkbox" checked={form.auto_yc_ca1} onChange={(event) => setForm((current) => ({ ...current, auto_yc_ca1: event.target.checked }))}/> Tự động gán YC cho Ca 1 từ 23:00–03:00</label>
             {renderBookingCustomerPicker('Khách hàng dùng chung')}
@@ -1631,30 +1637,33 @@ export default function LiveTourPage({ user }) {
             <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value, ...(event.target.value === 'COMBO' ? {} : { combo_purchase_id: '' }) }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option><option value="COMBO" disabled={!form.combo_purchase_id}>COMBO · chọn combo đã mua</option></select></label>
             <label className="live-tour-field"><span>Trừ vé combo</span><select value={form.combo_purchase_id} onChange={(event) => {
               setForm((current) => ({
-                ...current, combo_purchase_id: event.target.value,
+                ...current, combo_purchase_id: event.target.value, discount: eligibleCheckoutCombos.find(({ purchase }) => purchase.id === event.target.value)?.purchase.component_balances ? '0' : current.discount,
                 payment_method: event.target.value ? 'COMBO' : current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
               }))
             }} disabled={!form.customer_id}><option value="">Không trừ combo</option>{eligibleCheckoutCombos.map(({ purchase }, index) => {
               const purchaseId = String(purchase?._id ?? purchase?.id ?? '')
-              return <option value={purchaseId} key={purchaseId || index}>{purchase.combo_name || 'Combo'} · còn {purchase.remaining} vé</option>
+              return <option value={purchaseId} key={purchaseId || index}>{purchase.combo_name || 'Combo'} · còn {purchase.remaining} {purchase.component_balances ? 'lượt' : 'vé'}{purchase.unlimited === false && purchase.expires_on ? ` · HSD ${purchase.expires_on.split('-').reverse().join('/')}` : ''}</option>
             })}</select></label>
-            {form.combo_purchase_id && <div className="live-tour-combo-deduction wide">Server sẽ trừ <strong>{checkoutPreviewComboUnits} vé combo</strong> theo định mức của các dịch vụ phía trên.</div>}
+            {form.combo_purchase_id && <div className="live-tour-combo-deduction wide">Server sẽ trừ <strong>{checkoutPreviewComboUnits} {selectedCheckoutCombo?.component_balances ? 'lượt dịch vụ trong combo' : 'vé combo'}</strong> theo định mức của các dịch vụ phía trên.{selectedCheckoutCombo?.component_balances && ' Giá dịch vụ đã thanh toán khi mua combo; chỉ ghi nhận tiền TIP ở lần sử dụng.'}</div>}
+            {selectedCheckoutCombo?.component_balances && <div className="wide">{selectedCheckoutCombo.component_balances.map((item) => <p key={item.service_id}>{services.find((service) => service.id === item.service_id)?.name || item.service_name}: còn {item.remaining} / {item.total} lượt</p>)}</div>}
+            {form.combo_purchase_id && !selectedCheckoutCombo && <p className="error-box wide" role="alert">Combo không còn phù hợp với dịch vụ hoặc ngày thanh toán. Hãy chọn lại.</p>}
             {checkoutRequiresTicketPrice && <label className="live-tour-field wide"><span>Giá vé (dịch vụ chưa có giá danh mục)</span><input type="number" min="1" max="1000000000" step="1000" value={form.ticket_price} onChange={(event) => setForm((current) => ({ ...current, ticket_price: event.target.value }))} required/><small>Chỉ gửi giá vé này cho thanh toán tiền/thẻ; không gửi tổng tiền và không dùng khi trừ combo.</small></label>}
             <label className="live-tour-field"><span>Số hóa đơn</span><input value={form.bill_no} onChange={(event) => setForm((current) => ({ ...current, bill_no: event.target.value }))}/></label>
             <label className="live-tour-field"><span>Số vé</span><input value={form.ticket_no} onChange={(event) => setForm((current) => ({ ...current, ticket_no: event.target.value }))}/></label>
-            <label className="live-tour-field"><span>Giảm giá</span><input type="number" min="0" value={form.discount} onChange={(event) => setForm((current) => ({ ...current, discount: event.target.value }))}/></label>
+            <label className="live-tour-field"><span>Giảm giá</span><input type="number" min="0" readOnly={Boolean(selectedCheckoutCombo?.component_balances)} value={form.discount} onChange={(event) => setForm((current) => ({ ...current, discount: event.target.value }))}/></label>
             <label className="live-tour-field"><span>Tiền TIP</span><input type="number" min="0" value={form.tip} onChange={(event) => setForm((current) => ({ ...current, tip: event.target.value }))}/></label>
             <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
           </>}
 
           {modal.kind === 'add_employee' && <><label className="live-tour-field wide"><span>Tên nhân viên</span><input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required autoFocus/></label><p className="wide">Nhân viên mới mặc định Nghỉ, chưa vào ca. Sau khi thêm, chọn Đi làm và Ca 1/Ca 2 khi nhân viên thực sự vào ca.</p><label className="live-tour-check-field"><input type="checkbox" checked={form.vip} onChange={(event) => setForm((current) => ({ ...current, vip: event.target.checked }))}/> Thêm nhân viên VIP</label></>}
 
-          {['replace_service', 'add_service'].includes(modal.kind) && <><label className="live-tour-field wide"><span>Dịch vụ</span><input list="live-tour-service-change-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required autoFocus/><datalist id="live-tour-service-change-options">{services.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
+          {['replace_service', 'add_service'].includes(modal.kind) && <><label className="live-tour-field wide"><span>Dịch vụ</span><input list="live-tour-service-change-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required autoFocus/><datalist id="live-tour-service-change-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
 
           {modal.kind === 'combo_purchase' && <>
             <label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} readOnly={!modal.newCustomer} onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value }))} required autoFocus={Boolean(modal.newCustomer)}/></label>
             <label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} readOnly={!modal.newCustomer} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}/></label>
-            <label className="live-tour-field"><span>Combo</span><select value={form.combo_id} onChange={(event) => setForm((current) => ({ ...current, combo_id: event.target.value }))} required><option value="">-- Chọn combo --</option>{combos.map((combo, index) => <option value={itemId(combo, index)} key={itemId(combo, index)}>{itemLabel(combo)}</option>)}</select></label>
+            <label className="live-tour-field"><span>Combo</span><select value={form.combo_id} onChange={(event) => setForm((current) => ({ ...current, combo_id: event.target.value }))} required><option value="">-- Chọn combo --</option>{saleableCombos.map((combo, index) => <option value={itemId(combo, index)} key={itemId(combo, index)}>{itemLabel(combo)}</option>)}</select></label>
+            {selectedComboCatalogItem?.components?.length > 0 && <div className="wide">{selectedComboCatalogItem.components.map((part) => <p key={part.service_id}>{services.find((service) => service.id === part.service_id)?.name || part.service_name}: {part.quantity * Math.max(1, Number(form.quantity || 1))} lượt</p>)}<small>{selectedComboCatalogItem.unlimited === false ? `Hạn dùng: ${selectedComboCatalogItem.expires_on.split('-').reverse().join('/')}` : 'Vô thời hạn'}</small></div>}
             <label className="live-tour-field"><span>Số combo</span><input type="number" min="1" max="1000" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} required/></label>
             <label className="live-tour-field wide"><span>Thành tiền dự kiến theo danh mục</span><input type="text" value={comboPurchasePreviewAmount === null ? 'Chọn combo để xem giá' : formatMoney(comboPurchasePreviewAmount)} readOnly aria-readonly="true"/><small>Đây chỉ là số hiển thị. Server lấy giá danh mục hiện hành, tính và lưu số tiền chính thức.</small></label>
             <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option></select></label>
@@ -1667,7 +1676,7 @@ export default function LiveTourPage({ user }) {
             {form.backdate_one_day && <label className="live-tour-field"><span>Lý do điều chỉnh</span><textarea value={form.correction_reason} minLength="3" onChange={(event) => setForm((current) => ({ ...current, correction_reason: event.target.value }))} required placeholder="Bắt buộc ghi rõ lý do…"/></label>}
           </div>}
 
-          {modal.kind === 'combo_import' && <><label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value }))} required/></label><label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}/></label><label className="live-tour-field"><span>Combo</span><select value={form.combo_id} onChange={(event) => setForm((current) => ({ ...current, combo_id: event.target.value }))} required><option value="">-- Chọn combo --</option>{combos.map((combo, index) => <option value={itemId(combo, index)} key={itemId(combo, index)}>{itemLabel(combo)}</option>)}</select></label><label className="live-tour-field"><span>Số lượt còn lại</span><input type="number" min="0" value={form.remaining} onChange={(event) => setForm((current) => ({ ...current, remaining: event.target.value }))} required/></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
+          {modal.kind === 'combo_import' && <><label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} onChange={(event) => setForm((current) => ({ ...current, customer_name: event.target.value }))} required/></label><label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}/></label><label className="live-tour-field"><span>Combo</span><select value={form.combo_id} onChange={(event) => setForm((current) => ({ ...current, combo_id: event.target.value }))} required><option value="">-- Chọn combo --</option>{combos.filter((combo) => !combo.components?.length).map((combo, index) => <option value={itemId(combo, index)} key={itemId(combo, index)}>{itemLabel(combo)}</option>)}</select></label><label className="live-tour-field"><span>Số lượt còn lại</span><input type="number" min="0" value={form.remaining} onChange={(event) => setForm((current) => ({ ...current, remaining: event.target.value }))} required/></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
 
           {modal.kind === 'room_upsert' && <><label className="live-tour-field"><span>Mã phòng / giường</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value, room: event.target.value }))} required autoFocus/></label><p>Phòng 16–21 tự động thuộc nhóm VIP; các phòng khác là Standard.</p></>}
           {modal.kind === 'service_upsert' && <><label className="live-tour-field"><span>Mã dịch vụ</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên dịch vụ</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Thời lượng (phút)</span><input type="number" min="0" value={form.duration} onChange={(event) => setForm((current) => ({ ...current, duration: event.target.value }))}/></label><label className="live-tour-field"><span>Đơn giá</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
@@ -1678,9 +1687,10 @@ export default function LiveTourPage({ user }) {
             <label className="live-tour-check-field"><input type="checkbox" checked={form.request_eligible} onChange={(event) => setForm((current) => ({ ...current, request_eligible: event.target.checked }))}/> Cho phép YC</label>
             <label className="live-tour-check-field"><input type="checkbox" checked={form.non_request_eligible} onChange={(event) => setForm((current) => ({ ...current, non_request_eligible: event.target.checked }))}/> Cho phép không YC</label>
           </>}
-          {modal.kind === 'combo_upsert' && <><label className="live-tour-field"><span>Mã combo</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên combo</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Số lượt</span><input type="number" min="1" value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="live-tour-field"><span>Giá combo</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
+          {modal.kind === 'combo_upsert' && modal.item?.components?.length > 0 && <p className="wide">Số lượt được tính từ dịch vụ thành phần. Để thay đổi thành phần, mở Cài đặt → Cài đặt dịch vụ.</p>}
+          {modal.kind === 'combo_upsert' && <><label className="live-tour-field"><span>Mã combo</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên combo</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Số lượt</span><input type="number" min="1" readOnly={Boolean(modal.item?.components?.length)} value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="live-tour-field"><span>Giá combo</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
         </div>
-        <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={closeModal}>Hủy</button><button type="submit" className="primary-button" disabled={Boolean(actionBusy) || (modal.kind === 'quick_booking' && !selectedQuickBookingRecord) || (modal.kind === 'quick_checkout' && !form.pending_id && !selectedQuickCheckoutRecord) || (['checkout', 'quick_checkout'].includes(modal.kind) && !checkoutUsesCombo && (checkoutHasUnresolvedPricing || checkoutHasMixedPricing))}>{actionBusy ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
+        <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={closeModal}>Hủy</button><button type="submit" className="primary-button" disabled={Boolean(actionBusy) || (checkoutUsesCombo && !selectedCheckoutCombo) || (modal.kind === 'quick_booking' && !selectedQuickBookingRecord) || (modal.kind === 'quick_checkout' && !form.pending_id && !selectedQuickCheckoutRecord) || (['checkout', 'quick_checkout'].includes(modal.kind) && !checkoutUsesCombo && (checkoutHasUnresolvedPricing || checkoutHasMixedPricing))}>{actionBusy ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
       </form>
     </LiveTourModal>}
 
