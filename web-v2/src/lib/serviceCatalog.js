@@ -51,6 +51,10 @@ export function comboUsagePreview(purchase, entries, services, day = vietnamDate
   if (!Array.isArray(purchase.component_balances)) return { eligible: Number(purchase.remaining) > 0, units: null }
   const required = new Map()
   for (const entry of entries) {
+    if (entry.service_items?.length) {
+      for (const item of entry.service_items) required.set(item.service_id, (required.get(item.service_id) || 0) + Number(item.quantity))
+      continue
+    }
     const exact = services.find((service) => key(service.name) === key(entry.service))
     const parts = exact ? [exact.name] : String(entry.service || '').split('&').map((part) => part.trim()).filter(Boolean)
     for (const part of parts) {

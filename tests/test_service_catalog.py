@@ -212,7 +212,8 @@ def test_http_create_edit_replay_conflict_and_payment_survive_reopen(monkeypatch
     complete(state, single, customer)
     db = SettingsDatabase(state)
     _, client = app_client(db)
-    body = {"action": "checkout", "expected_revision": 7, "idempotency_key": "composed-payment-once", "payload": {"employee_id": "e1", "customer_id": customer["id"], "combo_purchase_id": owned["id"], "payment_method": "COMBO"}}
+    revision = client.get("/v2/live-tour").json()["revision"]
+    body = {"action": "checkout", "expected_revision": revision, "idempotency_key": "composed-payment-once", "payload": {"employee_id": "e1", "customer_id": customer["id"], "combo_purchase_id": owned["id"], "payment_method": "COMBO"}}
     first = client.post("/v2/live-tour/action", json=body)
     assert first.status_code == 200, first.text
     stored = deepcopy(db.stored)

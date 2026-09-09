@@ -16,11 +16,15 @@ from test_live_tour_backend import NOW, RouteIdentity, employee, state_with
 
 class SettingsDatabase:
     """SQL contract fixture; state survives creation of a second app instance."""
-    def __init__(self, stored=None):
+    def __init__(self, stored=None, directory=None):
         self.stored = deepcopy(stored)
         self.revision = 7 if stored else 0
         self.employee_reads = 0
         self.fail_employee_read = False
+        self.directory = deepcopy(directory) if directory is not None else (
+            [{"username": row.get("username") or row["name"], "full_name": row["name"], "role": row.get("role", "nhanvien"), "payload": {}} for row in stored.get("employees", [])]
+            if stored else [{"username": "server-ktv", "full_name": "Nhân viên máy chủ", "role": "nhanvien", "payload": {"Đi làm": "Đi làm", "Vào ca": "Ca 2"}}]
+        )
 
     @contextmanager
     def begin(self):
@@ -40,7 +44,7 @@ class SettingsDatabase:
             self.employee_reads += 1
             if self.fail_employee_read:
                 raise RuntimeError("database unavailable")
-            rows = [{"username": "server-ktv", "full_name": "Nhân viên máy chủ", "role": "nhanvien", "payload": {"Đi làm": "Đi làm", "Vào ca": "Ca 2"}}]
+            rows = deepcopy(self.directory)
         elif "SELECT value_json" in sql:
             rows = [{"value_json": deepcopy(self.stored), "revision": self.revision}] if self.stored else []
         elif "INSERT INTO vera_app_setting" in sql:
@@ -85,14 +89,14 @@ def test_first_boot_uses_database_and_starts_employees_off_duty():
     response = client.get("/v2/live-tour").json()
     assert response["storage_mode"] == "server"
     worker = response["state"]["employees"][0]
-    assert worker["username"] == "server-ktv"
+    assert worker["username"] == worker["name"] == "server-ktv"
     assert worker["work_status"] == "Nghỉ" and worker["shift"] == ""
     assert worker["service"] == "" and worker["room"] == ""
     assert database.stored["bootstrap_source"] == "employees"
     assert "sync" not in response["capabilities"]
     assert not hasattr(app.state, "live_tour_leave_sync_service")
     client.get("/v2/live-tour?refresh=true")
-    assert database.employee_reads == 1
+    assert database.employee_reads == 2  # Directory is refreshed on each read.
 
 
 def test_first_boot_database_error_does_not_save_an_empty_board():
@@ -125,7 +129,7 @@ def test_booking_is_persisted_and_read_by_a_new_app_instance():
     assert loaded["state"]["employees"] == data["state"]["employees"]
     assert loaded["revision"] == data["revision"]
     assert loaded["state"]["employees"][0]["service"] == "Body 90"
-    assert database.employee_reads == 1
+    assert database.employee_reads == 6
 
 
 @pytest.mark.parametrize("action", ["sync_leaves", "merge_current_tour", "merge_current_tour_preview", " SYNC_LEAVES "])
@@ -153,8 +157,12 @@ def test_existing_financial_and_operating_state_survives_without_external_recove
     database = SettingsDatabase(state)
     _, client = app_client(database)
     data = client.get("/v2/live-tour").json()
-    assert database.stored == state
-    assert database.employee_reads == 0
+    for key, value in state.items():
+        if key != "employees":
+            assert database.stored[key] == value
+    for key, value in state["employees"][0].items():
+        assert database.stored["employees"][0][key] == value
+    assert database.employee_reads == 1
     assert data["state"]["invoices"] == state["invoices"]
     assert all(data["state"]["customers"][0][key] == value for key, value in state["customers"][0].items())
     assert "sync_status" not in data["state"]

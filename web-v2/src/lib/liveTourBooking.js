@@ -1,0 +1,36 @@
+export const tourNameKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLowerCase().replace(/\s+/g, ' ')
+
+export function bookingEmployees(employees, now = Date.now()) {
+  const ranking = (worker) => {
+    if (!worker.service) return [0, Number(worker.sort_index || 0)]
+    if (!worker.started_at) return [3, Number(worker.sort_index || 0)]
+    if (worker.duration == null) return [2, Infinity]
+    const remaining = new Date(worker.started_at).getTime() + Number(worker.duration || 0) * 60000 - now
+    return [remaining <= 15 * 60000 ? 1 : 2, remaining]
+  }
+  return employees.filter((worker) => worker.roster_eligible !== false && !worker.hidden && tourNameKey(worker.work_status) === 'di lam' && ['ca 1', 'ca 2'].includes(tourNameKey(worker.shift)) && !worker.break_started_at && tourNameKey(worker.status) !== 'cho thanh toan')
+    .sort((a, b) => { const x = ranking(a), y = ranking(b); return x[0] - y[0] || x[1] - y[1] || tourNameKey(a.name).localeCompare(tourNameKey(b.name)) })
+}
+
+export function bookingServiceItems(worker, catalog) {
+  if (worker?.service_items?.length) return worker.service_items.map((item) => ({ service_id: item.service_id, quantity: item.quantity }))
+  const name = worker?.service || ''
+  if (!name) return []
+  const exact = catalog.find((item) => tourNameKey(item.name) === tourNameKey(name))
+  const names = exact ? [name] : name.split('&').map((item) => item.trim()).filter(Boolean)
+  const counts = new Map()
+  for (const name of names) {
+    const item = catalog.find((item) => tourNameKey(item.name) === tourNameKey(name))
+    if (item) counts.set(item.id, (counts.get(item.id) || 0) + 1)
+  }
+  return [...counts].map(([service_id, quantity]) => ({ service_id, quantity }))
+}
+
+export function bookingTotal(items, services) {
+  return items.reduce((sum, item) => sum + Number(services.find((service) => service.id === item.service_id)?.price || 0) * Number(item.quantity || 0), 0)
+}
+
+export function discountAmount(subtotal, mode, value) {
+  const number = Math.max(0, Number(value || 0))
+  return mode === 'percent' ? Math.round(subtotal * Math.min(100, number) / 100) : number
+}

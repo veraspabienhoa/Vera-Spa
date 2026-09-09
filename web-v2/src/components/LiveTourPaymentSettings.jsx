@@ -1,0 +1,11 @@
+import { useState } from 'react'
+import { Plus, Save, Trash2 } from 'lucide-react'
+
+export default function LiveTourPaymentSettings({ value, busy, onSave }) {
+  const [form, setForm] = useState(() => structuredClone(value || { auto_print: false, tip_cards: [] }))
+  return <form className="tour-payment-settings" onSubmit={(event) => { event.preventDefault(); onSave(form) }}><h3>Cài đặt thanh toán và in hóa đơn</h3>
+    <label className="live-tour-check-field"><input type="checkbox" disabled={busy} checked={form.auto_print} onChange={(event) => setForm((current) => ({ ...current, auto_print: event.target.checked }))}/> Tự động mở hộp thoại in sau thanh toán (mặc định tắt)</label>
+    <strong>Thẻ tiền TIP</strong>{form.tip_cards.map((card, index) => <div className="tour-payment-setting-row" key={card.id}><input aria-label={`Tên thẻ TIP ${index + 1}`} required maxLength="80" disabled={busy} value={card.name} onChange={(event) => setForm((current) => ({ ...current, tip_cards: current.tip_cards.map((row, i) => i === index ? { ...row, name: event.target.value } : row) }))}/><input aria-label={`Mệnh giá thẻ TIP ${index + 1}`} type="number" required min="1" max="10000000000" step="1" disabled={busy} value={card.amount} onChange={(event) => setForm((current) => ({ ...current, tip_cards: current.tip_cards.map((row, i) => i === index ? { ...row, amount: Number(event.target.value) } : row) }))}/><button className="icon-button" type="button" disabled={busy} aria-label={`Xóa thẻ TIP ${index + 1}`} onClick={() => setForm((current) => ({ ...current, tip_cards: current.tip_cards.filter((_, i) => i !== index) }))}><Trash2 size={16}/></button></div>)}
+    <div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={busy || form.tip_cards.length >= 30} onClick={() => setForm((current) => ({ ...current, tip_cards: [...current.tip_cards, { id: crypto.randomUUID(), name: '', amount: 50000 }] }))}><Plus size={15}/> Thêm thẻ TIP</button><button type="submit" className="primary-button" disabled={busy}><Save size={15}/> Lưu cài đặt thanh toán</button></div>
+  </form>
+}
