@@ -112,7 +112,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Đặt lịch nhanh",
         "Đặt lịch",
         "Đặt lịch hàng loạt",
-        "Bắt đầu đã chọn",
+        "Thực hiện đã chọn",
         "+30 phút",
         "Hoàn thành",
         "Chờ thanh toán",
