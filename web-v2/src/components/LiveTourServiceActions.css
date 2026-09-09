@@ -1,0 +1,18 @@
+.live-tour-page .live-tour-service-actions{display:flex;align-items:stretch;gap:4px}
+.live-tour-page .live-tour-service-actions button{display:flex;align-items:center;justify-content:center;gap:3px;min-height:28px;border:1px solid #b9cec2;border-radius:5px;padding:4px 6px;font-family:inherit;font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap}
+.live-tour-page .live-tour-start-button{background:#175a3e;color:#fff}
+.live-tour-page .live-tour-finish-button{background:#fff4d8;color:#654500}
+.live-tour-page .live-tour-service-actions button:disabled{cursor:not-allowed;opacity:.4}
+.live-tour-page .live-tour-service-actions button:focus-visible,.live-tour-page .tour-room-booking-button:focus-visible{outline:2px solid #123e8c;outline-offset:2px}
+.live-tour-page .live-tour-service-actions small{font:inherit;opacity:.85}
+.live-tour-page .room-actions{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px}
+.live-tour-page .room-actions button{min-width:0;flex-wrap:wrap;gap:2px;padding:4px 2px;font-size:8px;white-space:normal}
+.live-tour-page .tour-room-booking-button{position:relative;display:grid;align-content:space-between;gap:2px;width:100%;min-width:0;min-height:42px;border:0;padding:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.live-tour-page .tour-room-grid .tour-room-card.has-private-service{padding-right:4px}
+.live-tour-page .tour-room-grid .tour-room-card.vip.has-private-service{padding-right:2px}
+.live-tour-page .tour-room-card.has-private-service .tour-room-booking-button{padding-right:27px}
+.live-tour-page .tour-room-detail .tour-room-detail-row{grid-template-columns:minmax(90px,.55fr) minmax(100px,1fr) auto;align-items:center}
+.live-tour-page .live-tour-actions-col{width:150px;min-width:150px}
+.live-tour-page .tour-room-detail .tour-room-detail-head{flex-wrap:wrap}
+.live-tour-page .tour-room-detail-head .room-actions{margin:0;min-width:155px}
+@media(max-width:640px){.live-tour-page .tour-room-detail .tour-room-detail-row{grid-template-columns:minmax(75px,.55fr) minmax(0,1fr)}.live-tour-page .tour-room-detail-row .live-tour-service-actions{grid-column:1/-1}.live-tour-page .live-tour-actions-col{min-width:136px}.live-tour-page .live-tour-service-actions button{min-height:30px;font-size:9px}.live-tour-page .room-actions button{font-size:8px}}

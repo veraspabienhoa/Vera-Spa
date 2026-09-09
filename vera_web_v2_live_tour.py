@@ -46,7 +46,7 @@ MAX_TICKET_UNITS = 100_000
 MAX_PURCHASE_QUANTITY = 1_000
 CUSTOMER_PII_KEYS = frozenset({"customer_id", "customer_name", "customer_phone", "phone"})
 PROTECTED_IDEMPOTENCY_ACTIONS = frozenset({
-    "checkout", "quick_checkout", "combo_purchase", "sync_leaves", "finish_to_pending",
+    "checkout", "quick_checkout", "combo_purchase", "sync_leaves", "finish_to_pending", "start_room", "finish_room",
 })
 BACKDATE_ACTIONS = frozenset({"checkout", "quick_checkout", "combo_purchase"})
 CLIENT_FINANCIAL_TIME_FIELDS = frozenset({
@@ -59,7 +59,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
-    "update_booking", "finish_to_pending", "payment_settings_update",
+    "update_booking", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -473,6 +473,29 @@ def _room_group(value: Any) -> str:
 def _catalog_room_group(state: dict[str, Any], name: Any) -> str:
     item = next((row for row in state["rooms"] if _norm(row.get("name")) == _norm(name)), {})
     return str(item.get("area_name") or _room_group(name))
+
+
+def _room_action_members(state: dict[str, Any], room: str, action: str) -> list[dict[str, Any]]:
+    statuses = {"dang cho"} if action == "start_room" else {"dang thuc hien", "dang su dung"}
+    return [employee for employee in state["employees"]
+            if employee.get("service") and employee.get("room")
+            and _norm(_catalog_room_group(state, employee["room"])) == _norm(room)
+            and _norm(employee.get("status")) in statuses]
+
+
+def _room_action_counts(state: dict[str, Any]) -> dict[str, dict[str, int]]:
+    counts: dict[str, dict[str, int]] = {}
+    for employee in state["employees"]:
+        if not employee.get("service") or not employee.get("room"):
+            continue
+        room = _catalog_room_group(state, employee["room"])
+        bucket = counts.setdefault(room, {"waiting": 0, "doing": 0})
+        status = _norm(employee.get("status"))
+        if status == "dang cho":
+            bucket["waiting"] += 1
+        elif status in {"dang thuc hien", "dang su dung"}:
+            bucket["doing"] += 1
+    return counts
 
 
 def _service_areas(state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1392,7 +1415,22 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         state.update(working)
         return {"items": results, "count": len(results)}
     result: dict[str, Any] = {}
-    if action == "booking":
+    if action in {"start_room", "finish_room"}:
+        room = str(payload.get("room") or "").strip()
+        known_rooms = {str(area["name"]) for area in _service_areas(state)}
+        known_rooms.update(_catalog_room_group(state, row["room"]) for row in state["employees"] if row.get("room"))
+        canonical_room = next((name for name in known_rooms if _norm(name) == _norm(room)), None)
+        if not room or canonical_room is None:
+            raise HTTPException(400, "Hãy chọn phòng/khu vực có trong Live Tour.")
+        members = _room_action_members(state, canonical_room, action)
+        if not members:
+            raise HTTPException(409, "Phòng không còn dịch vụ đang chờ." if action == "start_room" else "Phòng không còn dịch vụ đang thực hiện.")
+        # Resolve every bed from the stored state, regardless of table filters or
+        # hidden rows. A single failed transition rolls back the entire room.
+        result = _apply_action(state, "start" if action == "start_room" else "finish_to_pending",
+                               {"employee_ids": [row["id"] for row in members]}, actor, now)
+        result["room"] = canonical_room
+    elif action == "booking":
         result["employee"] = _booking(state, payload, now)
     elif action == "update_booking":
         employee = _employee(state, payload.get("employee_id"))
@@ -2302,6 +2340,7 @@ def _state_response(
         "rooms": {"all": physical_rooms, "available": available_groups, "occupied": occupied_groups, "total_count": len(physical_rooms), "available_count": len(available_groups), "occupied_count": len(occupied_groups), "source_sheet": "Live Tour"},
         "available_rooms": available_groups, "available_beds": available, "metric_snapshots": metrics,
         "room_groups": {room["name"]: _catalog_room_group(state, room["name"]) for room in state["rooms"]},
+        "room_action_counts": _room_action_counts(state) if can_operate else {},
         "service_areas": _service_areas(state),
         "metrics_business_date": state.get("counter_business_date"), "metrics_retained_until_10": now.astimezone(VN_TZ).hour < 10,
         "metrics_rollover_hour": 10, "metrics_rollover_minute": 0,
