@@ -658,7 +658,10 @@ export default function LeaveRegistrationPage({ user }) {
       })
       setWarnings(result.warnings || [])
       setMessage('Đã ghi lịch nghỉ THÀNH CÔNG')
-      await load()
+      const refreshed = await load({ afterSave: true })
+      if (!refreshed) {
+        setWarnings((current) => [...current, 'Lịch nghỉ đã được lưu, nhưng chưa thể làm mới dữ liệu hiển thị. Vui lòng bấm Làm mới; không cần ghi lại lịch nghỉ.'])
+      }
       await refreshWatchDates()
     } catch (err) {
       setError(`KHÔNG THÀNH CÔNG (${err.message || 'Không ghi được lịch nghỉ.'})`)

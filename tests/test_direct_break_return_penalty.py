@@ -1,5 +1,7 @@
+import ast
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import vera_auto_check as auto_check
 from vera_web_v2_break_return_penalty import confirmed_break_return_fact
@@ -87,4 +89,17 @@ def test_timesoft_sync_runs_break_return_penalty_directly():
     assert "def process_break_return_penalties" in sync
     assert "break_return_result = process_break_return_penalties(engine, catalog)" in sync
     assert "ĐỒNG BỘ TIMESOFT - NGHỈ GIỮA CA" in sync
-    assert "timesoft-direct-attendance-penalty-2026-09-02-v2" in snapshot
+    # Exercise the entrypoint without importing its network/job installers.
+    # Release labels change independently of the direct-penalty wiring.
+    main = next(node for node in ast.parse(snapshot).body if isinstance(node, ast.FunctionDef) and node.name == "main")
+    calls = []
+    namespace = {
+        "ts": SimpleNamespace(run_sync=lambda: calls.append("sync") or 0, _log=lambda message: None),
+        "_skip_tour_penalties": lambda *args: {},
+        "_fast_checkin_tail": lambda: calls.append("tail"),
+        "FAST_INTERVAL_SECONDS": 30,
+        "FAST_WINDOW_SECONDS": 240,
+    }
+    exec(compile(ast.Module(body=[main], type_ignores=[]), str(root / "timesoft_snapshot_job.py"), "exec"), namespace)
+    assert namespace["main"]() == 0
+    assert calls == ["sync", "tail"]

@@ -33,3 +33,12 @@ python -m pytest -q tests/test_live_tour*.py tests/test_spa_management.py tests/
 ```
 
 Kết quả: 309 test liên quan đạt, gồm 18 trường hợp mới. Frontend: `npm run lint` và `npm run build` tại `web-v2` thành công; còn 3 cảnh báo lint và cảnh báo chunk lớn có sẵn. Chưa nghiệm thu trực tiếp giao diện production; cần kiểm tra danh sách và thao tác phòng sau triển khai.
+
+## Rà soát CI trước triển khai
+
+- Toàn bộ `python -m pytest -q`: **556 test đạt** sau khi xử lý 7 lỗi tồn tại trên `main`.
+- Sửa lỗi Đăng ký nghỉ: khi server đã lưu nhưng tải lại danh sách thất bại, giữ thông báo lưu thành công và thêm cảnh báo hướng dẫn bấm Làm mới, không ghi lại. Kiểm thử thực thi handler với lỗi ở từng API đọc, lưu thất bại và tải lại bình thường; giữ các lần đọc tuần tự và chỉ gửi một lần tạo lịch.
+- Bốn kiểm thử đăng nhập được cập nhật theo gateway hiện tại: xác minh tài khoản PostgreSQL rồi đổi token Supabase tại server. Mock đúng ranh giới database/HTTP; vẫn kiểm tra từ chối sai mật khẩu, không lộ mật khẩu tạm, hồ sơ đã xác minh và cache token. Không sửa mã đăng nhập production.
+- Kiểm thử TimeSoft kiểm tra entrypoint gọi đồng bộ thay vì cố định chuỗi phiên bản. Kiểm thử phân loại Vi phạm dùng cùng hàm chuẩn hóa tiếng Việt với hệ thống.
+- Ba điều kiện CI cũ được cập nhật: CCCD được xác minh trong các API lưu hồ sơ; nhân viên tự sửa dùng danh sách lý do đúng ngày của từng dòng; nguồn payroll TimeSoft kiểm tra dataset và ngày thiếu thay vì nhãn release. Giữ nguyên các bước CI bắt buộc và cấu hình triển khai.
+- Lint/build giao diện vẫn đạt; các cảnh báo đã ghi ở trên còn tồn tại. Chưa merge/deploy hoặc nghiệm thu production.
