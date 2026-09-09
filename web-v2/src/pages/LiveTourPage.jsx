@@ -11,6 +11,7 @@ import LiveTourReceipt from '../components/LiveTourReceipt'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import LiveTourServiceActions from '../components/LiveTourServiceActions'
 import { discountAmount } from '../lib/liveTourBooking'
+import { bookingPlaces, isPrivateCatalogService } from '../lib/liveTourAvailability'
 import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, vietnamDate } from '../lib/serviceCatalog'
 
 const EMPTY_LIVE_TOUR = {
@@ -960,17 +961,6 @@ export default function LiveTourPage({ user }) {
   const catalogRooms = asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms)
   const rawRooms = useMemo(() => asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms).length ? asArray(data.state.rooms) : Array.isArray(data.rooms) ? data.rooms : asArray(data.rooms?.all), [data.catalogs?.rooms, data.rooms, data.state?.rooms])
   const serverRoomGroups = useMemo(() => asArray(data.rooms?.all), [data.rooms])
-  const bookableRooms = useMemo(() => {
-    const availableBeds = asArray(data.available_beds)
-    const placeKey = (room) => normalizedColumn(typeof room === 'object' && room ? room.name : room)
-    const unique = new Map(rawRooms.map((room) => [placeKey(room), room]))
-    if (availableBeds.length) {
-      const allowed = new Set(availableBeds.map(placeKey))
-      return [...unique.values()].filter((room) => room.active !== false && allowed.has(placeKey(room))).sort(compareRooms)
-    }
-    if (Array.isArray(data.available_beds)) return []
-    return [...unique.values()].filter((room) => roomKey(room)).sort(compareRooms)
-  }, [data.available_beds, rawRooms])
   const roomCatalog = useMemo(() => {
     const fallbackGroups = [...rawRooms, ...validRecords.map((record) => cellValue(record, roomColumn))]
     const groupSource = data.service_areas || serverRoomGroups.length ? serverRoomGroups : fallbackGroups
@@ -1021,6 +1011,8 @@ export default function LiveTourPage({ user }) {
   const pendingPayments = asArray(data.pending_payments).length ? asArray(data.pending_payments) : asArray(data.pending).length ? asArray(data.pending) : asArray(data.state?.pending)
   const customers = asArray(data.customers).length ? asArray(data.customers) : asArray(data.state?.customers)
   const services = asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services)
+  const placesForBooking = (row) => bookingPlaces(data, { employeeId: row.employee_id || modal?.rowIds?.[0], now: clockMs, privateService: isPrivateCatalogService(services.find((item) => item.name === row.service) || row.service) }).sort(compareRooms)
+  const bookableRooms = placesForBooking(form)
   const combos = asArray(data.combo_catalog).length ? asArray(data.combo_catalog) : asArray(data.catalogs?.combos).length ? asArray(data.catalogs?.combos) : asArray(data.state?.combos)
   const reports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
   const audit = asArray(data.audit).length ? asArray(data.audit) : asArray(data.history).length ? asArray(data.history) : asArray(data.state?.audit)
@@ -1377,7 +1369,7 @@ export default function LiveTourPage({ user }) {
               const status = cellValue(record, statusColumn)
               const hasPrivateService = records.some((item) => item._private_service || isPrivateService(cellValue(item, serviceColumn)))
               return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
-                <button type="button" className="tour-room-booking-button" onClick={() => { setSelectedRoomKey(key); if (canOperate) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }} aria-expanded={selectedRoomKey === key}>
+                <button type="button" className="tour-room-booking-button" onClick={() => setSelectedRoomKey(key)} onDoubleClick={() => { if (canOperate && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }} title="Bấm một lần để xem nhân viên; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div className="tour-room-card-head"><strong>{areaLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
                 <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
@@ -1389,7 +1381,7 @@ export default function LiveTourPage({ user }) {
             {!displayedRooms.length && <div className="tour-room-empty">Chưa có dữ liệu phòng.</div>}
           </div>
           {selectedRoomKey && selectedRoom && <div className={`tour-room-detail ${areaKey(selectedRoom) === '19' ? 'vip-19' : ''}`.trim()} role="region" aria-label={`Chi tiết ${areaLabel(selectedRoom)}`}>
-            <div className="tour-room-detail-head"><strong>{areaLabel(selectedRoom)} · Danh sách nhân viên</strong><small>{selectedRoomRecords.length} nhân viên · Bấm tên nhân viên để mở booking</small>{roomServiceActions(selectedRoom)}<button type="button" className="text-button" aria-label="Đóng chi tiết phòng" onClick={() => setSelectedRoomKey('')}><X size={14}/></button></div>
+            <div className="tour-room-detail-head"><strong>{areaLabel(selectedRoom)} · Danh sách nhân viên</strong><small>{selectedRoomRecords.length} nhân viên · Bấm đúp thẻ phòng để đặt lịch</small>{canOperate && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => { setError(''); setBookingContext({ roomLabel: areaLabel(selectedRoom) }) }}>Đặt lịch</button>}{roomServiceActions(selectedRoom)}<button type="button" className="text-button" aria-label="Đóng chi tiết phòng" onClick={() => setSelectedRoomKey('')}><X size={14}/></button></div>
             {selectedRoomRecords.length ? <div className="tour-room-detail-list">{selectedRoomRecords.map((item, index) => {
               const employee = cellValue(item, employeeColumn) || 'Chưa có tên nhân viên'
               const service = cellValue(item, serviceColumn) || 'Chưa có dịch vụ'
@@ -1599,7 +1591,7 @@ export default function LiveTourPage({ user }) {
               {!quickBookingMatches.length && <div className="live-tour-empty">Không tìm thấy nhân viên đang rảnh, đi làm và có ca phù hợp.</div>}
             </div>
             {selectedQuickBookingRecord && <div className="live-tour-employee-picked" aria-live="polite">Đã chọn: {cellValue(selectedQuickBookingRecord, employeeColumn)} · Lịch hẹn hiện tại: {cellValue(selectedQuickBookingRecord, appointmentColumn) || 'Không có lịch hẹn'}</div>}
-            <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-quick-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-quick-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-quick-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-quick-room-options">{bookableRooms.map((room) => <option value={room.name} label={room.notice || 'Đang trống'} key={room.id}/>)}</datalist><small>{bookableRooms.find((room) => room.name === form.room)?.notice}</small></label>
             <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-quick-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-quick-service-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
             <label className="live-tour-field"><span>Yêu cầu</span><select value={form.request} onChange={(event) => setForm((current) => ({ ...current, request: event.target.value }))}><option value="">Không yêu cầu</option><option value="YC">YC</option></select></label>
             <label className="live-tour-field"><span>Lịch hẹn</span><input type="text" list="live-tour-appointment-options" value={form.appointment} onChange={(event) => setForm((current) => ({ ...current, appointment: event.target.value }))} placeholder="Chọn hoặc nhập nội dung tự do"/><datalist id="live-tour-appointment-options">{appointmentOptions.map((appointment) => <option value={appointment} key={appointment}/>)}</datalist></label>
@@ -1609,7 +1601,7 @@ export default function LiveTourPage({ user }) {
           </>}
 
           {modal.kind === 'booking' && <>
-            <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist></label>
+            <label className="live-tour-field"><span>Phòng / giường</span><input list="live-tour-room-options" value={form.room} onChange={(event) => setForm((current) => ({ ...current, room: event.target.value }))} required/><datalist id="live-tour-room-options">{bookableRooms.map((room) => <option value={room.name} label={room.notice || 'Đang trống'} key={room.id}/>)}</datalist><small>{bookableRooms.find((room) => room.name === form.room)?.notice}</small></label>
             <label className="live-tour-field"><span>Dịch vụ</span><input list="live-tour-service-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/><datalist id="live-tour-service-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label>
             <label className="live-tour-field"><span>Yêu cầu</span><select value={form.request} onChange={(event) => setForm((current) => ({ ...current, request: event.target.value }))}><option value="">Không yêu cầu</option><option value="YC">YC</option></select></label>
             <label className="live-tour-field"><span>Lịch hẹn</span><input type="text" list="live-tour-booking-appointment-options" value={form.appointment} onChange={(event) => setForm((current) => ({ ...current, appointment: event.target.value }))} placeholder="Chọn hoặc nhập nội dung tự do"/><datalist id="live-tour-booking-appointment-options">{appointmentOptions.map((appointment) => <option value={appointment} key={appointment}/>)}</datalist></label>
@@ -1621,11 +1613,10 @@ export default function LiveTourPage({ user }) {
             <div className="live-tour-multi-booking">
               {form.bookings.map((row, index) => <div className="live-tour-multi-row" key={row.employee_id}>
                 <strong>{row.employee_name}</strong>
-                <input list="live-tour-multi-room-options" value={row.room} onChange={(event) => updateBookingRow(index, 'room', event.target.value)} placeholder="Phòng / giường" aria-label={`Phòng của ${row.employee_name}`} required/>
+                <div><input list={`live-tour-multi-room-options-${index}`} value={row.room} onChange={(event) => updateBookingRow(index, 'room', event.target.value)} placeholder="Phòng / giường" aria-label={`Phòng của ${row.employee_name}`} required/><datalist id={`live-tour-multi-room-options-${index}`}>{placesForBooking(row).map((place) => <option value={place.name} label={place.notice || 'Đang trống'} key={place.id}/>)}</datalist><small>{placesForBooking(row).find((place) => place.name === row.room)?.notice}</small></div>
                 <input list="live-tour-multi-service-options" value={row.service} onChange={(event) => updateBookingRow(index, 'service', event.target.value)} placeholder="Dịch vụ" aria-label={`Dịch vụ của ${row.employee_name}`} required/>
                 <select value={row.request} onChange={(event) => updateBookingRow(index, 'request', event.target.value)} aria-label={`Yêu cầu của ${row.employee_name}`}><option value="">Không yêu cầu</option><option value="YC">YC</option></select>
               </div>)}
-              <datalist id="live-tour-multi-room-options">{bookableRooms.map((room) => <option value={roomValue(room)} key={roomKey(room)}/>)}</datalist>
               <datalist id="live-tour-multi-service-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist>
             </div>
             <label className="live-tour-check-field wide"><input type="checkbox" checked={form.auto_yc_ca1} onChange={(event) => setForm((current) => ({ ...current, auto_yc_ca1: event.target.checked }))}/> Tự động gán YC cho Ca 1 từ 23:00–03:00</label>
@@ -1734,7 +1725,7 @@ export default function LiveTourPage({ user }) {
       <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu trạng thái Live Tour; Break được ưu tiên hiển thị cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
     </>}
 
-    {bookingContext && <LiveTourBookingDialog data={data} context={bookingContext} canOperate={canOperate} canPayment={canPayment} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
+    {bookingContext && <LiveTourBookingDialog data={data} context={bookingContext} now={clockMs} canOperate={canOperate} canPayment={canPayment} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
     {receipt && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
     <div className="setup-note tour-countdown-note">Live Tour lưu trực tiếp trên máy chủ, kiểm tra phiên bản trước mỗi thao tác và tự tải lại khi có người dùng khác cập nhật.</div>
   </div>
