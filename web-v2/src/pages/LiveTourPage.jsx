@@ -12,6 +12,7 @@ import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import LiveTourServiceActions from '../components/LiveTourServiceActions'
 import { discountAmount } from '../lib/liveTourBooking'
 import { availableBookingPurchase } from '../lib/liveTourComboBooking'
+import { customerMatches } from '../lib/customerSearch'
 import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, vietnamDate } from '../lib/serviceCatalog'
 
 const EMPTY_LIVE_TOUR = {
@@ -1029,13 +1030,12 @@ export default function LiveTourPage({ user }) {
   const reports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
   const audit = asArray(data.audit).length ? asArray(data.audit) : asArray(data.history).length ? asArray(data.history) : asArray(data.state?.audit)
   const backups = asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)
-  const filteredCustomers = customers.filter((customer) => normalizedColumn(`${itemLabel(customer)} ${customer?.phone || ''}`).includes(normalizedColumn(customerSearch)))
-  const bookingCustomerNeedles = normalizedColumn(`${form.customer_name} ${form.phone}`).split(/\s+/).filter(Boolean)
-  const bookingCustomerMatches = ['quick_booking', 'booking', 'multi_booking'].includes(modal?.kind) && canPayment && !form.customer_id && bookingCustomerNeedles.length
+  const filteredCustomers = customers.filter((customer) => customerMatches({ ...customer, name: itemLabel(customer) }, customerSearch))
+  const bookingCustomerQuery = `${form.customer_name} ${form.phone}`.trim()
+  const bookingCustomerMatches = ['quick_booking', 'booking', 'multi_booking'].includes(modal?.kind) && canPayment && !form.customer_id && bookingCustomerQuery
     ? customers.filter((customer) => {
       if (!stableCustomerId(customer)) return false
-      const haystack = normalizedColumn(`${itemLabel(customer)} ${customer?.phone || customer?.customer_phone || ''}`)
-      return bookingCustomerNeedles.every((needle) => haystack.includes(needle))
+      return customerMatches({ ...customer, name: itemLabel(customer) }, bookingCustomerQuery)
     }).slice(0, 8)
     : []
   const checkoutCustomerNeedles = normalizedColumn(`${form.customer_name} ${form.phone}`).split(/\s+/).filter(Boolean)
@@ -1286,7 +1286,7 @@ export default function LiveTourPage({ user }) {
     if (!canPayment) return null
     const linkedCustomer = customers.find((customer) => stableCustomerId(customer) === String(form.customer_id || ''))
     return <>
-      <label className="live-tour-field"><span>{label}</span><input type="search" role="combobox" aria-controls="live-tour-booking-customers" aria-expanded={!form.customer_id && bookingCustomerMatches.length > 0} value={form.customer_name} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', customer_name: event.target.value }))} placeholder="Tìm tên khách (có thể nhập không dấu)" autoComplete="off"/></label>
+      <label className="live-tour-field"><span>{label}</span><input type="search" role="combobox" aria-controls="live-tour-booking-customers" aria-expanded={!form.customer_id && bookingCustomerMatches.length > 0} value={form.customer_name} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', customer_name: event.target.value }))} placeholder="Tìm tên hoặc số điện thoại" autoComplete="off"/></label>
       <label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', phone: event.target.value }))} placeholder="Tìm theo số điện thoại"/></label>
       {form.customer_id && <div className="live-tour-customer-selected wide" aria-live="polite"><span>Đã chọn đúng khách: <strong>{itemLabel(linkedCustomer, form.customer_name || form.customer_id)}</strong> · {customerComboBalance(linkedCustomer)} vé combo còn lại</span><button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, customer_id: '', customer_name: '', phone: '' }))}>Đổi khách hàng</button></div>}
       {!form.customer_id && bookingCustomerMatches.length > 0 && <div className="live-tour-customer-picker wide" id="live-tour-booking-customers" role="listbox" aria-label="Kết quả tìm khách hàng cho đặt lịch">{bookingCustomerMatches.map((customer, index) => {
@@ -1504,7 +1504,7 @@ export default function LiveTourPage({ user }) {
 
       {activePanel === 'customers' && <div className="live-tour-panel-body">
         <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG & COMBO</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { newCustomer: true, rowIds: [] })}><Plus size={13}/> Mua combo cho khách mới</button><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => openModal('combo_import')}>Nhập combo cũ</button><button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
-        <label className="live-tour-customer-search"><Search size={14}/><input type="search" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
+        <label className="live-tour-customer-search"><Search size={14}/><input type="search" aria-label="Tìm tên hoặc số điện thoại khách hàng" autoComplete="off" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
         <div className="live-tour-card-grid" style={{ marginTop: 8 }}>
           {filteredCustomers.map((customer, index) => <article className="live-tour-data-card" key={itemId(customer, index)}>
             <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong>

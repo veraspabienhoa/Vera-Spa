@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { tourNameKey } from '../lib/liveTourBooking'
 
-export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false }) {
+export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption }) {
   const id = useId()
   const root = useRef(null)
   const typing = useRef(false)
@@ -10,7 +10,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
   useEffect(() => { if (!typing.current) setQuery(selected?.label || ''); typing.current = false }, [value, selected?.label])
-  const matches = options.filter((option) => !query || tourNameKey(`${option.label} ${option.detail || ''}`).includes(tourNameKey(query)))
+  const matches = options.filter((option) => filterOption ? filterOption(option, query) : !query || tourNameKey(`${option.label} ${option.detail || ''}`).includes(tourNameKey(query)))
   const choose = (item) => { onChange(item.value); setQuery(clearOnSelect ? '' : item.label); setOpen(false); setIndex(0) }
   return <div className="live-tour-search-select" ref={root} onBlur={(event) => { if (!root.current?.contains(event.relatedTarget)) { setOpen(false); setQuery(selected?.label || '') } }}>
     <label htmlFor={id}>{label}</label>
