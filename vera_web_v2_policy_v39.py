@@ -115,6 +115,7 @@ def install_policy_v39(
         skip_registration_timing=False,
         record_uid="",
         existing_ordinal=None,
+        allow_inactive_employee=False,
     ):
         record, warnings = original_validate(
             conn, body, ident,
@@ -122,6 +123,7 @@ def install_policy_v39(
             skip_registration_timing=skip_registration_timing,
             record_uid=record_uid,
             existing_ordinal=existing_ordinal,
+            allow_inactive_employee=allow_inactive_employee,
         )
         if str(getattr(ident, "role", "") or "").strip().lower() == "admin":
             return record, warnings
