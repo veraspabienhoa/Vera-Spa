@@ -128,6 +128,10 @@ def component_debits(purchase, entries, services, day, *, check_balance=True):
         return []
     required = Counter()
     for entry in entries:
+        if entry.get("service_items"):
+            for item in entry["service_items"]:
+                required[item["service_id"]] += item["quantity"]
+            continue
         name = str(entry.get("service") or "")
         exact = next((row for row in services if _key(row["name"]) == _key(name)), None)
         parts = [name] if exact else [part.strip() for part in name.split("&") if part.strip()]

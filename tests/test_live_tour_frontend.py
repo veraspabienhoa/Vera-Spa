@@ -69,7 +69,7 @@ def test_live_tour_wires_every_vba_equivalent_action_to_the_backend():
         "multi_booking",
         "start",
         "add_minutes",
-        "complete",
+        "finish_to_pending",
         "move_pending",
         "checkout",
         "quick_checkout",
@@ -339,9 +339,9 @@ def test_live_tour_quick_booking_is_independent_and_uses_a_stable_employee_id():
     assert "row-" not in stable_helper
     quick_button = next(
         line for line in source.splitlines()
-        if "Đặt lịch nhanh" in line and "openModal('quick_booking'" in line
+        if "Đặt lịch nhanh" in line and "setBookingContext" in line
     )
-    assert "rowIds: []" in quick_button
+    assert "setBookingContext({})" in quick_button
     assert "selectedIds" not in quick_button
     assert "disabled={!canOperate}" in quick_button
     assert "if (modal.kind === 'quick_booking')" in submit
