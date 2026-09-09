@@ -27,6 +27,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from vera_web_v2_service_catalog import catalog_details, component_debits, purchase_terms, require_available
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 STATE_CATEGORY = "live_tour"
@@ -883,13 +884,15 @@ def _audit(
     state["audit"] = state["audit"][-MAX_AUDIT:]
 
 
-def _service_values(state: dict[str, Any], payload: dict[str, Any]) -> tuple[str, int | None, int]:
+def _service_values(state: dict[str, Any], payload: dict[str, Any], now: datetime | None = None) -> tuple[str, int | None, int]:
     item = _catalog_item(state, "services", payload)
     name = str((item or {}).get("name") or payload.get("service") or "").strip()
     if not name:
         raise HTTPException(400, "Vui lòng chọn dịch vụ.")
     if item is None:
         raise HTTPException(400, f"Dịch vụ '{name}' chưa có trong danh mục.")
+    if now is not None:
+        require_available(item, now.astimezone(VN_TZ).date(), "Dịch vụ")
     duration_value = (item or {}).get("duration")
     is_request = _norm(payload.get("request")) == "yc"
     eligibility = "request_eligible" if is_request else "non_request_eligible"
@@ -972,7 +975,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
     if room_item.get("active") is False:
         raise HTTPException(400, "Vị trí phục vụ đã ngừng sử dụng.")
     request, auto_request = _auto_yc_ca1(now, employee, payload.get("request"), bool(payload.get("auto_yc_ca1")))
-    service, duration, price = _service_values(state, {**payload, "request": request})
+    service, duration, price = _service_values(state, {**payload, "request": request}, now)
     _check_room_collision(state, employee, room, service)
     customer = None
     if any(payload.get(key) for key in ("customer_id", "customer_name", "customer_phone", "phone")):
@@ -1190,18 +1193,29 @@ def _checkout_mutating(
     total = default_total
 
     combo_units = sum(_service_ticket_units(state, item.get("service")) for item in entries) if combo_purchase_id else 0
-    if combo_units > MAX_TICKET_UNITS:
-        raise HTTPException(400, f"Số vé combo trừ không được vượt quá {MAX_TICKET_UNITS}.")
     combo_purchase = None
+    debit_plan = []
     if combo_purchase_id:
         if not customer:
             raise HTTPException(400, "Phải chọn khách hàng khi thanh toán bằng combo.")
         combo_purchase = next((item for item in customer["combo_purchases"] if str(item.get("id")) == combo_purchase_id), None)
         if not combo_purchase:
             raise HTTPException(404, "Không tìm thấy combo đã mua của khách hàng.")
+        debit_plan = component_debits(combo_purchase, entries, state["services"], timing["effective_datetime"].astimezone(VN_TZ).date())
+        if "component_balances" in combo_purchase:
+            combo_units = sum(item["units"] for item in debit_plan)
+            if discount:
+                raise HTTPException(400, "Combo dịch vụ đã thanh toán khi mua; không áp dụng giảm giá lần nữa khi dùng lượt.")
+            total = tip  # Service revenue was recorded at purchase, not at redemption.
+        if combo_units > MAX_TICKET_UNITS:
+            raise HTTPException(400, f"Số lượt combo trừ không được vượt quá {MAX_TICKET_UNITS}.")
         remaining = int(combo_purchase.get("remaining") or 0)
         if combo_units <= 0 or remaining < combo_units:
             raise HTTPException(409, f"Combo chỉ còn {remaining} vé, không đủ trừ {combo_units} vé.")
+        for debit in debit_plan:
+            balance = next(row for row in combo_purchase["component_balances"] if row["service_id"] == debit["service_id"])
+            balance["used"] += debit["units"]
+            balance["remaining"] -= debit["units"]
         combo_purchase["used"] = int(combo_purchase.get("used") or 0) + combo_units
         combo_purchase["remaining"] = remaining - combo_units
         combo_purchase["updated_at"] = _iso(now)
@@ -1222,7 +1236,9 @@ def _checkout_mutating(
         "subtotal": subtotal, "discount": discount, "tip": tip, "total": total,
         "pricing_source": pricing_source,
         "combo_purchase_id": combo_purchase_id, "combo_units": combo_units,
-        "combo_units_source": "server_service_catalog",
+        "combo_units_source": "server_purchase_components" if combo_purchase is not None and "component_balances" in combo_purchase else "server_service_catalog",
+        "combo_covered_amount": subtotal if combo_purchase is not None and "component_balances" in combo_purchase else 0,
+        "combo_component_debits": deepcopy(debit_plan),
         "entries": entries, "note": str(payload.get("note") or ""), "quick": quick,
     }
     state["invoices"].append(invoice)
@@ -1236,7 +1252,8 @@ def _checkout_mutating(
             "actor": actor, "customer_id": invoice["customer_id"],
             "combo_purchase_id": combo_purchase_id, "units": combo_units,
             "remaining_before": remaining, "remaining_after": int(combo_purchase.get("remaining") or 0),
-            "entries": [
+            "component_debits": deepcopy(debit_plan),
+            "entries": [{"service": item["service_name"], "service_id": item["service_id"], "units": item["units"]} for item in debit_plan] if "component_balances" in combo_purchase else [
                 {"service": item.get("service", ""), "units": _service_ticket_units(state, item.get("service"))}
                 for item in entries
             ],
@@ -1259,7 +1276,11 @@ def _checkout_mutating(
             "bill_no": invoice["bill_no"], "ticket_no": invoice["ticket_no"],
             "payment_method": invoice["payment_method"], "tip": allocated_tip,
             "total": allocated_total, "note": invoice["note"],
-            "combo_units": _service_ticket_units(state, entry.get("service")) if combo_purchase_id else 0,
+            "combo_units": (
+                sum(item["units"] for item in component_debits(combo_purchase, [entry], state["services"], timing["effective_datetime"].astimezone(VN_TZ).date(), check_balance=False))
+                if combo_purchase is not None and "component_balances" in combo_purchase
+                else _service_ticket_units(state, entry.get("service")) if combo_purchase_id else 0
+            ),
         })
     if pending:
         state["pending"] = [item for item in state["pending"] if str(item.get("id")) != pending_id]
@@ -1588,7 +1609,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         employee = _employee(state, payload.get("employee_id"))
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:
             raise HTTPException(409, "Chỉ sửa dịch vụ đang chờ hoặc đang thực hiện.")
-        name, duration, price = _service_values(state, {**payload, "request": employee.get("request")})
+        name, duration, price = _service_values(state, {**payload, "request": employee.get("request")}, now)
         if action == "replace_service" or not employee.get("service"):
             employee["service"] = name
             employee["duration"] = duration
@@ -1647,6 +1668,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         if kind == "rooms" and any(key in incoming for key in ("area_id", "area_name", "area_kind", "bed_name")):
             raise HTTPException(400, "Hãy dùng Cài đặt khu vực dịch vụ để quản lý phòng, giường và bàn.")
         validated_fields: dict[str, Any] = {}
+        if kind in {"services", "combos"}:
+            validated_fields.update(catalog_details(kind, incoming, current, state["services"]))
         if kind == "services":
             duration_value = _bounded_number(
                 incoming.get("duration"), label="Thời lượng dịch vụ", minimum=0,
@@ -1672,7 +1695,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
                 if flag in incoming and not isinstance(incoming[flag], bool):
                     raise HTTPException(400, f"{flag} phải là giá trị đúng/sai.")
         if kind == "combos":
-            ticket_source = incoming.get("tickets", incoming.get("quantity"))
+            ticket_source = validated_fields.get("tickets", incoming.get("tickets", incoming.get("quantity", (current or {}).get("tickets"))))
             if ticket_source in (None, ""):
                 ticket_source = 0
             validated_fields["tickets"] = int(_bounded_number(
@@ -1715,6 +1738,11 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             raise HTTPException(409, "Hãy quản lý vị trí này trong Cài đặt → Cài đặt khu vực dịch vụ.")
         if kind in {"rooms", "services"} and _catalog_referenced(state, kind, item):
             raise HTTPException(409, "Không thể xóa danh mục còn gắn với dịch vụ chưa thanh toán.")
+        if kind == "services":
+            component_refs = [part for combo in state["combos"] for part in combo.get("components", [])]
+            component_refs += [part for customer in state["customers"] for purchase in customer.get("combo_purchases", []) for part in purchase.get("component_balances", []) if part.get("remaining", 0) > 0]
+            if any(part.get("service_id") == item["id"] for part in component_refs):
+                raise HTTPException(409, "Dịch vụ đang thuộc combo hoặc còn lượt khách đã mua; chưa thể xóa.")
         state[kind] = [row for row in state[kind] if row is not item]
         result["deleted_id"] = item.get("id")
     elif action == "combo_purchase":
@@ -1722,6 +1750,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         combo = _catalog_item(state, "combos", payload)
         if not combo:
             raise HTTPException(404, "Không tìm thấy combo trong danh mục.")
+        require_available(combo, financial_timing["effective_datetime"].astimezone(VN_TZ).date(), "Combo")
         quantity_source = payload.get("quantity")
         if quantity_source in (None, ""):
             quantity_source = 1
@@ -1744,6 +1773,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         purchase_price = catalog_price * quantity
         if purchase_price > MAX_MONEY:
             raise HTTPException(400, f"Tổng giá combo không được vượt quá {MAX_MONEY}.")
+        terms = purchase_terms(combo, quantity, state["services"], financial_timing["effective_datetime"].astimezone(VN_TZ).date())
         payment_method = _canonical_payment_method(payload.get("payment_method"), quick=True)
         if payment_method == "COMBO":
             raise HTTPException(400, "Không thể dùng chính combo để thanh toán giao dịch mua combo.")
@@ -1751,6 +1781,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         if not customer:
             raise HTTPException(400, "Thiếu thông tin khách hàng.")
         purchase = {
+            **terms,
             "id": str(uuid4()), "combo_id": combo.get("id"), "combo_name": combo.get("name"),
             "total": tickets, "used": 0, "remaining": tickets,
             "price": purchase_price,
@@ -1820,6 +1851,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             combo = _catalog_item(state, "combos", row_payload)
             if not customer or not combo:
                 raise HTTPException(400, "Dòng import combo thiếu khách hàng hoặc combo hợp lệ.")
+            if combo.get("components"):
+                raise HTTPException(400, "Combo có dịch vụ thành phần cần ghi nhận bằng Mua combo để lưu đúng số lượt từng dịch vụ.")
             total = int(_bounded_number(
                 row_payload.get("total", row_payload.get("tickets", combo.get("tickets"))),
                 label="Tổng số vé combo", minimum=1, maximum=MAX_TICKET_UNITS, integer=True,
@@ -2686,7 +2719,7 @@ def install_live_tour_routes(
             require_feature(conn, ident, "live_tour_admin")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
             state, revision = _read_state(conn, now)
-        return {"revision": revision, "services": deepcopy(state["services"]), "service_areas": _service_areas(state)}
+        return {"revision": revision, "services": deepcopy(state["services"]), "combos": deepcopy(state["combos"]), "service_areas": _service_areas(state)}
 
     @app.get("/v2/live-tour/customers/{customer_id}/history")
     def live_tour_customer_history(
