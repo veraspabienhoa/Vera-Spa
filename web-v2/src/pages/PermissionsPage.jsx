@@ -1,3 +1,4 @@
+import EmployeeSelector from '../components/EmployeeSelector'
 import { RefreshCw, Save, Search, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -82,6 +83,7 @@ export default function PermissionsPage() {
     setInherit(true)
   }
   const save = async () => {
+    if (!target || busy) return
     setBusy(true); setNotice(null)
     try {
       const result = await veraApi.savePermissions(scope, target, { allowed_features: allowed, inherit, expected_revision: data.revision })
@@ -104,7 +106,10 @@ export default function PermissionsPage() {
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
     <section className="panel permission-target-panel">
       <div className="permission-scope-tabs"><button className={scope === 'role' ? 'active' : ''} onClick={() => chooseScope('role')}>Theo nhóm</button><button className={scope === 'account' ? 'active' : ''} onClick={() => chooseScope('account')}>Theo tài khoản</button></div>
-      <label>{scope === 'role' ? 'Chọn nhóm' : 'Chọn tài khoản'}<select value={target} onChange={(e) => chooseTarget(e.target.value)}>{scope === 'role' ? data?.roles?.map((role) => <option key={role} value={role}>{roleLabel[role] || role}</option>) : data?.accounts?.map((item) => <option key={item.username} value={item.username}>{item.username} · {roleLabel[item.role] || item.role}</option>)}</select></label>
+      {scope === 'role'
+        ? <label>Chọn nhóm<select value={target} onChange={(e) => chooseTarget(e.target.value)}>{data?.roles?.map((role) => <option key={role} value={role}>{roleLabel[role] || role}</option>)}</select></label>
+        : <EmployeeSelector employees={data?.accounts || []} value={target} onChange={chooseTarget} selectionOnly disabled={busy} />}
+
       {scope === 'account' && <>
         <label className="inherit-toggle"><input type="checkbox" checked={inherit} onChange={(e) => e.target.checked ? resetToRolePermissions() : enablePrivatePermissions()} /> Kế thừa quyền của nhóm</label>
         <div className="permission-account-actions">

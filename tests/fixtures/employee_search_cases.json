@@ -1,0 +1,14 @@
+[
+  {"name":"Cẩm Vân","query":"cam van","matches":true},
+  {"name":"Đỗ Ánh","query":"  DO   anh  ","matches":true},
+  {"name":"Linh Đan — Nhân viên","query":"linh dan","matches":true},
+  {"name":"Linh Đan – Nhân viên","query":"LINH ĐAN – NHÂN VIÊN","matches":true},
+  {"name":"Cẩm Vân - Ca 2","query":"Cẩm Vân - Ca 2","matches":true},
+  {"name":"Cẩm Vân","query":"Cẩm Vân","matches":true},
+  {"name":"Cẩm Vân Anh","query":"Cẩm Vân","matches":false},
+  {"name":"Ngọc Châu","query":"Châu","matches":false},
+  {"name":"Ngọc Châu","query":"ngoc","matches":false},
+  {"name":"Ngọc Châu","query":"Locker","matches":false},
+  {"name":"Ngọc Châu","query":"","matches":true},
+  {"name":"Ngọc Châu","query":"   ","matches":true}
+]

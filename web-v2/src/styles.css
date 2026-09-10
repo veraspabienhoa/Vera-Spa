@@ -458,9 +458,6 @@ textarea { resize: vertical; }
 .list-range-buttons button { border: 0; padding: 8px 11px; border-radius: 9px; color: #33463c; background: #edf2ef; font-size: 11px; font-weight: 800; }
 .list-range-buttons button.active { color: white; background: var(--green-800); box-shadow: 0 5px 12px rgba(33,70,57,.14); }
 .list-custom-range { justify-content: flex-start; }
-.employee-search-field { width: min(380px, 100%); display: grid; gap: 5px; }
-.employee-search-field > span { display: inline-flex; align-items: center; gap: 6px; color: #4b5b53; font-size: 11px; font-weight: 800; }
-.employee-search-field input { background: white; }
 .select-column { width: 58px; min-width: 58px; text-align: center; }
 .select-column input { width: 18px; height: 18px; padding: 0; accent-color: var(--green-800); }
 .reason-edit-cell { min-width: 240px; }
@@ -865,8 +862,6 @@ tr:last-child td { border-bottom: 0; }
   .list-range-buttons button:last-child { grid-column: 1 / -1; }
   .list-custom-range { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .list-custom-range .date-input-group, .list-custom-range .date-picker-control { min-width: 0; width: 100%; }
-  .employee-search-field { width: 100%; }
-  .employee-search-field input { padding: 8px 9px; font-size: 12px; }
   .leave-list-wrap { width: 100%; overflow-x: clip; }
   .leave-records-table { width: 100%; min-width: 0; table-layout: fixed; font-size: 10px; }
   .leave-records-table.without-penalty .leave-col-select { width: 8%; }

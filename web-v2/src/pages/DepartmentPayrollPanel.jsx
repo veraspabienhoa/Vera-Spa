@@ -1,4 +1,5 @@
-import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
+import EmployeeSelector from '../components/EmployeeSelector'
+import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Send, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { numberInputDisplayValue } from '../lib/numberInput'
@@ -10,7 +11,6 @@ const monthNow = () => {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
-const normalizeSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd').toLowerCase().trim()
 
 async function request(path, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
@@ -81,7 +81,6 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [salaryConfigTables, setSalaryConfigTables] = useState({ operations: [], tapvu: [] })
   const [employeeCatalog, setEmployeeCatalog] = useState([])
   const [addDepartment, setAddDepartment] = useState('quanly')
-  const [employeeSearch, setEmployeeSearch] = useState({ operations: '', tapvu: '' })
   const [pendingEmployee, setPendingEmployee] = useState({ operations: '', tapvu: '' })
   const [rows, setRows] = useState([])
   const [history, setHistory] = useState([])
@@ -188,10 +187,8 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const employeeCandidates = (group) => {
     const departments = group === 'tapvu' ? new Set(['tapvu']) : new Set([addDepartment])
     const configured = new Set([...(salaryConfigTables.operations || []), ...(salaryConfigTables.tapvu || [])].map((row) => row.employee_username))
-    const search = normalizeSearch(employeeSearch[group])
     return employeeCatalog.filter((item) => departments.has(item.department)
-      && !configured.has(item.employee_username)
-      && (!search || normalizeSearch(`${item.employee_name} ${item.employee_username}`).includes(search)))
+      && !configured.has(item.employee_username))
   }
 
   const addEmployeeRow = (group) => {
@@ -204,7 +201,6 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     const config = settings[candidate.department]?.config || {}
     setSalaryConfigTables((tables) => ({ ...tables, [group]: [...(tables[group] || []), { ...config, ...candidate }] }))
     setPendingEmployee((value) => ({ ...value, [group]: '' }))
-    setEmployeeSearch((value) => ({ ...value, [group]: '' }))
     setNotice(null)
   }
 
@@ -219,8 +215,8 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
       <div className="panel-title-row"><div><h3>{title}</h3><p>Mỗi nhân viên là một dòng; mức đã lưu được dùng trực tiếp khi tính bảng lương tháng.</p></div></div>
       <div className="department-config-add-row">
         {group === 'operations' && <label>Bộ phận<select value={addDepartment} onChange={(event) => { setAddDepartment(event.target.value); setPendingEmployee((value) => ({ ...value, operations: '' })) }}><option value="quanly">Quản lý</option><option value="letan">Lễ tân</option><option value="locker">Locker</option></select></label>}
-        <label className="department-config-search"><span>Tìm nhân viên</span><div><Search size={16} /><input value={employeeSearch[group]} placeholder="Nhập tên hoặc tên đăng nhập…" onChange={(event) => { setEmployeeSearch((value) => ({ ...value, [group]: event.target.value })); setPendingEmployee((value) => ({ ...value, [group]: '' })) }} /></div></label>
-        <label>Chọn nhân viên<select value={pendingEmployee[group]} onChange={(event) => setPendingEmployee((value) => ({ ...value, [group]: event.target.value }))}><option value="">-- Chọn nhân viên --</option>{candidates.map((item) => <option key={item.employee_username} value={item.employee_username}>{item.employee_name} · {item.employee_username}</option>)}</select></label>
+        <EmployeeSelector employees={candidates} value={pendingEmployee[group]} selectionOnly disabled={Boolean(busy)}
+          onChange={(name) => setPendingEmployee((value) => ({ ...value, [group]: name }))} />
         <button className="secondary-button" type="button" disabled={Boolean(busy) || !pendingEmployee[group]} onClick={() => addEmployeeRow(group)}><Plus size={16} /> Thêm dòng</button>
       </div>
       <div className="responsive-data-table department-config-table"><table>

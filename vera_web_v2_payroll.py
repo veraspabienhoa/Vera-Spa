@@ -1,6 +1,8 @@
 """Complete Web V2 payroll workflow: calculate, configure, save and email."""
 from __future__ import annotations
 
+from vera_employee_search import employee_name_matches
+
 import calendar
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -393,7 +395,7 @@ def _filter_rows(records, batch: str, search: str, norm):
         records = [item for item in records if str(item.get("Mã bản lưu") or "") == batch]
     needle = norm(search)
     if needle:
-        records = [item for item in records if needle in {norm(item.get("Tên Hệ thống")), norm(item.get("Họ và tên"))}]
+        records = [item for item in records if employee_name_matches(item.get("Tên Hệ thống"), search)]
     return records
 
 

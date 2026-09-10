@@ -12,6 +12,8 @@ be interpreted.  That is safer than allowing Web V2 to bypass a legacy rule.
 """
 from __future__ import annotations
 
+from vera_employee_search import employee_name_matches as _employee_name_matches
+
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import hmac
@@ -159,14 +161,6 @@ def _norm(value: Any) -> str:
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
     s = s.replace("đ", "d")
     return re.sub(r"\s+", " ", s).strip()
-
-
-def _employee_name_matches(value: Any, query: Any) -> bool:
-    needle = _norm(query)
-    if not needle:
-        return True
-    short_name = re.split(r"\s*[-–—]\s*", str(value or ""), maxsplit=1)[0]
-    return needle in {_norm(value), _norm(short_name)}
 
 
 _WATCHED_PAID_REASON_KEYS = {

@@ -30,7 +30,7 @@ def test_employee_toolbar_keeps_native_name_dropdown_and_other_filters():
     main = (ROOT / "web-v2/src/main.jsx").read_text(encoding="utf-8")
 
     assert "toolbar.querySelectorAll('select').forEach(removeToolbarProxy)" in source
-    assert "select[data-employee-name-dropdown]" in source
+    assert "[data-employee-selector]" in source
     assert ".staff-control-panel .staff-toolbar" in source
     assert ".staff-list-panel .vera-list-name-search" in source
     assert "removeDuplicateListSearch" in source

@@ -17,6 +17,7 @@ from openpyxl import Workbook
 
 import vera_web_v2_admin_audit_archive as audit_module
 import vera_web_v2_snapshot as snapshot_module
+from vera_employee_search import employee_name_matches
 
 
 RELEASE = "4.1-operations-search-filters-export"
@@ -55,7 +56,7 @@ def _validate_range(start: date, end: date, *, max_days: int) -> None:
 def _snapshot_filter(records: list[dict[str, Any]], employee: str, department: str, shift: str) -> list[dict[str, Any]]:
     return [
         item for item in records
-        if _matches(item.get("employee_name"), employee)
+        if employee_name_matches(item.get("employee_name"), employee)
         and _matches(item.get("break_department"), department)
         and _matches(item.get("shift"), shift)
     ]
@@ -136,7 +137,7 @@ def _audit_rows(conn, start: date, end: date, actor: str, *, archive_only: bool 
         LIMIT 5000
     """), {"start_date": start, "end_date": end}).mappings().all()
     if actor.strip():
-        rows = [row for row in rows if _matches(row.get("actor"), actor)]
+        rows = [row for row in rows if employee_name_matches(row.get("actor"), actor)]
     return rows
 
 

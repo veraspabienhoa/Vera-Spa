@@ -1,4 +1,6 @@
-import { CheckSquare, Download, FileSignature, RefreshCw, Save, Search, Settings2, Square, Users } from 'lucide-react'
+import EmployeeSelector from '../components/EmployeeSelector'
+import { matchesEmployeeName } from '../lib/employeeSearch'
+import { CheckSquare, Download, FileSignature, RefreshCw, Save, Settings2, Square, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { contractApi } from '../lib/contractApi'
 import VeraDateInput from '../components/VeraDateInput'
@@ -87,9 +89,7 @@ export default function ContractPage({ user }) {
   }
 
   const filteredEmployees = useMemo(() => {
-    const needle = search.trim().toLocaleLowerCase('vi')
-    if (!needle) return data?.employees || []
-    return (data?.employees || []).filter((item) => `${item.full_name} ${item.username} ${item.role_label}`.toLocaleLowerCase('vi').includes(needle))
+    return (data?.employees || []).filter((item) => matchesEmployeeName(item.username, search))
   }, [data?.employees, search])
 
   const selectedSet = useMemo(() => new Set(selectedUsernames), [selectedUsernames])
@@ -177,7 +177,7 @@ export default function ContractPage({ user }) {
         {scopeOptions.map((item) => <button type="button" key={item.value} className={scope === item.value ? 'active' : ''} onClick={() => setScope(item.value)}>{item.label}</button>)}
       </div>}
       {scope === 'selected' && <div className="contract-selected-scope">
-        {permissions.can_export_bulk && <label className="contract-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm tên hoặc tài khoản nhân viên…" /></label>}
+        {permissions.can_export_bulk && <EmployeeSelector employees={data?.employees || []} value={search} onChange={setSearch} />}
         <div className="contract-selection-actions">
           <button type="button" className="secondary-button" onClick={selectFiltered} disabled={!filteredEmployees.length}><CheckSquare size={16} /> Chọn tất cả đang hiển thị</button>
           <button type="button" className="secondary-button" onClick={clearSelected} disabled={!selectedUsernames.length}><Square size={16} /> Bỏ chọn</button>

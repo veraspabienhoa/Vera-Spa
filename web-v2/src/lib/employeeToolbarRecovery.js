@@ -18,16 +18,16 @@ function restoreToolbar() {
   const toolbar = document.querySelector('.staff-control-panel .staff-toolbar')
   if (!toolbar) return
 
-  // Keep the toolbar on native React-owned selects, including the employee
-  // dropdown copied from Đăng ký lịch.
+  // Keep other toolbar filters on native React-owned selects. The employee
+  // field is owned by the shared EmployeeSelector.
   toolbar.querySelectorAll('select').forEach(removeToolbarProxy)
 
-  const employeeSelect = toolbar.querySelector('select[data-employee-name-dropdown]')
-  if (employeeSelect instanceof HTMLSelectElement) employeeSelect.dataset.veraToolbarStateSynced = '1'
+  const employeeSelect = toolbar.querySelector('[data-employee-selector] input[type="search"]')
+  if (employeeSelect instanceof HTMLInputElement) employeeSelect.dataset.veraToolbarStateSynced = '1'
 }
 
 function removeDuplicateListSearch() {
-  // EmployeePage owns the canonical searchable dropdown in the top toolbar.
+  // EmployeePage owns the shared EmployeeSelector in the top toolbar.
   // employeeDirectoryUx historically injected a second proxy below the list;
   // keeping two imperative inputs caused stale closures and could break React
   // DOM reconciliation while filtering rows.
