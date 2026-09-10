@@ -31,10 +31,10 @@ const PENDING_REMINDER_INTERVAL_MS = 15 * 60 * 1000
 const VIP_ROOMS = ['16', '17', '18', '19', '20', '21']
 const VIP_ROOM_KEYS = new Set(VIP_ROOMS)
 const PANEL_TABS = [
-  ['pending', 'Chờ thanh toán'],
+  ['pending', 'Hóa đơn chờ thanh toán'],
   ['invoices', 'Hóa đơn đã thanh toán'],
-  ['customers', 'Khách hàng & combo'],
   ['reports', 'Báo cáo'],
+  ['customers', 'Khách hàng'],
   ['history', 'Lịch sử & sao lưu'],
   ['catalog', 'Danh mục'],
 ]
@@ -1412,8 +1412,8 @@ export default function LiveTourPage({ user }) {
       {['pending', 'invoices', 'reports'].includes(activePanel) && <LiveTourFilters value={listFilters} onChange={setListFilters}/>}
       {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
 
-      {activePanel === 'pending' && canPending && <div className="live-tour-panel-body" id="live-tour-pending-panel" role="tabpanel" aria-label="Chờ thanh toán">
-        <div className="live-tour-panel-toolbar"><h2>CHỜ THANH TOÁN</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={!canExportKind('pending')} onClick={() => exportData('pending')}><Download size={13}/> Xuất chờ thanh toán</button></div></div>
+      {activePanel === 'pending' && canPending && <div className="live-tour-panel-body" id="live-tour-pending-panel" role="tabpanel" aria-label="Hóa đơn chờ thanh toán">
+        <div className="live-tour-panel-toolbar"><h2>HÓA ĐƠN CHỜ THANH TOÁN</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={!canExportKind('pending')} onClick={() => exportData('pending')}><Download size={13}/> Xuất chờ thanh toán</button></div></div>
         {pendingPayments.length ? <div className="live-tour-card-grid">{pendingPayments.map((item, index) => {
           const id = String(item?._id ?? item?.id ?? '')
           const entries = asArray(item?.entries)
@@ -1447,7 +1447,7 @@ export default function LiveTourPage({ user }) {
       </div>}
 
       {activePanel === 'customers' && canCustomers && <div className="live-tour-panel-body">
-        <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG & COMBO</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { newCustomer: true, rowIds: [] })}><Plus size={13}/> Mua combo cho khách mới</button>{isAdmin && <button type="button" className="secondary-button" disabled={!canImportCombo} onClick={() => openModal('combo_import')}>Nhập combo</button>}<button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
+        <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { newCustomer: true, rowIds: [] })}><Plus size={13}/> Mua combo cho khách mới</button>{isAdmin && <button type="button" className="secondary-button" disabled={!canImportCombo} onClick={() => openModal('combo_import')}>Nhập combo</button>}<button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
         <label className="live-tour-customer-search"><Search size={14}/><input type="search" aria-label="Tìm tên hoặc số điện thoại khách hàng" autoComplete="off" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
         <div className="live-tour-card-grid" style={{ marginTop: 8 }}>
           {filteredCustomers.map((customer, index) => <article className="live-tour-data-card" key={itemId(customer, index)}>

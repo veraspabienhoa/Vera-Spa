@@ -1,1 +1,95 @@
-.live-tour-export-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px 0}.live-tour-export-filters label{display:grid;gap:5px;font-size:13px;font-weight:650;flex:1 1 150px;min-width:0}.live-tour-export-filters input,.live-tour-export-filters select{box-sizing:border-box;width:100%;min-width:0;padding:10px;border:1px solid #cbdcd1;border-radius:8px;background:#fff;color:inherit;font:inherit}@media(max-width:650px){.live-tour-export-filters input,.live-tour-export-filters select{font-size:16px}}
+.live-tour-filters {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #dce6e1;
+  border-radius: 10px;
+  background: #f7faf8;
+}
+
+.live-tour-filters-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.live-tour-filters label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: #526a60;
+  font-size: .875rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.live-tour-filters input,
+.live-tour-filters select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 2.75rem;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #cbdcd1;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink, #173c30);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+/* Keep Safari's native date value inside its grid column. */
+.live-tour-filters input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.live-tour-filters input::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+.live-tour-filters-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.live-tour-filters .live-tour-filters-reset {
+  min-height: 2.75rem;
+  padding: 8px 16px;
+  font-size: .875rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 680px) {
+  .live-tour-filters-dates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .live-tour-filters-preset {
+    grid-column: 1 / -1;
+  }
+
+  .live-tour-filters-search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .live-tour-filters .live-tour-filters-reset {
+    width: 100%;
+  }
+}
+
+@media (max-width: 380px) {
+  .live-tour-filters-dates {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
