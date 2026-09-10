@@ -18,7 +18,9 @@ import { startLeaveListDateFilterSync } from './lib/leaveListDateFilterSync'
 import { startDepartmentSalaryAdvanceTransportGuard } from './lib/departmentSalaryAdvanceTransportGuard'
 import { startDepartmentSalaryAdvanceLedger } from './lib/departmentSalaryAdvanceLedger'
 import { startAttendanceTimesoftRefreshGuard } from './lib/attendanceTimesoftRefreshGuard'
+import { startSearchableDropdowns } from './lib/searchableDropdowns'
 import './styles.css'
+import './searchable-dropdowns.css'
 import './visibility-cleanup.css'
 
 void registerVeraServiceWorker().catch(() => {})
@@ -30,6 +32,7 @@ startEmployeeProfileProductionFix()
 startEmployeeProfileSwitchGuard()
 startEmployeeProfileCompletionAndIssuerFix()
 startEmployeeDirectoryUx()
+startSearchableDropdowns()
 startEmployeeProfileHeaderSaveFix()
 startEmployeeToolbarRecovery()
 startEmployeeMissingProfileFix()

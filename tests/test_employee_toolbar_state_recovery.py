@@ -11,7 +11,7 @@ def test_employee_toolbar_uses_single_react_filter_source():
     assert "veraToolbarStateSynced" in source
     assert "toolbar.querySelectorAll('select').forEach(removeToolbarProxy)" in source
     assert "select[data-employee-name-dropdown]" in source
-    assert "select.matches('[data-employee-name-dropdown]')" in directory
+    assert "enhanceAllSelects()" not in directory
     assert "removeDuplicateListSearch" in source
     assert "wrapper?.remove()" in source
     assert "forceReactControlValue" not in source
