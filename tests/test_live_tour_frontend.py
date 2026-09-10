@@ -587,3 +587,23 @@ def test_live_tour_quick_checkout_is_independent_and_uses_stable_employee_ids():
     assert "Tìm nhân viên chờ thanh toán" in source
     assert "customer_id: employee?.customer_id || ''" in source
     assert "phone: employee?.customer_phone || ''" in source
+
+def test_remaining_order_is_global_and_leave_stays_last_even_when_prioritized():
+    source = _source(LIVE_TOUR)
+    helper = source[source.index('function prioritizeRecords'):source.index('function shiftBucket')]
+    script = """
+const findColumn = columns => columns[0];
+const cellValue = (record, column) => String(record[column] ?? '').trim();
+const hasGroup = (record, key) => (record._tour_groups || []).includes(key);
+""" + helper + """
+const records = [
+ {id:'long', time:30}, {id:'leave', time:'', _tour_groups:['leave']},
+ {id:'short', time:5}, {id:'blank', time:''}, {id:'late', time:-2},
+ {id:'tie', time:5}
+];
+console.log(JSON.stringify(['all','leave','doing'].map(filter =>
+ prioritizeRecords(records, ['time'], filter).map(row => row.id))));
+"""
+    result = subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [['blank', 'late', 'short', 'tie', 'long', 'leave']] * 3
+    assert 'column === sttColumn(columns) ? index + 1' in source
