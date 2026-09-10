@@ -1383,7 +1383,10 @@ export default function LiveTourPage({ user }) {
               const status = cellValue(record, statusColumn)
               const hasPrivateService = records.some((item) => item._private_service || isPrivateService(cellValue(item, serviceColumn)))
               return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
-                <button type="button" className="tour-room-booking-button" onClick={() => { setSelectedRoomKey(key); if (canOperate) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }} aria-expanded={selectedRoomKey === key}>
+                <button type="button" className="tour-room-booking-button"
+                  onClick={() => setSelectedRoomKey(key)}
+                  onDoubleClick={() => { if (canOperate && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }}
+                  title="Bấm một lần để xem nhân viên; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div className="tour-room-card-head"><strong>{areaLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
                 <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
@@ -1395,7 +1398,7 @@ export default function LiveTourPage({ user }) {
             {!displayedRooms.length && <div className="tour-room-empty">Chưa có dữ liệu phòng.</div>}
           </div>
           {selectedRoomKey && selectedRoom && <div className={`tour-room-detail ${areaKey(selectedRoom) === '19' ? 'vip-19' : ''}`.trim()} role="region" aria-label={`Chi tiết ${areaLabel(selectedRoom)}`}>
-            <div className="tour-room-detail-head"><strong>{areaLabel(selectedRoom)} · Danh sách nhân viên</strong><small>{selectedRoomRecords.length} nhân viên · Bấm tên nhân viên để mở booking</small>{roomServiceActions(selectedRoom)}<button type="button" className="text-button" aria-label="Đóng chi tiết phòng" onClick={() => setSelectedRoomKey('')}><X size={14}/></button></div>
+            <div className="tour-room-detail-head"><strong>{areaLabel(selectedRoom)} · Danh sách nhân viên</strong><small>{selectedRoomRecords.length} nhân viên · Bấm đúp ô phòng để đặt lịch</small>{roomServiceActions(selectedRoom)}<button type="button" className="text-button" aria-label="Đóng chi tiết phòng" onClick={() => setSelectedRoomKey('')}><X size={14}/></button></div>
             {selectedRoomRecords.length ? <div className="tour-room-detail-list">{selectedRoomRecords.map((item, index) => {
               const employee = cellValue(item, employeeColumn) || 'Chưa có tên nhân viên'
               const service = cellValue(item, serviceColumn) || 'Chưa có dịch vụ'
