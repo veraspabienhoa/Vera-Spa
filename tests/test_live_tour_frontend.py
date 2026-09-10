@@ -458,8 +458,7 @@ def test_live_tour_checkout_can_link_an_exact_existing_customer_and_load_history
     assert "Đã liên kết đúng mã khách hàng" in source
     assert "const openCustomerHistory" in source
     assert "veraApi.liveTourCustomerHistory(customerId)" in source
-    assert "const query = compactExportQuery(exportFilters)" in source
-    assert "exportLiveTourExcel('customer_detail', { ...query, customer_id: customerId })" in source
+    assert "exportLiveTourExcel('customer_detail', { customer_id: customerId })" in source
     assert "liveTourCustomerHistory: (customerId)" in api
     assert "/v2/live-tour/customers/${encodeURIComponent(customerId)}/history" in api
     api_params = api[api.index("function liveTourExportParams") : api.index("export const veraApi")]
