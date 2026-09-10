@@ -172,7 +172,7 @@ def test_live_tour_ui_and_api_have_no_external_source_connections():
     root = Path(__file__).resolve().parents[1]
     frontend = (root / "web-v2/src/pages/LiveTourPage.jsx").read_text()
     calls = re.findall(r"veraApi\.(\w+)\(", frontend)
-    assert set(calls) <= {"liveTour", "liveTourAction", "liveTourCustomerHistory", "exportLiveTourExcel", "exportLiveTourPng"}
+    assert set(calls) <= {"liveTour", "liveTourAction", "liveTourCustomerHistory", "exportLiveTourExcel", "readLiveTourPng"}
     for token in ("syncLeaves", "TourVera", "Google Drive", "openPurchaseReport", "merge_current_tour"):
         assert token not in frontend
     backend = (root / "vera_web_v2_live_tour.py").read_text()

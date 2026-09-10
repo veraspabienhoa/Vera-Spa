@@ -50,7 +50,7 @@ async function request(path, options = {}) {
   return payload
 }
 
-async function download(path, fallbackName, options = {}) {
+async function binaryResponse(path, options = {}, failureMessage = 'Không tải được dữ liệu sau 2 lần thử') {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const session = await getCurrentSession()
   const headers = new Headers(options.headers || {})
@@ -67,11 +67,16 @@ async function download(path, fallbackName, options = {}) {
       if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 800))
     }
   }
-  if (!response) throw new Error(`Không tải được file Excel sau 2 lần thử. (${lastError?.message || 'Lỗi mạng'})`)
+  if (!response) throw new Error(`${failureMessage}. (${lastError?.message || 'Lỗi mạng'})`)
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
     throw new Error(apiErrorMessage(payload, response.status))
   }
+  return response
+}
+
+async function download(path, fallbackName, options = {}) {
+  const response = await binaryResponse(path, options, 'Không tải được file Excel sau 2 lần thử')
   const blob = await response.blob()
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
@@ -346,9 +351,10 @@ export const veraApi = {
     const params = liveTourExportParams(kind, query)
     return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)
   },
-  exportLiveTourPng: (query = {}) => {
+  readLiveTourPng: async (query = {}) => {
     const params = liveTourExportParams('board', query)
-    return download(`/v2/live-tour/export.png?${params}`, 'VeraSpa_LiveTour.png')
+    const response = await binaryResponse(`/v2/live-tour/export.png?${params}`, { cache: 'no-store' })
+    return response.blob()
   },
   tourSource: () => request('/v2/tour/source'),
   saveTourSource: (body) => request('/v2/tour/source', { method: 'PUT', body: JSON.stringify(body) }),

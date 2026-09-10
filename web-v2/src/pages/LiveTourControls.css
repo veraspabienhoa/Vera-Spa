@@ -1,0 +1,50 @@
+.live-tour-controls .live-tour-operator-title {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.live-tour-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.live-tour-controls-label {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid #dce6e1;
+  color: #416056;
+  font-size: .875rem;
+  font-weight: 700;
+}
+
+.live-tour-controls-label:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.live-tour-controls-grid > button,
+.live-tour-controls-grid > select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  justify-content: center;
+  padding: 8px;
+  font-size: .875rem;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
+}
+
+.live-tour-controls-grid > select {
+  font-size: 1rem;
+}
+
+@media (max-width: 640px) {
+  .live-tour-controls-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
