@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from vera_leave_registration_shared import group, norm
 from vera_web_v2_violation_unlimited import install_violation_unlimited
 
 
@@ -26,23 +27,11 @@ class FakeShared:
             "Legacy KHÔNG phép": {"leave_type": ""},
         }
 
-    @staticmethod
-    def norm(value):
-        return str(value or "").strip().lower()
+    norm = staticmethod(norm)
+    group = staticmethod(group)
 
     def _reason_item(self, _conn, reason):
         return self.rules[reason]
-
-    @staticmethod
-    def group(reason):
-        key = str(reason or "").lower()
-        if "không phép" in key:
-            return "khong_phep"
-        if "phát sinh" in key:
-            return "phat_sinh"
-        if "có phép" in key:
-            return "co_phep"
-        return ""
 
 
 def test_violation_type_is_not_grouped_as_khong_phep():

@@ -78,9 +78,15 @@ Kiểm thử mới ở `tests/test_live_tour_invoice_permissions.py`; cập nh�
 quyền cũ sang quyền tách mới. Chạy nhóm `test_live_tour*`, `test_spa_management.py`,
 `test_service_catalog.py`, build frontend và ESLint các file thay đổi.
 
-Toàn bộ pytest còn 7 lỗi đã có trên main trước thay đổi này: kiểm tra nguồn đồng bộ
-TimeSoft, kiểm tra nguồn thông báo lịch nghỉ, phân loại vi phạm và 4 fixture auth
-chưa cấu hình PostgreSQL. Không sửa các phần không liên quan trong nhánh này.
+Toàn bộ pytest: **653 đạt**. Build frontend, ESLint file thay đổi, kiểm tra nghiệp vụ
+trong CI và 5 bài kiểm quyền lịch nghỉ phía frontend đều đạt.
+
+Các lỗi kiểm thử cũ đã được xử lý: kiểm tra OCR tại hai đường lưu hồ sơ trên server;
+kiểm tra nhóm lịch nghỉ theo cấu hình hiện tại; bỏ phụ thuộc nhãn phiên bản TimeSoft;
+dùng bộ chuẩn hóa tiếng Việt thật trong fixture vi phạm; mô phỏng đầy đủ PostgreSQL
+và luồng xác thực hiện tại trong test auth. Không thay đổi cấu hình đăng nhập thực tế.
+Giao diện đăng ký nghỉ cũng giữ thông báo lưu thành công khi tải lại danh sách lỗi,
+kèm cảnh báo yêu cầu làm mới, tránh người dùng ghi lại lịch đã lưu.
 
 Không cần đổi schema, không đồng bộ file ngoài. Sau khi được duyệt và deploy,
 admin mở Phân quyền, chọn nhóm/tài khoản rồi bật các quyền sửa/xóa cần thiết.
