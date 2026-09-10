@@ -12,6 +12,14 @@ LEGACY_FEATURE_INHERITANCE = {
 }
 # Edit/delete did not exist before: never inherit those destructive privileges.
 CAPABILITY_FEATURES = {
+    "invoice_date_edit": "live_tour_invoice_date_edit",
+    "customers_edit": "live_tour_customers_edit",
+    "customers_delete": "live_tour_customers_delete",
+    "customer_combo_edit": "live_tour_customer_combo_edit",
+    "customer_combo_delete": "live_tour_customer_combo_delete",
+    "reports_edit": "live_tour_reports_edit",
+    "reports_delete": "live_tour_reports_delete",
+
     "booking": "live_tour_booking",
     "invoice_view": "live_tour_invoice_view",
     "paid_invoice_view": "live_tour_paid_invoice_view",
@@ -29,6 +37,7 @@ CAPABILITY_FEATURES = {
 EXPORT_FEATURES = {
     "revenue": ("live_tour_reports_view",),
     "tip": ("live_tour_reports_view",),
+    "reports": ("live_tour_reports_view",),
     "customers": ("live_tour_customers_view",),
     "pending": ("live_tour_pending_view", "live_tour_invoice_view"),
     "history": ("live_tour_history_view",),

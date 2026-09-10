@@ -64,12 +64,13 @@ def test_restore_rejects_active_break_even_with_idle_snapshot():
     assert len(state["break_events"]) == 1
 
 
-def test_new_employee_requires_explicit_work_status_and_shift_before_booking():
-    state = state_with()
-    worker = live._apply_action(state, "add_employee", {"name": "An"}, "admin", NOW)["employee"]
-    assert worker["work_status"] == "Nghỉ" and worker["shift"] == ""
+def test_employee_without_work_status_and_shift_cannot_be_booked():
+    worker = employee("e1", "An")
+    worker.update(work_status="Nghỉ", shift="")
+    state = state_with(worker)
     with pytest.raises(HTTPException):
         live._booking(state, {"employee_id": worker["id"], "service": "Body 90", "room": "1.1"}, NOW)
+
 
 
 def test_counter_rollover_at_ten_is_separate_from_financial_day():

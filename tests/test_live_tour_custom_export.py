@@ -30,7 +30,7 @@ def test_custom_export_rejects_unknown_empty_or_duplicate_columns(columns):
     assert error.value.status_code == 400
 
 
-@pytest.mark.parametrize("ids", [[], ["deleted"], ["e2"]])
+@pytest.mark.parametrize("ids", [[], ["deleted"]])
 def test_custom_export_rejects_empty_missing_or_hidden_selection(ids):
     state = state_with(employee("e1", "An"), employee("e2", "Bình"))
     state["employees"][1]["hidden"] = True

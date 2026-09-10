@@ -5,9 +5,9 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 
-def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money):
+def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None):
     deleting = action == "paid_invoice_delete"
-    allowed = {"invoice_id", "reason"} if deleting else {"invoice_id", "reason", "note", "entries", "discount", "tip", "payment_method"}
+    allowed = {"invoice_id", "reason"} if deleting else {"invoice_id", "reason", "note", "entries", "discount", "tip", "payment_method", "invoice_at"}
     if set(payload) - allowed:
         raise HTTPException(400, "Không được đổi khách hàng, dịch vụ, ngày hoặc mã hóa đơn đã thanh toán; hãy hủy và lập lại nếu cần.")
     reason = payload.get("reason")
@@ -69,6 +69,8 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
         working["combo_usage"] = [row for row in working["combo_usage"] if row.get("invoice_id") != invoice["id"]]
         after = None
     else:
+        if "invoice_at" in payload:
+            invoice.update(invoice_date(payload["invoice_at"]))
         edits = payload.get("entries", [])
         if not isinstance(edits, list) or len(edits) > len(invoice["entries"]):
             raise HTTPException(400, "Danh sách giá dịch vụ không hợp lệ.")
@@ -108,6 +110,9 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
             report.update(total=total // len(reports) + (index < total % len(reports)),
                           tip=tip // len(reports) + (index < tip % len(reports)),
                           payment_method=method, note=invoice.get("note", ""), updated_at=iso(now), updated_by=actor)
+        if "invoice_at" in payload:
+            for row in reports + usage:
+                row.update(effective_at=invoice["effective_at"], business_date=invoice["business_date"])
         after = deepcopy(invoice)
     change = {"id": str(uuid4()), "invoice_id": before["id"], "action": action, "actor": actor,
               "at": iso(now), "reason": reason.strip(), "before": before, "after": after,

@@ -50,6 +50,17 @@ def test_first_boot_only_uses_username_and_allowed_roles():
     assert db.revision == revision  # Reads do not write or reorder an unchanged directory.
 
 
+def test_retired_manual_exclusions_do_not_hide_eligible_directory_employees():
+    state = state_with(employee('e1', 'An'))
+    state['roster_excluded_usernames'] = ['Bình']
+    db = SettingsDatabase(state, directory=[person('An'), person('Bình'), person('Lễ Tân', 'letan')])
+    _, client = app_client(db)
+    data = client.get('/v2/live-tour').json()
+    assert {row['Tên nhân viên'] for row in data['records']} == {'An', 'Bình'}
+    assert next(row for row in data['records'] if row['Tên nhân viên'] == 'An')['_id'] == 'e1'
+    assert 'roster_excluded_usernames' not in db.stored
+
+
 def test_existing_names_migrate_without_losing_assignments_or_history():
     state, a, b = prepare()
     book(state, a, b)
@@ -63,7 +74,7 @@ def test_existing_names_migrate_without_losing_assignments_or_history():
     assert [row['Tên nhân viên'] for row in data['records']] == ['An']
     actual = db.stored['employees'][0]
     for key in ['id', 'service', 'service_items', 'started_at', 'room', 'tour_count', 'vip', 'hidden', 'sort_index']:
-        assert actual[key] == before['employees'][0][key]
+        assert actual[key] == (False if key == 'hidden' else before['employees'][0][key])
     assert data['retained_assignments'][0]['name'] == 'Lễ Tân'
     assert '2.1' not in data['available_beds']
     assert db.stored['invoices'] == before['invoices']
@@ -95,19 +106,7 @@ def test_role_change_refreshes_existing_state_and_directory_failure_is_atomic():
     assert client.get('/v2/live-tour').json()['records'][0]['Tên nhân viên'] == 'An'
 
 
-def test_removed_employee_can_only_be_readded_from_eligible_directory():
-    db = SettingsDatabase(directory=[person('An'), person('Lễ Tân', 'letan')])
-    _, client = app_client(db)
-    data = client.get('/v2/live-tour').json()
-    worker_id = data['state']['employees'][0]['id']
-    def post(action, payload, key):
-        return client.post('/v2/live-tour/action', json={'action': action, 'payload': payload, 'expected_revision': db.revision, 'idempotency_key': key})
-    assert post('delete_employee', {'employee_id': worker_id}, 'delete-employee-once').status_code == 200
-    assert client.get('/v2/live-tour').json()['records'] == []
-    assert post('add_employee', {'name': 'Lễ Tân', 'role': 'leader'}, 'reject-role-spoof').status_code == 400
-    assert post('add_employee', {'name': 'Người tự nhập'}, 'reject-unknown-name').status_code == 400
-    assert post('add_employee', {'username': 'An'}, 'restore-employee-once').status_code == 200
-    assert client.get('/v2/live-tour').json()['records'][0]['Tên nhân viên'] == 'An'
+
 
 
 def test_multiple_services_use_catalog_prices_quantities_and_release_employee_on_finish():

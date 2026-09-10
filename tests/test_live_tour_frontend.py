@@ -68,7 +68,7 @@ def test_live_tour_wires_every_vba_equivalent_action_to_the_backend():
         "booking",
         "multi_booking",
         "start",
-        "add_minutes",
+
         "finish_to_pending",
         "move_pending",
         "checkout",
@@ -78,11 +78,8 @@ def test_live_tour_wires_every_vba_equivalent_action_to_the_backend():
         "start_break",
         "end_break",
         "reorder",
-        "hide_employee",
-        "show_employee",
-        "show_all",
-        "add_employee",
-        "delete_employee",
+
+
         "set_vip",
         "replace_service",
         "add_service",
@@ -109,11 +106,11 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "LIVE TOUR",
         "Mở tab mới",
         "Điều khiển",
-        "Đặt lịch nhanh",
+
         "Đặt lịch",
-        "Đặt lịch hàng loạt",
+
         "Thực hiện đã chọn",
-        "+30 phút",
+
         "Hoàn thành",
         "Chờ thanh toán",
         "Thanh toán nhanh",
@@ -121,12 +118,10 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Nghỉ phép",
         "Ca 1",
         "Ca 2",
-        "Bắt đầu break",
-        "Kết thúc break",
-        "Ẩn đã chọn",
-        "Hiện tất cả",
-        "Thêm nhân viên",
-        "Xóa nhân viên",
+        "Nghỉ giữa ca",
+        "Kết thúc nghỉ giữa ca",
+
+
         "Đánh dấu VIP",
         "Đổi dịch vụ",
         "Khách hàng & combo",
@@ -139,7 +134,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Xuất khách hàng",
         "Xuất chờ thanh toán",
         "Xuất lịch sử",
-        "Xuất PNG",
+        "Chụp hình bảng tua",
     }
 
     missing = sorted(label for label in expected_labels if label not in source)
@@ -212,7 +207,7 @@ def test_live_tour_guards_controls_and_requests_with_server_capabilities():
         "canPayment",
         "canAdmin",
         "canExport",
-        "canRecoverHidden",
+
     ):
         assert f"const {capability}" in source
 
@@ -220,24 +215,13 @@ def test_live_tour_guards_controls_and_requests_with_server_capabilities():
     assert "capability('payment'" in source
     assert "capability('admin'" in source
     assert "capability('export'" in source
-    assert "capability('hide_recovery'" in source
     assert "const canOperate = capability('operate', isAdmin ||" in source
     assert "const canPayment = capability('payment', isAdmin ||" in source
     assert "const canAdmin = capability('admin', isAdmin ||" in source
     assert "const canExport = capability('export', isAdmin ||" in source
     assert "isAdmin || capability('operate'" not in source
-    assert "if (HIDDEN_RECOVERY_ACTIONS.has(action)) return capabilities.hideRecovery" in source
     assert "if (!canRunAction(action" in source
-    assert "disabled={!canRecoverHidden}" in source
     assert "if (!canExportKind(kind))" in source
-
-
-def test_live_tour_leaves_auto_yc_timing_to_the_server():
-    source = _source(LIVE_TOUR)
-
-    assert "auto_yc_ca1: Boolean(form.auto_yc_ca1)" in source
-    assert "Tự động gán YC cho Ca 1 từ 23:00–03:00" in source
-    assert ".getHours()" not in source
 
 
 def test_live_tour_modal_supports_escape_focus_trap_and_focus_restore():
@@ -352,15 +336,14 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
         assert f"'{key}'" in api
 
     export_flow = source[
-        source.index("const exportData") : source.index("const removeSelectedEmployees")
+        source.index("const exportData") : source.index("const removeCatalogItem")
     ]
-    assert "FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery(exportFilters) : {}" in export_flow
+    assert "FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery" in export_flow
+    assert "...listFilters" in export_flow
     assert "veraApi.exportLiveTourExcel(kind, query)" in export_flow
     assert "veraApi.exportLiveTourPng(query)" in export_flow
     assert "query.date_from && query.date_to && query.date_from > query.date_to" in export_flow
     assert "query.time_from > query.time_to" not in export_flow
-    assert "kind === 'board' && showHidden && canRecoverHidden" in export_flow
-    assert "query.include_hidden = 'true'" in export_flow
 
     api_helper = api[
         api.index("function liveTourExportParams") : api.index("export const veraApi")
@@ -370,63 +353,6 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
     assert "'include_hidden'" in api_helper
     assert "liveTourExportParams(kind, query)" in api
     assert "liveTourExportParams('board', query)" in api
-
-
-def test_live_tour_quick_booking_is_independent_and_uses_a_stable_employee_id():
-    source = _source(LIVE_TOUR)
-    stable_helper = source[
-        source.index("function stableEmployeeId") : source.index("function recordId")
-    ]
-    submit = source[
-        source.index("const submitModal") : source.index("const columns")
-    ]
-
-    assert "_employee_id" in stable_helper
-    assert "employee_id" in stable_helper
-    assert "row-" not in stable_helper
-    quick_button = next(
-        line for line in source.splitlines()
-        if "Đặt lịch nhanh" in line and "setBookingContext" in line
-    )
-    assert "setBookingContext({})" in quick_button
-    assert "selectedIds" not in quick_button
-    assert "disabled={!canBook}" in quick_button
-    assert "if (modal.kind === 'quick_booking')" in submit
-    assert "action = 'booking'" in submit
-    assert "employee_id: stableEmployeeId(selectedQuickBookingRecord)" in submit
-
-
-def test_live_tour_quick_booking_search_ignores_accents_and_keeps_vba_appointments():
-    source = _source(LIVE_TOUR)
-
-    assert "employee_id: '', employee_search: ''" in source
-    assert "const needle = normalizedColumn(form.employee_search)" in source
-    assert "normalizedColumn(cellValue(record, employeeColumn)).includes(needle)" in source
-    assert "const selectedQuickBookingRecord" in source
-    assert "Lịch hẹn hiện tại:" in source
-    assert "Không có lịch hẹn" in source
-    assert "const appointmentOptions = useMemo" in source
-    assert 'type="text" list="live-tour-appointment-options"' in source
-    assert "appointment: appointment" not in source
-    assert "employee_search: name, appointment" in source
-    assert 'type="datetime-local"' not in source
-
-
-def test_live_tour_quick_booking_excludes_rows_the_server_would_reject():
-    source = _source(LIVE_TOUR)
-    helper = source[
-        source.index("function isQuickBookingEligible") : source.index("function asArray")
-    ]
-
-    assert "stableEmployeeId(record)" in helper
-    assert "record?._hidden" in helper
-    assert "isCurrentlyOnBreak(record)" in helper
-    assert "isRoomAssignmentActive(record)" in helper
-    assert "'DI LAM'" in helper
-    assert "shiftBucket(record, columns)" in helper
-    assert "serviceNameColumn(columns)" in helper
-    for status in ("DANG CHO", "DANG THUC HIEN", "DANG SU DUNG", "CHO THANH TOAN"):
-        assert status in helper
 
 
 def test_live_tour_pending_reminder_runs_on_zero_to_positive_then_every_15_minutes():
@@ -473,26 +399,12 @@ def test_live_tour_cache_recursively_removes_customer_identity_and_action_result
     assert "JSON.stringify({ savedAt: Date.now(), data: cacheSafeLiveTour(data) })" in cache_helpers
 
 
-def test_live_tour_booking_pi_is_payment_gated_and_never_prefills_the_employee_name():
-    source = _source(LIVE_TOUR)
-    open_modal = source[source.index("const openModal") : source.index("const closeModal")]
-    submit = source[source.index("const submitModal") : source.index("const columns")]
-
-    assert "customer_name: source.customer_name ?? context.defaults?.customer_name ?? ''" in open_modal
-    assert "customer_name: source.customer_name ?? source.name" not in open_modal
-    assert "sourceIsCapturedEmployee ? source.customer_phone" in open_modal
-    assert submit.count("...(canCustomers ? { customer_id:") >= 3
-    picker = source[source.index("const renderBookingCustomerPicker") : source.index("return <>", source.index("const renderBookingCustomerPicker"))]
-    assert "if (!canCustomers) return null" in picker
-    assert source.count("{renderBookingCustomerPicker(") >= 3
-
-
 def test_live_tour_checkout_uses_server_preview_without_sending_client_totals():
     source = _source(LIVE_TOUR)
     submit = source[source.index("const submitModal") : source.index("const columns")]
     checkout = submit[
-        submit.index("} else if (['checkout', 'quick_checkout'].includes(modal.kind))") :
-        submit.index("} else if (modal.kind === 'add_employee')")
+        submit.index("if (['checkout', 'quick_checkout'].includes(modal.kind))") :
+        submit.index("} else if (['replace_service', 'add_service']")
     ]
 
     assert "previewEntryPrice(entry, services)" in source
@@ -521,7 +433,7 @@ def test_live_tour_combo_purchase_is_catalog_priced_and_supports_new_customers()
     ]
     purchase_form = source[
         source.index("{modal.kind === 'combo_purchase' && <>") :
-        source.index("{canAdmin && ['checkout', 'quick_checkout', 'combo_purchase']")
+        source.index("{canAdmin && modal.kind === 'combo_purchase'")
     ]
 
     assert "Mua combo cho khách mới" in source

@@ -143,7 +143,7 @@ function liveTourExportParams(kind, query = {}) {
   for (const key of ['columns', 'employee_ids']) {
     if (Array.isArray(query[key])) query[key].forEach((value) => params.append(key, String(value)))
   }
-  for (const key of ['date_from', 'date_to', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
+  for (const key of ['employee', 'customer', 'service', 'report_kind', 'date_from', 'date_to', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
     const value = String(query?.[key] ?? '').trim()
     if (value) params.set(key, value)
   }
@@ -338,6 +338,7 @@ export const veraApi = {
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
   liveTour: (refresh = false, includeHidden = false) => request(`/v2/live-tour?refresh=${refresh ? 'true' : 'false'}&include_hidden=${includeHidden ? 'true' : 'false'}`),
   liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
+  liveTourReports: () => request('/v2/live-tour/reports'),
   spaCustomers: () => request('/v2/live-tour/customers'),
   spaSettings: () => request('/v2/live-tour/settings'),
   liveTourCustomerHistory: (customerId) => request(`/v2/live-tour/customers/${encodeURIComponent(customerId)}/history`),

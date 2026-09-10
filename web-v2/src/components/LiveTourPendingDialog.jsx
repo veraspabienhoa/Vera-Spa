@@ -1,3 +1,4 @@
+import { invoiceLocalTime } from '../lib/liveTourFilters'
 import { useState } from 'react'
 import { Trash2, X } from 'lucide-react'
 import { bookingServiceItems, bookingTotal } from '../lib/liveTourBooking'
@@ -8,7 +9,7 @@ import './LiveTourBookingDialog.css'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
 
-export default function LiveTourPendingDialog({ context, catalog, busy, error, onAction, onClose }) {
+export default function LiveTourPendingDialog({ context, catalog, busy, error, onAction, onClose, canEditDate = false }) {
   const { item, mode, revision } = context
   const editing = mode === 'edit'
   const deleting = mode === 'delete'
@@ -17,6 +18,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
   const [rows, setRows] = useState(initial)
   const [note, setNote] = useState(item.note || '')
   const [reason, setReason] = useState('')
+  const [invoiceAt, setInvoiceAt] = useState(() => invoiceLocalTime(item))
   const setItems = (index, items) => setRows((current) => current.map((row, i) => i === index ? { items, price: bookingTotal(items, catalog) } : row))
   const submit = async (event) => {
     event.preventDefault()
@@ -26,18 +28,20 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
       return changed || priceChanged ? [{ index, ...(changed ? { service_items: row.items } : {}), price: Number(row.price) }] : []
     })
     const result = await onAction(deleting ? 'pending_delete' : 'pending_update', {
-      pending_id: item.id, reason: reason.trim(), ...(editing ? { note, entries } : {}),
+      pending_id: item.id, reason: reason.trim(),
+      ...(!deleting && canEditDate && invoiceAt !== invoiceLocalTime(item) ? { invoice_at: `${invoiceAt}:00+07:00` } : {}), ...(editing ? { note, entries } : {}),
     }, [], { expectedRevision: revision })
     if (result) onClose()
   }
   return <div className="live-tour-modal-backdrop" onClick={() => { if (!busy) onClose() }}>
     <section ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={deleting ? 'Xóa hóa đơn chờ thanh toán' : editing ? 'Sửa hóa đơn chờ thanh toán' : 'Xem hóa đơn chờ thanh toán'} onClick={(event) => event.stopPropagation()}>
       <div className="live-tour-modal-head"><strong>{deleting ? 'Xóa' : editing ? 'Sửa' : 'Xem'} hóa đơn chờ thanh toán</strong><button type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
-      <p><strong>{item.customer_name || 'Khách lẻ'}</strong>{item.customer_phone && ` · ${item.customer_phone}`}<br/><small>Mã: {item.id} · {item.created_at}</small></p>
+      <p><strong>{item.customer_name || 'Khách lẻ'}</strong>{item.customer_phone && ` · ${item.customer_phone}`}<br/><small>Mã: {item.id} · {new Date(item.effective_at || item.booked_at || item.created_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</small></p>
       {error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất trước khi sửa.</p>}
       {deleting && <p className="error-box">Xóa phiếu khỏi Chờ thanh toán và giải phóng vé combo đang giữ chỗ. Không trừ vé, không đổi doanh thu đã thu. Bản cũ và lý do được lưu trong lịch sử để đối chiếu.</p>}
       {editing && <p>Giữ nguyên khách hàng, nhân viên và kết quả hoàn thành. Dịch vụ không đổi giữ giá đã ghi nhận; khi đổi dịch vụ, hệ thống kiểm tra lại vé combo.</p>}
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
+        {!deleting && canEditDate && editing && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><input type="datetime-local" required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
         {item.entries.map((entry, index) => <div className="wide live-tour-data-card" key={index}>
           <strong>{entry.employee_name} · {entry.room}</strong>
           {editing ? <>

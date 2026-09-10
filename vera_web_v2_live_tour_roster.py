@@ -30,9 +30,10 @@ def reconcile(state, directory, make_employee):
         if row:
             worker.update(name=row['username'], username=row['username'], role=str(row.get('role') or '').strip().lower())
             assigned.add(key(row['username']))
-    excluded = set(state.get('roster_excluded_usernames') or [])
+    # The directory owns membership now that manual roster removal is retired.
+    state.pop('roster_excluded_usernames', None)
     for row in directory:
-        if eligible(row) and key(row['username']) not in assigned and row['username'] not in excluded:
+        if eligible(row) and key(row['username']) not in assigned:
             worker = make_employee(row, len(state['employees']))
             worker['roster_eligible'] = True
             state['employees'].append(worker)

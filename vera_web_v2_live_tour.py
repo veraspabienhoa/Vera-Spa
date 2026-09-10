@@ -31,6 +31,7 @@ from vera_web_v2_live_tour_payment import default_settings as _default_payment_s
 from vera_web_v2_live_tour_roster import eligible as _roster_eligible, reconcile as _reconcile_roster
 from vera_web_v2_service_catalog import catalog_details, component_debits, purchase_terms, require_available
 from vera_web_v2_live_tour_permissions import CAPABILITY_FEATURES, EXPORT_FEATURES
+from vera_web_v2_live_tour_changes import change_customer
 from vera_web_v2_live_tour_invoice import change_paid_invoice
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -48,6 +49,7 @@ MAX_TICKET_UNITS = 100_000
 MAX_PURCHASE_QUANTITY = 1_000
 CUSTOMER_PII_KEYS = frozenset({"customer_id", "customer_name", "customer_phone", "phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components"})
 PROTECTED_IDEMPOTENCY_ACTIONS = frozenset({
+    "customer_delete", "customer_combo_update", "customer_combo_delete", "report_invoice_update", "report_invoice_delete",
     "paid_invoice_update", "paid_invoice_delete",
     "pending_update", "pending_delete",
     "checkout", "quick_checkout", "combo_purchase", "sync_leaves", "finish_to_pending", "start_room", "finish_room",
@@ -57,11 +59,12 @@ CLIENT_FINANCIAL_TIME_FIELDS = frozenset({
     "business_date", "created_at", "effective_at", "recorded_at",
 })
 IDEMPOTENCY_REQUIRED_ACTIONS = {
+    "customer_delete", "customer_combo_update", "customer_combo_delete", "report_invoice_update", "report_invoice_delete",
     "paid_invoice_update", "paid_invoice_delete",
     "pending_update", "pending_delete",
     "booking", "multi_booking", "start", "add_minutes", "complete", "move_pending",
     "checkout", "quick_checkout", "set_work_status", "set_shift", "start_break", "end_break",
-    "reorder", "hide_employee", "show_employee", "show_all", "add_employee", "delete_employee",
+    "reorder",
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
@@ -444,6 +447,24 @@ def _financial_timing(payload: dict[str, Any], now: datetime) -> dict[str, Any]:
     }
 
 
+def _booking_timing(entries, now, pending=None):
+    pending = pending or {}
+    dates = [_parse_datetime(row.get("booked_at")) for row in entries]
+    effective = (_parse_datetime(pending.get("effective_at")) or _parse_datetime(pending.get("booked_at"))
+                 or min((value for value in dates if value), default=None)
+                 or _parse_datetime(pending.get("created_at")) or now.astimezone(VN_TZ))
+    return {"recorded_at": _iso(now), "effective_at": _iso(effective),
+            "business_date": effective.astimezone(VN_TZ).date().isoformat(),
+            "effective_datetime": effective, "backdate_one_day": False, "correction_reason": ""}
+
+
+def _invoice_date(value):
+    parsed = _parse_datetime(value)
+    if not isinstance(value, str) or not parsed or not 2000 <= parsed.year <= 2100:
+        raise HTTPException(400, "Ngày giờ hóa đơn không hợp lệ (2000–2100).")
+    return {"effective_at": _iso(parsed), "business_date": parsed.astimezone(VN_TZ).date().isoformat()}
+
+
 def _parse_datetime(value: Any) -> datetime | None:
     if not value:
         return None
@@ -635,13 +656,15 @@ def _empty_state(now: datetime) -> dict[str, Any]:
         "employees": [], "rooms": rooms, "services": services, "combos": combos,
         "customers": [], "pending": [], "invoices": [], "reports": [], "combo_usage": [],
         "break_events": [], "payment_settings": _default_payment_settings(),
-        "audit": [], "backups": [], "pending_changes": [], "invoice_changes": [], "bill_counters": {}, "idempotency": {},
+        "audit": [], "backups": [], "pending_changes": [], "invoice_changes": [], "customer_changes": [], "bill_counters": {}, "idempotency": {},
     }
 
 
 def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
     state = deepcopy(raw) if isinstance(raw, dict) else _empty_state(now)
     defaults = _empty_state(now)
+    if not isinstance(state.get("customer_changes"), list):
+        state["customer_changes"] = []
     if not isinstance(state.get("invoice_changes"), list):
         state["invoice_changes"] = []
     for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups", "pending_changes"):
@@ -660,7 +683,7 @@ def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
     for index, employee in enumerate(state["employees"]):
         employee.setdefault("id", str(uuid4()))
         employee.setdefault("sort_index", index)
-        employee.setdefault("hidden", False)
+        employee["hidden"] = False
         employee.setdefault("vip", False)
         employee.setdefault("tour_count", 0)
         employee.setdefault("request_count", 0)
@@ -1002,6 +1025,12 @@ def _available_combo(state, customer_id, purchase, *, employee_ids=(), pending_i
         for part in row.get("combo_reserved_components") or []:
             key = part["service_id"]
             by_service[key] = by_service.get(key, 0) + part["units"]
+    if purchase.get("deleted_at"):
+        available["remaining"] = 0
+        for part in available.get("component_balances", []):
+            part["remaining"] = 0
+        available["booking_reserved"] = reserved
+        return available
     available["booking_reserved"] = reserved
     available["remaining"] = max(0, int(purchase.get("remaining") or 0) - reserved)
     for part in available.get("component_balances") or []:
@@ -1159,7 +1188,9 @@ def _customer(
     name = str(payload.get("customer_name") or payload.get("name") or "").strip()
     phone_key = _phone_key(phone)
     by_id = next((item for item in state["customers"] if customer_id and str(item.get("id")) == customer_id), None)
-    by_phone = next((item for item in state["customers"] if phone_key and _phone_key(item.get("phone")) == phone_key), None)
+    by_phone = next((item for item in state["customers"] if phone_key and not item.get("deleted_at") and _phone_key(item.get("phone")) == phone_key), None)
+    if by_id and by_id.get("deleted_at"):
+        raise HTTPException(409, "Khách hàng đã xóa, không thể tạo giao dịch mới.")
     if customer_id and by_id is None:
         raise HTTPException(404, "Không tìm thấy khách hàng đã chọn.")
     if by_id is not None and by_phone is not None and by_id is not by_phone:
@@ -1187,7 +1218,7 @@ def _customer(
     return found
 
 
-def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> str:
+def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime, *, calendar_day: bool = False) -> str:
     manual = str(payload.get("bill_no") or "").strip()
     # Voiding never frees a document number, including manually supplied bills.
     issued = state["invoices"] + [row["before"] for row in state.get("invoice_changes", []) if isinstance(row.get("before"), dict)]
@@ -1196,7 +1227,7 @@ def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime)
         if _norm(manual) in existing:
             raise HTTPException(409, f"Số hóa đơn '{manual}' đã tồn tại.")
         return manual
-    day = _business_date(now).isoformat()
+    day = (now.astimezone(VN_TZ).date() if calendar_day else _business_date(now)).isoformat()
     counters = state.setdefault("bill_counters", {})
     current = int(counters.get(day) or 0)
     prefix = f"LIVE-{day.replace('-', '')}-"
@@ -1253,7 +1284,7 @@ def _checkout_mutating(
         if any(_norm(item.get("status")) != "cho thanh toan" for item in employees):
             raise HTTPException(409, "Chỉ thanh toán dịch vụ đã Hoàn thành/CHO THANH TOÁN.")
         entries = [{
-            "employee_id": item.get("id"), "employee_name": item.get("name"),
+            "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
             "combo_purchase_id": item.get("combo_purchase_id", ""),
             "combo_reserved_units": item.get("combo_reserved_units", 0),
             "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
@@ -1266,6 +1297,7 @@ def _checkout_mutating(
         } for item in employees]
     if not entries:
         raise HTTPException(400, "Không có dịch vụ để thanh toán.")
+    timing = _booking_timing(entries, now, pending)
     for entry in entries:
         entry["price"] = _resolved_service_price(state, entry)
         entry.setdefault("price_source", "catalog_reconciled")
@@ -1363,7 +1395,7 @@ def _checkout_mutating(
         "actor": actor, "customer_id": (customer or {}).get("id", ""),
         "customer_name": (customer or {}).get("name", customer_payload.get("customer_name", "")),
         "customer_phone": (customer or {}).get("phone", customer_payload.get("customer_phone", "")),
-        "bill_no": _next_bill_no(state, payload, timing["effective_datetime"]),
+        "bill_no": _next_bill_no(state, payload, timing["effective_datetime"], calendar_day=True),
         "ticket_no": str(payload.get("ticket_no") or ""),
         "payment_method": payment_method,
         "subtotal": subtotal, "discount": discount, "tip": tip, "total": total, **payment_details,
@@ -1428,6 +1460,8 @@ def _checkout(
     quick: bool, timing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Apply invoice/report/combo/customer changes as one in-memory unit."""
+    if _backdate_requested(payload):
+        raise HTTPException(400, "Hóa đơn lấy ngày giờ booking. Hãy dùng Sửa hóa đơn để điều chỉnh ngày giờ.")
     financial_timing = timing or _financial_timing(payload, now)
     snapshot = deepcopy(state)
     try:
@@ -1452,7 +1486,7 @@ def _change_pending(state, action, payload, actor, now):
     Service selections, line prices and notes may be corrected. Nothing debits
     tickets or rewrites a paid invoice until the normal checkout transaction.
     """
-    allowed = {"pending_id", "reason", "note", "entries"} if action == "pending_update" else {"pending_id", "reason"}
+    allowed = {"pending_id", "reason", "note", "entries", "invoice_at"} if action == "pending_update" else {"pending_id", "reason"}
     if set(payload) - allowed:
         raise HTTPException(400, "Chỉ được sửa dịch vụ, giá và ghi chú của hóa đơn chờ thanh toán.")
     reason = payload.get("reason")
@@ -1465,6 +1499,8 @@ def _change_pending(state, action, payload, actor, now):
         working["pending"].remove(pending)
         after = None
     else:
+        if "invoice_at" in payload:
+            pending.update(_invoice_date(payload["invoice_at"]))
         if "note" in payload:
             if not isinstance(payload["note"], str) or len(payload["note"]) > 2000:
                 raise HTTPException(400, "Ghi chú không hợp lệ hoặc vượt quá 2000 ký tự.")
@@ -1515,6 +1551,10 @@ def _change_pending(state, action, payload, actor, now):
 
 
 def _required_action_feature(action: str) -> str:
+    if action in {"report_invoice_update", "report_invoice_delete"}:
+        return "live_tour_reports_edit" if action.endswith("update") else "live_tour_reports_delete"
+    if action in {"customer_delete", "customer_combo_update", "customer_combo_delete"}:
+        return {"customer_delete": "live_tour_customers_delete", "customer_combo_update": "live_tour_customer_combo_edit", "customer_combo_delete": "live_tour_customer_combo_delete"}[action]
     if action in {"paid_invoice_update", "paid_invoice_delete"}:
         return "live_tour_paid_invoice_edit" if action == "paid_invoice_update" else "live_tour_paid_invoice_delete"
     if action in {"booking", "multi_booking"}:
@@ -1526,7 +1566,7 @@ def _required_action_feature(action: str) -> str:
     if action in {"checkout", "quick_checkout", "move_pending", "combo_purchase", "customer_upsert"}:
         return "live_tour_payment"
     if action in {
-        "add_employee", "delete_employee", "room_upsert", "room_delete", "service_upsert",
+        "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
         "clear_expired", "clear_expired_preview", "combo_import", "set_vip", "service_area_upsert", "service_area_delete", "payment_settings_update",
     }:
@@ -1549,7 +1589,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
     financial_timing = _financial_timing(payload, now) if action in BACKDATE_ACTIONS else None
     batch_actions = {
         "start", "add_minutes", "complete", "set_work_status", "set_shift", "start_break", "reorder",
-        "end_break", "hide_employee", "show_employee", "delete_employee", "set_vip",
+        "end_break", "set_vip",
         "replace_service", "add_service", "finish_to_pending",
     }
     employee_ids = [str(item) for item in (payload.get("employee_ids") or []) if str(item or "").strip()]
@@ -1703,7 +1743,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             "customer_name": str((customer or {}).get("name") or canonical_identity.get("customer_name") or ""),
             "customer_phone": str((customer or {}).get("phone") or canonical_identity.get("customer_phone") or ""),
             "entries": [{
-                "employee_id": item.get("id"), "employee_name": item.get("name"),
+                "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
                 "combo_purchase_id": item.get("combo_purchase_id", ""),
                 "combo_reserved_units": item.get("combo_reserved_units", 0),
                 "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
@@ -1716,6 +1756,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             } for item in employees],
             "note": str(payload.get("note") or ""),
         }
+        booking_time = _booking_timing(pending["entries"], now)
+        pending.update(effective_at=booking_time["effective_at"], booked_at=booking_time["effective_at"], business_date=booking_time["business_date"])
         state["pending"].append(pending)
         for employee in employees:
             _clear_assignment(employee)
@@ -1725,7 +1767,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
     elif action in {"paid_invoice_update", "paid_invoice_delete"}:
         result = change_paid_invoice(state, action, payload, actor, now, money=_bounded_money,
                                      payment_values=_payment_values, canonical_method=_canonical_payment_method,
-                                     available_combo=_available_combo, iso=_iso, max_money=MAX_MONEY)
+                                     available_combo=_available_combo, iso=_iso, max_money=MAX_MONEY, invoice_date=_invoice_date)
     elif action in {"checkout", "quick_checkout"}:
         result["invoice"] = _checkout(
             state, payload, actor, now, action == "quick_checkout", financial_timing,
@@ -1841,54 +1883,6 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             item["sort_index"] = index
         state["employees"] = ordered
         result["employee"] = employee
-    elif action in {"hide_employee", "show_employee"}:
-        employee = _employee(state, payload.get("employee_id"))
-        if action == "hide_employee" and (employee.get("service") or employee.get("break_started_at")):
-            raise HTTPException(409, "Không thể ẩn nhân viên đang có dịch vụ hoặc đang nghỉ giữa ca.")
-        employee["hidden"] = action == "hide_employee"
-        result["employee"] = employee
-    elif action == "show_all":
-        for employee in state["employees"]:
-            employee["hidden"] = False
-        result["shown"] = len(state["employees"])
-    elif action == "add_employee":
-        name = str(payload.get("username") or payload.get("name") or "").strip()
-        directory = state.get("employee_directory")
-        if directory is not None:
-            source = next((row for row in directory if _norm(row["username"]) == _norm(name)), None)
-            if source is None:
-                raise HTTPException(400, "Hãy chọn Leader/Nhân viên đang làm việc từ danh sách nhân viên.")
-            name = source["username"]
-            state["roster_excluded_usernames"] = [value for value in state.get("roster_excluded_usernames", []) if value != name]
-        if not name:
-            raise HTTPException(400, "Thiếu tên nhân viên.")
-        if any(_norm(item.get("name")) == _norm(name) for item in state["employees"]):
-            raise HTTPException(409, "Nhân viên đã có trong Live Tour.")
-        employee = {
-            "id": str(uuid4()), "username": name if directory is not None else str(payload.get("username") or ""),
-            **({"role": source["role"], "roster_eligible": True} if directory is not None else {}),
-            "stt": str(len(state["employees"]) + 1), "name": name,
-            "appointment": "", "service": "", "request": "", "room": "", "status": "",
-            "duration": None, "service_price": None, "service_price_source": "",
-            "booked_at": "", "started_at": "",
-            "completed_at": "", "payment_status": "", "wait_minutes": None,
-            "completion_delta_minutes": None, "steam_elapsed_minutes": None,
-            "tour_count": 0, "request_count": 0,
-            "work_status": _canonical_work_status(payload.get("work_status") or "Nghỉ"),
-            "shift": _canonical_shift(payload.get("shift"), allow_blank=True), "break_started_at": "", "clock_out": "",
-            "clock_in": "", "note": "", "hidden": False, "vip": bool(payload.get("vip", False)),
-            "sort_index": len(state["employees"]),
-        }
-        state["employees"].append(employee)
-        result["employee"] = employee
-    elif action == "delete_employee":
-        employee = _employee(state, payload.get("employee_id"))
-        if _active_booking(employee) or employee.get("service") or employee.get("break_started_at"):
-            raise HTTPException(409, "Không thể xóa nhân viên đang có dịch vụ, chưa thanh toán hoặc đang nghỉ.")
-        if employee.get("username"):
-            state.setdefault("roster_excluded_usernames", []).append(employee["username"])
-        state["employees"] = [item for item in state["employees"] if item is not employee]
-        result["deleted_id"] = employee.get("id")
     elif action == "set_vip":
         employee = _employee(state, payload.get("employee_id"))
         employee["vip"] = bool(payload.get("vip", payload.get("enabled", True)))
@@ -1921,6 +1915,11 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         original_employee.pop("service_items", None)
         employee = original_employee
         result["employee"] = employee
+    elif action in {"customer_delete", "customer_combo_update", "customer_combo_delete"}:
+        result = change_customer(state, action, payload, actor, now, iso=_iso,
+                                 bounded_number=_bounded_number)
+    elif action in {"report_invoice_update", "report_invoice_delete"}:
+        result = _apply_action(state, action.replace("report_invoice_", "paid_invoice_"), payload, actor, now)
     elif action == "customer_upsert":
         name = str(payload.get("customer_name") or "").strip()
         phone = str(payload.get("customer_phone") or "").strip()
@@ -1929,8 +1928,13 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         if phone and not 6 <= len(_phone_key(phone)) <= 15:
             raise HTTPException(400, "Số điện thoại cần từ 6 đến 15 chữ số.")
         customer_id = str(payload.get("customer_id") or "").strip()
-        if not customer_id and phone and any(_phone_key(row.get("phone")) == _phone_key(phone) for row in state["customers"]):
+        if not customer_id and phone and any(not row.get("deleted_at") and _phone_key(row.get("phone")) == _phone_key(phone) for row in state["customers"]):
             raise HTTPException(409, "Số điện thoại đã tồn tại. Hãy mở khách hàng đó để sửa.")
+        before = deepcopy(next((c for c in state["customers"] if c.get("id") == customer_id), None))
+        if customer_id:
+            reason = payload.get("reason")
+            if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
+                raise HTTPException(400, "Nhập lý do sửa khách hàng (tối đa 1000 ký tự).")
         customer = _customer(state, {"customer_id": customer_id, "customer_name": name, "customer_phone": phone}, allow_identity_update=True)
         customer.update(name=name, phone=phone, updated_at=_iso(now))
         # Keep open transactions usable after contact edits; paid ledgers remain historical.
@@ -1938,6 +1942,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         for entry in open_entries:
             if entry.get("customer_id") == customer["id"]:
                 entry.update(customer_name=name, customer_phone=phone)
+        if before:
+            state.setdefault("customer_changes", []).append({"id": str(uuid4()), "customer_id": customer_id, "action": action, "at": _iso(now), "actor": actor, "reason": payload["reason"].strip(), "before": before, "after": deepcopy(customer)})
         result = {"customer": deepcopy(customer)}
     elif action in {"service_area_upsert", "service_area_delete"}:
         result = _service_area_change(state, payload, delete=action == "service_area_delete")
@@ -2192,7 +2198,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         for append_only_key in (
             "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups", "pending_changes",
             "invoice_changes",
-            "bill_counters", "idempotency", "created_at", "sync_status",
+            "bill_counters", "idempotency", "created_at", "sync_status", "customer_changes",
         ):
             restored[append_only_key] = deepcopy(state.get(append_only_key))
         state.clear()
@@ -2345,7 +2351,7 @@ def _shift_bucket(employee: dict[str, Any]) -> str:
 
 
 def _metric_bucket(employees: list[dict[str, Any]], now: datetime) -> dict[str, int]:
-    records = [_employee_record(employee, now) for employee in employees if not employee.get("hidden")]
+    records = [_employee_record(employee, now) for employee in employees]
     total_quantity = sum(int(record.get("Tổng SL") or 0) for record in records)
     waiting = sum("waiting" in record["_tour_groups"] for record in records)
     breaks = sum(bool(record.get("_attendance_break_active")) for record in records)
@@ -2441,7 +2447,7 @@ def _customer_history(
         "total_tip": sum(int(item.get("tip") or 0) for item in invoices),
         "combo_purchased_units": sum(int(item.get("total") or 0) for item in combo_purchases),
         "combo_used_units": sum(int(item.get("units") or 0) for item in combo_usage),
-        "combo_remaining_units": sum(int(item.get("remaining") or 0) for item in all_purchases),
+        "combo_remaining_units": sum(int(item.get("remaining") or 0) for item in all_purchases if not item.get("deleted_at")),
     }
     return {
         "customer": deepcopy(customer), "summary": summary,
@@ -2478,6 +2484,11 @@ def _readable_audit(events, *, invoice_view, paid_invoice_view, customers_view):
     return result
 
 
+def _report_rows_with_combo_kind(state):
+    sales = {row["id"] for row in state["invoices"] if row.get("purchased_combo_id")}
+    return [dict(row, combo_sale=row.get("invoice_id") in sales) for row in state["reports"]]
+
+
 def _state_response(
     state: dict[str, Any], revision: int, now: datetime, *, include_hidden: bool = False,
     can_admin: bool = False, can_operate: bool = False,
@@ -2489,6 +2500,14 @@ def _state_response(
     can_pending_view: bool | None = None, can_customers_view: bool | None = None,
     can_reports_view: bool | None = None, can_history_view: bool | None = None,
     can_backup: bool | None = None,
+    can_invoice_date_edit: bool = False,
+    can_customers_edit: bool = False,
+    can_customers_delete: bool = False,
+    can_customer_combo_edit: bool = False,
+    can_customer_combo_delete: bool = False,
+    can_reports_edit: bool = False,
+    can_reports_delete: bool = False,
+
 ) -> dict[str, Any]:
     # Defaults support internal legacy callers; HTTP routes always pass explicit
     # effective grants, including denials, from the canonical permission store.
@@ -2505,8 +2524,10 @@ def _state_response(
     state = deepcopy(state)
     _ensure_counter_day(state, now)
     ordered = _ordered_employees([row for row in state["employees"] if row.get("roster_eligible") is not False], now)
-    can_recover_hidden = can_admin or can_operate
-    visible = ordered if include_hidden and can_recover_hidden else [item for item in ordered if not item.get("hidden")]
+    can_recover_hidden = False
+    for item in ordered:
+        item["hidden"] = False
+    visible = ordered
     records = [_employee_record(employee, now) for employee in visible]
     for index, record in enumerate(records, 1):
         record["STT"] = index
@@ -2527,7 +2548,10 @@ def _state_response(
     customers = []
     if can_customers_view:
         for item in state["customers"]:
+            if item.get("deleted_at"):
+                continue
             customer = deepcopy(item)
+            customer["combo_purchases"] = [p for p in customer.get("combo_purchases", []) if not p.get("deleted_at")]
             purchases = list(customer.get("combo_purchases") or [])
             for purchase in purchases:
                 available_purchase = _available_combo(state, customer["id"], purchase)
@@ -2558,7 +2582,7 @@ def _state_response(
                                   paid_invoice_view=can_paid_invoice_view, customers_view=can_customers_view) if can_history_view else []
     public_break_events = _redact_customer_pii(state["break_events"]) if can_history_view else []
     public_employees = deepcopy(visible) if customer_pii else _redact_customer_pii(visible)
-    public_reports = state["reports"][-1000:] if can_reports_view else []
+    public_reports = _report_rows_with_combo_kind(state) if can_reports_view else []
     if not customer_pii:
         public_reports = _redact_customer_pii(public_reports)
     pending_changes = deepcopy(state.get("pending_changes", [])[-500:]) if can_history_view and pending_access else []
@@ -2593,6 +2617,7 @@ def _state_response(
         "pending_count": len(state["pending"]) if can_pending_view else 0,
         "pending_changes": pending_changes,
         "invoice_changes": invoice_changes,
+        "customer_changes": deepcopy(state.get("customer_changes", [])) if can_customers_view and can_history_view else [],
         "report_rows": public_reports,
         "audit": public_audit, "history": public_audit, "backups": public_backups,
         "break_events": public_break_events,
@@ -2604,7 +2629,7 @@ def _state_response(
             "rooms": state["rooms"], "services": state["services"], "combos": state["combos"],
             "customers": customers,
             "pending": state["pending"] if pending_access else [],
-            "invoices": state["invoices"][-500:] if can_paid_invoice_view else [],
+            "invoices": state["invoices"] if can_paid_invoice_view else [],
             "reports": public_reports,
             "combo_usage": state["combo_usage"][-1000:] if can_customers_view else [],
             "audit": public_audit, "break_events": public_break_events,
@@ -2621,6 +2646,14 @@ def _state_response(
             "pending_view": can_pending_view, "customers_view": can_customers_view,
             "reports_view": can_reports_view, "history_view": can_history_view, "backup": can_backup,
             "hide_recovery": can_recover_hidden,
+            "invoice_date_edit": can_invoice_date_edit,
+            "customers_edit": can_customers_edit,
+            "customers_delete": can_customers_delete,
+            "customer_combo_edit": can_customer_combo_edit,
+            "customer_combo_delete": can_customer_combo_delete,
+            "reports_edit": can_reports_edit,
+            "reports_delete": can_reports_delete,
+
         },
     }
 
@@ -2710,6 +2743,14 @@ def _event_in_export_bounds(
 ) -> bool:
     if not any(bounds.values()):
         return True
+    if bounds.get("customer") and _norm(bounds["customer"]) not in _norm(f"{item.get('customer_name', '')} {item.get('customer_phone', '')}"):
+        return False
+    entries = item.get("entries") or [item]
+    if not any((not bounds.get("employee") or _norm(bounds["employee"]) in _norm(row.get("employee_name")))
+               and (not bounds.get("service") or _norm(bounds["service"]) in _norm(row.get("service"))) for row in entries):
+        return False
+    if bounds.get("report_kind") == "combos" and not (item.get("combo_sale") or item.get("purchased_combo_id") or item.get("combo_units") or any("combo" in _norm(r.get("service")) for r in entries)):
+        return False
     event = None
     for key in ("effective_at", "created_at", "completed_at", "started_at", "booked_at", "purchased_at", "at", "updated_at"):
         event = _parse_datetime(item.get(key))
@@ -2717,7 +2758,7 @@ def _event_in_export_bounds(
             break
     raw_day = item.get("business_date") or fallback_business_date
     try:
-        event_day = date.fromisoformat(str(raw_day)) if raw_day else (event.astimezone(VN_TZ).date() if event else None)
+        event_day = event.astimezone(VN_TZ).date() if event and bounds.get("calendar_date") else date.fromisoformat(str(raw_day)) if raw_day else (event.astimezone(VN_TZ).date() if event else None)
     except ValueError:
         event_day = event.astimezone(VN_TZ).date() if event else None
     if bounds.get("date_from") and (event_day is None or event_day < bounds["date_from"]):
@@ -2745,7 +2786,7 @@ def _export_rows(
     if kind == "board":
         employees = [
             item for item in _ordered_employees(state["employees"], now)
-            if item.get("roster_eligible") is not False and (include_hidden or not item.get("hidden"))
+            if item.get("roster_eligible") is not False
             and _event_in_export_bounds(item, bounds, fallback_business_date=state.get("business_date"))
         ]
         records = [{**_employee_record(item, now), "STT": index} for index, item in enumerate(employees, 1)]
@@ -2759,15 +2800,20 @@ def _export_rows(
         return "Doanh_thu", headers, rows
     if kind == "tip":
         headers = ["Ngày", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Tip", "Người tạo"]
-        rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in state["reports"] if _event_in_export_bounds(item, bounds)]
+        rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
         return "Tip", headers, rows
+    if kind == "reports":
+        fields = ["business_date", "effective_at", "employee_name", "service", "room", "bill_no", "customer_name", "customer_phone", "total", "tip", "payment_method", "actor"]
+        headers = ["Ngày", "Ngày giờ hóa đơn", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Khách hàng", "Điện thoại", "Tổng tiền", "Tip", "Thanh toán", "Người tạo"]
+        rows = [[item.get(key) for key in fields] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
+        return "Bao_cao", headers, rows
     if kind == "customers":
         headers = ["Khách hàng", "Điện thoại", "Combo", "Tổng vé", "Đã dùng", "Còn lại", "Ngày mua"]
-        rows = [[customer.get("name"), customer.get("phone"), purchase.get("combo_name"), purchase.get("total"), purchase.get("used"), purchase.get("remaining"), purchase.get("lk") or purchase.get("purchased_at")] for customer in state["customers"] for purchase in (customer.get("combo_purchases") or [{}]) if _event_in_export_bounds(purchase, bounds)]
+        rows = [[customer.get("name"), customer.get("phone"), purchase.get("combo_name"), purchase.get("total"), purchase.get("used"), purchase.get("remaining"), purchase.get("lk") or purchase.get("purchased_at")] for customer in state["customers"] if not customer.get("deleted_at") for purchase in ([p for p in customer.get("combo_purchases", []) if not p.get("deleted_at")] or [{}]) if _event_in_export_bounds(purchase, bounds)]
         return "Khach_hang", headers, rows
     if kind == "pending":
         headers = ["Ngày giờ", "Khách hàng", "Điện thoại", "Nhân viên", "Dịch vụ", "Phòng", "Ghi chú"]
-        rows = [[item.get("created_at"), item.get("customer_name"), item.get("customer_phone"), entry.get("employee_name"), entry.get("service"), entry.get("room"), item.get("note")] for item in state["pending"] if _event_in_export_bounds(item, bounds) for entry in item.get("entries", [])]
+        rows = [[item.get("effective_at") or item.get("booked_at") or item.get("created_at"), item.get("customer_name"), item.get("customer_phone"), entry.get("employee_name"), entry.get("service"), entry.get("room"), item.get("note")] for item in state["pending"] if _event_in_export_bounds(item, bounds) for entry in item.get("entries", [])]
         return "Cho_thanh_toan", headers, rows
     if kind == "history":
         headers = ["Ngày giờ", "Ngày kinh doanh", "Người thao tác", "Hành động", "Chi tiết"]
@@ -2892,7 +2938,7 @@ def _excel_bytes(
         if employee_ids is not None:
             if not employee_ids or len(employee_ids) > 5000:
                 raise HTTPException(400, "Hãy chọn từ 1 đến 5000 nhân viên để xuất.")
-            allowed = {str(item.get("id")) for item in state["employees"] if item.get("roster_eligible") is not False and (include_hidden or not item.get("hidden"))}
+            allowed = {str(item.get("id")) for item in state["employees"] if item.get("roster_eligible") is not False}
             if not set(employee_ids).issubset(allowed):
                 raise HTTPException(409, "Danh sách nhân viên đã thay đổi hoặc có dòng đang ẩn. Hãy tải lại và chọn lại.")
             state = {**state, "employees": [item for item in state["employees"] if str(item.get("id")) in set(employee_ids)]}
@@ -2924,25 +2970,34 @@ def _excel_bytes(
 
 
 def _png_bytes(state: dict[str, Any], now: datetime, *, include_hidden: bool = False) -> bytes:
-    employees = [item for item in _ordered_employees(state["employees"], now) if item.get("roster_eligible") is not False and (include_hidden or not item.get("hidden"))]
-    width, row_height = 1800, 38
-    height = max(180, 116 + row_height * len(employees))
-    image = Image.new("RGB", (width, height), "#f4f8f5")
+    import textwrap
+    employees = [item for item in _ordered_employees(state["employees"], now) if item.get("roster_eligible") is not False]
+    records = [{**_employee_record(item, now), "STT": i} for i, item in enumerate(employees, 1)]
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    try:
+        font = ImageFont.truetype(font_path, 14)
+        bold = ImageFont.truetype(font_path.replace(".ttf", "-Bold.ttf"), 14)
+    except OSError:
+        font = ImageFont.load_default(size=14)
+        bold = font
+    widths = [65 if c == "STT" else 210 if c in {"Tên nhân viên", "Dịch vụ", "Ghi chú"} else 155 for c in BOARD_COLUMNS]
+    def cells(values):
+        return ["\n".join(textwrap.wrap(str(value if value is not None else ""), max(6, (width-16)//9)) or [""])
+                for value, width in zip(values, widths)]
+    rendered = [cells(BOARD_COLUMNS)] + [cells([r.get(c, "") for c in BOARD_COLUMNS]) for r in records]
+    heights = [max(len(c.split("\n")) for c in row)*20+16 for row in rendered]
+    image = Image.new("RGB", (sum(widths), sum(heights)), "white")
     draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-    draw.rectangle((0, 0, width, 66), fill="#174e3b")
-    draw.text((24, 18), f"LIVE TOUR - {_business_date(now).strftime('%d/%m/%Y')}", fill="white", font=font)
-    columns = [(20, "STT"), (90, "Nhân viên"), (430, "Trạng thái"), (650, "Phòng"), (770, "Còn lại"), (900, "Dịch vụ"), (1320, "Yêu cầu"), (1460, "Ca"), (1600, "Ghi chú")]
-    for x, label in columns:
-        draw.text((x, 78), label, fill="#173329", font=font)
-    for index, employee in enumerate(employees):
-        y = 106 + index * row_height
-        record = _employee_record(employee, now)
-        fill = {"green": "#caedb2", "yellow": "#ffe477", "red": "#ffaaa2", "break": "#f6b27d", "waiting": "#dcc3ee", "idle": "#dcebd8"}.get(record["_row_style"], "#ffffff")
-        draw.rectangle((12, y, width - 12, y + row_height - 3), fill=fill, outline="#d5dfda")
-        values = [index + 1, record["Tên nhân viên"], record["Trạng thái"], record["Phòng"], record["TG CÒN LẠI"], record["Dịch vụ"], record["Yêu cầu"], record["Vào ca"], record["Ghi chú"]]
-        for (x, _), value in zip(columns, values):
-            draw.text((x, y + 10), str(value or "")[:48], fill="#15251f", font=font)
+    palette = {"green": "#caedb2", "yellow": "#ffe477", "red": "#ffaaa2", "break": "#f6b27d", "waiting": "#dcc3ee", "idle": "#dcebd8", "leave": "#eeeeee"}
+    y = 0
+    for i, (row, height) in enumerate(zip(rendered, heights)):
+        fill = "#174e3b" if i == 0 else palette.get(records[i-1]["_row_style"], "#ffffff")
+        x = 0
+        for value, width in zip(row, widths):
+            draw.rectangle((x, y, x+width-1, y+height-1), fill=fill, outline="#d5dfda")
+            draw.multiline_text((x+8, y+8), value, font=bold if i == 0 else font, fill="white" if i == 0 else "#15251f", spacing=3)
+            x += width
+        y += height
     output = BytesIO()
     image.save(output, format="PNG", optimize=True)
     return output.getvalue()
@@ -3078,7 +3133,7 @@ def install_live_tour_routes(
         return {
             "ok": True, "duplicate": duplicate, "action": action,
             "revision": revision, "result": public_result,
-            **_state_response(state, revision, now, **grants),
+            **({"capabilities": {name: grants[f"can_{name}"] for name in CAPABILITY_FEATURES}} if action.startswith("report_invoice_") else _state_response(state, revision, now, **grants)),
         }
 
     @app.get("/v2/live-tour")
@@ -3098,6 +3153,18 @@ def install_live_tour_routes(
             **grants,
         )
 
+    @app.get("/v2/live-tour/reports")
+    def live_tour_reports(ident: identity_type = Depends(current_identity)):
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_reports_view")
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            state, revision = _read_state(conn, now)
+            grants = permissions(conn, ident)
+        public = _state_response(state, revision, now, **grants)
+        return {"revision": revision, "invoices": public["state"]["invoices"],
+                "reports": public["report_rows"], "capabilities": public["capabilities"]}
+
     @app.get("/v2/live-tour/customers")
     def spa_customers(ident: identity_type = Depends(current_identity)):
         now = datetime.now(timezone)
@@ -3106,7 +3173,7 @@ def install_live_tour_routes(
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
             state, revision = _read_state(conn, now)
             can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
-        return {"revision": revision, "customers": deepcopy(state["customers"]), "can_export": can_export}
+        return {"revision": revision, "customers": [dict(deepcopy(c), combo_purchases=[deepcopy(p) for p in c.get("combo_purchases", []) if not p.get("deleted_at")]) for c in state["customers"] if not c.get("deleted_at")], "can_export": can_export}
 
     @app.get("/v2/live-tour/settings")
     def spa_settings(ident: identity_type = Depends(current_identity)):
@@ -3159,10 +3226,7 @@ def install_live_tour_routes(
             raise HTTPException(400, "Mọi thao tác thay đổi Live Tour cần idempotency_key để chống ghi trùng.")
         payload_hash = _canonical_payload_hash(action, payload)
         with engine_instance().begin() as conn:
-            if action == "show_all" and feature_allowed(conn, ident, "live_tour_admin"):
-                pass
-            else:
-                require_feature(conn, ident, _required_action_feature(action))
+            require_feature(conn, ident, "live_tour_customers_edit" if action == "customer_upsert" and payload.get("customer_id") else _required_action_feature(action))
             if action in {"booking", "multi_booking"}:
                 require_feature(conn, ident, "live_tour_view")
             if action in {"booking", "multi_booking", "update_booking"} and (
@@ -3172,6 +3236,15 @@ def install_live_tour_routes(
             if action in {"pending_update", "pending_delete"} or (action in {"checkout", "quick_checkout"} and payload.get("pending_id")):
                 require_feature(conn, ident, "live_tour_pending_view")
                 require_feature(conn, ident, "live_tour_invoice_view")
+            if action in {"report_invoice_update", "report_invoice_delete"}:
+                require_feature(conn, ident, "live_tour_reports_view")
+                require_feature(conn, ident, "live_tour_paid_invoice_view")
+            if "invoice_at" in payload:
+                require_feature(conn, ident, "live_tour_invoice_date_edit")
+            if action == "customer_upsert" and payload.get("customer_id"):
+                require_feature(conn, ident, "live_tour_customers_edit")
+            if action in {"customer_delete", "customer_combo_update", "customer_combo_delete"}:
+                require_feature(conn, ident, "live_tour_customers_view")
             if action in {"paid_invoice_update", "paid_invoice_delete"}:
                 require_feature(conn, ident, "live_tour_paid_invoice_view")
             if action in BACKDATE_ACTIONS and _backdate_requested(payload):
@@ -3227,6 +3300,8 @@ def install_live_tour_routes(
         date_from: str = Query(default=""), date_to: str = Query(default=""),
         time_from: str = Query(default=""), time_to: str = Query(default=""),
         customer_id: str = Query(default=""),
+        employee: str = "", customer: str = "", service: str = "",
+        report_kind: str = "",
         columns: list[str] | None = Query(default=None),
         employee_ids: list[str] | None = Query(default=None),
         ident: identity_type = Depends(current_identity),
@@ -3234,7 +3309,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         export_kind = kind.strip().lower()
         if export_kind not in {
-            "board", "custom", "revenue", "tip", "customers", "pending", "history",
+            "board", "custom", "revenue", "tip", "reports", "customers", "pending", "history",
             "breaks", "customer_detail",
         }:
             raise HTTPException(400, "Loại báo cáo Live Tour không hợp lệ.")
@@ -3245,6 +3320,7 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
+        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), report_kind=report_kind.strip(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):
@@ -3261,6 +3337,9 @@ def install_live_tour_routes(
         elif export_kind == "revenue" and not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
             state = deepcopy(state)
             state["invoices"] = _redact_customer_pii(state["invoices"])
+        elif export_kind == "reports" and not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
+            state = deepcopy(state)
+            state["reports"] = _redact_customer_pii(state["reports"])
         content, filename = _excel_bytes(
             state, export_kind, now, include_hidden=bool(include_hidden and can_recover_hidden),
             bounds=bounds, customer_id=customer_id_value, selected_columns=columns, employee_ids=employee_ids,

@@ -122,13 +122,13 @@ def test_customer_edit_keeps_stable_history_and_updates_only_open_transactions()
     customer = action(state, "customer_upsert", {"customer_name": "Khách cũ", "customer_phone": "0901234567"})["customer"]
     customer_id = customer["id"]
     state["customers"][0]["combo_purchases"] = [{"id": "purchase1", "total": 13, "used": 2, "remaining": 11}]
-    state["invoices"] = [{"id": "bill1", "customer_id": customer_id, "customer_name": "Khách cũ", "total": 100, "entries": []}]
+    state["invoices"] = [{"id": "bill1", "customer_id": customer_id, "reason": "Đối chiếu hồ sơ", "customer_name": "Khách cũ", "total": 100, "entries": []}]
     invoices = deepcopy(state["invoices"])
     action(state, "booking", {"employee_id": "e1", "room": "1.1", "service": "Body 90", "customer_id": customer_id})
     action(state, "start", {"employee_id": "e1"})
     action(state, "complete", {"employee_id": "e1"})
     action(state, "move_pending", {"employee_id": "e1"})
-    result = action(state, "customer_upsert", {"customer_id": customer_id, "customer_name": "Tên mới", "customer_phone": "0907654321", "combo_purchases": [], "remaining": 0})["customer"]
+    result = action(state, "customer_upsert", {"customer_id": customer_id, "reason": "Đối chiếu hồ sơ", "customer_name": "Tên mới", "customer_phone": "0907654321", "combo_purchases": [], "remaining": 0})["customer"]
     assert result["id"] == customer_id
     assert result["combo_purchases"][0]["remaining"] == 11
     assert state["invoices"] == invoices
@@ -149,7 +149,7 @@ def test_duplicate_customer_phone_is_rejected_without_merging_records():
     for customer_id in ["", second["id"]]:
         before = deepcopy(state)
         with pytest.raises(HTTPException) as exc:
-            action(state, "customer_upsert", {"customer_id": customer_id, "customer_name": "Bình", "customer_phone": "090 123 4567"})
+            action(state, "customer_upsert", {"customer_id": customer_id, "reason": "Đối chiếu hồ sơ", "customer_name": "Bình", "customer_phone": "090 123 4567"})
         assert exc.value.status_code == 409
         assert state == before
     assert first["id"] != second["id"]
