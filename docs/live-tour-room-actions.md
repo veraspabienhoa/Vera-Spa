@@ -1,7 +1,7 @@
 # Live Tour: Thực hiện và Hoàn thành theo nhân viên/phòng
 
 - Thêm hai nút **Thực hiện**, **Hoàn thành** cạnh tên nhân viên trong bảng và trong danh sách chi tiết phòng. Không cần đánh dấu chọn trước khi thao tác riêng lẻ.
-- Thêm hai nút trên từng thẻ phòng và phần đầu chi tiết phòng. Số cạnh nút là số nhân viên có trạng thái phù hợp trong phòng đó. Bấm phần thông tin phòng vẫn mở booking như trước.
+- Thêm hai nút trên từng thẻ phòng và phần đầu chi tiết phòng. Số cạnh nút là số nhân viên có trạng thái phù hợp trong phòng đó. Bấm phần thông tin phòng một lần để xem danh sách nhân viên; bấm đúp mới mở booking (cần quyền thao tác và không có yêu cầu đang gửi).
 - **Thực hiện cả phòng** (`start_room`) chuyển các dịch vụ Đang chờ trong phòng sang Đang thực hiện, ghi giờ bắt đầu và số tua/YC theo quy tắc hiện có. Không bắt đầu lại dịch vụ đang thực hiện.
 - **Hoàn thành cả phòng** (`finish_room`) chỉ hoàn tất dịch vụ đang thực hiện, chuyển sang Chờ thanh toán và giải phóng nhân viên/phòng. Giữ nguyên lịch đang chờ, dịch vụ đã chờ thanh toán và người ở phòng khác. Giữ từng phiếu với đúng khách hàng, không gộp khách khác nhau thành một phiếu.
 - Server xác định toàn bộ giường thuộc phòng từ cấu hình khu vực và trạng thái đã lưu. Thao tác cả phòng bao gồm phiên đang ẩn và phiên cũ còn mở ngoài danh sách nhân viên; không phụ thuộc tìm kiếm, bộ lọc ca hoặc các checkbox đang chọn ở bảng. Tên phòng tùy chỉnh được gửi nguyên văn, không bỏ tiền tố “Phòng”.

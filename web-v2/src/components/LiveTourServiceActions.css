@@ -7,7 +7,7 @@
 .live-tour-page .live-tour-service-actions small{font:inherit;opacity:.85}
 .live-tour-page .room-actions{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px}
 .live-tour-page .room-actions button{min-width:0;flex-wrap:wrap;gap:2px;padding:4px 2px;font-size:8px;white-space:normal}
-.live-tour-page .tour-room-booking-button{position:relative;display:grid;align-content:space-between;gap:2px;width:100%;min-width:0;min-height:42px;border:0;padding:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.live-tour-page .tour-room-booking-button{position:relative;display:grid;align-content:space-between;gap:2px;width:100%;min-width:0;min-height:42px;border:0;padding:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;touch-action:manipulation}
 .live-tour-page .tour-room-grid .tour-room-card.has-private-service{padding-right:4px}
 .live-tour-page .tour-room-grid .tour-room-card.vip.has-private-service{padding-right:2px}
 .live-tour-page .tour-room-card.has-private-service .tour-room-booking-button{padding-right:27px}
