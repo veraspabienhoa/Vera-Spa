@@ -4,6 +4,8 @@ PostgreSQL is the only employee store.  The legacy credential workbook is not
 read or written by these routes.  The browser never receives passwords or
 token hashes and never writes the employees table directly.
 """
+from vera_search_text import search_text_matches
+
 from datetime import date, datetime
 from io import BytesIO
 import json
@@ -936,7 +938,7 @@ def install_staff_routes(
         if search.strip():
             needle = norm(search)
             exact = [row for row in data if needle in {norm(row["username"]), norm(row["full_name"])}]
-            data = exact or [row for row in data if needle in norm(f"{row['username']} {row['full_name']}")]
+            data = exact or [row for row in data if search_text_matches([row["username"], row["full_name"]], needle)]
         if role.strip():
             data = [row for row in data if row["role"] == role.strip().lower()]
         if status.strip():

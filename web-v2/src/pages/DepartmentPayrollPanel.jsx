@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
@@ -191,7 +192,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     const search = normalizeSearch(employeeSearch[group])
     return employeeCatalog.filter((item) => departments.has(item.department)
       && !configured.has(item.employee_username)
-      && (!search || normalizeSearch(`${item.employee_name} ${item.employee_username}`).includes(search)))
+      && (!search || searchTextMatches([item.employee_name, item.employee_username], search)))
   }
 
   const addEmployeeRow = (group) => {

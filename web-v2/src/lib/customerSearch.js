@@ -1,3 +1,4 @@
+import { searchTextMatches } from './searchText.js'
 import { tourNameKey } from './liveTourBooking.js'
 
 const phoneDigits = (value) => String(value || '').replace(/\D/g, '')
@@ -8,8 +9,9 @@ export function customerMatches(customer, query) {
   const terms = tourNameKey(query).replace(/[+(]*\d(?:[\d\s().-]*\d)?\)*/g, phoneDigits).trim().split(/\s+/).filter(Boolean)
   const name = tourNameKey(customer?.name || customer?.customer_name)
   const phone = phoneDigits(customer?.phone || customer?.customer_phone)
-  return terms.every((term) => name.includes(term) || (/^\d+$/.test(term)
-    && (phone.includes(term) || localPhone(phone).includes(localPhone(term)))))
+  const nameQuery = terms.filter((term) => !/^\d+$/.test(term)).join(' ')
+  return searchTextMatches(name, nameQuery) && terms.filter((term) => /^\d+$/.test(term)).every((term) =>
+    phone.includes(term) || localPhone(phone).includes(localPhone(term)))
 }
 
 export const customerOptionMatches = (option, query) => customerMatches({ name: option.label, phone: option.detail }, query)

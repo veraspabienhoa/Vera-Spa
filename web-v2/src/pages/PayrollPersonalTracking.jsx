@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Search, Trash2, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
@@ -169,7 +170,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
     const rows = (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
     const needle = searchKey(search)
     if (!needle) return rows
-    return rows.filter((item) => searchKey(`${item.employee_name} ${item.full_name} ${item.role}`).includes(needle))
+    return rows.filter((item) => searchTextMatches([item.employee_name, item.full_name, item.role], needle))
   }, [data, search])
 
   const activeRows = useMemo(() => visible.filter((item) => !item.completed && Number(item.remaining || 0) > 0), [visible])

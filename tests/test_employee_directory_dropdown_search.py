@@ -11,7 +11,7 @@ def test_all_native_dropdowns_use_the_shared_search_menu():
     assert "win.HTMLSelectElement.prototype" in source
     assert "source.dispatchEvent(new win.Event('change', { bubbles: true }))" in source
     assert "input.type = 'search'" in source
-    assert "dropdownOptions(active.source, active.input.value)" in source
+    assert "optionsFor(active, active.input.value)" in source
     assert "event.key === 'Escape'" in source
     assert "'ArrowDown', 'ArrowUp'" in source
 

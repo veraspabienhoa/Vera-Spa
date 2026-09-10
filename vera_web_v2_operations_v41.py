@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from vera_search_text import search_text_matches
+
 from datetime import date, datetime, timedelta
 from io import BytesIO
 import unicodedata
@@ -32,7 +34,7 @@ def _norm(value: Any) -> str:
 
 def _matches(value: Any, query: str) -> bool:
     needle = _norm(query)
-    return not needle or needle in _norm(value)
+    return search_text_matches(value, needle)
 
 
 def _remove_route(app, path: str, method: str):

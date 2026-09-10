@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import {
   Download, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw,
   Power, Save, Search, ShieldCheck, Trash2, Upload,
@@ -159,7 +160,7 @@ export default function RulesPage() {
       if (reasonFilter && String(row.values['Lý do nghỉ'] ?? '').trim() !== reasonFilter) return false
       if (typeFilter && String(row.values['Loại nghỉ'] ?? '').trim() !== typeFilter) return false
       if (!needle) return true
-      return columns.some((column) => String(row.values[column] ?? '').toLocaleLowerCase('vi').includes(needle))
+      return columns.some((column) => searchTextMatches(row.values[column], needle))
     })
   }, [columns, rows, search, reasonFilter, typeFilter])
 

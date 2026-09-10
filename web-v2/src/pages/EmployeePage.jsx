@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import {
   BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
   PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound,
@@ -196,7 +197,7 @@ export default function EmployeePage({ user }) {
     const exact = needle ? employees.filter((employee) => [employee.username, employee.full_name].some((value) => searchKey(value) === needle)) : []
     const namePool = exact.length ? new Set(exact.map((employee) => employee.username)) : null
     return employees.filter((employee) => {
-      const matchesName = !needle || (namePool ? namePool.has(employee.username) : searchKey(`${employee.username} ${employee.full_name}`).includes(needle))
+      const matchesName = !needle || (namePool ? namePool.has(employee.username) : searchTextMatches([employee.username, employee.full_name], needle))
       return matchesName && (!roleFilter || employee.role === roleFilter)
         && (!statusFilter || employee.employment_status === statusFilter)
         && (!shiftFilter || employee.work_shift === shiftFilter)

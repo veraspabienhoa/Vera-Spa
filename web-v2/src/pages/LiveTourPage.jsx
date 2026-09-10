@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
@@ -856,7 +857,7 @@ export default function LiveTourPage({ user }) {
   const searchedRecords = useMemo(() => {
     const needle = normalizedColumn(employeeSearch)
     const employeeColumn = employeeNameColumn(columns)
-    return needle ? shiftRecords.filter((record) => normalizedColumn(cellValue(record, employeeColumn)).includes(needle)) : shiftRecords
+    return needle ? shiftRecords.filter((record) => searchTextMatches(cellValue(record, employeeColumn), needle)) : shiftRecords
   }, [columns, employeeSearch, shiftRecords])
   const displayedRecords = useMemo(() => prioritizeRecords(searchedRecords, columns, activeFilter), [activeFilter, columns, searchedRecords])
 
@@ -906,7 +907,7 @@ export default function LiveTourPage({ user }) {
     const needle = normalizedColumn(form.employee_search)
     return validRecords.filter((record) => {
       if (!isQuickCheckoutEligible(record, columns)) return false
-      return !needle || normalizedColumn(cellValue(record, employeeColumn)).includes(needle)
+      return !needle || searchTextMatches(cellValue(record, employeeColumn), needle)
     }).slice(0, 20)
   }, [columns, employeeColumn, form.employee_search, validRecords])
   const selectedQuickCheckoutRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickCheckoutEligible(record, columns)) || null
@@ -968,7 +969,7 @@ export default function LiveTourPage({ user }) {
   const employeeServiceActions = (record) => canOperate && <LiveTourServiceActions target={cellValue(record, employeeColumn)} waiting={hasGroup(record, 'waiting') ? 1 : 0} doing={hasGroup(record, 'doing') ? 1 : 0} busy={Boolean(actionBusy) || !stableEmployeeId(record)} onStart={() => executeAction('start', {}, [stableEmployeeId(record)])} onFinish={() => executeAction('finish_to_pending', {}, [stableEmployeeId(record)])}/>
   const searchedRoomKeys = useMemo(() => {
     const needle = normalizedColumn(employeeSearch)
-    return new Set(needle ? shiftRecords.flatMap((record) => normalizedColumn(cellValue(record, employeeColumn)).includes(needle) ? [assignmentAreaKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
+    return new Set(needle ? shiftRecords.flatMap((record) => searchTextMatches(cellValue(record, employeeColumn), needle) ? [assignmentAreaKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
   }, [assignmentAreaKey, employeeColumn, employeeSearch, roomColumn, shiftRecords])
 
   const retainedMetric = data.metric_snapshots?.[shiftFilter] || null
@@ -1000,8 +1001,7 @@ export default function LiveTourPage({ user }) {
   const checkoutCustomerNeedles = normalizedColumn(`${form.customer_name} ${form.phone}`).split(/\s+/).filter(Boolean)
   const checkoutCustomerMatches = ['checkout', 'quick_checkout'].includes(modal?.kind) && !form.customer_id && checkoutCustomerNeedles.length
     ? customers.filter((customer) => {
-      const haystack = normalizedColumn(`${itemLabel(customer)} ${customer?.phone || customer?.customer_phone || ''}`)
-      return checkoutCustomerNeedles.every((needle) => haystack.includes(needle))
+      return customerMatches({ ...customer, name: itemLabel(customer) }, `${form.customer_name} ${form.phone}`)
     }).slice(0, 8)
     : []
   const purchasedCombos = customers.flatMap((customer) => customerComboPurchases(customer).map((purchase) => ({ customer, purchase })))

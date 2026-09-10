@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import { CheckSquare, Download, FileSignature, RefreshCw, Save, Search, Settings2, Square, Users } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { contractApi } from '../lib/contractApi'
@@ -89,7 +90,7 @@ export default function ContractPage({ user }) {
   const filteredEmployees = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('vi')
     if (!needle) return data?.employees || []
-    return (data?.employees || []).filter((item) => `${item.full_name} ${item.username} ${item.role_label}`.toLocaleLowerCase('vi').includes(needle))
+    return (data?.employees || []).filter((item) => searchTextMatches([item.full_name, item.username, item.role_label], needle))
   }, [data?.employees, search])
 
   const selectedSet = useMemo(() => new Set(selectedUsernames), [selectedUsernames])

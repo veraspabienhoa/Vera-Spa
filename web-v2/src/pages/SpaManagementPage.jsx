@@ -1,3 +1,5 @@
+import { searchTextMatches } from '../lib/searchText'
+import { customerMatches } from '../lib/customerSearch'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import { Download, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -7,7 +9,6 @@ import ServiceCatalogForm, { ServiceTypePicker } from '../components/ServiceCata
 import './SpaManagementPage.css'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' ₫'
-const searchKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().trim()
 const areaLabels = { room: 'Phòng', bed: 'Giường', table: 'Bàn' }
 const blankArea = () => ({ name: '', kind: 'room', beds: [{ name: 'Giường 1' }] })
 
@@ -142,7 +143,7 @@ export default function SpaManagementPage({ user, mode }) {
   const catalogItems = [...services.map((item) => ({ ...item, catalog_kind: 'service' })), ...(data?.combos || []).map((item) => ({ ...item, catalog_kind: 'combo' }))]
   const groups = [...new Set(catalogItems.map((item) => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
   const rows = (customersPage ? data?.customers : tab === 'services' ? catalogItems : data?.service_areas) || []
-  const filtered = rows.filter((item) => searchKey(`${item.name} ${item.phone || ''} ${item.group || ''}`).includes(searchKey(search)) && (customersPage || tab !== 'services' || serviceFilter === 'all' || item.catalog_kind === serviceFilter))
+  const filtered = rows.filter((item) => (customersPage ? customerMatches(item, search) : searchTextMatches([item.name, item.group], search)) && (customersPage || tab !== 'services' || serviceFilter === 'all' || item.catalog_kind === serviceFilter))
   const title = customersPage ? 'Khách hàng' : 'Cài đặt'
   const addKind = customersPage ? 'customer' : tab === 'services' ? 'choose-service' : 'area'
   const editTitle = editor?.kind === 'choose-service' ? 'Chọn loại dịch vụ' : editor?.kind === 'history' ? `Lịch sử · ${editor.value.customer.name}` : `${editor?.existing ? 'Sửa' : 'Thêm'} ${editor?.kind === 'customer' ? 'khách hàng' : editor?.kind === 'area' ? 'khu vực dịch vụ' : editor?.kind === 'combo' ? 'dịch vụ combo' : 'dịch vụ đơn lẻ'}`
