@@ -1330,6 +1330,7 @@ export default function LiveTourPage({ user }) {
   return <div className="feature-page tour-page live-tour-page">
     <style>{`
       .tour-page{gap:5px}.page-wrap.tour-page-wrap{padding-top:4px}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
+      .live-tour-board{min-width:0}.live-tour-board>.tour-records-panel{margin-top:5px}
       .live-tour-page .tour-sticky-top{display:grid;gap:4px;background:var(--paper,#f7faf8)}
       .live-tour-page .tour-topbar{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(330px,1fr) auto;align-items:center;gap:10px}
       .live-tour-page .tour-heading-title{min-width:0;display:flex;align-items:center;gap:8px}.live-tour-page .tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:18px;line-height:.95}.live-tour-status{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 7px;color:#17603f;background:#dff4e8;font-size:8px;font-weight:900}.live-tour-status:before{content:'';width:7px;height:7px;border-radius:50%;background:#23a861;box-shadow:0 0 0 3px rgba(35,168,97,.16)}
@@ -1366,6 +1367,8 @@ export default function LiveTourPage({ user }) {
       @media(max-width:420px){.live-tour-page .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
       @media(max-width:430px){.live-tour-selection-summary{grid-column:1/-1}.live-tour-card-grid{grid-template-columns:1fr}}
     `}</style>
+    {/* Keep the sticky rooms inside the roster so they cannot cover the workspace below. */}
+    <div className="live-tour-board">
     <div className="tour-sticky-top" ref={stickyTopRef}>
       <div className="tour-topbar">
         <div className="tour-heading-title"><h1>LIVE TOUR</h1><span className="live-tour-status">TRỰC TIẾP</span></div>
@@ -1454,6 +1457,7 @@ export default function LiveTourPage({ user }) {
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
+    </div>
 
     {asArray(data.retained_assignments).length > 0 && <section className="tour-roster-retained"><strong>Phiên còn mở ngoài danh sách Leader/Nhân viên</strong><p>Hoàn tất các phiên cũ bên dưới; các tài khoản này không nhận booking mới.</p>{data.retained_assignments.map((worker) => <div key={worker.id}><span>{worker.name} · {worker.service || 'Nghỉ giữa ca'} · {worker.room}</span>{worker.break_started_at ? <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('end_break', { employee_id: worker.id }, [])}>Kết thúc nghỉ</button> : normalizedColumn(worker.status) === 'CHO THANH TOAN' ? <button type="button" className="secondary-button" disabled={!canPayment || Boolean(actionBusy)} onClick={async () => { const result = await executeAction('move_pending', { employee_id: worker.id }, []); if (result) openModal('checkout', { item: result.result.pending, rowIds: [] }) }}>Thanh toán</button> : <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => { setError(''); setBookingContext({ employeeId: worker.id }) }}>Xử lý phiên</button>}</div>)}</section>}
     <section className="panel live-tour-operator">
