@@ -46,7 +46,7 @@ const EXPORT_KINDS = [
   ['history', 'Xuất lịch sử'],
   ['breaks', 'Xuất nghỉ giữa ca'],
 ]
-const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'history', 'breaks'])
+const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'pending', 'history', 'breaks'])
 const EMPTY_EXPORT_FILTERS = { date_from: '', date_to: '', time_from: '', time_to: '' }
 const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone'])
 const REPORT_LABELS = {
@@ -1207,15 +1207,10 @@ export default function LiveTourPage({ user }) {
   const exportCustomerHistory = async () => {
     const customerId = customerHistoryModal?.customerId
     if (!customerId || !canExportKind('customer_detail') || actionBusy) return
-    const query = compactExportQuery(exportFilters)
-    if (query.date_from && query.date_to && query.date_from > query.date_to) {
-      setError('Ngày bắt đầu của bộ lọc xuất dữ liệu không được sau ngày kết thúc.')
-      return
-    }
     setActionBusy('export-customer-detail')
     setError('')
     try {
-      await veraApi.exportLiveTourExcel('customer_detail', { ...query, customer_id: customerId })
+      await veraApi.exportLiveTourExcel('customer_detail', { customer_id: customerId })
       setNotice('Đã tạo file lịch sử chi tiết khách hàng.')
     } catch (err) {
       setError(err.message || 'Không xuất được lịch sử khách hàng.')
@@ -1404,14 +1399,14 @@ export default function LiveTourPage({ user }) {
           return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => setActivePanel(key)} key={key}>{label}{key === 'pending' && allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>
         })}
       </div>
-      {canExport && ['pending', 'customers', 'reports', 'history'].includes(activePanel) && <div className="live-tour-export-filters" aria-label="Bộ lọc thời gian xuất dữ liệu">
+      {canExport && activePanel === 'history' && <div className="live-tour-export-filters" aria-label="Bộ lọc thời gian xuất dữ liệu">
         <strong>Bộ lọc xuất dữ liệu</strong>
         <label><span>Từ ngày</span><input type="date" max={exportFilters.date_to || undefined} value={exportFilters.date_from} onChange={(event) => setExportFilters((current) => ({ ...current, date_from: event.target.value }))}/></label>
         <label><span>Đến ngày</span><input type="date" min={exportFilters.date_from || undefined} value={exportFilters.date_to} onChange={(event) => setExportFilters((current) => ({ ...current, date_to: event.target.value }))}/></label>
         <label><span>Từ giờ</span><input type="time" value={exportFilters.time_from} onChange={(event) => setExportFilters((current) => ({ ...current, time_from: event.target.value }))}/></label>
         <label><span>Đến giờ</span><input type="time" value={exportFilters.time_to} onChange={(event) => setExportFilters((current) => ({ ...current, time_to: event.target.value }))}/></label>
         <button type="button" className="secondary-button" disabled={!Object.values(exportFilters).some(Boolean)} onClick={() => setExportFilters(EMPTY_EXPORT_FILTERS)}>Xóa bộ lọc</button>
-        <small>Áp dụng cho doanh thu, TIP, khách hàng, chờ thanh toán, lịch sử và nghỉ giữa ca; không áp dụng cho Bảng tua/PNG.</small>
+        <small>Áp dụng cho xuất lịch sử và nghỉ giữa ca.</small>
       </div>}
       {['pending', 'invoices', 'reports'].includes(activePanel) && <LiveTourFilters value={listFilters} onChange={setListFilters}/>}
       {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
