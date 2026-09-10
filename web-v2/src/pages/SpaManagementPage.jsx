@@ -28,22 +28,25 @@ function Field({ label, children }) {
 }
 
 function CustomerHistory({ value }) {
+  const canPaid = value.capabilities?.paid_invoice_view !== false
+  const canPending = value.capabilities?.pending_view !== false && value.capabilities?.invoice_view !== false
   return <div className="spa-history">
-    <div className="spa-summary"><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span><span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
-    <h3>Dịch vụ đã sử dụng</h3>
+    <div className="spa-summary">{canPaid && <><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span></>}<span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
+    {canPaid ? <><h3>Dịch vụ đã sử dụng</h3>
     <div className="responsive-data-table"><table><thead><tr><th>Ngày / hóa đơn</th><th>Dịch vụ</th><th>Nhân viên</th><th>Vị trí</th><th>Giá dịch vụ</th></tr></thead><tbody>{value.services.map((item) => <tr key={item.id}><td>{item.business_date}<small>{item.bill_no}</small></td><td>{item.service}</td><td>{item.employee_name}</td><td>{item.room}</td><td>{money(item.price)}</td></tr>)}</tbody></table></div>
-    {!value.services.length && <p>Chưa có dịch vụ đã thanh toán.</p>}
+    {!value.services.length && <p>Chưa có dịch vụ đã thanh toán.</p>}</> : <p>Chưa được cấp quyền xem hóa đơn đã thanh toán.</p>}
     <h3>Combo đã mua</h3>
     <div className="spa-card-grid">{value.combo_purchases.map((item, index) => <article className="spa-card" key={item.id || index}><strong>{item.combo_name}</strong><span>{item.purchased_at || item.created_at || item.lk}</span><span>Đã dùng {item.used || 0} / {item.total || 0} {item.component_balances ? 'lượt' : 'vé'} · Còn {item.remaining || 0} {item.component_balances ? 'lượt' : 'vé'}</span>{item.component_balances?.map((part) => <span key={part.service_id}>{part.service_name}: còn {part.remaining} / {part.total} lượt</span>)}{item.unlimited === false && item.expires_on && <small>Hạn dùng: {item.expires_on.split('-').reverse().join('/')}</small>}</article>)}</div>
     {!value.combo_purchases.length && <p>Chưa mua combo.</p>}
-    <h3>Chờ thanh toán ({value.pending.length})</h3>
-    {value.pending.map((item) => <p key={item.id}>{item.created_at} · {(item.entries || []).map((entry) => entry.service).join(', ')}</p>)}
+    {canPending ? <><h3>Chờ thanh toán ({value.pending.length})</h3>
+    {value.pending.map((item) => <p key={item.id}>{item.created_at} · {(item.entries || []).map((entry) => entry.service).join(', ')}</p>)}</> : <p>Chưa được cấp quyền xem hóa đơn chờ thanh toán.</p>}
   </div>
 }
 
 export default function SpaManagementPage({ user, mode }) {
   const customersPage = mode === 'customers'
-  const allowed = user?.role === 'admin' || user?.permissions?.[customersPage ? 'live_tour_payment' : 'live_tour_admin'] === true
+  const allowed = user?.role === 'admin' || user?.permissions?.[customersPage ? 'live_tour_customers_view' : 'live_tour_admin'] === true
+  const canEditCustomer = user?.role === 'admin' || user?.permissions?.live_tour_payment === true
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -148,10 +151,10 @@ export default function SpaManagementPage({ user, mode }) {
     {!customersPage && <div className="spa-tabs" role="tablist" aria-label="Cài đặt"><button role="tab" aria-selected={tab === 'services'} aria-controls="spa-settings-content" id="spa-services-tab" disabled={busy} onClick={() => { setTab('services'); setSearch('') }}>Cài đặt dịch vụ</button><button role="tab" aria-selected={tab === 'areas'} aria-controls="spa-settings-content" id="spa-areas-tab" disabled={busy} onClick={() => { setTab('areas'); setSearch('') }}>Cài đặt khu vực dịch vụ</button></div>}
     <section className="panel spa-content" id="spa-settings-content" role={customersPage ? undefined : 'tabpanel'} aria-labelledby={customersPage ? undefined : `spa-${tab}-tab`}>
       {!customersPage && tab === 'services' && <div className="spa-service-filters" aria-label="Lọc loại dịch vụ">{[['all', 'Tất cả'], ['service', 'Dịch vụ đơn lẻ'], ['combo', 'Dịch vụ combo']].map(([value, label]) => <button type="button" className="secondary-button" aria-pressed={serviceFilter === value} key={value} onClick={() => setServiceFilter(value)}>{label}</button>)}</div>}
-      <div className="spa-toolbar"><input type="search" aria-label="Tìm kiếm" placeholder={customersPage ? 'Tìm tên hoặc số điện thoại…' : 'Tìm theo tên…'} value={search} onChange={(event) => setSearch(event.target.value)}/><span>{filtered.length} / {rows.length}</span><div className="spa-actions">{customersPage && data?.can_export && <button className="secondary-button" disabled={busy} onClick={exportCustomers}><Download size={16}/> Xuất Excel</button>}<button className="primary-button" disabled={busy || !data} onClick={() => openEditor(addKind)}><Plus size={16}/> Thêm {customersPage ? 'khách hàng' : tab === 'services' ? 'dịch vụ' : 'khu vực'}</button></div></div>
+      <div className="spa-toolbar"><input type="search" aria-label="Tìm kiếm" placeholder={customersPage ? 'Tìm tên hoặc số điện thoại…' : 'Tìm theo tên…'} value={search} onChange={(event) => setSearch(event.target.value)}/><span>{filtered.length} / {rows.length}</span><div className="spa-actions">{customersPage && data?.can_export && <button className="secondary-button" disabled={busy} onClick={exportCustomers}><Download size={16}/> Xuất Excel</button>}<button className="primary-button" disabled={busy || !data || (customersPage && !canEditCustomer)} onClick={() => openEditor(addKind)}><Plus size={16}/> Thêm {customersPage ? 'khách hàng' : tab === 'services' ? 'dịch vụ' : 'khu vực'}</button></div></div>
       {busy && !data && <p role="status">Đang tải dữ liệu…</p>}
       {data && !filtered.length && <p className="spa-empty">{rows.length ? 'Không có kết quả phù hợp.' : 'Chưa có dữ liệu. Bấm Thêm để tạo mới.'}</p>}
-      {customersPage ? <div className="responsive-data-table"><table><thead><tr><th>Khách hàng</th><th>Điện thoại</th><th>Combo còn lại</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.name || 'Chưa có tên'}</strong></td><td>{item.phone || '—'}</td><td>{(item.combo_purchases || []).reduce((sum, purchase) => sum + Number(purchase.remaining || 0), 0)} vé</td><td><div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor('customer', item)}>Sửa</button><button className="secondary-button" disabled={busy} onClick={() => history(item)}><History size={14}/> Lịch sử</button></div></td></tr>)}</tbody></table></div>
+      {customersPage ? <div className="responsive-data-table"><table><thead><tr><th>Khách hàng</th><th>Điện thoại</th><th>Combo còn lại</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.name || 'Chưa có tên'}</strong></td><td>{item.phone || '—'}</td><td>{(item.combo_purchases || []).reduce((sum, purchase) => sum + Number(purchase.remaining || 0), 0)} vé</td><td><div className="spa-actions"><button className="secondary-button" disabled={busy || !canEditCustomer} onClick={() => openEditor('customer', item)}>Sửa</button><button className="secondary-button" disabled={busy} onClick={() => history(item)}><History size={14}/> Lịch sử</button></div></td></tr>)}</tbody></table></div>
         : tab === 'services' ? <div className="responsive-data-table"><table><thead><tr><th>Dịch vụ / nhóm</th><th>Loại dịch vụ</th><th>Thời lượng / thành phần</th><th>Giá</th><th>Số lượt</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={`${item.catalog_kind}:${item.id}`}>
           <td><strong>{item.name}</strong>{item.private && <span className="spa-badge">PR</span>}<small>{item.group || 'Chưa phân nhóm'}</small>{item.active === false && <small>Ngừng sử dụng</small>}{item.expires_on && item.unlimited === false && <small>Hết hạn: {item.expires_on.split('-').reverse().join('/')}</small>}</td>
           <td><span className="spa-badge">{item.catalog_kind === 'combo' ? 'Combo' : 'Đơn lẻ'}</span></td>

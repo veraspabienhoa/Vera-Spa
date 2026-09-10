@@ -6,6 +6,9 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import LiveTourBookingDialog from '../components/LiveTourBookingDialog'
+import LiveTourPendingDialog from '../components/LiveTourPendingDialog'
+import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
+import LiveTourInvoiceChanges from '../components/LiveTourInvoiceChanges'
 import LiveTourPaymentSettings from '../components/LiveTourPaymentSettings'
 import LiveTourReceipt from '../components/LiveTourReceipt'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
@@ -25,6 +28,7 @@ const VIP_ROOMS = ['16', '17', '18', '19', '20', '21']
 const VIP_ROOM_KEYS = new Set(VIP_ROOMS)
 const PANEL_TABS = [
   ['pending', 'Chờ thanh toán'],
+  ['invoices', 'Hóa đơn đã thanh toán'],
   ['customers', 'Khách hàng & combo'],
   ['reports', 'Báo cáo'],
   ['history', 'Lịch sử & sao lưu'],
@@ -40,7 +44,6 @@ const EXPORT_KINDS = [
   ['breaks', 'Xuất nghỉ giữa ca'],
 ]
 const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'history', 'breaks'])
-const PAYMENT_EXPORT_KINDS = new Set(['revenue', 'tip', 'customers', 'pending', 'customer_detail'])
 const EMPTY_EXPORT_FILTERS = { date_from: '', date_to: '', time_from: '', time_to: '' }
 const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone'])
 const REPORT_LABELS = {
@@ -51,8 +54,12 @@ const REPORT_LABELS = {
 function hasLiveTourExportAccess(kind, capabilities) {
   if (!capabilities.export) return false
   if (kind === 'board' || kind === 'custom') return true
-  if (kind === 'history' || kind === 'breaks') return capabilities.admin
-  return PAYMENT_EXPORT_KINDS.has(kind) && capabilities.payment
+  if (kind === 'history' || kind === 'breaks') return capabilities.history
+  if (kind === 'customers') return capabilities.customers
+  if (kind === 'pending') return capabilities.pending && capabilities.invoiceView
+  if (kind === 'revenue' || kind === 'tip') return capabilities.reports
+  if (kind === 'customer_detail') return capabilities.customers && capabilities.invoiceView && capabilities.paidInvoiceView && capabilities.pending && capabilities.reports
+  return false
 }
 
 function compactExportQuery(filters) {
@@ -96,7 +103,7 @@ function cacheSafeLiveTour(data) {
     ...safeData,
     records,
     customers: [], pending_payments: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], report_rows: [], reports: {},
-    audit: [], history: [], backups: [],
+    audit: [], history: [], backups: [], pending_changes: [], invoice_changes: [], pending_count: 0,
     ...(state ? { state } : {}),
   }
 }
@@ -464,6 +471,14 @@ const ADMIN_ACTIONS = new Set([
 ])
 
 function canRunAction(action, capabilities) {
+  if (['booking', 'multi_booking'].includes(action)) return capabilities.booking
+  if (action === 'pending_update') return capabilities.invoiceEdit
+  if (action === 'pending_delete') return capabilities.invoiceDelete
+  if (action === 'paid_invoice_update') return capabilities.paidInvoiceEdit
+  if (action === 'paid_invoice_delete') return capabilities.paidInvoiceDelete
+  if (['backup', 'restore'].includes(action)) return capabilities.backup
+  if (['customer_upsert', 'combo_purchase'].includes(action)) return capabilities.payment && capabilities.customers
+  if (action === 'combo_import') return capabilities.admin && capabilities.payment && capabilities.customers
   if (HIDDEN_RECOVERY_ACTIONS.has(action)) return capabilities.hideRecovery
   if (ADMIN_ACTIONS.has(action)) return capabilities.admin
   if (PAYMENT_ACTIONS.has(action)) return capabilities.payment
@@ -542,6 +557,7 @@ export default function LiveTourPage({ user }) {
   const [reorderSteps, setReorderSteps] = useState('1')
   const [modal, setModal] = useState(null)
   const [bookingContext, setBookingContext] = useState(null)
+  const [pendingContext, setPendingContext] = useState(null)
   const [receipt, setReceipt] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [expiredPreview, setExpiredPreview] = useState(null)
@@ -567,9 +583,21 @@ export default function LiveTourPage({ user }) {
   const canPayment = capability('payment', isAdmin || user?.permissions?.live_tour_payment === true)
   const canAdmin = capability('admin', isAdmin || user?.permissions?.live_tour_admin === true)
   const canExport = capability('export', isAdmin || user?.permissions?.live_tour_export === true)
+  const canBook = capability('booking', isAdmin || user?.permissions?.live_tour_booking === true)
+  const canInvoiceView = capability('invoice_view', isAdmin || user?.permissions?.live_tour_invoice_view === true)
+  const canPaidInvoiceView = capability('paid_invoice_view', isAdmin || user?.permissions?.live_tour_paid_invoice_view === true)
+  const canPaidInvoiceEdit = canPaidInvoiceView && capability('paid_invoice_edit', isAdmin || user?.permissions?.live_tour_paid_invoice_edit === true)
+  const canPaidInvoiceDelete = canPaidInvoiceView && capability('paid_invoice_delete', isAdmin || user?.permissions?.live_tour_paid_invoice_delete === true)
+  const canPending = capability('pending_view', isAdmin || user?.permissions?.live_tour_pending_view === true)
+  const canInvoiceEdit = canPending && canInvoiceView && capability('invoice_edit', isAdmin || user?.permissions?.live_tour_invoice_edit === true)
+  const canInvoiceDelete = canPending && canInvoiceView && capability('invoice_delete', isAdmin || user?.permissions?.live_tour_invoice_delete === true)
+  const canCustomers = capability('customers_view', isAdmin || user?.permissions?.live_tour_customers_view === true)
+  const canReports = capability('reports_view', isAdmin || user?.permissions?.live_tour_reports_view === true)
+  const canHistory = capability('history_view', isAdmin || user?.permissions?.live_tour_history_view === true)
+  const canBackup = capability('backup', isAdmin || user?.permissions?.live_tour_backup === true)
   const canRecoverHidden = capability('hide_recovery', canAdmin || canOperate)
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
-  const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, payment: canPayment, admin: canAdmin })
+  const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, pending: canPending, invoiceView: canInvoiceView, paidInvoiceView: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory })
   const load = useCallback(async (refresh = false, quiet = false) => {
     if (!quiet) setBusy(true)
     setError('')
@@ -583,6 +611,7 @@ export default function LiveTourPage({ user }) {
       })
     } catch (err) {
       setData((current) => cacheSafeLiveTour(current))
+      if (err.status === 403) { setModal(null); setBookingContext(null); setPendingContext(null); setReceipt(null); setCustomerHistoryModal(null) }
       setError(err.message || 'Không tải được Live Tour.')
     } finally {
       if (!quiet) setBusy(false)
@@ -590,10 +619,10 @@ export default function LiveTourPage({ user }) {
   }, [cacheKey, showHidden])
 
   useEffect(() => {
-    if (!modal && !bookingContext) void load(false, initiallyCached.current)
-    const interval = window.setInterval(() => { if (!actionBusy && !modal && !bookingContext) void load(false, true) }, 10000)
+    if (!modal && !bookingContext && !pendingContext) void load(false, initiallyCached.current)
+    const interval = window.setInterval(() => { if (!actionBusy && !modal && !bookingContext && !pendingContext) void load(false, true) }, 10000)
     return () => window.clearInterval(interval)
-  }, [actionBusy, load, modal, bookingContext])
+  }, [actionBusy, load, modal, bookingContext, pendingContext])
 
   useEffect(() => {
     const interval = window.setInterval(() => setClockMs(Date.now()), 1000)
@@ -606,16 +635,17 @@ export default function LiveTourPage({ user }) {
 
   useEffect(() => {
     const allowed = {
-      pending: canPayment,
-      customers: canPayment,
-      reports: canPayment || canExport,
-      history: canAdmin,
+      pending: canPending,
+      invoices: canPaidInvoiceView,
+      customers: canCustomers,
+      reports: canReports,
+      history: canHistory || canBackup,
       catalog: canAdmin,
     }
     if (allowed[activePanel]) return
-    const fallback = ['pending', 'reports', 'history', 'catalog'].find((panel) => allowed[panel]) || ''
+    const fallback = PANEL_TABS.map(([key]) => key).find((panel) => allowed[panel]) || ''
     setActivePanel(fallback)
-  }, [activePanel, canAdmin, canExport, canPayment])
+  }, [activePanel, canAdmin, canPending, canPaidInvoiceView, canCustomers, canReports, canHistory, canBackup])
 
   const executeAction = useCallback(async (action, payload = {}, ids = [...selectedIds], options = {}) => {
     if (actionBusy) return null
@@ -623,7 +653,7 @@ export default function LiveTourPage({ user }) {
       setError('Hãy tải Live Tour thành công trước khi thực hiện thao tác.')
       return null
     }
-    if (!canRunAction(action, { operate: canOperate, payment: canPayment, admin: canAdmin, hideRecovery: canRecoverHidden })) {
+    if (!canRunAction(action, { operate: canOperate, payment: canPayment, admin: canAdmin, hideRecovery: canRecoverHidden, booking: canBook, invoiceEdit: canInvoiceEdit, invoiceDelete: canInvoiceDelete, paidInvoiceEdit: canPaidInvoiceEdit, paidInvoiceDelete: canPaidInvoiceDelete, backup: canBackup, customers: canCustomers })) {
       setError('Tài khoản chưa được cấp quyền thực hiện thao tác này trên Live Tour.')
       return null
     }
@@ -639,7 +669,7 @@ export default function LiveTourPage({ user }) {
     const requestEntry = requestIdempotencyEntry(requestEntriesRef.current, cacheKey, action, actionPayload, options.idempotencyKey)
     try {
       const body = { action, payload: actionPayload, idempotency_key: requestEntry.key }
-      if (data.revision !== null && data.revision !== undefined) body.expected_revision = data.revision
+      if (data.revision !== null && data.revision !== undefined) body.expected_revision = options.expectedRevision ?? data.revision
       if (rowIds.length) body.row_ids = rowIds
       if (rowIds.length === 1) body.row_id = rowIds[0]
       const result = await veraApi.liveTourAction(body)
@@ -668,7 +698,7 @@ export default function LiveTourPage({ user }) {
     } finally {
       setActionBusy('')
     }
-  }, [actionBusy, cacheKey, canAdmin, canOperate, canPayment, canRecoverHidden, data.revision, load, selectedIds])
+  }, [actionBusy, cacheKey, canAdmin, canOperate, canPayment, canRecoverHidden, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
 
   const previewExpired = async () => {
     if (!canAdmin || actionBusy || data.revision == null) return
@@ -780,13 +810,13 @@ export default function LiveTourPage({ user }) {
       payload = {
         employee_id: stableEmployeeId(selectedQuickBookingRecord), room: form.room, service: form.service,
         appointment: form.appointment, request: form.request, auto_yc_ca1: Boolean(form.auto_yc_ca1),
-        ...(canPayment ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
+        ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
         note: form.note,
       }
     } else if (modal.kind === 'booking') {
       payload = {
         room: form.room, service: form.service, appointment: form.appointment, request: form.request,
-        ...(canPayment ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
+        ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
         note: form.note,
       }
     } else if (modal.kind === 'multi_booking') {
@@ -795,7 +825,7 @@ export default function LiveTourPage({ user }) {
           employee_id: row.employee_id, room: row.room, service: row.service,
           request: row.request,
           appointment: row.appointment,
-          ...(canPayment ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
+          ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
           note: form.note,
         })),
         auto_yc_ca1: Boolean(form.auto_yc_ca1),
@@ -816,7 +846,8 @@ export default function LiveTourPage({ user }) {
         return
       }
       payload = {
-        pending_id: form.pending_id || null, customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone,
+        pending_id: form.pending_id || null,
+        ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
         payment_method: paymentMethod, bill_no: form.bill_no,
         ticket_no: form.ticket_no, discount: Number(form.discount || 0),
         discount_mode: form.discount_mode, discount_percent: Number(form.discount_percent || 0),
@@ -1032,7 +1063,7 @@ export default function LiveTourPage({ user }) {
   const backups = asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)
   const filteredCustomers = customers.filter((customer) => customerMatches({ ...customer, name: itemLabel(customer) }, customerSearch))
   const bookingCustomerQuery = `${form.customer_name} ${form.phone}`.trim()
-  const bookingCustomerMatches = ['quick_booking', 'booking', 'multi_booking'].includes(modal?.kind) && canPayment && !form.customer_id && bookingCustomerQuery
+  const bookingCustomerMatches = ['quick_booking', 'booking', 'multi_booking'].includes(modal?.kind) && canCustomers && !form.customer_id && bookingCustomerQuery
     ? customers.filter((customer) => {
       if (!stableCustomerId(customer)) return false
       return customerMatches({ ...customer, name: itemLabel(customer) }, bookingCustomerQuery)
@@ -1120,7 +1151,7 @@ export default function LiveTourPage({ user }) {
   const selectedRecords = validRecords.filter((record, index) => selectedIds.has(recordId(record, index)))
   const allDisplayedSelected = displayedRecords.length > 0 && displayedRecords.every((record, index) => selectedIds.has(recordId(record, index)))
 
-  const pendingReminderCount = canPayment ? pendingPayments.length : 0
+  const pendingReminderCount = canPending ? Number(data.pending_count ?? pendingPayments.length) : 0
   const hasPendingReminder = pendingReminderCount > 0
   const announcePendingPayments = useCallback((count) => {
     if (count <= 0) return
@@ -1169,7 +1200,7 @@ export default function LiveTourPage({ user }) {
   }))
 
   const openPendingPanel = () => {
-    if (!canPayment) return
+    if (!canPending) return
     setActivePanel('pending')
     setPendingReminder(null)
     window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
@@ -1232,7 +1263,7 @@ export default function LiveTourPage({ user }) {
   }
 
   const openCustomerHistory = async (customer) => {
-    if (!canPayment) {
+    if (!canCustomers) {
       setError('Tài khoản chưa được cấp quyền xem lịch sử khách hàng.')
       return
     }
@@ -1255,7 +1286,7 @@ export default function LiveTourPage({ user }) {
 
   const exportCustomerHistory = async () => {
     const customerId = customerHistoryModal?.customerId
-    if (!customerId || !canPayment || !canExport || actionBusy) return
+    if (!customerId || !canExportKind('customer_detail') || actionBusy) return
     const query = compactExportQuery(exportFilters)
     if (query.date_from && query.date_to && query.date_from > query.date_to) {
       setError('Ngày bắt đầu của bộ lọc xuất dữ liệu không được sau ngày kết thúc.')
@@ -1283,7 +1314,7 @@ export default function LiveTourPage({ user }) {
   }
 
   const renderBookingCustomerPicker = (label = 'Khách hàng') => {
-    if (!canPayment) return null
+    if (!canCustomers) return null
     const linkedCustomer = customers.find((customer) => stableCustomerId(customer) === String(form.customer_id || ''))
     return <>
       <label className="live-tour-field"><span>{label}</span><input type="search" role="combobox" aria-controls="live-tour-booking-customers" aria-expanded={!form.customer_id && bookingCustomerMatches.length > 0} value={form.customer_name} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', customer_name: event.target.value }))} placeholder="Tìm tên hoặc số điện thoại" autoComplete="off"/></label>
@@ -1347,6 +1378,7 @@ export default function LiveTourPage({ user }) {
           {canAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><LayoutGrid size={16}/> {showAdminTools ? 'Ẩn màu dòng' : 'Hiện màu dòng'}</button>}
           {canRecoverHidden && <button type="button" className="secondary-button" onClick={() => setShowHidden((current) => !current)}>{showHidden ? 'Ẩn lại nhân viên đã ẩn' : `Hiện nhân viên đã ẩn (${data.state?.hidden_count || 0})`}</button>}
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
+          {canExport && <><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board')}><Download size={16}/> Xuất bảng tua</button><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board', true)}><FileImage size={16}/> Xuất PNG</button></>}
           <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới Live Tour</button>
         </div>
       </div>
@@ -1385,7 +1417,7 @@ export default function LiveTourPage({ user }) {
               return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
                 <button type="button" className="tour-room-booking-button"
                   onClick={() => setSelectedRoomKey(key)}
-                  onDoubleClick={() => { if (canOperate && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }}
+                  onDoubleClick={() => { if (canBook && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }}
                   title="Bấm một lần để xem nhân viên; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div className="tour-room-card-head"><strong>{areaLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
@@ -1418,7 +1450,7 @@ export default function LiveTourPage({ user }) {
     <section className="panel tour-table-panel tour-records-panel">
       <div className="responsive-data-table tour-table" ref={recordsTableRef} tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
-        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment} onClick={() => { setError(''); if (isQuickCheckoutEligible(item, columns) && canPayment) openModal('checkout', { rowIds: [id] }); else setBookingContext({ employeeId: id }) }}>{String(item[column] ?? '')}</button> : String(item[column] ?? '')}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
+        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { setError(''); if (isQuickCheckoutEligible(item, columns) && canPayment) openModal('checkout', { rowIds: [id] }); else setBookingContext({ employeeId: id }) }}>{String(item[column] ?? '')}</button> : String(item[column] ?? '')}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
@@ -1426,14 +1458,14 @@ export default function LiveTourPage({ user }) {
     {asArray(data.retained_assignments).length > 0 && <section className="tour-roster-retained"><strong>Phiên còn mở ngoài danh sách Leader/Nhân viên</strong><p>Hoàn tất các phiên cũ bên dưới; các tài khoản này không nhận booking mới.</p>{data.retained_assignments.map((worker) => <div key={worker.id}><span>{worker.name} · {worker.service || 'Nghỉ giữa ca'} · {worker.room}</span>{worker.break_started_at ? <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('end_break', { employee_id: worker.id }, [])}>Kết thúc nghỉ</button> : normalizedColumn(worker.status) === 'CHO THANH TOAN' ? <button type="button" className="secondary-button" disabled={!canPayment || Boolean(actionBusy)} onClick={async () => { const result = await executeAction('move_pending', { employee_id: worker.id }, []); if (result) openModal('checkout', { item: result.result.pending, rowIds: [] }) }}>Thanh toán</button> : <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => { setError(''); setBookingContext({ employeeId: worker.id }) }}>Xử lý phiên</button>}</div>)}</section>}
     <section className="panel live-tour-operator">
       <div className="live-tour-operator-head">
-        <div className="live-tour-operator-title"><Menu size={18}/><strong>Điều khiển</strong><button type="button" className={`live-tour-pending-badge ${pendingPayments.length ? 'has-items' : ''}`} onClick={openPendingPanel} disabled={!canPayment} aria-controls="live-tour-pending-panel"><BellRing size={13} aria-hidden="true"/> {pendingPayments.length} chờ thanh toán</button></div>
+        <div className="live-tour-operator-title"><Menu size={18}/><strong>Điều khiển</strong><button type="button" className={`live-tour-pending-badge ${pendingPayments.length ? 'has-items' : ''}`} onClick={openPendingPanel} disabled={!canPending} aria-controls="live-tour-pending-panel"><BellRing size={13} aria-hidden="true"/> {pendingPayments.length} chờ thanh toán</button></div>
         <button type="button" className="secondary-button live-tour-drawer-toggle" onClick={() => setDrawerOpen((current) => !current)}>{drawerOpen ? 'Đóng điều khiển' : 'Mở điều khiển'}</button>
       </div>
       <div className={`live-tour-operator-drawer ${drawerOpen ? 'open' : ''}`}>
         <div className="live-tour-action-group"><strong>Đặt lịch & tua</strong>
-          <button type="button" className="secondary-button" onClick={() => { setError(''); setBookingContext({}) }} disabled={!canOperate}>Đặt lịch nhanh</button>
-          <button type="button" className="secondary-button" onClick={() => { setError(''); setBookingContext({ employeeId: [...selectedIds][0] }) }} disabled={!canOperate || selectedIds.size !== 1}>Đặt lịch</button>
-          <button type="button" className="secondary-button" onClick={() => openModal('multi_booking')} disabled={!canOperate || !selectedIds.size}>Đặt lịch hàng loạt</button>
+          <button type="button" className="secondary-button" onClick={() => { setError(''); setBookingContext({}) }} disabled={!canBook}>Đặt lịch nhanh</button>
+          <button type="button" className="secondary-button" onClick={() => { setError(''); setBookingContext({ employeeId: [...selectedIds][0] }) }} disabled={!canBook || selectedIds.size !== 1}>Đặt lịch</button>
+          <button type="button" className="secondary-button" onClick={() => openModal('multi_booking')} disabled={!canBook || !selectedIds.size}>Đặt lịch hàng loạt</button>
           <button type="button" className="primary-button" onClick={() => runSelected('start')} disabled={!canOperate || !selectedIds.size}><Play size={13}/> Thực hiện đã chọn</button>
           <button type="button" className="secondary-button" onClick={() => runSelected('add_minutes', { minutes: 30 })} disabled={!canOperate || !selectedIds.size}>+30 phút</button>
           <button type="button" className="secondary-button" onClick={() => runSelected('finish_to_pending')} disabled={!canOperate || !selectedIds.size}><CheckCircle2 size={13}/> Hoàn thành</button>
@@ -1473,11 +1505,11 @@ export default function LiveTourPage({ user }) {
     <section className="panel live-tour-operator live-tour-workspace" ref={workspaceRef}>
       <div className="live-tour-panel-tabs" role="tablist" aria-label="Không gian vận hành Live Tour">
         {PANEL_TABS.map(([key, label]) => {
-          const disabled = (['pending', 'customers'].includes(key) && !canPayment) || (key === 'reports' && !canPayment && !canExport) || (['history', 'catalog'].includes(key) && !canAdmin)
+          const disabled = !({ pending: canPending, invoices: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory || canBackup, catalog: canAdmin })[key]
           return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => setActivePanel(key)} key={key}>{label}{key === 'pending' && pendingPayments.length ? ` (${pendingPayments.length})` : ''}</button>
         })}
       </div>
-      {canExport && (canPayment || canAdmin) && ['pending', 'customers', 'reports', 'history'].includes(activePanel) && <div className="live-tour-export-filters" aria-label="Bộ lọc thời gian xuất dữ liệu">
+      {canExport && ['pending', 'customers', 'reports', 'history'].includes(activePanel) && <div className="live-tour-export-filters" aria-label="Bộ lọc thời gian xuất dữ liệu">
         <strong>Bộ lọc xuất dữ liệu</strong>
         <label><span>Từ ngày</span><input type="date" max={exportFilters.date_to || undefined} value={exportFilters.date_from} onChange={(event) => setExportFilters((current) => ({ ...current, date_from: event.target.value }))}/></label>
         <label><span>Đến ngày</span><input type="date" min={exportFilters.date_from || undefined} value={exportFilters.date_to} onChange={(event) => setExportFilters((current) => ({ ...current, date_to: event.target.value }))}/></label>
@@ -1488,7 +1520,7 @@ export default function LiveTourPage({ user }) {
       </div>}
       {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
 
-      {activePanel === 'pending' && <div className="live-tour-panel-body" id="live-tour-pending-panel" role="tabpanel" aria-label="Chờ thanh toán">
+      {activePanel === 'pending' && canPending && <div className="live-tour-panel-body" id="live-tour-pending-panel" role="tabpanel" aria-label="Chờ thanh toán">
         <div className="live-tour-panel-toolbar"><h2>CHỜ THANH TOÁN</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={!canExportKind('pending')} onClick={() => exportData('pending')}><Download size={13}/> Xuất chờ thanh toán</button></div></div>
         {pendingPayments.length ? <div className="live-tour-card-grid">{pendingPayments.map((item, index) => {
           const id = String(item?._id ?? item?.id ?? '')
@@ -1500,12 +1532,29 @@ export default function LiveTourPage({ user }) {
             <span>{serviceSummary} · {roomSummary}</span>
             <small>{item?.customer_name || item?.customer || 'Khách lẻ'} {item?.customer_phone || item?.phone ? `· ${item?.customer_phone || item?.phone}` : ''}</small>
             <small>{item?.created_at || item?.waiting_since || ''}</small>
-            <div className="live-tour-card-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('checkout', { item, rowIds: [], defaults: { pending_id: id } })}>Thanh toán</button><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openModal('quick_checkout', { item, rowIds: [], defaults: { pending_id: id } })}>Thanh toán nhanh</button></div>
+            <div className="live-tour-card-actions"><button type="button" className="primary-button" disabled={!canPayment || Boolean(actionBusy)} onClick={() => openModal('checkout', { item, rowIds: [], defaults: { pending_id: id } })}>Thanh toán</button><button type="button" className="secondary-button" disabled={!canPayment || Boolean(actionBusy)} onClick={() => openModal('quick_checkout', { item, rowIds: [], defaults: { pending_id: id } })}>Thanh toán nhanh</button>
+              {canInvoiceView && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => { setError(''); setPendingContext({ item, mode: 'view', revision: data.revision }) }}>Xem hóa đơn</button>}
+              {canInvoiceEdit && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => { setError(''); setPendingContext({ item, mode: 'edit', revision: data.revision }) }}>Sửa hóa đơn</button>}
+              {canInvoiceDelete && <button type="button" className="secondary-button danger-button" disabled={Boolean(actionBusy)} onClick={() => { setError(''); setPendingContext({ item, mode: 'delete', revision: data.revision }) }}><Trash2 size={14}/> Xóa hóa đơn</button>}
+            </div>
           </article>
-        })}</div> : <div className="live-tour-empty">Không có hóa đơn chờ thanh toán.</div>}
+        })}</div> : <div className="live-tour-empty">{canInvoiceView ? 'Không có hóa đơn chờ thanh toán.' : `Có ${data.pending_count || 0} phiếu. Cần quyền Xem hóa đơn chờ thanh toán để mở chi tiết.`}</div>}
       </div>}
 
-      {activePanel === 'customers' && <div className="live-tour-panel-body">
+      {activePanel === 'invoices' && canPaidInvoiceView && <div className="live-tour-panel-body">
+        <div className="live-tour-panel-toolbar"><h2>HÓA ĐƠN ĐÃ THANH TOÁN</h2></div>
+        <p>Hiển thị tối đa 500 hóa đơn gần nhất còn hiệu lực. Hủy hóa đơn được lưu đối soát, không xóa bản gốc và không tự hoàn tiền qua ngân hàng/thẻ.</p>
+        <div className="live-tour-card-grid">{asArray(data.state?.invoices).slice().reverse().map((invoice) => <article className="live-tour-data-card" key={invoice.id}>
+          <strong>{invoice.bill_no} · {invoice.customer_name || 'Khách lẻ'}</strong><span>{invoice.business_date} · {invoice.payment_method}</span><strong>{formatMoney(invoice.total)}</strong>
+          <div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => setReceipt({ invoice, autoPrint: false })}><Printer size={14}/> Xem / in hóa đơn</button>
+            {canPaidInvoiceEdit && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => { setError(''); setPendingContext({ item: invoice, paid: true, mode: 'edit', revision: data.revision }) }}>Sửa hóa đơn</button>}
+            {canPaidInvoiceDelete && <button type="button" className="secondary-button danger-button" disabled={Boolean(actionBusy)} onClick={() => { setError(''); setPendingContext({ item: invoice, paid: true, mode: 'delete', revision: data.revision }) }}><Trash2 size={14}/> Xóa / hủy hóa đơn</button>}
+          </div>
+        </article>)}</div>
+        {!asArray(data.state?.invoices).length && <p>Chưa có hóa đơn đã thanh toán còn hiệu lực.</p>}
+      </div>}
+
+      {activePanel === 'customers' && canCustomers && <div className="live-tour-panel-body">
         <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG & COMBO</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { newCustomer: true, rowIds: [] })}><Plus size={13}/> Mua combo cho khách mới</button><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => openModal('combo_import')}>Nhập combo cũ</button><button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
         <label className="live-tour-customer-search"><Search size={14}/><input type="search" aria-label="Tìm tên hoặc số điện thoại khách hàng" autoComplete="off" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
         <div className="live-tour-card-grid" style={{ marginTop: 8 }}>
@@ -1514,13 +1563,13 @@ export default function LiveTourPage({ user }) {
             <span>{customer?.phone || 'Chưa có số điện thoại'}</span>
             <small>Số dư combo: {customer?.combo_balance ?? customer?.remaining_tickets ?? customer?.balance ?? 0}</small>
             {customerComboPurchases(customer).map((combo, comboIndex) => <small key={itemId(combo, comboIndex)}>{itemLabel(combo)} · còn {combo?.remaining ?? combo?.balance ?? 0}</small>)}
-            <div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openCustomerHistory(customer)}><History size={12}/> Lịch sử</button><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { item: customer, rowIds: [], defaults: { customer_id: stableCustomerId(customer), customer_name: itemLabel(customer), phone: customer?.phone || customer?.customer_phone || '' } })}><Plus size={12}/> Mua combo</button></div>
+            <div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canCustomers} onClick={() => openCustomerHistory(customer)}><History size={12}/> Lịch sử</button><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { item: customer, rowIds: [], defaults: { customer_id: stableCustomerId(customer), customer_name: itemLabel(customer), phone: customer?.phone || customer?.customer_phone || '' } })}><Plus size={12}/> Mua combo</button></div>
           </article>)}
           {!filteredCustomers.length && <div className="live-tour-empty">Không tìm thấy khách hàng phù hợp.</div>}
         </div>
       </div>}
 
-      {activePanel === 'reports' && <div className="live-tour-panel-body">
+      {activePanel === 'reports' && canReports && <div className="live-tour-panel-body">
         <details className="live-tour-catalog-section">
           <summary>Xuất bảng tùy chỉnh</summary>
           <label>Phạm vi nhân viên<select value={customScope} onChange={(event) => setCustomScope(event.target.value)}><option value="displayed">Đang hiển thị</option><option value="selected">Đã chọn</option><option value="all">Tất cả</option></select></label>
@@ -1534,24 +1583,25 @@ export default function LiveTourPage({ user }) {
           {Object.entries(data.reports && !Array.isArray(data.reports) ? data.reports : {}).filter(([, value]) => ['string', 'number'].includes(typeof value)).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{REPORT_LABELS[key] || key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}
           {!Object.keys(data.reports && !Array.isArray(data.reports) ? data.reports : {}).length && <div className="live-tour-empty">Chưa có số liệu báo cáo.</div>}
         </div>
-        {reports.length > 0 && <div className="live-tour-card-grid">{reports.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.employee_name || itemLabel(item, `Báo cáo ${index + 1}`)}</strong><span>{item?.service || 'Dịch vụ'} · {formatMoney(item?.total ?? item?.revenue ?? item?.amount)}</span><small>TIP: {formatMoney(item?.tip ?? 0)} · {item?.created_at || ''}</small>{canPayment && asArray(data.state?.invoices).some((invoice) => invoice.id === item.invoice_id) && <button type="button" className="secondary-button" onClick={() => setReceipt({ invoice: data.state.invoices.find((invoice) => invoice.id === item.invoice_id), autoPrint: false })}><Printer size={14}/> Xem / in hóa đơn</button>}</article>)}</div>}
+        {reports.length > 0 && <div className="live-tour-card-grid">{reports.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.employee_name || itemLabel(item, `Báo cáo ${index + 1}`)}</strong><span>{item?.service || 'Dịch vụ'} · {formatMoney(item?.total ?? item?.revenue ?? item?.amount)}</span><small>TIP: {formatMoney(item?.tip ?? 0)} · {item?.created_at || ''}</small>{canPaidInvoiceView && asArray(data.state?.invoices).some((invoice) => invoice.id === item.invoice_id) && <button type="button" className="secondary-button" onClick={() => setReceipt({ invoice: data.state.invoices.find((invoice) => invoice.id === item.invoice_id), autoPrint: false })}><Printer size={14}/> Xem / in hóa đơn</button>}</article>)}</div>}
       </div>}
 
-      {activePanel === 'history' && <div className="live-tour-panel-body">
-        <div className="live-tour-catalog-section">
+      {activePanel === 'history' && (canHistory || canBackup) && <div className="live-tour-panel-body">
+        {canHistory && <LiveTourInvoiceChanges changes={[...asArray(data.pending_changes), ...asArray(data.invoice_changes)]}/>}
+        {canHistory && <div className="live-tour-catalog-section">
           <div className="live-tour-panel-toolbar"><h3>LỊCH SỬ NGHỈ GIỮA CA</h3><button type="button" className="secondary-button" disabled={!canExportKind('breaks')} onClick={() => exportData('breaks')}><Download size={13}/> Xuất nghỉ giữa ca</button></div>
           <div className="live-tour-history-list">{asArray(data.break_events).slice().reverse().map((event, index) => <article key={event.id || index}>
             <strong>{event.employee_name} · {event.event_type === 'start' ? 'Bắt đầu nghỉ' : 'Vào lại'}</strong>
             <span>{event.at} · {event.outcome || 'Định mức 90 phút'}{event.minutes != null ? ` · ${event.minutes} phút` : ''}</span>
             <small>{event.actor}</small>
           </article>)}{!asArray(data.break_events).length && <div className="live-tour-empty">Chưa có lịch sử nghỉ giữa ca.</div>}</div>
-        </div>
-        <div className="live-tour-panel-toolbar"><h2>LỊCH SỬ & SAO LƯU</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => executeAction('backup', { name: `Backup ${new Date().toLocaleString('vi-VN')}` }, [])}><History size={13}/> Tạo bản sao lưu</button><button type="button" className="secondary-button" disabled={!canExportKind('history')} onClick={() => exportData('history')}><Download size={13}/> Xuất lịch sử</button></div></div>
-        <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{item?.created_at || item?.timestamp || ''}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => { if (window.confirm('Khôi phục bản sao này? Dữ liệu Live Tour hiện tại sẽ được thay thế.')) void executeAction('restore', { backup_id: item?._id ?? item?.id }, []) }}>Khôi phục</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có bản sao lưu.</div>}</div>
-        <div className="live-tour-catalog-section"><h3>Nhật ký thao tác</h3>{audit.length ? <div className="live-tour-card-grid">{audit.slice(0, 100).map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.action_label || item?.action || itemLabel(item, `Sự kiện ${index + 1}`)}</strong><span>{item?.employee_name || item?.actor || item?.created_by || ''}</span><small>{item?.at || item?.created_at || item?.timestamp || ''}</small><small>{item?.note || item?.message || (item?.detail ? JSON.stringify(item.detail) : '')}</small></article>)}</div> : <div className="live-tour-empty">Chưa có lịch sử thao tác.</div>}</div>
+        </div>}
+        <div className="live-tour-panel-toolbar"><h2>LỊCH SỬ & SAO LƯU</h2><div className="live-tour-panel-toolbar-actions">{canBackup && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => executeAction('backup', { name: `Backup ${new Date().toLocaleString('vi-VN')}` }, [])}><History size={13}/> Tạo bản sao lưu</button>}{canHistory && <button type="button" className="secondary-button" disabled={!canExportKind('history')} onClick={() => exportData('history')}><Download size={13}/> Xuất lịch sử</button>}</div></div>
+        {canBackup && <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{item?.created_at || item?.timestamp || ''}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => { if (window.confirm('Khôi phục bản sao này? Chỉ phục hồi cấu hình/bảng tua khi không còn phiên mở; sổ hóa đơn, vé và lịch sử không bị quay lùi.')) void executeAction('restore', { backup_id: item?._id ?? item?.id }, []) }}>Khôi phục</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có bản sao lưu.</div>}</div>}
+        {canHistory && <div className="live-tour-catalog-section"><h3>Nhật ký thao tác</h3>{audit.length ? <div className="live-tour-card-grid">{audit.slice(0, 100).map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.action_label || item?.action || itemLabel(item, `Sự kiện ${index + 1}`)}</strong><span>{item?.employee_name || item?.actor || item?.created_by || ''}</span><small>{item?.at || item?.created_at || item?.timestamp || ''}</small><small>{item?.note || item?.message || (item?.detail ? JSON.stringify(item.detail) : '')}</small></article>)}</div> : <div className="live-tour-empty">Chưa có lịch sử thao tác.</div>}</div>}
       </div>}
 
-      {activePanel === 'catalog' && <div className="live-tour-panel-body">
+      {activePanel === 'catalog' && canAdmin && <div className="live-tour-panel-body">
         <div className="live-tour-panel-toolbar"><h2>DANH MỤC LIVE TOUR</h2></div>
         {canAdmin && <div className="live-tour-catalog-section">
           <h3>Chuyển phiên quá hạn sang chờ thanh toán</h3>
@@ -1576,14 +1626,15 @@ export default function LiveTourPage({ user }) {
       </div>}
     </section>
 
-    {customerHistoryModal && <LiveTourModal title={`Lịch sử khách hàng · ${itemLabel(customerHistoryData.customer || customerHistoryModal.customer, 'Khách hàng')}`} onClose={() => setCustomerHistoryModal(null)}>
+    {customerHistoryModal && canCustomers && <LiveTourModal title={`Lịch sử khách hàng · ${itemLabel(customerHistoryData.customer || customerHistoryModal.customer, 'Khách hàng')}`} onClose={() => setCustomerHistoryModal(null)}>
       {customerHistoryBusy && <div className="live-tour-empty">Đang tải lịch sử chính xác theo mã khách hàng…</div>}
       {customerHistoryModal.error && <div className="error-box">{customerHistoryModal.error}</div>}
       {!customerHistoryBusy && customerHistoryModal.data && <div className="live-tour-history-sections">
+        {(!canPaidInvoiceView || !canInvoiceView || !canPending || !canReports) && <p>Chỉ hiển thị các phần được cấp quyền. Nội dung hóa đơn hoặc báo cáo chưa được cấp quyền sẽ không được tải.</p>}
         <div className="live-tour-history-summary">{Object.entries(customerHistoryData.summary || {}).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}</div>
         {customerHistorySections.map(([label, items]) => <section className="live-tour-catalog-section" key={label}><h3>{label} ({items.length})</h3>{items.length ? <div className="live-tour-history-list">{items.slice(0, 100).map((item, index) => <article key={itemId(item, index)}><strong>{item?.service || item?.combo_name || item?.bill_no || item?.employee_name || `${label} ${index + 1}`}</strong><span>{item?.payment_method || item?.status || item?.room || ''}</span><small>{item?.business_date || item?.effective_at || item?.created_at || item?.at || ''}</small>{Number.isFinite(Number(item?.total ?? item?.amount)) && <small>{formatMoney(item?.total ?? item?.amount)}</small>}</article>)}</div> : <div className="live-tour-empty">Chưa có dữ liệu.</div>}</section>)}
       </div>}
-      <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={() => setCustomerHistoryModal(null)}>Đóng</button><button type="button" className="primary-button" disabled={!canPayment || !canExport || customerHistoryBusy || Boolean(actionBusy)} onClick={exportCustomerHistory}><Download size={13}/> Xuất chi tiết khách hàng</button></div>
+      <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={() => setCustomerHistoryModal(null)}>Đóng</button><button type="button" className="primary-button" disabled={!canExportKind('customer_detail') || customerHistoryBusy || Boolean(actionBusy)} onClick={exportCustomerHistory}><Download size={13}/> Xuất chi tiết khách hàng</button></div>
     </LiveTourModal>}
 
     {modal && <LiveTourModal title={{
@@ -1660,8 +1711,8 @@ export default function LiveTourPage({ user }) {
               </div>
               {selectedQuickCheckoutRecord && <div className="live-tour-employee-picked" aria-live="polite">Đã chọn: {cellValue(selectedQuickCheckoutRecord, employeeColumn)} · {cellValue(selectedQuickCheckoutRecord, serviceColumn) || 'Chưa có dịch vụ'}</div>}
             </>}
-            <label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', customer_name: event.target.value, combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))} placeholder="Tìm hoặc nhập khách mới"/></label>
-            <label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} readOnly={Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', phone: event.target.value, combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))} placeholder="Tìm theo số điện thoại"/></label>
+            <label className="live-tour-field"><span>Khách hàng</span><input value={form.customer_name} readOnly={!canCustomers || Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', customer_name: event.target.value, combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))} placeholder="Tìm hoặc nhập khách mới"/></label>
+            <label className="live-tour-field"><span>Điện thoại</span><input type="tel" value={form.phone} readOnly={!canCustomers || Boolean(form.customer_id)} onChange={(event) => setForm((current) => ({ ...current, customer_id: '', phone: event.target.value, combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))} placeholder="Tìm theo số điện thoại"/></label>
             {form.customer_id && <div className="live-tour-customer-selected wide"><span>Đã liên kết đúng mã khách hàng: <strong>{form.customer_id}</strong></span><button type="button" className="secondary-button" onClick={() => setForm((current) => ({ ...current, customer_id: '', combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))}>Đổi khách hàng</button></div>}
             {!form.customer_id && checkoutCustomerMatches.length > 0 && <div className="live-tour-customer-picker wide" aria-label="Kết quả tìm khách hàng">{checkoutCustomerMatches.map((customer, index) => {
               const id = stableCustomerId(customer)
@@ -1743,8 +1794,10 @@ export default function LiveTourPage({ user }) {
       <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu trạng thái Live Tour; Break được ưu tiên hiển thị cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
     </>}
 
-    {bookingContext && <LiveTourBookingDialog data={data} context={bookingContext} canOperate={canOperate} canPayment={canPayment} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
-    {receipt && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
+    {bookingContext && <LiveTourBookingDialog data={data} context={bookingContext} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
+    {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
+    {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
+    {receipt && canPaidInvoiceView && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
     <div className="setup-note tour-countdown-note">Live Tour lưu trực tiếp trên máy chủ, kiểm tra phiên bản trước mỗi thao tác và tự tải lại khi có người dùng khác cập nhật.</div>
   </div>
 }

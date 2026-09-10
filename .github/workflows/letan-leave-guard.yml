@@ -48,14 +48,14 @@ jobs:
         run: |
           python - <<'PY'
           import ast
+          from vera_letan_leave_policy import DEFAULT_GROUPS
           source = open('vera_web_v2_letan_leave_guard.py', encoding='utf-8').read()
           tree = ast.parse(source)
-          groups = None
-          for node in tree.body:
-              if isinstance(node, ast.AnnAssign) and getattr(node.target, 'id', '') == 'LETAN_REASON_GROUPS':
-                  groups = ast.literal_eval(node.value)
-                  break
-          assert groups is not None
+          assignment = next(node for node in tree.body if isinstance(node, ast.Assign)
+                            and any(getattr(target, 'id', '') == 'LETAN_REASON_GROUPS' for target in node.targets))
+          namespace = {'DEFAULT_GROUPS': DEFAULT_GROUPS}
+          exec(compile(ast.Module(body=[assignment], type_ignores=[]), '<guard-groups>', 'exec'), namespace)
+          groups = namespace['LETAN_REASON_GROUPS']
           expected = [
               ['Nghỉ CÓ phép', 'Đi trễ CÓ phép', 'Về sớm CÓ phép'],
               ['Nghỉ KHÔNG phép', 'Đi trễ KHÔNG phép', 'Về sớm KHÔNG phép'],
@@ -95,5 +95,6 @@ jobs:
           grep -q 'if (changedRecords.length === 0) return' web-v2/src/pages/LeaveRegistrationPage.jsx
           grep -q 'if not old_group:' vera_web_v2_letan_leave_guard.py
           grep -q 'groups_1_to_5_only' vera_web_v2_letan_leave_guard.py
-          grep -q '<LetanLeavePolicyRules />' web-v2/src/App.jsx
+          grep -q '<LetanLeavePolicyRules' web-v2/src/pages/RulesPage.jsx
+          grep -q 'policy={letanLeavePolicy}' web-v2/src/pages/RulesPage.jsx
           grep -q '<LeaveListTypeColumn user={shellUser} />' web-v2/src/App.jsx

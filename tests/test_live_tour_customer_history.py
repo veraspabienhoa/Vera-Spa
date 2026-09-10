@@ -113,12 +113,12 @@ class Engine:
         yield Connection()
 
 
-def test_customer_history_route_requires_payment_before_read(monkeypatch):
+def test_customer_history_route_requires_customers_permission_before_read(monkeypatch):
     app = FastAPI()
     reads = []
 
     def require(_conn, _ident, feature):
-        assert feature == "live_tour_payment"
+        assert feature == "live_tour_customers_view"
         raise HTTPException(403, "Không có quyền")
 
     monkeypatch.setattr(live, "_read_state", lambda *_args, **_kwargs: reads.append(True))
@@ -137,14 +137,14 @@ def test_customer_history_route_requires_payment_before_read(monkeypatch):
     assert reads == []
 
 
-def test_customer_detail_export_requires_export_and_payment(monkeypatch):
+def test_customer_detail_export_requires_export_and_customer_access(monkeypatch):
     app = FastAPI()
     required = []
     state = history_state()
 
     def require(_conn, _ident, feature):
         required.append(feature)
-        if feature == "live_tour_payment":
+        if feature == "live_tour_customers_view":
             raise HTTPException(403, "Không có quyền")
 
     monkeypatch.setattr(live, "_read_state", lambda *_args, **_kwargs: (state, 1))
@@ -164,4 +164,4 @@ def test_customer_detail_export_requires_export_and_payment(monkeypatch):
             date_from="", date_to="", time_from="", time_to="", ident=Identity(),
         )
     assert error.value.status_code == 403
-    assert required == ["live_tour_export", "live_tour_payment"]
+    assert required == ["live_tour_export", "live_tour_customers_view"]

@@ -10,6 +10,7 @@ import gspread
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from vera_web_v2_live_tour_permissions import LEGACY_FEATURE_INHERITANCE
 
 
 CREDENTIAL_SHEET_ID = os.getenv(
@@ -27,8 +28,20 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
     "Live Tour": {
         "live_tour_view": "Xem Live Tour",
         "live_tour_operate": "Xếp tua và vận hành",
-        "live_tour_payment": "Thanh toán, Khách hàng và quản lý combo",
-        "live_tour_admin": "Cài đặt dịch vụ, khu vực, quản trị nhân viên và sao lưu",
+        "live_tour_booking": "Đặt booking (cần quyền Xem Live Tour)",
+        "live_tour_payment": "Thanh toán, cập nhật khách hàng và bán combo",
+        "live_tour_invoice_view": "Xem hóa đơn chờ thanh toán",
+        "live_tour_paid_invoice_view": "Xem / in hóa đơn đã thanh toán",
+        "live_tour_paid_invoice_edit": "Sửa hóa đơn đã thanh toán (cần quyền Xem tương ứng)",
+        "live_tour_paid_invoice_delete": "Xóa / hủy hóa đơn đã thanh toán (cần quyền Xem tương ứng)",
+        "live_tour_invoice_edit": "Sửa hóa đơn chờ (cần Xem hóa đơn + Chờ thanh toán)",
+        "live_tour_invoice_delete": "Xóa hóa đơn chờ (cần Xem hóa đơn + Chờ thanh toán)",
+        "live_tour_pending_view": "Chờ thanh toán (chi tiết cần Xem hóa đơn)",
+        "live_tour_customers_view": "Xem Khách hàng & combo",
+        "live_tour_reports_view": "Xem báo cáo",
+        "live_tour_history_view": "Xem lịch sử thao tác",
+        "live_tour_backup": "Tạo / khôi phục sao lưu",
+        "live_tour_admin": "Cài đặt dịch vụ, khu vực, quản trị nhân viên",
         "live_tour_export": "Xuất Excel / PNG",
     },
     "Lịch nghỉ": {
@@ -172,6 +185,7 @@ def install_permission_routes(
             "role_overrides": {role: _scope_rows(payload, "role", role) for role in ROLES},
             "account_overrides": {item["username"]: _scope_rows(payload, "account", item["username"]) for item in accounts},
             "defaults": {role: sorted(DEFAULT_ROLE_FEATURES.get(role, set())) for role in ROLES},
+            "legacy_inheritance": LEGACY_FEATURE_INHERITANCE,
             "revision": int(row.get("revision") or 0) if row else 0,
         }
 

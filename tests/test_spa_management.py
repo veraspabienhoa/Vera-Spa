@@ -187,7 +187,7 @@ def test_new_menus_persist_on_server_with_revision_and_idempotency():
 
 
 @pytest.mark.parametrize("permission,path,operation,payload", [
-    ("live_tour_payment", "/v2/live-tour/customers", "customer_upsert", {"customer_name": "An"}),
+    ("live_tour_customers_view", "/v2/live-tour/customers", "customer_upsert", {"customer_name": "An"}),
     ("live_tour_admin", "/v2/live-tour/settings", "service_area_upsert", {"name": "Bàn 1", "kind": "table"}),
 ])
 def test_menu_permissions_apply_to_reads_and_writes(permission, path, operation, payload):
@@ -211,4 +211,7 @@ def test_menu_permissions_apply_to_reads_and_writes(permission, path, operation,
     assert "invoices" not in response.json()
     if permission == "live_tour_admin":
         assert "customers" not in response.json()
+    else:
+        assert client.post("/v2/live-tour/action", json=body).status_code == 403
+        grants.add("live_tour_payment")
     assert client.post("/v2/live-tour/action", json=body).status_code == 200
