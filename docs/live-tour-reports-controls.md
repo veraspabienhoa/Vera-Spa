@@ -32,6 +32,7 @@ Quyền tạo khách hàng vẫn đi cùng thanh toán. Trang Báo cáo có endp
 ## Kiểm tra và triển khai
 
 - Xác nhận khi tiếp tục: toàn bộ pytest **682 đạt**; ESLint **0 lỗi, 3 cảnh báo có sẵn**; Vite production build thành công. Kiểm tra mới bao phủ báo cáo Excel có tiền và phân quyền thông tin khách, giờ phiếu chờ đã sửa, danh sách khách sau xóa và phục hồi nhân viên từ danh sách hệ thống.
+- GitHub kích hoạt thêm Payroll 3.8 CI khi App.jsx đổi: hai kiểm tra cũ còn tham chiếu hàm đã thay bằng đối trừ nợ qua save hook và nhãn/nơi đặt nút sửa/xóa đã đổi từ trước trên main. Cập nhật hai kiểm tra theo luồng hiện tại, giữ kiểm tra trạng thái nợ, hook lưu, hành động sửa/xóa và không tạo nút lưu trùng; không đổi logic lương, triggers hoặc bước kiểm tra bắt buộc.
 - Kiểm thử API: bảo toàn giờ booking sau khi nhân viên nhận lượt mới; sửa ngày cần quyền riêng và đồng bộ sổ; từ chối dữ liệu sai không ghi dở dang; phân quyền khách/combo; vé thành phần và giữ chỗ; báo cáo và export; ảnh toàn bảng; các mốc tuần/tháng theo Việt Nam.
 - Build React và ESLint. Có fixture chỉ đọc cho `/preview?page=reports` và `/preview?page=customers`, không gọi API sản xuất. Trình duyệt trong phiên làm việc chặn localhost, nên chưa hoàn tất kiểm tra trực quan qua trình duyệt.
 - Sau merge, chạy **Deploy VPS Production** và **Deploy VERA SPA Web V2** trên cùng commit `main`. Chạy API trước rồi giao diện. Không cần thay schema PostgreSQL; dữ liệu JSON có thêm trường thời điểm, dấu xóa và lịch sử.
