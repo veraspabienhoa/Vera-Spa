@@ -124,7 +124,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
 
         "Đánh dấu VIP",
         "Đổi dịch vụ",
-        "Khách hàng & combo",
+        "Khách hàng",
         "Báo cáo",
         "Lịch sử & sao lưu",
         "Danh mục",
