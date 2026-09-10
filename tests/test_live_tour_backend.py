@@ -951,7 +951,7 @@ def test_export_bounds_filter_business_date_and_cross_midnight_vietnam_time():
         }],
     }),
 ])
-def test_booking_with_customer_pii_requires_payment_before_state_mutation(
+def test_booking_with_customer_pii_requires_customers_permission_before_state_mutation(
     monkeypatch, action, payload,
 ):
     app = FastAPI()
@@ -960,7 +960,7 @@ def test_booking_with_customer_pii_requires_payment_before_state_mutation(
 
     def require(_conn, _identity, feature):
         checked.append(feature)
-        if feature == "live_tour_payment":
+        if feature == "live_tour_customers_view":
             raise HTTPException(403, "Không có quyền thanh toán")
 
     monkeypatch.setattr(
@@ -985,7 +985,7 @@ def test_booking_with_customer_pii_requires_payment_before_state_mutation(
         )
 
     assert error.value.status_code == 403
-    assert checked[:2] == ["live_tour_operate", "live_tour_payment"]
+    assert checked == ["live_tour_booking", "live_tour_view", "live_tour_customers_view"]
     assert state_reads == []
 
 
@@ -1007,7 +1007,7 @@ def test_action_response_redacts_pii_without_mutating_internal_idempotency(monke
     live.install_live_tour_routes(
         app, engine_instance=RouteEngine, current_identity=lambda: RouteIdentity(),
         require_feature=lambda *_args: None,
-        feature_allowed=lambda _conn, _identity, feature: feature != "live_tour_payment",
+        feature_allowed=lambda _conn, _identity, feature: feature in {"live_tour_admin", "live_tour_operate"},
         identity_type=RouteIdentity,
     )
     endpoint = next(

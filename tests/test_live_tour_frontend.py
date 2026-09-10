@@ -263,15 +263,58 @@ def test_live_tour_export_access_depends_on_the_requested_data_kind():
 
     assert "if (!capabilities.export) return false" in helper
     assert "if (kind === 'board' || kind === 'custom') return true" in helper
-    assert "if (kind === 'history' || kind === 'breaks') return capabilities.admin" in helper
-    assert "PAYMENT_EXPORT_KINDS.has(kind) && capabilities.payment" in helper
-    assert "new Set(['revenue', 'tip', 'customers', 'pending', 'customer_detail'])" in source
+    assert "if (kind === 'history' || kind === 'breaks') return capabilities.history" in helper
+    assert "if (kind === 'customers') return capabilities.customers" in helper
+    assert "capabilities.pending && capabilities.invoiceView" in helper
+    assert "capabilities.paidInvoiceView" in helper
 
     assert "disabled={!canExportKind('pending')}" in source
     assert "disabled={!canExportKind('customers')}" in source
     assert "disabled={!canExportKind(kind)}" in source
     assert "disabled={!canExportKind('board')}" in source
     assert "disabled={!canExportKind('history')}" in source
+
+
+def test_invoice_action_permissions_are_independent_in_frontend():
+    source = _source(LIVE_TOUR)
+    helper = source[source.index("const PAYMENT_ACTIONS"):source.index("function LiveTourModal")]
+    actions = ["booking", "pending_update", "pending_delete", "paid_invoice_update", "paid_invoice_delete", "backup", "checkout"]
+    cases = [
+        ({"admin": True, "payment": True, "operate": True}, ["checkout"]),
+        ({"booking": True}, ["booking"]),
+        ({"invoiceEdit": True, "paidInvoiceView": True}, ["pending_update"]),
+        ({"invoiceDelete": True}, ["pending_delete"]),
+        ({"paidInvoiceEdit": True}, ["paid_invoice_update"]),
+        ({"paidInvoiceDelete": True}, ["paid_invoice_delete"]),
+        ({"backup": True}, ["backup"]),
+    ]
+    script = helper + "\nconst actions=" + json.dumps(actions) + ";\n"
+    script += "console.log(JSON.stringify(" + json.dumps([case[0] for case in cases]) + ".map(c => actions.filter(a => canRunAction(a, c)))));"
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [case[1] for case in cases]
+
+
+def test_invoice_editors_use_opening_revision_and_require_a_reason():
+    source = _source(LIVE_TOUR)
+    assert "options.expectedRevision ?? data.revision" in source
+    assert "['invoices', 'Hóa đơn đã thanh toán']" in source
+    for component in ("LiveTourPendingDialog.jsx", "LiveTourPaidInvoiceDialog.jsx"):
+        dialog = _source(LIVE_TOUR.parent.parent / "components" / component)
+        assert "expectedRevision: revision" in dialog
+        assert "reason: reason.trim()" in dialog
+        assert "disabled={!reason.trim()}" in dialog
+        assert 'role="dialog" aria-modal="true"' in dialog
+
+
+def test_invoice_correction_snapshots_are_not_saved_in_browser_cache():
+    source = _source(LIVE_TOUR)
+    helper = source[source.index("function sanitizeLiveTourCacheValue"):source.index("function saveCachedLiveTour")]
+    script = "const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone']);\nfunction asArray(x) { return Array.isArray(x) ? x : [] }\n" + helper
+    script += "\nconsole.log(JSON.stringify(cacheSafeLiveTour({invoice_changes:[{secret:1}],pending_changes:[{secret:2}],result:{invoice:{secret:3}},state:{invoices:[{secret:4}]}})));"
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    value = json.loads(result.stdout)
+    assert value["invoice_changes"] == [] and value["pending_changes"] == []
+    assert "result" not in value and not value["state"]["invoices"]
 
 
 def test_export_permission_matrix_includes_breaks_without_escalation():
@@ -281,11 +324,15 @@ def test_export_permission_matrix_includes_breaks_without_escalation():
     cases = [
         ({"export": False, "admin": True, "payment": True}, []),
         ({"export": True, "admin": False, "payment": False}, ["board", "custom"]),
-        ({"export": True, "admin": True, "payment": False}, ["board", "custom", "history", "breaks"]),
-        ({"export": True, "admin": False, "payment": True}, ["board", "custom", "revenue", "tip", "customers", "pending", "customer_detail"]),
+        ({"export": True, "admin": True, "payment": True}, ["board", "custom"]),
+        ({"export": True, "history": True}, ["board", "custom", "history", "breaks"]),
+        ({"export": True, "reports": True}, ["board", "custom", "revenue", "tip"]),
+        ({"export": True, "customers": True}, ["board", "custom", "customers"]),
+        ({"export": True, "pending": True}, ["board", "custom"]),
+        ({"export": True, "pending": True, "invoiceView": True}, ["board", "custom", "pending"]),
+        ({"export": True, "pending": True, "invoiceView": True, "paidInvoiceView": True, "reports": True, "customers": True}, ["board", "custom", "revenue", "tip", "customers", "pending", "customer_detail"]),
     ]
-    prelude = re.search(r"const PAYMENT_EXPORT_KINDS = .*", source).group(0)
-    script = prelude + "\n" + helper + "\nconst kinds=" + json.dumps(kinds) + ";\n"
+    script = helper + "\nconst kinds=" + json.dumps(kinds) + ";\n"
     script += "console.log(JSON.stringify(" + json.dumps([case[0] for case in cases]) + ".map(c => kinds.filter(k => hasLiveTourExportAccess(k, c)))));"
     result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
     assert json.loads(result.stdout) == [case[1] for case in cases]
@@ -343,7 +390,7 @@ def test_live_tour_quick_booking_is_independent_and_uses_a_stable_employee_id():
     )
     assert "setBookingContext({})" in quick_button
     assert "selectedIds" not in quick_button
-    assert "disabled={!canOperate}" in quick_button
+    assert "disabled={!canBook}" in quick_button
     assert "if (modal.kind === 'quick_booking')" in submit
     assert "action = 'booking'" in submit
     assert "employee_id: stableEmployeeId(selectedQuickBookingRecord)" in submit
@@ -434,9 +481,9 @@ def test_live_tour_booking_pi_is_payment_gated_and_never_prefills_the_employee_n
     assert "customer_name: source.customer_name ?? context.defaults?.customer_name ?? ''" in open_modal
     assert "customer_name: source.customer_name ?? source.name" not in open_modal
     assert "sourceIsCapturedEmployee ? source.customer_phone" in open_modal
-    assert submit.count("...(canPayment ? { customer_id:") >= 3
+    assert submit.count("...(canCustomers ? { customer_id:") >= 3
     picker = source[source.index("const renderBookingCustomerPicker") : source.index("return <>", source.index("const renderBookingCustomerPicker"))]
-    assert "if (!canPayment) return null" in picker
+    assert "if (!canCustomers) return null" in picker
     assert source.count("{renderBookingCustomerPicker(") >= 3
 
 

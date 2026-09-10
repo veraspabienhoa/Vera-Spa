@@ -10,7 +10,7 @@ import useDialogFocus from '../lib/useDialogFocus'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 
-export default function LiveTourBookingDialog({ data, context, canOperate, canPayment, busy, error, onAction, onClose, onCheckout }) {
+export default function LiveTourBookingDialog({ data, context, canOperate, canBook, canCustomers, canPayment, busy, error, onAction, onClose, onCheckout }) {
   const dialogRef = useDialogFocus(() => { if (!busy) onClose() })
   const employees = [...(data.state?.employees || []), ...(data.retained_assignments || [])]
   const initial = employees.find((row) => row.id === context.employeeId)
@@ -31,7 +31,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canPa
   const selectedCustomer = (data.customers || []).find((row) => row.id === customerId)
   const purchases = customerPurchases(selectedCustomer).map((purchase) => availableBookingPurchase(purchase, employee ? [employee] : []))
   const selectedCombo = purchases.find((purchase) => purchase.id === comboId)
-  const comboError = canPayment && comboId ? (selectedCombo ? comboBookingError(selectedCombo, items, catalog) : 'Không tìm thấy combo đã mua. Hãy chọn lại khách hàng hoặc combo.') : ''
+  const comboError = canCustomers && comboId ? (selectedCombo ? comboBookingError(selectedCombo, items, catalog) : 'Không tìm thấy combo đã mua. Hãy chọn lại khách hàng hoặc combo.') : ''
   const selectCustomer = (id) => {
     const customer = (data.customers || []).find((row) => row.id === id)
     const purchase = preferredBookingCombo(customer, catalog)
@@ -44,7 +44,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canPa
   }
   const bookingPayload = () => ({
     employee_id: employeeId, service_items: items, room, request, note,
-    ...(canPayment ? { customer_id: customerId || null, customer_name: selectedCustomer?.name || '', customer_phone: selectedCustomer?.phone || '', combo_purchase_id: comboId || '' } : {}),
+    ...(canCustomers ? { customer_id: customerId || null, customer_name: selectedCustomer?.name || '', customer_phone: selectedCustomer?.phone || '', combo_purchase_id: comboId || '' } : {}),
   })
   const selectEmployee = (id) => {
     const worker = employees.find((row) => row.id === id)
@@ -66,7 +66,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canPa
     setMessage('')
     const changed = JSON.stringify(items) !== JSON.stringify(bookingServiceItems(employee, catalog))
       || room !== employee.room || request !== (employee.request || '') || note !== (employee.note || '')
-      || (canPayment && (customerId !== (employee.customer_id || '') || comboId !== (employee.combo_purchase_id || '')))
+      || (canCustomers && (customerId !== (employee.customer_id || '') || comboId !== (employee.combo_purchase_id || '')))
     if (changed && comboError) { setMessage(comboError); return }
     if (changed && (!room || !items.length)) { setMessage('Hãy chọn ít nhất một dịch vụ và phòng/giường trước khi hoàn thành.'); return }
     const result = await onAction('finish_to_pending', changed ? bookingPayload() : { employee_id: employeeId }, [])
@@ -85,8 +85,8 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canPa
     {completed ? <><p>Đã chuyển dịch vụ vào Chờ thanh toán. {employee?.name} đã rảnh để nhận lịch mới.</p><div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canPayment && <button type="button" className="primary-button" onClick={() => onCheckout(completed)}>Thanh toán</button>}</div></>
       : <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {context.employeeId ? <p className="wide"><strong>Nhân viên: {employee?.name}</strong>{editing && ` · ${employee.status}`}</p> : <div className="wide"><LiveTourSearchSelect label="Nhân viên *" options={employeeOptions} value={employeeId} onChange={selectEmployee} required/></div>}
-        {canPayment && <div className="wide"><LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={(data.customers || []).map((row) => ({ value: row.id, label: row.name, detail: row.phone, badge: customerTicketLabel(row) }))} value={customerId} onChange={selectCustomer} disabled={Boolean(editing && employee?.customer_id)}/><small>{customerId ? selectedCustomer?.phone : 'Để trống là Khách lẻ'}</small>{selectedCustomer && <strong className="tour-customer-ticket-count" aria-live="polite">{customerTicketLabel(selectedCustomer)}</strong>}</div>}
-        {canPayment && purchases.length > 0 && <div className="wide tour-booking-combo">
+        {canCustomers && <div className="wide"><LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={(data.customers || []).map((row) => ({ value: row.id, label: row.name, detail: row.phone, badge: customerTicketLabel(row) }))} value={customerId} onChange={selectCustomer} disabled={Boolean(editing && employee?.customer_id)}/><small>{customerId ? selectedCustomer?.phone : 'Để trống là Khách lẻ'}</small>{selectedCustomer && <strong className="tour-customer-ticket-count" aria-live="polite">{customerTicketLabel(selectedCustomer)}</strong>}</div>}
+        {canCustomers && purchases.length > 0 && <div className="wide tour-booking-combo">
           <label className="live-tour-field"><span>Combo của khách</span><select value={comboId} onChange={(event) => selectCombo(event.target.value)}><option value="">Dịch vụ lẻ · không dùng combo</option>{purchases.map((purchase, index) => <option key={purchase.id} value={purchase.id}>{purchase.combo_name || 'Combo'} · còn {purchase.remaining} vé có thể đặt lịch · #{index + 1}</option>)}</select></label>
           {selectedCombo && <div aria-live="polite"><p><strong>Còn {selectedCombo.remaining} vé có thể đặt lịch</strong>. Vé được giữ chỗ khi đặt lịch và trừ khi thanh toán.</p>{selectedCombo.component_balances ? <>{selectedCombo.component_balances.map((part) => <p key={part.service_id}>{catalog.find((service) => service.id === part.service_id)?.name || part.service_name}: còn <strong>{part.remaining}</strong> lượt</p>)}<small>Mỗi dịch vụ được tự điền 1 lượt; có thể sửa số lượng hoặc bỏ dịch vụ.</small></> : <p>Combo vé cũ chưa khai báo dịch vụ. Hãy chọn dịch vụ bên dưới.</p>}</div>}
           {comboError && <p className="error-box" role="alert">{comboError}</p>}
@@ -97,7 +97,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canPa
         <label className="live-tour-field"><span>Yêu cầu</span><select value={request} disabled={doing} onChange={(event) => setRequest(event.target.value)}><option value="">Để trống</option><option value="YC">YC</option></select></label>
         <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={note} onChange={(event) => setNote(event.target.value)}/></label>
         <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(bookingTotal(items, catalog))}</strong></div>
-        <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canOperate && <><button type="submit" className="secondary-button" value="book" disabled={!employeeId || Boolean(comboError)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{!doing && <button type="submit" className="primary-button" value="start" disabled={!employeeId || Boolean(comboError)}>Thực hiện</button>}{doing && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}{canPayment && tourNameKey(employee?.status) === 'cho thanh toan' && <button type="button" className="primary-button" onClick={() => onCheckout(null, employee)}>Thanh toán</button>}</div>
+        <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{(editing ? canOperate : canBook) && <><button type="submit" className="secondary-button" value="book" disabled={!employeeId || Boolean(comboError)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{!doing && canOperate && <button type="submit" className="primary-button" value="start" disabled={!employeeId || Boolean(comboError)}>Thực hiện</button>}{doing && canOperate && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}{canPayment && tourNameKey(employee?.status) === 'cho thanh toan' && <button type="button" className="primary-button" onClick={() => onCheckout(null, employee)}>Thanh toán</button>}</div>
       </fieldset></form>}
   </section></div>
 }

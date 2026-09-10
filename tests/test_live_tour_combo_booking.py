@@ -204,7 +204,7 @@ def test_http_stale_booking_and_replayed_checkout_do_not_overspend(monkeypatch):
 @pytest.mark.parametrize("payload", [{"combo_purchase_id": ""}, {"combo_purchase_id": "owned"}, {"bookings": [{"combo_purchase_id": ""}]}])
 def test_operate_only_cannot_set_or_clear_customer_combo(payload):
     def require(_conn, _identity, feature):
-        if feature == "live_tour_payment":
+        if feature == "live_tour_customers_view":
             raise HTTPException(403, "Permission denied")
     app = FastAPI()
     live.install_live_tour_routes(app, engine_instance=RouteEngine, current_identity=lambda: RouteIdentity(),

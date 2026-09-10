@@ -446,6 +446,7 @@ class Identity(BaseModel):
 
 
 from vera_web_v2_permissions import DEFAULT_ROLE_FEATURES as WEB_V2_DEFAULT_FEATURES, FEATURES as WEB_V2_FEATURES
+from vera_web_v2_live_tour_permissions import LEGACY_FEATURE_INHERITANCE
 
 _PERMISSION_CACHE_SECONDS = max(
     1.0, float(os.getenv("VERA_PERMISSION_CACHE_SECONDS", "60") or 60),
@@ -511,6 +512,9 @@ def _feature_allowed(
         if str(item.get("target") or "").strip().lower() == role and str(item.get("feature") or "").strip() == feature:
             return _as_bool(item.get("allowed"))
 
+    legacy_feature = LEGACY_FEATURE_INHERITANCE.get(feature)
+    if legacy_feature:
+        return _feature_allowed(conn, ident, legacy_feature, payload)
     return feature in WEB_V2_DEFAULT_FEATURES.get(role, set())
 
 

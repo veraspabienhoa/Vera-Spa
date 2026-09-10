@@ -30,6 +30,8 @@ from sqlalchemy import text
 from vera_web_v2_live_tour_payment import default_settings as _default_payment_settings, settings_update as _payment_settings_update, payment_values as _payment_values
 from vera_web_v2_live_tour_roster import eligible as _roster_eligible, reconcile as _reconcile_roster
 from vera_web_v2_service_catalog import catalog_details, component_debits, purchase_terms, require_available
+from vera_web_v2_live_tour_permissions import CAPABILITY_FEATURES, EXPORT_FEATURES
+from vera_web_v2_live_tour_invoice import change_paid_invoice
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 STATE_CATEGORY = "live_tour"
@@ -46,6 +48,8 @@ MAX_TICKET_UNITS = 100_000
 MAX_PURCHASE_QUANTITY = 1_000
 CUSTOMER_PII_KEYS = frozenset({"customer_id", "customer_name", "customer_phone", "phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components"})
 PROTECTED_IDEMPOTENCY_ACTIONS = frozenset({
+    "paid_invoice_update", "paid_invoice_delete",
+    "pending_update", "pending_delete",
     "checkout", "quick_checkout", "combo_purchase", "sync_leaves", "finish_to_pending", "start_room", "finish_room",
 })
 BACKDATE_ACTIONS = frozenset({"checkout", "quick_checkout", "combo_purchase"})
@@ -53,6 +57,8 @@ CLIENT_FINANCIAL_TIME_FIELDS = frozenset({
     "business_date", "created_at", "effective_at", "recorded_at",
 })
 IDEMPOTENCY_REQUIRED_ACTIONS = {
+    "paid_invoice_update", "paid_invoice_delete",
+    "pending_update", "pending_delete",
     "booking", "multi_booking", "start", "add_minutes", "complete", "move_pending",
     "checkout", "quick_checkout", "set_work_status", "set_shift", "start_break", "end_break",
     "reorder", "hide_employee", "show_employee", "show_all", "add_employee", "delete_employee",
@@ -629,14 +635,16 @@ def _empty_state(now: datetime) -> dict[str, Any]:
         "employees": [], "rooms": rooms, "services": services, "combos": combos,
         "customers": [], "pending": [], "invoices": [], "reports": [], "combo_usage": [],
         "break_events": [], "payment_settings": _default_payment_settings(),
-        "audit": [], "backups": [], "bill_counters": {}, "idempotency": {},
+        "audit": [], "backups": [], "pending_changes": [], "invoice_changes": [], "bill_counters": {}, "idempotency": {},
     }
 
 
 def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
     state = deepcopy(raw) if isinstance(raw, dict) else _empty_state(now)
     defaults = _empty_state(now)
-    for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups"):
+    if not isinstance(state.get("invoice_changes"), list):
+        state["invoice_changes"] = []
+    for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups", "pending_changes"):
         if not isinstance(state.get(key), list):
             state[key] = deepcopy(defaults[key])
     # An explicitly empty catalog is a saved choice, not an uninitialized state.
@@ -1181,7 +1189,9 @@ def _customer(
 
 def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> str:
     manual = str(payload.get("bill_no") or "").strip()
-    existing = {_norm(item.get("bill_no")) for item in state["invoices"] if item.get("bill_no")}
+    # Voiding never frees a document number, including manually supplied bills.
+    issued = state["invoices"] + [row["before"] for row in state.get("invoice_changes", []) if isinstance(row.get("before"), dict)]
+    existing = {_norm(item.get("bill_no")) for item in issued if item.get("bill_no")}
     if manual:
         if _norm(manual) in existing:
             raise HTTPException(409, f"Số hóa đơn '{manual}' đã tồn tại.")
@@ -1190,7 +1200,7 @@ def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime)
     counters = state.setdefault("bill_counters", {})
     current = int(counters.get(day) or 0)
     prefix = f"LIVE-{day.replace('-', '')}-"
-    for invoice in state["invoices"]:
+    for invoice in issued:
         bill_no = str(invoice.get("bill_no") or "")
         if bill_no.startswith(prefix) and bill_no[len(prefix):].isdigit():
             current = max(current, int(bill_no[len(prefix):]))
@@ -1435,7 +1445,84 @@ def _snapshot_for_backup(state: dict[str, Any]) -> dict[str, Any]:
     return snapshot
 
 
+def _change_pending(state, action, payload, actor, now):
+    """Edit/void only an unpaid draft; preserve a complete, append-only snapshot.
+
+    Customer/staff identity and completion counters are historical facts here.
+    Service selections, line prices and notes may be corrected. Nothing debits
+    tickets or rewrites a paid invoice until the normal checkout transaction.
+    """
+    allowed = {"pending_id", "reason", "note", "entries"} if action == "pending_update" else {"pending_id", "reason"}
+    if set(payload) - allowed:
+        raise HTTPException(400, "Chỉ được sửa dịch vụ, giá và ghi chú của hóa đơn chờ thanh toán.")
+    reason = payload.get("reason")
+    if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
+        raise HTTPException(400, "Nhập lý do sửa/xóa hóa đơn (tối đa 1000 ký tự).")
+    working = deepcopy(state)
+    pending = _find_by_id(working["pending"], payload.get("pending_id"), "hóa đơn chờ thanh toán")
+    before = deepcopy(pending)
+    if action == "pending_delete":
+        working["pending"].remove(pending)
+        after = None
+    else:
+        if "note" in payload:
+            if not isinstance(payload["note"], str) or len(payload["note"]) > 2000:
+                raise HTTPException(400, "Ghi chú không hợp lệ hoặc vượt quá 2000 ký tự.")
+            pending["note"] = payload["note"].strip()
+        edits = payload.get("entries", [])
+        if not isinstance(edits, list) or len(edits) > len(pending["entries"]):
+            raise HTTPException(400, "Danh sách dòng hóa đơn không hợp lệ.")
+        entries = deepcopy(pending["entries"])
+        seen, changed_services = set(), set()
+        for edit in edits:
+            if not isinstance(edit, dict) or set(edit) - {"index", "service_items", "price"}:
+                raise HTTPException(400, "Nội dung dòng hóa đơn không hợp lệ.")
+            index = edit.get("index")
+            if type(index) is not int or not 0 <= index < len(entries) or index in seen:
+                raise HTTPException(400, "Dòng hóa đơn không tồn tại hoặc bị trùng.")
+            seen.add(index)
+            entry = entries[index]
+            if "service_items" in edit:
+                requested = edit["service_items"]
+                if not isinstance(requested, list) or not 1 <= len(requested) <= 30 or any(not isinstance(row, dict) or isinstance(row.get("quantity"), bool) for row in requested):
+                    raise HTTPException(400, "Chọn từ 1 đến 30 dịch vụ với số lượng hợp lệ.")
+                current = [{"service_id": row["service_id"], "quantity": row.get("quantity", 1)} for row in entry.get("service_items", [])]
+                if edit["service_items"] != current:
+                    name, duration, price, items = _service_selection(working, {**edit, "request": entry.get("request", "")}, now)
+                    entry.update(service=name, duration=duration, price=price, service_items=items, price_source="catalog")
+                    changed_services.add(index)
+            if "price" in edit:
+                entry["price"] = _bounded_money(edit["price"], label="Giá dòng hóa đơn")
+                entry["price_source"] = "pending_correction"
+        _bounded_money(sum(int(row.get("price") or 0) for row in entries), label="Tổng hóa đơn")
+        # Retain all unchanged reservations first. Revalidate changed services
+        # against that ledger and other drafts, never against their old selves.
+        pending["entries"] = [row for index, row in enumerate(entries) if index not in changed_services]
+        customer = next((row for row in working["customers"] if row["id"] == pending.get("customer_id")), None)
+        for index in sorted(changed_services):
+            entry = entries[index]
+            entry.update(_booking_combo(working, customer, {"combo_purchase_id": entry.get("combo_purchase_id", "")}, entry, now))
+            pending["entries"].append(entry)
+        pending["entries"] = entries
+        pending.update(updated_at=_iso(now), updated_by=actor)
+        after = deepcopy(pending)
+    change = {"id": str(uuid4()), "pending_id": before["id"], "action": action,
+              "actor": actor, "at": _iso(now), "reason": reason.strip(), "before": before, "after": after}
+    working.setdefault("pending_changes", []).append(change)
+    state.clear()
+    state.update(working)
+    return {"pending": after, "pending_id": before["id"], "change_id": change["id"], "deleted": after is None}
+
+
 def _required_action_feature(action: str) -> str:
+    if action in {"paid_invoice_update", "paid_invoice_delete"}:
+        return "live_tour_paid_invoice_edit" if action == "paid_invoice_update" else "live_tour_paid_invoice_delete"
+    if action in {"booking", "multi_booking"}:
+        return "live_tour_booking"
+    if action in {"pending_update", "pending_delete"}:
+        return "live_tour_invoice_edit" if action == "pending_update" else "live_tour_invoice_delete"
+    if action in {"backup", "restore"}:
+        return "live_tour_backup"
     if action in {"checkout", "quick_checkout", "move_pending", "combo_purchase", "customer_upsert"}:
         return "live_tour_payment"
     if action in {
@@ -1633,6 +1720,12 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         for employee in employees:
             _clear_assignment(employee)
         result["pending"] = pending
+    elif action in {"pending_update", "pending_delete"}:
+        result = _change_pending(state, action, payload, actor, now)
+    elif action in {"paid_invoice_update", "paid_invoice_delete"}:
+        result = change_paid_invoice(state, action, payload, actor, now, money=_bounded_money,
+                                     payment_values=_payment_values, canonical_method=_canonical_payment_method,
+                                     available_combo=_available_combo, iso=_iso, max_money=MAX_MONEY)
     elif action in {"checkout", "quick_checkout"}:
         result["invoice"] = _checkout(
             state, payload, actor, now, action == "quick_checkout", financial_timing,
@@ -2092,7 +2185,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         # ledgers and audit history are append-only and can never be rolled
         # back to create duplicate tickets, invoices or combo balances.
         for append_only_key in (
-            "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups",
+            "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups", "pending_changes",
+            "invoice_changes",
             "bill_counters", "idempotency", "created_at", "sync_status",
         ):
             restored[append_only_key] = deepcopy(state.get(append_only_key))
@@ -2356,11 +2450,40 @@ def _unbilled_entries(state: dict[str, Any], bounds: dict[str, Any] | None = Non
     return result
 
 
+def _readable_audit(events, *, invoice_view, paid_invoice_view, customers_view):
+    result = _redact_customer_pii(events)
+    for event in result:
+        if (event.get("action") in {"pending_update", "pending_delete"} and not invoice_view
+                or event.get("action") in {"checkout", "quick_checkout", "paid_invoice_update", "paid_invoice_delete"} and not paid_invoice_view
+                or event.get("action") in {"combo_purchase", "combo_import", "customer_upsert"} and not customers_view):
+            event["detail"] = {"summary": "Nội dung cần quyền xem tương ứng."}
+    return result
+
+
 def _state_response(
     state: dict[str, Any], revision: int, now: datetime, *, include_hidden: bool = False,
     can_admin: bool = False, can_operate: bool = False,
     can_payment: bool = False, can_export: bool = False,
+    can_booking: bool | None = None, can_invoice_view: bool | None = None,
+    can_paid_invoice_view: bool | None = None,
+    can_paid_invoice_edit: bool = False, can_paid_invoice_delete: bool = False,
+    can_invoice_edit: bool = False, can_invoice_delete: bool = False,
+    can_pending_view: bool | None = None, can_customers_view: bool | None = None,
+    can_reports_view: bool | None = None, can_history_view: bool | None = None,
+    can_backup: bool | None = None,
 ) -> dict[str, Any]:
+    # Defaults support internal legacy callers; HTTP routes always pass explicit
+    # effective grants, including denials, from the canonical permission store.
+    can_booking = can_operate if can_booking is None else can_booking
+    can_invoice_view = can_payment if can_invoice_view is None else can_invoice_view
+    can_paid_invoice_view = can_payment if can_paid_invoice_view is None else can_paid_invoice_view
+    can_pending_view = can_payment if can_pending_view is None else can_pending_view
+    can_customers_view = can_payment if can_customers_view is None else can_customers_view
+    can_reports_view = can_payment if can_reports_view is None else can_reports_view
+    can_history_view = can_admin if can_history_view is None else can_history_view
+    can_backup = can_admin if can_backup is None else can_backup
+    pending_access = can_pending_view and can_invoice_view
+    customer_pii = can_customers_view or can_invoice_view or can_paid_invoice_view
     state = deepcopy(state)
     _ensure_counter_day(state, now)
     ordered = sorted([row for row in state["employees"] if row.get("roster_eligible") is not False], key=lambda item: (int(item.get("sort_index") or 0), _norm(item.get("name"))))
@@ -2383,7 +2506,7 @@ def _state_response(
         "ca2": _metric_bucket([item for item in ordered if _shift_bucket(item) == "ca2"], now),
     }
     customers = []
-    if can_payment:
+    if can_customers_view:
         for item in state["customers"]:
             customer = deepcopy(item)
             purchases = list(customer.get("combo_purchases") or [])
@@ -2401,20 +2524,30 @@ def _state_response(
         "pending_count": len(state["pending"]),
         "total_revenue": sum(int(item.get("total") or 0) for item in state["invoices"]),
         "total_tip": sum(int(item.get("tip") or 0) for item in state["invoices"]),
-    } if can_payment else {}
-    if can_payment:
+    } if can_reports_view else {}
+    if can_reports_view:
         unbilled = _unbilled_entries(state)
         report_summary.update({
             "expected_unbilled_revenue": sum(item["expected_amount"] or 0 for item in unbilled),
             "unbilled_count": len(unbilled),
             "unbilled_unpriced_count": sum(item["unpriced"] for item in unbilled),
         })
-    public_backups = [_public_backup(item) for item in state["backups"]] if can_admin else []
+    public_backups = [_public_backup(item) for item in state["backups"]] if can_backup else []
     # Re-redact historical audit entries too: older persisted state may predate
     # write-time redaction and must never leak through an admin response.
-    public_audit = _redact_customer_pii(state["audit"][-1000:]) if can_admin else []
-    public_break_events = _redact_customer_pii(state["break_events"]) if can_admin else []
-    public_employees = deepcopy(visible) if can_payment else _redact_customer_pii(visible)
+    public_audit = _readable_audit(state["audit"][-1000:], invoice_view=pending_access,
+                                  paid_invoice_view=can_paid_invoice_view, customers_view=can_customers_view) if can_history_view else []
+    public_break_events = _redact_customer_pii(state["break_events"]) if can_history_view else []
+    public_employees = deepcopy(visible) if customer_pii else _redact_customer_pii(visible)
+    public_reports = state["reports"][-1000:] if can_reports_view else []
+    if not customer_pii:
+        public_reports = _redact_customer_pii(public_reports)
+    pending_changes = deepcopy(state.get("pending_changes", [])[-500:]) if can_history_view and pending_access else []
+    invoice_changes = deepcopy(state.get("invoice_changes", [])[-500:]) if can_history_view and can_paid_invoice_view else []
+    if not can_customers_view:
+        for change in invoice_changes:
+            change.pop("purchase_before", None)
+            change.pop("purchase_after", None)
     return {
         "storage_mode": "server", "columns": BOARD_COLUMNS, "records": records, "count": len(records), "employee_count": len(records),
         "available": groups("available"), "working_count": groups("working"), "leave_count": groups("leave"),
@@ -2433,12 +2566,15 @@ def _state_response(
         # Root aliases keep the API convenient for both the copied Tour UI and
         # the richer Live Tour operator drawers.
         "services": state["services"], "combo_catalog": state["combos"],
-        "payment_settings": deepcopy(state.get("payment_settings") or _default_payment_settings()) if can_payment or can_admin else {},
+        "payment_settings": deepcopy(state.get("payment_settings") or _default_payment_settings()) if can_payment or can_admin or can_paid_invoice_view else {},
         "employee_directory": deepcopy(state.get("employee_directory", [])) if can_admin else [],
-        "retained_assignments": [deepcopy(row) if can_payment else _redact_customer_pii(row) for row in state["employees"] if row.get("roster_eligible") is False and (row.get("service") or row.get("break_started_at"))] if can_operate or can_payment or can_admin else [],
-        "customers": customers, "pending_payments": state["pending"] if can_payment else [],
-        "pending": state["pending"] if can_payment else [], "reports": report_summary,
-        "report_rows": state["reports"][-1000:] if can_payment else [],
+        "retained_assignments": [deepcopy(row) if customer_pii else _redact_customer_pii(row) for row in state["employees"] if row.get("roster_eligible") is False and (row.get("service") or row.get("break_started_at"))] if can_operate or can_payment or can_admin else [],
+        "customers": customers, "pending_payments": state["pending"] if pending_access else [],
+        "pending": state["pending"] if pending_access else [], "reports": report_summary,
+        "pending_count": len(state["pending"]) if can_pending_view else 0,
+        "pending_changes": pending_changes,
+        "invoice_changes": invoice_changes,
+        "report_rows": public_reports,
         "audit": public_audit, "history": public_audit, "backups": public_backups,
         "break_events": public_break_events,
         "catalogs": {"rooms": state["rooms"], "services": state["services"], "combos": state["combos"]},
@@ -2448,16 +2584,23 @@ def _state_response(
             "employees": public_employees, "hidden_count": sum(bool(item.get("hidden")) for item in ordered),
             "rooms": state["rooms"], "services": state["services"], "combos": state["combos"],
             "customers": customers,
-            "pending": state["pending"] if can_payment else [],
-            "invoices": state["invoices"][-500:] if can_payment else [],
-            "reports": state["reports"][-1000:] if can_payment else [],
-            "combo_usage": state["combo_usage"][-1000:] if can_payment else [],
+            "pending": state["pending"] if pending_access else [],
+            "invoices": state["invoices"][-500:] if can_paid_invoice_view else [],
+            "reports": public_reports,
+            "combo_usage": state["combo_usage"][-1000:] if can_customers_view else [],
             "audit": public_audit, "break_events": public_break_events,
             "backups": public_backups,
         },
         "capabilities": {
             "admin": can_admin, "catalog_admin": can_admin, "manage_catalog": can_admin,
             "operate": can_operate, "payment": can_payment, "export": can_export,
+            "booking": can_booking, "invoice_view": can_invoice_view,
+            "paid_invoice_view": can_paid_invoice_view,
+            "paid_invoice_edit": can_paid_invoice_edit and can_paid_invoice_view,
+            "paid_invoice_delete": can_paid_invoice_delete and can_paid_invoice_view,
+            "invoice_edit": can_invoice_edit and pending_access, "invoice_delete": can_invoice_delete and pending_access,
+            "pending_view": can_pending_view, "customers_view": can_customers_view,
+            "reports_view": can_reports_view, "history_view": can_history_view, "backup": can_backup,
             "hide_recovery": can_recover_hidden,
         },
     }
@@ -2880,13 +3023,39 @@ def install_live_tour_routes(
             "can_admin": can_admin, "can_operate": can_operate,
             "can_payment": bool(feature_allowed(conn, ident, "live_tour_payment")),
             "can_export": bool(feature_allowed(conn, ident, "live_tour_export")),
+            **{f"can_{name}": bool(feature_allowed(conn, ident, feature)) for name, feature in CAPABILITY_FEATURES.items()},
         }
 
     def action_response(
         *, state: dict[str, Any], revision: int, now: datetime, action: str,
         result: dict[str, Any], grants: dict[str, bool], duplicate: bool = False,
     ) -> dict[str, Any]:
-        public_result = result if grants.get("can_payment") else _redact_customer_pii(result)
+        def readable_result(value):
+            if isinstance(value, list):
+                return [readable_result(row) for row in value]
+            if not isinstance(value, dict):
+                return deepcopy(value)
+            public = {}
+            for key, nested in value.items():
+                if key == "invoice":
+                    if not grants.get("can_paid_invoice_view"):
+                        continue
+                    # Never print a superseded/voided receipt on a retry.
+                    invoice_id = nested.get("id") if isinstance(nested, dict) else None
+                    public[key] = deepcopy(next((row for row in state["invoices"] if row.get("id") == invoice_id), None))
+                    if invoice_id and public[key] is None:
+                        public["voided"] = True
+                elif key == "pending" and isinstance(nested, dict):
+                    pending = next((row for row in state["pending"] if row.get("id") == nested.get("id")), None)
+                    public[key] = deepcopy(pending) if pending and grants.get("can_invoice_view") and grants.get("can_pending_view") else {"id": nested.get("id")}
+                elif key in {"customer", "purchase", "customers", "combo_purchase"} and not grants.get("can_customers_view"):
+                    continue
+                else:
+                    public[key] = readable_result(nested)
+            return public
+        public_result = readable_result(result)
+        if not (grants.get("can_customers_view") or grants.get("can_invoice_view") or grants.get("can_paid_invoice_view")):
+            public_result = _redact_customer_pii(public_result)
         return {
             "ok": True, "duplicate": duplicate, "action": action,
             "revision": revision, "result": public_result,
@@ -2904,21 +3073,17 @@ def install_live_tour_routes(
             # Creation and reads share the same lock only for the first bootstrap.
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
             state, revision = _read_state(conn, now)
-            can_admin = feature_allowed(conn, ident, "live_tour_admin")
-            can_operate = feature_allowed(conn, ident, "live_tour_operate")
-            can_payment = feature_allowed(conn, ident, "live_tour_payment")
-            can_export = feature_allowed(conn, ident, "live_tour_export")
+            grants = permissions(conn, ident)
         return _state_response(
             state, revision, now, include_hidden=include_hidden,
-            can_admin=can_admin, can_operate=can_operate,
-            can_payment=can_payment, can_export=can_export,
+            **grants,
         )
 
     @app.get("/v2/live-tour/customers")
     def spa_customers(ident: identity_type = Depends(current_identity)):
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
-            require_feature(conn, ident, "live_tour_payment")
+            require_feature(conn, ident, "live_tour_customers_view")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
             state, revision = _read_state(conn, now)
             can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
@@ -2940,10 +3105,26 @@ def install_live_tour_routes(
     ):
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
-            require_feature(conn, ident, "live_tour_payment")
+            require_feature(conn, ident, "live_tour_customers_view")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
             state, _ = _read_state(conn, now)
-        return _customer_history(state, customer_id)
+            grants = permissions(conn, ident)
+        readable = deepcopy(state)
+        if not grants["can_paid_invoice_view"]:
+            readable["invoices"] = []
+        if not (grants["can_pending_view"] and grants["can_invoice_view"]):
+            readable["pending"] = []
+        if not grants["can_reports_view"]:
+            readable["reports"] = []
+        history = _customer_history(readable, customer_id)
+        if not grants["can_paid_invoice_view"]:
+            for key in ("invoice_count", "service_count", "total_revenue", "total_tip"):
+                history["summary"].pop(key, None)
+        if not (grants["can_pending_view"] and grants["can_invoice_view"]):
+            history["summary"].pop("pending_count", None)
+        return {**history, "capabilities": {
+            name: grants[f"can_{name}"] for name in CAPABILITY_FEATURES
+        }}
 
     @app.post("/v2/live-tour/action")
     def live_tour_action(body: LiveTourAction, ident: identity_type = Depends(current_identity)):
@@ -2963,6 +3144,17 @@ def install_live_tour_routes(
                 pass
             else:
                 require_feature(conn, ident, _required_action_feature(action))
+            if action in {"booking", "multi_booking"}:
+                require_feature(conn, ident, "live_tour_view")
+            if action in {"booking", "multi_booking", "update_booking"} and (
+                payload.get("start_now") or any(row.get("start_now") for row in (payload.get("bookings") or []) if isinstance(row, dict))
+            ):
+                require_feature(conn, ident, "live_tour_operate")
+            if action in {"pending_update", "pending_delete"} or (action in {"checkout", "quick_checkout"} and payload.get("pending_id")):
+                require_feature(conn, ident, "live_tour_pending_view")
+                require_feature(conn, ident, "live_tour_invoice_view")
+            if action in {"paid_invoice_update", "paid_invoice_delete"}:
+                require_feature(conn, ident, "live_tour_paid_invoice_view")
             if action in BACKDATE_ACTIONS and _backdate_requested(payload):
                 # Lùi ngày changes the financial ledger date and therefore
                 # requires both the normal payment grant and the admin grant.
@@ -2971,9 +3163,13 @@ def install_live_tour_routes(
                 _contains_customer_pii(payload) or "combo_purchase_id" in payload
                 or any("combo_purchase_id" in row for row in (payload.get("bookings") or []) if isinstance(row, dict))
             ):
-                require_feature(conn, ident, "live_tour_payment")
+                require_feature(conn, ident, "live_tour_customers_view")
             if action == "combo_import":
                 require_feature(conn, ident, "live_tour_payment")
+            if action in {"combo_import", "combo_purchase", "customer_upsert"}:
+                require_feature(conn, ident, "live_tour_customers_view")
+            if action in {"checkout", "quick_checkout"} and _contains_customer_pii(payload):
+                require_feature(conn, ident, "live_tour_customers_view")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
             state, revision = _read_state(conn, now, for_update=True)
             previous = _idempotency_replay(
@@ -3032,14 +3228,20 @@ def install_live_tour_routes(
         )
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
-            if export_kind in {"revenue", "tip", "customers", "pending", "customer_detail"}:
-                require_feature(conn, ident, "live_tour_payment")
-            elif export_kind in {"history", "breaks"}:
-                require_feature(conn, ident, "live_tour_admin")
+            for feature in EXPORT_FEATURES.get(export_kind, ()):
+                require_feature(conn, ident, feature)
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
             state, _ = _read_state(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
+            grants = permissions(conn, ident)
+        if export_kind == "history":
+            state = deepcopy(state)
+            state["audit"] = _readable_audit(state["audit"], invoice_view=grants["can_invoice_view"] and grants["can_pending_view"],
+                                             paid_invoice_view=grants["can_paid_invoice_view"], customers_view=grants["can_customers_view"])
+        elif export_kind == "revenue" and not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
+            state = deepcopy(state)
+            state["invoices"] = _redact_customer_pii(state["invoices"])
         content, filename = _excel_bytes(
             state, export_kind, now, include_hidden=bool(include_hidden and can_recover_hidden),
             bounds=bounds, customer_id=customer_id_value, selected_columns=columns, employee_ids=employee_ids,

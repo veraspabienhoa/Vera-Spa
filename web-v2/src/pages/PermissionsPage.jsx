@@ -15,10 +15,16 @@ export default function PermissionsPage() {
   const [notice, setNotice] = useState(null)
 
   const allFeatureKeys = (source = data) => Object.values(source?.groups || {}).flatMap((items) => Object.keys(items))
+  const featureAllowed = (key, role, account = '', source = data) => {
+    const accountOverride = source?.account_overrides?.[account] || {}
+    const roleOverride = source?.role_overrides?.[role] || {}
+    if (Object.hasOwn(accountOverride, key)) return accountOverride[key]
+    if (Object.hasOwn(roleOverride, key)) return roleOverride[key]
+    const legacy = source?.legacy_inheritance?.[key]
+    return legacy ? featureAllowed(legacy, role, account, source) : (source?.defaults?.[role] || []).includes(key)
+  }
   const roleAllowed = (role, source = data) => {
-    const override = source?.role_overrides?.[role] || {}
-    const defaults = source?.defaults?.[role] || []
-    return allFeatureKeys(source).filter((key) => Object.prototype.hasOwnProperty.call(override, key) ? override[key] : defaults.includes(key))
+    return allFeatureKeys(source).filter((key) => featureAllowed(key, role, '', source))
   }
   const applyTarget = (nextScope, nextTarget, source = data) => {
     if (!source) return
@@ -33,7 +39,7 @@ export default function PermissionsPage() {
       const roleFeatures = roleAllowed(account?.role, source)
       setAllowed(isInherited
         ? roleFeatures
-        : allFeatureKeys(source).filter((key) => Object.prototype.hasOwnProperty.call(override, key) ? override[key] : roleFeatures.includes(key)))
+        : allFeatureKeys(source).filter((key) => featureAllowed(key, account?.role, nextTarget, source)))
     }
   }
   const load = async ({ keepNotice = false } = {}) => {
