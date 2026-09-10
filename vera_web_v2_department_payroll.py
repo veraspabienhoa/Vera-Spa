@@ -187,6 +187,15 @@ def _month_range(month: str) -> tuple[date, date, str]:
     )
 
 
+def _accumulated_month_range(month: str, today: date | None = None) -> tuple[date, date, str]:
+    """Use completed days only for the live current-month salary table."""
+    start, month_end, label = _month_range(month)
+    current_day = today or datetime.now(VN_TZ).date()
+    if start.year == current_day.year and start.month == current_day.month:
+        return start, current_day - timedelta(days=1), label
+    return start, month_end, label
+
+
 def _setting_key(department: str, suffix: str) -> str:
     return f"department_{department}_{suffix}"
 
@@ -395,7 +404,7 @@ def _penalty_maps(conn, start: date, end: date, norm: Callable[[Any], str]) -> t
 
 
 def _calculation(conn, department: str, month: str, norm: Callable[[Any], str]) -> dict[str, Any]:
-    start, end, label = _month_range(month)
+    start, end, label = _accumulated_month_range(month)
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
@@ -513,7 +522,7 @@ def _schedule_totals(
 
 
 def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str]) -> dict[str, Any]:
-    start, end, label = _month_range(month)
+    start, end, label = _accumulated_month_range(month)
     work_schedule._ensure_schema(conn)
     settings = _settings(conn, department)
     cfg = settings["config"]
@@ -590,9 +599,10 @@ def _combined_calculation(conn, month: str, norm: Callable[[Any], str], source: 
         row["tt"] = index
         row["advance"] = saved_advances.get(norm(row.get("employee_username")), _number(row.get("advance")))
         row.update(_recalculate(row, row["calculation_config"]))
-    _, _, label = _month_range(month)
+    start, end, label = _accumulated_month_range(month)
     return {
         "ok": True, "month": month, "month_label": label, "source": source,
+        "start": start.isoformat(), "end": end.isoformat(),
         "source_label": "Lịch làm việc" if source == "schedule" else "Chấm công",
         "departments": settings, "rows": rows,
     }

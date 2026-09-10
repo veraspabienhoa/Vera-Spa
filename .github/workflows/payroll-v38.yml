@@ -13,7 +13,6 @@ on:
       - "web-v2/src/pages/PayrollPageEnhanced.jsx"
       - "web-v2/src/pages/PayrollPageEnhanced.css"
       - "web-v2/src/pages/PayrollDebtAdminPanel.jsx"
-      - "web-v2/src/pages/PayrollSavedAdminPanel.jsx"
       - "web-v2/src/App.jsx"
       - ".github/workflows/payroll-v38.yml"
       - "cloudbuild.yaml"
@@ -29,7 +28,6 @@ on:
       - "web-v2/src/pages/PayrollPageEnhanced.jsx"
       - "web-v2/src/pages/PayrollPageEnhanced.css"
       - "web-v2/src/pages/PayrollDebtAdminPanel.jsx"
-      - "web-v2/src/pages/PayrollSavedAdminPanel.jsx"
       - "web-v2/src/App.jsx"
       - ".github/workflows/payroll-v38.yml"
       - "cloudbuild.yaml"
@@ -75,7 +73,6 @@ jobs:
           enhanced_page = Path('web-v2/src/pages/PayrollPageEnhanced.jsx').read_text(encoding='utf-8')
           enhanced_css = Path('web-v2/src/pages/PayrollPageEnhanced.css').read_text(encoding='utf-8')
           debt_admin = Path('web-v2/src/pages/PayrollDebtAdminPanel.jsx').read_text(encoding='utf-8')
-          saved_admin = Path('web-v2/src/pages/PayrollSavedAdminPanel.jsx').read_text(encoding='utf-8')
           app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
 
@@ -100,7 +97,7 @@ jobs:
               'safe cache fallback avoids silently dropping debt': 'cache_exists' in debt_sync and 'Đã dừng tính lương để tránh bỏ sót khấu trừ' in debt_sync,
               'saved payroll list endpoint exists': '/v2/payroll/saved-batches' in enhancements,
               'history batch delete endpoint exists': '@app.delete("/v2/payroll/history/{batch_id}")' in enhancements,
-              'completion marks applied obligations done': '_mark_applied_custom_obligations_completed' in enhancements and 'completed_obligations' in enhancements,
+              'completion reports applied obligation reconciliation': 'debt_reconciliation' in enhancements and 'completed_obligations' in enhancements,
               'admin can defer current penalty': '/v2/payroll/penalties/defer' in enhancements and 'Tạm hoãn vi phạm' in enhancements,
               'deferred penalty starts next period': 'period_end + timedelta(days=1)' in enhancements,
               'saved batch can reopen as editable draft': '/v2/payroll/saved-batches/{batch_id}/edit' in saved_edit and '_draft_key(start, end)' in saved_edit,
@@ -108,16 +105,14 @@ jobs:
               'API wrapper installs saved edit routes': 'install_payroll_saved_edit_routes(' in wrapper,
               'Web V2 loads Payroll 3.8 page': "import('./pages/PayrollPageV38')" in app,
               'V38 uses enhanced payroll UI': "./PayrollPageEnhanced" in page,
-              'V38 mounts saved payroll controls': 'PayrollSavedAdminPanel' in page,
-              'default config is below payroll history in enhanced UI': enhanced_page.find('LỊCH SỬ BẢNG LƯƠNG') < enhanced_page.find('CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH'),
+              'V38 no longer mounts salary history controls': 'PayrollSavedAdminPanel' not in page,
+              'default config remains in enhanced UI': 'CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH' in enhanced_page,
               'employee search exists in current payroll': 'Tìm tên nhân viên' in enhanced_page and 'draftSearch' in enhanced_page,
               'complete payroll button exists': 'Hoàn thành bảng lương' in enhanced_page,
-              'saved payroll delete controls exist': 'Xóa lịch sử kỳ đang chọn' in enhanced_page and 'deleteHistoryBatch' in enhanced_page,
-              'saved payroll edit and delete controls exist without duplicate draft save': all(token in saved_admin for token in ('Chỉnh sửa', 'Xóa bảng lương đã lưu')) and '> Lưu bảng lương</button>' not in saved_admin,
-              'saved payroll edit calls backend': '/v2/payroll/saved-batches/${encodeURIComponent(batch)}/edit' in saved_admin,
+              'salary history section is removed from KTV payroll': all(token not in enhanced_page for token in ('LỊCH SỬ BẢNG LƯƠNG', 'deleteHistoryBatch', 'exportHistory')),
               'payroll debt dates are dd/mm/yyyy': debt_admin.count('placeholder="dd/mm/yyyy"') == 3 and 'dateToIso' in debt_admin,
               'nonpositive take-home rows are highlighted': 'payroll-nonpositive' in enhanced_page and 'payroll-nonpositive' in enhanced_css,
-              'current penalty can be moved to next payroll': 'Chuyển kỳ sau' in enhanced_page and '/v2/payroll/penalties/defer' in enhanced_page,
+              'legacy obligation-only UI is removed from KTV payroll': all(token not in enhanced_page for token in ('NGHĨA VỤ VI PHẠM', 'Nợ do Thực nhận âm', 'Chuyển kỳ sau')),
               'table overflow is contained': 'overflow-x: auto' in enhanced_css and 'overflow-x: hidden' in enhanced_css,
               'UI exposes employee and leader overrides': 'MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8' in page,
               'Cloud Run deploys v38 wrapper': 'vera_web_v2_api_v38:app' in build,
