@@ -1818,8 +1818,10 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         result["break_event"] = end_event
     elif action == "reorder":
         employee = _employee(state, payload.get("employee_id"))
-        ordered = sorted(state["employees"], key=lambda item: (int(item.get("sort_index") or 0), _norm(item.get("name"))))
-        current = ordered.index(employee)
+        # Manual moves apply within the same displayed remaining-time bucket.
+        ordered = _ordered_employees(state["employees"], now)
+        peers = [item for item in ordered if _employee_time_key(item, now) == _employee_time_key(employee, now)]
+        current = peers.index(employee)
         direction = str(payload.get("direction") or "").lower()
         steps = int(_bounded_number(
             payload.get("steps", 1), label="Bước di chuyển", minimum=1,
@@ -1827,11 +1829,14 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         ))
         if steps not in {1, 3, 5}:
             raise HTTPException(400, "Bước di chuyển chỉ nhận 1, 3 hoặc 5.")
-        target = 0 if direction == "top" else len(ordered) - 1 if direction == "bottom" else current - steps if direction == "up" else current + steps if direction == "down" else current
+        target = 0 if direction == "top" else len(peers) - 1 if direction == "bottom" else current - steps if direction == "up" else current + steps if direction == "down" else current
         if direction not in {"top", "bottom", "up", "down"}:
             raise HTTPException(400, "Hướng sắp xếp không hợp lệ.")
-        ordered.pop(current)
-        ordered.insert(max(0, min(target, len(ordered))), employee)
+        peers.pop(current)
+        peers.insert(max(0, min(target, len(peers))), employee)
+        peer_ids = {item["id"] for item in peers}
+        peer_iter = iter(peers)
+        ordered = [next(peer_iter) if item["id"] in peer_ids else item for item in ordered]
         for index, item in enumerate(ordered):
             item["sort_index"] = index
         state["employees"] = ordered
@@ -2238,6 +2243,19 @@ def _remaining(employee: dict[str, Any], now: datetime) -> tuple[int | None, str
     return int(math.ceil((deadline - now.astimezone(VN_TZ)).total_seconds() / 60)), _iso(deadline)
 
 
+def _employee_time_key(employee: dict[str, Any], now: datetime) -> tuple[int, int, int]:
+    remaining, _ = _remaining(employee, now)
+    blank = remaining is None or remaining <= -15
+    return (int(_norm(employee.get("work_status")) == "nghi phep"),
+            0 if blank else 1, 0 if blank else remaining)
+
+
+def _ordered_employees(employees: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+    return sorted(employees, key=lambda item: (
+        *_employee_time_key(item, now), int(item.get("sort_index") or 0), _norm(item.get("name")),
+    ))
+
+
 def _row_style(employee: dict[str, Any], remaining: int | None) -> tuple[str, list[str]]:
     status = _norm(employee.get("status"))
     work = _norm(employee.get("work_status"))
@@ -2486,11 +2504,12 @@ def _state_response(
     customer_pii = can_customers_view or can_invoice_view or can_paid_invoice_view
     state = deepcopy(state)
     _ensure_counter_day(state, now)
-    ordered = sorted([row for row in state["employees"] if row.get("roster_eligible") is not False], key=lambda item: (int(item.get("sort_index") or 0), _norm(item.get("name"))))
+    ordered = _ordered_employees([row for row in state["employees"] if row.get("roster_eligible") is not False], now)
     can_recover_hidden = can_admin or can_operate
     visible = ordered if include_hidden and can_recover_hidden else [item for item in ordered if not item.get("hidden")]
     records = [_employee_record(employee, now) for employee in visible]
-    for record in records:
+    for index, record in enumerate(records, 1):
+        record["STT"] = index
         record["_private_service"] = _catalog_private_service(state, record.get("Dịch vụ"))
     occupied = sorted({str(item.get("room")) for item in state["employees"] if _active_booking(item) and item.get("room")})
     all_rooms = [str(item.get("name")) for item in state["rooms"] if item.get("active", True)]
@@ -2725,11 +2744,11 @@ def _export_rows(
     bounds = bounds or _parse_export_bounds()
     if kind == "board":
         employees = [
-            item for item in sorted(state["employees"], key=lambda row: int(row.get("sort_index") or 0))
+            item for item in _ordered_employees(state["employees"], now)
             if item.get("roster_eligible") is not False and (include_hidden or not item.get("hidden"))
             and _event_in_export_bounds(item, bounds, fallback_business_date=state.get("business_date"))
         ]
-        records = [_employee_record(item, now) for item in employees]
+        records = [{**_employee_record(item, now), "STT": index} for index, item in enumerate(employees, 1)]
         return "Bang_tua", BOARD_COLUMNS, [[record.get(column, "") for column in BOARD_COLUMNS] for record in records]
     if kind == "custom":
         title, headers, rows = _export_rows(state, "board", now, include_hidden=include_hidden, bounds=bounds)
@@ -2905,7 +2924,7 @@ def _excel_bytes(
 
 
 def _png_bytes(state: dict[str, Any], now: datetime, *, include_hidden: bool = False) -> bytes:
-    employees = [item for item in sorted(state["employees"], key=lambda row: int(row.get("sort_index") or 0)) if item.get("roster_eligible") is not False and (include_hidden or not item.get("hidden"))]
+    employees = [item for item in _ordered_employees(state["employees"], now) if item.get("roster_eligible") is not False and (include_hidden or not item.get("hidden"))]
     width, row_height = 1800, 38
     height = max(180, 116 + row_height * len(employees))
     image = Image.new("RGB", (width, height), "#f4f8f5")
@@ -2921,7 +2940,7 @@ def _png_bytes(state: dict[str, Any], now: datetime, *, include_hidden: bool = F
         record = _employee_record(employee, now)
         fill = {"green": "#caedb2", "yellow": "#ffe477", "red": "#ffaaa2", "break": "#f6b27d", "waiting": "#dcc3ee", "idle": "#dcebd8"}.get(record["_row_style"], "#ffffff")
         draw.rectangle((12, y, width - 12, y + row_height - 3), fill=fill, outline="#d5dfda")
-        values = [record["STT"], record["Tên nhân viên"], record["Trạng thái"], record["Phòng"], record["TG CÒN LẠI"], record["Dịch vụ"], record["Yêu cầu"], record["Vào ca"], record["Ghi chú"]]
+        values = [index + 1, record["Tên nhân viên"], record["Trạng thái"], record["Phòng"], record["TG CÒN LẠI"], record["Dịch vụ"], record["Yêu cầu"], record["Vào ca"], record["Ghi chú"]]
         for (x, _), value in zip(columns, values):
             draw.text((x, y + 10), str(value or "")[:48], fill="#15251f", font=font)
     output = BytesIO()

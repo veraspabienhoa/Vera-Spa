@@ -1259,3 +1259,48 @@ def test_combo_catalog_rejects_zero_tickets():
         )
     assert error.value.status_code == 400
     assert state == original
+
+
+def test_board_orders_displayed_remaining_time_and_numbers_visible_rows():
+    rows = [employee(f'e{i}', f'Worker {i}') for i in range(1, 8)]
+    for row, minutes in zip(rows, [30, 5, -2, -15, None, None, 10]):
+        if minutes is not None:
+            row.update(status='Đang thực hiện', duration=90,
+                       started_at=(NOW - timedelta(minutes=90-minutes)).isoformat())
+    rows[5]['work_status'] = 'Nghỉ phép'
+    rows[6]['hidden'] = True
+    state = state_with(*rows)
+    records = live._state_response(state, 1, NOW)['records']
+    assert [r['Tên nhân viên'] for r in records] == ['Worker 4', 'Worker 5', 'Worker 3', 'Worker 2', 'Worker 1', 'Worker 6']
+    assert [r['STT'] for r in records] == list(range(1, 7))
+    _, headers, exported = live._export_rows(state, 'board', NOW)
+    assert [r[headers.index('Tên nhân viên')] for r in exported] == [r['Tên nhân viên'] for r in records]
+    assert [r[0] for r in exported] == list(range(1, 7))
+    assert rows[0]['stt'] == '1'  # Source identity is not rewritten by presentation.
+
+
+def test_manual_reorder_preserves_time_buckets_and_moves_equal_time_peers():
+    rows = [employee(f'e{i}', f'Worker {i}') for i in range(1, 5)]
+    rows[0].update(status='Đang thực hiện', duration=30, started_at=NOW.isoformat())
+    rows[3]['work_status'] = 'Nghỉ phép'
+    state = state_with(*rows)
+    live._apply_action(state, 'reorder', {'employee_id': 'e3', 'direction': 'top'}, 'admin', NOW)
+    assert [r['id'] for r in live._ordered_employees(state['employees'], NOW)] == ['e3', 'e2', 'e1', 'e4']
+    live._apply_action(state, 'reorder', {'employee_id': 'e4', 'direction': 'top'}, 'admin', NOW)
+    assert [r['id'] for r in live._ordered_employees(state['employees'], NOW)] == ['e3', 'e2', 'e1', 'e4']
+
+
+@pytest.mark.parametrize('action,payload', [
+    ('start', {'employee_id': 'e1'}),
+    ('start_room', {'room': '1'}),
+])
+def test_start_reorders_the_returned_board(action, payload):
+    first, second, idle = employee('e1', 'First'), employee('e2', 'Second'), employee('e3', 'Idle')
+    state = state_with(first, second, idle)
+    live._apply_action(state, 'booking', {'employee_id': 'e1', 'service': 'Body 90', 'room': '1.1'}, 'admin', NOW)
+    second.update(status='Đang thực hiện', service='Body 90', duration=90,
+                  started_at=(NOW-timedelta(minutes=60)).isoformat(), room='2.1')
+    live._apply_action(state, action, payload, 'admin', NOW)
+    records = live._state_response(state, 1, NOW)['records']
+    assert [r['Tên nhân viên'] for r in records] == ['Idle', 'Second', 'First']
+    assert [r['STT'] for r in records] == [1, 2, 3]

@@ -184,7 +184,6 @@ function groupCount(records, key) {
 }
 
 function prioritizeRecords(records, columns, activeFilter) {
-  if (activeFilter === 'all') return records
   const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
   const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
   const remainingOrder = (record) => {
@@ -194,15 +193,16 @@ function prioritizeRecords(records, columns, activeFilter) {
     return Number.isFinite(value) ? [1, value] : [2, 0]
   }
   return records.map((record, index) => ({ record, index })).sort((left, right) => {
+    const leftLeave = hasGroup(left.record, 'leave')
+    const rightLeave = hasGroup(right.record, 'leave')
+    if (leftLeave !== rightLeave) return leftLeave ? 1 : -1
+    const [leftRank, leftTime] = remainingOrder(left.record)
+    const [rightRank, rightTime] = remainingOrder(right.record)
+    if (leftRank !== rightRank) return leftRank - rightRank
+    if (leftTime !== rightTime) return leftTime - rightTime
     const leftMatches = hasGroup(left.record, priorityGroup)
     const rightMatches = hasGroup(right.record, priorityGroup)
     if (leftMatches !== rightMatches) return leftMatches ? -1 : 1
-    if (leftMatches && rightMatches) {
-      const [leftRank, leftTime] = remainingOrder(left.record)
-      const [rightRank, rightTime] = remainingOrder(right.record)
-      if (leftRank !== rightRank) return leftRank - rightRank
-      if (leftTime !== rightTime) return leftTime - rightTime
-    }
     return left.index - right.index
   }).map(({ record }) => record)
 }
@@ -1397,7 +1397,7 @@ export default function LiveTourPage({ user }) {
       {data.countdown_error && <div className="warning-box">Countdown Live Tour: {data.countdown_error}</div>}
       {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
       <div className="tour-control-layout">
-        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
+        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Xếp theo TG còn lại' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong khi cùng TG còn lại' : `Ưu tiên ${label} khi cùng TG còn lại`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
         <div className="tour-room-segment-buttons" aria-label="Chọn phân khúc phòng">
           <button type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ<br/>PHÒNG</span><small>{roomCatalog.length} phòng</small></button>
           <button type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>STANDARD<br/>ROOM</span><small>{standardRooms.length} phòng</small></button>
@@ -1453,7 +1453,7 @@ export default function LiveTourPage({ user }) {
     <section className="panel tour-table-panel tour-records-panel">
       <div className="responsive-data-table tour-table" ref={recordsTableRef} tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
-        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { setError(''); if (isQuickCheckoutEligible(item, columns) && canPayment) openModal('checkout', { rowIds: [id] }); else setBookingContext({ employeeId: id }) }}>{String(item[column] ?? '')}</button> : String(item[column] ?? '')}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
+        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { setError(''); if (isQuickCheckoutEligible(item, columns) && canPayment) openModal('checkout', { rowIds: [id] }); else setBookingContext({ employeeId: id }) }}>{String(item[column] ?? '')}</button> : column === sttColumn(columns) ? index + 1 : String(item[column] ?? '')}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
