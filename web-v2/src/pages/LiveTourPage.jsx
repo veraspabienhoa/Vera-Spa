@@ -1,5 +1,6 @@
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import LiveTourFilters from '../components/LiveTourFilters'
+import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import { EMPTY_TOUR_FILTERS, filterTourRows } from '../lib/liveTourFilters'
 import {
   BellRing, CheckCircle2, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
@@ -49,10 +50,6 @@ const EXPORT_KINDS = [
 const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'pending', 'history', 'breaks'])
 const EMPTY_EXPORT_FILTERS = { date_from: '', date_to: '', time_from: '', time_to: '' }
 const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone'])
-const REPORT_LABELS = {
-  invoice_count: 'Số hóa đơn', pending_count: 'Phiếu chờ thanh toán', revenue: 'Doanh thu', tip: 'TIP', total_revenue: 'Doanh thu đã ghi nhận', total_tip: 'Tổng TIP',
-  expected_unbilled_revenue: 'Doanh thu dự kiến chưa xuất bill', unbilled_count: 'Dịch vụ chưa xuất bill', unbilled_unpriced_count: 'Dịch vụ chưa xác định giá',
-}
 
 function hasLiveTourExportAccess(kind, capabilities) {
   if (!capabilities.export) return false
@@ -469,7 +466,7 @@ function canRunAction(action, capabilities) {
   if (['backup', 'restore'].includes(action)) return capabilities.backup
   if (action === 'customer_upsert') return capabilities.customersEdit && capabilities.customers
   if (action === 'combo_purchase') return capabilities.payment && capabilities.customers
-  if (action === 'combo_import') return capabilities.admin && capabilities.payment && capabilities.customers
+  if (action === 'combo_import') return capabilities.isAdmin === true && capabilities.admin && capabilities.payment && capabilities.customers
   if (ADMIN_ACTIONS.has(action)) return capabilities.admin
   if (PAYMENT_ACTIONS.has(action)) return capabilities.payment
   return capabilities.operate
@@ -567,7 +564,7 @@ export default function LiveTourPage({ user }) {
   const pendingAnnouncementSequenceRef = useRef(0)
   const pendingReminderTimerRef = useRef(null)
   const workspaceRef = useRef(null)
-  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
+  const isAdmin = String(user?.role || '').trim().toLowerCase() === 'admin'
   const capabilities = data.capabilities && typeof data.capabilities === 'object' ? data.capabilities : {}
   const capability = (name, fallback) => Object.prototype.hasOwnProperty.call(capabilities, name) ? capabilities[name] === true : fallback
   const canOperate = capability('operate', isAdmin || user?.permissions?.live_tour_operate === true)
@@ -583,6 +580,7 @@ export default function LiveTourPage({ user }) {
   const canInvoiceEdit = canPending && canInvoiceView && capability('invoice_edit', isAdmin || user?.permissions?.live_tour_invoice_edit === true)
   const canInvoiceDelete = canPending && canInvoiceView && capability('invoice_delete', isAdmin || user?.permissions?.live_tour_invoice_delete === true)
   const canCustomers = capability('customers_view', isAdmin || user?.permissions?.live_tour_customers_view === true)
+  const canImportCombo = isAdmin && canAdmin && canPayment && canCustomers
   const canReports = capability('reports_view', isAdmin || user?.permissions?.live_tour_reports_view === true)
   const canHistory = capability('history_view', isAdmin || user?.permissions?.live_tour_history_view === true)
   const canBackup = capability('backup', isAdmin || user?.permissions?.live_tour_backup === true)
@@ -639,7 +637,7 @@ export default function LiveTourPage({ user }) {
       setError('Hãy tải Live Tour thành công trước khi thực hiện thao tác.')
       return null
     }
-    if (!canRunAction(action, { operate: canOperate, payment: canPayment, admin: canAdmin, customersEdit: capabilities.customers_edit, customersDelete: capabilities.customers_delete, comboEdit: capabilities.customer_combo_edit, comboDelete: capabilities.customer_combo_delete, booking: canBook, invoiceEdit: canInvoiceEdit, invoiceDelete: canInvoiceDelete, paidInvoiceEdit: canPaidInvoiceEdit, paidInvoiceDelete: canPaidInvoiceDelete, backup: canBackup, customers: canCustomers })) {
+    if (!canRunAction(action, { operate: canOperate, payment: canPayment, admin: canAdmin, isAdmin, customersEdit: capabilities.customers_edit, customersDelete: capabilities.customers_delete, comboEdit: capabilities.customer_combo_edit, comboDelete: capabilities.customer_combo_delete, booking: canBook, invoiceEdit: canInvoiceEdit, invoiceDelete: canInvoiceDelete, paidInvoiceEdit: canPaidInvoiceEdit, paidInvoiceDelete: canPaidInvoiceDelete, backup: canBackup, customers: canCustomers })) {
       setError('Tài khoản chưa được cấp quyền thực hiện thao tác này trên Live Tour.')
       return null
     }
@@ -684,7 +682,7 @@ export default function LiveTourPage({ user }) {
     } finally {
       setActionBusy('')
     }
-  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
+  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, isAdmin, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
 
   const previewExpired = async () => {
     if (!canAdmin || actionBusy || data.revision == null) return
@@ -729,6 +727,10 @@ export default function LiveTourPage({ user }) {
   }
 
   const openModal = (kind, context = {}) => {
+    if (kind === 'combo_import' && !canImportCombo) {
+      setError('Chỉ Admin được nhập combo.')
+      return
+    }
     const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
     const capturedEmployees = capturedRowIds?.length
       ? [...asArray(data.state?.employees), ...asArray(data.retained_assignments)].filter((employee) => capturedRowIds.includes(stableEmployeeId(employee)))
@@ -991,7 +993,6 @@ export default function LiveTourPage({ user }) {
   const pendingPayments = filterTourRows(allPendingPayments, listFilters)
   const reports = filterTourRows(allReports, listFilters)
   const visibleInvoices = filterTourRows(asArray(data.state?.invoices), listFilters)
-  const reportTotals = reports.reduce((total, row) => ({ revenue: total.revenue + Number(row.total || 0), tip: total.tip + Number(row.tip || 0) }), { revenue: 0, tip: 0 })
 
   const audit = asArray(data.audit).length ? asArray(data.audit) : asArray(data.history).length ? asArray(data.history) : asArray(data.state?.audit)
   const backups = asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)
@@ -1446,7 +1447,7 @@ export default function LiveTourPage({ user }) {
       </div>}
 
       {activePanel === 'customers' && canCustomers && <div className="live-tour-panel-body">
-        <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG & COMBO</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { newCustomer: true, rowIds: [] })}><Plus size={13}/> Mua combo cho khách mới</button><button type="button" className="secondary-button" disabled={!canAdmin} onClick={() => openModal('combo_import')}>Nhập combo cũ</button><button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
+        <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG & COMBO</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { newCustomer: true, rowIds: [] })}><Plus size={13}/> Mua combo cho khách mới</button>{isAdmin && <button type="button" className="secondary-button" disabled={!canImportCombo} onClick={() => openModal('combo_import')}>Nhập combo</button>}<button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
         <label className="live-tour-customer-search"><Search size={14}/><input type="search" aria-label="Tìm tên hoặc số điện thoại khách hàng" autoComplete="off" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
         <div className="live-tour-card-grid" style={{ marginTop: 8 }}>
           {filteredCustomers.map((customer, index) => <article className="live-tour-data-card" key={itemId(customer, index)}>
@@ -1471,10 +1472,8 @@ export default function LiveTourPage({ user }) {
           <p>Bộ lọc ngày/giờ báo cáo không áp dụng cho bảng tua hiện tại.</p>
         </details>
         <div className="live-tour-panel-toolbar"><h2>BÁO CÁO · DOANH THU · TIỀN TIP</h2><div className="live-tour-panel-toolbar-actions">{EXPORT_KINDS.map(([kind, label]) => <button type="button" className="secondary-button" disabled={!canExportKind(kind)} onClick={() => exportData(kind)} key={kind}><Download size={13}/> {label}</button>)}<button type="button" className="secondary-button" disabled={!canExportKind('board')} onClick={() => exportData('board', true)}><FileImage size={13}/> Chụp hình bảng tua</button></div></div>
-        <div className="live-tour-report-metrics">
-          {Object.entries(reportTotals).filter(([, value]) => ['string', 'number'].includes(typeof value)).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{REPORT_LABELS[key] || key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}
-          {!reports.length && <div className="live-tour-empty">Chưa có số liệu báo cáo.</div>}
-        </div>
+        <LiveTourRevenueSummary rows={reports}/>
+        {!reports.length && <div className="live-tour-empty">Chưa có số liệu báo cáo.</div>}
         {reports.length > 0 && <div className="live-tour-card-grid">{reports.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.employee_name || itemLabel(item, `Báo cáo ${index + 1}`)}</strong><span>{item?.service || 'Dịch vụ'} · {formatMoney(item?.total ?? item?.revenue ?? item?.amount)}</span><small>TIP: {formatMoney(item?.tip ?? 0)} · {item?.effective_at || item?.created_at || ''}</small>{canPaidInvoiceView && asArray(data.state?.invoices).some((invoice) => invoice.id === item.invoice_id) && <button type="button" className="secondary-button" onClick={() => setReceipt({ invoice: data.state.invoices.find((invoice) => invoice.id === item.invoice_id), autoPrint: false })}><Printer size={14}/> Xem / in hóa đơn</button>}</article>)}</div>}
       </div>}
 
@@ -1533,7 +1532,7 @@ export default function LiveTourPage({ user }) {
     {modal && <LiveTourModal title={{
       checkout: 'Thanh toán', quick_checkout: 'Thanh toán nhanh',
       replace_service: 'Đổi dịch vụ', add_service: 'Thêm dịch vụ',
-      combo_purchase: modal.newCustomer ? 'Mua combo cho khách mới' : 'Mua combo', combo_import: 'Nhập combo cũ', room_upsert: modal.item ? 'Sửa phòng' : 'Thêm phòng',
+      combo_purchase: modal.newCustomer ? 'Mua combo cho khách mới' : 'Mua combo', combo_import: 'Nhập combo', room_upsert: modal.item ? 'Sửa phòng' : 'Thêm phòng',
       service_upsert: modal.item ? 'Sửa dịch vụ' : 'Thêm dịch vụ', combo_upsert: modal.item ? 'Sửa combo' : 'Thêm combo',
     }[modal.kind] || 'Live Tour'} onClose={closeModal}>
       <form onSubmit={submitModal}>

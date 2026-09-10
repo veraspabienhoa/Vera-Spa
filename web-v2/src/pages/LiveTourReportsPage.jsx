@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import LiveTourFilters from '../components/LiveTourFilters'
+import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourReceipt from '../components/LiveTourReceipt'
 import { EMPTY_TOUR_FILTERS, filterTourRows } from '../lib/liveTourFilters'
@@ -45,7 +46,8 @@ export default function LiveTourReportsPage({ user }) {
     <section className="panel spa-content">
       <div className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[['invoices', 'Hóa đơn'], ['revenue', 'Doanh thu'], ['tip', 'Tiền TIP'], ['combos', 'Combo']].map(([key,label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
       <LiveTourFilters value={filters} onChange={setFilters}/>
-      <p>{rows.length} dòng · Tổng tiền: {money(rows.reduce((n,r) => n+Number(r.total || 0),0))} · TIP: {money(rows.reduce((n,r) => n+Number(r.tip || 0),0))}</p>
+      <LiveTourRevenueSummary rows={rows}/>
+      <p>{rows.length} dòng</p>
       {grants.export && <button className="secondary-button" onClick={() => veraApi.exportLiveTourExcel(tab === 'invoices' ? 'revenue' : tab === 'tip' ? 'tip' : 'reports', { ...filters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}) }).catch(e => setError(e.message))}>Xuất Excel theo bộ lọc</button>}
       {tab === 'invoices' && !grants.paid_invoice_view && <p>Cần quyền Xem hóa đơn đã thanh toán để mở báo cáo hóa đơn.</p>}
       <div className="responsive-data-table"><table><thead><tr><th>Ngày giờ hóa đơn</th><th>Hóa đơn / khách hàng</th><th>Nhân viên / dịch vụ</th><th>Tiền</th><th>TIP</th><th>Thao tác</th></tr></thead><tbody>{rows.map(row => {

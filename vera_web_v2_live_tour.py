@@ -3217,6 +3217,8 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         action = body.action.strip().lower()
         _reject_external_action(action)
+        if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được nhập combo.")
         payload = deepcopy(body.payload)
         actor = str(ident.employee_username or ident.full_name or "web_v2")
         idempotency_key = str(body.idempotency_key or payload.get("idempotency_key") or "").strip()
