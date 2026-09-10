@@ -178,7 +178,7 @@ def test_new_controls_and_dialogs_are_mounted_in_both_workspaces():
     board=(root/'pages/LiveTourPage.jsx').read_text()
     for obsolete in ["openModal('add_employee')", "runSelected('hide_employee')", "runSelected('delete_employee')", '>Đặt lịch nhanh</button>', '>Đặt lịch hàng loạt</button>', '>+30 phút</button>']:
         assert obsolete not in board
-    assert 'Chụp hình bảng tua' in board and 'Nghỉ giữa ca' in board
+    assert 'Copy B.Tua' in board and 'Nghỉ giữa ca' in board
     assert 'LiveTourBookingDialog' in board and 'setBookingContext' in board
     for page in ['LiveTourPage.jsx','SpaManagementPage.jsx']:
         source=(root/'pages'/page).read_text()

@@ -1,5 +1,5 @@
 export const EMPTY_TOUR_FILTERS = { preset: 'all', date_from: '', date_to: '', employee: '', customer: '', service: '' }
-export const TOUR_DATE_PRESETS = [['all', 'Tất cả'], ['yesterday', 'Ngày hôm qua'], ['today', 'Hôm nay'], ['last-week', 'Tuần trước'], ['week', 'Tuần này'], ['last-month', 'Tháng trước'], ['month', 'Tháng này'], ['custom', 'Tùy chỉnh']]
+export const TOUR_DATE_PRESETS = [['all', 'Tất cả'], ['yesterday', 'Hôm qua'], ['today', 'Hôm nay'], ['last-week', 'Tuần trước'], ['week', 'Tuần này'], ['last-month', 'Tháng trước'], ['month', 'Tháng này'], ['custom', 'Tùy chỉnh']]
 const day = (value) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value)
 export function tourDateRange(preset, now = new Date()) {
   if (['all', 'custom'].includes(preset)) return { date_from: '', date_to: '' }

@@ -34,3 +34,15 @@ export function discountAmount(subtotal, mode, value) {
   const number = Math.max(0, Number(value || 0))
   return mode === 'percent' ? Math.round(subtotal * Math.min(100, number) / 100) : number
 }
+
+// Match the server's _booking_timing: settling later preserves the booking date.
+export function checkoutBookingTime(entries, pending, now = Date.now()) {
+  const timestamp = value => {
+    if (!value) return null
+    const parsed = new Date(value).getTime()
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const booked = entries.map(entry => timestamp(entry.booked_at)).filter(value => value !== null)
+  return timestamp(pending?.effective_at) ?? timestamp(pending?.booked_at)
+    ?? (booked.length ? Math.min(...booked) : null) ?? timestamp(pending?.created_at) ?? now
+}

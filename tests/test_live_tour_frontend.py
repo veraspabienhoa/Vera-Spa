@@ -47,7 +47,7 @@ def test_live_tour_api_exposes_read_write_and_export_contracts():
         "liveTour",
         "liveTourAction",
         "exportLiveTourExcel",
-        "exportLiveTourPng",
+        "readLiveTourPng",
     ):
         assert re.search(rf"\b{method}\s*:\s*", api), f"Missing veraApi.{method}"
 
@@ -134,7 +134,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Xuất khách hàng",
         "Xuất chờ thanh toán",
         "Xuất lịch sử",
-        "Chụp hình bảng tua",
+        "Copy B.Tua",
     }
 
     missing = sorted(label for label in expected_labels if label not in source)
@@ -255,7 +255,7 @@ def test_live_tour_export_access_depends_on_the_requested_data_kind():
     assert "disabled={!canExportKind('pending')}" in source
     assert "disabled={!canExportKind('customers')}" in source
     assert "disabled={!canExportKind(kind)}" in source
-    assert "disabled={!canExportKind('board')}" in source
+    assert "disabled={!canExportKind('board') || Boolean(actionBusy)}" in source
     assert "disabled={!canExportKind('history')}" in source
 
 
@@ -341,7 +341,7 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
     assert "FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery" in export_flow
     assert "...listFilters" in export_flow
     assert "veraApi.exportLiveTourExcel(kind, query)" in export_flow
-    assert "veraApi.exportLiveTourPng(query)" in export_flow
+    assert "veraApi.readLiveTourPng()" in source
     assert "query.date_from && query.date_to && query.date_from > query.date_to" in export_flow
     assert "query.time_from > query.time_to" not in export_flow
 
@@ -491,7 +491,7 @@ def test_live_tour_quick_checkout_is_independent_and_uses_stable_employee_ids():
     assert "stableEmployeeId(record)" in helper
     assert "_payment_pending" in helper
     assert "CHO THANH TOAN" in helper
-    assert "disabled={!canPayment}" in button
+    assert "disabled={!canPayment || Boolean(actionBusy)}" in button
     assert "selectedIds.size" not in button
     assert "const quickCheckoutMatches" in source
     assert "[stableEmployeeId(selectedQuickCheckoutRecord)]" in source
