@@ -2802,13 +2802,18 @@ def _export_rows(
         headers = ["Ngày", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Tip", "Người tạo"]
         rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
         return "Tip", headers, rows
+    if kind == "reports":
+        fields = ["business_date", "effective_at", "employee_name", "service", "room", "bill_no", "customer_name", "customer_phone", "total", "tip", "payment_method", "actor"]
+        headers = ["Ngày", "Ngày giờ hóa đơn", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Khách hàng", "Điện thoại", "Tổng tiền", "Tip", "Thanh toán", "Người tạo"]
+        rows = [[item.get(key) for key in fields] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
+        return "Bao_cao", headers, rows
     if kind == "customers":
         headers = ["Khách hàng", "Điện thoại", "Combo", "Tổng vé", "Đã dùng", "Còn lại", "Ngày mua"]
-        rows = [[customer.get("name"), customer.get("phone"), purchase.get("combo_name"), purchase.get("total"), purchase.get("used"), purchase.get("remaining"), purchase.get("lk") or purchase.get("purchased_at")] for customer in state["customers"] for purchase in (customer.get("combo_purchases") or [{}]) if _event_in_export_bounds(purchase, bounds)]
+        rows = [[customer.get("name"), customer.get("phone"), purchase.get("combo_name"), purchase.get("total"), purchase.get("used"), purchase.get("remaining"), purchase.get("lk") or purchase.get("purchased_at")] for customer in state["customers"] if not customer.get("deleted_at") for purchase in ([p for p in customer.get("combo_purchases", []) if not p.get("deleted_at")] or [{}]) if _event_in_export_bounds(purchase, bounds)]
         return "Khach_hang", headers, rows
     if kind == "pending":
         headers = ["Ngày giờ", "Khách hàng", "Điện thoại", "Nhân viên", "Dịch vụ", "Phòng", "Ghi chú"]
-        rows = [[item.get("created_at"), item.get("customer_name"), item.get("customer_phone"), entry.get("employee_name"), entry.get("service"), entry.get("room"), item.get("note")] for item in state["pending"] if _event_in_export_bounds(item, bounds) for entry in item.get("entries", [])]
+        rows = [[item.get("effective_at") or item.get("booked_at") or item.get("created_at"), item.get("customer_name"), item.get("customer_phone"), entry.get("employee_name"), entry.get("service"), entry.get("room"), item.get("note")] for item in state["pending"] if _event_in_export_bounds(item, bounds) for entry in item.get("entries", [])]
         return "Cho_thanh_toan", headers, rows
     if kind == "history":
         headers = ["Ngày giờ", "Ngày kinh doanh", "Người thao tác", "Hành động", "Chi tiết"]
@@ -3304,7 +3309,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         export_kind = kind.strip().lower()
         if export_kind not in {
-            "board", "custom", "revenue", "tip", "customers", "pending", "history",
+            "board", "custom", "revenue", "tip", "reports", "customers", "pending", "history",
             "breaks", "customer_detail",
         }:
             raise HTTPException(400, "Loại báo cáo Live Tour không hợp lệ.")
@@ -3315,7 +3320,7 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
-        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), report_kind=report_kind.strip(), calendar_date=export_kind in {"revenue", "tip", "pending"})
+        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), report_kind=report_kind.strip(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):
@@ -3332,6 +3337,9 @@ def install_live_tour_routes(
         elif export_kind == "revenue" and not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
             state = deepcopy(state)
             state["invoices"] = _redact_customer_pii(state["invoices"])
+        elif export_kind == "reports" and not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
+            state = deepcopy(state)
+            state["reports"] = _redact_customer_pii(state["reports"])
         content, filename = _excel_bytes(
             state, export_kind, now, include_hidden=bool(include_hidden and can_recover_hidden),
             bounds=bounds, customer_id=customer_id_value, selected_columns=columns, employee_ids=employee_ids,

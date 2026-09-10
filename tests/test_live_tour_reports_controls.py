@@ -188,3 +188,52 @@ def test_new_controls_and_dialogs_are_mounted_in_both_workspaces():
     for filename in ['LiveTourPaidInvoiceDialog.jsx','LiveTourPendingDialog.jsx']:
         source=(root/'components'/filename).read_text()
         assert 'canEditDate' in source and 'invoice_at:' in source and 'expectedRevision: revision' in source
+
+
+def test_report_excel_preserves_money_filters_and_customer_read_grants(monkeypatch):
+    state, invoice = paid_state()
+    report = state['reports'][0]
+    report.update(customer_name='Khách Á', customer_phone='0901234567', employee_name='An',
+                  service='Body', effective_at='2026-09-07T01:00:00+07:00', business_date='2026-09-07')
+    invoice['purchased_combo_id'] = 'combo-sale'
+    other = dict(report, id='other', invoice_id='other', employee_name='Bình', service='Foot', total=999)
+    state['reports'].append(other)
+    client, _ = scoped_client(monkeypatch, state, ALL)
+    query = {'kind':'reports', 'date_from':'2026-09-07', 'date_to':'2026-09-07',
+             'employee':'an', 'customer':'khach a', 'service':'body', 'report_kind':'combos'}
+    response = client.get('/v2/live-tour/export.xlsx', params=query)
+    assert response.status_code == 200
+    rows = list(load_workbook(BytesIO(response.content)).active.values)
+    assert len(rows) == 2
+    actual = dict(zip(rows[0], rows[1]))
+    assert actual['Tổng tiền'] == report['total'] and actual['Tip'] == report['tip']
+    assert actual['Khách hàng'] == 'Khách Á' and actual['Ngày giờ hóa đơn'] == report['effective_at']
+    grants = {'live_tour_reports_view', 'live_tour_export'}
+    client, _ = scoped_client(monkeypatch, state, grants)
+    response = client.get('/v2/live-tour/export.xlsx', params={'kind':'reports'})
+    rows = list(load_workbook(BytesIO(response.content)).active.values)
+    for values in rows[1:]:
+        actual = dict(zip(rows[0], values))
+        assert actual['Khách hàng'] is None and actual['Điện thoại'] is None
+    client, _ = scoped_client(monkeypatch, state, {'live_tour_export'})
+    assert client.get('/v2/live-tour/export.xlsx', params={'kind':'reports'}).status_code == 403
+
+
+def test_pending_excel_uses_corrected_booking_time(monkeypatch):
+    state, pending = pending_state()
+    live._apply_action(state, 'pending_update', {'pending_id': pending['id'], 'reason':'Đối soát',
+                      'invoice_at':'2026-09-02T09:14:00+07:00'}, 'admin', NOW)
+    client, _ = scoped_client(monkeypatch, state, ALL)
+    response = client.get('/v2/live-tour/export.xlsx', params={'kind':'pending', 'date_from':'2026-09-02', 'date_to':'2026-09-02'})
+    rows = list(load_workbook(BytesIO(response.content)).active.values)
+    assert len(rows) == 2 and rows[1][0] == '2026-09-02T09:14:00+07:00'
+
+
+def test_customer_export_omits_deleted_profiles_and_purchases():
+    state = customer_state()
+    live._apply_action(state, 'customer_combo_delete', {'customer_id':'c1', 'purchase_id':'p1', 'reason':'Gỡ vé'}, 'admin', NOW)
+    _, _, rows = live._export_rows(state, 'customers', NOW)
+    assert len(rows) == 1 and rows[0][0] == 'Khách' and rows[0][2] is None
+    live._apply_action(state, 'customer_delete', {'customer_id':'c1', 'reason':'Gỡ hồ sơ'}, 'admin', NOW)
+    assert live._export_rows(state, 'customers', NOW)[2] == []
+    assert len(state['customer_changes']) == 2

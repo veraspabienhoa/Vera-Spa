@@ -50,6 +50,17 @@ def test_first_boot_only_uses_username_and_allowed_roles():
     assert db.revision == revision  # Reads do not write or reorder an unchanged directory.
 
 
+def test_retired_manual_exclusions_do_not_hide_eligible_directory_employees():
+    state = state_with(employee('e1', 'An'))
+    state['roster_excluded_usernames'] = ['Bình']
+    db = SettingsDatabase(state, directory=[person('An'), person('Bình'), person('Lễ Tân', 'letan')])
+    _, client = app_client(db)
+    data = client.get('/v2/live-tour').json()
+    assert {row['Tên nhân viên'] for row in data['records']} == {'An', 'Bình'}
+    assert next(row for row in data['records'] if row['Tên nhân viên'] == 'An')['_id'] == 'e1'
+    assert 'roster_excluded_usernames' not in db.stored
+
+
 def test_existing_names_migrate_without_losing_assignments_or_history():
     state, a, b = prepare()
     book(state, a, b)

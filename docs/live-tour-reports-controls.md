@@ -1,6 +1,6 @@
 # Live Tour: báo cáo, ngày giờ hóa đơn và điều khiển
 
-Yêu cầu nguồn: `f61f76bec7ec84511e0b7ce8b11a9bb00dfb13ee.webarchive`.
+Yêu cầu nguồn: `f61f76bec7ec84511e0b7ce8b11a9bb00dfb13ee.webarchive`, đối chiếu lại với `84fb79b460dba57ddb3d5a02140bbf8b7dff6060.webarchive` khi tiếp tục ngày 10/09/2026.
 
 ## Thay đổi
 
@@ -11,6 +11,7 @@ Yêu cầu nguồn: `f61f76bec7ec84511e0b7ce8b11a9bb00dfb13ee.webarchive`.
 - Menu Báo cáo riêng: hóa đơn, doanh thu, TIP và combo. Sửa/xóa từ báo cáo dùng luồng điều chỉnh/hủy hóa đơn gốc, đồng bộ các sổ liên quan. Xóa một dòng báo cáo hóa đơn được ghi rõ là hủy toàn hóa đơn tương ứng; không cho sửa riêng số tổng làm lệch sổ.
 - Bộ lọc ngày hôm qua, hôm nay, tuần trước/này, tháng trước/này, tùy chỉnh; tìm nhân viên, khách hàng, dịch vụ. Tuần bắt đầu thứ Hai; ngày theo Việt Nam. Nhân viên và dịch vụ phải khớp cùng dòng hóa đơn. Live Tour: Chờ thanh toán, Hóa đơn đã thanh toán, Báo cáo đều dùng bộ lọc này. Xuất báo cáo mang theo bộ lọc. Các sổ được đọc đầy đủ để tìm cả hóa đơn cũ, không cắt còn 500/1000 dòng trước khi lọc.
 - Khách hàng và Live Tour đều có sửa/xóa khách hàng và combo đã mua. Sửa combo điều chỉnh lượt còn lại (từng dịch vụ khi có thành phần), giữ lượt đã dùng và hóa đơn bán ban đầu. Xóa là gỡ khỏi danh sách sử dụng, giữ bằng chứng giao dịch. Chặn khi còn booking/phiếu giữ chỗ; xóa khách hàng còn vé phải xử lý combo trước. Mọi điều chỉnh có lịch sử trước/sau và lý do.
+- Rà soát tiếp: nối quyền sửa ngày giờ cho hộp Chờ thanh toán; hiển thị/xuất ngày giờ đã điều chỉnh; xuất báo cáo doanh thu/combo có đầy đủ số tiền và kiểm tra quyền xem thông tin khách. Xuất danh sách khách bỏ hồ sơ/combo đã xóa; lịch sử vẫn giữ nguyên. Bỏ danh sách loại trừ nhân viên thủ công cũ để mọi Leader/Nhân viên đủ điều kiện đều trở lại bảng từ danh sách hệ thống.
 
 ## Phân quyền
 
@@ -30,6 +31,7 @@ Quyền tạo khách hàng vẫn đi cùng thanh toán. Trang Báo cáo có endp
 
 ## Kiểm tra và triển khai
 
+- Xác nhận khi tiếp tục: toàn bộ pytest **682 đạt**; ESLint **0 lỗi, 3 cảnh báo có sẵn**; Vite production build thành công. Kiểm tra mới bao phủ báo cáo Excel có tiền và phân quyền thông tin khách, giờ phiếu chờ đã sửa, danh sách khách sau xóa và phục hồi nhân viên từ danh sách hệ thống.
 - Kiểm thử API: bảo toàn giờ booking sau khi nhân viên nhận lượt mới; sửa ngày cần quyền riêng và đồng bộ sổ; từ chối dữ liệu sai không ghi dở dang; phân quyền khách/combo; vé thành phần và giữ chỗ; báo cáo và export; ảnh toàn bảng; các mốc tuần/tháng theo Việt Nam.
 - Build React và ESLint. Có fixture chỉ đọc cho `/preview?page=reports` và `/preview?page=customers`, không gọi API sản xuất. Trình duyệt trong phiên làm việc chặn localhost, nên chưa hoàn tất kiểm tra trực quan qua trình duyệt.
 - Sau merge, chạy **Deploy VPS Production** và **Deploy VERA SPA Web V2** trên cùng commit `main`. Chạy API trước rồi giao diện. Không cần thay schema PostgreSQL; dữ liệu JSON có thêm trường thời điểm, dấu xóa và lịch sử.
