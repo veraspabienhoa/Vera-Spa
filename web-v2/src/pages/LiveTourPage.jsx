@@ -539,7 +539,6 @@ export default function LiveTourPage({ user }) {
   const [roomSegment, setRoomSegment] = useState('all')
   const [customerContext, setCustomerContext] = useState(null)
   const [listFilters, setListFilters] = useState({ ...EMPTY_TOUR_FILTERS })
-  const [showAdminTools, setShowAdminTools] = useState(false)
   const [selectedRoomKey, setSelectedRoomKey] = useState('')
   const [clockMs, setClockMs] = useState(Date.now())
   const [activePanel, setActivePanel] = useState('pending')
@@ -1252,10 +1251,10 @@ export default function LiveTourPage({ user }) {
       .tour-page{gap:5px}.page-wrap.tour-page-wrap{padding-top:4px}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
       .live-tour-board{min-width:0}.live-tour-board>.tour-records-panel{margin-top:5px}
       .live-tour-page .tour-sticky-top{display:grid;gap:4px;background:var(--paper,#f7faf8)}
-      .live-tour-page .tour-topbar{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(330px,1fr) auto;align-items:center;gap:10px}
+      .live-tour-page .tour-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
       .live-tour-page .tour-heading-title{min-width:0;display:flex;align-items:center;gap:8px}.live-tour-page .tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:18px;line-height:.95}.live-tour-status{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 7px;color:#17603f;background:#dff4e8;font-size:8px;font-weight:900}.live-tour-status:before{content:'';width:7px;height:7px;border-radius:50%;background:#23a861;box-shadow:0 0 0 3px rgba(35,168,97,.16)}
       .live-tour-page .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}.live-tour-page .tour-table tr.live-tour-selected td{box-shadow:inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-table tr.live-tour-selected td:first-child{box-shadow:inset 2px 0 #173c30,inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
-      .live-tour-page .tour-shift-filter{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;margin:0}.live-tour-page .tour-shift-filter button{min-width:66px;padding:5px 9px;border-radius:8px;font-size:10px}
+      .live-tour-page .tour-shift-filter{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:6px;margin:8px 0}.live-tour-page .tour-shift-filter button{min-width:66px;padding:5px 9px;border-radius:8px;font-size:10px}
       .live-tour-page .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.live-tour-page .tour-heading-actions button{min-height:34px;padding:6px 10px;font-size:10px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
       .live-tour-payment-reminder{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #e9ad57;border-radius:9px;color:#64350d;background:#fff3d7;box-shadow:0 3px 12px rgba(124,73,17,.12);font-size:10px}.live-tour-payment-reminder strong{font-size:11px}.live-tour-payment-reminder span{flex:1}.live-tour-payment-reminder button{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
       .live-tour-page .tour-control-layout{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);gap:4px;align-items:stretch}.live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:27px;gap:3px;border-radius:7px;padding:2px 6px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:7px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:15px}
@@ -1276,8 +1275,8 @@ export default function LiveTourPage({ user }) {
       @media(prefers-reduced-motion:reduce){.live-tour-page .tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
       @media(max-width:760px){.live-tour-export-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.live-tour-export-filters>strong,.live-tour-export-filters small{grid-column:1/-1}.live-tour-form-grid{grid-template-columns:1fr}.live-tour-field.wide{grid-column:auto}.live-tour-multi-row{grid-template-columns:1fr 1fr}.live-tour-multi-row strong{grid-column:1/-1}}
       @media(max-width:640px){
-        .live-tour-page .tour-sticky-top{position:static}.live-tour-page .tour-topbar{grid-template-columns:1fr;gap:6px}.live-tour-page .tour-heading-title h1{font-size:14.5px}.live-tour-page .tour-shift-filter{order:3}.live-tour-page .tour-records-panel .tour-table{max-height:none;overflow-x:hidden;overflow-y:visible}
-        .live-tour-page .tour-shift-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-bottom:7px}.live-tour-page .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
+        .live-tour-page .tour-sticky-top{position:static}.live-tour-page .tour-topbar{grid-template-columns:1fr;gap:6px}.live-tour-page .tour-heading-title h1{font-size:14.5px}.live-tour-page .tour-records-panel .tour-table{max-height:none;overflow-x:hidden;overflow-y:visible}
+        .live-tour-page .tour-shift-filter{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}.live-tour-page .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
         .live-tour-page .tour-heading-actions{width:100%;justify-content:stretch}.live-tour-page .tour-heading-actions button{flex:1}
         .live-tour-page .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:31px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:2px;text-align:center}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;line-height:1.05}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:14px}
         .live-tour-page .tour-control-layout{grid-template-columns:1fr;gap:4px}.live-tour-page .tour-room-segment-button{min-height:42px;padding:3px 2px}.live-tour-page .tour-room-segment-button svg{width:12px;height:12px}.live-tour-page .tour-room-segment-button span{font-size:7px}.live-tour-page .tour-room-segment-button small{font-size:6px}
@@ -1292,13 +1291,7 @@ export default function LiveTourPage({ user }) {
     <div className="tour-sticky-top" ref={stickyTopRef}>
       <div className="tour-topbar">
         <div className="tour-heading-title"><h1>LIVE TOUR</h1><span className="live-tour-status">TRỰC TIẾP</span></div>
-        <div className="tour-shift-filter" aria-label="Lọc Live Tour theo ca">
-          <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
-          <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
-          <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
-        </div>
         <div className="tour-heading-actions">
-          {canAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><LayoutGrid size={16}/> {showAdminTools ? 'Ẩn màu dòng' : 'Hiện màu dòng'}</button>}
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
           {canExport && <><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board')}><Download size={16}/> Xuất bảng tua</button><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/> Copy B.Tua</button></>}
           <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới Live Tour</button>
@@ -1310,11 +1303,15 @@ export default function LiveTourPage({ user }) {
         <BellRing size={16} aria-hidden="true"/><strong>CHỜ THANH TOÁN</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>
         <button type="button" className="secondary-button" onClick={openPendingPanel}>Mở danh sách</button>
       </div>}
+      <div className="tour-shift-filter" aria-label="Lọc Live Tour theo ca">
+        <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
+        <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
+        <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
+      </div>
       <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}
       </div>
       {data.countdown_error && <div className="warning-box">Countdown Live Tour: {data.countdown_error}</div>}
-      {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
       <div className="tour-control-layout">
         <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Xếp theo TG còn lại' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong khi cùng TG còn lại' : `Ưu tiên ${label} khi cùng TG còn lại`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
         <div className="tour-room-segment-buttons" aria-label="Chọn phân khúc phòng">
@@ -1651,15 +1648,10 @@ export default function LiveTourPage({ user }) {
       </form>
     </LiveTourModal>}
 
-    {canAdmin && showAdminTools && <>
-      <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu trạng thái Live Tour; Break được ưu tiên hiển thị cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
-    </>}
-
     {bookingContext && <LiveTourBookingDialog data={data} context={bookingContext} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
     {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} canEditDate={capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {customerContext && <LiveTourCustomerDialog context={customerContext} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
     {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} canEditDate={capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {receipt && canPaidInvoiceView && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
-    <div className="setup-note tour-countdown-note">Live Tour lưu trực tiếp trên máy chủ, kiểm tra phiên bản trước mỗi thao tác và tự tải lại khi có người dùng khác cập nhật.</div>
   </div>
 }
