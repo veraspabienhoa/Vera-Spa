@@ -1,3 +1,4 @@
+import { invoiceLocalTime } from '../lib/liveTourFilters'
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import useDialogFocus from '../lib/useDialogFocus'
@@ -5,7 +6,7 @@ import './LiveTourBookingDialog.css'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
 
-export default function LiveTourPaidInvoiceDialog({ context, busy, error, onAction, onClose }) {
+export default function LiveTourPaidInvoiceDialog({ context, busy, error, onAction, onClose, canEditDate = false }) {
   const { item, mode, revision } = context
   const deleting = mode === 'delete'
   const dialog = useDialogFocus(() => { if (!busy) onClose() })
@@ -15,6 +16,7 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
   const [method, setMethod] = useState(item.payment_method)
   const [note, setNote] = useState(item.note || '')
   const [reason, setReason] = useState('')
+  const [invoiceAt, setInvoiceAt] = useState(() => invoiceLocalTime(item))
   const covered = item.combo_units_source === 'server_purchase_components'
   const subtotal = prices.reduce((sum, price) => sum + Number(price || 0), 0)
   const total = covered ? Number(tip || 0) : subtotal - Number(discount || 0) + Number(tip || 0)
@@ -23,6 +25,7 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
     const entries = prices.flatMap((price, index) => Number(price) !== Number(item.entries[index].price) ? [{ index, price: Number(price) }] : [])
     const result = await onAction(deleting ? 'paid_invoice_delete' : 'paid_invoice_update', {
       invoice_id: item.id, reason: reason.trim(),
+      ...(!deleting && canEditDate && invoiceAt !== invoiceLocalTime(item) ? { invoice_at: `${invoiceAt}:00+07:00` } : {}),
       ...(!deleting ? { entries, discount: Number(discount), tip: Number(tip), payment_method: method, note } : {}),
     }, [], { expectedRevision: revision })
     if (result) onClose()
@@ -34,9 +37,10 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
       {error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất.</p>}
       <p className={deleting ? 'error-box' : 'setup-note'}>{deleting
         ? 'Hủy hóa đơn sẽ loại tiền và TIP khỏi báo cáo, hoàn vé đã dùng theo lịch sử gốc. Hóa đơn bán combo chỉ được hủy khi combo chưa dùng và không còn booking giữ chỗ. Bản gốc được giữ trong lịch sử.'
-        : 'Sửa giá, giảm giá, TIP, ghi chú hoặc phương thức thu tiền. Khách hàng, dịch vụ, nhân viên, số bill và ngày gốc được giữ nguyên. Muốn đổi dịch vụ hoặc đổi qua lại COMBO: hủy rồi lập lại để đối soát vé.'}</p>
+        : 'Sửa giá, giảm giá, TIP, ghi chú hoặc phương thức thu tiền. Khách hàng, dịch vụ, nhân viên, số bill được giữ nguyên. Muốn đổi dịch vụ hoặc đổi qua lại COMBO: hủy rồi lập lại để đối soát vé.'}</p>
       <p>Đây là điều chỉnh sổ hệ thống; không tự hoàn tiền qua ngân hàng hoặc thẻ. Cần đối soát thu/hoàn tiền thực tế riêng.</p>
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
+        {!deleting && canEditDate && true && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><input type="datetime-local" required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
         {item.entries.map((entry, index) => <div className="wide live-tour-data-card" key={index}><strong>{entry.employee_name || 'Bán combo'} · {entry.service}</strong><small>{entry.room}</small>
           {deleting ? <span>{money(entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><input type="number" min="0" max="10000000000" step="1" required value={prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
         </div>)}

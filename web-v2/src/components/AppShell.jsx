@@ -8,6 +8,7 @@ const items = [
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker'] },
   { id: 'tour', label: 'Bảng tua', icon: Compass, ready: true, permission: 'tour' },
   { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true, permission: 'live_tour_view' },
+  { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
   { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, permission: 'live_tour_admin' },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },

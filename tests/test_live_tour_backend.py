@@ -830,26 +830,21 @@ def test_normalize_state_canonicalizes_unknown_source_values_safely():
     assert normalized["employees"][1]["shift"] == ""
 
 
-def test_operator_capabilities_allow_hidden_employee_recovery_but_view_only_does_not():
-    visible = employee("e1", "An")
+def test_legacy_hidden_flags_no_longer_remove_eligible_staff():
     hidden = employee("e2", "Bình")
     hidden["hidden"] = True
-    state = state_with(visible, hidden)
+    state = state_with(employee("e1", "An"), hidden)
+    for operate in (False, True):
+        response = live._state_response(state, 3, NOW, can_operate=operate)
+        assert [r["employee_id"] for r in response["records"]] == ["e1", "e2"]
+        assert all(not r["_hidden"] for r in response["records"])
+        assert response["capabilities"]["hide_recovery"] is False
+    before = deepcopy(state)
+    for action in ("add_employee", "delete_employee", "hide_employee", "show_employee", "show_all"):
+        with pytest.raises(HTTPException):
+            live._apply_action(state, action, {"employee_id": "e2"}, "admin", NOW)
+        assert state == before
 
-    operator = live._state_response(
-        state, 3, NOW, include_hidden=True, can_operate=True,
-    )
-    assert {item["employee_id"] for item in operator["records"]} == {"e1", "e2"}
-    assert operator["capabilities"]["operate"] is True
-    assert "sync" not in operator["capabilities"]
-    assert operator["capabilities"]["hide_recovery"] is True
-
-    view_only = live._state_response(state, 3, NOW, include_hidden=True)
-    assert [item["employee_id"] for item in view_only["records"]] == ["e1"]
-    assert view_only["capabilities"]["hide_recovery"] is False
-
-    live._apply_action(state, "show_employee", {"employee_id": "e2"}, "operator", NOW)
-    assert hidden["hidden"] is False
 
 
 def test_assignment_cleanup_clears_only_tour_fields():
@@ -900,7 +895,7 @@ def test_board_export_hides_rows_by_default_and_admin_can_include_them():
     _, _, admin_rows = live._export_rows(state, "board", NOW, include_hidden=True)
     name_index = headers.index("Tên nhân viên")
 
-    assert [row[name_index] for row in default_rows] == ["An"]
+    assert [row[name_index] for row in default_rows] == ["An", "Bình"]
     assert [row[name_index] for row in admin_rows] == ["An", "Bình"]
 
 
@@ -1104,7 +1099,7 @@ def test_operator_can_include_hidden_rows_in_board_and_png_exports(monkeypatch):
 def test_all_representative_mutation_groups_require_idempotency_keys_at_api_boundary():
     assert {
         "booking", "start", "add_minutes", "checkout", "quick_checkout",
-        "set_work_status", "hide_employee", "combo_purchase", "combo_import",
+        "set_work_status", "customer_combo_update", "combo_purchase", "combo_import",
         "backup", "restore", "clear_expired",
     } <= live.IDEMPOTENCY_REQUIRED_ACTIONS
     body = live.LiveTourAction(action="checkout", idempotency_key="request-123", payload={})
@@ -1271,11 +1266,11 @@ def test_board_orders_displayed_remaining_time_and_numbers_visible_rows():
     rows[6]['hidden'] = True
     state = state_with(*rows)
     records = live._state_response(state, 1, NOW)['records']
-    assert [r['Tên nhân viên'] for r in records] == ['Worker 4', 'Worker 5', 'Worker 3', 'Worker 2', 'Worker 1', 'Worker 6']
-    assert [r['STT'] for r in records] == list(range(1, 7))
+    assert [r['Tên nhân viên'] for r in records] == ['Worker 4', 'Worker 5', 'Worker 3', 'Worker 2', 'Worker 7', 'Worker 1', 'Worker 6']
+    assert [r['STT'] for r in records] == list(range(1, 8))
     _, headers, exported = live._export_rows(state, 'board', NOW)
     assert [r[headers.index('Tên nhân viên')] for r in exported] == [r['Tên nhân viên'] for r in records]
-    assert [r[0] for r in exported] == list(range(1, 7))
+    assert [r[0] for r in exported] == list(range(1, 8))
     assert rows[0]['stt'] == '1'  # Source identity is not rewritten by presentation.
 
 

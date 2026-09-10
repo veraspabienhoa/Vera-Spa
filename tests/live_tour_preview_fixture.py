@@ -24,8 +24,17 @@ def preview_response(admin=True):
         live._booking(state, {"employee_id": f"demo-{index}", "room": f"18.{index - 1}", "service": "Body 90"}, now)
     live._apply_action(state, "start_break", {"employee_id": "demo-6"}, "Tài khoản mẫu", now - timedelta(minutes=95))
     live._apply_action(state, "end_break", {"employee_id": "demo-6"}, "Tài khoản mẫu", now)
+    for service in state["services"]:
+        service["price"] = 200000
+    for index in (7, 8):
+        live._booking(state, {"employee_id": f"demo-{index}", "room": f"2.{index-6}", "service": "Body 90", "customer_name": "Khách mẫu", "customer_phone": "0901234567", "start_now": True}, now)
+        live._apply_action(state, "complete", {"employee_id": f"demo-{index}"}, "Tài khoản mẫu", now)
+    live._apply_action(state, "checkout", {"employee_id": "demo-7", "payment_method": "TIỀN MẶT"}, "Tài khoản mẫu", now)
+    live._apply_action(state, "move_pending", {"employee_id": "demo-8"}, "Tài khoản mẫu", now)
+    state["customers"][0]["combo_purchases"] = [{"id": "demo-combo", "combo_name": "Combo mẫu", "total": 10, "used": 2, "remaining": 8}]
     return live._state_response(state, 1, now, can_admin=admin, can_operate=admin,
-                                can_payment=admin, can_export=admin)
+                                can_payment=admin, can_export=admin, can_invoice_edit=admin, can_invoice_delete=admin, can_paid_invoice_edit=admin, can_paid_invoice_delete=admin,
+                                can_invoice_date_edit=admin, can_reports_edit=admin, can_reports_delete=admin, can_customers_edit=admin, can_customers_delete=admin, can_customer_combo_edit=admin, can_customer_combo_delete=admin)
 
 
 if __name__ == "__main__":

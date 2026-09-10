@@ -77,61 +77,30 @@ def test_backdate_rejects_invalid_reason_boolean_and_client_time_override(payloa
     assert error.value.status_code == 400
 
 
-def test_checkout_backdate_preserves_recorded_time_and_uses_effective_bill_day():
+def test_checkout_uses_booking_timestamp():
     now = datetime(2026, 9, 5, 15, 0, tzinfo=live.VN_TZ)
     state = _payable_state(now)
-    payload = {
-        "employee_id": "e1",
-        "customer_name": "Khách cần ẩn",
-        "customer_phone": "0901000000",
-        "payment_method": "TIỀN MẶT",
-        "backdate_one_day": True,
-        "correction_reason": "Nhập sót cuối ngày",
-    }
-
-    result = live._apply_action(state, "checkout", payload, "admin", now)
-    invoice = result["invoice"]
-
-    assert invoice["created_at"] == "2026-09-05T15:00:00+07:00"
-    assert invoice["recorded_at"] == invoice["created_at"]
-    assert invoice["effective_at"] == "2026-09-04T23:59:00+07:00"
+    state["employees"][0]["booked_at"] = "2026-09-04T09:15:00+07:00"
+    invoice = live._apply_action(state, "checkout", {"employee_id": "e1", "payment_method": "TIỀN MẶT"}, "admin", now)["invoice"]
+    assert invoice["effective_at"] == "2026-09-04T09:15:00+07:00"
     assert invoice["business_date"] == "2026-09-04"
-    assert invoice["bill_no"] == "LIVE-20260904-0001"
-    assert invoice["backdate_one_day"] is True
-    assert invoice["correction_reason"] == "Nhập sót cuối ngày"
+    assert invoice["bill_no"].startswith("LIVE-20260904-")
+    assert invoice["recorded_at"] == live._iso(now)
     assert state["reports"][0]["effective_at"] == invoice["effective_at"]
-    assert state["reports"][0]["recorded_at"] == invoice["recorded_at"]
-    assert state["business_date"] == "2026-09-05"
-
-    audit = state["audit"][-1]
-    assert audit["business_date"] == "2026-09-04"
-    assert audit["effective_at"] == invoice["effective_at"]
-    assert audit["recorded_at"] == invoice["recorded_at"]
-    assert audit["detail"]["correction_reason"] == "Nhập sót cuối ngày"
-    assert "customer_name" not in audit["detail"]
-    assert "customer_phone" not in audit["detail"]
 
 
-def test_quick_checkout_supports_admin_backdate_and_server_default_payment():
-    now = datetime(2026, 9, 5, 0, 1, tzinfo=live.VN_TZ)
+
+def test_quick_checkout_uses_booking_timestamp():
+    now = datetime(2026, 9, 5, 15, 0, tzinfo=live.VN_TZ)
     state = _payable_state(now)
+    state["employees"][0]["booked_at"] = "2026-09-04T09:15:00+07:00"
+    invoice = live._apply_action(state, "quick_checkout", {"employee_id": "e1", "payment_method": "TIỀN MẶT"}, "admin", now)["invoice"]
+    assert invoice["effective_at"] == "2026-09-04T09:15:00+07:00"
+    assert invoice["business_date"] == "2026-09-04"
+    assert invoice["bill_no"].startswith("LIVE-20260904-")
+    assert invoice["recorded_at"] == live._iso(now)
+    assert state["reports"][0]["effective_at"] == invoice["effective_at"]
 
-    invoice = live._apply_action(
-        state,
-        "quick_checkout",
-        {
-            "employee_id": "e1",
-            "backdate_one_day": True,
-            "correction_reason": "Ca đêm ghi muộn",
-        },
-        "admin",
-        now,
-    )["invoice"]
-
-    assert invoice["quick"] is True
-    assert invoice["payment_method"] == "TIỀN MẶT"
-    assert invoice["effective_at"] == "2026-09-03T23:59:00+07:00"
-    assert invoice["bill_no"].startswith("LIVE-20260903-")
 
 
 def test_combo_purchase_backdate_propagates_timing_to_purchase_invoice_and_report():
@@ -233,7 +202,7 @@ def test_backdate_route_requires_payment_then_admin_before_read_or_mutation(monk
     assert state_reads == []
 
 
-def test_backdated_payment_replay_returns_same_result_without_second_invoice(monkeypatch):
+def test_booking_dated_payment_replay_returns_same_result_without_second_invoice(monkeypatch):
     app = FastAPI()
     seed_now = datetime(2026, 9, 5, 15, 0, tzinfo=live.VN_TZ)
     shared = {"state": _payable_state(seed_now), "revision": 0}
@@ -264,8 +233,7 @@ def test_backdated_payment_replay_returns_same_result_without_second_invoice(mon
         payload={
             "employee_id": "e1",
             "payment_method": "TIỀN MẶT",
-            "backdate_one_day": True,
-            "correction_reason": "Nhập sót giao dịch",
+
         },
     )
 

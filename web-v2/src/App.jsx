@@ -14,7 +14,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'live-tour', 'customers', 'settings', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'live-tour', 'reports', 'customers', 'settings', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -65,6 +65,7 @@ const AdminChangesPage = lazyPage(() => import('./pages/AdminChangesPage'))
 const StorageAdminPage = lazyPage(() => import('./pages/StorageAdminPage'))
 const BirthdayPage = lazyPage(() => import('./pages/BirthdayPage'))
 const TourPage = lazyPage(() => import('./pages/TourPage'))
+const LiveTourReportsPage = lazyPage(() => import('./pages/LiveTourReportsPage'))
 const LiveTourPage = lazyPage(() => import('./pages/LiveTourPage'))
 const SpaManagementPage = lazyPage(() => import('./pages/SpaManagementPage'))
 const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
@@ -194,6 +195,7 @@ export default function App() {
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
+        {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
         {page === 'live-tour' && <LiveTourPage user={shellUser} />}
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
         {page === 'settings' && <SpaManagementPage user={shellUser} mode="settings" />}

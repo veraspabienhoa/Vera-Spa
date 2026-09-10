@@ -1,3 +1,4 @@
+import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import { Download, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -46,7 +47,7 @@ function CustomerHistory({ value }) {
 export default function SpaManagementPage({ user, mode }) {
   const customersPage = mode === 'customers'
   const allowed = user?.role === 'admin' || user?.permissions?.[customersPage ? 'live_tour_customers_view' : 'live_tour_admin'] === true
-  const canEditCustomer = user?.role === 'admin' || user?.permissions?.live_tour_payment === true
+  const canEditCustomer = user?.role === 'admin' || user?.permissions?.live_tour_customers_edit === true
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -54,6 +55,9 @@ export default function SpaManagementPage({ user, mode }) {
   const [tab, setTab] = useState('services')
   const [search, setSearch] = useState('')
   const [serviceFilter, setServiceFilter] = useState('all')
+  const [customerContext, setCustomerContext] = useState(null)
+  const canCreateCustomer = user?.role === 'admin' || user?.permissions?.live_tour_payment === true
+  const canCustomer = feature => user?.role === 'admin' || user?.permissions?.[`live_tour_${feature}`] === true
   const [editor, setEditor] = useState(null)
   const [form, setForm] = useState({})
   const requests = useRef(new Map())
@@ -83,7 +87,7 @@ export default function SpaManagementPage({ user, mode }) {
     setEditor({ kind, existing: Boolean(item) })
   }
 
-  const mutate = async (action, payload) => {
+  const mutate = async (action, payload, _ids, options) => {
     if (running.current || data?.revision == null) return
     running.current = true
     setBusy(true); setError(''); setNotice('')
@@ -91,12 +95,13 @@ export default function SpaManagementPage({ user, mode }) {
     const signature = JSON.stringify([action, payload])
     if (!requests.current.has(signature)) requests.current.set(signature, crypto.randomUUID())
     try {
-      const result = await veraApi.liveTourAction({ action, payload, expected_revision: data.revision, idempotency_key: requests.current.get(signature) })
+      const result = await veraApi.liveTourAction({ action, payload, expected_revision: options?.expectedRevision ?? data.revision, idempotency_key: requests.current.get(signature) })
       requests.current.delete(signature)
       setData(customersPage ? { revision: result.revision, customers: result.customers, can_export: result.capabilities.export }
         : { revision: result.revision, services: result.services, combos: result.combo_catalog, service_areas: result.service_areas })
       setEditor(null)
       setNotice('Đã lưu thay đổi.')
+      return result
     } catch (err) {
       let message = err.message || 'Không lưu được thay đổi.'
       if (err.status === 409 && /Live Tour đã thay đổi ở thiết bị khác/i.test(message)) {
@@ -151,10 +156,12 @@ export default function SpaManagementPage({ user, mode }) {
     {!customersPage && <div className="spa-tabs" role="tablist" aria-label="Cài đặt"><button role="tab" aria-selected={tab === 'services'} aria-controls="spa-settings-content" id="spa-services-tab" disabled={busy} onClick={() => { setTab('services'); setSearch('') }}>Cài đặt dịch vụ</button><button role="tab" aria-selected={tab === 'areas'} aria-controls="spa-settings-content" id="spa-areas-tab" disabled={busy} onClick={() => { setTab('areas'); setSearch('') }}>Cài đặt khu vực dịch vụ</button></div>}
     <section className="panel spa-content" id="spa-settings-content" role={customersPage ? undefined : 'tabpanel'} aria-labelledby={customersPage ? undefined : `spa-${tab}-tab`}>
       {!customersPage && tab === 'services' && <div className="spa-service-filters" aria-label="Lọc loại dịch vụ">{[['all', 'Tất cả'], ['service', 'Dịch vụ đơn lẻ'], ['combo', 'Dịch vụ combo']].map(([value, label]) => <button type="button" className="secondary-button" aria-pressed={serviceFilter === value} key={value} onClick={() => setServiceFilter(value)}>{label}</button>)}</div>}
-      <div className="spa-toolbar"><input type="search" aria-label="Tìm kiếm" placeholder={customersPage ? 'Tìm tên hoặc số điện thoại…' : 'Tìm theo tên…'} value={search} onChange={(event) => setSearch(event.target.value)}/><span>{filtered.length} / {rows.length}</span><div className="spa-actions">{customersPage && data?.can_export && <button className="secondary-button" disabled={busy} onClick={exportCustomers}><Download size={16}/> Xuất Excel</button>}<button className="primary-button" disabled={busy || !data || (customersPage && !canEditCustomer)} onClick={() => openEditor(addKind)}><Plus size={16}/> Thêm {customersPage ? 'khách hàng' : tab === 'services' ? 'dịch vụ' : 'khu vực'}</button></div></div>
+      <div className="spa-toolbar"><input type="search" aria-label="Tìm kiếm" placeholder={customersPage ? 'Tìm tên hoặc số điện thoại…' : 'Tìm theo tên…'} value={search} onChange={(event) => setSearch(event.target.value)}/><span>{filtered.length} / {rows.length}</span><div className="spa-actions">{customersPage && data?.can_export && <button className="secondary-button" disabled={busy} onClick={exportCustomers}><Download size={16}/> Xuất Excel</button>}<button className="primary-button" disabled={busy || !data || (customersPage && !canCreateCustomer)} onClick={() => openEditor(addKind)}><Plus size={16}/> Thêm {customersPage ? 'khách hàng' : tab === 'services' ? 'dịch vụ' : 'khu vực'}</button></div></div>
       {busy && !data && <p role="status">Đang tải dữ liệu…</p>}
       {data && !filtered.length && <p className="spa-empty">{rows.length ? 'Không có kết quả phù hợp.' : 'Chưa có dữ liệu. Bấm Thêm để tạo mới.'}</p>}
-      {customersPage ? <div className="responsive-data-table"><table><thead><tr><th>Khách hàng</th><th>Điện thoại</th><th>Combo còn lại</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.name || 'Chưa có tên'}</strong></td><td>{item.phone || '—'}</td><td>{(item.combo_purchases || []).reduce((sum, purchase) => sum + Number(purchase.remaining || 0), 0)} vé</td><td><div className="spa-actions"><button className="secondary-button" disabled={busy || !canEditCustomer} onClick={() => openEditor('customer', item)}>Sửa</button><button className="secondary-button" disabled={busy} onClick={() => history(item)}><History size={14}/> Lịch sử</button></div></td></tr>)}</tbody></table></div>
+      {customersPage ? <div className="responsive-data-table"><table><thead><tr><th>Khách hàng</th><th>Điện thoại</th><th>Combo còn lại</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.name || 'Chưa có tên'}</strong></td><td>{item.phone || '—'}</td><td>{(item.combo_purchases || []).reduce((sum, purchase) => sum + Number(purchase.remaining || 0), 0)} vé</td><td><div className="spa-actions"><button className="secondary-button" disabled={busy || !canEditCustomer} onClick={() => { setError(''); setCustomerContext({ customer: item, mode: 'edit', revision: data.revision }) }}>Sửa</button>{canCustomer('customers_delete') && <button className="secondary-button danger-button" disabled={busy} onClick={() => { setError(''); setCustomerContext({ customer: item, mode: 'delete', revision: data.revision }) }}>Xóa</button>}
+      {(item.combo_purchases || []).map(purchase => <span key={purchase.id}>{purchase.combo_name} · {purchase.remaining} vé {canCustomer('customer_combo_edit') && <button className="text-button" disabled={busy} onClick={() => { setError(''); setCustomerContext({ customer: item, purchase, mode: 'edit', revision: data.revision }) }}>Sửa combo</button>}{canCustomer('customer_combo_delete') && <button className="text-button" disabled={busy} onClick={() => { setError(''); setCustomerContext({ customer: item, purchase, mode: 'delete', revision: data.revision }) }}>Xóa combo</button>}</span>)}
+      <button className="secondary-button" disabled={busy} onClick={() => history(item)}><History size={14}/> Lịch sử</button></div></td></tr>)}</tbody></table></div>
         : tab === 'services' ? <div className="responsive-data-table"><table><thead><tr><th>Dịch vụ / nhóm</th><th>Loại dịch vụ</th><th>Thời lượng / thành phần</th><th>Giá</th><th>Số lượt</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={`${item.catalog_kind}:${item.id}`}>
           <td><strong>{item.name}</strong>{item.private && <span className="spa-badge">PR</span>}<small>{item.group || 'Chưa phân nhóm'}</small>{item.active === false && <small>Ngừng sử dụng</small>}{item.expires_on && item.unlimited === false && <small>Hết hạn: {item.expires_on.split('-').reverse().join('/')}</small>}</td>
           <td><span className="spa-badge">{item.catalog_kind === 'combo' ? 'Combo' : 'Đơn lẻ'}</span></td>
@@ -164,6 +171,7 @@ export default function SpaManagementPage({ user, mode }) {
         </tr>)}</tbody></table></div>
           : <div className="spa-card-grid">{filtered.map((item) => <article className="spa-card" key={item.id}><div className="spa-card-heading"><h3>{item.name}</h3><span className="spa-badge">{areaLabels[item.kind]}</span></div>{item.kind === 'room' ? <><p>{item.beds.length} giường</p><ul className="spa-bed-list">{item.beds.map((bed) => <li key={bed.id}>{bed.name}{bed.active === false ? ' · Ngừng sử dụng' : ''}</li>)}</ul></> : <p>Vị trí phục vụ độc lập</p>}<div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor('area', item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove('area', item)}><Trash2 size={14}/> Xóa</button></div></article>)}</div>}
     </section>
+    {customerContext && <LiveTourCustomerDialog context={customerContext} busy={busy} error={error} onAction={mutate} onClose={() => setCustomerContext(null)}/>}
     {editor && <Editor title={editTitle} onClose={() => { setEditor(null); setError('') }} busy={busy}>
       {error && <div className="error-box" role="alert">{error}</div>}
       {editor.kind === 'choose-service' ? <ServiceTypePicker onChoose={(kind) => openEditor(kind)}/> : editor.kind === 'history' ? <CustomerHistory value={editor.value}/> : <form onSubmit={submit}><fieldset disabled={busy} className="spa-form">
