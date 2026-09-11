@@ -1463,7 +1463,7 @@ def _checkout_mutating(
         state["pending"] = [item for item in state["pending"] if str(item.get("id")) != pending_id]
         for employee in state["employees"]:
             retained = employee.get("last_assignment_display") or {}
-            if retained.get("pending_id") == pending_id:
+            if retained.get("pending_id") == pending_id and not employee.get("service") and not employee.get("status"):
                 retained["TT thanh toán"] = "ĐÃ THANH TOÁN"
     else:
         for employee in employees:
