@@ -557,8 +557,6 @@ export default function LiveTourPage({ user }) {
   const [exportFilters, setExportFilters] = useState(EMPTY_EXPORT_FILTERS)
   const [customColumns, setCustomColumns] = useState(null)
   const [customScope, setCustomScope] = useState('displayed')
-  const stickyTopRef = useRef(null)
-  const recordsTableRef = useRef(null)
   const requestEntriesRef = useRef(new Map())
   const pendingCountRef = useRef(0)
   const previousPendingCountRef = useRef(0)
@@ -861,42 +859,7 @@ export default function LiveTourPage({ user }) {
   }, [columns, employeeSearch, shiftRecords])
   const displayedRecords = useMemo(() => prioritizeRecords(searchedRecords, columns, activeFilter), [activeFilter, columns, searchedRecords])
 
-  useEffect(() => {
-    let frame = 0
-    const updateStickyTableHeader = () => {
-      window.cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(() => {
-        const table = recordsTableRef.current
-        const stickyTop = stickyTopRef.current
-        if (!table || !stickyTop) {
-          table?.style.removeProperty('--tour-table-head-offset')
-          return
-        }
-        const tableRect = table.getBoundingClientRect()
-        const stickyRect = stickyTop.getBoundingClientRect()
-        const headerHeight = table.querySelector('thead')?.getBoundingClientRect().height || 0
-        const mobile = window.matchMedia('(max-width: 640px)').matches
-        const topbarBottom = document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0
-        const headerTop = mobile ? Math.max(0, topbarBottom) : Math.max(topbarBottom, stickyRect.bottom + 4)
-        const requestedOffset = Math.max(0, headerTop - tableRect.top)
-        // Exclude the horizontal scrollbar from the header's vertical travel.
-        table.style.setProperty('--tour-table-head-offset', `${Math.min(requestedOffset, Math.max(0, table.clientHeight - headerHeight))}px`)
-      })
-    }
-    if (typeof ResizeObserver === 'undefined') return undefined
-    const observer = new ResizeObserver(updateStickyTableHeader)
-    if (recordsTableRef.current) observer.observe(recordsTableRef.current)
-    if (stickyTopRef.current) observer.observe(stickyTopRef.current)
-    window.addEventListener('scroll', updateStickyTableHeader, { passive: true })
-    window.addEventListener('resize', updateStickyTableHeader)
-    updateStickyTableHeader()
-    return () => {
-      window.cancelAnimationFrame(frame)
-      observer.disconnect()
-      window.removeEventListener('scroll', updateStickyTableHeader)
-      window.removeEventListener('resize', updateStickyTableHeader)
-    }
-  }, [columns, displayedRecords.length])
+
 
   const roomColumn = findColumn(columns, ['PHONG'])
   const employeeColumn = employeeNameColumn(columns)
@@ -1251,7 +1214,7 @@ export default function LiveTourPage({ user }) {
     <style>{`
       .tour-page{gap:5px}.page-wrap.tour-page-wrap{padding-top:4px}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
       .live-tour-board{min-width:0}.live-tour-board>.tour-records-panel{margin-top:5px}
-      .live-tour-page .tour-sticky-top{display:grid;gap:4px;background:var(--paper,#f7faf8)}
+      .live-tour-page .tour-board-top{position:static;display:grid;gap:4px;background:var(--paper,#f7faf8)}
       .live-tour-page .tour-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
       .live-tour-page .tour-heading-title{min-width:0;display:flex;align-items:center;gap:8px}.live-tour-page .tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:18px;line-height:.95}.live-tour-status{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 7px;color:#17603f;background:#dff4e8;font-size:8px;font-weight:900}.live-tour-status:before{content:'';width:7px;height:7px;border-radius:50%;background:#23a861;box-shadow:0 0 0 3px rgba(35,168,97,.16)}
       .live-tour-page .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}.live-tour-page .tour-table tr.live-tour-selected td{box-shadow:inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-table tr.live-tour-selected td:first-child{box-shadow:inset 2px 0 #173c30,inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
@@ -1260,7 +1223,7 @@ export default function LiveTourPage({ user }) {
       .live-tour-payment-reminder{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #e9ad57;border-radius:9px;color:#64350d;background:#fff3d7;box-shadow:0 3px 12px rgba(124,73,17,.12);font-size:10px}.live-tour-payment-reminder strong{font-size:11px}.live-tour-payment-reminder span{flex:1}.live-tour-payment-reminder button{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
       .live-tour-page .tour-control-layout{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);gap:4px;align-items:stretch}.live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:27px;gap:3px;border-radius:7px;padding:2px 6px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:7px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:15px}
       .live-tour-page .tour-room-segment-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.live-tour-page .tour-room-segment-button{min-width:0;min-height:100%;border:1px solid transparent;border-radius:8px;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#fff;font-weight:900;text-align:center;letter-spacing:.02em}.live-tour-page .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.live-tour-page .tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.live-tour-page .tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}.live-tour-page .tour-room-segment-button svg{width:15px;height:15px}.live-tour-page .tour-room-segment-button span{font-size:9px;line-height:1}.live-tour-page .tour-room-segment-button small{color:inherit;font-size:7px;opacity:.88}.live-tour-page .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
-      .live-tour-page .tour-table-panel{padding:5px}.live-tour-page .tour-table th,.live-tour-page .tour-table td{padding-top:5px;padding-bottom:5px}.live-tour-page .tour-records-panel{min-height:0}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:auto;overflow-y:hidden;scrollbar-gutter:auto}.live-tour-page .tour-records-panel .tour-table thead{position:relative;z-index:7;transform:translateY(var(--tour-table-head-offset,0));will-change:transform}.live-tour-page .tour-records-panel .tour-table th{position:static}.live-tour-select-col{width:28px;min-width:28px;text-align:center}.live-tour-select-col input{width:13px;height:13px;accent-color:#173c30}
+      .live-tour-page .tour-table-panel{padding:5px}.live-tour-page .tour-table th,.live-tour-page .tour-table td{padding-top:5px;padding-bottom:5px}.live-tour-page .tour-records-panel{min-height:0;height:auto;max-height:none}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:auto;overflow-y:hidden;scrollbar-gutter:auto}.live-tour-page .tour-records-panel .tour-table thead{position:static;transform:none}.live-tour-page .tour-records-panel .tour-table th{position:static}.live-tour-select-col{width:28px;min-width:28px;text-align:center}.live-tour-select-col input{width:13px;height:13px;accent-color:#173c30}
       .live-tour-page .tour-quick-tools{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:3px 0 0}.live-tour-page .tour-employee-search{position:relative;flex:1 1 260px;max-width:360px}.live-tour-page .tour-employee-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.live-tour-page .tour-employee-search input{width:100%;height:27px;padding:4px 7px 4px 27px;box-sizing:border-box;font-size:9px}.live-tour-selection-summary{font-size:9px;font-weight:850;color:#3d5a4e}.live-tour-quick-button{min-height:27px;padding:4px 8px;font-size:9px}
       .live-tour-page .tour-room-panel{margin:0;padding:5px;border:1px solid #cfe1d8;border-radius:9px;background:#f3faf6}.live-tour-page .tour-room-panel-head{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);align-items:center;gap:4px;margin-bottom:3px}.live-tour-page .tour-room-panel-title{display:flex;align-items:center;gap:4px;color:#173c30;font-size:11px;font-weight:900}.live-tour-page .tour-room-panel-head small{justify-self:center;min-width:160px;color:#3f574c;font-size:15px;font-weight:950;line-height:1;text-align:center}.live-tour-page .tour-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px}
       .live-tour-page .tour-room-card{--room-segment:#155b78;position:relative;width:100%;min-width:0;min-height:53px;display:grid;align-content:space-between;gap:1px;border:1px solid rgba(0,0,0,.13);border-radius:7px;padding:4px;color:inherit;background:#fff;text-align:left;appearance:none;box-shadow:inset 0 2px 0 var(--room-segment),0 2px 5px rgba(28,52,42,.06);transition:transform .16s ease,box-shadow .16s ease}.live-tour-page .tour-room-card.vip{--room-segment:#b58a31;border:3px solid #c59a3d;padding:2px;box-shadow:inset 0 2px 0 #f3cf72,0 2px 7px rgba(130,92,19,.16)}.live-tour-page .tour-room-card.has-private-service{padding-right:29px}.live-tour-page .tour-room-card:hover{transform:translateY(-1px);box-shadow:inset 0 2px 0 var(--room-segment),0 5px 10px rgba(28,52,42,.11)}.live-tour-page .tour-room-card.vip:hover{box-shadow:inset 0 2px 0 #f3cf72,0 5px 11px rgba(130,92,19,.24)}.live-tour-page .tour-room-card.selected{outline:2px solid #173c30;outline-offset:1px}.live-tour-page .tour-room-card.vip.selected{outline-color:#9b6e16}
@@ -1272,11 +1235,11 @@ export default function LiveTourPage({ user }) {
       .live-tour-modal-backdrop{position:fixed;inset:0;z-index:1600;display:grid;place-items:center;padding:12px;background:rgba(14,31,25,.55)}.live-tour-modal{width:min(760px,100%);max-height:calc(100vh - 24px);overflow:auto;border-radius:14px;padding:13px;background:#fff;box-shadow:0 18px 55px rgba(0,0,0,.28)}.live-tour-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.live-tour-modal-head strong{font:700 18px Georgia,serif;color:#173c30}.live-tour-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.live-tour-form-grid>.wide{grid-column:1/-1}.live-tour-field{display:grid;gap:4px}.live-tour-field.wide{grid-column:1/-1}.live-tour-field span{font-size:9px;font-weight:850;color:#435d52}.live-tour-field input,.live-tour-field select,.live-tour-field textarea{width:100%;min-width:0;box-sizing:border-box;padding:7px 8px;font-size:10px}.live-tour-field textarea{min-height:62px;resize:vertical}.live-tour-check-field{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:800}.live-tour-multi-booking{grid-column:1/-1;display:grid;gap:6px}.live-tour-multi-row{display:grid;grid-template-columns:minmax(105px,.7fr) repeat(3,minmax(95px,1fr));gap:5px;align-items:center;padding:6px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-multi-row strong{font-size:9px}.live-tour-multi-row input,.live-tour-multi-row select{width:100%;min-width:0;padding:6px;font-size:9px}.live-tour-modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:12px}.live-tour-modal-actions button{min-height:34px}
       .live-tour-employee-picker{grid-column:1/-1;display:grid;gap:5px;max-height:220px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-employee-picker button{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(150px,1fr);gap:3px 9px;padding:7px 9px;border:1px solid #d9e3dd;border-radius:8px;color:#173c30;background:#fff;text-align:left}.live-tour-employee-picker button.selected{border-color:#173c30;background:#e7f3ed;box-shadow:inset 3px 0 #173c30}.live-tour-employee-picker button strong{font-size:10px}.live-tour-employee-picker button span,.live-tour-employee-picker button small{font-size:8px}.live-tour-employee-picker button small{grid-column:1/-1;color:#697b72}.live-tour-employee-picked{grid-column:1/-1;padding:6px 8px;border-radius:7px;color:#185238;background:#e3f4ea;font-size:9px;font-weight:850}
       .live-tour-checkout-preview{display:grid;gap:6px;padding:9px;border:1px solid #cfe0d7;border-radius:9px;background:#f6faf8}.live-tour-checkout-preview>strong{color:#173c30;font-size:10px}.live-tour-checkout-preview>small{color:#65766e;font-size:8px}.live-tour-checkout-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:6px;border-radius:7px;background:#fff;font-size:9px}.live-tour-checkout-entry span{overflow:hidden;text-overflow:ellipsis}.live-tour-checkout-entry small{grid-column:1/-1;color:#697b72;font-size:8px}.live-tour-checkout-total{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding-top:6px;border-top:1px solid #d8e4de;font-size:9px}.live-tour-combo-deduction{padding:7px;border-radius:8px;color:#4c3b0c;background:#fff4cf;font-size:9px}.live-tour-customer-selected{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;background:#e6f4ec;font-size:9px}.live-tour-customer-selected button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-customer-picker{display:grid;gap:4px;max-height:150px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-customer-picker button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid #dce6e1;border-radius:7px;color:#173c30;background:#fff;text-align:left}.live-tour-customer-picker button span{color:#64776e;font-size:8px}.live-tour-correction{display:grid;gap:7px;padding:9px;border:1px solid #e8c985;border-radius:9px;background:#fff9e9}.live-tour-history-sections{display:grid;gap:10px}.live-tour-history-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}.live-tour-history-list{display:grid;gap:5px;max-height:260px;overflow:auto}.live-tour-history-list article{padding:7px;border:1px solid #dce6e1;border-radius:8px;background:#f8faf9;font-size:9px}.live-tour-history-list article strong,.live-tour-history-list article span,.live-tour-history-list article small{display:block;margin-top:2px}
-      @media(min-width:641px){.live-tour-page .tour-sticky-top{position:sticky;top:74px;z-index:18;padding:3px 0 2px;box-shadow:0 6px 12px rgba(25,58,46,.04)}.live-tour-page .tour-records-panel .tour-table th{top:0}.live-tour-page .tour-room-detail{max-height:none;overflow:visible}.live-tour-page .tour-room-detail.vip-19{max-height:none;overflow:visible}}
+      @media(min-width:641px){.live-tour-page .tour-room-detail{max-height:none;overflow:visible}.live-tour-page .tour-room-detail.vip-19{max-height:none;overflow:visible}}
       @media(prefers-reduced-motion:reduce){.live-tour-page .tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
       @media(max-width:760px){.live-tour-export-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.live-tour-export-filters>strong,.live-tour-export-filters small{grid-column:1/-1}.live-tour-form-grid{grid-template-columns:1fr}.live-tour-field.wide{grid-column:auto}.live-tour-multi-row{grid-template-columns:1fr 1fr}.live-tour-multi-row strong{grid-column:1/-1}}
       @media(max-width:640px){
-        .live-tour-page .tour-sticky-top{position:static}.live-tour-page .tour-topbar{grid-template-columns:1fr;gap:6px}.live-tour-page .tour-heading-title h1{font-size:14.5px}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}
+        .live-tour-page .tour-topbar{grid-template-columns:1fr;gap:6px}.live-tour-page .tour-heading-title h1{font-size:14.5px}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}
         .live-tour-page .tour-shift-filter{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}.live-tour-page .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
         .live-tour-page .tour-heading-actions{width:100%;justify-content:stretch}.live-tour-page .tour-heading-actions button{flex:1}
         .live-tour-page .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:31px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:2px;text-align:center}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;line-height:1.05}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:14px}
@@ -1289,7 +1252,7 @@ export default function LiveTourPage({ user }) {
     `}</style>
     {/* Keep the sticky rooms inside the roster so they cannot cover the workspace below. */}
     <div className="live-tour-board">
-    <div className="tour-sticky-top" ref={stickyTopRef}>
+    <div className="tour-board-top">
       <div className="tour-topbar">
         <div className="tour-heading-title"><h1>LIVE TOUR</h1><span className="live-tour-status">TRỰC TIẾP</span></div>
         <div className="tour-heading-actions">
@@ -1404,7 +1367,7 @@ export default function LiveTourPage({ user }) {
     </div>
 
     <section className="panel tour-table-panel tour-records-panel">
-      <div className="responsive-data-table tour-table" ref={recordsTableRef} tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
+      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
         return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { setError(''); if (isQuickCheckoutEligible(item, columns) && canPayment) openModal('checkout', { rowIds: [id] }); else setBookingContext({ employeeId: id }) }}>{String(item[column] ?? '')}</button> : column === sttColumn(columns) ? index + 1 : String(item[column] ?? '')}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
       })}</tbody></table></div>

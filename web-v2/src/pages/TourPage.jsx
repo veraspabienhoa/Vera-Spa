@@ -256,8 +256,6 @@ export default function TourPage({ user }) {
   const [tourSourceDraft, setTourSourceDraft] = useState('')
   const [tourSourceBusy, setTourSourceBusy] = useState(false)
   const [tourSourceNotice, setTourSourceNotice] = useState({ text: '', error: false })
-  const stickyTopRef = useRef(null)
-  const recordsTableRef = useRef(null)
   const load = useCallback(async (refresh = false, quiet = false) => {
     if (!quiet) setBusy(true)
     setError('')
@@ -341,45 +339,7 @@ export default function TourPage({ user }) {
     () => prioritizeRecords(searchedRecords, columns, activeFilter),
     [activeFilter, columns, searchedRecords],
   )
-  useEffect(() => {
-    let frame = 0
-    const updateStickyTableHeader = () => {
-      window.cancelAnimationFrame(frame)
-      frame = window.requestAnimationFrame(() => {
-        const table = recordsTableRef.current
-        const stickyTop = stickyTopRef.current
-        if (!table || !stickyTop) {
-          table?.style.removeProperty('--tour-table-head-offset')
-          return
-        }
-        const tableRect = table.getBoundingClientRect()
-        const stickyRect = stickyTop.getBoundingClientRect()
-        const headerHeight = table.querySelector('thead')?.getBoundingClientRect().height || 0
-        const mobile = window.matchMedia('(max-width: 640px)').matches
-        const topbarBottom = document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0
-        const headerTop = mobile ? Math.max(0, topbarBottom) : Math.max(topbarBottom, stickyRect.bottom + 4)
-        const requestedOffset = Math.max(0, headerTop - tableRect.top)
-        // Exclude the horizontal scrollbar from the header's vertical travel.
-        const maximumOffset = Math.max(0, table.clientHeight - headerHeight)
-        table.style.setProperty(
-          '--tour-table-head-offset',
-          `${Math.min(requestedOffset, maximumOffset)}px`,
-        )
-      })
-    }
-    const observer = new ResizeObserver(updateStickyTableHeader)
-    if (recordsTableRef.current) observer.observe(recordsTableRef.current)
-    if (stickyTopRef.current) observer.observe(stickyTopRef.current)
-    window.addEventListener('scroll', updateStickyTableHeader, { passive: true })
-    window.addEventListener('resize', updateStickyTableHeader)
-    updateStickyTableHeader()
-    return () => {
-      window.cancelAnimationFrame(frame)
-      observer.disconnect()
-      window.removeEventListener('scroll', updateStickyTableHeader)
-      window.removeEventListener('resize', updateStickyTableHeader)
-    }
-  }, [columns, displayedRecords.length])
+
   const availableRooms = useMemo(
     () => (Array.isArray(data.available_rooms) ? data.available_rooms : []),
     [data.available_rooms],
@@ -448,7 +408,7 @@ export default function TourPage({ user }) {
       .tour-page{gap:5px}
       .page-wrap.tour-page-wrap{padding-top:4px}
       .tour-page>.setup-note{padding:6px 9px;font-size:9px}
-      .tour-sticky-top{display:grid;gap:4px;background:var(--paper,#f7faf8)}
+      .tour-board-top{position:static;display:grid;gap:4px;background:var(--paper,#f7faf8)}
       .tour-topbar{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(330px,1fr) auto;align-items:center;gap:10px}
       .tour-heading-title{min-width:0}.tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:18px;line-height:.95}
       .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}
@@ -465,7 +425,7 @@ export default function TourPage({ user }) {
       .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}
       .tour-room-segment-button svg{width:15px;height:15px}.tour-room-segment-button span{font-size:9px;line-height:1}.tour-room-segment-button small{color:inherit;font-size:7px;opacity:.88}
       .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
-      .tour-table-panel{padding:5px}.tour-table th{padding-top:5px;padding-bottom:5px}.tour-table td{padding-top:5px;padding-bottom:5px}.tour-records-panel{min-height:0}.tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:auto;overflow-y:hidden;scrollbar-gutter:auto}.tour-records-panel .tour-table thead{position:relative;z-index:7;transform:translateY(var(--tour-table-head-offset,0));will-change:transform}.tour-records-panel .tour-table th{position:static}
+      .tour-table-panel{padding:5px}.tour-table th{padding-top:5px;padding-bottom:5px}.tour-table td{padding-top:5px;padding-bottom:5px}.tour-records-panel{min-height:0;height:auto;max-height:none}.tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:auto;overflow-y:hidden;scrollbar-gutter:auto}.tour-records-panel .tour-table thead{position:static;transform:none}.tour-records-panel .tour-table th{position:static}
       .tour-quick-tools{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:3px 0 0}.tour-employee-search{position:relative;flex:1 1 260px;max-width:360px}.tour-employee-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#60756b}.tour-employee-search input{width:100%;height:27px;padding:4px 7px 4px 27px;box-sizing:border-box;font-size:9px}
       .tour-room-panel{margin:0;padding:5px;border:1px solid #cfe1d8;border-radius:9px;background:#f3faf6}.tour-room-panel-head{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);align-items:center;gap:4px;margin-bottom:3px}.tour-room-panel-title{display:flex;align-items:center;gap:4px;color:#173c30;font-size:11px;font-weight:900}.tour-room-panel-head small{justify-self:center;min-width:160px;color:#3f574c;font-size:15px;font-weight:950;line-height:1;text-align:center}.tour-room-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px}
       .tour-room-card{--room-segment:#155b78;position:relative;width:100%;min-width:0;min-height:53px;display:grid;align-content:space-between;gap:1px;border:1px solid rgba(0,0,0,.13);border-radius:7px;padding:4px;color:inherit;background:#fff;text-align:left;appearance:none;box-shadow:inset 0 2px 0 var(--room-segment),0 2px 5px rgba(28,52,42,.06);transition:transform .16s ease,box-shadow .16s ease}.tour-room-card.vip{--room-segment:#b58a31;border:3px solid #c59a3d;padding:2px;box-shadow:inset 0 2px 0 #f3cf72,0 2px 7px rgba(130,92,19,.16)}.tour-room-card.has-private-service{padding-right:29px}.tour-room-card:hover{transform:translateY(-1px);box-shadow:inset 0 2px 0 var(--room-segment),0 5px 10px rgba(28,52,42,.11)}.tour-room-card.vip:hover{box-shadow:inset 0 2px 0 #f3cf72,0 5px 11px rgba(130,92,19,.24)}.tour-room-card.selected{outline:2px solid #173c30;outline-offset:1px}.tour-room-card.vip.selected{outline-color:#9b6e16}
@@ -477,10 +437,10 @@ export default function TourPage({ user }) {
       .tour-room-detail{margin-top:5px;padding:6px;border:1px solid #d9e2dd;border-radius:8px;background:#fff}.tour-room-detail-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.tour-room-detail-head strong{font-size:10px}.tour-room-detail-head small{color:#68776f;font-size:7px;font-weight:800}.tour-room-detail-list{display:grid;gap:3px}.tour-room-detail-row{min-width:0;display:grid;grid-template-columns:minmax(90px,.55fr) minmax(120px,1fr);gap:8px;padding:4px 6px;border-radius:6px;background:#f3f6f4;font-size:8px}.tour-room-detail-row strong,.tour-room-detail-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tour-room-detail-row span{color:#55665e}.tour-room-detail-empty{padding:4px;color:#68776f;font-size:8px}
       .tour-legend{padding:9px}.tour-legend .panel-title-row{margin-bottom:5px}.tour-legend .panel-title-row h2{font-size:14px}.tour-legend .panel-title-row p{font-size:9px}.tour-legend-grid{gap:4px}.tour-legend-grid span{padding:4px 7px;font-size:8px}
       .tour-source-panel{padding:8px}.tour-source-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}.tour-source-head strong{display:flex;align-items:center;gap:5px;font-size:11px}.tour-source-head small{color:#65756e;font-size:8px}.tour-source-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}.tour-source-form input{min-width:0;height:32px;padding:5px 9px;font-size:10px}.tour-source-form button{min-height:32px;padding:5px 10px}.tour-source-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:5px;color:#65756e;font-size:8px}.tour-source-meta a{color:#155b78;font-weight:850}.tour-source-notice{font-weight:800;color:#247146}.tour-source-notice.error{color:#a52a22}
-      @media(min-width:641px){.tour-sticky-top{position:sticky;top:74px;z-index:18;padding:3px 0 2px;box-shadow:0 6px 12px rgba(25,58,46,.04)}.tour-records-panel .tour-table th{top:0}.tour-room-detail{max-height:none;overflow:visible}.tour-room-detail.vip-19{max-height:none;overflow:visible}}
+      @media(min-width:641px){.tour-room-detail{max-height:none;overflow:visible}.tour-room-detail.vip-19{max-height:none;overflow:visible}}
       @media(prefers-reduced-motion:reduce){.tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
       @media(max-width:640px){
-        .tour-sticky-top{position:static}.tour-topbar{grid-template-columns:1fr;gap:6px}.tour-heading-title h1{font-size:14.5px}.tour-shift-filter{order:3}.tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}
+        .tour-topbar{grid-template-columns:1fr;gap:6px}.tour-heading-title h1{font-size:14.5px}.tour-shift-filter{order:3}.tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}
         .tour-shift-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-bottom:7px}
         .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
         .tour-heading-actions{width:100%;justify-content:stretch}.tour-heading-actions button{flex:1}
@@ -501,7 +461,7 @@ export default function TourPage({ user }) {
         .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       }
     `}</style>
-    <div className="tour-sticky-top" ref={stickyTopRef}>
+    <div className="tour-board-top">
       <div className="tour-topbar">
         <div className="tour-heading-title"><h1>BẢNG TUA</h1></div>
         <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca">
@@ -560,7 +520,7 @@ export default function TourPage({ user }) {
       </section>
     </div>
     <section className="panel tour-table-panel tour-records-panel">
-      <div className="responsive-data-table tour-table" ref={recordsTableRef} tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
+      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
     {isAdmin && showAdminTools && <>
