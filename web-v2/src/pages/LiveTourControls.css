@@ -1,7 +1,7 @@
 .live-tour-page .live-tour-controls {
   --live-tour-control-row-height: 14px;
-  margin: 0;
-  padding: 0 3px;
+  margin: var(--live-tour-section-gap, 6px) 0;
+  padding: 2px 3px;
   border-radius: 5px;
   box-shadow: none;
 }
@@ -10,7 +10,7 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: 100%;
   padding: 0;
   overflow-x: auto;
@@ -32,7 +32,7 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .live-tour-page .live-tour-controls-actions > button,
