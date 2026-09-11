@@ -68,7 +68,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
-    "update_booking", "update_appointment", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
+    "update_booking", "cancel_booking", "update_appointment", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Lịch hẹn", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -1648,7 +1648,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
     batch_actions = {
         "start", "add_minutes", "complete", "set_work_status", "set_shift", "start_break", "reorder",
         "end_break", "set_vip",
-        "replace_service", "add_service", "finish_to_pending",
+        "replace_service", "add_service", "finish_to_pending", "cancel_booking",
     }
     employee_ids = [str(item) for item in (payload.get("employee_ids") or []) if str(item or "").strip()]
     if len(set(employee_ids)) != len(employee_ids):
@@ -1690,6 +1690,15 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         employee = _employee(state, payload.get("employee_id"))
         employee["appointment"] = appointment.strip()
         result["employee"] = employee
+    elif action == "cancel_booking":
+        employee = _employee(state, payload.get("employee_id"))
+        if _norm(employee.get("status")) != "dang cho" or employee.get("started_at") or employee.get("completed_at"):
+            raise HTTPException(409, "Chỉ hủy Booking đang chờ, chưa thực hiện.")
+        booking_id = employee.get("booking_id", "")
+        payload = {**payload, "booking_id": booking_id, "room": employee.get("room", ""), "service": employee.get("service", "")}
+        _clear_assignment(employee, now)
+        employee.pop("last_assignment_display", None)
+        result = {"employee": employee, "cancelled_booking_id": booking_id}
     elif action == "update_booking":
         employee = _employee(state, payload.get("employee_id"))
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:

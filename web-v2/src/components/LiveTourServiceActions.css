@@ -16,7 +16,7 @@
 .live-tour-page .tour-room-detail .tour-room-detail-head{flex-wrap:wrap;justify-content:flex-start}
 .live-tour-page .tour-room-detail-head .room-actions{margin:0;min-width:155px}
 @media(max-width:640px){.live-tour-page .tour-room-detail .tour-room-detail-row{grid-template-columns:minmax(0,1fr)}.live-tour-page .live-tour-actions-col{min-width:136px}.live-tour-page .live-tour-service-actions button{min-height:30px;font-size:9px}.live-tour-page .room-actions button{font-size:8px}}
-.live-tour-page .tour-room-grid .room-actions{gap:2px;margin:0}
+.live-tour-page .tour-room-grid .room-actions{gap:2px;margin: auto 0 0;padding-top:2px}
 .live-tour-page .tour-room-grid .room-actions button{min-height:14px;flex-wrap:nowrap;gap:2px;padding:0 1px;font-size:7px;line-height:1.1;white-space:nowrap}
 
 .live-tour-page .tour-room-detail-person{display:flex;align-items:center;gap:8px;min-width:0}
