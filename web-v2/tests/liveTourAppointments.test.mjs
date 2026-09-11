@@ -454,19 +454,53 @@ test('booking dropdown shows all room results and reports a PR collision immedia
     await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
     await chooseOption(inputFor('Dịch vụ'), 'PR', f)
     const input = inputFor('Phòng / giường *')
-    await act(() => input.focus())
+    assert.equal(document.activeElement, input)
+    assert.equal(input.getAttribute('aria-expanded'), 'true')
     assert.equal(document.querySelectorAll('.tour-search-scroll [role=option]').length, 9)
     await f.type(input, '1')
     assert.equal(document.querySelectorAll('.tour-search-scroll [role=option]').length, 6)
     assert.equal(document.querySelectorAll('.tour-room-option-occupied').length, 6)
     const option = [...document.querySelectorAll('.tour-search-scroll [role=option]')].find(row => row.textContent.startsWith('1.2'))
     await act(() => option.click())
+    assert.equal(document.activeElement, input)
     assert.match(document.querySelector('.tour-booking-dialog [role=alert]').textContent, /PR cần toàn phòng trống/)
     assert.equal(f.writes.length, 0)
     assert.ok([...document.querySelectorAll('.tour-booking-dialog button[type=submit]')].every(button => button.disabled))
     await chooseOption(input, '16', f)
     assert.equal(document.querySelector('.tour-booking-dialog [role=alert]'), null)
     assert.equal(input.value, '16.1')
+  } finally { await f.dispose() }
+})
+
+test('booking advances on selection and Enter, skips quantities, and permits returning to add services', async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.booking = true
+    data.capabilities.customers_view = true
+    data.customers = [{ id: 'c1', name: 'Khách Một', phone: '0901234567' }]
+    data.services.push({ id: 'extra', name: 'Extra', price: 50 })
+    data.state.employees = [{ id: 'e1', name: 'An An', service: '', status: '' }]
+    data.state.rooms = [{ name: '1.1' }]
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await chooseOption(inputFor('Khách hàng'), 'Khách Một', f)
+    const service = inputFor('Dịch vụ'), room = inputFor('Phòng / giường *')
+    assert.equal(document.activeElement, service)
+    assert.equal(service.getAttribute('aria-expanded'), 'true')
+    await f.type(service, 'Body')
+    assert.equal(document.activeElement, service)
+    await act(() => service.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    assert.equal(document.activeElement, room)
+    assert.equal(room.getAttribute('aria-expanded'), 'true')
+    await chooseOption(room, '1.1', f)
+    const request = document.querySelector('.tour-booking-form select')
+    assert.equal(document.activeElement, request)
+    await act(() => { request.value = 'YC'; request.dispatchEvent(new dom.window.Event('change', { bubbles: true })) })
+    assert.equal(document.activeElement, document.querySelector('.tour-booking-form textarea'))
+    await chooseOption(service, 'Extra', f)
+    assert.equal(document.querySelectorAll('.tour-booking-item').length, 2)
+    assert.equal(document.activeElement, room)
+    assert.equal(f.writes.length, 0)
   } finally { await f.dispose() }
 })
 
