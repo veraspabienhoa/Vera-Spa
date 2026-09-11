@@ -84,7 +84,7 @@ def test_checkout_uses_booking_timestamp():
     invoice = live._apply_action(state, "checkout", {"employee_id": "e1", "payment_method": "TIỀN MẶT"}, "admin", now)["invoice"]
     assert invoice["effective_at"] == "2026-09-04T09:15:00+07:00"
     assert invoice["business_date"] == "2026-09-04"
-    assert invoice["bill_no"].startswith("LIVE-20260904-")
+    assert invoice["bill_no"].startswith("VERA-20260904-")
     assert invoice["recorded_at"] == live._iso(now)
     assert state["reports"][0]["effective_at"] == invoice["effective_at"]
 
@@ -97,7 +97,7 @@ def test_quick_checkout_uses_booking_timestamp():
     invoice = live._apply_action(state, "quick_checkout", {"employee_id": "e1", "payment_method": "TIỀN MẶT"}, "admin", now)["invoice"]
     assert invoice["effective_at"] == "2026-09-04T09:15:00+07:00"
     assert invoice["business_date"] == "2026-09-04"
-    assert invoice["bill_no"].startswith("LIVE-20260904-")
+    assert invoice["bill_no"].startswith("VERA-20260904-")
     assert invoice["recorded_at"] == live._iso(now)
     assert state["reports"][0]["effective_at"] == invoice["effective_at"]
 
@@ -129,7 +129,7 @@ def test_combo_purchase_backdate_propagates_timing_to_purchase_invoice_and_repor
         assert item["business_date"] == "2026-09-04"
         assert item["correction_reason"] == "Bổ sung giao dịch"
     assert result["purchase"]["purchased_at"] == result["purchase"]["recorded_at"]
-    assert result["invoice"]["bill_no"] == "LIVE-20260904-0001"
+    assert result["invoice"]["bill_no"] == "VERA-20260904-0001"
 
 
 class _Identity(BaseModel):

@@ -1,4 +1,5 @@
 """Server-owned TIP presets and percentage discounts for Live Tour receipts."""
+import re
 from copy import deepcopy
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import uuid4
@@ -7,7 +8,7 @@ from fastapi import HTTPException
 
 
 def default_settings():
-    return {'auto_print': False, 'tip_cards': [
+    return {'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
         {'id': f'tip-{amount}', 'name': f'{amount:,} đ'.replace(',', '.'), 'amount': amount}
         for amount in (50000, 100000, 200000, 300000, 500000)
     ]}
@@ -33,7 +34,17 @@ def settings_update(payload, money):
             raise HTTPException(400, 'Thẻ TIP cần tên, mệnh giá dương và mã không trùng.')
         identifiers.add(identifier)
         result.append({'id': identifier, 'name': name, 'amount': amount})
-    return {'auto_print': payload['auto_print'], 'tip_cards': result}
+    open_receipt = payload.get('open_receipt', True)
+    bank = payload.get('bank', {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''})
+    if not isinstance(open_receipt, bool) or not isinstance(bank, dict) or not isinstance(bank.get('enabled', False), bool):
+        raise HTTPException(400, 'Cài đặt mở hóa đơn hoặc ngân hàng không hợp lệ.')
+    bank = {'enabled': bank.get('enabled', False), **{key: str(bank.get(key) or '').strip() for key in ('bank_id', 'account_no', 'account_name')}}
+    if any(len(bank[key]) > 100 for key in ('bank_id', 'account_no', 'account_name')):
+        raise HTTPException(400, 'Thông tin ngân hàng quá dài.')
+    if bank['enabled'] and (not re.fullmatch(r'[A-Za-z0-9]{2,20}', bank['bank_id']) or not re.fullmatch(r'[0-9]{6,19}', bank['account_no']) or not bank['account_name']):
+        raise HTTPException(400, 'Cần mã ngân hàng, số tài khoản từ 6–19 chữ số và tên chủ tài khoản.')
+    return {'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
+            'tip_cards': sorted(result, key=lambda card: card['amount'])}
 
 
 def payment_values(state, payload, subtotal, money, max_money):

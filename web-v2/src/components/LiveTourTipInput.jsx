@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import LiveTourPageItems from './LiveTourPageItems'
+import { sortedTipCards } from '../lib/paymentPresentation'
 import { defaultTipMode, money, tipCardLabel } from '../lib/liveTourCheckout'
 
 export default function LiveTourTipInput({ form, setForm, cards, preferenceKey, total }) {
@@ -16,7 +16,7 @@ export default function LiveTourTipInput({ form, setForm, cards, preferenceKey, 
       <button type="button" className="secondary-button" aria-label={`Mặc định: ${label}`} aria-pressed={preferred === mode} onClick={() => remember(mode)}>{preferred === mode ? 'Mặc định' : 'Đặt mặc định'}</button>
     </div>)}
     {form.tip_mode === 'manual' ? <label className="live-tour-field tour-tip-amount"><span>Tiền TIP</span><input type="number" min="0" max="10000000000" step="1" value={form.tip} onChange={(event) => setForm((current) => ({ ...current, tip: event.target.value }))}/></label>
-      : <LiveTourPageItems className="tour-tip-cards" items={cards} label="Thẻ TIP" pageSize={4}>{(card) => <button type="button" className="secondary-button" key={card.id} aria-pressed={form.tip_card_ids.includes(card.id)} onClick={() => setForm((current) => ({ ...current, tip_card_ids: current.tip_card_ids.includes(card.id) ? current.tip_card_ids.filter((id) => id !== card.id) : [...current.tip_card_ids, card.id] }))}>{tipCardLabel(card)}</button>}</LiveTourPageItems>}
+      : <div className="tour-tip-cards"><div className="tour-page-items-content">{sortedTipCards(cards).map((card) => <button type="button" className="secondary-button" key={card.id} aria-pressed={form.tip_card_ids.includes(card.id)} onClick={() => setForm((current) => ({ ...current, tip_card_ids: current.tip_card_ids.includes(card.id) ? current.tip_card_ids.filter((id) => id !== card.id) : [...current.tip_card_ids, card.id] }))}>{tipCardLabel(card)}</button>)}</div></div>}
     <p className="tour-tip-total">Tổng TIP: <strong>{money(total)}</strong></p>
     {preferenceError && <small role="alert">{preferenceError}</small>}
   </fieldset>

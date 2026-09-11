@@ -1,3 +1,4 @@
+import BackToTop from './BackToTop'
 import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -376,6 +377,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>
+      <BackToTop/>
     </div>
   )
 }

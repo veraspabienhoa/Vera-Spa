@@ -207,7 +207,7 @@ def test_checkout_is_atomic_for_invoice_report_combo_and_preserves_vip():
     }, "admin", NOW, False)
 
     assert invoice["total"] == 280  # 100 + 200 - 50 + 30 tip
-    assert invoice["bill_no"] == "LIVE-20260905-0001"
+    assert invoice["bill_no"] == "VERA-20260905-0001"
     assert invoice["combo_units"] == 2
     assert invoice["payment_method"] == "COMBO"
     assert invoice["combo_units_source"] == "server_service_catalog"
@@ -226,7 +226,7 @@ def test_checkout_is_atomic_for_invoice_report_combo_and_preserves_vip():
     third.update({"service": "Body 70", "service_price": 200, "room": "2.1", "status": "CHO THANH TOÁN"})
     state["employees"].append(third)
     second_invoice = live._checkout(state, {"employee_id": "e3", "payment_method": "TIỀN MẶT"}, "admin", NOW, False)
-    assert second_invoice["bill_no"] == "LIVE-20260905-0002"
+    assert second_invoice["bill_no"] == "VERA-20260905-0002"
 
     fourth = employee("e4", "Dung")
     fourth.update({"service": "Body 70", "service_price": 200, "room": "2.2", "status": "CHO THANH TOÁN"})

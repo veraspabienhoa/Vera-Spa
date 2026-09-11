@@ -1,3 +1,4 @@
+import LiveTourPaymentQr from '../components/LiveTourPaymentQr'
 import { searchTextMatches } from '../lib/searchText'
 import { roomOptionMatches, bookingRoomGroup } from '../lib/liveTourRooms'
 import { tourStartOrder } from '../lib/liveTourOrder'
@@ -868,7 +869,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
     const result = await executeAction(action, payload, modalIds)
     if (result) {
-      if (['checkout', 'quick_checkout'].includes(modal.kind) && result.result?.invoice) setReceipt({ invoice: result.result.invoice, autoPrint: form.print_after })
+      if (['checkout', 'quick_checkout'].includes(modal.kind) && result.result?.invoice && (data.payment_settings?.open_receipt !== false || form.print_after)) setReceipt({ invoice: result.result.invoice, autoPrint: form.print_after })
       setModal(null)
     }
   }
@@ -1091,7 +1092,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     : checkoutPreviewSubtotal
   const checkoutTipPreview = form.tip_mode === 'cards' ? asArray(data.payment_settings?.tip_cards).filter((card) => form.tip_card_ids.includes(card.id)).reduce((sum, card) => sum + Number(card.amount), 0) : Math.max(0, Number(form.tip || 0))
   const checkoutDiscountPreview = discountAmount(checkoutEffectiveSubtotal, form.discount_mode, form.discount_mode === 'percent' ? form.discount_percent : form.discount)
-  const checkoutPreviewTotal = selectedCheckoutCombo?.component_balances ? checkoutTipPreview : Number.isFinite(checkoutEffectiveSubtotal)
+  const checkoutPreviewTotal = selectedCheckoutCombo ? checkoutTipPreview : Number.isFinite(checkoutEffectiveSubtotal)
     ? Math.max(0, checkoutEffectiveSubtotal - checkoutDiscountPreview) + checkoutTipPreview
     : null
   const checkoutPreviewComboUnits = selectedCheckoutCombo?.component_balances ? selectedComboPreview.units : checkoutPreviewEntries.reduce((sum, entry) => sum + Number(entry.ticket_units || 0), 0)
@@ -1648,6 +1649,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <label className="live-tour-field"><span>Số vé</span><input value={form.ticket_no} onChange={(event) => setForm((current) => ({ ...current, ticket_no: event.target.value }))}/></label>
             <label className="live-tour-field"><span>Loại giảm giá</span><select value={form.discount_mode} disabled={Boolean(selectedCheckoutCombo?.component_balances)} onChange={(event) => setForm((current) => ({ ...current, discount_mode: event.target.value }))}><option value="amount">Số tiền (đ)</option><option value="percent">Tỷ lệ (%)</option></select></label>
             <label className="live-tour-field"><span>Giảm giá {form.discount_mode === 'percent' ? '(%)' : '(đ)'}</span><input type="number" min="0" max={form.discount_mode === 'percent' ? '100' : undefined} step={form.discount_mode === 'percent' ? '0.01' : '1'} readOnly={Boolean(selectedCheckoutCombo?.component_balances)} value={form.discount_mode === 'percent' ? form.discount_percent : form.discount} onChange={(event) => setForm((current) => ({ ...current, [current.discount_mode === 'percent' ? 'discount_percent' : 'discount']: event.target.value }))}/><small>{Number.isFinite(checkoutDiscountPreview) ? formatMoney(checkoutDiscountPreview) : ''}</small></label>
+            {!checkoutHasUnresolvedPricing && <LiveTourPaymentQr bank={data.payment_settings?.bank} amount={checkoutPreviewTotal} reference={form.bill_no || 'VERA SPA'}/>}
             <LiveTourTipInput key={tipPreferenceKey} form={form} setForm={setForm} cards={asArray(data.payment_settings?.tip_cards)} preferenceKey={tipPreferenceKey} total={checkoutTipPreview}/>
             <label className="live-tour-check-field wide"><input type="checkbox" checked={form.print_after} onChange={(event) => setForm((current) => ({ ...current, print_after: event.target.checked }))}/> In hóa đơn sau khi thanh toán</label>
             <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
@@ -1695,6 +1697,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} canEditDate={capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {customerContext && <LiveTourCustomerDialog context={customerContext} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
     {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} canEditDate={capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
-    {receipt && canPaidInvoiceView && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
+    {receipt && canPaidInvoiceView && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} paymentSettings={data.payment_settings} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
   </div>
 }
