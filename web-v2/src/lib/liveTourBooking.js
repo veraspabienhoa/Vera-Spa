@@ -1,15 +1,11 @@
+import { employeeTourStart, tourStartOrder } from './liveTourOrder.js'
+
 export const tourNameKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLowerCase().replace(/\s+/g, ' ')
 
-export function bookingEmployees(employees, now = Date.now()) {
-  const ranking = (worker) => {
-    if (!worker.service) return [0, Number(worker.sort_index || 0)]
-    if (!worker.started_at) return [3, Number(worker.sort_index || 0)]
-    if (worker.duration == null) return [2, Infinity]
-    const remaining = new Date(worker.started_at).getTime() + Number(worker.duration || 0) * 60000 - now
-    return [remaining <= 15 * 60000 ? 1 : 2, remaining]
-  }
+export function bookingEmployees(employees) {
+  const ranking = (worker) => tourStartOrder(employeeTourStart(worker))
   return employees.filter((worker) => worker.roster_eligible !== false && !worker.hidden && tourNameKey(worker.work_status) === 'di lam' && ['ca 1', 'ca 2'].includes(tourNameKey(worker.shift)) && !worker.break_started_at && tourNameKey(worker.status) !== 'cho thanh toan')
-    .sort((a, b) => { const x = ranking(a), y = ranking(b); return x[0] - y[0] || x[1] - y[1] || tourNameKey(a.name).localeCompare(tourNameKey(b.name)) })
+    .sort((a, b) => { const x = ranking(a), y = ranking(b); return x[0] - y[0] || x[1] - y[1] || Number(a.sort_index || 0) - Number(b.sort_index || 0) || tourNameKey(a.name).localeCompare(tourNameKey(b.name)) })
 }
 
 export function bookingServiceItems(worker, catalog) {

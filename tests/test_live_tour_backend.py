@@ -1259,17 +1259,17 @@ def test_combo_catalog_rejects_zero_tickets():
     assert state == original
 
 
-def test_board_orders_displayed_remaining_time_and_numbers_visible_rows():
+def test_board_orders_standard_start_time_regardless_of_remaining_and_numbers_rows():
     rows = [employee(f'e{i}', f'Worker {i}') for i in range(1, 8)]
-    for row, minutes in zip(rows, [30, 5, -2, -15, None, None, 10]):
-        if minutes is not None:
-            row.update(status='Đang thực hiện', duration=90,
-                       started_at=(NOW - timedelta(minutes=90-minutes)).isoformat())
+    for row, elapsed, duration in zip(rows, [10, 60, 1440, 60, None, 2880, 30], [30, 180, 30, 30, 90, 90, 90]):
+        if elapsed is not None:
+            row.update(status='Đang thực hiện', duration=duration,
+                       started_at=(NOW - timedelta(minutes=elapsed)).isoformat())
     rows[5]['work_status'] = 'Nghỉ phép'
     rows[6]['hidden'] = True
     state = state_with(*rows)
     records = live._state_response(state, 1, NOW)['records']
-    assert [r['Tên nhân viên'] for r in records] == ['Worker 4', 'Worker 5', 'Worker 3', 'Worker 2', 'Worker 7', 'Worker 1', 'Worker 6']
+    assert [r['Tên nhân viên'] for r in records] == ['Worker 5', 'Worker 3', 'Worker 2', 'Worker 4', 'Worker 7', 'Worker 1', 'Worker 6']
     assert [r['STT'] for r in records] == list(range(1, 8))
     _, headers, exported = live._export_rows(state, 'board', NOW)
     assert [r[headers.index('Tên nhân viên')] for r in exported] == [r['Tên nhân viên'] for r in records]
@@ -1277,7 +1277,7 @@ def test_board_orders_displayed_remaining_time_and_numbers_visible_rows():
     assert rows[0]['stt'] == '1'  # Source identity is not rewritten by presentation.
 
 
-def test_manual_reorder_preserves_time_buckets_and_moves_equal_time_peers():
+def test_manual_reorder_preserves_start_order_and_moves_equal_start_peers():
     rows = [employee(f'e{i}', f'Worker {i}') for i in range(1, 5)]
     rows[0].update(status='Đang thực hiện', duration=30, started_at=NOW.isoformat())
     rows[3]['work_status'] = 'Nghỉ phép'
@@ -1302,3 +1302,46 @@ def test_start_reorders_the_returned_board(action, payload):
     records = live._state_response(state, 1, NOW)['records']
     assert [r['Tên nhân viên'] for r in records] == ['Idle', 'Second', 'First']
     assert [r['STT'] for r in records] == [1, 2, 3]
+
+
+@pytest.mark.parametrize('transition', ['complete', 'finish_to_pending', 'checkout', 'quick_checkout'])
+def test_retained_start_order_survives_completion_and_payment(transition):
+    early, later, idle, leave = [employee(f'e{i}', name) for i, name in enumerate(['Early', 'Later', 'Idle', 'Leave'], 1)]
+    early.update(service='Body 90', room='1.1', duration=180, status='Đang thực hiện',
+                 started_at=(NOW - timedelta(minutes=60)).isoformat(), service_price=100, service_price_source='catalog')
+    later.update(service='Body 90', room='2.1', duration=10, status='Đang thực hiện',
+                 started_at=(NOW - timedelta(minutes=10)).isoformat())
+    leave.update(work_status='Nghỉ phép', started_at=(NOW - timedelta(days=1)).isoformat())
+    state = state_with(early, later, idle, leave)
+    expected = ['e3', 'e1', 'e2', 'e4']
+    assert [row['id'] for row in live._ordered_employees(state['employees'], NOW)] == expected
+    if transition in {'checkout', 'quick_checkout'}:
+        live._apply_action(state, 'complete', {'employee_id': 'e1'}, 'tester', NOW)
+    live._apply_action(state, transition, {'employee_id': 'e1', 'payment_method': 'TIỀN MẶT'}, 'tester', NOW)
+    assert [row['id'] for row in live._ordered_employees(state['employees'], NOW)] == expected
+    assert [row['id'] for row in live._ordered_employees(state['employees'], NOW + timedelta(hours=3))] == expected
+
+
+def test_manual_move_cannot_put_later_start_before_earlier_or_move_leave_above_working():
+    rows = [employee(f'e{i}', f'Worker {i}') for i in range(1, 5)]
+    rows[0].update(started_at=(NOW - timedelta(minutes=60)).isoformat(), status='Đang thực hiện', duration=180)
+    rows[1].update(started_at=(NOW - timedelta(minutes=60)).isoformat(), status='Đang thực hiện', duration=30)
+    rows[2].update(started_at=NOW.isoformat(), status='Đang thực hiện', duration=10)
+    rows[3].update(work_status='Nghỉ phép')
+    state = state_with(*rows)
+    live._apply_action(state, 'reorder', {'employee_id': 'e2', 'direction': 'top'}, 'tester', NOW)
+    assert [row['id'] for row in live._ordered_employees(state['employees'], NOW)] == ['e2', 'e1', 'e3', 'e4']
+    for identifier in ['e3', 'e4']:
+        live._apply_action(state, 'reorder', {'employee_id': identifier, 'direction': 'top'}, 'tester', NOW)
+        assert [row['id'] for row in live._ordered_employees(state['employees'], NOW)] == ['e2', 'e1', 'e3', 'e4']
+
+
+def test_queue_uses_standard_start_column_and_not_yc_or_completion_time():
+    standard, request, paid = [employee(f'e{i}', name) for i, name in enumerate(['Standard', 'YC', 'Paid'], 1)]
+    standard.update(service='Body 90', request='', started_at=NOW.isoformat())
+    request.update(service='Body 90', request='YC', started_at=(NOW - timedelta(hours=1)).isoformat())
+    paid.update(last_assignment_display={'TG bắt đầu thực hiện': '31/08/2026 22:00:00',
+                                        'TG bắt đầu thực hiện YC': '01/09/2026 08:00:00'})
+    ordered = live._ordered_employees([standard, paid, request], NOW)
+    assert [row['id'] for row in ordered] == ['e2', 'e3', 'e1']
+    assert live._employee_record(request, NOW)['TG bắt đầu thực hiện'] == ''

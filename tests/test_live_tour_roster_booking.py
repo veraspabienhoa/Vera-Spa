@@ -238,15 +238,15 @@ def test_tip_presets_require_admin_and_receipts_keep_original_values(monkeypatch
     assert client.get('/v2/live-tour').json()['payment_settings'] == {'auto_print': False, 'tip_cards': []}
 
 
-def test_browser_helpers_rank_idle_then_finishing_then_doing_and_preserve_service_ids():
+def test_browser_helpers_rank_by_standard_start_and_preserve_service_ids():
     uri = (Path(__file__).parents[1] / 'web-v2/src/lib/liveTourBooking.js').as_uri()
     script = '''
 import assert from 'node:assert/strict';
 const {bookingEmployees, bookingServiceItems, bookingTotal, discountAmount, tourNameKey} = await import(MODULE);
 const now = Date.parse('2026-09-09T05:00:00Z');
 const worker = {work_status:'Đi làm',shift:'Ca 1',started_at:new Date(now-600000).toISOString(),service:'Massage',duration:60};
-const rows = [{...worker,id:'long',name:'Long'},{...worker,id:'short',name:'Short',duration:11},{...worker,id:'idle',name:'Idle',service:''},{...worker,id:'break',break_started_at:'x'},{...worker,id:'off',work_status:'Nghỉ'},{...worker,id:'other-role',roster_eligible:false}];
-assert.deepEqual(bookingEmployees(rows,now).map(row=>row.id),['idle','short','long']);
+const rows = [{...worker,id:'long',name:'Long',started_at:new Date(now-3600000).toISOString()},{...worker,id:'short',name:'Short',duration:11},{...worker,id:'idle',name:'Idle',service:'',started_at:''},{...worker,id:'break',break_started_at:'x'},{...worker,id:'off',work_status:'Nghỉ'},{...worker,id:'other-role',roster_eligible:false}];
+assert.deepEqual(bookingEmployees(rows,now).map(row=>row.id),['idle','long','short']);
 assert.equal(tourNameKey('  Linh Đan  '),'linh dan');
 const catalog=[{id:'s',name:'Da & Body',price:100000}];
 assert.deepEqual(bookingServiceItems({service:'Da & Body'},catalog),[{service_id:'s',quantity:1}]);

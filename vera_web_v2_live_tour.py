@@ -1928,7 +1928,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         result["break_event"] = end_event
     elif action == "reorder":
         employee = _employee(state, payload.get("employee_id"))
-        # Manual moves apply within the same displayed remaining-time bucket.
+        # Manual moves cannot override the displayed start time or leave status.
         ordered = _ordered_employees(state["employees"], now)
         peers = [item for item in ordered if _employee_time_key(item, now) == _employee_time_key(employee, now)]
         current = peers.index(employee)
@@ -2318,10 +2318,13 @@ def _remaining(employee: dict[str, Any], now: datetime) -> tuple[int | None, str
 
 
 def _employee_time_key(employee: dict[str, Any], now: datetime) -> tuple[int, int, int]:
-    remaining, _ = _remaining(employee, now)
-    blank = remaining is None or remaining <= -15
+    # Use precisely the standard-start column, including retained history after
+    # completion/payment. YC start times and countdown expiry do not reorder it.
+    raw = str(_employee_record(employee, now).get("TG bắt đầu thực hiện") or "").strip()
+    started = _parse_datetime(raw)
+    rank = 0 if not raw else 1 if started else 2
     return (int(_norm(employee.get("work_status")) == "nghi phep"),
-            0 if blank else 1, 0 if blank else remaining)
+            rank, int(started.timestamp()) if started else 0)
 
 
 def _ordered_employees(employees: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
