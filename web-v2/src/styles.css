@@ -326,7 +326,7 @@ button:not(:disabled):not(.disabled):active { filter: brightness(.84) saturate(1
 .birthday-card span { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .birthday-card em { margin-top: 5px; color: #8c651f; font-size: 10px; font-style: normal; font-weight: 900; text-transform: uppercase; }
 .tour-table-panel { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
-.tour-table { width: 100%; max-width: 100%; max-height: none; min-width: 0; overflow-x: auto; overflow-y: visible; overscroll-behavior-x: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.tour-table { width: 100%; max-width: 100%; height: auto; max-height: none; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-gutter: auto; -webkit-overflow-scrolling: touch; }
 .tour-table:focus-visible { outline: 3px solid rgba(33,70,57,.22); outline-offset: -3px; }
 .tour-table table { width: max-content; min-width: 100%; }
 .tour-table td { white-space: nowrap; }
