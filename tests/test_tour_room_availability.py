@@ -79,7 +79,9 @@ def test_desktop_employee_table_expands_to_show_all_rows():
         assert ".tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:auto;overflow-y:hidden;scrollbar-gutter:auto}" in source
         assert ".tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}" in source
         assert ".tour-records-panel .tour-table{max-height:calc(100vh" not in source
-        assert "table.clientHeight - headerHeight" in source
+        assert '.tour-records-panel{min-height:0;height:auto;max-height:none}' in source
+        assert 'displayedRecords.map' in source
+        assert 'displayedRecords.slice' not in source
 
 
 def test_tour_heading_and_available_room_summary_are_compact():
@@ -106,14 +108,16 @@ def test_tour_metric_boxes_follow_the_requested_two_row_order():
     assert 'className="tour-customer-count"' not in source
 
 
-def test_desktop_employee_header_stays_fixed_without_vertical_table_scroll():
-    source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
+def test_employee_board_remains_in_document_flow_without_overlapping_panels():
+    for page in ("TourPage.jsx", "LiveTourPage.jsx"):
+        source = (ROOT / "web-v2/src/pages" / page).read_text(encoding="utf-8")
 
-    assert "--tour-table-head-offset" in source
-    assert "headerTop - tableRect.top" in source
-    assert "mobile ? Math.max(0, topbarBottom)" in source
-    assert "ref={recordsTableRef}" in source
-    assert ".tour-records-panel .tour-table{max-height:none" in source
+        assert '.tour-board-top{position:static;display:grid;' in source
+        assert '.tour-records-panel .tour-table thead{position:static;transform:none}' in source
+        assert 'updateStickyTableHeader' not in source
+        assert '--tour-table-head-offset' not in source
+        assert '.tour-sticky-top' not in source
+        assert 'ref={recordsTableRef}' not in source
 
 
 def test_private_service_badge_vip_19_and_admin_tools_are_compact():

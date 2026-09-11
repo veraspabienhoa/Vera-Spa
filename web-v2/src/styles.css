@@ -330,7 +330,7 @@ button:not(:disabled):not(.disabled):active { filter: brightness(.84) saturate(1
 .tour-table:focus-visible { outline: 3px solid rgba(33,70,57,.22); outline-offset: -3px; }
 .tour-table table { width: max-content; min-width: 100%; }
 .tour-table td { white-space: nowrap; }
-.tour-table th { position: sticky; top: 0; z-index: 4; color: #000; background: #a1948c; box-shadow: 0 2px 0 rgba(35,31,29,.18); font-weight: 800; text-align: center; white-space: normal; }
+.tour-table th { position: static; color: #000; background: #a1948c; box-shadow: 0 2px 0 rgba(35,31,29,.18); font-weight: 800; text-align: center; white-space: normal; }
 .tour-table .tour-col-status { width: 72px; min-width: 72px; max-width: 72px; text-align: center; white-space: normal; overflow-wrap: anywhere; }
 .tour-table .tour-col-remaining { width: 58px; min-width: 58px; max-width: 58px; text-align: center; white-space: normal; overflow-wrap: anywhere; }
 .tour-table .tour-col-room, .tour-table .tour-col-request { width: 54px; min-width: 54px; max-width: 54px; text-align: center; white-space: normal; overflow-wrap: anywhere; }
