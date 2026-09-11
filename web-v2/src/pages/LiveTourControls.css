@@ -1,3 +1,7 @@
+.live-tour-page .live-tour-controls[hidden] {
+  display: none;
+}
+
 .live-tour-page .live-tour-controls {
   --live-tour-control-row-height: 15.4px;
   margin: 8px 0;

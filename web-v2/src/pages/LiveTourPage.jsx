@@ -1358,7 +1358,7 @@ export default function LiveTourPage({ user }) {
             })}</div> : <div className="tour-room-detail-empty">Phòng đang trống, chưa có nhân viên và dịch vụ.</div>}
           </div>}
         </div>
-        <section className="panel live-tour-operator live-tour-controls" aria-labelledby="live-tour-controls-heading">
+        <section hidden className="panel live-tour-operator live-tour-controls" aria-labelledby="live-tour-controls-heading">
           <div className="live-tour-operator-head">
             <div className="live-tour-operator-title"><Menu size={18}/><strong id="live-tour-controls-heading">Điều khiển</strong><button type="button" className={`live-tour-pending-badge ${pendingPayments.length ? 'has-items' : ''}`} onClick={openPendingPanel} disabled={!canPending} aria-controls="live-tour-pending-panel"><BellRing size={13} aria-hidden="true"/> {pendingPayments.length} chờ thanh toán</button></div>
           </div>
