@@ -527,7 +527,7 @@ function LiveTourLegacyModal({ title, onClose, children }) {
 
 const EMPTY_FORM = {
   checkout_source: 'pending', service_id: '', booking_date: '', booking_time: '', booking_reason: '',
-  employee_id: '', employee_search: '', room: '', service: '', request: '', appointment: '', customer_id: '', customer_name: '', phone: '',
+  target_employee_id: '', employee_id: '', employee_search: '', room: '', service: '', request: '', appointment: '', customer_id: '', customer_name: '', phone: '',
   discount: '0', discount_mode: 'amount', discount_percent: '0', tip: '0', tip_mode: 'manual', tip_card_ids: [], print_after: false, ticket_price: '', payment_method: 'TIỀN MẶT', bill_no: '', ticket_no: '',
   pending_id: '', combo_purchase_id: '', note: '', name: '', shift: '', combo_id: '', quantity: '1', remaining: '', amount: '0', code: '', duration: '60', vip: false,
   backdate_one_day: false, correction_reason: '',
@@ -678,7 +678,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         await load(true, true)
       }
       setSelectedIds(new Set())
-      setNotice(result?.message || 'Đã cập nhật Live Tour.')
+      setNotice(result?.message === 'Đã cập nhật Live Tour.' ? '' : result?.message || '')
       return result
     } catch (err) {
       const message = liveTourErrorDetail(err)
@@ -754,6 +754,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Chỉ Admin được nhập combo.')
       return
     }
+    if (kind === 'change_employee' && (context.rowIds?.length !== 1 || !hasGroup(validRecords.find((row) => stableEmployeeId(row) === context.rowIds[0]), 'waiting'))) {
+      setError('Hãy chọn một nhân viên có Booking đang chờ để đổi.'); return
+    }
     const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
     const capturedEmployees = capturedRowIds?.length
       ? [...asArray(data.state?.employees), ...asArray(data.retained_assignments)].filter((employee) => capturedRowIds.includes(stableEmployeeId(employee)))
@@ -808,7 +811,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       ? [stableEmployeeId(selectedQuickCheckoutRecord)]
       : modal.rowIds || [...selectedIds]
     let action = modal.kind
-    let payload = { ...form }
+    let payload = modal.kind === 'change_employee' ? { target_employee_id: form.target_employee_id } : { ...form }
+    if (modal.kind === 'change_employee' && !form.target_employee_id) { setError('Hãy chọn nhân viên thay thế.'); return }
     if (['checkout', 'quick_checkout'].includes(modal.kind)) {
       if (manualQuickBooking && (!canBook || !form.employee_id || !form.room || !form.service_id || !form.booking_date || !form.booking_time)) {
         setError('Hãy chọn nhân viên, phòng, dịch vụ và ngày giờ booking.'); return
@@ -878,7 +882,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       payload.backdate_one_day = true
       payload.correction_reason = correctionReason
     }
-    const result = await executeAction(action, payload, modalIds)
+    const result = await executeAction(action, payload, modalIds, modal.kind === 'change_employee' ? { expectedRevision: modal.revision } : {})
     if (result) {
       if (['checkout', 'quick_checkout'].includes(modal.kind) && result.result?.invoice && (data.payment_settings?.open_receipt !== false || form.print_after)) setReceipt({ invoice: result.result.invoice, autoPrint: form.print_after })
       setModal(null)
@@ -1015,7 +1019,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const reports = filterTourRows(allReports, listFilters)
   const visibleInvoices = filterTourRows(asArray(data.state?.invoices), listFilters)
 
-  const audit = asArray(data.audit).length ? asArray(data.audit) : asArray(data.history).length ? asArray(data.history) : asArray(data.state?.audit)
   const backups = asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)
   const filteredCustomers = customers.filter((customer) => customerMatches({ ...customer, name: itemLabel(customer) }, customerSearch))
   const quickCheckoutEmployees = [...asArray(data.state?.employees), ...asArray(data.retained_assignments)]
@@ -1155,19 +1158,19 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
   }, [announcePendingPayments, hasPendingReminder])
 
-  const toggleRow = (id) => setSelectedIds((current) => {
+  const toggleRow = (id) => { setSelectedRoomKey(''); setSelectedIds((current) => {
     const next = new Set(current)
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
-  })
-  const toggleDisplayed = () => setSelectedIds((current) => {
+  }) }
+  const toggleDisplayed = () => { setSelectedRoomKey(''); setSelectedIds((current) => {
     const next = new Set(current)
     displayedRecords.forEach((record, index) => {
       const id = recordId(record, index)
       if (allDisplayedSelected) next.delete(id); else next.add(id)
     })
     return next
-  })
+  }) }
   const openPendingPanel = () => {
     if (!canPending) return
     setActivePanel('pending')
@@ -1175,22 +1178,23 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
-  const selectedSummary = () => selectedRecords.map((record) => [
+  const summaryRecords = selectedRoomKey ? selectedRoomRecords : selectedRecords
+  const selectedSummary = () => (selectedRoomKey ? `${areaLabel(selectedRoom)}\n` : '') + summaryRecords.map((record) => [
     cellValue(record, employeeColumn), cellValue(record, serviceColumn), cellValue(record, requestColumn), cellValue(record, roomColumn),
   ].filter(Boolean).join(' | ')).join('\n')
 
   const copySelectedSummary = async () => {
-    if (!selectedRecords.length) return setNotice('Hãy chọn nhân viên cần sao chép.')
+    if (!summaryRecords.length) return setNotice(selectedRoomKey ? 'Phòng đang trống, chưa có thông tin để sao chép.' : 'Hãy chọn phòng hoặc nhân viên cần sao chép.')
     try {
       await navigator.clipboard.writeText(selectedSummary())
-      setNotice(`Đã sao chép ${selectedRecords.length} dòng Live Tour.`)
+      setNotice(`Đã sao chép ${summaryRecords.length} dòng Live Tour.`)
     } catch {
       setError('Trình duyệt không cho phép sao chép. Hãy cấp quyền Clipboard và thử lại.')
     }
   }
 
   const shareSelectedSummary = async () => {
-    if (!selectedRecords.length) return setNotice('Hãy chọn nhân viên cần chia sẻ.')
+    if (!summaryRecords.length) return setNotice(selectedRoomKey ? 'Phòng đang trống, chưa có thông tin để chia sẻ.' : 'Hãy chọn phòng hoặc nhân viên cần chia sẻ.')
     if (!navigator.share) return copySelectedSummary()
     try { await navigator.share({ title: 'Live Tour · VERA SPA', text: selectedSummary() }) } catch (err) {
       if (err?.name !== 'AbortError') setError('Không chia sẻ được dữ liệu đã chọn.')
@@ -1355,7 +1359,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         </div>
       </div>
       {error && <div className="error-box">{error}</div>}
-      {notice && <div className="setup-note">{notice}</div>}
+      {notice && notice !== 'Đã cập nhật Live Tour.' && <div className="setup-note">{notice}</div>}
       <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}
       </div>
@@ -1384,7 +1388,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               const hasPrivateService = records.some((item) => item._private_service || isPrivateService(cellValue(item, serviceColumn)))
               return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : records.length ? 'has-standard-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
                 <button type="button" className="tour-room-booking-button"
-                  onClick={() => setSelectedRoomKey(key)}
+                  onClick={() => { setSelectedRoomKey(key); setSelectedIds(new Set()) }}
                   onDoubleClick={() => { if (canBook && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }}
                   title="Bấm một lần để xem nhân viên; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div className="tour-room-card-head"><strong>{areaLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
@@ -1440,6 +1444,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className="secondary-button" onClick={() => openModal('replace_service')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}>Đổi dịch vụ</button>
               <button type="button" className="secondary-button" onClick={() => openModal('add_service')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}>Thêm dịch vụ</button>
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
               </div>
             </div>
           </div>
@@ -1450,10 +1455,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             filterOption={(option, query) => searchTextMatches(option.label, query)}
             options={shiftRecords.map((record) => ({ value: stableEmployeeId(record), label: cellValue(record, employeeColumn), detail: `${cellValue(record, findColumn(columns, ['VAO CA']))} · ${cellValue(record, statusColumn) || 'Sẵn sàng'}` }))}
             onSearch={(query) => { setEmployeeSearch(query); if (employeePickId) setSelectedIds(new Set()); setEmployeePickId('') }}
-            onChange={(id) => { const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])) }}/>
+            onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])) }}/>
           {canEditAppointment && appointmentEditor(appointmentTarget, true)}
-          <span className="live-tour-selection-summary">Đã chọn {selectedIds.size} nhân viên</span>
-          <button type="button" className="secondary-button live-tour-quick-button" onClick={copySelectedSummary}><ClipboardCopy size={14}/> Sao chép tóm tắt</button>
+          <span className="live-tour-selection-summary">{selectedRoomKey ? `${areaLabel(selectedRoom)} · ${selectedRoomRecords.length} nhân viên` : `Đã chọn ${selectedIds.size} nhân viên`}</span>
+          <button type="button" className="secondary-button live-tour-quick-button" onClick={copySelectedSummary}><ClipboardCopy size={14}/> Sao chép</button>
           <button type="button" className="secondary-button live-tour-quick-button" onClick={shareSelectedSummary}><Share2 size={14}/> Chia sẻ</button>
         </div>
       </section>
@@ -1564,7 +1569,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         </div>}
         <div className="live-tour-panel-toolbar"><h2>LỊCH SỬ & SAO LƯU</h2><div className="live-tour-panel-toolbar-actions">{canBackup && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => executeAction('backup', { name: `Backup ${new Date().toLocaleString('vi-VN')}` }, [])}><History size={13}/> Tạo bản sao lưu</button>}{canHistory && <button type="button" className="secondary-button" disabled={!canExportKind('history')} onClick={() => exportData('history')}><Download size={13}/> Xuất lịch sử</button>}</div></div>
         {canBackup && <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{item?.created_at || item?.timestamp || ''}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => { if (window.confirm('Khôi phục bản sao này? Chỉ phục hồi cấu hình/bảng tua khi không còn phiên mở; sổ hóa đơn, vé và lịch sử không bị quay lùi.')) void executeAction('restore', { backup_id: item?._id ?? item?.id }, []) }}>Khôi phục</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có bản sao lưu.</div>}</div>}
-        {canHistory && <div className="live-tour-catalog-section"><h3>Nhật ký thao tác</h3>{audit.length ? <div className="live-tour-card-grid">{audit.slice(0, 100).map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{item?.action_label || item?.action || itemLabel(item, `Sự kiện ${index + 1}`)}</strong><span>{item?.employee_name || item?.actor || item?.created_by || ''}</span><small>{item?.at || item?.created_at || item?.timestamp || ''}</small><small>{item?.note || item?.message || (item?.detail ? JSON.stringify(item.detail) : '')}</small></article>)}</div> : <div className="live-tour-empty">Chưa có lịch sử thao tác.</div>}</div>}
       </div>}
 
       {activePanel === 'catalog' && canAdmin && <div className="live-tour-panel-body">
@@ -1605,18 +1609,24 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
     {modal && <LiveTourModal title={{
       checkout: 'Thanh toán', quick_checkout: 'Thanh toán nhanh',
-      replace_service: 'Đổi dịch vụ', add_service: 'Thêm dịch vụ',
+      change_employee: 'Đổi nhân viên', replace_service: 'Đổi dịch vụ', add_service: 'Thêm dịch vụ',
       combo_purchase: modal.newCustomer ? 'Mua combo cho khách mới' : 'Mua combo', combo_import: 'Nhập combo', room_upsert: modal.item ? 'Sửa phòng' : 'Thêm phòng',
       service_upsert: modal.item ? 'Sửa dịch vụ' : 'Thêm dịch vụ', combo_upsert: modal.item ? 'Sửa combo' : 'Thêm combo',
     }[modal.kind] || 'Live Tour'} onClose={closeModal} fitViewport={['checkout', 'quick_checkout'].includes(modal.kind)} busy={Boolean(actionBusy)}>
-      {['checkout', 'quick_checkout'].includes(modal.kind) && error && <p className="error-box" role="alert">{error}</p>}
+      {['checkout', 'quick_checkout', 'change_employee'].includes(modal.kind) && error && <p className="error-box" role="alert">{error}</p>}
       <form onSubmit={submitModal}>
         <div className="live-tour-form-grid">
+          {modal.kind === 'change_employee' && <>
+            <p className="wide">Chuyển Booking đang chờ của <strong>{cellValue(validRecords.find((row) => stableEmployeeId(row) === modal.rowIds[0]), employeeColumn)}</strong> sang nhân viên mới. Giữ nguyên phòng, dịch vụ và thông tin khách.</p>
+            <LiveTourSearchSelect className="wide" label="Nhân viên thay thế" placeholder="Tìm và chọn nhân viên đang rảnh…" value={form.target_employee_id}
+              options={validRecords.filter((row) => stableEmployeeId(row) !== modal.rowIds[0] && hasGroup(row, 'available') && !cellValue(row, serviceColumn) && !hasGroup(row, 'break') && normalizedColumn(cellValue(row, statusColumn)) !== 'CHO THANH TOAN').map((row) => ({ value: stableEmployeeId(row), label: cellValue(row, employeeColumn) }))}
+              onChange={(id) => setForm((current) => ({ ...current, target_employee_id: id }))} disabled={Boolean(actionBusy)} required/>
+          </>}
           {['checkout', 'quick_checkout'].includes(modal.kind) && <>
             {modal.kind === 'quick_checkout' && <>
               {canBook && !modal.item && <div className="tour-checkout-source wide">
-                <button type="button" className="secondary-button" aria-pressed={!manualQuickBooking} onClick={() => { setForm((current) => ({ ...current, checkout_source: 'pending', employee_id: '', employee_search: '', pending_id: '', customer_id: '', customer_name: '', phone: '', combo_purchase_id: '', payment_method: 'TIỀN MẶT' })); setModal((current) => ({ ...current, rowIds: [] })) }}>Chờ thanh toán</button>
-                <button type="button" className="secondary-button" aria-pressed={manualQuickBooking} onClick={() => { setForm((current) => ({ ...current, checkout_source: 'manual', employee_id: '', employee_search: '', pending_id: '', customer_id: '', customer_name: '', phone: '', combo_purchase_id: '', payment_method: 'TIỀN MẶT' })); setModal((current) => ({ ...current, rowIds: [] })) }}>Nhập thanh toán nhanh</button>
+                <button type="button" className="secondary-button" aria-pressed={!manualQuickBooking} onClick={() => { setForm((current) => ({ ...current, checkout_source: 'pending', target_employee_id: '', employee_id: '', employee_search: '', pending_id: '', customer_id: '', customer_name: '', phone: '', combo_purchase_id: '', payment_method: 'TIỀN MẶT' })); setModal((current) => ({ ...current, rowIds: [] })) }}>Chờ thanh toán</button>
+                <button type="button" className="secondary-button" aria-pressed={manualQuickBooking} onClick={() => { setForm((current) => ({ ...current, checkout_source: 'manual', target_employee_id: '', employee_id: '', employee_search: '', pending_id: '', customer_id: '', customer_name: '', phone: '', combo_purchase_id: '', payment_method: 'TIỀN MẶT' })); setModal((current) => ({ ...current, rowIds: [] })) }}>Nhập thanh toán nhanh</button>
               </div>}
               {!manualQuickBooking && <div className="wide"><LiveTourSearchSelect className="live-tour-employee-picker" label="Tìm nhân viên / phòng / dịch vụ chờ thanh toán" required
                 value={form.pending_id ? `pending:${form.pending_id}` : form.employee_id ? `employee:${form.employee_id}` : ''}
