@@ -914,6 +914,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
     record = _employee_record(employee, now)
     employee["last_assignment_display"] = {column: record[column] for column in RETAINED_ASSIGNMENT_COLUMNS}
     employee.pop("service_items", None)
+    employee.pop("pre_start_tour_position", None)
     for key in ("combo_purchase_id", "combo_reserved_units", "combo_reserved_components"):
         employee.pop(key, None)
     for key in (
@@ -1166,6 +1167,24 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
     return employee
 
 
+def _capture_tour_position(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
+    record = _employee_record(employee, now)
+    return {
+        "sort_index": employee.get("sort_index", 0),
+        "display": {column: record.get(column, "") for column in ("TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC")},
+        "counter_key": "request_count" if _norm(employee.get("request")) == "yc" else "tour_count",
+        "counter_day": _counter_business_date(now).isoformat(),
+    }
+
+
+def _employee_change_until(employee: dict[str, Any]) -> datetime | None:
+    started = _parse_datetime(employee.get("started_at"))
+    if (_norm(employee.get("status")) != "dang thuc hien" or not started
+            or employee.get("completed_at") or not employee.get("pre_start_tour_position")):
+        return None
+    return started + timedelta(minutes=10)
+
+
 def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime) -> None:
     if _norm(employee.get("work_status")) != "di lam" or _shift_bucket(employee) not in {"ca1", "ca2"}:
         raise HTTPException(409, "Nhân viên phải đang Đi làm và được xếp Ca 1/Ca 2.")
@@ -1179,6 +1198,7 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
     if employee.get("combo_purchase_id"):
         customer = _customer(state, {"customer_id": employee.get("customer_id")}, create=False)
         employee.update(_booking_combo(state, customer, {}, employee, now, employee))
+    employee["pre_start_tour_position"] = _capture_tour_position(employee, now)
     if _norm(employee.get("request")) == "yc":
         employee["request_count"] = int(employee.get("request_count") or 0) + 1
     else:
@@ -1697,14 +1717,21 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         target = _employee(state, payload.get("target_employee_id"))
         if source["id"] == target["id"]:
             raise HTTPException(400, "Hãy chọn nhân viên thay thế khác.")
-        if _norm(source.get("status")) != "dang cho" or source.get("started_at") or source.get("completed_at"):
-            raise HTTPException(409, "Chỉ đổi nhân viên cho Booking đang chờ, chưa thực hiện.")
+        deadline = _employee_change_until(source)
+        started = _parse_datetime(source.get("started_at"))
+        if not deadline or not started or not started <= now.astimezone(VN_TZ) <= deadline:
+            raise HTTPException(409, "Chỉ đổi nhân viên đang thực hiện trong 10 phút đầu; phiên cần có vị trí tua trước khi bắt đầu.")
         if (target.get("roster_eligible") is False or _norm(target.get("work_status")) != "di lam"
                 or _shift_bucket(target) not in {"ca1", "ca2"} or target.get("break_started_at")
                 or _has_unsettled_work(target)):
             raise HTTPException(409, "Nhân viên thay thế phải đang đi làm, có ca và đang rảnh.")
-        # Transfer the existing booking and reservation exactly once; counters and
-        # employee attendance remain attached to their original employees.
+        # Keep the original service clock: repeated replacement cannot reopen the
+        # ten-minute window. Each employee retains their own pre-service position.
+        original_position = deepcopy(source["pre_start_tour_position"])
+        target_position = _capture_tour_position(target, now)
+        counter_key = original_position["counter_key"]
+        target_position["counter_key"] = counter_key
+        target_position["counter_day"] = original_position["counter_day"]
         fields = ("service", "service_items", "service_price", "service_price_source", "duration",
                   "request", "request_source", "room", "status", "booked_at", "booking_id",
                   "started_at", "completed_at", "wait_minutes", "payment_status", "completion_note",
@@ -1714,8 +1741,13 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         _clear_assignment(target, now)
         target.pop("last_assignment_display", None)
         target.update(assignment)
+        target["pre_start_tour_position"] = target_position
         _clear_assignment(source, now)
-        source.pop("last_assignment_display", None)
+        source["sort_index"] = original_position["sort_index"]
+        source["last_assignment_display"] = original_position["display"]
+        if original_position["counter_day"] == _counter_business_date(now).isoformat():
+            source[counter_key] = max(0, int(source.get(counter_key) or 0) - 1)
+            target[counter_key] = int(target.get(counter_key) or 0) + 1
         source["note"] = ""
         payload = {**payload, "booking_id": assignment.get("booking_id", "")}
         result = {"employee": target, "previous_employee_id": source["id"]}
@@ -2443,6 +2475,8 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_id": employee.get("id"), "id": employee.get("id"),
         "employee_id": employee.get("id"), "_employee_id": employee.get("id"),
         "_row_style": style, "_tour_groups": groups,
+        "_employee_change_until": _iso(_employee_change_until(employee)) if _employee_change_until(employee) else "",
+        "_employee_change_started_at": employee.get("started_at", ""),
         "_countdown_deadline": deadline, "_attendance_break_active": bool(employee.get("break_started_at")),
         "_hidden": bool(employee.get("hidden")), "_active_booking": _active_booking(employee),
         "_payment_pending": _norm(employee.get("status")) == "cho thanh toan",

@@ -1,3 +1,4 @@
+import { canChangeEmployee } from '../lib/liveTourEmployeeChange'
 import LiveTourPaymentQr from '../components/LiveTourPaymentQr'
 import { searchTextMatches } from '../lib/searchText'
 import { roomOptionMatches, bookingRoomGroup } from '../lib/liveTourRooms'
@@ -754,8 +755,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Chỉ Admin được nhập combo.')
       return
     }
-    if (kind === 'change_employee' && (context.rowIds?.length !== 1 || !hasGroup(validRecords.find((row) => stableEmployeeId(row) === context.rowIds[0]), 'waiting'))) {
-      setError('Hãy chọn một nhân viên có Booking đang chờ để đổi.'); return
+    if (kind === 'change_employee' && (context.rowIds?.length !== 1 || !canChangeEmployee(validRecords.find((row) => stableEmployeeId(row) === context.rowIds[0]), clockMs))) {
+      setError('Chỉ đổi nhân viên đang thực hiện trong 10 phút đầu kể từ khi bấm Thực hiện.'); return
     }
     const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
     const capturedEmployees = capturedRowIds?.length
@@ -1444,7 +1445,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className="secondary-button" onClick={() => openModal('replace_service')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}>Đổi dịch vụ</button>
               <button type="button" className="secondary-button" onClick={() => openModal('add_service')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}>Thêm dịch vụ</button>
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
               </div>
             </div>
           </div>
@@ -1617,7 +1618,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       <form onSubmit={submitModal}>
         <div className="live-tour-form-grid">
           {modal.kind === 'change_employee' && <>
-            <p className="wide">Chuyển Booking đang chờ của <strong>{cellValue(validRecords.find((row) => stableEmployeeId(row) === modal.rowIds[0]), employeeColumn)}</strong> sang nhân viên mới. Giữ nguyên phòng, dịch vụ và thông tin khách.</p>
+            <p className="wide">Chuyển dịch vụ đang thực hiện của <strong>{cellValue(validRecords.find((row) => stableEmployeeId(row) === modal.rowIds[0]), employeeColumn)}</strong> sang nhân viên mới trong 10 phút đầu. Giữ nguyên phòng, dịch vụ, thông tin khách và thời gian còn lại; nhân viên cũ trở về vị trí tua trước khi bắt đầu.</p>
             <LiveTourSearchSelect className="wide" label="Nhân viên thay thế" placeholder="Tìm và chọn nhân viên đang rảnh…" value={form.target_employee_id}
               options={validRecords.filter((row) => stableEmployeeId(row) !== modal.rowIds[0] && hasGroup(row, 'available') && !cellValue(row, serviceColumn) && !hasGroup(row, 'break') && normalizedColumn(cellValue(row, statusColumn)) !== 'CHO THANH TOAN').map((row) => ({ value: stableEmployeeId(row), label: cellValue(row, employeeColumn) }))}
               onChange={(id) => setForm((current) => ({ ...current, target_employee_id: id }))} disabled={Boolean(actionBusy)} required/>
