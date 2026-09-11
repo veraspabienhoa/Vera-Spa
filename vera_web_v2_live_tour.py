@@ -1242,11 +1242,12 @@ def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime,
     day = (now.astimezone(VN_TZ).date() if calendar_day else _business_date(now)).isoformat()
     counters = state.setdefault("bill_counters", {})
     current = int(counters.get(day) or 0)
-    prefix = f"LIVE-{day.replace('-', '')}-"
+    prefix = f"VERA-{day.replace('-', '')}-"
     for invoice in issued:
         bill_no = str(invoice.get("bill_no") or "")
-        if bill_no.startswith(prefix) and bill_no[len(prefix):].isdigit():
-            current = max(current, int(bill_no[len(prefix):]))
+        for known_prefix in (prefix, prefix.replace("VERA-", "LIVE-", 1)):
+            if bill_no.startswith(known_prefix) and bill_no[len(known_prefix):].isdigit():
+                current = max(current, int(bill_no[len(known_prefix):]))
     while True:
         current += 1
         candidate = f"{prefix}{current:04d}"
@@ -3248,7 +3249,7 @@ def install_live_tour_routes(
             grants = permissions(conn, ident)
         public = _state_response(state, revision, now, **grants)
         return {"revision": revision, "invoices": public["state"]["invoices"],
-                "reports": public["report_rows"], "capabilities": public["capabilities"]}
+                "reports": public["report_rows"], "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
 
     @app.get("/v2/live-tour/customers")
     def spa_customers(ident: identity_type = Depends(current_identity)):

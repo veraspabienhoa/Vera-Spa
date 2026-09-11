@@ -235,7 +235,7 @@ def test_tip_presets_require_admin_and_receipts_keep_original_values(monkeypatch
     act(state, 'payment_settings_update', {'auto_print': False, 'tip_cards': []})
     assert invoice['tip'] == 80000 and invoice['tip_cards'][0]['name'] == 'TIP 80k'
     client, _ = api_client(monkeypatch, state)
-    assert client.get('/v2/live-tour').json()['payment_settings'] == {'auto_print': False, 'tip_cards': []}
+    assert client.get('/v2/live-tour').json()['payment_settings'] == {**live._default_payment_settings(), 'tip_cards': []}
 
 
 def test_browser_helpers_rank_by_standard_start_and_preserve_service_ids():
@@ -292,3 +292,25 @@ def test_http_permissions_protect_tip_settings_and_customer_booking_edits(monkey
     assert client.get('/v2/live-tour').json()['pending_payments'] == []
     grants.add('live_tour_admin')
     assert post('payment_settings_update', {'auto_print': True, 'tip_cards': []}).status_code == 200
+
+
+def test_payment_settings_bank_validation_open_receipt_and_tip_order():
+    payload = {'auto_print': True, 'open_receipt': False,
+               'bank': {'enabled': True, 'bank_id': '970436', 'account_no': '00123456789', 'account_name': 'VERA SPA'},
+               'tip_cards': [{'id': 'high', 'name': '50.000 đ', 'amount': 50000}, {'id': 'low', 'name': '10.000 đ', 'amount': 10000}]}
+    result = live._payment_settings_update(payload, live._bounded_money)
+    assert result['auto_print'] is False
+    assert result['open_receipt'] is False
+    assert result['bank']['account_no'] == '00123456789'
+    assert [card['amount'] for card in result['tip_cards']] == [10000, 50000]
+    for bank in [None, {'enabled': True, 'bank_id': '../x', 'account_no': '123456', 'account_name': 'A'}, {'enabled': 'yes'}]:
+        with pytest.raises(HTTPException):
+            live._payment_settings_update({**payload, 'bank': bank}, live._bounded_money)
+
+
+def test_vera_invoice_sequence_continues_after_legacy_live_numbers():
+    state = state_with(employee('e1', 'An'))
+    state['invoices'] = [{'bill_no': 'LIVE-20260905-0042'}]
+    state['bill_counters'] = {}
+    assert live._next_bill_no(state, {}, NOW) == 'VERA-20260905-0043'
+    assert state['invoices'][0]['bill_no'] == 'LIVE-20260905-0042'

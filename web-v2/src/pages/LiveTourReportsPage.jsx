@@ -57,6 +57,6 @@ export default function LiveTourReportsPage({ user }) {
       {!rows.length && <p>Không có dữ liệu phù hợp bộ lọc.</p>}
     </section>
     {context && <LiveTourPaidInvoiceDialog key={`${context.item.id}:${context.mode}`} context={context} busy={busy} error={error} onAction={act} canEditDate={grants.invoice_date_edit} onClose={() => setContext(null)}/>}
-    {receipt && <LiveTourReceipt invoice={receipt} onClose={() => setReceipt(null)}/>}
+    {receipt && <LiveTourReceipt invoice={receipt} paymentSettings={data.payment_settings} onClose={() => setReceipt(null)}/>}
   </div>
 }
