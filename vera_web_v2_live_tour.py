@@ -68,7 +68,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
-    "update_booking", "cancel_booking", "update_appointment", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
+    "update_booking", "cancel_booking", "change_employee", "update_appointment", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Lịch hẹn", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -1690,6 +1690,35 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         employee = _employee(state, payload.get("employee_id"))
         employee["appointment"] = appointment.strip()
         result["employee"] = employee
+    elif action == "change_employee":
+        if len(employee_ids) > 1:
+            raise HTTPException(400, "Chỉ đổi một nhân viên mỗi lần.")
+        source = _employee(state, payload.get("employee_id"))
+        target = _employee(state, payload.get("target_employee_id"))
+        if source["id"] == target["id"]:
+            raise HTTPException(400, "Hãy chọn nhân viên thay thế khác.")
+        if _norm(source.get("status")) != "dang cho" or source.get("started_at") or source.get("completed_at"):
+            raise HTTPException(409, "Chỉ đổi nhân viên cho Booking đang chờ, chưa thực hiện.")
+        if (target.get("roster_eligible") is False or _norm(target.get("work_status")) != "di lam"
+                or _shift_bucket(target) not in {"ca1", "ca2"} or target.get("break_started_at")
+                or _has_unsettled_work(target)):
+            raise HTTPException(409, "Nhân viên thay thế phải đang đi làm, có ca và đang rảnh.")
+        # Transfer the existing booking and reservation exactly once; counters and
+        # employee attendance remain attached to their original employees.
+        fields = ("service", "service_items", "service_price", "service_price_source", "duration",
+                  "request", "request_source", "room", "status", "booked_at", "booking_id",
+                  "started_at", "completed_at", "wait_minutes", "payment_status", "completion_note",
+                  "completion_delta_minutes", "steam_elapsed_minutes", "customer_id", "customer_name",
+                  "customer_phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components", "note")
+        assignment = {key: deepcopy(source[key]) for key in fields if key in source}
+        _clear_assignment(target, now)
+        target.pop("last_assignment_display", None)
+        target.update(assignment)
+        _clear_assignment(source, now)
+        source.pop("last_assignment_display", None)
+        source["note"] = ""
+        payload = {**payload, "booking_id": assignment.get("booking_id", "")}
+        result = {"employee": target, "previous_employee_id": source["id"]}
     elif action == "cancel_booking":
         employee = _employee(state, payload.get("employee_id"))
         if _norm(employee.get("status")) != "dang cho" or employee.get("started_at") or employee.get("completed_at"):
