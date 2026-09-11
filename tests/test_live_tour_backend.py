@@ -864,16 +864,19 @@ def test_assignment_cleanup_clears_only_tour_fields():
     preserved = {
         key: deepcopy(ktv[key]) for key in (
             "id", "name", "vip", "tour_count", "request_count", "work_status", "shift",
-            "break_history", "clock_in", "clock_out", "sort_index",
+            "break_history", "clock_in", "clock_out", "sort_index", "appointment", "note",
         )
     }
 
-    live._clear_assignment(ktv)
+    before = live._employee_record(ktv, NOW)
+    live._clear_assignment(ktv, NOW)
+    after = live._employee_record(ktv, NOW)
+    assert {key: after[key] for key in live.RETAINED_ASSIGNMENT_COLUMNS} == {key: before[key] for key in live.RETAINED_ASSIGNMENT_COLUMNS}
 
     for key in (
-        "appointment", "service", "request", "request_source", "room", "status",
+        "service", "request", "request_source", "room", "status",
         "booked_at", "started_at", "completed_at", "payment_status", "customer_id",
-        "customer_name", "customer_phone", "note", "booking_id",
+        "customer_name", "customer_phone", "booking_id",
         "service_price_source",
     ):
         assert ktv[key] == ""

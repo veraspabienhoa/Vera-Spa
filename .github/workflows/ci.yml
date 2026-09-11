@@ -1157,6 +1157,9 @@ jobs:
       - name: Verify inline leave editing and role policies
         run: npm run test:leave-edit
 
+      - name: Verify Live Tour appointment editing and checkout display
+        run: node --test tests/liveTourAppointments.test.mjs
+
       - name: Lint
         run: npm run lint
 

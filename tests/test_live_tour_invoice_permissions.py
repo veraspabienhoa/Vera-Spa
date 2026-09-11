@@ -261,7 +261,7 @@ def test_exports_require_every_associated_read_grant(monkeypatch, kind, feature)
 
 def test_new_booking_permission_is_independent_from_operation_and_payment(monkeypatch):
     state = payable_state()
-    live._clear_assignment(state["employees"][0])
+    live._clear_assignment(state["employees"][0], NOW)
     grants = {"live_tour_view", "live_tour_booking"}
     client, shared = scoped_client(monkeypatch, state, grants)
     payload = {"employee_id": "e1", "service": "Body 90", "room": "1.1"}
