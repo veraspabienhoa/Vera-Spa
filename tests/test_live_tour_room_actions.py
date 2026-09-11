@@ -132,7 +132,11 @@ def test_room_http_requires_operate_and_redacts_customer_data(monkeypatch):
     grants.add('live_tour_operate')
     data = client.get('/v2/live-tour').json()
     assert data['room_action_counts']['1'] == {'waiting': 2, 'doing': 1}
-    assert len([record for record in data['records'] if record.get('Phòng', '').startswith('1.')]) == 4
+    assert len([record for record in data['records'] if record.get('Phòng', '').startswith('1.')]) == 3
+    # Completion clears the room cell, while retaining the invoice source.
+    assert len([record for record in data['state']['employees'] if record.get('room', '').startswith('1.')]) == 4
+    unpaid = [record for record in data['records'] if record.get('_payment_pending')]
+    assert unpaid and all(record['Phòng'] == '' and record['Dịch vụ'] == '' for record in unpaid)
     response = client.post('/v2/live-tour/action', json={'action': 'finish_room', 'payload': {'room': '1'},
         'expected_revision': shared['revision'], 'idempotency_key': 'allowed-room-finish'})
     assert response.status_code == 200, response.text

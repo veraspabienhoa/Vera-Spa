@@ -68,11 +68,11 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
-    "update_booking", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
+    "update_booking", "update_appointment", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
 }
 BOARD_COLUMNS = [
-    "STT", "Tên nhân viên", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
-    "Lịch hẹn", "Dịch vụ", "Đi làm", "Vào ca", "Breaktime", "TG nghỉ còn lại",
+    "STT", "Tên nhân viên", "Lịch hẹn", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
+    "Dịch vụ", "Đi làm", "Vào ca", "Breaktime", "TG nghỉ còn lại",
     "Giờ ra", "Giờ vào", "Ghi chú", "Thời lượng", "TG bắt đầu thực hiện",
     "TG bắt đầu thực hiện YC", "TT thanh toán", "Kết quả hoàn thành", "SL tua", "SL yêu cầu",
     "Tổng SL", "VIP", "Giờ Booking", "TG khách chờ", "TG Xông Hơi",
@@ -902,14 +902,24 @@ def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room
             raise HTTPException(409, f"Giường/phòng {room} đang được sử dụng.")
 
 
-def _clear_assignment(employee: dict[str, Any]) -> None:
+RETAINED_ASSIGNMENT_COLUMNS = (
+    "Thời lượng", "TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC",
+    "TT thanh toán", "Kết quả hoàn thành", "Giờ Booking", "TG khách chờ", "TG Xông Hơi",
+)
+
+
+def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
+    # Retain display history separately from the live booking. Old timestamps,
+    # prices and combo reservations must never become a second payable service.
+    record = _employee_record(employee, now)
+    employee["last_assignment_display"] = {column: record[column] for column in RETAINED_ASSIGNMENT_COLUMNS}
     employee.pop("service_items", None)
     for key in ("combo_purchase_id", "combo_reserved_units", "combo_reserved_components"):
         employee.pop(key, None)
     for key in (
-        "appointment", "service", "request", "request_source", "room", "status", "booked_at",
+        "service", "request", "request_source", "room", "status", "booked_at",
         "started_at", "completed_at", "payment_status", "customer_id", "customer_name",
-        "customer_phone", "note", "booking_id",
+        "customer_phone", "booking_id",
         "service_price_source", "completion_note",
     ):
         employee[key] = ""
@@ -1134,19 +1144,21 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
     if any(payload.get(key) for key in ("customer_id", "customer_name", "customer_phone", "phone")):
         customer = _customer(state, payload)
     combo = _booking_combo(state, customer, payload, {"service": service, "service_items": service_items}, now)
+    employee.pop("last_assignment_display", None)
     employee.update({
         **combo,
-        "appointment": str(payload.get("appointment") or "").strip(),
+        "appointment": str(payload.get("appointment", employee.get("appointment")) or "").strip(),
         "service": service, "service_price": price, "service_items": service_items,
         "service_price_source": "catalog",
         "request": request, "request_source": "auto_yc_ca1" if auto_request else "manual",
         "room": room,
         "status": "Đang chờ", "duration": duration, "booked_at": _iso(now),
         "started_at": "", "completed_at": "", "wait_minutes": None,
+        "completion_note": "", "completion_delta_minutes": None, "steam_elapsed_minutes": None,
         "payment_status": "", "customer_id": str((customer or {}).get("id") or ""),
         "customer_name": str((customer or {}).get("name") or ""),
         "customer_phone": str((customer or {}).get("phone") or ""),
-        "note": str(payload.get("note") or ""),
+        "note": str(payload.get("note", employee.get("note")) or ""),
         "vip": bool(payload.get("vip", employee.get("vip", False))),
     })
     if payload.get("start_now"):
@@ -1449,9 +1461,14 @@ def _checkout_mutating(
         })
     if pending:
         state["pending"] = [item for item in state["pending"] if str(item.get("id")) != pending_id]
+        for employee in state["employees"]:
+            retained = employee.get("last_assignment_display") or {}
+            if retained.get("pending_id") == pending_id and not employee.get("service") and not employee.get("status"):
+                retained["TT thanh toán"] = "ĐÃ THANH TOÁN"
     else:
         for employee in employees:
-            _clear_assignment(employee)
+            employee["payment_status"] = "ĐÃ THANH TOÁN"
+            _clear_assignment(employee, now)
     return invoice
 
 
@@ -1551,6 +1568,8 @@ def _change_pending(state, action, payload, actor, now):
 
 
 def _required_action_feature(action: str) -> str:
+    if action == "update_appointment":
+        return "live_tour_view"
     if action in {"report_invoice_update", "report_invoice_delete"}:
         return "live_tour_reports_edit" if action.endswith("update") else "live_tour_reports_delete"
     if action in {"customer_delete", "customer_combo_update", "customer_combo_delete"}:
@@ -1623,6 +1642,15 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         result["room"] = canonical_room
     elif action == "booking":
         result["employee"] = _booking(state, payload, now)
+    elif action == "update_appointment":
+        if len(employee_ids) > 1 or (employee_ids and employee_ids[0] != str(payload.get("employee_id") or "")):
+            raise HTTPException(400, "Hãy chọn đúng một nhân viên để lưu lịch hẹn.")
+        appointment = payload.get("appointment")
+        if not isinstance(appointment, str) or len(appointment) > 200 or any(ord(char) < 32 for char in appointment):
+            raise HTTPException(400, "Lịch hẹn phải là một dòng, tối đa 200 ký tự.")
+        employee = _employee(state, payload.get("employee_id"))
+        employee["appointment"] = appointment.strip()
+        result["employee"] = employee
     elif action == "update_booking":
         employee = _employee(state, payload.get("employee_id"))
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:
@@ -1760,7 +1788,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         pending.update(effective_at=booking_time["effective_at"], booked_at=booking_time["effective_at"], business_date=booking_time["business_date"])
         state["pending"].append(pending)
         for employee in employees:
-            _clear_assignment(employee)
+            _clear_assignment(employee, now)
+            employee["last_assignment_display"]["pending_id"] = pending["id"]
         result["pending"] = pending
     elif action in {"pending_update", "pending_delete"}:
         result = _change_pending(state, action, payload, actor, now)
@@ -2335,8 +2364,15 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_row_style": style, "_tour_groups": groups,
         "_countdown_deadline": deadline, "_attendance_break_active": bool(employee.get("break_started_at")),
         "_hidden": bool(employee.get("hidden")), "_active_booking": _active_booking(employee),
+        "_payment_pending": _norm(employee.get("status")) == "cho thanh toan",
         "_private_service": _is_private_service(employee.get("service")),
     }
+    if not employee.get("service") and not employee.get("status"):
+        retained = employee.get("last_assignment_display") or {}
+        record.update({column: retained[column] for column in RETAINED_ASSIGNMENT_COLUMNS if column in retained})
+    if record["_payment_pending"]:
+        for column in ("Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu", "Dịch vụ"):
+            record[column] = ""
     return record
 
 
@@ -2491,7 +2527,7 @@ def _report_rows_with_combo_kind(state):
 
 def _state_response(
     state: dict[str, Any], revision: int, now: datetime, *, include_hidden: bool = False,
-    can_admin: bool = False, can_operate: bool = False,
+    can_admin: bool = False, can_operate: bool = False, can_appointment_edit: bool = False,
     can_payment: bool = False, can_export: bool = False,
     can_booking: bool | None = None, can_invoice_view: bool | None = None,
     can_paid_invoice_view: bool | None = None,
@@ -2636,6 +2672,7 @@ def _state_response(
             "backups": public_backups,
         },
         "capabilities": {
+            "appointment_edit": can_appointment_edit,
             "admin": can_admin, "catalog_admin": can_admin, "manage_catalog": can_admin,
             "operate": can_operate, "payment": can_payment, "export": can_export,
             "booking": can_booking, "invoice_view": can_invoice_view,
@@ -3094,6 +3131,7 @@ def install_live_tour_routes(
         can_admin = bool(feature_allowed(conn, ident, "live_tour_admin"))
         can_operate = bool(feature_allowed(conn, ident, "live_tour_operate"))
         return {
+            "can_appointment_edit": str(getattr(ident, "role", "") or "").strip().lower() in {"admin", "quanly", "letan"} and bool(feature_allowed(conn, ident, "live_tour_view")),
             "can_admin": can_admin, "can_operate": can_operate,
             "can_payment": bool(feature_allowed(conn, ident, "live_tour_payment")),
             "can_export": bool(feature_allowed(conn, ident, "live_tour_export")),
@@ -3217,6 +3255,8 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         action = body.action.strip().lower()
         _reject_external_action(action)
+        if action == "update_appointment" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly", "letan"}:
+            raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được sửa lịch hẹn.")
         if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được nhập combo.")
         payload = deepcopy(body.payload)
