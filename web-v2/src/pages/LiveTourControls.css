@@ -8,53 +8,59 @@
 
 .live-tour-controls-grid {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
+  align-items: stretch;
+  gap: 3px;
   max-width: 100%;
-  padding: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-}
-
-.live-tour-controls-group {
-  flex: 0 0 auto;
   min-width: 0;
-  padding-right: 6px;
-  border-right: 1px solid #dce6e1;
+  padding: 0;
 }
 
-.live-tour-controls-group:last-child { padding-right: 0; border-right: 0; }
-
-.live-tour-controls-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 6px;
-}
+.live-tour-controls-group,
+.live-tour-controls-actions { display: contents; }
 
 .live-tour-page .live-tour-controls-actions > button,
 .live-tour-page .live-tour-controls-actions > select {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   width: auto;
   min-width: 0;
-  min-height: var(--live-tour-control-row-height);
-  height: var(--live-tour-control-row-height);
+  min-height: 18px;
+  height: auto;
   margin: 0;
   justify-content: center;
-  gap: 4px;
-  padding: 0 4px;
+  gap: 2px;
+  padding: 1px 2px;
   border-radius: 4px;
+  font-family: inherit;
   font-size: 10px;
+  font-weight: 800;
   line-height: 1.1;
   white-space: nowrap;
   text-align: center;
 }
 
 .live-tour-controls-actions > button > svg { flex-shrink: 0; width: 10px; height: 10px; }
-.live-tour-page .live-tour-controls-actions > select { min-width: 76px; min-height: 18px; height: 18px; font-size: 1rem; line-height: 1; }
+
+@media (min-width:821px) and (max-width:1200px) {
+  .live-tour-page .live-tour-controls-actions > button,
+  .live-tour-page .live-tour-controls-actions > select { font-size:8px; padding-inline:1px; }
+  .live-tour-controls-grid { gap:1px; }
+  .live-tour-controls-actions > button > svg { display:none; }
+}
+
+@media (max-width:820px) {
+  .live-tour-controls-grid {
+    display: grid;
+    grid-template-rows: repeat(2, auto);
+    grid-template-columns: repeat(9, max-content);
+    grid-auto-flow: row;
+    gap: 4px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+  .live-tour-page .live-tour-controls-actions > button,
+  .live-tour-page .live-tour-controls-actions > select { min-height:24px; padding:3px 5px; }
+}
 
 
 .live-tour-page .tour-table .tour-col-appointment{width:140px;min-width:140px;max-width:140px;overflow:hidden}
