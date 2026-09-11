@@ -1,7 +1,10 @@
 import './LiveTourFilters.css'
-import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange } from '../lib/liveTourFilters'
+import { useMemo } from 'react'
+import LiveTourSearchSelect from './LiveTourSearchSelect'
+import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
-export default function LiveTourFilters({ value, onChange }) {
+export default function LiveTourFilters({ value, onChange, rows }) {
+  const options = useMemo(() => tourFilterOptions(rows), [rows])
   const change = patch => onChange({ ...value, ...patch })
   return <div className="live-tour-filters" role="group" aria-label="Bộ lọc danh sách">
     <div className="live-tour-filters-row live-tour-filters-dates">
@@ -10,9 +13,9 @@ export default function LiveTourFilters({ value, onChange }) {
       <label><span>Đến ngày</span><input type="date" value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date_to: e.target.value, preset: 'custom' })}/></label>
     </div>
     <div className="live-tour-filters-row live-tour-filters-search">
-      <label><span>Nhân viên</span><input type="search" placeholder="Tìm tên nhân viên" value={value.employee} onChange={e => change({ employee: e.target.value })}/></label>
-      <label><span>Khách hàng</span><input type="search" placeholder="Tìm tên hoặc số điện thoại" value={value.customer} onChange={e => change({ customer: e.target.value })}/></label>
-      <label><span>Dịch vụ</span><input type="search" placeholder="Tìm dịch vụ" value={value.service} onChange={e => change({ service: e.target.value })}/></label>
+      <LiveTourSearchSelect label="Nhân viên" placeholder="Tìm tên nhân viên" options={options.employee} value={value.employee} searchValue={value.employee} onSearch={text => change({ employee: text })} onChange={text => change({ employee: text })} showAllOptions emptyLabel="Tất cả"/>
+      <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" options={options.customer} value={value.customer} searchValue={value.customer} onSearch={text => change({ customer: text })} onChange={text => change({ customer: text })} showAllOptions emptyLabel="Tất cả"/>
+      <LiveTourSearchSelect label="Dịch vụ" placeholder="Tìm dịch vụ" options={options.service} value={value.service} searchValue={value.service} onSearch={text => change({ service: text })} onChange={text => change({ service: text })} showAllOptions emptyLabel="Tất cả"/>
     </div>
     <div className="live-tour-filters-actions">
       <button type="button" className="secondary-button live-tour-filters-reset" onClick={() => onChange({ ...EMPTY_TOUR_FILTERS })}>Xóa bộ lọc</button>

@@ -1472,7 +1472,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         <button type="button" className="secondary-button" disabled={!Object.values(exportFilters).some(Boolean)} onClick={() => setExportFilters(EMPTY_EXPORT_FILTERS)}>Xóa bộ lọc</button>
         <small>Áp dụng cho xuất lịch sử và nghỉ giữa ca.</small>
       </div>}
-      {['pending', 'invoices', 'reports'].includes(activePanel) && <LiveTourFilters value={listFilters} onChange={setListFilters}/>}
+      {['pending', 'invoices', 'reports'].includes(activePanel) && <LiveTourFilters value={listFilters} onChange={setListFilters} rows={activePanel === 'pending' ? allPendingPayments : activePanel === 'invoices' ? asArray(data.state?.invoices) : allReports}/>}
       {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
 
       {activePanel === 'pending' && canPending && <div className="live-tour-panel-body" id="live-tour-pending-panel" role="tabpanel" aria-label="Hóa đơn chờ thanh toán">

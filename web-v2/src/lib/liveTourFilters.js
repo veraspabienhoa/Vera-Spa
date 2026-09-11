@@ -37,3 +37,18 @@ export function invoiceLocalTime(item) {
   if (!value || !Number.isFinite(date.getTime())) return ''
   return new Date(date.getTime() + 7*3600000).toISOString().slice(0, 16)
 }
+
+// Suggestions come from the full active list, so typing never removes other choices.
+export function tourFilterOptions(rows = []) {
+  const values = { employee: new Set(), customer: new Set(), service: new Set() }
+  const add = (key, value) => { if (String(value || '').trim()) values[key].add(String(value).trim()) }
+  for (const row of rows) {
+    add('customer', row.customer_name)
+    for (const entry of row.entries?.length ? row.entries : [row]) {
+      add('employee', entry.employee_name)
+      add('service', entry.service)
+    }
+  }
+  return Object.fromEntries(Object.entries(values).map(([key, items]) => [key,
+    [...items].sort((a, b) => a.localeCompare(b, 'vi')).map(label => ({ value: label, label }))]))
+}

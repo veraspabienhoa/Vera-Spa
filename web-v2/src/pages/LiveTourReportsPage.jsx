@@ -45,7 +45,7 @@ export default function LiveTourReportsPage({ user }) {
     {error && <p className="error-box" role="alert">{error}</p>}
     <section className="panel spa-content">
       <div className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[['invoices', 'Hóa đơn'], ['revenue', 'Doanh thu'], ['tip', 'Tiền TIP'], ['combos', 'Combo']].map(([key,label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
-      <LiveTourFilters value={filters} onChange={setFilters}/>
+      <LiveTourFilters value={filters} onChange={setFilters} rows={tab === 'invoices' ? data.invoices : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/>
       <LiveTourRevenueSummary rows={rows}/>
       <p>{rows.length} dòng</p>
       {grants.export && <button className="secondary-button" onClick={() => veraApi.exportLiveTourExcel(tab === 'invoices' ? 'revenue' : tab === 'tip' ? 'tip' : 'reports', { ...filters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}) }).catch(e => setError(e.message))}>Xuất Excel theo bộ lọc</button>}
