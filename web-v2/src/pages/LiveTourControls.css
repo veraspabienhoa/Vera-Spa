@@ -1,6 +1,6 @@
 .live-tour-page .live-tour-controls {
   margin: 8px 0;
-  padding: 10px;
+  padding: 6px 10px;
   box-shadow: none;
 }
 
@@ -13,19 +13,19 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .live-tour-controls-group {
   min-width: 0;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid #dce6e1;
   border-radius: 10px;
   background: #f7faf8;
 }
 
 .live-tour-controls-label {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: #416056;
   font-size: .875rem;
   font-weight: 700;
@@ -34,21 +34,23 @@
 .live-tour-controls-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  grid-auto-rows: minmax(22px, 1fr);
+  gap: 4px;
 }
 
 .live-tour-page .live-tour-controls-actions > button,
 .live-tour-page .live-tour-controls-actions > select {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: 22px;
   height: 100%;
   margin: 0;
   justify-content: center;
-  padding: 6px 8px;
-  border-radius: 8px;
-  font-size: .875rem;
-  line-height: 1.25;
+  gap: 4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: .75rem;
+  line-height: 1;
   white-space: normal;
   text-align: center;
 }
@@ -62,7 +64,7 @@
 }
 
 @media (max-width: 640px) {
-  .live-tour-page .live-tour-controls { padding: 8px; }
+  .live-tour-page .live-tour-controls { padding: 6px 8px; }
   .live-tour-controls-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .live-tour-controls-group { padding: 8px; }
+  .live-tour-controls-group { padding: 6px; }
 }
