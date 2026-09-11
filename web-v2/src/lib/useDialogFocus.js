@@ -8,7 +8,7 @@ export default function useDialogFocus(onClose) {
     const previous = document.activeElement
     const dialog = dialogRef.current
     const targets = () => [...(dialog?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]') || [])]
-    const frame = requestAnimationFrame(() => (targets()[0] || dialog)?.focus())
+    const frame = window.requestAnimationFrame(() => (targets()[0] || dialog)?.focus({ preventScroll: true }))
     const keydown = (event) => {
       if (event.key === 'Escape') { event.preventDefault(); closeRef.current?.(); return }
       if (event.key !== 'Tab') return
@@ -18,7 +18,7 @@ export default function useDialogFocus(onClose) {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }
     document.addEventListener('keydown', keydown)
-    return () => { cancelAnimationFrame(frame); document.removeEventListener('keydown', keydown); previous?.focus?.() }
+    return () => { window.cancelAnimationFrame(frame); document.removeEventListener('keydown', keydown); previous?.focus?.({ preventScroll: true }) }
   }, [])
   return dialogRef
 }

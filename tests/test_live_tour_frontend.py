@@ -416,8 +416,8 @@ def test_live_tour_checkout_uses_server_preview_without_sending_client_totals():
 
     assert "previewEntryPrice(entry, services)" in source
     assert "previewEntryTicketUnits(entry, services)" in source
-    assert "Dịch vụ và giá dự kiến từ dữ liệu server" in source
-    assert "Giá, tổng tiền và số vé cuối cùng luôn do server tính lại" in source
+    assert "Chi tiết dịch vụ" in source
+    assert "Tổng thanh toán" in source
     assert not re.search(r"\b(total|services|combo_units)\s*:", checkout)
     assert "ticket_price: ticketPrice" in checkout
     assert "checkoutRequiresTicketPrice" in checkout
@@ -428,7 +428,7 @@ def test_live_tour_checkout_uses_server_preview_without_sending_client_totals():
     assert "max=\"1000000000\"" in source
     assert "payment_method: paymentMethod" in checkout
     assert "form.combo_purchase_id ? 'COMBO'" in checkout
-    assert "Server sẽ trừ" in source and "vé combo" in source
+    assert "checkoutPreviewComboUnits" in source and "vé combo" in source
 
 
 def test_live_tour_combo_purchase_is_catalog_priced_and_supports_new_customers():
@@ -462,7 +462,7 @@ def test_live_tour_checkout_can_link_an_exact_existing_customer_and_load_history
     assert "const checkoutCustomerMatches" in source
     assert "return customerMatches({ ...customer, name: itemLabel(customer) }" in source
     assert "customer_id: id, customer_name: itemLabel(customer)" in source
-    assert "Đã liên kết đúng mã khách hàng" in source
+    assert "Khách hàng: <strong>{form.customer_name}</strong>" in source
     assert "const openCustomerHistory" in source
     assert "veraApi.liveTourCustomerHistory(customerId)" in source
     assert "exportLiveTourExcel('customer_detail', { customer_id: customerId })" in source

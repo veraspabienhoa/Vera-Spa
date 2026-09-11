@@ -1,0 +1,48 @@
+.live-tour-modal-backdrop.tour-transaction-backdrop{inset:auto;box-sizing:border-box;padding:8px;overflow:hidden;overscroll-behavior:none;z-index:1600}
+.tour-transaction-frame{position:relative;max-width:100%;flex-shrink:0}
+.live-tour-modal.tour-transaction-dialog{position:absolute;inset:0 auto auto 0;box-sizing:border-box;max-width:none;max-height:none;height:auto;overflow:visible;transform-origin:top left;border-radius:10px;padding:10px;font-size:12px;line-height:1.3}
+.tour-transaction-dialog .live-tour-modal-head{gap:8px;margin:0 0 8px}
+.tour-transaction-dialog .live-tour-modal-head>strong{font-size:18px;line-height:1.2}
+.tour-transaction-dialog .icon-button{width:28px;min-width:28px;height:28px;min-height:28px;padding:4px}
+.tour-transaction-dialog p{margin:3px 0}
+.tour-transaction-dialog .error-box,.tour-transaction-dialog .warning-box{margin:4px 0;padding:6px;font-size:11px;overflow-wrap:anywhere}
+.tour-transaction-dialog .tour-booking-form,.tour-transaction-dialog .live-tour-form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:8px;border:0;padding:0;margin:0;min-width:0}
+.tour-transaction-dialog .wide{grid-column:1/-1}
+.tour-transaction-dialog .tour-booking-customer,.tour-transaction-dialog .tour-booking-combo,.tour-transaction-dialog .tour-booking-service-picker,.tour-transaction-dialog .tour-booking-items,.tour-transaction-dialog .tour-booking-note{grid-column:span 2}
+.tour-transaction-dialog .live-tour-field,.tour-transaction-dialog .live-tour-search-select{min-width:0;gap:3px;margin:0}
+.tour-transaction-dialog .live-tour-field>span,.tour-transaction-dialog .live-tour-search-select>label{display:block;margin:0 0 3px;font-size:11px;font-weight:700;line-height:1.15}
+.tour-transaction-dialog input:not([type=checkbox]),.tour-transaction-dialog select,.tour-transaction-dialog textarea{box-sizing:border-box;min-width:0;width:100%;height:32px;min-height:32px;margin:0;padding:4px 6px;border:1px solid #cbdcd1;border-radius:6px;background:#fff;font-size:16px;font-weight:400;line-height:1.25}
+.tour-transaction-dialog textarea{height:36px;min-height:36px;resize:none}
+.tour-transaction-dialog input[type=checkbox]{width:16px;height:16px;min-height:0;margin:0;flex:0 0 auto}
+.tour-transaction-dialog small{font-size:10px;line-height:1.2}
+.tour-transaction-dialog .tour-booking-combo{padding:7px;border-radius:6px;background:#edf5ee}
+.tour-transaction-dialog .tour-customer-ticket-count{display:inline;margin:0 0 0 6px;font-size:11px}
+.tour-transaction-dialog .tour-booking-item{grid-template-columns:minmax(0,1fr) 58px 28px;gap:6px;padding:5px 0;min-width:0;font-size:12px}
+.tour-transaction-dialog .tour-booking-item strong{overflow-wrap:anywhere}
+.tour-transaction-dialog .tour-booking-item small{margin-top:2px}
+.tour-transaction-dialog .tour-booking-item label{font-size:10px}
+.tour-transaction-dialog .tour-booking-item input{height:28px;min-height:28px;padding:2px 4px}
+.tour-transaction-dialog .tour-booking-total{padding:6px 8px;border-radius:6px}
+.tour-transaction-dialog .live-tour-modal-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin:8px 0 0;padding:0}
+.tour-transaction-dialog .live-tour-modal-actions button{flex:0 1 auto;min-height:32px;padding:5px 10px;font-size:12px;line-height:1.2}
+.tour-list-pages{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:3px;font-size:10px}
+.tour-list-pages button{width:26px;min-width:26px;min-height:24px;padding:0;border:1px solid #cbdcd1;border-radius:4px;background:#f2f7f4;color:#173c30;font-size:17px;line-height:1;cursor:pointer}
+.tour-list-pages button:disabled{opacity:.35;cursor:default}
+.tour-transaction-dialog .live-tour-checkout-preview{padding:6px 8px;border-radius:6px;display:grid;gap:4px}
+.tour-transaction-dialog .live-tour-checkout-entry{padding:3px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;font-size:11px}
+.tour-transaction-dialog .live-tour-checkout-entry small{grid-column:1/-1}
+.tour-transaction-dialog .live-tour-checkout-total{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;gap:4px 8px;margin:0;padding-top:4px;font-size:12px}
+.tour-transaction-dialog .live-tour-checkout-total strong{font-size:14px}
+.tour-transaction-dialog .live-tour-customer-selected,.tour-transaction-dialog .live-tour-combo-deduction{margin:0;padding:4px 6px;font-size:11px;min-width:0}
+.tour-transaction-dialog .live-tour-customer-selected button{min-height:26px;padding:3px 7px;font-size:11px}
+.tour-transaction-dialog .live-tour-check-field{font-size:11px;gap:5px;min-height:22px}
+.tour-transaction-dialog .tour-tip-cards .tour-page-items-content{display:flex;gap:5px;flex-wrap:wrap}
+.tour-transaction-dialog .tour-tip-cards button{min-height:28px;padding:4px 6px;font-size:11px}
+.tour-transaction-dialog .transaction-customer-options{display:flex;gap:5px;flex-wrap:wrap}
+.tour-transaction-dialog .transaction-customer-options button{min-height:28px;padding:4px 6px;font-size:11px}
+@media(max-width:700px){
+  .tour-transaction-dialog .tour-booking-form,.tour-transaction-dialog .live-tour-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .tour-transaction-dialog .tour-booking-customer,.tour-transaction-dialog .tour-booking-combo{grid-column:auto}
+  .tour-transaction-dialog .live-tour-modal-head>strong{font-size:16px}
+  .tour-transaction-dialog .live-tour-checkout-total{grid-template-columns:minmax(0,1fr) auto}
+}

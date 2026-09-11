@@ -1,0 +1,10 @@
+.tour-search-popup{position:fixed;z-index:2200;box-sizing:border-box;overflow:hidden;border:1px solid #cbdcd1;border-radius:8px;padding:3px;background:#fff;box-shadow:0 8px 24px #17332925;color:#173329;font-family:inherit}
+.tour-search-popup [role=option]{display:flex;flex-direction:column;justify-content:center;gap:2px;box-sizing:border-box;min-height:32px;max-height:40px;padding:4px 7px;width:100%;border:0;border-radius:4px;background:#fff;color:inherit;text-align:left;cursor:pointer;font:inherit;font-size:13px;line-height:1.15}
+.tour-search-popup [role=option]:hover,.tour-search-popup [role=option].highlighted{background:#e6f2e9}
+.tour-search-popup [role=option] strong,.tour-search-popup [role=option] small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tour-search-popup .tour-select-option-heading{display:flex;align-items:center;justify-content:space-between;gap:4px;flex-wrap:nowrap;width:100%}
+.tour-search-popup small{font-size:11px;color:#63766b}
+.tour-search-popup .tour-ticket-badge{padding:2px 4px;font-size:10px;flex:0 1 auto}
+.tour-search-popup p{margin:4px;padding:6px;font-size:12px}
+.tour-search-popup .tour-list-pages{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:3px 0 0;font-size:11px}
+.tour-search-popup .tour-list-pages button{min-height:24px;width:26px;padding:0;border:1px solid #cbdcd1;border-radius:4px;background:#f2f7f4;font-size:17px;line-height:1}
