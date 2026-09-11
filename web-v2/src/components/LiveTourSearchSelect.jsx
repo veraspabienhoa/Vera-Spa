@@ -1,9 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
+import { advanceBookingField } from '../lib/advanceBookingField'
 import { searchTextMatches } from '../lib/searchText'
 import './LiveTourSearchSelect.css'
 
-export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, showAllOptions = false }) {
+export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, showAllOptions = false, advanceOnSelect = false, invalid = false }) {
   const id = useId(), root = useRef(null), input = useRef(null), menu = useRef(null), side = useRef(null)
   const typing = useRef(false)
   const selected = options.find((item) => item.value === value)
@@ -18,7 +19,10 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
   const activeIndex = Math.min(index, Math.max(0, matches.length - 1))
   const start = Math.floor(activeIndex / position.pageSize) * position.pageSize
   const close = () => { setOpen(false); side.current = null }
-  const choose = (item) => { onChange(item.value); setQuery(clearOnSelect ? '' : item.label); close(); setIndex(0) }
+  const choose = (item) => {
+    flushSync(() => { onChange(item.value); setQuery(clearOnSelect ? '' : item.label); close(); setIndex(0) })
+    if (advanceOnSelect) advanceBookingField(input.current)
+  }
 
   useLayoutEffect(() => {
     if (!open || disabled) return
@@ -62,7 +66,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
     if (!root.current?.contains(event.relatedTarget) && !menu.current?.contains(event.relatedTarget)) { close(); if (!freeSearch) setQuery(selected?.label || '') }
   }}>
     {!hideLabel && <label htmlFor={id}>{label}</label>}
-    <input ref={input} id={id} type={freeSearch ? 'search' : 'text'} inputMode={inputMode} aria-label={hideLabel ? label : undefined} role="combobox" aria-autocomplete="list" aria-expanded={open && !disabled} aria-controls={`${id}-options`} aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined} autoComplete="off" value={query} required={required} disabled={disabled} placeholder={placeholder}
+    <input ref={input} data-booking-step={advanceOnSelect ? true : undefined} aria-invalid={invalid || undefined} id={id} type={freeSearch ? 'search' : 'text'} inputMode={inputMode} aria-label={hideLabel ? label : undefined} role="combobox" aria-autocomplete="list" aria-expanded={open && !disabled} aria-controls={`${id}-options`} aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined} autoComplete="off" value={query} required={required} disabled={disabled} placeholder={placeholder}
       onFocus={() => { setOpen(true); if (!freeSearch) setQuery(''); setIndex(0) }}
       onChange={(event) => { typing.current = Boolean(value); setQuery(event.target.value); onSearch?.(event.target.value); setOpen(true); setIndex(0); if (value && !freeSearch) onChange('') }}
       onKeyDown={(event) => {
@@ -72,7 +76,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
       }}/>
     {open && !disabled && createPortal(<div ref={menu} className={`tour-search-popup ${showAllOptions ? 'tour-search-scroll' : ''}`} style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onMouseDown={(event) => event.preventDefault()}>
       <div role="listbox" id={`${id}-options`} aria-label={label}>
-        {!required && <button type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { onChange(''); if (freeSearch) onSearch?.(''); setQuery(''); close() }}>{emptyLabel}</button>}
+        {!required && <button type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { if (freeSearch) onSearch?.(''); choose({ value: '', label: '' }) }}>{emptyLabel}</button>}
         {(showAllOptions ? matches : matches.slice(start, start + position.pageSize)).map((item, offset) => {
           const i = (showAllOptions ? 0 : start) + offset
           return <button type="button" tabIndex={-1} role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={`${i === activeIndex ? 'highlighted' : ''} ${item.className || ''}`} onClick={() => choose(item)}><span className="tour-select-option-heading"><strong>{item.label}</strong>{item.badge && <strong className="tour-ticket-badge">{item.badge}</strong>}</span>{item.detail && <small>{item.detail}</small>}</button>
