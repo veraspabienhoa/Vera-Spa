@@ -6,8 +6,6 @@
 .tour-search-popup small{font-size:11px;color:#63766b}
 .tour-search-popup .tour-ticket-badge{padding:2px 4px;font-size:10px;flex:0 1 auto}
 .tour-search-popup p{margin:4px;padding:6px;font-size:12px}
-.tour-search-popup .tour-list-pages{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:3px 0 0;font-size:11px}
-.tour-search-popup .tour-list-pages button{min-height:24px;width:26px;padding:0;border:1px solid #cbdcd1;border-radius:4px;background:#f2f7f4;font-size:17px;line-height:1}
 
 .tour-search-popup.tour-search-scroll{overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .tour-search-scroll [role=option]{max-height:none;min-height:40px}

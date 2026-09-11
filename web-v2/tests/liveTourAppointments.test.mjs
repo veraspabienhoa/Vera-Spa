@@ -153,7 +153,9 @@ test('duplicate employee names resolve by the option ID and every result remains
   } })
   try {
     await act(() => f.search().focus())
-    assert.ok(document.querySelectorAll('.tour-search-popup [role=option]').length <= 6)
+    assert.equal(document.querySelectorAll('.tour-search-popup [role=option]').length, 36)
+    assert.equal(document.querySelector('.tour-search-popup .tour-list-pages'), null)
+    assert.ok(document.querySelector('.tour-search-popup').classList.contains('tour-search-scroll'))
     const key = async (value) => act(() => f.search().dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })))
     for (let i = 0; i < 34; i++) await key('ArrowDown')
     await key('Enter')
