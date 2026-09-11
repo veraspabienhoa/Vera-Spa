@@ -73,10 +73,13 @@ def test_tour_record_exposes_exact_countdown_deadline_for_room_clock():
 
 
 def test_desktop_employee_table_expands_to_show_all_rows():
-    source = (ROOT / "web-v2/src/pages/TourPage.jsx").read_text(encoding="utf-8")
+    for page in ("TourPage.jsx", "LiveTourPage.jsx"):
+        source = (ROOT / "web-v2/src/pages" / page).read_text(encoding="utf-8")
 
-    assert ".tour-records-panel .tour-table{max-height:none;overflow-x:auto;overflow-y:visible}" in source
-    assert ".tour-records-panel .tour-table{max-height:calc(100vh" not in source
+        assert ".tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:auto;overflow-y:hidden;scrollbar-gutter:auto}" in source
+        assert ".tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}" in source
+        assert ".tour-records-panel .tour-table{max-height:calc(100vh" not in source
+        assert "table.clientHeight - headerHeight" in source
 
 
 def test_tour_heading_and_available_room_summary_are_compact():
