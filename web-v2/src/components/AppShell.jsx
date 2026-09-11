@@ -284,6 +284,9 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   }
 
   const sidebarOpen = mobileOpen || (standalone && standaloneMenuOpen)
+  const navigationToggle = standalone
+    ? <button type="button" className="standalone-menu-toggle icon-button" onClick={() => setStandaloneMenuOpen((value) => !value)} aria-label={standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'} aria-expanded={standaloneMenuOpen}>{standaloneMenuOpen ? <X size={20} /> : <Menu size={20} />} {standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'}</button>
+    : <button type="button" className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu" aria-expanded={mobileOpen}><Menu size={22} /></button>
 
   return (
     <div className={`app-shell ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`}>
@@ -291,6 +294,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       {/* Legacy full reload used window.location.reload(); current refresh remounts only the visible page. */}
       <style>{`
         .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:700;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
+        .page-wrap.live-tour-page-wrap{padding-block:0}
         .app-shell.standalone-mode.menu-hidden{grid-template-columns:minmax(0,1fr)}.app-shell.standalone-mode .sidebar.standalone-hidden{display:none}.standalone-menu-toggle{display:inline-flex;align-items:center;gap:6px;width:auto;padding:7px 10px;font-size:12px;font-weight:850;white-space:nowrap}.topbar-actions{display:flex;align-items:center;gap:7px;margin-left:auto}.topbar-actions .topbar-refresh-button{margin-left:0}.topbar-open-tab-button{background:#fff}
         .break-alert-stack{position:fixed;z-index:1200;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 90px);overflow-y:auto;display:grid;gap:6px;margin:0;pointer-events:auto}.break-alert-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:10px;background:#173d31;color:white;box-shadow:0 5px 16px rgba(31,54,46,.18);cursor:move;touch-action:none;user-select:none}.break-alert-toolbar strong{font-size:12px;color:white}.break-alert-toolbar-actions{display:flex;align-items:center;gap:5px}.break-alert-toolbar button,.break-alert-card button,.break-alert-hidden-chip button,.break-alert-global-off button{border:1px solid currentColor;background:#fff;border-radius:7px;padding:4px 7px;font-size:11px;font-weight:800;cursor:pointer}.break-alert-toolbar button{color:#173d31}.break-alert-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px;align-items:flex-start;padding:8px 10px;border:1px solid #a92c25;border-radius:10px;background:#fff6f4;box-shadow:0 5px 16px rgba(120,24,17,.13)}.break-alert-card.employee{border-color:#c98212;background:#fff9ed}.break-alert-card>svg{margin-top:1px;color:#a92c25}.break-alert-card.employee>svg{color:#a46708}.break-alert-card strong{display:block;font-size:12px;line-height:1.3;color:#8d211b}.break-alert-card.employee strong{color:#8b5a05}.break-alert-card span{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:#543d38}.break-alert-card .break-alert-timer{font-weight:900;font-size:12px}.break-alert-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap;margin-top:5px}.break-alert-dismiss{color:#6c594f}.break-alert-delete-global{color:#a01818!important;border-color:#a01818!important;background:#fff!important}.break-alert-delete-global:disabled{opacity:.55;cursor:wait}.break-alert-hidden-chip,.break-alert-global-off{position:fixed;z-index:1200;display:flex;align-items:center;gap:7px;border:1px solid #9c6a13;border-radius:10px;background:#fff8e8;box-shadow:0 5px 16px rgba(80,58,20,.16);padding:7px 9px;font-size:11px;font-weight:800}.break-alert-hidden-chip button,.break-alert-global-off button{color:#75500c}.break-alert-global-off{right:18px;top:82px;border-color:#6d746f;background:#f4f6f5;color:#34433d}.break-alert-global-off button{color:#34433d}
         @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05}.break-alert-stack{width:calc(100vw - 12px);max-height:calc(100vh - 72px)}.break-alert-toolbar{padding:6px}.break-alert-card{padding:7px 8px}.break-alert-global-off{right:6px;top:70px}}
@@ -331,17 +335,15 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       {sidebarOpen && <button className="sidebar-backdrop" onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu" />}
 
       <main className="main-area">
-        <header className="topbar">
-          {standalone
-            ? <button className="standalone-menu-toggle icon-button" onClick={() => setStandaloneMenuOpen((value) => !value)} aria-label={standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'}>{standaloneMenuOpen ? <X size={20} /> : <Menu size={20} />} {standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'}</button>
-            : <button className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu"><Menu size={22} /></button>}
+        {currentPage !== 'live-tour' && <header className="topbar">
+          {navigationToggle}
           <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
           <div className="topbar-actions">
             {currentPage !== 'tour' && currentPage !== 'live-tour' && <button type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /> Mở tab mới</button>}
             <button type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /> Làm mới</button>
           </div>
-        </header>
-        <div className={`page-wrap ${currentPage === 'tour' ? 'tour-page-wrap' : currentPage === 'live-tour' ? 'tour-page-wrap' : ''}`.trim()}>
+        </header>}
+        <div className={`page-wrap ${currentPage === 'tour' ? 'tour-page-wrap' : currentPage === 'live-tour' ? 'tour-page-wrap live-tour-page-wrap' : ''}`.trim()}>
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
 
           {isAdmin && breakAlertControl.disabled && <div className="break-alert-global-off"><span>Thông báo nghỉ giữa ca đang TẮT cho mọi tài khoản.</span><button type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(false)}>{breakAlertControl.busy ? 'Đang bật…' : 'Bật lại'}</button></div>}
@@ -371,7 +373,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           </div>}
 
           {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button type="button" onClick={() => choose('birthday', true)}>Xem</button><button type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng">×</button></div>}
-          {children}
+          {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>
     </div>
