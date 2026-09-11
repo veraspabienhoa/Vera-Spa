@@ -4,9 +4,9 @@ import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import { EMPTY_TOUR_FILTERS, filterTourRows } from '../lib/liveTourFilters'
 import {
-  BellRing, CheckCircle2, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
-  ExternalLink, History, LayoutGrid, Menu, PauseCircle, Play, Plus,
-  Printer, RefreshCw, Search, Share2, Trash2, WalletCards, X,
+  BellRing, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
+  ExternalLink, History, LayoutGrid, PauseCircle, Play, Plus,
+  Printer, RefreshCw, Search, Share2, Trash2, X,
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -1302,7 +1302,7 @@ export default function LiveTourPage({ user }) {
       {notice && <div className="setup-note">{notice}</div>}
       {pendingReminder && <div className="live-tour-payment-reminder">
         <BellRing size={16} aria-hidden="true"/><strong>CHỜ THANH TOÁN</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>
-        <button type="button" className="secondary-button" onClick={openPendingPanel}>Mở danh sách</button>
+        <button type="button" className="secondary-button" onClick={openPendingPanel} aria-controls="live-tour-pending-panel">Mở danh sách</button>
       </div>}
       <div className="tour-shift-filter" aria-label="Lọc Live Tour theo ca">
         <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
@@ -1358,23 +1358,14 @@ export default function LiveTourPage({ user }) {
             })}</div> : <div className="tour-room-detail-empty">Phòng đang trống, chưa có nhân viên và dịch vụ.</div>}
           </div>}
         </div>
-        <section hidden className="panel live-tour-operator live-tour-controls" aria-labelledby="live-tour-controls-heading">
-          <div className="live-tour-operator-head">
-            <div className="live-tour-operator-title"><Menu size={18}/><strong id="live-tour-controls-heading">Điều khiển</strong><button type="button" className={`live-tour-pending-badge ${pendingPayments.length ? 'has-items' : ''}`} onClick={openPendingPanel} disabled={!canPending} aria-controls="live-tour-pending-panel"><BellRing size={13} aria-hidden="true"/> {pendingPayments.length} chờ thanh toán</button></div>
-          </div>
+        <section className="panel live-tour-operator live-tour-controls" aria-label="Điều khiển">
           <div className="live-tour-controls-grid">
             <div className="live-tour-controls-group" role="group" aria-label="Đặt lịch & tua">
-              <h3 className="live-tour-controls-label">Đặt lịch & tua</h3>
               <div className="live-tour-controls-actions">
-              <button type="button" className="primary-button" onClick={() => runSelected('start')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}><Play size={13}/> Thực hiện đã chọn</button>
-              <button type="button" className="secondary-button" onClick={() => runSelected('finish_to_pending')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}><CheckCircle2 size={13}/> Hoàn thành</button>
-              <button type="button" className="secondary-button" onClick={() => runSelected('move_pending')} disabled={!canPayment || !selectedIds.size || Boolean(actionBusy)}>Chờ thanh toán</button>
-              <button type="button" className="secondary-button" onClick={() => openModal('checkout')} disabled={!canPayment || !selectedIds.size || Boolean(actionBusy)}><WalletCards size={13}/> Thanh toán</button>
               <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [] })} disabled={!canPayment || Boolean(actionBusy)}>Thanh toán nhanh</button>
               </div>
             </div>
             <div className="live-tour-controls-group" role="group" aria-label="Ca & trạng thái">
-              <h3 className="live-tour-controls-label">Ca & trạng thái</h3>
               <div className="live-tour-controls-actions">
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
@@ -1385,7 +1376,6 @@ export default function LiveTourPage({ user }) {
               </div>
             </div>
             <div className="live-tour-controls-group" role="group" aria-label="Thứ tự">
-              <h3 className="live-tour-controls-label">Thứ tự</h3>
               <div className="live-tour-controls-actions">
               <select value={reorderSteps} onChange={(event) => setReorderSteps(event.target.value)} aria-label="Số vị trí di chuyển"><option value="1">1 dòng</option><option value="3">3 dòng</option><option value="5">5 dòng</option></select>
               <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
@@ -1395,7 +1385,6 @@ export default function LiveTourPage({ user }) {
               </div>
             </div>
             <div className="live-tour-controls-group" role="group" aria-label="Nhân viên & dịch vụ">
-              <h3 className="live-tour-controls-label">Nhân viên & dịch vụ</h3>
               <div className="live-tour-controls-actions">
               <button type="button" className="secondary-button" disabled={!canAdmin || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_vip', { vip: true })}><Crown size={13}/> Đánh dấu VIP</button>
               <button type="button" className="secondary-button" disabled={!canAdmin || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_vip', { vip: false })}>Bỏ VIP</button>

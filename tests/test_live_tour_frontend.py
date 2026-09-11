@@ -109,10 +109,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
 
         "Đặt lịch",
 
-        "Thực hiện đã chọn",
-
-        "Hoàn thành",
-        "Chờ thanh toán",
+        "CHỜ THANH TOÁN",
         "Thanh toán nhanh",
         "Đi làm",
         "Nghỉ phép",
@@ -139,6 +136,16 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
 
     missing = sorted(label for label in expected_labels if label not in source)
     assert not missing, f"Live Tour is missing controls/workspaces: {', '.join(missing)}"
+
+    controls = source.split('className="panel live-tour-operator live-tour-controls"', 1)[1].split('</section>', 1)[0]
+    assert '<section hidden className="panel live-tour-operator live-tour-controls"' not in source
+    assert 'aria-label="Điều khiển"' in controls
+    assert 'live-tour-operator-head' not in controls
+    assert 'live-tour-controls-label' not in controls
+    for label in ('Thực hiện đã chọn', 'Hoàn thành', 'Chờ thanh toán', 'Thanh toán'):
+        assert f'> {label}</button>' not in controls and f'>{label}</button>' not in controls
+    for label in ('Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Ca 1', 'Ca 2', 'Nghỉ giữa ca', 'Kết thúc nghỉ giữa ca', 'Đánh dấu VIP', 'Bỏ VIP', 'Đổi dịch vụ', 'Thêm dịch vụ'):
+        assert label in controls
 
 
 def test_live_tour_can_open_itself_in_a_standalone_new_tab():
