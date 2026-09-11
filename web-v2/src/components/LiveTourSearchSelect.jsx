@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { searchTextMatches } from '../lib/searchText'
 import './LiveTourSearchSelect.css'
 
-export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống' }) {
+export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode }) {
   const id = useId(), root = useRef(null), input = useRef(null), menu = useRef(null), side = useRef(null)
   const typing = useRef(false)
   const selected = options.find((item) => item.value === value)
@@ -58,7 +58,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
     if (!root.current?.contains(event.relatedTarget) && !menu.current?.contains(event.relatedTarget)) { close(); if (!freeSearch) setQuery(selected?.label || '') }
   }}>
     {!hideLabel && <label htmlFor={id}>{label}</label>}
-    <input ref={input} id={id} type={freeSearch ? 'search' : 'text'} aria-label={hideLabel ? label : undefined} role="combobox" aria-autocomplete="list" aria-expanded={open && !disabled} aria-controls={`${id}-options`} aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined} autoComplete="off" value={query} required={required} disabled={disabled} placeholder={placeholder}
+    <input ref={input} id={id} type={freeSearch ? 'search' : 'text'} inputMode={inputMode} aria-label={hideLabel ? label : undefined} role="combobox" aria-autocomplete="list" aria-expanded={open && !disabled} aria-controls={`${id}-options`} aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined} autoComplete="off" value={query} required={required} disabled={disabled} placeholder={placeholder}
       onFocus={() => { setOpen(true); if (!freeSearch) setQuery(''); setIndex(0) }}
       onChange={(event) => { typing.current = Boolean(value); setQuery(event.target.value); onSearch?.(event.target.value); setOpen(true); setIndex(0); if (value && !freeSearch) onChange('') }}
       onKeyDown={(event) => {

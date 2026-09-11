@@ -416,7 +416,7 @@ def test_live_tour_checkout_uses_server_preview_without_sending_client_totals():
 
     assert "previewEntryPrice(entry, services)" in source
     assert "previewEntryTicketUnits(entry, services)" in source
-    assert "Chi tiết dịch vụ" in source
+    assert "<strong>Dịch vụ</strong>" in source
     assert "Tổng thanh toán" in source
     assert not re.search(r"\b(total|services|combo_units)\s*:", checkout)
     assert "ticket_price: ticketPrice" in checkout
@@ -459,10 +459,11 @@ def test_live_tour_checkout_can_link_an_exact_existing_customer_and_load_history
     source = _source(LIVE_TOUR)
     api = _source(API)
 
-    assert "const checkoutCustomerMatches" in source
-    assert "return customerMatches({ ...customer, name: itemLabel(customer) }" in source
-    assert "customer_id: id, customer_name: itemLabel(customer)" in source
-    assert "Khách hàng: <strong>{form.customer_name}</strong>" in source
+    customer = _source(LIVE_TOUR.parent.parent / "components" / "LiveTourCheckoutCustomer.jsx")
+    assert "<LiveTourCheckoutCustomer" in source
+    assert "customerMatches({ name: option.label, phone: option.detail }, query)" in customer
+    assert "customer_id: id" in customer
+    assert "customer_name: customer?.label" in customer and "phone: customer?.detail" in customer
     assert "const openCustomerHistory" in source
     assert "veraApi.liveTourCustomerHistory(customerId)" in source
     assert "exportLiveTourExcel('customer_detail', { customer_id: customerId })" in source
@@ -502,9 +503,9 @@ def test_live_tour_quick_checkout_is_independent_and_uses_stable_employee_ids():
     assert "selectedIds.size" not in button
     assert "const quickCheckoutMatches" in source
     assert "[stableEmployeeId(selectedQuickCheckoutRecord)]" in source
-    assert "Tìm nhân viên chờ thanh toán" in source
-    assert "customer_id: employee?.customer_id || ''" in source
-    assert "phone: employee?.customer_phone || ''" in source
+    assert "Tìm nhân viên / phòng / dịch vụ chờ thanh toán" in source
+    assert "customer_id: source.customer_id || ''" in source
+    assert "phone: source.customer_phone || ''" in source
 
 def test_remaining_order_is_global_and_leave_stays_last_even_when_prioritized():
     source = _source(LIVE_TOUR)

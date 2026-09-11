@@ -17,7 +17,6 @@ export default function LiveTourAppointmentInput({ value = '', employeeName, rev
   return <form className={`live-tour-appointment-editor${quick ? ' quick' : ''}`} onSubmit={save}>
     <span className="live-tour-appointment-text"><input type="text" maxLength={200} value={currentValue} disabled={disabled || busy}
       aria-label={employeeName ? `Lịch hẹn của ${employeeName}` : 'Lịch hẹn nhân viên'}
-      placeholder={employeeName ? 'Nhập lịch hẹn…' : 'Tìm hoặc chọn một nhân viên'}
       title={employeeName ? `Lịch hẹn của ${employeeName} · Enter để lưu, Esc để hủy` : 'Tìm hoặc chọn đúng một nhân viên để lưu lịch hẹn'}
       onChange={(event) => setDraft({ value: event.target.value, revision: draft?.revision ?? revision })}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setDraft(null) } }}/></span>
