@@ -16,6 +16,7 @@ import {
   loadLeaveRecords,
 } from '../lib/data'
 import {
+  canChangeLeaveReason,
   canDeleteLeaveRecord,
   canEditLeaveRecord,
   EMPLOYEE_SELF_SERVICE_ROLES,
@@ -33,7 +34,7 @@ const formatDateInput = (date) => {
   return `${year}-${month}-${day}`
 }
 
-const today = () => formatDateInput(new Date())
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const addDays = (date, days) => {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
@@ -109,6 +110,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
   const [recordReasonsByDate, setRecordReasonsByDate] = useState({})
+  const [recordReasonErrors, setRecordReasonErrors] = useState({})
   const [employeeSelfServicePolicy, setEmployeeSelfServicePolicy] = useState({
     enabled: true, regular_notice_days: 3, unpaid_notice_days: 1,
   })
@@ -145,7 +147,7 @@ export default function LeaveRegistrationPage({ user }) {
     || user?.permissions?.leave_manage_delete === true
     || user?.permissions?.leave_detail_delete === true
     || user?.permissions?.leave_today_khong_phep_edit_delete === true
-  const canEditRecord = (item) => canEditLeaveRecord({
+  const recordPermissionContext = (item) => ({
     role,
     allowedByPermission: canEdit,
     recordDate: item?.leave_date,
@@ -156,17 +158,8 @@ export default function LeaveRegistrationPage({ user }) {
     employeeSelfServicePolicy,
     letanLeavePolicy,
   })
-  const canDeleteRecord = (item) => canDeleteLeaveRecord({
-    role,
-    allowedByPermission: canDelete,
-    recordDate: item?.leave_date,
-    currentReason: item?.leave_reason,
-    currentLeaveType: item?.leave_type,
-    today: today(),
-    isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
-    employeeSelfServicePolicy,
-    letanLeavePolicy,
-  })
+  const canEditRecord = (item) => canEditLeaveRecord(recordPermissionContext(item))
+  const canDeleteRecord = (item) => canDeleteLeaveRecord({ ...recordPermissionContext(item), allowedByPermission: canDelete })
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
     && (employeeSelfService || user?.permissions?.leave_create !== false)
@@ -221,6 +214,7 @@ export default function LeaveRegistrationPage({ user }) {
         setSelectedUids([])
         setReasons(reasonData.reasons || [])
         setRecordReasonsByDate({ [date]: reasonData.reasons || [] })
+        setRecordReasonErrors({})
         setEmployeeSelfServicePolicy({
           enabled: reasonData.employee_self_service_policy?.enabled !== false,
           regular_notice_days: Number(reasonData.employee_self_service_policy?.regular_notice_days ?? 3),
@@ -260,8 +254,18 @@ export default function LeaveRegistrationPage({ user }) {
 
   useEffect(() => { load() }, [load])
 
+  const fetchRecordReasons = useCallback(async (recordDate, isActive = () => true) => {
+    if (isActive()) setRecordReasonErrors((current) => ({ ...current, [recordDate]: '' }))
+    try {
+      const result = await veraApi.leaveReasons(recordDate)
+      if (isActive()) setRecordReasonsByDate((current) => ({ ...current, [recordDate]: result.reasons || [] }))
+    } catch (err) {
+      if (isActive()) setRecordReasonErrors((current) => ({ ...current, [recordDate]: err.message || 'Không tải được lý do nghỉ.' }))
+    }
+  }, [])
+
   useEffect(() => {
-    if (!isApiConfigured || !employeeSelfService) return undefined
+    if (!isApiConfigured) return undefined
     let active = true
     const editableDates = [...new Set(records
       .filter((item) => canEditLeaveRecord({
@@ -279,23 +283,16 @@ export default function LeaveRegistrationPage({ user }) {
       .filter((recordDate) => recordDate && recordDate !== date)
 
     const loadEditableDateReasons = async () => {
-      const loaded = {}
-      // Keep these reads sequential because production uses a small PostgreSQL pool.
+      // One read per distinct date, sequentially for the VPS connection pool.
+      // Publish each completed date immediately; never substitute another day.
       for (const recordDate of editableDates) {
-        try {
-          const result = await veraApi.leaveReasons(recordDate)
-          loaded[recordDate] = result.reasons || []
-        } catch {
-          loaded[recordDate] = []
-        }
-      }
-      if (active && Object.keys(loaded).length > 0) {
-        setRecordReasonsByDate((current) => ({ ...current, ...loaded }))
+        if (!active) break
+        await fetchRecordReasons(recordDate, () => active)
       }
     }
     void loadEditableDateReasons()
     return () => { active = false }
-  }, [canEdit, date, employeeSelfService, employeeSelfServicePolicy, letanLeavePolicy, records, role, user?.employee_username])
+  }, [canEdit, date, employeeSelfServicePolicy, letanLeavePolicy, records, role, user?.employee_username, fetchRecordReasons])
 
   useEffect(() => {
     refreshWatchDates()
@@ -372,11 +369,11 @@ export default function LeaveRegistrationPage({ user }) {
   })
 
   const reasonOptionsForRecord = (item) => {
-    const catalog = employeeSelfService && isApiConfigured
-      ? (recordReasonsByDate[item?.leave_date] || [])
+    const catalog = isApiConfigured
+      ? (recordReasonsByDate[item?.leave_date] || (item?.leave_date === date ? reasons : []))
       : reasons
     const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
-    if (!group) return catalog
+    if (!group) return catalog.filter((reason) => canChangeLeaveReason(recordPermissionContext(item), reason))
     return group.map((name) => catalog.find((reason) => normalizeSearch(reason.name) === normalizeSearch(name)) || ({ name }))
   }
 
@@ -455,7 +452,8 @@ export default function LeaveRegistrationPage({ user }) {
     setListActionNotice(null)
     try {
       for (const item of changedRecords) {
-        const nextReason = reasons.find((reason) => reason.name === reasonDrafts[item.record_uid])
+        const nextReason = reasonOptionsForRecord(item).find((reason) => reason.name === reasonDrafts[item.record_uid])
+        if (!nextReason) throw new Error(`Lý do nghỉ đã chọn không còn được phép cho ${shortEmployeeName(item.employee_name)} ngày ${formatDateDisplay(item.leave_date)}. Hãy tải lại danh sách.`)
         const payload = { leave_reason: reasonDrafts[item.record_uid] }
         if (nextReason?.requires_manual_penalty) {
           const amount = window.prompt(`Nhập mức phạt cho "${nextReason.name}" (VNĐ):`, '')
@@ -1069,12 +1067,17 @@ export default function LeaveRegistrationPage({ user }) {
                     <td className="weekday-cell">{item.weekday_label || weekdayForDate(item.leave_date)}</td>
                     <td><strong>{shortEmployeeName(item.employee_name)}</strong></td>
                     <td className="reason-edit-cell">
-                      {canEditRecord(item) && (employeeSelfService || item.leave_date === date) ? (
-                        <select value={reasonValueForRecord(item)} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing}>
+                      {canEditRecord(item) ? (
+                        <select aria-label={`Sửa lý do nghỉ của ${shortEmployeeName(item.employee_name)} ngày ${formatDateDisplay(item.leave_date)}`} value={reasonValueForRecord(item)} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing || !isApiConfigured || (!recordReasonsByDate[item.leave_date] && !letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy))}>
                           {!letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && !reasonOptionsForRecord(item).some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
                           {reasonOptionsForRecord(item).map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
                         </select>
-                      ) : <span title={canEditRecord(item) ? 'Chọn ngày ở cột Ngày để sửa lý do.' : undefined}>{item.leave_reason}</span>}
+                      ) : <span>{item.leave_reason}</span>}
+                      {canEditRecord(item) && isApiConfigured && !recordReasonsByDate[item.leave_date] && !letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && (
+                        recordReasonErrors[item.leave_date]
+                          ? <div role="alert"><small>{recordReasonErrors[item.leave_date]}</small><button type="button" className="text-button" disabled={managing} onClick={() => fetchRecordReasons(item.leave_date)}>Thử tải lại lý do</button></div>
+                          : <small role="status">Đang tải lý do nghỉ cho ngày {formatDateDisplay(item.leave_date)}…</small>
+                      )}
                     </td>
                     <td className="detail-cell">{item.detail || '—'}</td>
                     {canViewPenalty && <td className="right">{Number(item.penalty || 0).toLocaleString('vi-VN')}đ</td>}
