@@ -2676,6 +2676,11 @@ def _state_response(
         "break_count": groups("break"), "stats": [{"label": "Có thể lên tua", "value": groups("available"), "detail": "Sắp xong + Đang rảnh"}],
         "rooms": {"all": physical_rooms, "available": available_groups, "occupied": occupied_groups, "total_count": len(physical_rooms), "available_count": len(available_groups), "occupied_count": len(occupied_groups), "source_sheet": "Live Tour"},
         "available_rooms": available_groups, "available_beds": available, "metric_snapshots": metrics,
+        # Occupancy must include hidden/retained staff without exposing customer data.
+        "room_assignments": [{"id": row["id"], "room": row.get("room", ""),
+                              "service": row.get("service", ""), "status": row.get("status", ""),
+                              "private": _catalog_private_service(state, row.get("service"))}
+                             for row in state["employees"] if _active_booking(row)],
         "room_groups": {room["name"]: _catalog_room_group(state, room["name"]) for room in state["rooms"]},
         "room_action_counts": _room_action_counts(state) if can_operate else {},
         "service_areas": _service_areas(state),

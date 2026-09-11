@@ -1345,3 +1345,19 @@ def test_queue_uses_standard_start_column_and_not_yc_or_completion_time():
     ordered = live._ordered_employees([standard, paid, request], NOW)
     assert [row['id'] for row in ordered] == ['e2', 'e3', 'e1']
     assert live._employee_record(request, NOW)['TG bắt đầu thực hiện'] == ''
+
+
+def test_room_occupancy_includes_retained_pr_without_customer_data_and_releases_on_completion():
+    worker = employee('e1', 'Retained')
+    worker.update(room='1.1', service='90 PR Tiêu chuẩn', status='Đang chờ',
+                  roster_eligible=False, hidden=True, customer_name='Private customer',
+                  customer_phone='0901234567', note='Private note')
+    state = state_with(worker)
+    response = live._state_response(state, 1, NOW)
+    assert not response['state']['employees']
+    assert response['room_assignments'] == [{
+        'id': 'e1', 'room': '1.1', 'service': '90 PR Tiêu chuẩn',
+        'status': 'Đang chờ', 'private': True,
+    }]
+    state['employees'][0]['status'] = 'Chờ thanh toán'
+    assert live._state_response(state, 2, NOW)['room_assignments'] == []

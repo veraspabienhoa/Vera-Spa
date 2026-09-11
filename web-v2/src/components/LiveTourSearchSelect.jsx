@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { searchTextMatches } from '../lib/searchText'
 import './LiveTourSearchSelect.css'
 
-export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode }) {
+export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, showAllOptions = false }) {
   const id = useId(), root = useRef(null), input = useRef(null), menu = useRef(null), side = useRef(null)
   const typing = useRef(false)
   const selected = options.find((item) => item.value === value)
@@ -54,6 +54,10 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
     }
   }, [open, disabled])
 
+  useEffect(() => {
+    if (open && showAllOptions) menu.current?.querySelector(`[id="${id}-${activeIndex}"]`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [activeIndex, id, open, showAllOptions])
+
   return <div className={`live-tour-search-select ${className}`} ref={root} onBlur={(event) => {
     if (!root.current?.contains(event.relatedTarget) && !menu.current?.contains(event.relatedTarget)) { close(); if (!freeSearch) setQuery(selected?.label || '') }
   }}>
@@ -66,16 +70,16 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); if (!freeSearch) setQuery(selected?.label || '') }
         if (event.key === 'Enter' && open) { event.preventDefault(); if (matches[activeIndex]) choose(matches[activeIndex]) }
       }}/>
-    {open && !disabled && createPortal(<div ref={menu} className="tour-search-popup" style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onMouseDown={(event) => event.preventDefault()}>
+    {open && !disabled && createPortal(<div ref={menu} className={`tour-search-popup ${showAllOptions ? 'tour-search-scroll' : ''}`} style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onMouseDown={(event) => event.preventDefault()}>
       <div role="listbox" id={`${id}-options`} aria-label={label}>
         {!required && <button type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { onChange(''); if (freeSearch) onSearch?.(''); setQuery(''); close() }}>{emptyLabel}</button>}
-        {matches.slice(start, start + position.pageSize).map((item, offset) => {
-          const i = start + offset
-          return <button type="button" tabIndex={-1} role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={i === activeIndex ? 'highlighted' : ''} onClick={() => choose(item)}><span className="tour-select-option-heading"><strong>{item.label}</strong>{item.badge && <strong className="tour-ticket-badge">{item.badge}</strong>}</span>{item.detail && <small>{item.detail}</small>}</button>
+        {(showAllOptions ? matches : matches.slice(start, start + position.pageSize)).map((item, offset) => {
+          const i = (showAllOptions ? 0 : start) + offset
+          return <button type="button" tabIndex={-1} role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={`${i === activeIndex ? 'highlighted' : ''} ${item.className || ''}`} onClick={() => choose(item)}><span className="tour-select-option-heading"><strong>{item.label}</strong>{item.badge && <strong className="tour-ticket-badge">{item.badge}</strong>}</span>{item.detail && <small>{item.detail}</small>}</button>
         })}
         {!matches.length && <p>Không có kết quả phù hợp.</p>}
       </div>
-      {matches.length > position.pageSize && <div className="tour-list-pages" aria-label={`Danh sách ${label}`}>
+      {!showAllOptions && matches.length > position.pageSize && <div className="tour-list-pages" aria-label={`Danh sách ${label}`}>
         <button type="button" tabIndex={-1} disabled={!start} aria-label="Kết quả trước" onClick={() => setIndex(Math.max(0, start - position.pageSize))}>‹</button>
         <span>{start + 1}–{Math.min(start + position.pageSize, matches.length)} / {matches.length}</span>
         <button type="button" tabIndex={-1} disabled={start + position.pageSize >= matches.length} aria-label="Kết quả tiếp" onClick={() => setIndex(start + position.pageSize)}>›</button>
