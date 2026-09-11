@@ -1,17 +1,17 @@
 import { useState } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { bookingEmployees, bookingServiceItems, bookingTotal, tourNameKey } from '../lib/liveTourBooking'
 import { catalogIsAvailable } from '../lib/serviceCatalog'
 import { customerOptionMatches } from '../lib/customerSearch'
 import { availableBookingPurchase, comboBookingError, comboBookingItems, customerPurchases, customerTicketLabel, preferredBookingCombo } from '../lib/liveTourComboBooking'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import './LiveTourBookingDialog.css'
-import useDialogFocus from '../lib/useDialogFocus'
+import LiveTourTransactionDialog from './LiveTourTransactionDialog'
+import LiveTourPageItems from './LiveTourPageItems'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 
 export default function LiveTourBookingDialog({ data, context, canOperate, canBook, canCustomers, canPayment, busy, error, onAction, onClose, onCheckout }) {
-  const dialogRef = useDialogFocus(() => { if (!busy) onClose() })
   const employees = [...(data.state?.employees || []), ...(data.retained_assignments || [])]
   const initial = employees.find((row) => row.id === context.employeeId)
   const catalog = data.services || []
@@ -56,6 +56,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   const submit = async (event) => {
     event.preventDefault(); setMessage('')
     if (comboError) { setMessage(comboError); return }
+    if (items.some((row) => !Number.isInteger(Number(row.quantity)) || Number(row.quantity) < 1 || Number(row.quantity) > 30)) { setMessage('Số lượng mỗi dịch vụ phải từ 1 đến 30.'); return }
     if (!employeeId || !room || !items.length) { setMessage('Hãy chọn nhân viên, ít nhất một dịch vụ và phòng/giường.'); return }
     const result = await onAction(editing ? 'update_booking' : 'booking', {
       ...bookingPayload(), start_now: event.nativeEvent.submitter?.value === 'start',
@@ -79,25 +80,26 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   const serviceOptions = catalog.filter((item) => catalogIsAvailable(item) && !items.some((row) => row.service_id === item.id)
     && (!selectedCombo?.component_balances || selectedCombo.component_balances.some((part) => part.service_id === item.id && part.remaining > 0)))
     .map((item) => ({ value: item.id, label: item.name, detail: `${item.duration ?? '∞'} phút · ${money(item.price)}` }))
-  return <div className="live-tour-modal-backdrop" onClick={() => { if (!busy) onClose() }}><section ref={dialogRef} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={editing ? `Booking · ${employee?.name}` : 'Đặt lịch'} onClick={(event) => event.stopPropagation()}>
-    <div className="live-tour-modal-head"><strong>{completed ? 'Đã hoàn thành dịch vụ' : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}</strong><button className="icon-button" type="button" disabled={busy} aria-label="Đóng" onClick={onClose}><X size={18}/></button></div>
+  return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog"
+    title={completed ? 'Đã hoàn thành dịch vụ' : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}>
     {(error || message) && <p className="error-box" role="alert">{error || message}</p>}
     {completed ? <><p>Đã chuyển dịch vụ vào Chờ thanh toán. {employee?.name} đã rảnh để nhận lịch mới.</p><div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canPayment && <button type="button" className="primary-button" onClick={() => onCheckout(completed)}>Thanh toán</button>}</div></>
       : <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {context.employeeId ? <p className="wide"><strong>Nhân viên: {employee?.name}</strong>{editing && ` · ${employee.status}`}</p> : <div className="wide"><LiveTourSearchSelect label="Nhân viên *" options={employeeOptions} value={employeeId} onChange={selectEmployee} required/></div>}
-        {canCustomers && <div className="wide"><LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={(data.customers || []).map((row) => ({ value: row.id, label: row.name, detail: row.phone, badge: customerTicketLabel(row) }))} value={customerId} onChange={selectCustomer} disabled={Boolean(editing && employee?.customer_id)}/><small>{customerId ? selectedCustomer?.phone : 'Để trống là Khách lẻ'}</small>{selectedCustomer && <strong className="tour-customer-ticket-count" aria-live="polite">{customerTicketLabel(selectedCustomer)}</strong>}</div>}
-        {canCustomers && purchases.length > 0 && <div className="wide tour-booking-combo">
+        {canCustomers && <div className="tour-booking-customer"><LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={(data.customers || []).map((row) => ({ value: row.id, label: row.name, detail: row.phone, badge: customerTicketLabel(row) }))} value={customerId} onChange={selectCustomer} disabled={Boolean(editing && employee?.customer_id)}/><small>{customerId ? selectedCustomer?.phone : 'Để trống là Khách lẻ'}</small>{selectedCustomer && <strong className="tour-customer-ticket-count" aria-live="polite">{customerTicketLabel(selectedCustomer)}</strong>}</div>}
+        {canCustomers && purchases.length > 0 && <div className="tour-booking-combo">
           <label className="live-tour-field"><span>Combo của khách</span><select value={comboId} onChange={(event) => selectCombo(event.target.value)}><option value="">Dịch vụ lẻ · không dùng combo</option>{purchases.map((purchase, index) => <option key={purchase.id} value={purchase.id}>{purchase.combo_name || 'Combo'} · còn {purchase.remaining} vé có thể đặt lịch · #{index + 1}</option>)}</select></label>
-          {selectedCombo && <div aria-live="polite"><p><strong>Còn {selectedCombo.remaining} vé có thể đặt lịch</strong>. Vé được giữ chỗ khi đặt lịch và trừ khi thanh toán.</p>{selectedCombo.component_balances ? <>{selectedCombo.component_balances.map((part) => <p key={part.service_id}>{catalog.find((service) => service.id === part.service_id)?.name || part.service_name}: còn <strong>{part.remaining}</strong> lượt</p>)}<small>Mỗi dịch vụ được tự điền 1 lượt; có thể sửa số lượng hoặc bỏ dịch vụ.</small></> : <p>Combo vé cũ chưa khai báo dịch vụ. Hãy chọn dịch vụ bên dưới.</p>}</div>}
+          {selectedCombo && <div aria-live="polite"><p><strong>Còn {selectedCombo.remaining} vé</strong> · Giữ vé đến khi thanh toán.</p>{selectedCombo.component_balances ? <LiveTourPageItems items={selectedCombo.component_balances} label="Dịch vụ combo" pageSize={1}>{(part) => <small key={part.service_id}>{catalog.find((service) => service.id === part.service_id)?.name || part.service_name}: còn <strong>{part.remaining}</strong> lượt</small>}</LiveTourPageItems> : <small>Chọn dịch vụ bên dưới để dùng combo vé.</small>}</div>}
+
           {comboError && <p className="error-box" role="alert">{comboError}</p>}
         </div>}
-        <div className="wide"><LiveTourSearchSelect label="Dịch vụ" clearOnSelect value={serviceId} options={serviceOptions} onChange={(id) => { setServiceId(''); if (id) setItems((current) => [...current, { service_id: id, quantity: 1 }]) }}/></div>
-        <div className="wide tour-booking-items">{items.map((row, i) => <div className="tour-booking-item" key={row.service_id}><div><strong>{catalog.find((item) => item.id === row.service_id)?.name || row.service_id}</strong><small>{money(catalog.find((item) => item.id === row.service_id)?.price)}</small></div><label>Số lượng<input type="number" min="1" max="30" required value={row.quantity} onChange={(event) => setItems((current) => current.map((item, index) => index === i ? { ...item, quantity: Number(event.target.value) } : item))}/></label><button type="button" className="icon-button" aria-label={`Bỏ dịch vụ ${i + 1}`} onClick={() => setItems((current) => current.filter((_, index) => index !== i))}><Trash2 size={17}/></button></div>)}{!items.length && <p><Plus size={14}/> Chọn một hoặc nhiều dịch vụ phía trên.</p>}</div>
+        <div className="tour-booking-service-picker"><LiveTourSearchSelect label="Dịch vụ" clearOnSelect value={serviceId} options={serviceOptions} onChange={(id) => { setServiceId(''); if (id) setItems((current) => [...current, { service_id: id, quantity: 1 }]) }}/></div>
+        <div className="tour-booking-items"><LiveTourPageItems items={items} label="Dịch vụ đã chọn">{(row, i) => <div className="tour-booking-item" key={row.service_id}><div><strong>{catalog.find((item) => item.id === row.service_id)?.name || row.service_id}</strong><small>{money(catalog.find((item) => item.id === row.service_id)?.price)}</small></div><label>Số lượng<input type="number" min="1" max="30" required value={row.quantity} onChange={(event) => setItems((current) => current.map((item, index) => index === i ? { ...item, quantity: Number(event.target.value) } : item))}/></label><button type="button" className="icon-button" aria-label={`Bỏ dịch vụ ${i + 1}`} onClick={() => setItems((current) => current.filter((_, index) => index !== i))}><Trash2 size={17}/></button></div>}</LiveTourPageItems>{!items.length && <p><Plus size={14}/> Chọn một hoặc nhiều dịch vụ phía trên.</p>}</div>
         <LiveTourSearchSelect label="Phòng / giường *" value={room} required options={(data.catalogs?.rooms || data.state?.rooms || []).filter((row) => row.active !== false).map((row) => ({ value: row.name, label: row.name, detail: row.area_name ? `${row.area_name} · ${row.bed_name || ''}` : '' }))} onChange={setRoom}/>
         <label className="live-tour-field"><span>Yêu cầu</span><select value={request} disabled={doing} onChange={(event) => setRequest(event.target.value)}><option value="">Để trống</option><option value="YC">YC</option></select></label>
-        <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={note} onChange={(event) => setNote(event.target.value)}/></label>
+        <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea value={note} onChange={(event) => setNote(event.target.value)}/></label>
         <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(bookingTotal(items, catalog))}</strong></div>
         <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{(editing ? canOperate : canBook) && <><button type="submit" className="secondary-button" value="book" disabled={!employeeId || Boolean(comboError)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{!doing && canOperate && <button type="submit" className="primary-button" value="start" disabled={!employeeId || Boolean(comboError)}>Thực hiện</button>}{doing && canOperate && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}{canPayment && tourNameKey(employee?.status) === 'cho thanh toan' && <button type="button" className="primary-button" onClick={() => onCheckout(null, employee)}>Thanh toán</button>}</div>
       </fieldset></form>}
-  </section></div>
+  </LiveTourTransactionDialog>
 }
