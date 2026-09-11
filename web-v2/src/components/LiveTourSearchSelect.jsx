@@ -1,10 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { advanceBookingField } from '../lib/advanceBookingField'
-import { searchTextMatches } from '../lib/searchText'
+import { searchTextMatches, scrollSearchOption } from '../lib/searchText'
 import './LiveTourSearchSelect.css'
 
-export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, showAllOptions = false, advanceOnSelect = false, invalid = false }) {
+export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, advanceOnSelect = false, invalid = false }) {
   const id = useId(), root = useRef(null), input = useRef(null), menu = useRef(null), side = useRef(null)
   const typing = useRef(false)
   const selected = options.find((item) => item.value === value)
@@ -13,11 +13,10 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
   const query = freeSearch ? searchValue : localQuery
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
-  const [position, setPosition] = useState({ left: 0, top: 0, width: 240, pageSize: 5 })
+  const [position, setPosition] = useState({ left: 0, top: 0, width: 240 })
   useEffect(() => { if (!typing.current) setQuery(selected?.label || ''); typing.current = false }, [value, selected?.label])
   const matches = options.filter((option) => filterOption ? filterOption(option, query) : searchTextMatches([option.label, option.detail], query))
   const activeIndex = Math.min(index, Math.max(0, matches.length - 1))
-  const start = Math.floor(activeIndex / position.pageSize) * position.pageSize
   const close = () => { setOpen(false); side.current = null }
   const choose = (item) => {
     flushSync(() => { onChange(item.value); setQuery(clearOnSelect ? '' : item.label); close(); setIndex(0) })
@@ -36,12 +35,11 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
       const below = top + height - rect.bottom - 8, above = rect.top - top - 8
       side.current ??= below < 180 && above > below ? 'above' : 'below'
       const room = side.current === 'above' ? above : below
-      const pageSize = Math.max(1, Math.min(5, Math.floor((room - 76) / 40)))
-      const menuHeight = Math.min(height - 16, pageSize * 40 + 76)
+      const menuHeight = Math.max(40, Math.min(height - 16, Math.max(80, room), 360))
       const menuWidth = Math.min(Math.max(rect.width, 240), width - 16)
       setPosition({ left: Math.max(left + 8, Math.min(rect.left, left + width - menuWidth - 8)),
         top: Math.max(top + 8, Math.min(side.current === 'above' ? rect.top - menuHeight - 4 : rect.bottom + 4, top + height - menuHeight - 8)),
-        width: menuWidth, pageSize, maxHeight: menuHeight })
+        width: menuWidth, maxHeight: menuHeight })
     }
     const schedule = () => { window.cancelAnimationFrame(frame); frame = window.requestAnimationFrame(place) }
     place()
@@ -59,8 +57,8 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
   }, [open, disabled])
 
   useEffect(() => {
-    if (open && showAllOptions) menu.current?.querySelector(`[id="${id}-${activeIndex}"]`)?.scrollIntoView?.({ block: 'nearest' })
-  }, [activeIndex, id, open, showAllOptions])
+    if (open) scrollSearchOption(menu.current, menu.current?.querySelector(`[id="${id}-${activeIndex}"]`))
+  }, [activeIndex, id, open])
 
   return <div className={`live-tour-search-select ${className}`} ref={root} onBlur={(event) => {
     if (!root.current?.contains(event.relatedTarget) && !menu.current?.contains(event.relatedTarget)) { close(); if (!freeSearch) setQuery(selected?.label || '') }
@@ -74,20 +72,14 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); if (!freeSearch) setQuery(selected?.label || '') }
         if (event.key === 'Enter' && open) { event.preventDefault(); if (matches[activeIndex]) choose(matches[activeIndex]) }
       }}/>
-    {open && !disabled && createPortal(<div ref={menu} className={`tour-search-popup ${showAllOptions ? 'tour-search-scroll' : ''}`} style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onMouseDown={(event) => event.preventDefault()}>
+    {open && !disabled && createPortal(<div ref={menu} className="tour-search-popup tour-search-scroll" style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onMouseDown={(event) => event.preventDefault()}>
       <div role="listbox" id={`${id}-options`} aria-label={label}>
         {!required && <button type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { if (freeSearch) onSearch?.(''); choose({ value: '', label: '' }) }}>{emptyLabel}</button>}
-        {(showAllOptions ? matches : matches.slice(start, start + position.pageSize)).map((item, offset) => {
-          const i = (showAllOptions ? 0 : start) + offset
+        {matches.map((item, i) => {
           return <button type="button" tabIndex={-1} role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={`${i === activeIndex ? 'highlighted' : ''} ${item.className || ''}`} onClick={() => choose(item)}><span className="tour-select-option-heading"><strong>{item.label}</strong>{item.badge && <strong className="tour-ticket-badge">{item.badge}</strong>}</span>{item.detail && <small>{item.detail}</small>}</button>
         })}
         {!matches.length && <p>Không có kết quả phù hợp.</p>}
       </div>
-      {!showAllOptions && matches.length > position.pageSize && <div className="tour-list-pages" aria-label={`Danh sách ${label}`}>
-        <button type="button" tabIndex={-1} disabled={!start} aria-label="Kết quả trước" onClick={() => setIndex(Math.max(0, start - position.pageSize))}>‹</button>
-        <span>{start + 1}–{Math.min(start + position.pageSize, matches.length)} / {matches.length}</span>
-        <button type="button" tabIndex={-1} disabled={start + position.pageSize >= matches.length} aria-label="Kết quả tiếp" onClick={() => setIndex(start + position.pageSize)}>›</button>
-      </div>}
     </div>, document.body)}
   </div>
 }
