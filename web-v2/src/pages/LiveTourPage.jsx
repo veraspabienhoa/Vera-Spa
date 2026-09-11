@@ -1215,11 +1215,11 @@ export default function LiveTourPage({ user }) {
       .tour-page{gap:5px}.page-wrap.tour-page-wrap{padding-top:4px}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
       .live-tour-board{min-width:0}.live-tour-board>.tour-records-panel{margin-top:5px}
       .live-tour-page .tour-board-top{position:static;display:grid;gap:4px;background:var(--paper,#f7faf8)}
-      .live-tour-page .tour-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
+      .live-tour-page .tour-topbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
       .live-tour-page .tour-heading-title{min-width:0;display:flex;align-items:center;gap:8px}.live-tour-page .tour-heading-title h1{margin:3px 0 0;color:var(--green-950);font-family:Georgia,serif;font-size:18px;line-height:.95}.live-tour-status{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 7px;color:#17603f;background:#dff4e8;font-size:8px;font-weight:900}.live-tour-status:before{content:'';width:7px;height:7px;border-radius:50%;background:#23a861;box-shadow:0 0 0 3px rgba(35,168,97,.16)}
       .live-tour-page .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}.live-tour-page .tour-table tr.live-tour-selected td{box-shadow:inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-table tr.live-tour-selected td:first-child{box-shadow:inset 2px 0 #173c30,inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
-      .live-tour-page .tour-shift-filter{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;gap:6px;margin:8px 0}.live-tour-page .tour-shift-filter button{min-width:66px;padding:5px 9px;border-radius:8px;font-size:10px}
-      .live-tour-page .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.live-tour-page .tour-heading-actions button{min-height:34px;padding:6px 10px;font-size:10px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
+      .live-tour-page .tour-shift-filter{display:flex;flex:0 0 auto;align-items:center;gap:4px;margin:0}.live-tour-page .tour-shift-filter button{flex:0 0 auto;min-width:56px;min-height:30px;padding:5px 9px;border-radius:8px;font-size:10px;white-space:nowrap}
+      .live-tour-page .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}.live-tour-page .tour-heading-actions button{min-height:34px;padding:6px 10px;font-size:10px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
       .live-tour-payment-reminder{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #e9ad57;border-radius:9px;color:#64350d;background:#fff3d7;box-shadow:0 3px 12px rgba(124,73,17,.12);font-size:10px}.live-tour-payment-reminder strong{font-size:11px}.live-tour-payment-reminder span{flex:1}.live-tour-payment-reminder button{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
       .live-tour-page .tour-control-layout{display:grid;grid-template-columns:minmax(520px,1fr) minmax(330px,.62fr);gap:4px;align-items:stretch}.live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:27px;gap:3px;border-radius:7px;padding:2px 6px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:7px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:15px}
       .live-tour-page .tour-room-segment-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.live-tour-page .tour-room-segment-button{min-width:0;min-height:100%;border:1px solid transparent;border-radius:8px;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:#fff;font-weight:900;text-align:center;letter-spacing:.02em}.live-tour-page .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.live-tour-page .tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.live-tour-page .tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}.live-tour-page .tour-room-segment-button svg{width:15px;height:15px}.live-tour-page .tour-room-segment-button span{font-size:9px;line-height:1}.live-tour-page .tour-room-segment-button small{color:inherit;font-size:7px;opacity:.88}.live-tour-page .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
@@ -1239,9 +1239,9 @@ export default function LiveTourPage({ user }) {
       @media(prefers-reduced-motion:reduce){.live-tour-page .tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
       @media(max-width:760px){.live-tour-export-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.live-tour-export-filters>strong,.live-tour-export-filters small{grid-column:1/-1}.live-tour-form-grid{grid-template-columns:1fr}.live-tour-field.wide{grid-column:auto}.live-tour-multi-row{grid-template-columns:1fr 1fr}.live-tour-multi-row strong{grid-column:1/-1}}
       @media(max-width:640px){
-        .live-tour-page .tour-topbar{grid-template-columns:1fr;gap:6px}.live-tour-page .tour-heading-title h1{font-size:14.5px}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}
-        .live-tour-page .tour-shift-filter{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}.live-tour-page .tour-shift-filter button{min-width:0;padding:7px 4px;font-size:11px}
-        .live-tour-page .tour-heading-actions{width:100%;justify-content:stretch}.live-tour-page .tour-heading-actions button{flex:1}
+        .live-tour-page .tour-topbar{gap:6px}.live-tour-page .tour-heading-title h1{font-size:14.5px}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}
+        .live-tour-page .tour-shift-filter{gap:3px}.live-tour-page .tour-shift-filter button{min-width:44px;padding:7px 6px;font-size:11px}
+        .live-tour-page .tour-heading-actions{justify-content:flex-start;margin-left:0}.live-tour-page .tour-heading-actions button{flex:0 1 auto}
         .live-tour-page .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:31px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:2px;text-align:center}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;line-height:1.05}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:14px}
         .live-tour-page .tour-control-layout{grid-template-columns:1fr;gap:4px}.live-tour-page .tour-room-segment-button{min-height:42px;padding:3px 2px}.live-tour-page .tour-room-segment-button svg{width:12px;height:12px}.live-tour-page .tour-room-segment-button span{font-size:7px}.live-tour-page .tour-room-segment-button small{font-size:6px}
         .live-tour-page .tour-table-panel{padding:5px}.live-tour-page .tour-quick-tools{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin:4px 0}.live-tour-page .tour-employee-search{min-width:0;max-width:none}.live-tour-page .tour-employee-search input{min-width:0;height:29px;padding:5px 5px 5px 27px;font-size:8px}.live-tour-page .tour-employee-search svg{left:8px;width:14px}.live-tour-selection-summary{font-size:8px}.live-tour-select-col{width:24px;min-width:24px}.live-tour-select-col input{width:12px;height:12px}
@@ -1253,8 +1253,17 @@ export default function LiveTourPage({ user }) {
     {/* Keep the sticky rooms inside the roster so they cannot cover the workspace below. */}
     <div className="live-tour-board">
     <div className="tour-board-top">
+      {pendingReminder && <div className="live-tour-payment-reminder">
+        <BellRing size={16} aria-hidden="true"/><strong>CHỜ THANH TOÁN</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>
+        <button type="button" className="secondary-button" onClick={openPendingPanel} aria-controls="live-tour-pending-panel">Mở danh sách</button>
+      </div>}
       <div className="tour-topbar">
         <div className="tour-heading-title"><h1>LIVE TOUR</h1><span className="live-tour-status">TRỰC TIẾP</span></div>
+        <div className="tour-shift-filter" role="group" aria-label="Lọc Live Tour theo ca">
+          <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')} aria-pressed={shiftFilter === 'all'}>Tất cả</button>
+          <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')} aria-pressed={shiftFilter === 'ca1'}>Ca 1</button>
+          <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')} aria-pressed={shiftFilter === 'ca2'}>Ca 2</button>
+        </div>
         <div className="tour-heading-actions">
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
           {canExport && <><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board')}><Download size={16}/> Xuất bảng tua</button><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/> Copy B.Tua</button></>}
@@ -1263,15 +1272,6 @@ export default function LiveTourPage({ user }) {
       </div>
       {error && <div className="error-box">{error}</div>}
       {notice && <div className="setup-note">{notice}</div>}
-      {pendingReminder && <div className="live-tour-payment-reminder">
-        <BellRing size={16} aria-hidden="true"/><strong>CHỜ THANH TOÁN</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>
-        <button type="button" className="secondary-button" onClick={openPendingPanel} aria-controls="live-tour-pending-panel">Mở danh sách</button>
-      </div>}
-      <div className="tour-shift-filter" aria-label="Lọc Live Tour theo ca">
-        <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
-        <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
-        <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
-      </div>
       <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}
       </div>
