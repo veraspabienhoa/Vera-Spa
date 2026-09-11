@@ -174,14 +174,15 @@ export default function App() {
 
   return (
     <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
-      <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
-      <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
-        {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
-        {page === 'schedule' && <WorkSchedulePage user={shellUser} />}
-        {page === 'long-leave' && <>
-          {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
-          <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
-          <LongLeaveSection key={longLeaveRevision} user={shellUser} />
+      {(navigationToggle) => <>
+        <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
+        <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
+          {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
+          {page === 'schedule' && <WorkSchedulePage user={shellUser} />}
+          {page === 'long-leave' && <>
+            {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
+            <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
+            <LongLeaveSection key={longLeaveRevision} user={shellUser} />
         </>}
         {page === 'employees' && <><EmployeePage user={shellUser} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
         {page === 'contract-1' && <ContractPage user={shellUser} />}
@@ -196,13 +197,14 @@ export default function App() {
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
-        {page === 'live-tour' && <LiveTourPage user={shellUser} />}
+        {page === 'live-tour' && <LiveTourPage user={shellUser} navigationToggle={navigationToggle} />}
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
         {page === 'settings' && <SpaManagementPage user={shellUser} mode="settings" />}
         {page === 'auto-check' && <AutoCheckPage user={shellUser} />}
         {page === 'changes' && <AdminChangesPage user={shellUser} />}
         {page === 'storage' && <StorageAdminPage />}
       </Suspense>
+      </>}
     </AppShell>
   )
 }

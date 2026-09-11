@@ -1,7 +1,8 @@
 .live-tour-page .live-tour-controls {
-  --live-tour-control-row-height: 28px;
-  margin: 8px 0;
-  padding: 4px 8px;
+  --live-tour-control-row-height: 14px;
+  margin: 0;
+  padding: 0 3px;
+  border-radius: 5px;
   box-shadow: none;
 }
 
@@ -11,7 +12,7 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  padding: 2px;
+  padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -44,13 +45,13 @@
   margin: 0;
   justify-content: center;
   gap: 4px;
-  padding: 3px 6px;
-  border-radius: 6px;
-  font-size: .75rem;
-  line-height: 1.15;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.1;
   white-space: nowrap;
   text-align: center;
 }
 
-.live-tour-controls-actions > button > svg { flex-shrink: 0; }
-.live-tour-page .live-tour-controls-actions > select { min-width: 76px; font-size: 1rem; }
+.live-tour-controls-actions > button > svg { flex-shrink: 0; width: 10px; height: 10px; }
+.live-tour-page .live-tour-controls-actions > select { min-width: 76px; min-height: 18px; height: 18px; font-size: 1rem; line-height: 1; }

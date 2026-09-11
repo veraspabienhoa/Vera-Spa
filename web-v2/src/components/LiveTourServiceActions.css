@@ -7,12 +7,14 @@
 .live-tour-page .live-tour-service-actions small{font:inherit;opacity:.85}
 .live-tour-page .room-actions{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px}
 .live-tour-page .room-actions button{min-width:0;flex-wrap:wrap;gap:2px;padding:4px 2px;font-size:8px;white-space:normal}
-.live-tour-page .tour-room-booking-button{position:relative;display:grid;align-content:space-between;gap:2px;width:100%;min-width:0;min-height:42px;border:0;padding:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;touch-action:manipulation}
-.live-tour-page .tour-room-grid .tour-room-card.has-private-service{padding-right:4px}
-.live-tour-page .tour-room-grid .tour-room-card.vip.has-private-service{padding-right:2px}
+.live-tour-page .tour-room-booking-button{position:relative;display:grid;align-content:start;gap:0;width:100%;min-width:0;min-height:21px;border:0;padding:0;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer;touch-action:manipulation}
+.live-tour-page .tour-room-grid .tour-room-card.has-private-service{padding-right:2px}
+.live-tour-page .tour-room-grid .tour-room-card.vip.has-private-service{padding-right:0}
 .live-tour-page .tour-room-card.has-private-service .tour-room-booking-button{padding-right:27px}
 .live-tour-page .tour-room-detail .tour-room-detail-row{grid-template-columns:minmax(90px,.55fr) minmax(100px,1fr) auto;align-items:center}
 .live-tour-page .live-tour-actions-col{width:150px;min-width:150px}
 .live-tour-page .tour-room-detail .tour-room-detail-head{flex-wrap:wrap}
 .live-tour-page .tour-room-detail-head .room-actions{margin:0;min-width:155px}
 @media(max-width:640px){.live-tour-page .tour-room-detail .tour-room-detail-row{grid-template-columns:minmax(75px,.55fr) minmax(0,1fr)}.live-tour-page .tour-room-detail-row .live-tour-service-actions{grid-column:1/-1}.live-tour-page .live-tour-actions-col{min-width:136px}.live-tour-page .live-tour-service-actions button{min-height:30px;font-size:9px}.live-tour-page .room-actions button{font-size:8px}}
+.live-tour-page .tour-room-grid .room-actions{gap:2px;margin:0}
+.live-tour-page .tour-room-grid .room-actions button{min-height:14px;flex-wrap:nowrap;gap:2px;padding:0 1px;font-size:7px;line-height:1.1;white-space:nowrap}
