@@ -409,4 +409,65 @@ test('board orders the standard start column across dates, ignoring remaining ti
   } finally { await f.dispose() }
 })
 
+
+
+test('room number search matches the entire room number and all beds, never another room bed suffix', async () => {
+  const { roomOptionMatches } = await import('../src/lib/liveTourRooms.js')
+  const options = ['1.1', '1.2', '1.6', '4', '4.1', '8.4', '10.4', '16.1', '16.2'].map(value => ({ value, label: value }))
+  assert.deepEqual(options.filter(row => roomOptionMatches(row, '1')).map(row => row.value), ['1.1', '1.2', '1.6'])
+  assert.deepEqual(options.filter(row => roomOptionMatches(row, '16')).map(row => row.value), ['16.1', '16.2'])
+  assert.deepEqual(options.filter(row => roomOptionMatches(row, '4')).map(row => row.value), ['4', '4.1'])
+  assert.deepEqual(options.filter(row => roomOptionMatches(row, 'Phòng 1')).map(row => row.value), ['1.1', '1.2', '1.6'])
+  assert.deepEqual(options.filter(row => roomOptionMatches(row, '1.2')).map(row => row.value), ['1.2'])
+})
+
+test('PR hides a whole room only while active, and other services annotate every bed in the room', async () => {
+  const { bookingRoomState } = await import('../src/lib/liveTourRooms.js')
+  const rooms = ['1.1','1.2','16.1','16.2'].map(name => ({ name }))
+  const catalog = [{ id: 'pr', name: '90 PR Tiêu chuẩn' }, { id: 'body', name: 'Body' }]
+  for (const status of ['Đang chờ', 'Đang thực hiện', 'Đang sử dụng']) {
+    const state = bookingRoomState(rooms, [{ id: 'other', room: '1.1', service: catalog[0].name, status }], catalog, 'new', '1.2')
+    assert.deepEqual(state.options.map(row => row.value), ['16.1','16.2'])
+    assert.match(state.error, /Phòng 1 đang bị khóa toàn phòng/)
+  }
+  const workers = [{ id: 'other', room: '1.1', service: 'Body', status: 'Đang chờ' }]
+  const state = bookingRoomState(rooms, workers, catalog, 'new', '1.2')
+  assert.equal(state.error, '')
+  assert.ok(state.options.slice(0, 2).every(row => row.className && row.detail.includes('1.1: Body')))
+  assert.match(bookingRoomState(rooms, workers, catalog, 'new', '1.2', [{ service_id: 'pr' }]).error, /PR cần toàn phòng trống/)
+  assert.match(bookingRoomState(rooms, workers, catalog, 'new', '1.1').error, /đang được sử dụng/)
+  assert.equal(bookingRoomState(rooms, workers, catalog, 'other', '1.1').error, '')
+  assert.equal(bookingRoomState(rooms, [{ ...workers[0], service: catalog[0].name, status: 'Chờ thanh toán' }], catalog, 'new', '1.1').options.length, 4)
+  const custom = [{ name: 'Bed A', area_name: 'Phòng 16' }, { name: 'Bed B', area_name: 'Phòng 16' }]
+  assert.equal(bookingRoomState(custom, [{ id: 'hidden', room: 'Bed A', service: 'Custom', private: true, status: 'Đang chờ' }], catalog, 'new', '').options.length, 0)
+})
+
+test('booking dropdown shows all room results and reports a PR collision immediately on selecting the room', async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.booking = true
+    data.services.push({ id: 'pr', name: '90 PR Tiêu chuẩn', price: 300000 })
+    data.state.employees = [{ id:'e1', name:'An An', shift:'Ca 1', work_status:'Đi làm', service:'', status:'' },
+      { id:'busy', room:'1.1', service:'Body 90', status:'Đang chờ' }]
+    data.state.rooms = ['1.1','1.2','1.3','1.4','1.5','1.6','16.1','16.2','8.4'].map(name => ({name}))
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await chooseOption(inputFor('Dịch vụ'), 'PR', f)
+    const input = inputFor('Phòng / giường *')
+    await act(() => input.focus())
+    assert.equal(document.querySelectorAll('.tour-search-scroll [role=option]').length, 9)
+    await f.type(input, '1')
+    assert.equal(document.querySelectorAll('.tour-search-scroll [role=option]').length, 6)
+    assert.equal(document.querySelectorAll('.tour-room-option-occupied').length, 6)
+    const option = [...document.querySelectorAll('.tour-search-scroll [role=option]')].find(row => row.textContent.startsWith('1.2'))
+    await act(() => option.click())
+    assert.match(document.querySelector('.tour-booking-dialog [role=alert]').textContent, /PR cần toàn phòng trống/)
+    assert.equal(f.writes.length, 0)
+    assert.ok([...document.querySelectorAll('.tour-booking-dialog button[type=submit]')].every(button => button.disabled))
+    await chooseOption(input, '16', f)
+    assert.equal(document.querySelector('.tour-booking-dialog [role=alert]'), null)
+    assert.equal(input.value, '16.1')
+  } finally { await f.dispose() }
+})
+
 test.after(() => dom.window.close())

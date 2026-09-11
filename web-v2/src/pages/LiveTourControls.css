@@ -77,3 +77,6 @@
   .live-tour-page .live-tour-appointment-editor.quick{width:100%}
   .live-tour-page .live-tour-appointment-target{flex-basis:100%}
 }
+
+.live-tour-page .tour-room-grid .tour-room-card.has-standard-service{background:#fff0c2}
+.live-tour-page .tour-room-services{font-size:9px;line-height:1.25;font-weight:700;overflow-wrap:anywhere;white-space:normal;margin-top:2px}
