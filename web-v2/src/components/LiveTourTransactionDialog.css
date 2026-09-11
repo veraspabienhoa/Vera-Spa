@@ -32,12 +32,28 @@
 .tour-transaction-dialog .live-tour-checkout-entry{padding:3px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;font-size:11px}
 .tour-transaction-dialog .live-tour-checkout-entry small{grid-column:1/-1}
 .tour-transaction-dialog .live-tour-checkout-total{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;gap:4px 8px;margin:0;padding-top:4px;font-size:12px}
-.tour-transaction-dialog .live-tour-checkout-total strong{font-size:14px}
+.tour-transaction-dialog .live-tour-checkout-total strong{font-size:18px;font-weight:800}
 .tour-transaction-dialog .live-tour-customer-selected,.tour-transaction-dialog .live-tour-combo-deduction{margin:0;padding:4px 6px;font-size:11px;min-width:0}
 .tour-transaction-dialog .live-tour-customer-selected button{min-height:26px;padding:3px 7px;font-size:11px}
 .tour-transaction-dialog .live-tour-check-field{font-size:11px;gap:5px;min-height:22px}
 .tour-transaction-dialog .tour-tip-cards .tour-page-items-content{display:flex;gap:5px;flex-wrap:wrap}
-.tour-transaction-dialog .tour-tip-cards button{min-height:28px;padding:4px 6px;font-size:11px}
+.tour-transaction-dialog .tour-tip-cards button{min-height:30px;padding:5px 8px;font-size:14px;font-weight:800}
+.tour-transaction-dialog .live-tour-checkout-entry>strong{font-size:16px;font-weight:800}
+.tour-transaction-dialog input[type=number]{font-weight:700}
+.tour-transaction-dialog .tour-checkout-source{display:flex;gap:6px}
+.tour-transaction-dialog .tour-checkout-source button{min-height:30px;padding:5px 10px;font-size:12px}
+.tour-transaction-dialog .tour-checkout-context{padding:5px 8px;background:#edf5ee;border:1px solid #cbdcd1;border-radius:6px}
+.tour-transaction-dialog .tour-checkout-context .tour-page-items-content>div{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.tour-transaction-dialog .tour-booking-datetime{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:5px}
+.tour-transaction-dialog .tour-tip-input{border:1px solid #cbdcd1;border-radius:6px;padding:6px 8px;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:5px 12px}
+.tour-transaction-dialog .tour-tip-input legend{font-size:11px;font-weight:700;padding:0 4px}
+.tour-transaction-dialog .tour-tip-mode{display:flex;align-items:center;justify-content:space-between;gap:5px;grid-column:1;min-height:28px}
+.tour-transaction-dialog .tour-tip-mode label{display:flex;align-items:center;gap:6px;font-size:12px}
+.tour-transaction-dialog .tour-tip-mode button{padding:3px 6px;min-height:26px;font-size:10px;white-space:nowrap}
+.tour-transaction-dialog .tour-tip-mode button[aria-pressed=true]{background:#dcece2;border-color:#93b4a1}
+.tour-transaction-dialog .tour-tip-amount,.tour-transaction-dialog .tour-tip-input>.tour-tip-cards{grid-column:2;grid-row:1/3;align-self:center}
+.tour-transaction-dialog .tour-tip-total{grid-column:2;grid-row:3;text-align:right;font-size:12px}
+.tour-transaction-dialog .tour-tip-total strong{font-size:18px;font-weight:800}
 .tour-transaction-dialog .transaction-customer-options{display:flex;gap:5px;flex-wrap:wrap}
 .tour-transaction-dialog .transaction-customer-options button{min-height:28px;padding:4px 6px;font-size:11px}
 @media(max-width:700px){
@@ -45,4 +61,7 @@
   .tour-transaction-dialog .tour-booking-customer,.tour-transaction-dialog .tour-booking-combo{grid-column:auto}
   .tour-transaction-dialog .live-tour-modal-head>strong{font-size:16px}
   .tour-transaction-dialog .live-tour-checkout-total{grid-template-columns:minmax(0,1fr) auto}
+  .tour-transaction-dialog .tour-booking-datetime{grid-column:1/-1}
+  .tour-transaction-dialog .tour-tip-input{grid-template-columns:1fr}
+  .tour-transaction-dialog .tour-tip-amount,.tour-transaction-dialog .tour-tip-input>.tour-tip-cards,.tour-transaction-dialog .tour-tip-total{grid-column:1;grid-row:auto}
 }

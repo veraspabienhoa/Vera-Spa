@@ -1274,6 +1274,35 @@ def _service_ticket_units(state: dict[str, Any], service_name: Any) -> int:
     return 1
 
 
+def _quick_booking_at(booking, now):
+    if not isinstance(booking, dict) or set(booking) - {"employee_id", "room", "service_items", "booked_at", "correction_reason"}:
+        raise HTTPException(400, "Thông tin nhập thanh toán nhanh không hợp lệ.")
+    raw = booking.get("booked_at")
+    booked = _parse_datetime(raw)
+    if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})", raw) or not booked or not 2000 <= booked.year <= 2100:
+        raise HTTPException(400, "Hãy chọn ngày và giờ booking hợp lệ.")
+    if booked > now.astimezone(VN_TZ):
+        raise HTTPException(400, "Không thể thanh toán booking trong tương lai.")
+    if booked.date() < now.astimezone(VN_TZ).date() and len(str(booking.get("correction_reason") or "").strip()) < 3:
+        raise HTTPException(400, "Nhập booking trước hôm nay cần lý do điều chỉnh.")
+    return booked
+
+
+def _quick_booking_entry(state, booking, now):
+    booked = _quick_booking_at(booking, now)
+    employee = _employee(state, booking.get("employee_id"))
+    if employee.get("hidden") or employee.get("roster_eligible") is False:
+        raise HTTPException(409, "Chọn nhân viên đang có trong danh sách phục vụ.")
+    room = _catalog_item(state, "rooms", booking)
+    if not room or room.get("active") is False:
+        raise HTTPException(400, "Hãy chọn phòng/giường đang sử dụng trong danh mục.")
+    service, duration, price, items = _service_selection(state, booking, booked)
+    return {"employee_id": employee["id"], "employee_name": employee["name"],
+            "room": room["name"], "service": service, "service_items": items,
+            "duration": duration, "price": price, "price_source": "catalog",
+            "booked_at": _iso(booked), "request": ""}
+
+
 def _checkout_mutating(
     state: dict[str, Any], payload: dict[str, Any], actor: str, now: datetime,
     quick: bool, timing: dict[str, Any],
@@ -1288,7 +1317,12 @@ def _checkout_mutating(
     if pending_id and pending is None:
         raise HTTPException(404, "Không tìm thấy khoản chờ thanh toán.")
     employees = [_employee(state, item_id) for item_id in direct_ids]
-    if pending:
+    manual_booking = payload.get("quick_booking") if "quick_booking" in payload else None
+    if "quick_booking" in payload:
+        if not quick or pending_id or direct_ids:
+            raise HTTPException(400, "Không được trộn nhập thanh toán nhanh với hóa đơn hoặc dòng đang chờ thanh toán.")
+        entries = [_quick_booking_entry(state, manual_booking, now)]
+    elif pending:
         entries = deepcopy(list(pending.get("entries") or []))
     else:
         if not employees:
@@ -1297,6 +1331,7 @@ def _checkout_mutating(
             raise HTTPException(409, "Chỉ thanh toán dịch vụ đã Hoàn thành/CHO THANH TOÁN.")
         entries = [{
             "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
+            "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
             "combo_purchase_id": item.get("combo_purchase_id", ""),
             "combo_reserved_units": item.get("combo_reserved_units", 0),
             "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
@@ -1310,6 +1345,8 @@ def _checkout_mutating(
     if not entries:
         raise HTTPException(400, "Không có dịch vụ để thanh toán.")
     timing = _booking_timing(entries, now, pending)
+    if manual_booking:
+        timing["correction_reason"] = str(manual_booking.get("correction_reason") or "").strip()
     for entry in entries:
         entry["price"] = _resolved_service_price(state, entry)
         entry.setdefault("price_source", "catalog_reconciled")
@@ -1417,6 +1454,7 @@ def _checkout_mutating(
         "combo_covered_amount": subtotal if combo_purchase is not None and "component_balances" in combo_purchase else 0,
         "combo_component_debits": deepcopy(debit_plan),
         "entries": entries, "note": str(payload.get("note") or ""), "quick": quick,
+        **({"source": "quick_booking"} if manual_booking else {}),
     }
     state["invoices"].append(invoice)
     if combo_purchase is not None:
@@ -1772,6 +1810,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             "customer_phone": str((customer or {}).get("phone") or canonical_identity.get("customer_phone") or ""),
             "entries": [{
                 "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
+                "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
                 "combo_purchase_id": item.get("combo_purchase_id", ""),
                 "combo_reserved_units": item.get("combo_reserved_units", 0),
                 "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
@@ -3271,6 +3310,14 @@ def install_live_tour_routes(
             require_feature(conn, ident, "live_tour_customers_edit" if action == "customer_upsert" and payload.get("customer_id") else _required_action_feature(action))
             if action in {"booking", "multi_booking"}:
                 require_feature(conn, ident, "live_tour_view")
+            if "quick_booking" in payload:
+                if action != "quick_checkout":
+                    raise HTTPException(400, "Nhập booking trực tiếp chỉ dùng trong Thanh toán nhanh.")
+                require_feature(conn, ident, "live_tour_booking")
+                require_feature(conn, ident, "live_tour_view")
+                booked = _quick_booking_at(payload["quick_booking"], now)
+                if booked.date() < now.astimezone(VN_TZ).date():
+                    require_feature(conn, ident, "live_tour_admin")
             if action in {"booking", "multi_booking", "update_booking"} and (
                 payload.get("start_now") or any(row.get("start_now") for row in (payload.get("bookings") or []) if isinstance(row, dict))
             ):

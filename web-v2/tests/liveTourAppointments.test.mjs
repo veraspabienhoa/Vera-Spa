@@ -21,13 +21,13 @@ const built = await build({
   plugins: [{ name: 'mock-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const veraApi = globalThis.__tourTestApi;', loader: 'js' }))
-    b.onResolve({ filter: /^\.\.\/components\// }, (args) => /LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog)$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
+    b.onResolve({ filter: /^\.\.\/components\// }, (args) => /LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput)$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
     b.onLoad({ filter: /.*/, namespace: 'dialog' }, () => ({ contents: 'export default function Dialog(){return null}', loader: 'js' }))
   } }],
 })
 
-async function fixture({ canEdit = true, conflict = false, payable = false, setup } = {}) {
-  dom.window.localStorage.clear()
+async function fixture({ canEdit = true, conflict = false, payable = false, setup, preserveStorage = false } = {}) {
+  if (!preserveStorage) dom.window.localStorage.clear()
   const records = ['An An', 'An Bình'].map((name, i) => ({ _id: `e${i + 1}`, 'Tên nhân viên': name, 'STT': i + 1,
     'Lịch hẹn': i ? '' : '16:00', 'Vào ca': 'Ca 1', 'Trạng thái': '', 'Dịch vụ': '', 'Phòng': '',
     _tour_groups: ['working', 'available'], _payment_pending: payable && !i }))
@@ -121,7 +121,7 @@ test('cleared board columns still show canonical service and room in quick check
     const picker = document.querySelector('.live-tour-employee-picker input')
     await act(() => picker.focus())
     const option = [...document.querySelectorAll('.tour-search-popup [role=option]')].find((item) => item.textContent.includes('An An'))
-    assert.match(option.textContent, /An An.*Body 90.*1\.1/)
+    assert.match(option.textContent, /An An.*1\.1.*Body 90/)
     await act(async () => option.click())
     assert.match(document.querySelector('.live-tour-employee-picked').textContent, /Body 90/)
   } finally { await f.dispose() }
@@ -249,6 +249,137 @@ test('the mounted payment form refits when the visible viewport changes', async 
     else delete dom.window.visualViewport
     Object.defineProperty(dom.window.HTMLElement.prototype, 'offsetHeight', originalHeight)
   }
+})
+
+
+const inputFor = (label) => {
+  const control = [...document.querySelectorAll('.tour-transaction-dialog label')].find((item) => item.textContent.trim() === label)
+  return control?.htmlFor ? document.getElementById(control.htmlFor) : control?.querySelector('input')
+}
+const clickText = async (text, scope = document) => act(async () => {
+  const button = [...scope.querySelectorAll('button')].find((item) => item.textContent.trim() === text)
+  assert.ok(button, text)
+  button.click()
+})
+const chooseOption = async (input, text, f) => {
+  await act(() => input.focus())
+  await f.type(input, text)
+  const option = [...document.querySelectorAll('.tour-search-popup [role=option]')].find((item) => item.textContent.includes(text))
+  assert.ok(option, text)
+  await act(() => option.click())
+}
+
+test('customer can be found by either field and selecting synchronizes both without stale identity', async () => {
+  const f = await fixture({ payable: true, setup(data) {
+    data.capabilities.customers_view = true
+    data.customers = Array.from({ length: 12 }, (_, i) => ({ id: `c${i}`, name: `Khách ${i}`, phone: `09012345${String(i).padStart(2, '0')}` }))
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await chooseOption(inputFor('Khách hàng'), 'Khách 11', f)
+    assert.equal(inputFor('Điện thoại').value, '0901234511')
+    await act(() => inputFor('Điện thoại').focus())
+    await f.type(inputFor('Điện thoại'), '090 123 4502')
+    assert.equal(inputFor('Khách hàng').value, '')
+    const result = [...document.querySelectorAll('.tour-search-popup [role=option]')].find((item) => item.textContent.includes('Khách 2'))
+    assert.ok(result)
+    await act(() => result.click())
+    assert.equal(inputFor('Khách hàng').value, 'Khách 2')
+    assert.equal(inputFor('Điện thoại').value, '0901234502')
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes[0].payload.customer_id, 'c2')
+    assert.equal(f.writes[0].payload.customer_phone, '0901234502')
+  } finally { await f.dispose() }
+})
+
+test('TIP has two exclusive rows, remembers default and sends only the selected TIP method', async () => {
+  const f = await fixture({ payable: true, setup(data) {
+    data.payment_settings = { auto_print: false, tip_cards: [{ id: 'tip50', name: '50.000 đ', amount: 50000 }] }
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    const tip = () => document.querySelector('.tour-tip-input')
+    assert.equal(tip().querySelectorAll('.tour-tip-mode input[type=checkbox]').length, 2)
+    await act(() => tip().querySelector('button[aria-label="Mặc định: Chọn thẻ tiền TIP"]').click())
+    assert.deepEqual([...tip().querySelectorAll('.tour-tip-mode input')].map((input) => input.checked), [false, true])
+    const card = tip().querySelector('.tour-tip-cards .tour-page-items-content button')
+    assert.equal(card.textContent, '50.000 đ')
+    await act(() => card.click())
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes[0].payload.tip, 0)
+    assert.deepEqual(f.writes[0].payload.tip_card_ids, ['tip50'])
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    assert.equal(tip().querySelectorAll('.tour-tip-mode input')[1].checked, true)
+    await act(() => tip().querySelectorAll('.tour-tip-mode input')[0].click())
+    await f.type(inputFor('Tiền TIP'), '125000')
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes[1].payload.tip, 125000)
+    assert.deepEqual(f.writes[1].payload.tip_card_ids, [])
+  } finally { await f.dispose() }
+})
+
+test('manual quick invoice chooses canonical staff, room, service and booking time without board selection', async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.booking = true
+    data.state.employees = [{ id: 'e1', name: 'An An', shift: 'Ca 1', service: '', status: '' }]
+    data.state.rooms = [{ name: '1.1', active: true }]
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel input[aria-label="Chọn An Bình"]').click())
+    await clickText('Thanh toán nhanh')
+    await clickText('Nhập thanh toán nhanh')
+    await chooseOption(inputFor('Nhân viên'), 'An An', f)
+    await chooseOption(inputFor('Phòng / giường'), '1.1', f)
+    await chooseOption(inputFor('Dịch vụ'), 'Body 90', f)
+    await f.type(inputFor('Giờ booking'), '09:30')
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes.length, 1)
+    const body = f.writes[0], entry = body.payload.quick_booking
+    assert.equal(body.action, 'quick_checkout')
+    assert.equal(entry.employee_id, 'e1')
+    assert.equal(entry.room, '1.1')
+    assert.deepEqual(entry.service_items, [{ service_id: 'body', quantity: 1 }])
+    assert.match(entry.booked_at, /T09:30:00\+07:00$/)
+    assert.equal(body.payload.employee_ids, undefined)
+    assert.equal(body.payload.total, undefined)
+    assert.equal(body.row_ids, undefined)
+  } finally { await f.dispose() }
+})
+
+test('quick checkout searches pending invoice by room and retains the selected invoice source', async () => {
+  const f = await fixture({ payable: true, setup(data) {
+    data.capabilities.pending_view = true; data.capabilities.invoice_view = true
+    data.pending_payments = [{ id: 'p-old', customer_name: '', booked_at: '2026-09-09T13:00:00+07:00',
+      entries: [{ employee_id: 'e1', employee_name: 'An An', room: '3.1', service: 'Body 90', price: 100, price_source: 'catalog', booked_at: '2026-09-09T13:00:00+07:00', started_at: '2026-09-09T13:05:00+07:00' }] }]
+  } })
+  try {
+    await act(() => [...document.querySelectorAll('.tour-records-panel input[type=checkbox]')][0].click())
+    // Open the independent control, not the invoice's own quick button.
+    await act(() => document.querySelector('.live-tour-action-button[data-action="quick_checkout"]')?.click())
+    if (!document.querySelector('.tour-transaction-dialog')) await clickText('Thanh toán nhanh')
+    const picker = document.querySelector('.live-tour-employee-picker input')
+    await chooseOption(picker, '3.1', f)
+    assert.match(document.querySelector('.tour-checkout-context').textContent, /An An.*3\.1/)
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes[0].payload.pending_id, 'p-old')
+    assert.equal(f.writes[0].payload.employee_ids, undefined)
+    assert.equal(f.writes[0].payload.quick_booking, undefined)
+  } finally { await f.dispose() }
+})
+
+test('pending cards display staff-room-service and both booking and execution timestamps', async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.pending_view = true; data.capabilities.invoice_view = true
+    data.pending_payments = [{ id: 'p1', entries: [{ employee_name: 'An An', room: '1.1', service: 'Body 90',
+      booked_at: '2026-09-09T13:00:00+07:00', started_at: '2026-09-09T13:05:00+07:00' }] }]
+  } })
+  try {
+    const card = document.querySelector('#live-tour-pending-panel .live-tour-data-card')
+    assert.match(card.textContent, /An An – 1\.1 – Body 90/)
+    assert.match(card.textContent, /Khách lẻ/)
+    assert.match(card.textContent, /Booking: 13:00 09\/09\/2026 · Thực hiện: 13:05 09\/09\/2026/)
+    assert.ok(!document.querySelector('input[placeholder="Nhập lịch hẹn…"]'))
+  } finally { await f.dispose() }
 })
 
 test.after(() => dom.window.close())
