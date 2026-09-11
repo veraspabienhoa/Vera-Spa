@@ -47,7 +47,7 @@ const addIsoDays = (value, days) => {
 }
 
 const employeeDateAllowed = (recordDate, leaveType, today, policy) => (
-  Boolean(recordDate && today) && recordDate >= addIsoDays(today, employeeNoticeDays(leaveType, policy))
+  Boolean(recordDate && today) && recordDate >= today && recordDate >= addIsoDays(today, employeeNoticeDays(leaveType, policy))
 )
 
 export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
@@ -55,9 +55,12 @@ export function canEditLeaveRecord({ role, allowedByPermission, recordDate, curr
   if (roleKey === 'admin') return true
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
     if (employeeSelfServicePolicy?.enabled !== false) {
-      return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today, employeeSelfServicePolicy)
+      // The server checks both old and new types. A future paid row can
+      // still change to Không phép at the shorter notice boundary.
+      return Boolean(isOwnRecord) && (employeeDateAllowed(recordDate, currentLeaveType, today, employeeSelfServicePolicy)
+        || employeeDateAllowed(recordDate, 'Không phép', today, employeeSelfServicePolicy))
     }
-    return Boolean(isOwnRecord) && Boolean(allowedByPermission)
+    return Boolean(isOwnRecord) && Boolean(allowedByPermission) && Boolean(recordDate && today) && recordDate >= today
   }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
@@ -73,11 +76,24 @@ export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, cu
     if (employeeSelfServicePolicy?.enabled !== false) {
       return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today, employeeSelfServicePolicy)
     }
-    return Boolean(isOwnRecord) && Boolean(allowedByPermission)
+    return Boolean(isOwnRecord) && Boolean(allowedByPermission) && Boolean(recordDate && today) && recordDate >= today
   }
   if (!EDITOR_ROLES.has(roleKey)) return Boolean(allowedByPermission)
   if (!recordDate || recordDate < today) return false
   const letanGroups = letanLeavePolicy?.groups?.map((group) => group.reasons) || LETAN_REASON_GROUPS
   if (recordDate === today && letanLeavePolicy?.enabled !== false && letanReasonGroup(currentReason, letanGroups)) return false
   return Boolean(allowedByPermission)
+}
+
+// Match the API's notice_days(policy, old_row, new_reason) before offering a
+// candidate. Authorization and all catalog rules are still checked on save.
+export function canChangeLeaveReason(context, nextReason) {
+  if (!canEditLeaveRecord(context)) return false
+  const group = letanReasonChoices(context.role, context.recordDate, context.currentReason, context.today, context.letanLeavePolicy)
+  if (group && !group.some((name) => normalizeReason(name) === normalizeReason(nextReason.name))) return false
+  const role = String(context.role || '').trim().toLowerCase()
+  if (!EMPLOYEE_SELF_SERVICE_ROLES.has(role) || context.employeeSelfServicePolicy?.enabled === false) return true
+  const leaveType = [context.currentLeaveType, nextReason.leave_type].some((value) => normalizeReason(value).includes('khong phep'))
+    ? 'Không phép' : nextReason.leave_type
+  return employeeDateAllowed(context.recordDate, leaveType, context.today, context.employeeSelfServicePolicy)
 }
