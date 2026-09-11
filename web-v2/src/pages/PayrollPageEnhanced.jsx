@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import { ArrowRightCircle, CheckCircle2, Download, Mail, Plus, RefreshCw, Save, Search, Settings2, Trash2, Upload, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -219,7 +220,7 @@ export default function PayrollPageEnhanced({ user }) {
   const draftNeedle = normalizeSearch(draftSearch)
   const visibleDraftRows = useMemo(() => {
     if (!draftNeedle) return draftRows
-    return draftRows.filter((row) => normalizeSearch(`${row['Tên Hệ thống']} ${row['Họ và tên']}`).includes(draftNeedle))
+    return draftRows.filter((row) => searchTextMatches([row['Tên Hệ thống'], row['Họ và tên']], draftNeedle))
   }, [draftRows, draftNeedle])
   const isBusy = Boolean(busy)
   const allVisibleSelected = visibleDraftRows.length > 0 && visibleDraftRows.every((row) => selected.includes(row['Tên Hệ thống']))

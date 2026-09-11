@@ -453,7 +453,7 @@ def test_live_tour_checkout_can_link_an_exact_existing_customer_and_load_history
     api = _source(API)
 
     assert "const checkoutCustomerMatches" in source
-    assert "checkoutCustomerNeedles.every" in source
+    assert "return customerMatches({ ...customer, name: itemLabel(customer) }" in source
     assert "customer_id: id, customer_name: itemLabel(customer)" in source
     assert "Đã liên kết đúng mã khách hàng" in source
     assert "const openCustomerHistory" in source

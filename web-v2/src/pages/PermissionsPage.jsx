@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import { RefreshCw, Save, Search, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -92,7 +93,7 @@ export default function PermissionsPage() {
       setBusy(false)
     }
   }
-  const groups = useMemo(() => Object.entries(data?.groups || {}).map(([label, items]) => [label, Object.entries(items).filter(([key, value]) => `${key} ${value}`.toLowerCase().includes(search.toLowerCase()))]).filter(([, items]) => items.length), [data, search])
+  const groups = useMemo(() => Object.entries(data?.groups || {}).map(([label, items]) => [label, Object.entries(items).filter(([key, value]) => searchTextMatches([key, value], search))]).filter(([, items]) => items.length), [data, search])
 
   return <div className="feature-page permissions-page">
     <style>{`

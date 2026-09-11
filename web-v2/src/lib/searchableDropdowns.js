@@ -1,24 +1,25 @@
 // Keep React-owned controls in place. A single floating search menu works for
 // native selects, including controls created later by profile/leave enhancers.
-export const dropdownSearchKey = (value) => String(value ?? '').normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLocaleLowerCase('vi').replace(/\s+/g, ' ').trim()
+import { searchTextMatches, scrollSearchOption } from './searchText.js'
 
-export function dropdownOptions(select, query = '') {
-  const key = dropdownSearchKey(query)
-  return Array.from(select.options).map((option, index) => ({
-    index, value: option.value, label: option.label || option.textContent || '',
+export function dropdownOptions(control, query = '', options = control.options || control.list?.options || []) {
+  return Array.from(options).map((option, index) => ({
+    index, value: option.value, label: option.label || option.textContent || option.value || '',
     group: option.parentElement?.tagName === 'OPTGROUP' ? option.parentElement.label : '',
     disabled: option.disabled || option.parentElement?.disabled,
     hidden: option.hidden || option.parentElement?.hidden,
-  })).filter((row) => !row.hidden && (!key || dropdownSearchKey(`${row.label} ${row.value} ${row.group}`).includes(key)))
+  })).filter((row) => !row.hidden && searchTextMatches([row.label, row.value, row.group], query))
 }
 
 export function startSearchableDropdowns(doc = document) {
   const win = doc.defaultView
   if (win.__veraSearchableDropdownsStop) return win.__veraSearchableDropdownsStop
   let active = null
+  let restoringFocus = false
   const isSelect = (node) => node instanceof win.HTMLSelectElement && !node.multiple && Number(node.size || 0) <= 1
-  const available = (node) => isSelect(node) && node.isConnected && !node.matches(':disabled')
+  const isDatalist = (node) => node instanceof win.HTMLInputElement && Boolean(node.getAttribute('list') || (active?.source === node && active.listId))
+  const available = (node) => (isSelect(node) || isDatalist(node)) && node.isConnected && !node.matches(':disabled') && !node.readOnly
+  const optionsFor = (state, query = '') => dropdownOptions(state.source, query, state.listId ? doc.getElementById(state.listId)?.options || [] : state.source.options)
   const listen = (node, type, handler, options) => {
     node.addEventListener(type, handler, options)
     return () => node.removeEventListener(type, handler, options)
@@ -28,12 +29,17 @@ export function startSearchableDropdowns(doc = document) {
     const state = active
     active = null
     state.observer.disconnect()
+    state.removeInputListener()
     state.menu.remove()
     for (const [key, value] of Object.entries(state.attributes)) {
       if (value === null) state.source.removeAttribute(key)
       else state.source.setAttribute(key, value)
     }
-    if (restoreFocus && available(state.source)) state.source.focus({ preventScroll: true })
+    if (restoreFocus && available(state.source)) {
+      restoringFocus = true
+      state.source.focus({ preventScroll: true })
+      restoringFocus = false
+    }
   }
   const position = () => {
     if (!active) return
@@ -46,15 +52,19 @@ export function startSearchableDropdowns(doc = document) {
     const offsetLeft = view?.offsetLeft || 0
     const roomBelow = offsetTop + height - rect.bottom - 8
     const roomAbove = rect.top - offsetTop - 8
-    const above = roomBelow < 200 && roomAbove > roomBelow
-    const menuHeight = Math.max(96, Math.min(340, above ? roomAbove : roomBelow))
-    const menuWidth = Math.min(Math.max(rect.width, 240), width - 16)
+    // Choose a side once per opening. Filtering cannot flip or move the input.
+    active.above ??= roomBelow < 200 && roomAbove > roomBelow
+    const sideRoom = active.above ? roomAbove : roomBelow
+    const menuHeight = Math.max(0, Math.min(active.listId ? 260 : 340, Math.max(active.listId ? 0 : 96, sideRoom), height - 16))
+    const menuWidth = Math.max(0, Math.min(Math.max(rect.width, 240), width - 16))
+    const preferredTop = active.above ? rect.top - menuHeight - 4 : rect.bottom + 4
+    const top = Math.max(offsetTop + 8, Math.min(preferredTop, offsetTop + height - menuHeight - 8))
     Object.assign(active.menu.style, {
       left: `${Math.max(offsetLeft + 8, Math.min(rect.left, offsetLeft + width - menuWidth - 8))}px`,
-      width: `${menuWidth}px`, maxHeight: `${menuHeight}px`,
-      top: `${above ? Math.max(offsetTop + 8, rect.top - active.menu.offsetHeight - 4) : rect.bottom + 4}px`,
+      width: `${menuWidth}px`, height: `${menuHeight}px`, maxHeight: `${menuHeight}px`, top: `${top}px`,
     })
   }
+
   const highlight = (index) => {
     if (!active) return
     active.index = index
@@ -62,23 +72,23 @@ export function startSearchableDropdowns(doc = document) {
     buttons.forEach((button, i) => button.classList.toggle('highlighted', i === index))
     if (buttons[index]) {
       active.input.setAttribute('aria-activedescendant', buttons[index].id)
-      buttons[index].scrollIntoView?.({ block: 'nearest' })
+      scrollSearchOption(active.list, buttons[index])
     } else active.input.removeAttribute('aria-activedescendant')
   }
   const choose = (row) => {
     if (!active || !row || row.disabled || !available(active.source)) return
     const source = active.source
-    const current = dropdownOptions(source).find((item) => item.index === row.index && item.value === row.value)
+    const current = optionsFor(active).find((item) => item.index === row.index && item.value === row.value)
     if (!current || current.disabled) return
     close(true)
     if (source.value === row.value) return
-    Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype, 'value').set.call(source, row.value)
+    Object.getOwnPropertyDescriptor(isSelect(source) ? win.HTMLSelectElement.prototype : win.HTMLInputElement.prototype, 'value').set.call(source, row.value)
     source.dispatchEvent(new win.Event('input', { bubbles: true }))
     source.dispatchEvent(new win.Event('change', { bubbles: true }))
   }
   const render = () => {
     if (!active) return
-    active.rows = dropdownOptions(active.source, active.input.value)
+    active.rows = optionsFor(active, active.input.value)
     active.list.replaceChildren()
     active.rows.forEach((row, index) => {
       const button = doc.createElement('button')
@@ -100,25 +110,29 @@ export function startSearchableDropdowns(doc = document) {
       active.list.appendChild(empty)
     }
     const selected = active.rows.findIndex((row) => !row.disabled && row.value === active.source.value)
-    highlight(selected >= 0 ? selected : active.rows.findIndex((row) => !row.disabled))
     position()
+    highlight(selected >= 0 ? selected : active.rows.findIndex((row) => !row.disabled))
   }
   const open = (source, query = '') => {
     if (!available(source)) return
-    if (active?.source === source) { active.input.focus(); return }
+    if (active?.source === source) { if (!active.listId) active.input.focus({ preventScroll: true }); return }
     close()
     const menu = doc.createElement('div')
     menu.className = 'vera-searchable-dropdown'
-    const input = doc.createElement('input')
-    input.type = 'search'
-    input.autocomplete = 'off'
-    input.spellcheck = false
-    input.placeholder = 'Gõ để tìm…'
-    input.value = query
+    const listId = isDatalist(source) ? source.getAttribute('list') : null
+    const input = listId ? source : doc.createElement('input')
+    if (!listId) {
+      input.type = 'search'
+      input.autocomplete = 'off'
+      input.spellcheck = false
+      input.placeholder = 'Gõ để tìm…'
+      input.value = query
+    }
     const labelNode = source.labels?.[0]?.cloneNode(true)
     labelNode?.querySelectorAll('select, input, button, textarea').forEach((node) => node.remove())
     const label = source.getAttribute('aria-label') || labelNode?.textContent?.trim() || 'Lựa chọn'
-    input.setAttribute('aria-label', `Tìm kiếm: ${label}`)
+    const attributes = Object.fromEntries(['aria-expanded', 'aria-controls', ...(listId ? ['list', 'role', 'aria-autocomplete', 'aria-activedescendant'] : [])].map((key) => [key, source.getAttribute(key)]))
+    if (!listId) input.setAttribute('aria-label', `Tìm kiếm: ${label}`)
     input.setAttribute('role', 'combobox')
     input.setAttribute('aria-autocomplete', 'list')
     input.setAttribute('aria-expanded', 'true')
@@ -128,36 +142,37 @@ export function startSearchableDropdowns(doc = document) {
     list.className = 'vera-searchable-dropdown-options'
     list.setAttribute('role', 'listbox')
     list.setAttribute('aria-label', label)
-    menu.append(input, list)
+    if (!listId) menu.append(input)
+    menu.append(list)
     // The host is outside React-owned children; never insert proxy siblings in
     // keyed table rows (filtering/removing rows must remain safe).
     ;(source.closest('dialog[open]') || doc.body).appendChild(menu)
-    const attributes = Object.fromEntries(['aria-expanded', 'aria-controls'].map((key) => [key, source.getAttribute(key)]))
     source.setAttribute('aria-expanded', 'true')
     source.setAttribute('aria-controls', list.id)
-    const signature = () => JSON.stringify([source.value, dropdownOptions(source)])
+    if (listId) source.removeAttribute('list')
+    const sourceOptions = () => listId ? doc.getElementById(listId)?.options || [] : source.options
+    const signature = () => JSON.stringify([source.value, dropdownOptions(source, '', sourceOptions())])
     let previous = signature()
     const observer = new win.MutationObserver(() => {
       if (!available(source)) { close(); return }
       const next = signature()
       if (next !== previous) { previous = next; render() }
     })
-    active = { source, menu, input, list, rows: [], index: -1, observer, attributes }
-    input.addEventListener('input', render)
+    active = { source, menu, input, list, listId, rows: [], index: -1, observer, attributes, removeInputListener: listen(input, 'input', render) }
     menu.addEventListener('pointerdown', (event) => { if (event.pointerType !== 'touch' && event.target.closest('button')) event.preventDefault() })
     observer.observe(doc.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'value', 'label', 'selected'] })
     render()
-    input.focus({ preventScroll: true })
+    if (!listId) input.focus({ preventScroll: true })
   }
   const pointerdown = (event) => {
     if (active?.menu.contains(event.target)) return
-    if (available(event.target)) { event.preventDefault(); open(event.target); return }
+    if (available(event.target)) { if (isSelect(event.target)) event.preventDefault(); open(event.target); return }
     close()
   }
   const click = (event) => {
     if (!available(event.target)) return
     // Also handles label activation and assistive-technology clicks.
-    event.preventDefault()
+    if (isSelect(event.target)) event.preventDefault()
     open(event.target)
   }
   const keydown = (event) => {
@@ -176,7 +191,7 @@ export function startSearchableDropdowns(doc = document) {
       }
       return
     }
-    if (!available(event.target) || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
+    if (!isSelect(event.target) || !available(event.target) || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
     const typing = event.key.length === 1 && event.key !== ' '
     if (typing || ['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
       event.preventDefault()
@@ -187,7 +202,10 @@ export function startSearchableDropdowns(doc = document) {
     listen(doc, 'pointerdown', pointerdown, true), listen(doc, 'click', click, true),
     listen(doc, 'keydown', keydown, true), listen(win, 'resize', position),
     listen(doc, 'scroll', position, true),
-    listen(doc, 'focusin', (event) => { if (active && !active.menu.contains(event.target) && event.target !== active.source) close() }),
+    listen(doc, 'focusin', (event) => {
+      if (active && !active.menu.contains(event.target) && event.target !== active.source) close()
+      if (!restoringFocus && isDatalist(event.target) && available(event.target)) open(event.target)
+    }),
     listen(doc, 'change', (event) => { if (event.target === active?.source) render() }),
     listen(doc, 'reset', () => close()),
   ]

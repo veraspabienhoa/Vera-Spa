@@ -1,3 +1,4 @@
+import { searchTextMatches } from '../lib/searchText'
 import { Clock3, Crown, DoorOpen, ExternalLink, LayoutGrid, Link2, RefreshCw, Save, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -334,7 +335,7 @@ export default function TourPage({ user }) {
     const needle = normalizedColumn(employeeSearch)
     if (!needle) return shiftRecords
     const nameColumn = employeeNameColumn(columns)
-    return shiftRecords.filter((record) => normalizedColumn(cellValue(record, nameColumn)).includes(needle))
+    return shiftRecords.filter((record) => searchTextMatches(cellValue(record, nameColumn), needle))
   }, [columns, employeeSearch, shiftRecords])
   const displayedRecords = useMemo(
     () => prioritizeRecords(searchedRecords, columns, activeFilter),
@@ -416,7 +417,7 @@ export default function TourPage({ user }) {
     return new Set(shiftRecords.flatMap((record) => {
       const employee = normalizedColumn(cellValue(record, employeeColumn))
       const key = roomKey(cellValue(record, roomColumn))
-      return employee.includes(needle) && key ? [key] : []
+      return searchTextMatches(employee, needle) && key ? [key] : []
     }))
   }, [employeeColumn, employeeSearch, roomColumn, shiftRecords])
   const statusColumn = findColumn(columns, ['TRANG THAI'])

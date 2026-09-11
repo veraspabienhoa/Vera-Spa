@@ -1,3 +1,4 @@
+import { searchTextMatches } from './searchText.js'
 import { getCurrentSession } from './supabase'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -111,7 +112,7 @@ function renderEmployeeSuggestions(panel, value = '', showAll = false) {
   const needle = searchable(value)
   const matches = (currentPayload.employee_catalog || []).filter((item) => {
     if (showAll && !needle) return true
-    return searchable(`${item.employee_name} ${item.employee_username} ${item.department_label}`).includes(needle)
+    return searchTextMatches([item.employee_name, item.employee_username, item.department_label], needle)
   }).slice(0, 30)
   menu.replaceChildren()
   if (!matches.length) {

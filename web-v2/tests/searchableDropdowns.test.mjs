@@ -133,3 +133,68 @@ test('React receives the new selection and safely removes keyed rows while the m
     for (const [key, descriptor] of Object.entries(before)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
   }
 })
+
+test('An An does not match Vân Anh or duplicate fields, but accents and partial last words work', () => {
+  const f = fixture('<select><option value="aa">An An</option><option value="va">Vân Anh</option><option value="An">An</option><option value="d">Đặng Ánh</option></select>')
+  try {
+    const input = f.open()
+    f.type(input, 'an an')
+    assert.deepEqual([...f.doc.querySelectorAll('[role="option"]')].map((r) => r.textContent), ['An An'])
+    f.type(input, 'dang a')
+    assert.deepEqual([...f.doc.querySelectorAll('[role="option"]')].map((r) => r.textContent), ['Đặng Ánh'])
+  } finally { f.dispose() }
+})
+
+test('filtering keeps popup geometry stable and never scrolls the page', () => {
+  const f = fixture()
+  try {
+    const select = f.doc.querySelector('select')
+    select.getBoundingClientRect = () => ({ top: 610, bottom: 654, left: 10, width: 300 })
+    f.dom.window.HTMLElement.prototype.scrollIntoView = () => { throw Error('Must not scroll page') }
+    const input = f.open()
+    const menu = f.doc.querySelector('.vera-searchable-dropdown')
+    const before = [menu.style.top, menu.style.left, menu.style.height]
+    f.type(input, 'son')
+    assert.deepEqual([menu.style.top, menu.style.left, menu.style.height], before)
+    f.type(input, 'no results')
+    assert.deepEqual([menu.style.top, menu.style.left, menu.style.height], before)
+    assert.equal(f.dom.window.scrollY, 0)
+  } finally { f.dispose() }
+})
+
+test('datalist fields use the same accurate results and preserve free typing', () => {
+  const f = fixture('<label>Nhân viên<input list="names" /></label><datalist id="names"><option value="An An"/><option value="Vân Anh"/></datalist>')
+  try {
+    const input = f.doc.querySelector('input')
+    let changes = 0
+    input.addEventListener('change', () => changes++)
+    input.focus()
+    assert.equal(input.hasAttribute('list'), false)
+    f.type(input, 'an an')
+    assert.deepEqual([...f.doc.querySelectorAll('[role="option"]')].map((r) => r.textContent), ['An An'])
+    assert.equal(changes, 0)
+    f.key(input, 'Enter')
+    assert.equal(input.value, 'An An')
+    assert.equal(input.getAttribute('list'), 'names')
+    assert.equal(f.doc.querySelector('.vera-searchable-dropdown'), null)
+    assert.equal(changes, 1)
+    f.open(input)
+    f.type(input, 'tên mới')
+    f.key(input, 'Escape')
+    assert.equal(input.value, 'tên mới')
+    assert.equal(input.getAttribute('list'), 'names')
+    assert.equal(f.doc.querySelector('.vera-searchable-dropdown'), null)
+  } finally { f.dispose() }
+})
+
+test('customer and invoice search preserve phone formatting without partial-word name matches', async () => {
+  const { customerMatches } = await import('../src/lib/customerSearch.js')
+  const { filterTourRows } = await import('../src/lib/liveTourFilters.js')
+  assert.equal(customerMatches({ name: 'Vân Anh', phone: '0912345678' }, 'an an'), false)
+  assert.equal(customerMatches({ name: 'An', phone: '0912345678' }, 'an an'), false)
+  assert.equal(customerMatches({ name: 'An An', phone: '+84 912 345 678' }, 'an an 0912 345 678'), true)
+  assert.equal(customerMatches({ name: 'An An', phone: '0912345678' }, '345 678'), true)
+  const rows = ['An An', 'Vân Anh'].map((name) => ({ entries: [{ employee_name: name, service: 'Body 90 phút' }] }))
+  assert.equal(filterTourRows(rows, { employee: 'An An' }).length, 1)
+  assert.equal(filterTourRows(rows, { employee: 'an an', service: 'body 90' }).length, 1)
+})
