@@ -262,6 +262,8 @@ const clickText = async (text, scope = document) => act(async () => {
   button.click()
 })
 const chooseOption = async (input, text, f) => {
+  // Wait for the dialog's first-frame focus before simulating user input.
+  await act(() => new Promise((resolve) => window.requestAnimationFrame(resolve)))
   await act(() => input.focus())
   await f.type(input, text)
   const option = [...document.querySelectorAll('.tour-search-popup [role=option]')].find((item) => item.textContent.includes(text))
@@ -379,6 +381,31 @@ test('pending cards display staff-room-service and both booking and execution ti
     assert.match(card.textContent, /Khách lẻ/)
     assert.match(card.textContent, /Booking: 13:00 09\/09\/2026 · Thực hiện: 13:05 09\/09\/2026/)
     assert.ok(!document.querySelector('input[placeholder="Nhập lịch hẹn…"]'))
+  } finally { await f.dispose() }
+})
+
+test('board orders the standard start column across dates, ignoring remaining time and keeping leave last', async () => {
+  const f = await fixture({ setup(data) {
+    data.columns.push('TG bắt đầu thực hiện', 'TG CÒN LẠI', 'TG bắt đầu thực hiện YC')
+    const template = data.records[0]
+    data.records = [
+      ['late', 'Mới bắt đầu', '01/10/2026 09:00:00', 1, ['doing']],
+      ['leave', 'Nghỉ phép hôm nay', '01/08/2026 09:00:00', '', ['leave']],
+      ['early', 'Bắt đầu trước', '30/09/2026 22:00:00', 120, ['doing']],
+      ['paid', 'Đã thanh toán', '01/10/2026 08:00:00', '', ['working', 'available']],
+      ['blank', 'Chưa thực hiện', '', '', ['working', 'available']],
+    ].map(([id, name, start, remaining, groups], index) => ({ ...template, _id: id, STT: index + 1,
+      'Tên nhân viên': name, 'TG bắt đầu thực hiện': start, 'TG CÒN LẠI': remaining,
+      'TG bắt đầu thực hiện YC': '01/01/2026 00:00:00', _tour_groups: groups }))
+  } })
+  try {
+    const names = () => [...document.querySelectorAll('.tour-records-panel tbody .tour-col-employee')].map((cell) => cell.textContent.trim())
+    assert.deepEqual(names(), ['Chưa thực hiện', 'Bắt đầu trước', 'Đã thanh toán', 'Mới bắt đầu', 'Nghỉ phép hôm nay'])
+    const leave = [...document.querySelectorAll('button.tour-metric-card')].find((button) => button.textContent.includes('Nghỉ phép'))
+    assert.ok(leave)
+    await act(() => leave.click())
+    assert.deepEqual(names(), ['Chưa thực hiện', 'Bắt đầu trước', 'Đã thanh toán', 'Mới bắt đầu', 'Nghỉ phép hôm nay'])
+    assert.deepEqual([...document.querySelectorAll('.tour-records-panel tbody .tour-col-stt')].map((cell) => cell.textContent), ['1', '2', '3', '4', '5'])
   } finally { await f.dispose() }
 })
 

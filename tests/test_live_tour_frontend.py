@@ -507,22 +507,28 @@ def test_live_tour_quick_checkout_is_independent_and_uses_stable_employee_ids():
     assert "customer_id: source.customer_id || ''" in source
     assert "phone: source.customer_phone || ''" in source
 
-def test_remaining_order_is_global_and_leave_stays_last_even_when_prioritized():
+def test_start_order_is_global_and_leave_stays_last_even_when_prioritized():
     source = _source(LIVE_TOUR)
     helper = source[source.index('function prioritizeRecords'):source.index('function shiftBucket')]
-    script = """
-const findColumn = columns => columns[0];
+    uri = (LIVE_TOUR.parent.parent / 'lib' / 'liveTourOrder.js').as_uri()
+    script = "const { tourStartOrder } = await import(" + json.dumps(uri) + ");\n" + """
+const findColumn = (columns, names) => columns.find(column => names.includes(column));
 const cellValue = (record, column) => String(record[column] ?? '').trim();
 const hasGroup = (record, key) => (record._tour_groups || []).includes(key);
 """ + helper + """
 const records = [
- {id:'long', time:30}, {id:'leave', time:'', _tour_groups:['leave']},
- {id:'short', time:5}, {id:'blank', time:''}, {id:'late', time:-2},
- {id:'tie', time:5}
+ {id:'late', start:'01/10/2026 09:00:00', remaining:1},
+ {id:'leave', start:'01/01/2026 09:00:00', _tour_groups:['leave']},
+ {id:'early', start:'30/09/2026 22:00:00', remaining:120},
+ {id:'blank', start:'', remaining:2},
+ {id:'middle', start:'01/10/2026 08:00:00', remaining:''},
+ {id:'tie', start:'30/09/2026 22:00:00', remaining:5},
+ {id:'invalid', start:'not a date', remaining:-5},
 ];
-console.log(JSON.stringify(['all','leave','doing'].map(filter =>
- prioritizeRecords(records, ['time'], filter).map(row => row.id))));
+const rows = records.map(row => ({...row, 'TG BAT DAU THUC HIEN':row.start, 'TG CON LAI':row.remaining}));
+console.log(JSON.stringify(['all','leave','doing','available'].map(filter =>
+ prioritizeRecords(rows, ['TG CON LAI','TG BAT DAU THUC HIEN'], filter).map(row => row.id))));
 """
-    result = subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
-    assert json.loads(result.stdout) == [['blank', 'late', 'short', 'tie', 'long', 'leave']] * 3
+    result = subprocess.run(['node', '--input-type=module', '-e', script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == [['blank', 'early', 'tie', 'middle', 'late', 'invalid', 'leave']] * 4
     assert 'column === sttColumn(columns) ? index + 1' in source

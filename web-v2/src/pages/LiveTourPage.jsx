@@ -1,4 +1,5 @@
 import { searchTextMatches } from '../lib/searchText'
+import { tourStartOrder } from '../lib/liveTourOrder'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
@@ -194,19 +195,13 @@ function groupCount(records, key) {
 
 function prioritizeRecords(records, columns, activeFilter) {
   const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
-  const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
-  const remainingOrder = (record) => {
-    const raw = cellValue(record, remainingColumn)
-    if (raw === '') return [0, 0]
-    const value = Number(raw.replace(',', '.'))
-    return Number.isFinite(value) ? [1, value] : [2, 0]
-  }
+  const startedColumn = findColumn(columns, ['TG BAT DAU THUC HIEN', 'BAT DAU THUC HIEN'])
   return records.map((record, index) => ({ record, index })).sort((left, right) => {
     const leftLeave = hasGroup(left.record, 'leave')
     const rightLeave = hasGroup(right.record, 'leave')
     if (leftLeave !== rightLeave) return leftLeave ? 1 : -1
-    const [leftRank, leftTime] = remainingOrder(left.record)
-    const [rightRank, rightTime] = remainingOrder(right.record)
+    const [leftRank, leftTime] = tourStartOrder(cellValue(left.record, startedColumn))
+    const [rightRank, rightTime] = tourStartOrder(cellValue(right.record, startedColumn))
     if (leftRank !== rightRank) return leftRank - rightRank
     if (leftTime !== rightTime) return leftTime - rightTime
     const leftMatches = hasGroup(left.record, priorityGroup)
@@ -1353,7 +1348,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </div>
       {data.countdown_error && <div className="warning-box">Countdown Live Tour: {data.countdown_error}</div>}
       <div className="tour-control-layout">
-        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Xếp theo TG còn lại' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong khi cùng TG còn lại' : `Ưu tiên ${label} khi cùng TG còn lại`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
+        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Xếp theo TG bắt đầu thực hiện từ sớm đến muộn' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong khi cùng TG bắt đầu thực hiện' : `Ưu tiên ${label} khi cùng TG bắt đầu thực hiện`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
       </div>
       <section className="panel tour-table-panel tour-room-table-panel">
         <div className={`tour-room-panel ${roomSegment}`}>
