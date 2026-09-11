@@ -295,6 +295,21 @@ def _prepare_tour(columns: list[str], source_records: list[dict[str, Any]], now:
     else:
         ordered_columns = moved + ordered_columns
 
+    service_column = _find_column(columns, "Dịch vụ")
+    if service_column:
+        attendance_columns = [column for column in (
+            work_column, shift_column,
+            _find_column_any(columns, ("Breaktime", "Break")),
+            _find_column_any(columns, ("TG nghỉ còn lại", "Thời gian nghỉ còn lại", "Thời gian")),
+            _find_column(columns, "Giờ ra"),
+            _find_column(columns, "Giờ vào"),
+            _find_column(columns, "Ghi chú"),
+        ) if column in ordered_columns and column != service_column]
+        attendance_columns = list(dict.fromkeys(attendance_columns))
+        ordered_columns = [column for column in ordered_columns if column not in attendance_columns]
+        position = ordered_columns.index(service_column) + 1
+        ordered_columns[position:position] = attendance_columns
+
     prepared: list[dict[str, Any]] = []
     counters = {"doing": 0, "waiting": 0, "finishing": 0, "idle": 0, "break": 0, "working": 0, "leave": 0}
     countdown_error = "" if duration_column else "Không tìm thấy cột Thời lượng."

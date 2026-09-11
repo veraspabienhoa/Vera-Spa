@@ -72,10 +72,10 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
-    "Lịch hẹn", "Dịch vụ", "Thời lượng", "TG bắt đầu thực hiện",
+    "Lịch hẹn", "Dịch vụ", "Đi làm", "Vào ca", "Breaktime", "TG nghỉ còn lại",
+    "Giờ ra", "Giờ vào", "Ghi chú", "Thời lượng", "TG bắt đầu thực hiện",
     "TG bắt đầu thực hiện YC", "TT thanh toán", "Kết quả hoàn thành", "SL tua", "SL yêu cầu",
-    "Tổng SL", "Đi làm", "Vào ca", "Breaktime", "TG nghỉ còn lại", "Giờ ra", "Giờ vào",
-    "Ghi chú", "VIP", "Giờ Booking", "TG khách chờ", "TG Xông Hơi",
+    "Tổng SL", "VIP", "Giờ Booking", "TG khách chờ", "TG Xông Hơi",
 ]
 
 DEFAULT_ROOM_BEDS = [
