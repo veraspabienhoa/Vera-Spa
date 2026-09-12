@@ -2,7 +2,7 @@ import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { customerMatches } from '../lib/customerSearch'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
-import { ArrowDown, ArrowUp, Download, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
+import { Download, GripVertical, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { catalogPayload, newCatalogForm } from '../lib/serviceCatalog'
@@ -64,6 +64,9 @@ export default function SpaManagementPage({ user, mode }) {
   const [form, setForm] = useState({})
   const requests = useRef(new Map())
   const running = useRef(false)
+  const pointerDrag = useRef(null)
+  const [draggingKey, setDraggingKey] = useState('')
+  const [dragOverKey, setDragOverKey] = useState('')
   const read = useCallback(() => customersPage ? veraApi.spaCustomers() : veraApi.spaSettings(), [customersPage])
 
   useEffect(() => {
@@ -158,20 +161,60 @@ export default function SpaManagementPage({ user, mode }) {
   const addKind = customersPage ? 'customer' : tab === 'services' ? 'choose-service' : 'area'
   const editTitle = editor?.kind === 'choose-service' ? 'Chọn loại dịch vụ' : editor?.kind === 'history' ? `Lịch sử · ${editor.value.customer.name}` : `${editor?.existing ? 'Sửa' : 'Thêm'} ${editor?.kind === 'customer' ? 'khách hàng' : editor?.kind === 'area' ? 'khu vực dịch vụ' : editor?.kind === 'combo' ? 'dịch vụ combo' : 'dịch vụ đơn lẻ'}`
   const rowKey = (item) => tab === 'services' ? `${item.catalog_kind}:${item.id}` : String(item.id)
-  const moveItem = (item, offset) => {
-    const visibleIndex = filtered.findIndex((row) => rowKey(row) === rowKey(item))
-    const neighbor = filtered[visibleIndex + offset]
-    if (!neighbor) return
+  const saveOrder = (sourceKey, targetKey) => {
+    if (!sourceKey || !targetKey || sourceKey === targetKey) return
     const allRows = tab === 'services' ? catalogItems : (data?.service_areas || [])
     const orderedIds = allRows.map(rowKey)
-    const from = orderedIds.indexOf(rowKey(item))
-    const to = orderedIds.indexOf(rowKey(neighbor))
-    ;[orderedIds[from], orderedIds[to]] = [orderedIds[to], orderedIds[from]]
+    const from = orderedIds.indexOf(sourceKey)
+    const target = orderedIds.indexOf(targetKey)
+    if (from < 0 || target < 0) return
+    const [moved] = orderedIds.splice(from, 1)
+    const targetAfterRemoval = orderedIds.indexOf(targetKey)
+    orderedIds.splice(from < target ? targetAfterRemoval + 1 : targetAfterRemoval, 0, moved)
     void mutate('settings_reorder', { scope: tab === 'services' ? 'catalog' : 'service_areas', ordered_ids: orderedIds })
   }
-  const moveDisabled = (item, offset) => {
+  const finishDrag = (sourceKey, targetKey) => {
+    setDraggingKey(''); setDragOverKey(''); pointerDrag.current = null
+    saveOrder(sourceKey, targetKey)
+  }
+  const dragProps = (item, baseClass = '') => {
+    const key = rowKey(item)
+    return {
+      draggable: !busy,
+      'data-sort-key': key,
+      className: `${baseClass} ${draggingKey === key ? 'spa-sort-dragging' : ''} ${dragOverKey === key && draggingKey !== key ? 'spa-sort-over' : ''}`.trim(),
+      onDragStart: (event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', key); setDraggingKey(key) },
+      onDragOver: (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverKey(key) },
+      onDrop: (event) => { event.preventDefault(); finishDrag(event.dataTransfer.getData('text/plain') || draggingKey, key) },
+      onDragEnd: () => { setDraggingKey(''); setDragOverKey('') },
+    }
+  }
+  const handlePointerDown = (event, item) => {
+    if (busy || event.pointerType === 'mouse') return
+    event.preventDefault()
+    pointerDrag.current = { pointerId: event.pointerId, sourceKey: rowKey(item), targetKey: rowKey(item) }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDraggingKey(rowKey(item))
+  }
+  const handlePointerMove = (event) => {
+    const active = pointerDrag.current
+    if (!active || active.pointerId !== event.pointerId) return
+    event.preventDefault()
+    const targetKey = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-sort-key]')?.dataset.sortKey
+    if (targetKey) { active.targetKey = targetKey; setDragOverKey(targetKey) }
+  }
+  const handlePointerUp = (event) => {
+    const active = pointerDrag.current
+    if (!active || active.pointerId !== event.pointerId) return
+    finishDrag(active.sourceKey, active.targetKey)
+  }
+  const cancelPointerDrag = () => { pointerDrag.current = null; setDraggingKey(''); setDragOverKey('') }
+  const handleSortKey = (event, item) => {
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return
+    event.preventDefault()
     const index = filtered.findIndex((row) => rowKey(row) === rowKey(item))
-    return busy || index < 0 || index + offset < 0 || index + offset >= filtered.length
+    const neighbor = filtered[index + (event.key === 'ArrowUp' ? -1 : 1)]
+    if (neighbor) saveOrder(rowKey(item), rowKey(neighbor))
   }
 
   if (!allowed) return <div className="error-box" role="alert">Tài khoản chưa được cấp quyền mở {title}.</div>
@@ -189,14 +232,15 @@ export default function SpaManagementPage({ user, mode }) {
       {customersPage ? <div className="responsive-data-table"><table><thead><tr><th>Khách hàng</th><th>Điện thoại</th><th>Combo còn lại</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id}><td><strong>{item.name || 'Chưa có tên'}</strong></td><td>{item.phone || '—'}</td><td>{(item.combo_purchases || []).reduce((sum, purchase) => sum + Number(purchase.remaining || 0), 0)} vé</td><td><div className="spa-actions"><button className="secondary-button" disabled={busy || !canEditCustomer} onClick={() => { setError(''); setCustomerContext({ customer: item, mode: 'edit', revision: data.revision }) }}>Sửa</button>{canCustomer('customers_delete') && <button className="secondary-button danger-button" disabled={busy} onClick={() => { setError(''); setCustomerContext({ customer: item, mode: 'delete', revision: data.revision }) }}>Xóa</button>}
       {(item.combo_purchases || []).map(purchase => <span key={purchase.id}>{purchase.combo_name} · {purchase.remaining} vé {canCustomer('customer_combo_edit') && <button className="text-button" disabled={busy} onClick={() => { setError(''); setCustomerContext({ customer: item, purchase, mode: 'edit', revision: data.revision }) }}>Sửa combo</button>}{canCustomer('customer_combo_delete') && <button className="text-button" disabled={busy} onClick={() => { setError(''); setCustomerContext({ customer: item, purchase, mode: 'delete', revision: data.revision }) }}>Xóa combo</button>}</span>)}
       <button className="secondary-button" disabled={busy} onClick={() => history(item)}><History size={14}/> Lịch sử</button></div></td></tr>)}</tbody></table></div>
-        : tab === 'services' ? <div className="responsive-data-table"><table><thead><tr><th>Dịch vụ / nhóm</th><th>Loại dịch vụ</th><th>Thời lượng / thành phần</th><th>Giá</th><th>Số lượt</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={`${item.catalog_kind}:${item.id}`}>
+        : tab === 'services' ? <div className="responsive-data-table"><table><thead><tr><th aria-label="Sắp xếp"></th><th>Dịch vụ / nhóm</th><th>Loại dịch vụ</th><th>Thời lượng / thành phần</th><th>Giá</th><th>Số lượt</th><th>Thao tác</th></tr></thead><tbody>{filtered.map((item) => <tr key={`${item.catalog_kind}:${item.id}`} {...dragProps(item)}>
+          <td><span className="spa-drag-handle" role="button" tabIndex={busy ? -1 : 0} aria-label={`Kéo để sắp xếp ${item.name}`} title="Giữ và kéo để thay đổi vị trí" onKeyDown={(event) => handleSortKey(event, item)} onPointerDown={(event) => handlePointerDown(event, item)} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={cancelPointerDrag}><GripVertical size={19}/></span></td>
           <td><strong>{item.name}</strong>{item.private && <span className="spa-badge">PR</span>}<small>{item.group || 'Chưa phân nhóm'}</small>{item.active === false && <small>Ngừng sử dụng</small>}{item.expires_on && item.unlimited === false && <small>Hết hạn: {item.expires_on.split('-').reverse().join('/')}</small>}</td>
           <td><span className="spa-badge">{item.catalog_kind === 'combo' ? 'Combo' : 'Đơn lẻ'}</span></td>
           <td>{item.catalog_kind === 'combo' ? item.components?.length ? <ul className="spa-component-summary">{item.components.map((part) => <li key={part.service_id}>{services.find((service) => service.id === part.service_id)?.name || part.service_name} × {part.quantity} lượt</li>)}</ul> : 'Combo vé hiện có' : item.duration == null ? 'Không giới hạn' : `${item.duration} phút`}</td>
           <td>{money(item.price)}</td><td>{item.catalog_kind === 'combo' ? item.tickets : item.sessions ?? 1}</td>
-          <td><div className="spa-actions"><button className="secondary-button" disabled={moveDisabled(item, -1)} onClick={() => moveItem(item, -1)}><ArrowUp size={14}/> Lên</button><button className="secondary-button" disabled={moveDisabled(item, 1)} onClick={() => moveItem(item, 1)}><ArrowDown size={14}/> Xuống</button><button className="secondary-button" disabled={busy} onClick={() => openEditor(item.catalog_kind, item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove(item.catalog_kind, item)}><Trash2 size={14}/> Xóa</button></div></td>
+          <td><div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor(item.catalog_kind, item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove(item.catalog_kind, item)}><Trash2 size={14}/> Xóa</button></div></td>
         </tr>)}</tbody></table></div>
-          : <div className="spa-card-grid spa-settings-list">{filtered.map((item) => <article className="spa-card" key={item.id}><div className="spa-card-heading"><h3>{item.name}</h3><span className="spa-badge">{areaLabels[item.kind]}</span></div>{item.kind === 'room' ? <><p>{item.beds.length} giường</p><ul className="spa-bed-list">{item.beds.map((bed) => <li key={bed.id}>{bed.name}{bed.active === false ? ' · Ngừng sử dụng' : ''}</li>)}</ul></> : <p>Vị trí phục vụ độc lập</p>}<div className="spa-actions"><button className="secondary-button" disabled={moveDisabled(item, -1)} onClick={() => moveItem(item, -1)}><ArrowUp size={14}/> Lên</button><button className="secondary-button" disabled={moveDisabled(item, 1)} onClick={() => moveItem(item, 1)}><ArrowDown size={14}/> Xuống</button><button className="secondary-button" disabled={busy} onClick={() => openEditor('area', item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove('area', item)}><Trash2 size={14}/> Xóa</button></div></article>)}</div>}
+          : <div className="spa-card-grid spa-settings-list">{filtered.map((item) => <article key={item.id} {...dragProps(item, 'spa-card')}><div className="spa-card-heading"><span className="spa-drag-handle" role="button" tabIndex={busy ? -1 : 0} aria-label={`Kéo để sắp xếp ${item.name}`} title="Giữ và kéo để thay đổi vị trí" onKeyDown={(event) => handleSortKey(event, item)} onPointerDown={(event) => handlePointerDown(event, item)} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={cancelPointerDrag}><GripVertical size={19}/></span><h3>{item.name}</h3><span className="spa-badge">{areaLabels[item.kind]}</span></div>{item.kind === 'room' ? <><p>{item.beds.length} giường</p><ul className="spa-bed-list">{item.beds.map((bed) => <li key={bed.id}>{bed.name}{bed.active === false ? ' · Ngừng sử dụng' : ''}</li>)}</ul></> : <p>Vị trí phục vụ độc lập</p>}<div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor('area', item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove('area', item)}><Trash2 size={14}/> Xóa</button></div></article>)}</div>}
     </section>
     {customerContext && <LiveTourCustomerDialog context={customerContext} busy={busy} error={error} onAction={mutate} onClose={() => setCustomerContext(null)}/>}
     {editor && <Editor title={editTitle} onClose={() => { setEditor(null); setError('') }} busy={busy}>

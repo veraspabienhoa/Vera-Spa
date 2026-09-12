@@ -20,7 +20,10 @@
 .spa-card{border:1px solid #dce6df; border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:10px; min-width:0}
 .spa-card h3,.spa-card p{margin:0}
 .spa-card-heading{display:flex; align-items:center; justify-content:space-between; gap:8px}
-.spa-card-heading h3{overflow-wrap:anywhere}
+.spa-card-heading h3{flex:1;overflow-wrap:anywhere}
+.spa-drag-handle{width:34px;height:34px;flex:0 0 34px;display:inline-grid;place-items:center;border:1px solid #cadbd2;border-radius:9px;color:#315f4d;background:#f4f8f5;cursor:grab;touch-action:none;user-select:none}
+.spa-drag-handle:active{cursor:grabbing}.spa-drag-handle:focus-visible{outline:2px solid #315f4d;outline-offset:2px}
+.spa-management .spa-sort-dragging{opacity:.45}.spa-management .spa-sort-over{outline:2px solid #2d7158;outline-offset:-2px;background:#edf6f1}
 .spa-badge{display:inline-block; padding:4px 8px; margin-left:6px; font-size:11px; font-weight:800; border-radius:20px; background:#e7f0e9; color:#285441; white-space:nowrap}
 .spa-bed-list{list-style:none; display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; padding:0}
 .spa-bed-list li{background:#f3f6f4; padding:6px 9px; border-radius:7px; font-size:13px}
