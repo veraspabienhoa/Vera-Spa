@@ -119,6 +119,7 @@
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-card-head>strong{font-size:min(18px,11cqw)}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-type{font-size:min(9px,5cqw);padding:1px 2px}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown{font-size:min(27px,16cqw);gap:2px;white-space:normal;overflow-wrap:anywhere}
+.live-tour-page .tour-room-countdown .tour-room-countdown-label{font-size:66.666667%}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown svg{width:min(33px,16cqw);height:min(33px,16cqw)}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-customer-count{font-size:min(13px,9cqw);overflow-wrap:anywhere}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-staff{overflow-wrap:anywhere}

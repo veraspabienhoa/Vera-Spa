@@ -1442,6 +1442,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               const record = pickRoomRecord(records, remainingColumn)
               const available = availableRoomKeys.has(key)
               const occupied = occupiedRoomKeys.has(key)
+              const countdown = roomCountdown(record, remainingColumn, clockMs, available, occupied)
               const hasPrivateService = records.some((item) => item._private_service || isPrivateService(cellValue(item, serviceColumn)))
               return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : records.length ? 'has-standard-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
                 <button type="button" className="tour-room-booking-button"
@@ -1450,7 +1451,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
                   title="Bấm một lần để xem nhân viên; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div className="tour-room-card-head"><strong>{areaLabel(room)}</strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-customer-count">{records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</div>
-                <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
+                <div className="tour-room-countdown"><Clock3 size={16}/><span className={['Đang trống', 'Đã hết giờ'].includes(countdown) ? 'tour-room-countdown-label' : undefined}>{countdown}</span></div>
                 {records.length ? <div className="tour-room-staff">{records.map((item, index) => <div key={recordId(item, index)}>{cellValue(item, employeeColumn)}</div>)}</div> : <div className="tour-room-meta">{available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên'}</div>}
                 {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
                 </button>
