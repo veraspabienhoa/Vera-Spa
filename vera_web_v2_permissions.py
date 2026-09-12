@@ -28,6 +28,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
     "Live Tour": {
         "live_tour_view": "Xem Live Tour",
         "live_tour_operate": "Xếp tua và vận hành",
+        "live_tour_reorder": "Thay đổi thứ tự nhân viên / STT toàn bảng",
         "live_tour_booking": "Đặt booking (cần quyền Xem Live Tour)",
         "live_tour_payment": "Thanh toán, tạo khách hàng và bán combo",
         "live_tour_invoice_view": "Xem hóa đơn chờ thanh toán",
@@ -121,7 +122,7 @@ FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in gr
 
 FRONTDESK = {
     "tour", "tour_refresh", "tour_leave_sync", "leave", "leave_manage", "leave_create", "leave_export", "leave_email", "leave_detail_edit", "leave_detail_delete",
-    "live_tour_view", "live_tour_operate", "live_tour_payment", "live_tour_export",
+    "live_tour_view", "live_tour_operate", "live_tour_reorder", "live_tour_payment", "live_tour_export",
     "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete",
     "long_leave", "long_leave_stats", "staff_list", "staff_export", "staff_import", "employee_add",
     "employee_add_save", "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",

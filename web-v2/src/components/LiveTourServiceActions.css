@@ -23,3 +23,17 @@
 .live-tour-page .tour-room-detail-person>.text-button{min-width:0;max-width:160px}
 .live-tour-page .tour-room-detail-person .live-tour-service-actions{flex-shrink:0}
 .live-tour-page .tour-room-detail-head>small{margin-left:12px;flex:1}
+
+/* Equal spacing for the room title, clock and occupancy; room rows grow together. */
+.live-tour-page .tour-room-grid .tour-room-card{display:flex;flex-direction:column;gap:4px;height:auto}
+.live-tour-page .tour-room-grid .tour-room-booking-button{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;align-items:stretch;gap:5px;padding:6px 5px;min-height:76px}
+.live-tour-page .tour-room-grid .tour-room-card-head{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0}
+.live-tour-page .tour-room-grid .tour-room-card-head strong{min-width:0;line-height:1.2;overflow-wrap:anywhere}
+.live-tour-page .tour-room-grid .tour-room-countdown{display:flex;align-items:center;gap:4px;line-height:1.2;margin:0}
+.live-tour-page .tour-room-grid .tour-room-meta{line-height:1.35;white-space:normal;overflow-wrap:anywhere;margin:0}
+.live-tour-page .tour-room-grid .tour-room-services{display:grid;gap:3px;margin:0;line-height:1.35}
+.live-tour-page .tour-room-grid .tour-room-services>div{padding-top:3px;border-top:1px solid #00000012}
+.live-tour-page .tour-room-grid .room-actions{margin-top:0;flex-shrink:0}
+@media(max-width:640px){.live-tour-page .tour-room-grid .tour-room-booking-button{gap:4px;padding:4px;min-height:68px}}
+.live-tour-page .tour-room-grid .tour-room-card-head{flex-wrap:wrap}
+.live-tour-page .tour-room-grid .tour-room-type{position:static;flex:0 0 auto;margin-left:auto;max-width:100%}

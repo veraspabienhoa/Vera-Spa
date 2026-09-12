@@ -348,11 +348,11 @@ def test_admin_direct_stt_and_cancel_waiting_booking_release_reservations():
     with pytest.raises(HTTPException):
         act(state, 'cancel_booking', {'employee_ids':['e2','e1']})
     assert state == before
-    assert live._required_action_feature('admin_reorder') == 'live_tour_admin'
+    assert live._required_action_feature('admin_reorder') == 'live_tour_reorder'
 
 
-def test_admin_reorder_rejects_non_admin_even_with_feature_grants(monkeypatch):
+def test_full_board_reorder_accepts_non_admin_with_feature_grant(monkeypatch):
     client, shared = api_client(monkeypatch)
     result = client.post('/v2/live-tour/action', json={'action':'admin_reorder','expected_revision':1,'idempotency_key':'admin-order-test','payload':{'employee_id':'e1','direction':'bottom'}})
-    assert result.status_code == 403
-    assert shared['revision'] == 1
+    assert result.status_code == 200
+    assert shared['revision'] == 2

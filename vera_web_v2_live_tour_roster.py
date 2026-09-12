@@ -1,11 +1,17 @@
 """Reconcile the persisted tour with the server employee directory without clearing work."""
 from copy import deepcopy
 import unicodedata
+import re
 
 
 def key(value):
     value = unicodedata.normalize('NFD', str(value or '').strip().lower())
     return ' '.join(''.join(c for c in value if unicodedata.category(c) != 'Mn').replace('đ', 'd').split())
+
+
+def shift_label(value):
+    match = re.match(r'^ca\s*([12])(?:\b|\()', key(value))
+    return f'Ca {match.group(1)}' if match else ''
 
 
 def eligible(row):
@@ -29,6 +35,8 @@ def reconcile(state, directory, make_employee):
         worker['roster_eligible'] = bool(row and eligible(row) and key(row['username']) not in assigned)
         if row:
             worker.update(name=row['username'], username=row['username'], role=str(row.get('role') or '').strip().lower())
+            if 'work_shift' in row:
+                worker['shift'] = shift_label(row.get('work_shift'))
             assigned.add(key(row['username']))
     # The directory owns membership now that manual roster removal is retired.
     state.pop('roster_excluded_usernames', None)
@@ -37,6 +45,8 @@ def reconcile(state, directory, make_employee):
             worker = make_employee(row, len(state['employees']))
             worker['roster_eligible'] = True
             state['employees'].append(worker)
+            if 'work_shift' in row:
+                worker['shift'] = shift_label(row.get('work_shift'))
             assigned.add(key(row['username']))
     state['employee_directory'] = [
         {'username': row['username'], 'name': row['username'], 'role': str(row['role']).strip().lower()}

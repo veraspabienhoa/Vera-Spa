@@ -459,10 +459,11 @@ const PAYMENT_ACTIONS = new Set(['checkout', 'quick_checkout', 'move_pending', '
 const ADMIN_ACTIONS = new Set([
   'room_upsert', 'room_delete', 'service_upsert', 'service_delete',
   'combo_upsert', 'combo_delete', 'combo_import', 'backup', 'restore', 'clear_expired',
-  'set_vip', 'payment_settings_update', 'admin_reorder',
+  'set_vip', 'payment_settings_update',
 ])
 
 function canRunAction(action, capabilities) {
+  if (['reorder', 'admin_reorder'].includes(action)) return capabilities.reorder
   if (action === 'update_appointment') return capabilities.appointmentEdit
   if (['booking', 'multi_booking'].includes(action)) return capabilities.booking
   if (action === 'customer_delete') return capabilities.customersDelete && capabilities.customers
@@ -531,7 +532,7 @@ const EMPTY_FORM = {
   checkout_source: 'pending', service_id: '', booking_date: '', booking_time: '', booking_reason: '',
   target_employee_id: '', employee_id: '', employee_search: '', room: '', service: '', request: '', appointment: '', customer_id: '', customer_name: '', phone: '',
   discount: '0', discount_mode: 'amount', discount_percent: '0', tip: '0', tip_mode: 'manual', tip_card_ids: [], print_after: false, ticket_price: '', payment_method: 'TIỀN MẶT', bill_no: '', ticket_no: '',
-  pending_id: '', combo_purchase_id: '', note: '', name: '', shift: '', combo_id: '', quantity: '1', remaining: '', amount: '0', code: '', duration: '60', vip: false,
+  bank_selection: 'auto', pending_id: '', combo_purchase_id: '', note: '', name: '', shift: '', combo_id: '', quantity: '1', remaining: '', amount: '0', code: '', duration: '60', vip: false,
   backdate_one_day: false, correction_reason: '',
   ticket_units: '1', private_service: false, request_eligible: true, non_request_eligible: true, request_duration: '',
 }
@@ -582,6 +583,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const capabilities = data.capabilities && typeof data.capabilities === 'object' ? data.capabilities : {}
   const capability = (name, fallback) => Object.prototype.hasOwnProperty.call(capabilities, name) ? capabilities[name] === true : fallback
   const canEditAppointment = capability('appointment_edit', false)
+  const canReorder = capability('reorder', isAdmin || user?.permissions?.live_tour_reorder === true)
   const canOperate = capability('operate', isAdmin || user?.permissions?.live_tour_operate === true)
   const canPayment = capability('payment', isAdmin || user?.permissions?.live_tour_payment === true)
   const canAdmin = capability('admin', isAdmin || user?.permissions?.live_tour_admin === true)
@@ -652,7 +654,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Hãy tải Live Tour thành công trước khi thực hiện thao tác.')
       return null
     }
-    if (!canRunAction(action, { appointmentEdit: canEditAppointment, operate: canOperate, payment: canPayment, admin: canAdmin, isAdmin, customersEdit: capabilities.customers_edit, customersDelete: capabilities.customers_delete, comboEdit: capabilities.customer_combo_edit, comboDelete: capabilities.customer_combo_delete, booking: canBook, invoiceEdit: canInvoiceEdit, invoiceDelete: canInvoiceDelete, paidInvoiceEdit: canPaidInvoiceEdit, paidInvoiceDelete: canPaidInvoiceDelete, backup: canBackup, customers: canCustomers })) {
+    if (!canRunAction(action, { reorder: canReorder, appointmentEdit: canEditAppointment, operate: canOperate, payment: canPayment, admin: canAdmin, isAdmin, customersEdit: capabilities.customers_edit, customersDelete: capabilities.customers_delete, comboEdit: capabilities.customer_combo_edit, comboDelete: capabilities.customer_combo_delete, booking: canBook, invoiceEdit: canInvoiceEdit, invoiceDelete: canInvoiceDelete, paidInvoiceEdit: canPaidInvoiceEdit, paidInvoiceDelete: canPaidInvoiceDelete, backup: canBackup, customers: canCustomers })) {
       setError('Tài khoản chưa được cấp quyền thực hiện thao tác này trên Live Tour.')
       return null
     }
@@ -697,7 +699,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     } finally {
       setActionBusy('')
     }
-  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, isAdmin, canEditAppointment, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
+  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, canReorder, isAdmin, canEditAppointment, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
 
   const previewExpired = async () => {
     if (!canAdmin || actionBusy || data.revision == null) return
@@ -758,7 +760,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       return
     }
     if (kind === 'change_employee' && (context.rowIds?.length !== 1 || !canChangeEmployee(validRecords.find((row) => stableEmployeeId(row) === context.rowIds[0]), clockMs))) {
-      setError('Chỉ đổi nhân viên đang thực hiện trong 10 phút đầu kể từ khi bấm Thực hiện.'); return
+      setError('Chỉ đổi nhân viên đang thực hiện trong thời hạn đổi nhân viên đã cài đặt.'); return
     }
     const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
     const capturedEmployees = capturedRowIds?.length
@@ -844,7 +846,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
           correction_reason: form.booking_reason.trim() } } : {}),
         ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
-        payment_method: paymentMethod, bill_no: form.bill_no,
+        payment_method: paymentMethod, bill_no: form.bill_no, bank_selection: form.bank_selection || 'auto',
         ticket_no: form.ticket_no, discount: Number(form.discount || 0),
         discount_mode: form.discount_mode, discount_percent: Number(form.discount_percent || 0),
         tip: form.tip_mode === 'cards' ? 0 : Number(form.tip || 0), tip_card_ids: form.tip_mode === 'cards' ? form.tip_card_ids : [],
@@ -1418,6 +1420,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           <div className="live-tour-controls-grid">
             <div className="live-tour-controls-group" role="group" aria-label="Đặt lịch & tua">
               <div className="live-tour-controls-actions">
+              <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('sync_daily_status', {}, [])}>Cập nhật lịch nghỉ</button>
               <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [] })} disabled={!canPayment || Boolean(actionBusy)}>Thanh toán nhanh</button>
               </div>
             </div>
@@ -1434,11 +1437,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <div className="live-tour-controls-group" role="group" aria-label="Thứ tự">
               <div className="live-tour-controls-actions">
               <select value={reorderSteps} onChange={(event) => setReorderSteps(event.target.value)} aria-label="Số vị trí di chuyển"><option value="1">1 dòng</option><option value="3">3 dòng</option><option value="5">5 dòng</option></select>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
-              {isAdmin && <><input type="number" aria-label="STT mới" placeholder="STT" min="1" step="1" value={targetPosition} onChange={event => setTargetPosition(event.target.value)}/><button type="button" className="secondary-button" disabled={selectedIds.size !== 1 || Boolean(actionBusy) || !Number.isInteger(Number(targetPosition)) || Number(targetPosition) < 1} onClick={() => runSingleSelected('admin_reorder', { direction: 'position', position: Number(targetPosition) })}>Đổi STT</button></>}
+              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
+              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
+              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
+              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
+              {canReorder && <><input type="number" aria-label="STT mới" placeholder="STT" min="1" step="1" value={targetPosition} onChange={event => setTargetPosition(event.target.value)}/><button type="button" className="secondary-button" disabled={selectedIds.size !== 1 || Boolean(actionBusy) || !Number.isInteger(Number(targetPosition)) || Number(targetPosition) < 1} onClick={() => runSingleSelected('admin_reorder', { direction: 'position', position: Number(targetPosition) })}>Đổi STT</button></>}
               </div>
             </div>
             <div className="live-tour-controls-group" role="group" aria-label="Nhân viên & dịch vụ">
@@ -1621,7 +1624,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       <form onSubmit={submitModal}>
         <div className="live-tour-form-grid">
           {modal.kind === 'change_employee' && <>
-            <p className="wide">Chuyển dịch vụ đang thực hiện của <strong>{cellValue(validRecords.find((row) => stableEmployeeId(row) === modal.rowIds[0]), employeeColumn)}</strong> sang nhân viên mới trong 10 phút đầu. Giữ nguyên phòng, dịch vụ, thông tin khách và thời gian còn lại; nhân viên cũ trở về vị trí tua trước khi bắt đầu.</p>
+            <p className="wide">Chuyển dịch vụ đang thực hiện của <strong>{cellValue(validRecords.find((row) => stableEmployeeId(row) === modal.rowIds[0]), employeeColumn)}</strong> sang nhân viên mới trong thời hạn cho phép. Giữ nguyên phòng, dịch vụ, thông tin khách và thời gian còn lại; nhân viên cũ trở về vị trí tua trước khi bắt đầu.</p>
             <LiveTourSearchSelect className="wide" label="Nhân viên thay thế" placeholder="Tìm và chọn nhân viên đang rảnh…" value={form.target_employee_id}
               options={validRecords.filter((row) => stableEmployeeId(row) !== modal.rowIds[0] && hasGroup(row, 'available') && !cellValue(row, serviceColumn) && !hasGroup(row, 'break') && normalizedColumn(cellValue(row, statusColumn)) !== 'CHO THANH TOAN').map((row) => ({ value: stableEmployeeId(row), label: cellValue(row, employeeColumn) }))}
               onChange={(id) => setForm((current) => ({ ...current, target_employee_id: id }))} disabled={Boolean(actionBusy)} required/>
@@ -1675,7 +1678,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <label className="live-tour-field"><span>Số vé</span><input value={form.ticket_no} onChange={(event) => setForm((current) => ({ ...current, ticket_no: event.target.value }))}/></label>
             <label className="live-tour-field"><span>Loại giảm giá</span><select value={form.discount_mode} disabled={Boolean(selectedCheckoutCombo?.component_balances)} onChange={(event) => setForm((current) => ({ ...current, discount_mode: event.target.value }))}><option value="amount">Số tiền (đ)</option><option value="percent">Tỷ lệ (%)</option></select></label>
             <label className="live-tour-field"><span>Giảm giá {form.discount_mode === 'percent' ? '(%)' : '(đ)'}</span><input type="number" min="0" max={form.discount_mode === 'percent' ? '100' : undefined} step={form.discount_mode === 'percent' ? '0.01' : '1'} readOnly={Boolean(selectedCheckoutCombo?.component_balances)} value={form.discount_mode === 'percent' ? form.discount_percent : form.discount} onChange={(event) => setForm((current) => ({ ...current, [current.discount_mode === 'percent' ? 'discount_percent' : 'discount']: event.target.value }))}/><small>{Number.isFinite(checkoutDiscountPreview) ? formatMoney(checkoutDiscountPreview) : ''}</small></label>
-            {!checkoutHasUnresolvedPricing && <LiveTourPaymentQr bank={data.payment_settings?.bank} amount={checkoutPreviewTotal} reference={form.bill_no || 'VERA SPA'}/>}
+            <label className="live-tour-field wide"><span>Tài khoản nhận chuyển khoản</span><select value={form.bank_selection || 'auto'} onChange={event => setForm(current => ({ ...current, bank_selection: event.target.value }))}><option value="auto">{data.payment_settings?.user_bank ? `Tài khoản của tôi · ${data.payment_settings.user_bank.account_name} · ${data.payment_settings.user_bank.account_no}` : 'Tài khoản mặc định'}</option><option value="default">Tài khoản mặc định khác{data.payment_settings?.bank?.account_no ? ` · ${data.payment_settings.bank.account_no}` : ' (chưa cấu hình)'}</option></select></label>
+            {!checkoutHasUnresolvedPricing && <LiveTourPaymentQr bank={form.bank_selection !== 'default' && data.payment_settings?.user_bank || data.payment_settings?.bank} amount={checkoutPreviewTotal} reference={form.bill_no || 'VERA SPA'}/>}
             <LiveTourTipInput key={tipPreferenceKey} form={form} setForm={setForm} cards={asArray(data.payment_settings?.tip_cards)} preferenceKey={tipPreferenceKey} total={checkoutTipPreview}/>
             <label className="live-tour-check-field wide"><input type="checkbox" checked={form.print_after} onChange={(event) => setForm((current) => ({ ...current, print_after: event.target.checked }))}/> In hóa đơn sau khi thanh toán</label>
             <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
