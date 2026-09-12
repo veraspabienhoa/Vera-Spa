@@ -54,6 +54,31 @@ def test_open_completed_and_repeat_preserve_service_and_ledgers():
     assert worker['clock_in']  # Incomplete cache cannot reopen a completed break.
 
 
+def test_break_metric_counts_unique_people_who_resting_and_currently_resting():
+    state = live._empty_state(NOW)
+    state['employees'] = []
+    attendance_rows = []
+    for index in range(1, 6):
+        worker = employee(f'e{index}', f'Nhân viên {index}')
+        worker.update(username=f'nv{index}', full_name=f'Nhân viên {index}')
+        state['employees'].append(worker)
+        attendance_rows.append(record(
+            employee_name=f'Nhân viên {index}',
+            break_out=f'15:{20 + index:02d}:00',
+            break_in='15:50:00' if index == 1 else '',
+        ))
+
+    sync_breaks(state, attendance_rows, NOW)
+    metrics = live._metric_bucket(state['employees'], NOW)
+
+    assert metrics['break_total_count'] == 5
+    assert metrics['break_active_count'] == 4
+
+    # Multiple manual rests still count as one employee, not multiple events.
+    state['employees'][0]['break_count'] = 3
+    assert live._metric_bucket(state['employees'], NOW)['break_total_count'] == 5
+
+
 @pytest.mark.parametrize('patch', [
     {'date': '11/09/2026'}, {'employee_name': 'Unknown'}, {'break_out': 'invalid'},
     {'break_out': '17:00:00'}, {'break_in': '17:00:00'}, {'break_in': 'invalid'},

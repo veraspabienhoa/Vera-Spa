@@ -533,7 +533,7 @@ test('admin bottom and direct STT actions target selected employee; manual order
     const actions = [...document.querySelectorAll('.live-tour-controls-actions > button')].map(button => button.textContent.trim())
     assert.deepEqual(actions.slice(0, 10), [
       'Cập nhật lịch nghỉ', 'Thanh toán nhanh', 'Đi làm', 'Nghỉ phép',
-      'Nghỉ giữa ca', 'Hủy Booking', 'Đổi nhân viên', 'Kết thúc nghỉ',
+      'Hủy Booking', 'Đổi nhân viên', 'Nghỉ giữa ca', 'Kết thúc nghỉ',
       'Xuống cuối', 'Lên đầu',
     ])
   } finally { await f.dispose() }

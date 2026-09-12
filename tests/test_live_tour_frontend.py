@@ -146,6 +146,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         assert label not in controls
     assert "Import Excel" not in source
     assert "Xuất bảng tua" not in source
+    assert "Đã copy ảnh bảng tua" not in source
 
 
 def test_live_tour_can_open_itself_in_a_standalone_new_tab():

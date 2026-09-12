@@ -2627,10 +2627,15 @@ def _metric_bucket(employees: list[dict[str, Any]], now: datetime) -> dict[str, 
     total_quantity = sum(int(record.get("Tổng SL") or 0) for record in records)
     waiting = sum("waiting" in record["_tour_groups"] for record in records)
     breaks = sum(bool(record.get("_attendance_break_active")) for record in records)
+    business_day = _counter_business_date(now).isoformat()
+    break_total = sum(bool(
+        int(employee.get("break_count") or 0)
+        or (employee.get("attendance_break") or {}).get("date") == business_day
+    ) for employee in employees)
     return {
         "total_quantity": total_quantity, "waiting_count": waiting,
         "customer_count": total_quantity + waiting,
-        "break_count": breaks, "break_total_count": sum(int(item.get("break_count") or 0) for item in employees),
+        "break_count": breaks, "break_total_count": break_total,
         "break_active_count": breaks,
     }
 

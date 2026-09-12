@@ -1273,7 +1273,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     setNotice('')
     try {
       await copyPngToClipboard(() => veraApi.readLiveTourPng())
-      setNotice('Đã copy ảnh bảng tua. Bạn có thể dán vào tin nhắn để chia sẻ.')
     } catch (err) {
       setError(err?.name === 'NotAllowedError'
         ? 'Chưa copy được ảnh. Hãy cho phép truy cập bộ nhớ tạm và bấm Copy B.Tua lại.'
@@ -1490,9 +1489,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [], defaults: { checkout_source: 'manual' } })} disabled={!canPayment || Boolean(actionBusy)}>Thanh toán nhanh</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Nghỉ giữa ca</button>
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
               <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Nghỉ giữa ca</button>
               <button type="button" className="secondary-button" title={selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) ? 'Giờ vào tự động cập nhật từ Chấm công' : ''} disabled={!canOperate || !selectedIds.size || selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc nghỉ</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
