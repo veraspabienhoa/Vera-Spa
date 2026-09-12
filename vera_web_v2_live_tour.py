@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -3279,6 +3279,52 @@ def _customer_detail_excel_bytes(
     return output.getvalue(), f"Live_Tour_Khach_hang_{safe_id}_{_business_date(now).strftime('%Y%m%d')}.xlsx"
 
 
+def _tip_summary_sheet(workbook, state, bounds):
+    bounds = bounds or {}
+    totals = {}
+    for row in _report_rows_with_combo_kind(state):
+        if not _event_in_export_bounds(row, bounds):
+            continue
+        name = str(row.get("employee_name") or "").strip() or "Chưa xác định nhân viên"
+        key = ("id", str(row["employee_id"])) if row.get("employee_id") else ("name", name.casefold())
+        item = totals.setdefault(key, {"name": name, "tip": 0})
+        item["tip"] += int(row.get("tip") or 0)
+    ordered = sorted(totals.values(), key=lambda item: (_norm(item["name"]), item["name"]))
+    sheet = workbook.create_sheet("Tong_hop_Tip", 0)
+    start, end = bounds.get("date_from"), bounds.get("date_to")
+    date_label = "Tất cả thời gian"
+    if start and end:
+        date_label = f"Ngày {start:%d/%m/%Y}" if start == end else f"{start:%d/%m/%Y} – {end:%d/%m/%Y}"
+    elif start:
+        date_label = f"Từ ngày {start:%d/%m/%Y}"
+    elif end:
+        date_label = f"Đến ngày {end:%d/%m/%Y}"
+    sheet.append([date_label, None, sum(item["tip"] for item in ordered)])
+    sheet.merge_cells("A1:B1")
+    sheet.append(["STT", "Tên nhân viên", "Tổng Tip"])
+    for index, item in enumerate(ordered, 1):
+        sheet.append([index, _excel_literal(item["name"]), item["tip"]])
+    edge = Side(style="thin", color="A6B7AE")
+    for row in sheet:
+        for cell in row:
+            cell.border = Border(left=edge, right=edge, top=edge, bottom=edge)
+            cell.alignment = Alignment(vertical="center", horizontal="left" if cell.column == 2 else "center" if cell.column == 1 else "right")
+            if cell.row <= 2:
+                cell.font = Font(bold=True, color="173329")
+                cell.fill = PatternFill("solid", fgColor="FFC933" if cell.row == 1 or cell.column == 3 else "87CEEB")
+        row[2].number_format = '#,##0" đ"'
+    sheet.row_dimensions[1].height = 30
+    sheet.row_dimensions[2].height = 24
+    for column, width in (("A", 7), ("B", 32), ("C", 22)):
+        sheet.column_dimensions[column].width = width
+    sheet.freeze_panes = "A3"
+    sheet.auto_filter.ref = f"A2:C{sheet.max_row}"
+    sheet.sheet_view.showGridLines = False
+    workbook.active = 0
+    for tab in workbook:
+        tab.sheet_view.tabSelected = tab is sheet
+
+
 def _excel_bytes(
     state: dict[str, Any], kind: str, now: datetime, *, include_hidden: bool = False,
     bounds: dict[str, Any] | None = None, customer_id: Any = "",
@@ -3307,6 +3353,8 @@ def _excel_bytes(
     sheet = workbook.active
     sheet.title = title[:31]
     _fill_excel_sheet(sheet, headers, rows)
+    if kind == "tip":
+        _tip_summary_sheet(workbook, state, bounds)
     if kind == "revenue":
         total_row = sheet.max_row + 1
         sheet.cell(total_row, 1, "Tổng cộng")
