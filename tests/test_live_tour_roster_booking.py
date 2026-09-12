@@ -227,13 +227,13 @@ def test_tip_presets_require_admin_and_receipts_keep_original_values(monkeypatch
     book(state, a)
     pending = act(state, 'finish_to_pending', {'employee_id': 'e1'})['pending']
     before = deepcopy(state)
-    for extra in [{'tip_card_ids': ['missing']}, {'tip_card_ids': ['tip-custom', 'tip-custom']}, {'tip_card_ids': ['tip-custom'], 'tip': 1}]:
+    for extra in [{'tip_card_ids': ['missing']}, {'tip_card_ids': ['tip-custom'] * 31}, {'tip_card_ids': ['tip-custom'], 'tip': 1}]:
         with pytest.raises(HTTPException):
             act(state, 'checkout', {'pending_id': pending['id'], 'payment_method': 'TIỀN MẶT', **extra})
         assert state == before
-    invoice = act(state, 'checkout', {'pending_id': pending['id'], 'payment_method': 'TIỀN MẶT', 'tip_card_ids': ['tip-custom']})['invoice']
+    invoice = act(state, 'checkout', {'pending_id': pending['id'], 'payment_method': 'TIỀN MẶT', 'tip_card_ids': ['tip-custom', 'tip-custom']})['invoice']
     act(state, 'payment_settings_update', {'auto_print': False, 'tip_cards': []})
-    assert invoice['tip'] == 80000 and invoice['tip_cards'][0]['name'] == 'TIP 80k'
+    assert invoice['tip'] == 160000 and len(invoice['tip_cards']) == 2 and invoice['tip_cards'][0]['name'] == 'TIP 80k'
     client, _ = api_client(monkeypatch, state)
     assert client.get('/v2/live-tour').json()['payment_settings'] == {**live._default_payment_settings(), 'tip_cards': []}
 
