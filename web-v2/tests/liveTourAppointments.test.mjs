@@ -527,9 +527,12 @@ test('admin bottom and direct STT actions target selected employee; manual order
     await f.type(document.querySelector('input[aria-label="STT mới"]'), '1')
     await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Đổi STT').click())
     assert.equal(f.writes[1].payload.position, 1)
-    const actions = [...document.querySelectorAll('.live-tour-controls-actions button')]
-    const add = actions.findIndex(b => b.textContent === 'Thêm dịch vụ')
-    assert.equal(actions[add + 1].textContent, 'Hủy Booking')
+    const actions = [...document.querySelectorAll('.live-tour-controls-actions > button')].map(button => button.textContent.trim())
+    assert.deepEqual(actions.slice(0, 10), [
+      'Cập nhật lịch nghỉ', 'Thanh toán nhanh', 'Đi làm', 'Nghỉ phép',
+      'Nghỉ giữa ca', 'Hủy Booking', 'Đổi nhân viên', 'Đánh dấu VIP',
+      'Xuống cuối', 'Lên đầu',
+    ])
   } finally { await f.dispose() }
 })
 

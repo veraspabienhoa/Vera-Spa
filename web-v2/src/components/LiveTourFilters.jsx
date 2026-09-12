@@ -3,8 +3,18 @@ import { useMemo } from 'react'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
-export default function LiveTourFilters({ value, onChange, rows }) {
-  const options = useMemo(() => tourFilterOptions(rows), [rows])
+export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [] }) {
+  const options = useMemo(() => {
+    const result = tourFilterOptions(rows)
+    const merge = (key, labels) => {
+      const unique = new Map(result[key].map((option) => [option.label, option]))
+      labels.filter(Boolean).forEach((label) => unique.set(String(label), { value: String(label), label: String(label) }))
+      result[key] = [...unique.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi'))
+    }
+    merge('customer', customers.flatMap((customer) => [customer?.name, customer?.phone]))
+    merge('service', services.map((service) => service?.name || service?.service))
+    return result
+  }, [customers, rows, services])
   const change = patch => onChange({ ...value, ...patch })
   return <div className="live-tour-filters" role="group" aria-label="Bộ lọc danh sách">
     <div className="live-tour-filters-row live-tour-filters-dates">

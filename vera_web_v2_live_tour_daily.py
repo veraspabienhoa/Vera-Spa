@@ -9,7 +9,7 @@ FULL_DAY_REASONS = {
 }
 
 
-def sync_daily(state, directory, leaves, *, automatic=False):
+def sync_daily(state, directory, leaves, *, automatic=False, today=''):
     """Match usernames first, unique full names second; keep every service intact."""
     rows = {key(row['username']): row for row in directory}
     name_owners = {}
@@ -28,6 +28,12 @@ def sync_daily(state, directory, leaves, *, automatic=False):
             continue
         username = key(worker.get('username') or worker.get('name'))
         if username not in rows:
+            continue
+        override_day = str(worker.get('manual_work_status_date') or '')
+        if override_day and override_day != today:
+            worker.pop('manual_work_status_date', None)
+            worker.pop('manual_work_status_by', None)
+        elif override_day and override_day == today:
             continue
         records = by_user.get(username, [])
         reasons = list(dict.fromkeys(str(row.get('leave_reason') or row.get('leave_type') or '').strip() for row in records))

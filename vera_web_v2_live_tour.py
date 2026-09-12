@@ -1769,7 +1769,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
                                {"employee_ids": [row["id"] for row in members]}, actor, now)
         result["room"] = canonical_room
     elif action == "sync_daily_status":
-        result = _sync_daily(state, payload["directory"], payload["leaves"])
+        result = _sync_daily(state, payload["directory"], payload["leaves"], today=payload.get("today", ""))
         payload = {"updated": result["updated"]}
     elif action == "booking":
         result["employee"] = _booking(state, payload, now)
@@ -2009,6 +2009,10 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         ):
             raise HTTPException(409, "Hãy hoàn tất dịch vụ/giờ nghỉ trước khi đổi trạng thái đi làm.")
         employee["work_status"] = next_status
+        employee["manual_work_status_date"] = now.astimezone(VN_TZ).date().isoformat()
+        employee["manual_work_status_by"] = actor
+        if _norm(next_status) == "di lam":
+            employee["shift"] = employee.get("assigned_shift", employee.get("shift", ""))
         result["employee"] = employee
     elif action == "set_shift":
         employee = _employee(state, payload.get("employee_id"))
@@ -2963,7 +2967,7 @@ def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[
         leaves = [dict(item) for item in conn.execute(text(
             "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
         ), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]
-        _sync_daily(state, directory, leaves, automatic=True)
+        _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
         if state != before:
             revision = _write_state(conn, state, revision, "live_tour_daily_projection")
         return state, revision
@@ -3680,7 +3684,7 @@ def install_live_tour_routes(
             # mutation into the value written after an exception.
             working = deepcopy(state)
             if action == "sync_daily_status":
-                payload = {**payload, "directory": _employee_directory(conn), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
+                payload = {**payload, "today": now.astimezone(VN_TZ).date().isoformat(), "directory": _employee_directory(conn), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
             result = _apply_action(working, action, payload, actor, now)
             if action in {"checkout", "quick_checkout", "combo_purchase"} and result.get("invoice"):
                 bank = _selected_bank(working.get("payment_settings") or {}, grants.get("viewer_bank"), payload.get("bank_selection", "auto"))

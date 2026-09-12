@@ -51,7 +51,11 @@ test('typing, choosing, clearing and switching lists update searches immediately
     await type(input('Dịch vụ'), 'Foot')
     assert.equal(filterTourRows(rows, current).length, 0)
     await act(() => document.querySelector('.live-tour-filters-reset').click())
-    assert.equal(filterTourRows(rows, current).length, 2)
+    assert.equal(current.employee, '')
+    assert.equal(current.customer, '')
+    assert.equal(current.service, '')
+    current = { ...EMPTY_TOUR_FILTERS }
+    await act(render)
     await act(() => input('Khách hàng').focus())
     await act(() => [...document.querySelectorAll('[role=option]')].find(x => x.textContent === 'Khách Đào').click())
     assert.deepEqual(filterTourRows(rows, current).map(x => x.id), ['a'])
@@ -62,6 +66,25 @@ test('typing, choosing, clearing and switching lists update searches immediately
     await act(() => document.querySelector('.live-tour-filters-reset').click())
     await act(() => input('Nhân viên').focus())
     assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', 'Thúy Vy'])
+  } finally { await act(() => root.unmount()) }
+})
+test('customer and service catalogs remain searchable when the active panel has no rows', async () => {
+  const root = createRoot(document.querySelector('#root'))
+  let current = { ...EMPTY_TOUR_FILTERS }
+  const props = {
+    rows: [],
+    customers: [{ id: 'c1', name: 'Anh Lưu', phone: '0919442626' }],
+    services: [{ id: 's1', name: '90 Tiêu chuẩn' }],
+    value: current,
+    onChange(value) { current = value },
+  }
+  const input = label => document.getElementById([...document.querySelectorAll('label')].find(x => x.textContent === label).htmlFor)
+  try {
+    await act(() => root.render(React.createElement(module.exports.default, props)))
+    await act(() => input('Khách hàng').focus())
+    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', '0919442626', 'Anh Lưu'])
+    await act(() => input('Dịch vụ').focus())
+    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', '90 Tiêu chuẩn'])
   } finally { await act(() => root.unmount()) }
 })
 test.after(() => dom.window.close())

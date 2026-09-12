@@ -909,6 +909,37 @@ def test_canonical_work_and_shift_transitions_reject_invalid_sequences():
     assert idle["work_status"] == "Nghỉ phép"
 
 
+@pytest.mark.parametrize(("manual_status", "automatic_leave", "expected_next_day"), [
+    ("Đi làm", True, "Nghỉ phép"),
+    ("Nghỉ phép", False, "Đi làm"),
+])
+def test_manual_work_status_overrides_daily_projection_for_the_current_day_only(
+    manual_status, automatic_leave, expected_next_day
+):
+    worker = employee("e1", "An")
+    worker["username"] = "an"
+    state = state_with(worker)
+    directory = [{"username": "an", "full_name": "An"}]
+    leaves = ([{"employee_name": "An", "leave_reason": "Nghỉ phép"}]
+              if automatic_leave else [])
+
+    live._apply_action(state, "set_work_status", {
+        "employee_id": "e1", "status": manual_status,
+    }, "admin", NOW)
+    day = NOW.astimezone(live.VN_TZ).date().isoformat()
+
+    live._sync_daily(state, directory, leaves, automatic=False, today=day)
+    assert worker["work_status"] == manual_status
+    assert worker["manual_work_status_date"] == day
+    assert worker["manual_work_status_by"] == "admin"
+
+    next_day = (NOW.astimezone(live.VN_TZ).date() + timedelta(days=1)).isoformat()
+    live._sync_daily(state, directory, leaves, automatic=False, today=next_day)
+    assert worker["work_status"] == expected_next_day
+    assert "manual_work_status_date" not in worker
+    assert "manual_work_status_by" not in worker
+
+
 def test_normalize_state_canonicalizes_unknown_source_values_safely():
     raw = live._empty_state(NOW)
     raw["employees"] = [

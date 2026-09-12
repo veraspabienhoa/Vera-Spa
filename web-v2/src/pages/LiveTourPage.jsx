@@ -11,8 +11,8 @@ import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import { EMPTY_TOUR_FILTERS, filterTourRows, tourDateRange } from '../lib/liveTourFilters'
 import {
   BellRing, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
-  ExternalLink, History, LayoutGrid, PauseCircle, Play, Plus,
-  Printer, RefreshCw, Search, Share2, Trash2, Upload, X,
+  ExternalLink, History, LayoutGrid, PauseCircle, Plus,
+  Printer, RefreshCw, Search, Share2, Trash2, X,
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -55,7 +55,6 @@ const PANEL_TABS = [
   ['catalog', 'Danh mục'],
 ]
 const EXPORT_KINDS = [
-  ['board', 'Xuất bảng tua'],
   ['revenue', 'Xuất doanh thu'],
   ['tip', 'Xuất tiền TIP'],
   ['customers', 'Xuất khách hàng'],
@@ -595,7 +594,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const previousPendingCountRef = useRef(0)
   const pendingAnnouncementSequenceRef = useRef(0)
   const pendingReminderTimerRef = useRef(null)
-  const boardImportInputRef = useRef(null)
   const workspaceRef = useRef(null)
   const isAdmin = String(user?.role || '').trim().toLowerCase() === 'admin'
   const normalizedRole = String(user?.role || '').trim().toLowerCase()
@@ -617,7 +615,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canInvoiceDelete = canPending && canInvoiceView && capability('invoice_delete', isAdmin || user?.permissions?.live_tour_invoice_delete === true)
   const canCustomers = capability('customers_view', isAdmin || user?.permissions?.live_tour_customers_view === true)
   const canImportCombo = isAdmin && canAdmin && canPayment && canCustomers
-  const canImportBoard = isAdmin && canAdmin
   const canEditStartedAt = ['admin', 'quanly'].includes(normalizedRole) && canOperate
   const canViewComboPackages = ['admin', 'quanly', 'letan'].includes(normalizedRole) && canCustomers
   const canReports = capability('reports_view', isAdmin || user?.permissions?.live_tour_reports_view === true)
@@ -1317,37 +1314,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
   }
 
-  const importBoard = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file || actionBusy) return
-    if (data.revision == null) {
-      setError('Hãy tải Live Tour thành công trước khi Import Excel.')
-      return
-    }
-    if (!/\.xlsx$/i.test(file.name)) {
-      setError('Hãy chọn file Excel định dạng .xlsx được xuất từ Bảng tua.')
-      return
-    }
-    if (!window.confirm(`Import dữ liệu từ "${file.name}" và lưu vào Bảng tua?`)) return
-    setActionBusy('import-board')
-    setError('')
-    setNotice('')
-    try {
-      const result = await veraApi.importLiveTourExcel(file, data.revision)
-      const next = { ...EMPTY_LIVE_TOUR, ...result }
-      setData(next)
-      saveCachedLiveTour(cacheKey, next)
-      setSelectedIds(new Set())
-      setNotice(result.message || `Đã Import và lưu ${result.imported || 0} nhân viên vào Bảng tua.`)
-    } catch (err) {
-      if (isRevisionConflict(err)) await load(true, true)
-      setError(err.message || 'Không Import được Excel vào Bảng tua.')
-    } finally {
-      setActionBusy('')
-    }
-  }
-
   const openCustomerHistory = async (customer) => {
     if (!canCustomers) {
       setError('Tài khoản chưa được cấp quyền xem lịch sử khách hàng.')
@@ -1400,12 +1366,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       .live-tour-page{--live-tour-section-gap:10px;gap:var(--live-tour-section-gap)}.page-wrap.live-tour-page-wrap{padding-top:0;padding-bottom:0}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
       .live-tour-board{min-width:0}.live-tour-board>.tour-records-panel{margin-top:var(--live-tour-section-gap)}
       .live-tour-page .tour-board-top{position:static;display:grid;gap:var(--live-tour-section-gap);background:var(--paper,#f7faf8)}
-      .live-tour-page .tour-topbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+      .live-tour-page .tour-topbar{display:flex;flex-wrap:nowrap;align-items:center;gap:4px 6px;overflow-x:auto;scrollbar-width:thin}
       .live-tour-customer-count{display:inline-flex;align-items:center;gap:4px;min-height:20px;margin-left:2px;padding:0 6px;border:1px solid #bfd4c7;border-radius:5px;color:#173c30;background:#edf7f1;font-size:9px;font-weight:800;white-space:nowrap}.live-tour-customer-count strong{font-size:13px;line-height:1}
       .live-tour-page .tour-heading-title{min-width:0;display:flex;align-items:center;gap:8px}.live-tour-page .tour-heading-title h1{margin:0;color:var(--green-950);font-family:Georgia,serif;font-size:14px;line-height:1}.live-tour-status{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 4px;color:#17603f;background:#dff4e8;font-size:8px;font-weight:900}.live-tour-status:before{content:'';width:7px;height:7px;border-radius:50%;background:#23a861;box-shadow:0 0 0 3px rgba(35,168,97,.16)}
       .live-tour-page .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}.live-tour-page .tour-table tr.live-tour-selected td{box-shadow:inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-table tr.live-tour-selected td:first-child{box-shadow:inset 2px 0 #173c30,inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
       .live-tour-page .tour-shift-filter{display:flex;flex:0 0 auto;align-items:center;gap:4px;margin:0}.live-tour-page .tour-shift-filter button{flex:0 0 auto;min-width:48px;min-height:15px;padding:0 6px;border-radius:5px;font-size:9px;line-height:1.1;white-space:nowrap}
-      .live-tour-page .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}.live-tour-page .tour-heading-actions button{min-height:34px;padding:6px 12px;font-family:inherit;font-size:13px;line-height:1.25;font-weight:900;border-radius:999px;background:#204e40;color:#fff;border:1px solid #204e40}.live-tour-page .tour-heading-actions button svg{width:16px;height:16px}.live-tour-page .tour-topbar>.icon-button{width:auto;min-width:20px;height:20px;min-height:20px;flex:0 0 auto;padding:0 3px;border-radius:4px;font-size:9px}.live-tour-page .tour-topbar>.icon-button svg{width:14px;height:14px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
+      .live-tour-page .tour-heading-actions{display:flex;gap:4px;flex-wrap:nowrap;justify-content:flex-end;margin-left:auto}.live-tour-page .tour-heading-actions button{min-height:24px;padding:3px 8px;font-family:inherit;font-size:10px;line-height:1.15;font-weight:900;border-radius:999px;background:#204e40;color:#fff;border:1px solid #204e40;white-space:nowrap}.live-tour-page .tour-heading-actions button svg{width:13px;height:13px}.live-tour-page .tour-topbar>.icon-button{width:auto;min-width:20px;height:20px;min-height:20px;flex:0 0 auto;padding:0 3px;border-radius:4px;font-size:9px}.live-tour-page .tour-topbar>.icon-button svg{width:14px;height:14px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
       .live-tour-payment-reminder{display:flex;align-items:center;gap:6px;min-height:23px;margin:0;padding:0 6px;border:1px solid #e9ad57;border-radius:9px;color:#64350d;background:#fff3d7;box-shadow:0 3px 12px rgba(124,73,17,.12);font-size:10px}.live-tour-payment-reminder strong{font-size:10px}.live-tour-payment-reminder>svg{width:12px;height:12px;flex-shrink:0}.live-tour-payment-reminder span{flex:1}.live-tour-payment-reminder button{min-height:20px;padding:0 6px;font-size:9px;line-height:1.1}.live-tour-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
       .live-tour-page .tour-control-layout{min-width:0}.live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(8,minmax(120px,1fr));gap:6px;max-width:100%;margin:0;padding:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:thin}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:15px;gap:4px;border-radius:4px;padding:0 4px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;white-space:nowrap}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:13px;line-height:1}
       .live-tour-page .tour-room-segment-buttons{display:flex;flex:0 0 auto;align-items:center;gap:4px}.live-tour-page .tour-room-segment-button{flex:0 0 auto;min-width:0;min-height:15px;border:1px solid transparent;border-radius:4px;padding:0 6px;display:flex;align-items:center;justify-content:center;gap:5px;color:#fff;font-weight:900;text-align:center;white-space:nowrap}.live-tour-page .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.live-tour-page .tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.live-tour-page .tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}.live-tour-page .tour-room-segment-button svg{width:11px;height:11px;flex-shrink:0}.live-tour-page .tour-room-segment-button span{font-size:9px;line-height:1.1}.live-tour-page .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
@@ -1428,7 +1394,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         .live-tour-page{--live-tour-section-gap:12px}
         .live-tour-page .tour-topbar{gap:4px}.live-tour-page .tour-heading-title h1{font-size:13px}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:hidden;overflow-y:hidden}
         .live-tour-page .tour-shift-filter{gap:3px}.live-tour-page .tour-shift-filter button{min-width:40px;padding:0 5px;font-size:9px}
-        .live-tour-page .tour-heading-actions{justify-content:flex-start;margin-left:0}.live-tour-page .tour-heading-actions button{flex:0 1 auto}
+        .live-tour-page .tour-heading-actions{justify-content:flex-start;margin-left:auto}.live-tour-page .tour-heading-actions button{flex:0 0 auto}
         .live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(8,minmax(110px,1fr))}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:15.5px;padding:0 4px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;line-height:1.05}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:13px}
         .live-tour-page .tour-room-segment-button{padding:0 5px}.live-tour-page .tour-room-segment-button svg{width:12px;height:12px}.live-tour-page .tour-room-segment-button span{font-size:9px}
         .live-tour-page .tour-table-panel{padding:0;border-radius:4px;box-shadow:none}.live-tour-page .tour-quick-tools{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin:0}.live-tour-page .tour-employee-search{min-width:0;max-width:none}.live-tour-page .tour-employee-search input{min-width:0;height:29px;padding:5px 5px 5px 27px;font-size:8px}.live-tour-page .tour-employee-search svg{left:8px;width:14px}.live-tour-selection-summary{font-size:8px}.live-tour-select-col{width:24px;min-width:24px}.live-tour-select-col input{width:12px;height:12px}
@@ -1460,8 +1426,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           {canCustomers && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('customers')}>Khách hàng</button>}
           {canViewComboPackages && <button type="button" className="secondary-button" onClick={() => { setComboLookupSearch(''); setComboLookupOpen(true) }}><Search size={16}/> Gói Combo</button>}
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
-          {canImportBoard && <><input ref={boardImportInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={importBoard}/><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => boardImportInputRef.current?.click()}><Upload size={16}/> Import Excel</button></>}
-          {canExport && <><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board')}><Download size={16}/> Xuất bảng tua</button><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/> Copy B.Tua</button></>}
+          {canExport && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/> Copy B.Tua</button>}
           <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button>
         </div>
       </div>
@@ -1520,39 +1485,23 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         </div>
         <section className="panel live-tour-operator live-tour-controls" aria-label="Điều khiển">
           <div className="live-tour-controls-grid">
-            <div className="live-tour-controls-group" role="group" aria-label="Đặt lịch & tua">
-              <div className="live-tour-controls-actions">
+            <div className="live-tour-controls-actions" role="group" aria-label="Bảng điều khiển Live Tour">
               <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('sync_daily_status', {}, [])}>Cập nhật lịch nghỉ</button>
               <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [], defaults: { checkout_source: 'manual' } })} disabled={!canPayment || Boolean(actionBusy)}>Thanh toán nhanh</button>
-              </div>
-            </div>
-            <div className="live-tour-controls-group" role="group" aria-label="Ca & trạng thái">
-              <div className="live-tour-controls-actions">
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Nghỉ giữa ca</button>
-              <button type="button" className="secondary-button" title={selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) ? 'Giờ vào tự động cập nhật từ Chấm công' : ''} disabled={!canOperate || !selectedIds.size || selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc nghỉ giữa ca</button>
-              </div>
-            </div>
-            <div className="live-tour-controls-group" role="group" aria-label="Thứ tự">
-              <div className="live-tour-controls-actions">
+              <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
+              <button type="button" className="secondary-button" disabled={!canAdmin || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_vip', { vip: true })}><Crown size={13}/> Đánh dấu VIP</button>
+              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
+              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
+              {canReorder ? <input type="number" aria-label="STT mới" placeholder="STT" min="1" step="1" value={targetPosition} onChange={event => setTargetPosition(event.target.value)}/> : <span/>}
+              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy) || !Number.isInteger(Number(targetPosition)) || Number(targetPosition) < 1} onClick={() => runSingleSelected('admin_reorder', { direction: 'position', position: Number(targetPosition) })}>Đổi STT</button>
               <select value={reorderSteps} onChange={(event) => setReorderSteps(event.target.value)} aria-label="Số vị trí di chuyển"><option value="1">1 dòng</option><option value="3">3 dòng</option><option value="5">5 dòng</option></select>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
-              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
-              <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
-              {canReorder && <><input type="number" aria-label="STT mới" placeholder="STT" min="1" step="1" value={targetPosition} onChange={event => setTargetPosition(event.target.value)}/><button type="button" className="secondary-button" disabled={selectedIds.size !== 1 || Boolean(actionBusy) || !Number.isInteger(Number(targetPosition)) || Number(targetPosition) < 1} onClick={() => runSingleSelected('admin_reorder', { direction: 'position', position: Number(targetPosition) })}>Đổi STT</button></>}
-              </div>
-            </div>
-            <div className="live-tour-controls-group" role="group" aria-label="Nhân viên & dịch vụ">
-              <div className="live-tour-controls-actions">
-              <button type="button" className="secondary-button" disabled={!canAdmin || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_vip', { vip: true })}><Crown size={13}/> Đánh dấu VIP</button>
               <button type="button" className="secondary-button" disabled={!canAdmin || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_vip', { vip: false })}>Bỏ VIP</button>
-              <button type="button" className="secondary-button" onClick={() => openModal('replace_service')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}>Đổi dịch vụ</button>
-              <button type="button" className="secondary-button" onClick={() => openModal('add_service')} disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)}>Thêm dịch vụ</button>
-              <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
-              </div>
             </div>
           </div>
         </section>
@@ -1592,6 +1541,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         value={listFilters}
         onChange={setListFilters}
         rows={activePanel === 'pending' ? allPendingPayments : activePanel === 'invoices' ? asArray(data.state?.invoices) : activePanel === 'reports' ? allReports : [...asArray(data.customer_changes), ...asArray(data.pending_changes), ...asArray(data.invoice_changes), ...asArray(data.break_events), ...asArray(data.backups)]}
+        customers={customers}
+        services={services}
       />}
       {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
 
