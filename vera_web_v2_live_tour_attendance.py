@@ -67,6 +67,11 @@ def sync_breaks(state, records, now):
             by_worker.setdefault(candidates[0]['id'], []).append(row)
     for worker in state['employees']:
         previous = worker.get('attendance_break') or {}
+        override = worker.get('manual_break_end') or {}
+        if override.get('date') == day.isoformat():
+            continue
+        if override:
+            worker.pop('manual_break_end', None)
         if previous and previous.get('date') != day.isoformat():
             _clear_owned(worker, previous)
             previous = {}

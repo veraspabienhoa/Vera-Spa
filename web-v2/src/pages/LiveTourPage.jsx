@@ -479,6 +479,7 @@ const ADMIN_ACTIONS = new Set([
 function canRunAction(action, capabilities) {
   if (['reorder', 'admin_reorder'].includes(action)) return capabilities.reorder
   if (action === 'update_appointment') return capabilities.appointmentEdit
+  if (action === 'end_break') return capabilities.endBreak || capabilities.operate
   if (['booking', 'multi_booking'].includes(action)) return capabilities.booking
   if (action === 'customer_delete') return capabilities.customersDelete && capabilities.customers
   if (action === 'customer_combo_update') return capabilities.comboEdit && capabilities.customers
@@ -616,6 +617,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canCustomers = capability('customers_view', isAdmin || user?.permissions?.live_tour_customers_view === true)
   const canImportCombo = isAdmin && canAdmin && canPayment && canCustomers
   const canEditStartedAt = ['admin', 'quanly'].includes(normalizedRole) && canOperate
+  const canEndBreak = ['admin', 'quanly', 'letan'].includes(normalizedRole)
   const canViewComboPackages = ['admin', 'quanly', 'letan'].includes(normalizedRole) && canCustomers
   const canReports = capability('reports_view', isAdmin || user?.permissions?.live_tour_reports_view === true)
   const canHistory = capability('history_view', isAdmin || user?.permissions?.live_tour_history_view === true)
@@ -673,7 +675,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Hãy tải Live Tour thành công trước khi thực hiện thao tác.')
       return null
     }
-    if (!canRunAction(action, { reorder: canReorder, appointmentEdit: canEditAppointment, operate: canOperate, payment: canPayment, admin: canAdmin, isAdmin, customersEdit: capabilities.customers_edit, customersDelete: capabilities.customers_delete, comboEdit: capabilities.customer_combo_edit, comboDelete: capabilities.customer_combo_delete, booking: canBook, invoiceEdit: canInvoiceEdit, invoiceDelete: canInvoiceDelete, paidInvoiceEdit: canPaidInvoiceEdit, paidInvoiceDelete: canPaidInvoiceDelete, backup: canBackup, customers: canCustomers })) {
+    if (!canRunAction(action, { endBreak: canEndBreak, reorder: canReorder, appointmentEdit: canEditAppointment, operate: canOperate, payment: canPayment, admin: canAdmin, isAdmin, customersEdit: capabilities.customers_edit, customersDelete: capabilities.customers_delete, comboEdit: capabilities.customer_combo_edit, comboDelete: capabilities.customer_combo_delete, booking: canBook, invoiceEdit: canInvoiceEdit, invoiceDelete: canInvoiceDelete, paidInvoiceEdit: canPaidInvoiceEdit, paidInvoiceDelete: canPaidInvoiceDelete, backup: canBackup, customers: canCustomers })) {
       setError('Tài khoản chưa được cấp quyền thực hiện thao tác này trên Live Tour.')
       return null
     }
@@ -718,7 +720,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     } finally {
       setActionBusy('')
     }
-  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, canReorder, isAdmin, canEditAppointment, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
+  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, canReorder, isAdmin, canEndBreak, canEditAppointment, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
 
   const previewExpired = async () => {
     if (!canAdmin || actionBusy || data.revision == null) return
@@ -1492,7 +1494,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
               <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Nghỉ giữa ca</button>
-              <button type="button" className="secondary-button" title={selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) ? 'Giờ vào tự động cập nhật từ Chấm công' : ''} disabled={!canOperate || !selectedIds.size || selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc nghỉ</button>
+              <button type="button" className="secondary-button" disabled={!(canEndBreak || canOperate) || !selectedIds.size || (!canEndBreak && selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active)) || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc nghỉ</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
               {canReorder ? <input type="number" aria-label="STT mới" placeholder="STT" min="1" step="1" value={targetPosition} onChange={event => setTargetPosition(event.target.value)}/> : <span/>}
@@ -1527,7 +1529,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     </section>
     </div>
 
-    {asArray(data.retained_assignments).length > 0 && <section className="tour-roster-retained"><strong>Phiên còn mở ngoài danh sách Leader/Nhân viên</strong><p>Hoàn tất các phiên cũ bên dưới; các tài khoản này không nhận booking mới.</p>{data.retained_assignments.map((worker) => <div key={worker.id}><span>{worker.name} · {worker.service || 'Nghỉ giữa ca'} · {worker.room}</span>{worker.break_started_at ? <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('end_break', { employee_id: worker.id }, [])}>Kết thúc nghỉ</button> : normalizedColumn(worker.status) === 'CHO THANH TOAN' ? <button type="button" className="secondary-button" disabled={!canPayment || Boolean(actionBusy)} onClick={async () => { const result = await executeAction('move_pending', { employee_id: worker.id }, []); if (result) openModal('checkout', { item: result.result.pending, rowIds: [] }) }}>Thanh toán</button> : <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => { setError(''); setBookingContext({ employeeId: worker.id }) }}>Xử lý phiên</button>}</div>)}</section>}
+    {asArray(data.retained_assignments).length > 0 && <section className="tour-roster-retained"><strong>Phiên còn mở ngoài danh sách Leader/Nhân viên</strong><p>Hoàn tất các phiên cũ bên dưới; các tài khoản này không nhận booking mới.</p>{data.retained_assignments.map((worker) => <div key={worker.id}><span>{worker.name} · {worker.service || 'Nghỉ giữa ca'} · {worker.room}</span>{worker.break_started_at ? <button type="button" className="secondary-button" disabled={!(canEndBreak || canOperate) || Boolean(actionBusy)} onClick={() => executeAction('end_break', { employee_id: worker.id }, [])}>Kết thúc nghỉ</button> : normalizedColumn(worker.status) === 'CHO THANH TOAN' ? <button type="button" className="secondary-button" disabled={!canPayment || Boolean(actionBusy)} onClick={async () => { const result = await executeAction('move_pending', { employee_id: worker.id }, []); if (result) openModal('checkout', { item: result.result.pending, rowIds: [] }) }}>Thanh toán</button> : <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => { setError(''); setBookingContext({ employeeId: worker.id }) }}>Xử lý phiên</button>}</div>)}</section>}
     <section className="panel live-tour-operator live-tour-workspace" ref={workspaceRef}>
       <div className="live-tour-panel-tabs" role="tablist" aria-label="Không gian vận hành Live Tour">
         {PANEL_TABS.map(([key, label]) => {

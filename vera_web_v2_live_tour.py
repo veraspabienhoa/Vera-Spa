@@ -2055,7 +2055,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
     elif action == "end_break":
         employee = _employee(state, payload.get("employee_id"))
         if (employee.get("attendance_break", {}).get("out") == employee.get("break_started_at")
-                and employee.get("break_started_at")):
+                and employee.get("break_started_at") and not payload.get("_manual_break_allowed")):
             raise HTTPException(409, "Giờ vào được tự động cập nhật từ Chấm công khi có FaceID vào lại.")
         if not employee.get("break_started_at"):
             raise HTTPException(409, "Nhân viên chưa bắt đầu nghỉ giữa ca.")
@@ -2066,6 +2066,10 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         outcome = "Đúng giờ" if break_minutes <= 90 else "Quá 90 phút"
         employee["break_started_at"] = ""
         employee["clock_in"] = _iso(now)
+        if payload.get("_manual_break_allowed"):
+            employee["manual_break_end"] = {"date": now.astimezone(VN_TZ).date().isoformat(), "at": _iso(now), "actor": actor}
+            if employee.get("attendance_break"):
+                employee["attendance_break"]["in"] = _iso(now)
         employee["break_count"] = int(employee.get("break_count") or 0) + 1
         employee.setdefault("break_history", []).append({
             "started_at": _iso(break_started), "ended_at": _iso(now),
@@ -3624,7 +3628,9 @@ def install_live_tour_routes(
             raise HTTPException(400, "Mọi thao tác thay đổi Live Tour cần idempotency_key để chống ghi trùng.")
         payload_hash = _canonical_payload_hash(action, payload)
         with engine_instance().begin() as conn:
-            require_feature(conn, ident, "live_tour_customers_edit" if action == "customer_upsert" and payload.get("customer_id") else _required_action_feature(action))
+            manual_break_allowed = action == "end_break" and str(getattr(ident, "role", "") or "").strip().lower() in {"admin", "letan", "quanly"}
+            if not manual_break_allowed:
+                require_feature(conn, ident, "live_tour_customers_edit" if action == "customer_upsert" and payload.get("customer_id") else _required_action_feature(action))
             if action in {"booking", "multi_booking"}:
                 require_feature(conn, ident, "live_tour_view")
             if "quick_booking" in payload:
@@ -3690,6 +3696,9 @@ def install_live_tour_routes(
             working = deepcopy(state)
             if action == "sync_daily_status":
                 payload = {**payload, "today": now.astimezone(VN_TZ).date().isoformat(), "directory": _employee_directory(conn), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
+            payload.pop("_manual_break_allowed", None)
+            if manual_break_allowed:
+                payload["_manual_break_allowed"] = True
             result = _apply_action(working, action, payload, actor, now)
             if action in {"checkout", "quick_checkout", "combo_purchase"} and result.get("invoice"):
                 bank = _selected_bank(working.get("payment_settings") or {}, grants.get("viewer_bank"), payload.get("bank_selection", "auto"))

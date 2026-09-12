@@ -125,6 +125,38 @@ def test_attendance_active_break_blocks_booking_and_manual_return():
         assert error.value.status_code == 409
 
 
+@pytest.mark.parametrize('role', ['admin', 'letan', 'quanly'])
+def test_authorized_manual_return_wins_until_next_day(monkeypatch, role):
+    class OperatorIdentity(RouteIdentity):
+        role: str = ''
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None): return NOW
+    monkeypatch.setattr(live, 'datetime', Clock)
+    db = SettingsDatabase(board())
+    app = FastAPI()
+    live.install_live_tour_routes(app, engine_instance=lambda: db,
+        current_identity=lambda: OperatorIdentity(role=role), require_feature=lambda *_: None,
+        feature_allowed=lambda *_: True, identity_type=OperatorIdentity,
+        attendance_reader=lambda *args: [record()])
+    client = TestClient(app)
+    loaded = client.get('/v2/live-tour').json()
+    result = client.post('/v2/live-tour/action', json={
+        'action': 'end_break', 'expected_revision': loaded['revision'],
+        'idempotency_key': 'manual-end-' + role, 'payload': {'employee_id': 'e1'},
+    })
+    assert result.status_code == 200, result.text
+    refreshed = client.get('/v2/live-tour').json()
+    assert not refreshed['records'][0]['_attendance_break_active']
+    worker = db.stored['employees'][0]
+    assert worker['manual_break_end']['date'] == NOW.date().isoformat()
+    tomorrow = NOW + timedelta(days=1)
+    sync_breaks(db.stored, [record(date=tomorrow.strftime('%d/%m/%Y'),
+        break_return_deadline_iso=tomorrow.replace(hour=16, minute=15).isoformat())], tomorrow)
+    assert worker['break_started_at']
+    assert 'manual_break_end' not in worker
+
+
 def test_overdue_break_blocks_single_multi_and_quick_booking_until_return():
     state = board()
     state['employees'].append(employee('e2', 'Bình'))
