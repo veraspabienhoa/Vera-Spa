@@ -167,10 +167,11 @@ def test_checkout_bank_snapshot_is_persisted_and_retry_is_stable(selection, acco
 
 def test_daily_route_uses_server_leaves_and_rejects_stale_revision():
     from test_live_tour_server_only import SettingsDatabase
+    queried_days = []
     class DailyDatabase(SettingsDatabase):
         def execute(self, statement, params=None):
             if 'FROM leave_records' in str(statement):
-                assert params['day'] == live.datetime.now(live.VN_TZ).date()
+                queried_days.append(params['day'])
                 class Result:
                     def mappings(self): return self
                     def all(self): return [{'employee_name':'An', 'leave_reason':'Leader nghỉ phép theo chính sách'}]
@@ -179,10 +180,12 @@ def test_daily_route_uses_server_leaves_and_rejects_stale_revision():
     db = DailyDatabase(state_with(employee('e1','An')))
     client = route_client(db, 'quanly')
     current = client.get('/v2/live-tour').json()
+    assert queried_days[-1] == (live.datetime.now(live.VN_TZ) - live.timedelta(hours=5)).date()
     body = {'action':'sync_daily_status', 'expected_revision':current['revision'],'idempotency_key':'daily-status-server',
         'payload':{'leaves':[], 'directory':[]}}
     response = client.post('/v2/live-tour/action',json=body)
     assert response.status_code == 200, response.text
+    assert queried_days[-1] == live.datetime.now(live.VN_TZ).date()
     assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'
     assert db.stored['employees'][0]['appointment'] == 'Leader nghỉ phép theo chính sách'
     body['idempotency_key'] = 'daily-status-stale'

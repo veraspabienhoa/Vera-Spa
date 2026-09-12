@@ -77,7 +77,7 @@ test('customer and service catalogs remain searchable when the active panel has 
   let current = { ...EMPTY_TOUR_FILTERS }
   const props = {
     rows: [],
-    customers: [{ id: 'c1', name: 'Anh Lưu', phone: '0919442626' }],
+    customers: [{ id: 'c1', name: 'Anh Lưu', phone: '0919442626', combo_purchases: [{remaining: 3}, {remaining: 4}] }],
     services: [{ id: 's1', name: '90 Tiêu chuẩn' }],
     value: current,
     onChange(value) { current = value },
@@ -86,7 +86,7 @@ test('customer and service catalogs remain searchable when the active panel has 
   try {
     await act(() => root.render(React.createElement(module.exports.default, props)))
     await act(() => input('Khách hàng').focus())
-    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', 'Anh Lưu - 0919442626'])
+    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', 'Anh Lưu - 0919442626Còn 7 vé combo'])
     await act(() => input('Dịch vụ').focus())
     assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', '90 Tiêu chuẩn'])
   } finally { await act(() => root.unmount()) }

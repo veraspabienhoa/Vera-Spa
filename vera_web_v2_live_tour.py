@@ -11,6 +11,8 @@ from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
 import hashlib
 import json
 import math
+import logging
+from threading import Event, Thread
 import re
 import unicodedata
 from collections.abc import Callable
@@ -980,7 +982,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
     for key in ("combo_purchase_id", "combo_reserved_units", "combo_reserved_components"):
         employee.pop(key, None)
     for key in (
-        "service", "request", "request_source", "room", "status", "booked_at", "booking_actor", "private_room_share_group",
+        "service", "request", "request_source", "room", "status", "booked_at", "booking_created_at", "auto_started_at", "auto_start_error", "booking_actor", "private_room_share_group",
         "started_at", "completed_at", "payment_status", "customer_id", "customer_name",
         "customer_phone", "booking_id",
         "service_price_source", "completion_note",
@@ -1230,7 +1232,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
         "service_price_source": "catalog",
         "request": request, "request_source": "auto_yc_ca1" if auto_request else "manual",
         "room": room,
-        "status": "Đang chờ", "duration": duration, "booked_at": _iso(now), "booking_actor": actor,
+        "status": "Đang chờ", "duration": duration, "booked_at": _iso(_adjust_booking_time(now)), "booking_created_at": _iso(now), "booking_actor": actor,
         "started_at": "", "completed_at": "", "wait_minutes": None,
         "completion_note": "", "completion_delta_minutes": None, "steam_elapsed_minutes": None,
         "payment_status": "", "customer_id": str((customer or {}).get("id") or ""),
@@ -1387,6 +1389,13 @@ def _service_ticket_units(state: dict[str, Any], service_name: Any) -> int:
     return 1
 
 
+def _adjust_booking_time(booked):
+    local = booked.astimezone(VN_TZ)
+    if time(0, 0, 1) <= local.time() <= time(1):
+        return (local - timedelta(days=1)).replace(hour=23, minute=59, second=0, microsecond=0)
+    return local
+
+
 def _quick_booking_at(booking, now):
     if not isinstance(booking, dict) or set(booking) - {"employee_id", "room", "service_items", "booked_at", "correction_reason"}:
         raise HTTPException(400, "Thông tin nhập thanh toán nhanh không hợp lệ.")
@@ -1398,7 +1407,7 @@ def _quick_booking_at(booking, now):
         raise HTTPException(400, "Không thể thanh toán booking trong tương lai.")
     if booked.date() < now.astimezone(VN_TZ).date() and len(str(booking.get("correction_reason") or "").strip()) < 3:
         raise HTTPException(400, "Nhập booking trước hôm nay cần lý do điều chỉnh.")
-    return booked
+    return _adjust_booking_time(booked)
 
 
 def _quick_booking_entry(state, booking, now, payment=None):
@@ -1886,7 +1895,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         target_position["counter_key"] = counter_key
         target_position["counter_day"] = original_position["counter_day"]
         fields = ("service", "service_items", "service_price", "service_price_source", "duration",
-                  "request", "request_source", "room", "status", "booked_at", "booking_actor", "booking_id", "private_room_share_group",
+                  "request", "request_source", "room", "status", "booked_at", "booking_created_at", "booking_actor", "booking_id", "private_room_share_group",
                   "started_at", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
                   "completion_delta_minutes", "steam_elapsed_minutes", "customer_id", "customer_name",
                   "customer_phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components", "note")
@@ -3044,6 +3053,29 @@ def _room_available(state: dict[str, Any], room: str) -> bool:
     return True
 
 
+def _auto_start_waiting(state, now):
+    local = now.astimezone(VN_TZ)
+    cutoff = local.replace(hour=0, minute=15, second=0, microsecond=0)
+    day = local.date().isoformat()
+    if local < cutoff or state.get("auto_start_waiting_date") == day:
+        return
+    candidates = [row for row in state["employees"] if _norm(row.get("status")) == "dang cho"
+                  and (_parse_datetime(row.get("booking_created_at") or row.get("booked_at")) or local) <= cutoff]
+    candidates.sort(key=lambda row: (_parse_datetime(row.get("booked_at")) or local, str(row["id"])))
+    if not candidates:
+        return
+    for index, row in enumerate(candidates):
+        try:
+            _start_employee(state, row, cutoff + timedelta(seconds=index))
+            row["auto_started_at"] = _iso(local)
+            row.pop("auto_start_error", None)
+            _audit(state, "auto_start_waiting", {"employee_id": row["id"], "started_at": row["started_at"]}, "system", local)
+        except HTTPException as exc:
+            row["auto_start_error"] = str(exc.detail)
+            _audit(state, "auto_start_waiting_failed", {"employee_id": row["id"], "error": str(exc.detail)}, "system", local)
+    state["auto_start_waiting_date"] = day
+
+
 def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[str, Any], int]:
     suffix = " FOR UPDATE" if for_update else ""
     row = conn.execute(text(f"""
@@ -3056,10 +3088,12 @@ def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[
         before = deepcopy(state)
         directory = _employee_directory(conn, now)
         _reconcile_roster(state, directory, _new_directory_employee)
+        leave_day = (now.astimezone(VN_TZ) - timedelta(hours=5)).date()
         leaves = [dict(item) for item in conn.execute(text(
             "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
-        ), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]
+        ), {"day": leave_day}).mappings().all()]
         _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
+        _auto_start_waiting(state, now)
         if state != before:
             revision = _write_state(conn, state, revision, "live_tour_daily_projection")
         return state, revision
@@ -3617,6 +3651,37 @@ def install_live_tour_routes(
     timezone = vn_tz or VN_TZ
     attendance = AttendanceBreakReader(attendance_reader) if attendance_reader else None
 
+    scheduler_stop = Event()
+    scheduler_thread = None
+
+    def scheduled_projection():
+        while not scheduler_stop.is_set():
+            try:
+                with engine_instance().begin() as conn:
+                    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+                    # Do not bootstrap an unused board from a background task.
+                    exists = conn.execute(text("SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
+                                          {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+                    if exists:
+                        _read_state(conn, datetime.now(timezone), for_update=True)
+            except Exception:
+                logging.getLogger(__name__).exception("Live Tour scheduled projection failed; retrying on next tick")
+            scheduler_stop.wait(15)
+
+    def start_scheduler():
+        nonlocal scheduler_thread
+        scheduler_stop.clear()
+        scheduler_thread = Thread(target=scheduled_projection, name="live-tour-scheduler", daemon=True)
+        scheduler_thread.start()
+
+    def stop_scheduler():
+        scheduler_stop.set()
+        if scheduler_thread:
+            scheduler_thread.join(timeout=2)
+
+    app.add_event_handler("startup", start_scheduler)
+    app.add_event_handler("shutdown", stop_scheduler)
+
     def read_state(conn, now, *, for_update=False):
         # Runtime callback uses the same installed policy chain as Chấm công.
         records = attendance.read(conn, now.astimezone(timezone).date(), force=for_update) if attendance else None
@@ -3790,8 +3855,9 @@ def install_live_tour_routes(
                     raise HTTPException(400, "Nhập booking trực tiếp chỉ dùng trong Thanh toán nhanh.")
                 require_feature(conn, ident, "live_tour_booking")
                 require_feature(conn, ident, "live_tour_view")
-                booked = _quick_booking_at(payload["quick_booking"], now)
-                if booked.date() < now.astimezone(VN_TZ).date():
+                _quick_booking_at(payload["quick_booking"], now)
+                entered = _parse_datetime(payload["quick_booking"]["booked_at"])
+                if entered.date() < now.astimezone(VN_TZ).date():
                     require_feature(conn, ident, "live_tour_admin")
             if action in {"booking", "multi_booking", "update_booking"} and (
                 payload.get("start_now") or any(row.get("start_now") for row in (payload.get("bookings") or []) if isinstance(row, dict))

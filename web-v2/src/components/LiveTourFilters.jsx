@@ -2,6 +2,7 @@ import './LiveTourFilters.css'
 import { useMemo } from 'react'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import { customerMatches } from '../lib/customerSearch'
+import { customerTicketLabel } from '../lib/liveTourComboBooking'
 import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
 export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [] }) {
@@ -13,6 +14,10 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
       result[key] = [...unique.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi'))
     }
     merge('customer', customers.map((customer) => [customer?.name, customer?.phone].filter(Boolean).join(' - ')))
+    result.customer = result.customer.map(option => {
+      const customer = customers.find(item => [item.name, item.phone].filter(Boolean).join(' - ') === option.label)
+      return { ...option, badge: customer ? customerTicketLabel(customer) || 'Còn 0 vé combo' : undefined }
+    })
     merge('service', services.map((service) => service?.name || service?.service))
     return result
   }, [customers, rows, services])

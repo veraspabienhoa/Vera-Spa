@@ -1,11 +1,14 @@
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import { customerMatches } from '../lib/customerSearch'
+import { customerTicketLabel } from '../lib/liveTourComboBooking'
 
 export default function LiveTourCheckoutCustomer({ customers, form, setForm, disabled, customerRequired = false, onSelectCustomer }) {
   const options = customers.map((customer) => ({
     value: String(customer.id || customer._id || customer.customer_id || ''),
     label: customer.name || customer.customer_name || '',
     detail: customer.phone || customer.customer_phone || '',
+    displayLabel: [customer.name || customer.customer_name, customer.phone || customer.customer_phone].filter(Boolean).join(' - '),
+    badge: customerTicketLabel(customer) || 'Còn 0 vé combo',
   })).filter((option) => option.value)
   const choose = (id) => {
     const customer = options.find((option) => option.value === id)
