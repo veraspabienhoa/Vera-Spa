@@ -1,7 +1,7 @@
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import { customerMatches } from '../lib/customerSearch'
 
-export default function LiveTourCheckoutCustomer({ customers, form, setForm, disabled }) {
+export default function LiveTourCheckoutCustomer({ customers, form, setForm, disabled, customerRequired = false }) {
   const options = customers.map((customer) => ({
     value: String(customer.id || customer._id || customer.customer_id || ''),
     label: customer.name || customer.customer_name || '',
@@ -18,7 +18,7 @@ export default function LiveTourCheckoutCustomer({ customers, form, setForm, dis
     ...(current.customer_id ? { customer_name: '', phone: '' } : {}), [field]: query,
     combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))
   return <>
-    <LiveTourSearchSelect label="Khách hàng" value={form.customer_id} searchValue={form.customer_name}
+    <LiveTourSearchSelect label="Khách hàng" value={form.customer_id} searchValue={form.customer_name} required={customerRequired}
       options={options} disabled={disabled} placeholder="Tìm tên hoặc nhập khách mới" emptyLabel="Khách lẻ"
       filterOption={(option, query) => customerMatches({ name: option.label, phone: option.detail }, query)}
       onSearch={(query) => type('customer_name', query)} onChange={choose}/>
