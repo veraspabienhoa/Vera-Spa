@@ -1314,7 +1314,7 @@ def _service_ticket_units(state: dict[str, Any], service_name: Any) -> int:
 def _quick_booking_at(booking, now):
     if not isinstance(booking, dict) or set(booking) - {"employee_id", "room", "service_items", "booked_at", "correction_reason"}:
         raise HTTPException(400, "Thông tin nhập thanh toán nhanh không hợp lệ.")
-    raw = booking.get("booked_at")
+    raw = booking.get("booked_at", _iso(now))
     booked = _parse_datetime(raw)
     if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})", raw) or not booked or not 2000 <= booked.year <= 2100:
         raise HTTPException(400, "Hãy chọn ngày và giờ booking hợp lệ.")
@@ -1327,13 +1327,19 @@ def _quick_booking_at(booking, now):
 
 def _quick_booking_entry(state, booking, now):
     booked = _quick_booking_at(booking, now)
+    service, duration, price, items = _service_selection(state, booking, booked)
+    if all(re.match(r"^xong hoi(?:\b|$)", _norm(item['name'])) for item in items):
+        return {"employee_id": "", "employee_name": "", "room": "", "service": service,
+                "service_items": items, "duration": duration, "price": price,
+                "price_source": "catalog", "booked_at": _iso(booked), "request": ""}
+    if not booking.get("booked_at"):
+        raise HTTPException(400, "Hãy chọn ngày và giờ booking hợp lệ.")
     employee = _employee(state, booking.get("employee_id"))
     if employee.get("hidden") or employee.get("roster_eligible") is False:
         raise HTTPException(409, "Chọn nhân viên đang có trong danh sách phục vụ.")
     room = _catalog_item(state, "rooms", booking)
     if not room or room.get("active") is False:
         raise HTTPException(400, "Hãy chọn phòng/giường đang sử dụng trong danh mục.")
-    service, duration, price, items = _service_selection(state, booking, booked)
     return {"employee_id": employee["id"], "employee_name": employee["name"],
             "room": room["name"], "service": service, "service_items": items,
             "duration": duration, "price": price, "price_source": "catalog",

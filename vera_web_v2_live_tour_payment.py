@@ -70,8 +70,8 @@ def payment_values(state, payload, subtotal, money, max_money):
         raise HTTPException(400, 'Giảm giá không được lớn hơn tạm tính.')
     tip = money(payload.get('tip'), label='Tiền tip', allow_blank_as_zero=True)
     selected = payload.get('tip_card_ids', [])
-    if not isinstance(selected, list) or len(selected) > 30 or any(not isinstance(item, str) for item in selected) or len(set(selected)) != len(selected):
-        raise HTTPException(400, 'Danh sách thẻ TIP không hợp lệ hoặc bị trùng.')
+    if not isinstance(selected, list) or len(selected) > 30 or any(not isinstance(item, str) for item in selected):
+        raise HTTPException(400, 'Danh sách thẻ TIP không hợp lệ hoặc vượt quá 30 thẻ.')
     cards = []
     if selected:
         if tip:

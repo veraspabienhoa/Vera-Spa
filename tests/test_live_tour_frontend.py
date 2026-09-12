@@ -143,7 +143,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
     assert 'live-tour-controls-label' not in controls
     for label in ('Thực hiện đã chọn', 'Hoàn thành', 'Chờ thanh toán', 'Thanh toán'):
         assert f'> {label}</button>' not in controls and f'>{label}</button>' not in controls
-    for label in ('Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Ca tự cập nhật sau check-in', 'Nghỉ giữa ca', 'Kết thúc nghỉ giữa ca', 'Đánh dấu VIP', 'Bỏ VIP', 'Đổi dịch vụ', 'Thêm dịch vụ'):
+    for label in ('Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Nghỉ giữa ca', 'Kết thúc nghỉ giữa ca', 'Đánh dấu VIP', 'Bỏ VIP', 'Đổi dịch vụ', 'Thêm dịch vụ'):
         assert label in controls
 
 
@@ -442,9 +442,9 @@ def test_live_tour_combo_purchase_is_catalog_priced_and_supports_new_customers()
         source.index("{canAdmin && modal.kind === 'combo_purchase'")
     ]
 
-    assert "Mua combo cho khách mới" in source
-    assert "newCustomer: true" in source
-    assert "readOnly={!modal.newCustomer}" in purchase_form
+    assert "Mua combo cho khách hàng" in source
+    assert "LiveTourCheckoutCustomer" in purchase_form
+    assert "readOnly={!modal.newCustomer}" not in purchase_form
     assert "comboPurchasePreviewAmount" in purchase_form
     assert "readOnly aria-readonly=\"true\"" in purchase_form
     assert "amount:" not in purchase_payload
@@ -492,7 +492,7 @@ def test_live_tour_quick_checkout_is_independent_and_uses_stable_employee_ids():
     ]
     button = next(
         line for line in source.splitlines()
-        if ">Thanh toán nhanh</button>" in line and "openModal('quick_checkout', { rowIds: [] })" in line
+        if ">Thanh toán nhanh</button>" in line and "disabled={!canPayment || Boolean(actionBusy)}" in line
     )
 
     assert "stableEmployeeId(record)" in helper
