@@ -1018,6 +1018,8 @@ def _service_selection(state, payload, now):
 
 
 def _entry_ticket_units(state, entry):
+    if entry.get("price_source") == "combo_ticket":
+        return 1  # Server-created redemption of one legacy generic ticket.
     if entry.get("service_items"):
         return sum(row.get("ticket_units", 1) * row["quantity"] for row in entry["service_items"])
     return _service_ticket_units(state, entry.get("service"))
@@ -1314,7 +1316,7 @@ def _service_ticket_units(state: dict[str, Any], service_name: Any) -> int:
 def _quick_booking_at(booking, now):
     if not isinstance(booking, dict) or set(booking) - {"employee_id", "room", "service_items", "booked_at", "correction_reason"}:
         raise HTTPException(400, "Thông tin nhập thanh toán nhanh không hợp lệ.")
-    raw = booking.get("booked_at", _iso(now))
+    raw = booking.get("booked_at")
     booked = _parse_datetime(raw)
     if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})", raw) or not booked or not 2000 <= booked.year <= 2100:
         raise HTTPException(400, "Hãy chọn ngày và giờ booking hợp lệ.")
@@ -1325,10 +1327,55 @@ def _quick_booking_at(booking, now):
     return booked
 
 
-def _quick_booking_entry(state, booking, now):
+def _quick_combo_selection(state, payload, booked):
+    """Resolve owned, unreserved entitlements; never infer services from a name."""
+    if _canonical_payment_method(payload.get("payment_method"), quick=True) != "COMBO":
+        raise HTTPException(400, "Dùng dịch vụ từ combo cần phương thức COMBO.")
+    customer = _customer(state, payload, create=False)
+    if not customer:
+        raise HTTPException(400, "Phải chọn khách hàng khi dùng combo.")
+    purchase = next((row for row in customer.get("combo_purchases", [])
+                     if row.get("id") == payload.get("combo_purchase_id")), None)
+    if purchase is None:
+        raise HTTPException(404, "Không tìm thấy combo đã mua của khách hàng.")
+    available = _available_combo(state, customer["id"], purchase)
+    require_available(available, booked.date(), "Combo đã mua")
+    if available["remaining"] <= 0:
+        raise HTTPException(409, "Combo đã hết lượt hoặc các lượt còn lại đã được giữ chỗ.")
+    if "component_balances" not in available:
+        # Imported generic tickets do not identify a catalog service. Record one
+        # prepaid redemption explicitly instead of inventing a service/price.
+        return f"Sử dụng combo: {purchase.get('combo_name') or 'Combo vé'}", None, 0, []
+    requested = []
+    for part in available["component_balances"]:
+        if part.get("remaining", 0) <= 0:
+            continue
+        service = next((row for row in state["services"] if row["id"] == part["service_id"]), None)
+        if service is None:
+            continue
+        try:
+            require_available(service, booked.date(), "Dịch vụ trong combo")
+        except HTTPException:
+            continue
+        requested.append({"service_id": service["id"], "quantity": 1})
+    if not requested:
+        raise HTTPException(409, "Combo không còn dịch vụ khả dụng trong ngày booking.")
+    # Same default as booking: one use per available component, not its entire
+    # balance. The browser previews every component and the total debit.
+    selection = _service_selection(state, {"service_items": requested}, booked)
+    plan = component_debits(available, [{"service_items": selection[3]}], state["services"], booked.date())
+    if sum(part["units"] for part in plan) > available["remaining"]:
+        raise HTTPException(409, "Combo không đủ lượt chưa giữ chỗ để thanh toán.")
+    return selection
+
+
+def _quick_booking_entry(state, booking, now, checkout_payload=None):
     booked = _quick_booking_at(booking, now)
-    service, duration, price, items = _service_selection(state, booking, booked)
-    if all(re.match(r"^xong hoi(?:\b|$)", _norm(item['name'])) for item in items):
+    checkout_payload = checkout_payload or {}
+    from_combo = booking.get("service_items") in (None, []) and checkout_payload.get("combo_purchase_id")
+    service, duration, price, items = (_quick_combo_selection(state, checkout_payload, booked)
+                                      if from_combo else _service_selection(state, booking, booked))
+    if items and all(re.match(r"^xong hoi(?:\b|$)", _norm(item['name'])) for item in items):
         return {"employee_id": "", "employee_name": "", "room": "", "service": service,
                 "service_items": items, "duration": duration, "price": price,
                 "price_source": "catalog", "booked_at": _iso(booked), "request": ""}
@@ -1342,7 +1389,7 @@ def _quick_booking_entry(state, booking, now):
         raise HTTPException(400, "Hãy chọn phòng/giường đang sử dụng trong danh mục.")
     return {"employee_id": employee["id"], "employee_name": employee["name"],
             "room": room["name"], "service": service, "service_items": items,
-            "duration": duration, "price": price, "price_source": "catalog",
+            "duration": duration, "price": price, "price_source": "combo_ticket" if from_combo and not items else "catalog",
             "booked_at": _iso(booked), "request": ""}
 
 
@@ -1364,7 +1411,7 @@ def _checkout_mutating(
     if "quick_booking" in payload:
         if not quick or pending_id or direct_ids:
             raise HTTPException(400, "Không được trộn nhập thanh toán nhanh với hóa đơn hoặc dòng đang chờ thanh toán.")
-        entries = [_quick_booking_entry(state, manual_booking, now)]
+        entries = [_quick_booking_entry(state, manual_booking, now, payload)]
     elif pending:
         entries = deepcopy(list(pending.get("entries") or []))
     else:
