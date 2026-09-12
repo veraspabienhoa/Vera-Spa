@@ -6,6 +6,8 @@ booking/payment operation is committed as one PostgreSQL transaction.
 """
 from __future__ import annotations
 
+from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
+
 import hashlib
 import json
 import math
@@ -1130,6 +1132,8 @@ def _resolved_service_price(state: dict[str, Any], entry: dict[str, Any]) -> int
 
 
 def _require_checked_in(employee, now):
+    if employee.get("break_started_at"):
+        raise HTTPException(409, "Nhân viên đang nghỉ giữa ca, chưa có giờ vào lại nên không thể đặt Booking.")
     if (_shift_bucket(employee) not in {"ca1", "ca2"}
             or _norm(employee.get("work_status")) != "di lam"
             or (employee.get("shift_checkin_date") and (
@@ -2034,6 +2038,9 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         result["break_event"] = start_event
     elif action == "end_break":
         employee = _employee(state, payload.get("employee_id"))
+        if (employee.get("attendance_break", {}).get("out") == employee.get("break_started_at")
+                and employee.get("break_started_at")):
+            raise HTTPException(409, "Giờ vào được tự động cập nhật từ Chấm công khi có FaceID vào lại.")
         if not employee.get("break_started_at"):
             raise HTTPException(409, "Nhân viên chưa bắt đầu nghỉ giữa ca.")
         break_started = _parse_datetime(employee.get("break_started_at"))
@@ -2533,7 +2540,13 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
     standard_start = employee.get("started_at") if _norm(employee.get("request")) != "yc" else ""
     break_remaining: int | str = ""
     break_started = _parse_datetime(employee.get("break_started_at"))
-    if break_started:
+    attendance_break = employee.get("attendance_break") or {}
+    if attendance_break.get("out") != employee.get("clock_out"):
+        attendance_break = {}
+    break_deadline = _parse_datetime(attendance_break.get("deadline"))
+    if attendance_break and break_deadline:
+        break_remaining = 0 if attendance_break.get("in") else math.ceil((break_deadline - now.astimezone(VN_TZ)).total_seconds() / 60)
+    elif break_started:
         break_elapsed = max(0, int((now.astimezone(VN_TZ) - break_started).total_seconds() // 60))
         break_remaining = 90 - break_elapsed
     elif employee.get("last_break_remaining_minutes") not in (None, ""):
@@ -2553,7 +2566,7 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "SL tua": int(employee.get("tour_count") or 0), "SL yêu cầu": int(employee.get("request_count") or 0),
         "Tổng SL": int(employee.get("tour_count") or 0) + int(employee.get("request_count") or 0),
         "Đi làm": employee.get("work_status", ""), "Vào ca": "" if _norm(employee.get("work_status")) == "nghi phep" else employee.get("shift", ""),
-        "Breaktime": _display_datetime(employee.get("break_started_at")),
+        "Breaktime": _display_datetime(attendance_break.get("out") or employee.get("break_started_at")),
         "TG nghỉ còn lại": break_remaining,
         "Giờ ra": employee.get("clock_out", ""), "Giờ vào": employee.get("clock_in", ""),
         "Ghi chú": employee.get("note", ""), "VIP": "VIP" if employee.get("vip") else "",
@@ -2565,6 +2578,8 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_row_style": style, "_tour_groups": groups,
         "_employee_change_until": _iso(_employee_change_until(employee)) if _employee_change_until(employee) else "",
         "_employee_change_started_at": employee.get("started_at", ""),
+        "_break_countdown_deadline": attendance_break.get("deadline", "") if not attendance_break.get("in") else "",
+        "_break_from_attendance": bool(attendance_break),
         "_countdown_deadline": deadline, "_attendance_break_active": bool(employee.get("break_started_at")),
         "_manual_order": bool(employee.get("manual_order")), "_sort_index": employee.get("sort_index", 0), "_hidden": bool(employee.get("hidden")), "_active_booking": _active_booking(employee),
         "_payment_pending": _norm(employee.get("status")) == "cho thanh toan",
@@ -3344,11 +3359,23 @@ def _remember_idempotency(
 
 def install_live_tour_routes(
     app, *, engine_instance: Callable[[], Any], current_identity, require_feature,
-    feature_allowed: Callable[..., bool], identity_type, vn_tz=VN_TZ,
+    feature_allowed: Callable[..., bool], identity_type, vn_tz=VN_TZ, attendance_reader=None,
 ) -> None:
     if getattr(app.state, "live_tour_installed", False):
         return
     timezone = vn_tz or VN_TZ
+    attendance = AttendanceBreakReader(attendance_reader) if attendance_reader else None
+
+    def read_state(conn, now, *, for_update=False):
+        # Runtime callback uses the same installed policy chain as Chấm công.
+        records = attendance.read(conn, now.astimezone(timezone).date(), force=for_update) if attendance else None
+        state, revision = _read_state(conn, now, for_update=for_update)
+        if records is not None:
+            before = deepcopy(state)
+            sync_breaks(state, records, now.astimezone(timezone))
+            if state != before:
+                revision = _write_state(conn, state, revision, "attendance_break_projection")
+        return state, revision
 
     def permissions(conn, ident) -> dict[str, bool]:
         viewer_bank = None
@@ -3412,7 +3439,7 @@ def install_live_tour_routes(
             require_feature(conn, ident, "live_tour_view")
             # Creation and reads share the same lock only for the first bootstrap.
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, revision = _read_state(conn, now)
+            state, revision = read_state(conn, now)
             grants = permissions(conn, ident)
         return _state_response(
             state, revision, now, include_hidden=include_hidden,
@@ -3425,7 +3452,7 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_reports_view")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, revision = _read_state(conn, now)
+            state, revision = read_state(conn, now)
             grants = permissions(conn, ident)
         public = _state_response(state, revision, now, **grants)
         return {"revision": revision, "invoices": public["state"]["invoices"],
@@ -3437,7 +3464,7 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, revision = _read_state(conn, now)
+            state, revision = read_state(conn, now)
             can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
         return {"revision": revision, "customers": [dict(deepcopy(c), combo_purchases=[deepcopy(p) for p in c.get("combo_purchases", []) if not p.get("deleted_at")]) for c in state["customers"] if not c.get("deleted_at")], "can_export": can_export}
 
@@ -3447,7 +3474,7 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_admin")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, revision = _read_state(conn, now)
+            state, revision = read_state(conn, now)
         return {"revision": revision, "services": deepcopy(state["services"]), "combos": deepcopy(state["combos"]), "service_areas": _service_areas(state)}
 
     @app.get("/v2/live-tour/customers/{customer_id}/history")
@@ -3459,7 +3486,7 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, _ = _read_state(conn, now)
+            state, _ = read_state(conn, now)
             grants = permissions(conn, ident)
         readable = deepcopy(state)
         if not grants["can_paid_invoice_view"]:
@@ -3541,7 +3568,7 @@ def install_live_tour_routes(
             if action in {"checkout", "quick_checkout"} and _contains_customer_pii(payload):
                 require_feature(conn, ident, "live_tour_customers_view")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, revision = _read_state(conn, now, for_update=True)
+            state, revision = read_state(conn, now, for_update=True)
             previous = _idempotency_replay(
                 state, idempotency_key, action=action, actor=actor, payload_hash=payload_hash,
             )
@@ -3612,7 +3639,7 @@ def install_live_tour_routes(
             for feature in EXPORT_FEATURES.get(export_kind, ()):
                 require_feature(conn, ident, feature)
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, _ = _read_state(conn, now)
+            state, _ = read_state(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
             grants = permissions(conn, ident)
@@ -3647,7 +3674,7 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
-            state, _ = _read_state(conn, now)
+            state, _ = read_state(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
         filename = f"Live_Tour_{_business_date(now).strftime('%Y%m%d')}.png"

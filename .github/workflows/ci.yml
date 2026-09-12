@@ -1158,7 +1158,7 @@ jobs:
         run: npm run test:leave-edit
 
       - name: Verify Live Tour appointment editing and checkout display
-        run: node --test tests/liveTourAppointments.test.mjs tests/liveTourFilters.test.mjs tests/paymentPresentation.test.mjs
+        run: node --test tests/liveTourAppointments.test.mjs tests/liveTourFilters.test.mjs tests/paymentPresentation.test.mjs tests/liveTourBreaktime.test.mjs
 
       - name: Lint
         run: npm run lint
