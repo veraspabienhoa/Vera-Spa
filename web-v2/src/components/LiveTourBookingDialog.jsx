@@ -55,7 +55,7 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, canS
   return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog tour-multi-booking-dialog" title={`Đặt lịch · ${context.roomLabel}`}>
     {(error || message) && <p className="error-box" role="alert">{error || message}</p>}
     <form onSubmit={submit}><fieldset disabled={busy} className="tour-multi-booking-form">
-      {canSharePrivateRoom && <label className="wide"><input type="checkbox" checked={sharePrivateRoom} onChange={event => setSharePrivateRoom(event.target.checked)}/> Cho khách dùng chung phòng PR</label>}
+      {canSharePrivateRoom && <label className="tour-multi-share"><input type="checkbox" checked={sharePrivateRoom} onChange={event => setSharePrivateRoom(event.target.checked)}/> Cho khách dùng chung phòng PR</label>}
       <div className="tour-multi-booking-rows">{rows.map((row, index) => {
         const roomOptions = bookingRoomState(rooms, data.room_assignments || employees, catalog, row.employee_id, row.room, row.service_id ? [{ service_id: row.service_id, quantity: 1 }] : [], sharePrivateRoom).options.filter((option) => option.group === context.roomGroup)
         return <div className="tour-multi-booking-row" key={index}>

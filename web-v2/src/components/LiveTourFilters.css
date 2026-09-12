@@ -1,8 +1,8 @@
 .live-tour-filters {
   display: grid;
-  gap: 12px;
+  gap: 6px;
   min-width: 0;
-  margin: 12px 0;
+  margin: 6px 0;
   padding: 12px;
   border: 1px solid #dce6e1;
   border-radius: 10px;
@@ -60,12 +60,13 @@
 
 .live-tour-filters-actions {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
 }
 
 .live-tour-filters .live-tour-filters-reset {
-  min-height: 2.75rem;
-  padding: 8px 16px;
+  min-height: 32px;
+  padding: 4px 12px;
   font-size: .875rem;
   line-height: 1.4;
 }

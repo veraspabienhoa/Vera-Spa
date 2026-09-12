@@ -57,7 +57,7 @@ jobs:
             fi
             if [[ "$attempt" -lt 3 ]]; then
               wait_seconds=$((attempt * 15))
-              echo "DEPLOY: VPS could not fetch GitHub; retrying in ${wait_seconds}s"
+              echo "DEPLOY: deployment or health check failed; see preceding logs; retrying in ${wait_seconds}s"
               sleep "$wait_seconds"
             fi
           done

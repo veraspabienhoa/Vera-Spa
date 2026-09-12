@@ -16,6 +16,7 @@ from threading import Event, Thread
 import re
 import unicodedata
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
@@ -1272,8 +1273,8 @@ def _employee_change_until(employee: dict[str, Any]) -> datetime | None:
     return started + timedelta(minutes=employee.get("employee_change_minutes", 10))
 
 
-def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime) -> None:
-    if _norm(employee.get("work_status")) != "di lam" or _shift_bucket(employee) not in {"ca1", "ca2"}:
+def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime, *, admin_start=False) -> None:
+    if not admin_start and (_norm(employee.get("work_status")) != "di lam" or _shift_bucket(employee) not in {"ca1", "ca2"}):
         raise HTTPException(409, "Nhân viên phải đang Đi làm và được xếp Ca 1/Ca 2.")
     if employee.get("break_started_at"):
         raise HTTPException(409, "Nhân viên đang nghỉ giữa ca nên chưa thể bắt đầu dịch vụ.")
@@ -1854,7 +1855,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         # Resolve every bed from the stored state, regardless of table filters or
         # hidden rows. A single failed transition rolls back the entire room.
         result = _apply_action(state, "start" if action == "start_room" else "finish_to_pending",
-                               {"employee_ids": [row["id"] for row in members]}, actor, now)
+                               {"employee_ids": [row["id"] for row in members], "_admin_start": payload.get("_admin_start") is True}, actor, now)
         result["room"] = canonical_room
     elif action == "sync_daily_status":
         result = _sync_daily(state, payload["directory"], payload["leaves"], today=payload.get("today", ""))
@@ -1994,7 +1995,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         result["employees"] = booked
     elif action == "start":
         employee = _employee(state, payload.get("employee_id"))
-        _start_employee(state, employee, now)
+        _start_employee(state, employee, now, admin_start=payload.get("_admin_start") is True)
         result["employee"] = employee
     elif action == "add_minutes":
         employee = _employee(state, payload.get("employee_id"))
@@ -3679,8 +3680,20 @@ def install_live_tour_routes(
         if scheduler_thread:
             scheduler_thread.join(timeout=2)
 
-    app.add_event_handler("startup", start_scheduler)
-    app.add_event_handler("shutdown", stop_scheduler)
+    previous_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def live_tour_lifespan(application):
+        # Preserve the application's existing startup/shutdown and shared state.
+        # FastAPI/Starlette no longer expose app.add_event_handler.
+        async with previous_lifespan(application) as state:
+            start_scheduler()
+            try:
+                yield state
+            finally:
+                stop_scheduler()
+
+    app.router.lifespan_context = live_tour_lifespan
 
     def read_state(conn, now, *, for_update=False):
         # Runtime callback uses the same installed policy chain as Chấm công.
@@ -3915,6 +3928,9 @@ def install_live_tour_routes(
             if action == "sync_daily_status":
                 payload = {**payload, "today": now.astimezone(VN_TZ).date().isoformat(), "directory": _employee_directory(conn), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
             payload.pop("_manual_break_allowed", None)
+            payload.pop("_admin_start", None)
+            if action in {"start", "start_room"} and str(getattr(ident, "role", "") or "").strip().lower() == "admin":
+                payload["_admin_start"] = True
             if manual_break_allowed:
                 payload["_manual_break_allowed"] = True
             result = _apply_action(working, action, payload, actor, now)
