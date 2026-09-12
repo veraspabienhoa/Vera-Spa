@@ -114,16 +114,12 @@ test('viewers without appointment capability see the value without an editor', a
   } finally { await f.dispose() }
 })
 
-test('cleared board columns still show canonical service and room in quick checkout', async () => {
+test('cleared board columns still show canonical service and room in checkout', async () => {
   const f = await fixture({ payable: true })
   try {
-    await act(async () => [...document.querySelectorAll('button')].find((button) => button.textContent === 'Thanh toán nhanh').click())
-    const picker = document.querySelector('.live-tour-employee-picker input')
-    await act(() => picker.focus())
-    const option = [...document.querySelectorAll('.tour-search-popup [role=option]')].find((item) => item.textContent.includes('An An'))
-    assert.match(option.textContent, /An An.*1\.1.*Body 90/)
-    await act(async () => option.click())
-    assert.match(document.querySelector('.live-tour-employee-picked').textContent, /Body 90/)
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    assert.match(document.querySelector('.tour-checkout-context').textContent, /An An.*1\.1/)
+    assert.match(document.querySelector('.tour-transaction-dialog').textContent, /Body 90/)
   } finally { await f.dispose() }
 })
 
@@ -307,11 +303,14 @@ test('TIP has two exclusive rows, remembers default and sends only the selected 
     await act(() => tip().querySelector('button[aria-label="Mặc định: Chọn thẻ tiền TIP"]').click())
     assert.deepEqual([...tip().querySelectorAll('.tour-tip-mode input')].map((input) => input.checked), [false, true])
     const card = tip().querySelector('.tour-tip-cards .tour-page-items-content button')
-    assert.equal(card.textContent, '50.000 đ')
+    assert.equal(card.textContent, '+ 50.000 đ')
+    await act(() => card.click())
+    await act(() => card.click())
+    await act(() => tip().querySelector('[aria-label="Bỏ thẻ TIP 2"]').click())
     await act(() => card.click())
     await f.save(document.querySelector('.tour-transaction-dialog form'))
     assert.equal(f.writes[0].payload.tip, 0)
-    assert.deepEqual(f.writes[0].payload.tip_card_ids, ['tip50'])
+    assert.deepEqual(f.writes[0].payload.tip_card_ids, ['tip50', 'tip50'])
     await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
     assert.equal(tip().querySelectorAll('.tour-tip-mode input')[1].checked, true)
     await act(() => tip().querySelectorAll('.tour-tip-mode input')[0].click())
@@ -331,7 +330,7 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
   try {
     await act(() => document.querySelector('.tour-records-panel input[aria-label="Chọn An Bình"]').click())
     await clickText('Thanh toán nhanh')
-    await clickText('Nhập thanh toán nhanh')
+    assert.deepEqual([...document.querySelectorAll('.tour-checkout-source button')].map(button => button.textContent), ['Thanh toán nhanh', 'Mua combo cho khách hàng'])
     await chooseOption(inputFor('Nhân viên'), 'An An', f)
     await chooseOption(inputFor('Phòng / giường'), '1.1', f)
     await chooseOption(inputFor('Dịch vụ'), 'Body 90', f)
@@ -358,9 +357,7 @@ test('quick checkout searches pending invoice by room and retains the selected i
   } })
   try {
     await act(() => [...document.querySelectorAll('.tour-records-panel input[type=checkbox]')][0].click())
-    // Open the independent control, not the invoice's own quick button.
-    await act(() => document.querySelector('.live-tour-action-button[data-action="quick_checkout"]')?.click())
-    if (!document.querySelector('.tour-transaction-dialog')) await clickText('Thanh toán nhanh')
+    await act(() => document.querySelector('#live-tour-pending-panel .live-tour-card-actions .secondary-button').click())
     const picker = document.querySelector('.live-tour-employee-picker input')
     await chooseOption(picker, '3.1', f)
     assert.match(document.querySelector('.tour-checkout-context').textContent, /An An.*3\.1/)
