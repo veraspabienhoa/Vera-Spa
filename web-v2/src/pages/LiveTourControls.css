@@ -143,3 +143,14 @@
 .live-tour-page .tour-room-panel .tour-room-grid .has-private-service .tour-room-booking-button{padding-right:2px;padding-bottom:27px}
 .live-tour-page .live-tour-panel-tabs{flex-wrap:wrap;overflow:visible}
 .live-tour-page .live-tour-panel-tabs button{font-size:18px;font-weight:900;min-height:40px}
+@media(max-width:768px){
+  .live-tour-page div.tour-topbar{flex-wrap:wrap;gap:8px;min-width:0;width:100%;max-width:100%;box-sizing:border-box;overflow:visible}
+  .live-tour-page .tour-topbar .tour-heading-title{flex:1;gap:8px}
+  .live-tour-page .tour-topbar .tour-heading-title h1{font-size:16px;white-space:nowrap}
+  .live-tour-page .tour-topbar .tour-shift-filter{flex:1 1 100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.4fr);gap:4px;min-width:0}
+  .live-tour-page .tour-topbar .tour-shift-filter button{min-width:0;min-height:34px;padding:5px 4px;font-size:11px}
+  .live-tour-page .tour-topbar .live-tour-customer-count{min-width:0;min-height:34px;padding:4px;box-sizing:border-box;justify-content:center;flex-wrap:wrap;white-space:normal}
+  .live-tour-page .tour-topbar .tour-heading-actions{flex:1 1 100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;min-width:0;margin-left:0;width:100%}
+  .live-tour-page .tour-topbar .tour-heading-actions button{min-width:0;max-width:100%;min-height:40px;padding:7px 6px;font-size:11px;white-space:normal;overflow-wrap:anywhere;justify-content:center;border-radius:10px}
+  .live-tour-page .tour-topbar .tour-heading-actions button svg{flex-shrink:0}
+}
