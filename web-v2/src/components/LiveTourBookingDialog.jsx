@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { flushSync } from 'react-dom'
 import { advanceBookingField } from '../lib/advanceBookingField'
-import { bookingRoomState, roomOptionMatches } from '../lib/liveTourRooms'
+import { bookingRoomGroup, bookingRoomState, roomOptionMatches } from '../lib/liveTourRooms'
 import { Plus, Trash2 } from 'lucide-react'
 import { bookingEmployees, bookingServiceItems, bookingTotal, tourNameKey } from '../lib/liveTourBooking'
 import { catalogIsAvailable } from '../lib/serviceCatalog'
@@ -13,6 +13,65 @@ import LiveTourTransactionDialog from './LiveTourTransactionDialog'
 import LiveTourPageItems from './LiveTourPageItems'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
+
+function LiveTourMultiBookingDialog({ data, context, canOperate, canBook, canCustomers, busy, error, onAction, onClose }) {
+  const employees = data.state?.employees || []
+  const catalog = data.services || []
+  const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
+  const eligibleEmployees = bookingEmployees(employees)
+  const groupRooms = rooms.filter((item) => bookingRoomGroup(item.name, rooms) === context.roomGroup)
+  const blankRow = (usedRooms = []) => {
+    const available = bookingRoomState(rooms, data.room_assignments || employees, catalog, '', '', []).options
+      .filter((option) => option.group === context.roomGroup && !option.className && !usedRooms.includes(option.value))
+    return { employee_id: '', customer_id: '', service_id: '', room: available[0]?.value || groupRooms[0]?.name || '', request: '' }
+  }
+  const [rows, setRows] = useState(() => [blankRow()])
+  const [note, setNote] = useState('')
+  const [message, setMessage] = useState('')
+  const updateRow = (index, patch) => setRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+  const removeRow = (index) => setRows((current) => current.length === 1 ? current : current.filter((_, rowIndex) => rowIndex !== index))
+  const addRow = () => setRows((current) => [...current, blankRow(current.map((row) => row.room))])
+  const submit = async (event) => {
+    event.preventDefault(); setMessage('')
+    if (rows.some((row) => !row.employee_id || !row.service_id || !row.room)) return setMessage('Mỗi dòng phải chọn nhân viên, dịch vụ và phòng/giường.')
+    if (new Set(rows.map((row) => row.employee_id)).size !== rows.length) return setMessage('Một nhân viên không thể xuất hiện ở nhiều dòng booking.')
+    if (new Set(rows.map((row) => tourNameKey(row.room))).size !== rows.length) return setMessage('Mỗi nhân viên phải được chọn một giường khác nhau.')
+    for (const row of rows) {
+      const state = bookingRoomState(rooms, data.room_assignments || employees, catalog, row.employee_id, row.room, [{ service_id: row.service_id, quantity: 1 }])
+      if (state.error) return setMessage(state.error)
+    }
+    const bookings = rows.map((row) => ({
+      employee_id: row.employee_id, service_items: [{ service_id: row.service_id, quantity: 1 }], room: row.room,
+      request: row.request, note, ...(canCustomers ? { customer_id: row.customer_id || null } : {}),
+      start_now: event.nativeEvent.submitter?.value === 'start',
+    }))
+    const result = await onAction('multi_booking', { bookings }, [])
+    if (result) onClose()
+  }
+  const employeeOptions = eligibleEmployees.map((row) => ({ value: row.id, label: row.name, detail: row.service ? `${row.status} · ${row.room}` : 'Đang rảnh' }))
+  const customerOptions = (data.customers || []).map((row) => ({ value: row.id, label: row.name, detail: row.phone, badge: customerTicketLabel(row) }))
+  const serviceOptions = catalog.filter((item) => catalogIsAvailable(item)).map((item) => ({ value: item.id, label: item.name, detail: `${item.duration ?? '∞'} phút · ${money(item.price)}` }))
+  return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog tour-multi-booking-dialog" title={`Đặt lịch · ${context.roomLabel}`}>
+    {(error || message) && <p className="error-box" role="alert">{error || message}</p>}
+    <form onSubmit={submit}><fieldset disabled={busy} className="tour-multi-booking-form">
+      <div className="tour-multi-booking-rows">{rows.map((row, index) => {
+        const roomOptions = bookingRoomState(rooms, data.room_assignments || employees, catalog, row.employee_id, row.room, row.service_id ? [{ service_id: row.service_id, quantity: 1 }] : []).options.filter((option) => option.group === context.roomGroup)
+        return <div className="tour-multi-booking-row" key={index}>
+          <LiveTourSearchSelect label="Nhân viên *" options={employeeOptions.filter((option) => option.value === row.employee_id || !rows.some((item) => item.employee_id === option.value))} value={row.employee_id} onChange={(value) => updateRow(index, { employee_id: value })} required/>
+          {canCustomers && <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={customerOptions} value={row.customer_id} onChange={(value) => updateRow(index, { customer_id: value })}/>}
+          <LiveTourSearchSelect label="Dịch vụ *" showAllOptions options={serviceOptions} value={row.service_id} onChange={(value) => updateRow(index, { service_id: value })} required/>
+          <LiveTourSearchSelect label="Phòng / giường *" showAllOptions filterOption={roomOptionMatches} options={roomOptions} value={row.room} onChange={(value) => updateRow(index, { room: value })} required/>
+          <label className="live-tour-field"><span>Yêu cầu</span><select value={row.request} onChange={(event) => updateRow(index, { request: event.target.value })}><option value="">Để trống</option><option value="YC">YC</option></select></label>
+          {rows.length > 1 && <button type="button" className="icon-button tour-multi-remove" aria-label={`Xóa dòng ${index + 1}`} onClick={() => removeRow(index)}><Trash2 size={16}/></button>}
+        </div>
+      })}</div>
+      <button type="button" className="secondary-button tour-multi-add" onClick={addRow}><Plus size={15}/> Thêm dòng</button>
+      <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea value={note} onChange={(event) => setNote(event.target.value)}/></label>
+      <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(rows.reduce((total, row) => total + Number(catalog.find((item) => item.id === row.service_id)?.price || 0), 0))}</strong></div>
+      <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canBook && <button type="submit" className="secondary-button" value="book">Đặt lịch</button>}{canOperate && <button type="submit" className="primary-button" value="start">Thực hiện</button>}</div>
+    </fieldset></form>
+  </LiveTourTransactionDialog>
+}
 
 export default function LiveTourBookingDialog({ data, context, canOperate, canBook, canCustomers, canPayment, busy, error, onAction, onClose, onCheckout }) {
   const employees = [...(data.state?.employees || []), ...(data.retained_assignments || [])]
@@ -86,6 +145,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   const serviceOptions = catalog.filter((item) => catalogIsAvailable(item) && !items.some((row) => row.service_id === item.id)
     && (!selectedCombo?.component_balances || selectedCombo.component_balances.some((part) => part.service_id === item.id && part.remaining > 0)))
     .map((item) => ({ value: item.id, label: item.name, detail: `${item.duration ?? '∞'} phút · ${money(item.price)}` }))
+  if (context.roomGroup && !context.employeeId) return <LiveTourMultiBookingDialog data={data} context={context} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} busy={busy} error={error} onAction={onAction} onClose={onClose}/>
   return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog"
     title={completed ? 'Đã hoàn thành dịch vụ' : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}>
     {(roomState.error || error || message) && <p className="error-box" role="alert">{roomState.error || error || message}</p>}

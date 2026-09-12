@@ -35,9 +35,10 @@ export function bookingRoomState(rooms, employees, catalog, employeeId, selected
     const roomGroup = bookingRoomGroup(row.name, rooms)
     const busy = active.filter(worker => bookingRoomGroup(worker.room, rooms) === roomGroup)
     if (busy.some(worker => (worker.private || isPrivateBooking(worker.service, catalog)))) return []
+    const busyAtPosition = busy.filter(worker => tourNameKey(worker.room) === tourNameKey(row.name))
     return [{ value: row.name, label: row.name, group: roomGroup,
-      className: busy.length ? 'tour-room-option-occupied' : '',
-      detail: [row.area_name, ...busy.map(worker => `${worker.room}: ${worker.service} · ${worker.status}`)].filter(Boolean).join(' · ') }]
+      className: busyAtPosition.length ? 'tour-room-option-occupied' : '',
+      detail: [row.area_name, ...busyAtPosition.map(worker => `${worker.room}: ${worker.service} · ${tourNameKey(worker.status) === 'dang thuc hien' ? 'Thực hiện' : worker.status}`)].filter(Boolean).join(' · ') }]
   })
   return { options, error }
 }

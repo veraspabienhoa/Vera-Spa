@@ -315,7 +315,7 @@ function roomCountdown(record, remainingColumn, clockMs, available, occupied) {
   const remaining = remainingRaw === '' ? null : Number(remainingRaw)
   if (Number.isFinite(remaining)) return remaining >= 0 ? `Còn ${remaining} phút` : `Trễ ${Math.abs(remaining)} phút`
   if (hasGroup(record, 'waiting')) return 'Đang chờ'
-  if (hasGroup(record, 'doing')) return 'Đang thực hiện'
+  if (hasGroup(record, 'doing')) return 'Thực hiện'
   return 'Chưa có thời gian'
 }
 
@@ -938,6 +938,20 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const statusColumn = findColumn(columns, ['TRANG THAI'])
   const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
   const requestColumn = findColumn(columns, ['YEU CAU'])
+  const openEmployeeBooking = (record) => {
+    const name = cellValue(record, employeeColumn) || 'Nhân viên'
+    setError('')
+    if (hasGroup(record, 'leave')) {
+      setNotice(`${name} đang nghỉ phép, không thể đặt Booking.`)
+      return
+    }
+    if (isCurrentlyOnBreak(record)) {
+      setNotice(`${name} đang nghỉ giữa ca, chưa thể đặt Booking.`)
+      return
+    }
+    setNotice('')
+    setBookingContext({ employeeId: stableEmployeeId(record) })
+  }
   const manualQuickBooking = modal?.kind === 'quick_checkout' && form.checkout_source === 'manual'
   const selectedQuickCheckoutRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickCheckoutEligible(record, columns)) || null
   const areaGroups = useMemo(() => new Map(Object.entries(data.room_groups || {}).map(([name, group]) => [normalizedColumn(name), group])), [data.room_groups])
@@ -1013,7 +1027,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     { key: 'available', label: 'Có thể lên tua', value: groupCount(shiftRecords, 'available'), className: 'tour-available-metric' },
     { key: 'finishing', label: 'Sắp xong', value: groupCount(shiftRecords, 'finishing'), className: '' },
     { key: 'waiting', label: 'Đang chờ', value: groupCount(shiftRecords, 'waiting'), className: '' },
-    { key: 'doing', label: 'Đang thực hiện', value: groupCount(shiftRecords, 'doing'), className: '' },
+    { key: 'doing', label: 'Thực hiện', value: groupCount(shiftRecords, 'doing'), className: '' },
     { key: 'all', label: 'Số nhân viên', value: new Set(shiftRecords.map((record, index) => recordId(record, index))).size, className: '' },
     { key: 'leave', label: 'Nghỉ phép', value: groupCount(shiftRecords, 'leave'), className: '' },
     { key: 'working', label: 'Đi làm', value: groupCount(shiftRecords, 'working'), className: '' },
@@ -1445,12 +1459,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : records.length ? 'has-standard-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
                 <button type="button" className="tour-room-booking-button"
                   onClick={() => { setSelectedRoomKey(key); setSelectedIds(new Set()) }}
-                  onDoubleClick={() => { if (canBook && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room) }) } }}
+                  onDoubleClick={() => { if (canBook && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room), roomGroup: key }) } }}
                   title="Bấm một lần để xem nhân viên; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div className="tour-room-card-head"><strong>{areaLabel(room)} <span className="tour-room-customer-count" style={{ color: '#c52222', whiteSpace: 'nowrap' }}>- {records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
-                <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
-                {records.length > 0 && <div className="tour-room-services">{records.map((item, index) => <div key={recordId(item, index)}>{cellValue(item, roomColumn)}: {cellValue(item, serviceColumn)}</div>)}</div>}
+                <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, hasGroup(record, 'doing') ? 'Thực hiện' : status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
+                {records.length > 0 && <div className="tour-room-services">{records.map((item, index) => <div key={recordId(item, index)}>{cellValue(item, roomColumn)}: {cellValue(item, serviceColumn)} · {hasGroup(item, 'doing') ? 'Thực hiện' : cellValue(item, statusColumn)}</div>)}</div>}
                 {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
                 </button>
                 {roomServiceActions(room)}
@@ -1463,7 +1477,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             {selectedRoomRecords.length ? <div className="tour-room-detail-list">{selectedRoomRecords.map((item, index) => {
               const employee = cellValue(item, employeeColumn) || 'Chưa có tên nhân viên'
               const service = cellValue(item, serviceColumn) || 'Chưa có dịch vụ'
-              return <div className="tour-room-detail-row" key={`${recordId(item, index)}:${index}`}><div className="tour-room-detail-person"><button type="button" className="text-button" disabled={!canOperate} onClick={() => { setError(''); setBookingContext({ employeeId: stableEmployeeId(item) }) }}><strong title={employee}>{employee}</strong></button>{employeeServiceActions(item)}</div><span title={service}>{service}</span></div>
+              return <div className="tour-room-detail-row" key={`${recordId(item, index)}:${index}`}><div className="tour-room-detail-person"><button type="button" className="text-button" disabled={!canOperate} onClick={() => openEmployeeBooking(item)}><strong title={employee}>{employee}</strong></button>{employeeServiceActions(item)}</div><span title={service}>{service}</span></div>
             })}</div> : <div className="tour-room-detail-empty">Phòng đang trống, chưa có nhân viên và dịch vụ.</div>}
           </div>}
         </div>
@@ -1523,7 +1537,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     <section className="panel tour-table-panel tour-records-panel">
       <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
-        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { setError(''); if (isQuickCheckoutEligible(item, columns) && canPayment) openModal('checkout', { rowIds: [id] }); else setBookingContext({ employeeId: id }) }}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? index + 1 : String(breakCellValue(item, column, clockMs))}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
+        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { if (isQuickCheckoutEligible(item, columns) && canPayment) { setError(''); openModal('checkout', { rowIds: [id] }) } else openEmployeeBooking(item) }}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? index + 1 : String(breakCellValue(item, column, clockMs))}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>

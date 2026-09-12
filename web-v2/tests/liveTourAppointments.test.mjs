@@ -422,7 +422,7 @@ test('room number search matches the entire room number and all beds, never anot
   assert.deepEqual(options.filter(row => roomOptionMatches(row, '1.2')).map(row => row.value), ['1.2'])
 })
 
-test('PR hides a whole room only while active, and other services annotate every bed in the room', async () => {
+test('PR hides a whole room while active, and other services annotate only the occupied bed', async () => {
   const { bookingRoomState } = await import('../src/lib/liveTourRooms.js')
   const rooms = ['1.1','1.2','16.1','16.2'].map(name => ({ name }))
   const catalog = [{ id: 'pr', name: '90 PR Tiêu chuẩn' }, { id: 'body', name: 'Body' }]
@@ -434,7 +434,9 @@ test('PR hides a whole room only while active, and other services annotate every
   const workers = [{ id: 'other', room: '1.1', service: 'Body', status: 'Đang chờ' }]
   const state = bookingRoomState(rooms, workers, catalog, 'new', '1.2')
   assert.equal(state.error, '')
-  assert.ok(state.options.slice(0, 2).every(row => row.className && row.detail.includes('1.1: Body')))
+  assert.ok(state.options[0].className && state.options[0].detail.includes('1.1: Body'))
+  assert.equal(state.options[1].className, '')
+  assert.ok(!state.options[1].detail.includes('1.1: Body'))
   assert.match(bookingRoomState(rooms, workers, catalog, 'new', '1.2', [{ service_id: 'pr' }]).error, /PR cần toàn phòng trống/)
   assert.match(bookingRoomState(rooms, workers, catalog, 'new', '1.1').error, /đang được sử dụng/)
   assert.equal(bookingRoomState(rooms, workers, catalog, 'other', '1.1').error, '')
@@ -460,7 +462,7 @@ test('booking dropdown shows all room results and reports a PR collision immedia
     assert.equal(document.querySelectorAll('.tour-search-scroll [role=option]').length, 9)
     await f.type(input, '1')
     assert.equal(document.querySelectorAll('.tour-search-scroll [role=option]').length, 6)
-    assert.equal(document.querySelectorAll('.tour-room-option-occupied').length, 6)
+    assert.equal(document.querySelectorAll('.tour-room-option-occupied').length, 1)
     const option = [...document.querySelectorAll('.tour-search-scroll [role=option]')].find(row => row.textContent.startsWith('1.2'))
     await act(() => option.click())
     assert.equal(document.activeElement, input)
