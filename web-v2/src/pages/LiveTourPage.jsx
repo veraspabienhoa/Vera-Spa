@@ -1435,7 +1435,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP</span></button>
             </div>
           </div>
-          <div className="tour-room-grid">
+          <div className="tour-room-grid" style={{ '--room-columns': Math.max(1, Math.ceil(displayedRooms.length / 2)) }}>
             {displayedRooms.map((room) => {
               const key = areaKey(room)
               const records = roomRecords.get(key) || []
