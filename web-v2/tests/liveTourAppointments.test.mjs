@@ -542,7 +542,7 @@ test('combo lookup opens directly, searches customers, exports Excel and opens h
     data.capabilities.pending_view = true
     data.capabilities.reports_view = true
     data.customers = [
-      { id: 'c1', name: 'Anh Lưu', phone: '0919442626', combo_purchases: [{ id: 'cp1', combo_name: 'Combo PR', total: 8, remaining: 7, purchased_at: `${TODAY_VN}T13:39:00+07:00` }] },
+      { id: 'c1', name: 'Anh Lưu', phone: '0919442626', combo_purchases: [{ id: 'cp1', combo_name: 'Combo PR', total: 8, used: 1, remaining: 7, price: 2500000, receptionist: 'Lễ tân A', purchased_at: `${TODAY_VN}T13:39:00+07:00` }] },
       { id: 'c2', name: 'Anh Hiền', phone: '0987653921', combo_purchases: [{ id: 'cp2', combo_name: 'Combo VIP', total: 10, remaining: 10, purchased_at: `${TODAY_VN}T14:06:00+07:00` }] },
     ]
   } })
@@ -558,8 +558,18 @@ test('combo lookup opens directly, searches customers, exports Excel and opens h
     await clickText('Xuất Excel', document.querySelector('.live-tour-combo-lookup'))
     assert.deepEqual(f.exports[0], { kind: 'customers', query: {} })
     await act(async () => document.querySelector('.live-tour-combo-customer').click())
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
     assert.match(document.body.textContent, /Lịch sử khách hàng · Anh Lưu/)
-    assert.match(document.body.textContent, /Lượt combo đã dùng \(1\)/)
+    assert.equal(document.querySelector('[aria-label="Lọc thời gian lịch sử Combo"] select').value, 'month')
+    assert.match(document.querySelector('.live-tour-history-sections').textContent, /Ngày mua:.*Gói dịch vụ combo:.*Combo PR.*Số vé đã mua:.*8.*Thành tiền:.*2\.500\.000.*Lễ tân:.*Lễ tân A.*Số vé đã sử dụng:.*1.*Số vé còn lại:.*7/s)
+    assert.equal(document.querySelector('.live-tour-history-summary'), null)
+    assert.match(document.body.textContent, /Lịch sử sử dụng vé Combo \(1\)/)
+    assert.doesNotMatch(document.body.textContent, /Hóa đơn \(0\)|Dịch vụ \/ doanh thu|Phiếu chờ thanh toán/)
+    await clickText('Xuất chi tiết khách hàng')
+    assert.equal(f.exports[1].kind, 'customer_detail')
+    assert.equal(f.exports[1].query.customer_id, 'c1')
+    assert.match(f.exports[1].query.date_from, /^\d{4}-\d{2}-01$/)
+    assert.match(f.exports[1].query.date_to, /^\d{4}-\d{2}-\d{2}$/)
   } finally { await f.dispose() }
 })
 

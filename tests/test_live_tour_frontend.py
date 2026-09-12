@@ -465,7 +465,9 @@ def test_live_tour_checkout_can_link_an_exact_existing_customer_and_load_history
     assert "customer_name: customer?.label" in customer and "phone: customer?.detail" in customer
     assert "const openCustomerHistory" in source
     assert "veraApi.liveTourCustomerHistory(customerId)" in source
-    assert "exportLiveTourExcel('customer_detail', { customer_id: customerId })" in source
+    assert "exportLiveTourExcel('customer_detail', compactExportQuery" in source
+    assert "date_from: customerHistoryFilters.date_from" in source
+    assert "date_to: customerHistoryFilters.date_to" in source
     assert "liveTourCustomerHistory: (customerId)" in api
     assert "/v2/live-tour/customers/${encodeURIComponent(customerId)}/history" in api
     api_params = api[api.index("function liveTourExportParams") : api.index("export const veraApi")]

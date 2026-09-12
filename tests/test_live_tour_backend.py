@@ -208,6 +208,27 @@ def test_completion_result_survives_pending_checkout_report_and_customer_history
     assert ktv["completion_note"] == ""
 
 
+def test_customer_history_keeps_each_combo_purchase_at_the_same_time():
+    state = state_with(employee("e1", "An"))
+    bought_at = NOW.isoformat()
+    state["customers"] = [{
+        "id": "c1", "name": "Khách A", "phone": "0901",
+        "combo_purchases": [
+            {"id": "cp1", "combo_name": "Combo Body", "total": 8, "used": 1, "remaining": 7, "price": 800000, "purchased_at": bought_at},
+            {"id": "cp2", "combo_name": "Combo Body", "total": 8, "used": 0, "remaining": 8, "price": 800000, "purchased_at": bought_at, "actor": "letan-b"},
+            {"id": "cp3", "combo_name": "Combo VIP", "total": 10, "used": 2, "remaining": 8, "price": 2000000, "purchased_at": bought_at},
+        ],
+    }]
+    state["invoices"] = [{"id": "i1", "customer_id": "c1", "purchased_combo_id": "cp1", "actor": "letan-a", "created_at": bought_at}]
+
+    history = live._customer_history(state, "c1")
+
+    assert len(history["combo_purchases"]) == 3
+    by_id = {purchase["id"]: purchase for purchase in history["combo_purchases"]}
+    assert by_id["cp2"]["actor"] == "letan-b"
+    assert history["invoices"][0]["actor"] == "letan-a"
+
+
 def test_vip_room_inference_is_limited_to_groups_16_through_21():
     state = state_with()
     room_16 = live._apply_action(state, "room_upsert", {"name": "16.9"}, "admin", NOW)["room"]

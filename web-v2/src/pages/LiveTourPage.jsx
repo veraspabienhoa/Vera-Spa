@@ -587,6 +587,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [comboLookupSearch, setComboLookupSearch] = useState('')
   const [customerHistoryModal, setCustomerHistoryModal] = useState(null)
   const [customerHistoryBusy, setCustomerHistoryBusy] = useState(false)
+  const [customerHistoryFilters, setCustomerHistoryFilters] = useState(() => ({ preset: 'month', ...tourDateRange('month') }))
   const [customColumns, setCustomColumns] = useState(null)
   const [customScope, setCustomScope] = useState('displayed')
   const requestEntriesRef = useRef(new Map())
@@ -1182,16 +1183,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     ? Number(selectedComboCatalogItem?.price || 0) * Math.max(1, Number(form.quantity || 1))
     : null
   const customerHistoryData = customerHistoryModal?.data || {}
-  const customerComboPurchaseHistory = asArray(customerHistoryData.combo_purchases).length
+  const allCustomerComboPurchases = asArray(customerHistoryData.combo_purchases).length
     ? asArray(customerHistoryData.combo_purchases)
     : asArray(customerHistoryData.purchases)
-  const customerHistorySections = [
-    ['Hóa đơn', asArray(customerHistoryData.invoices)],
-    ['Dịch vụ / doanh thu', asArray(customerHistoryData.reports)],
-    ['Lịch sử mua combo', customerComboPurchaseHistory],
-    ['Lượt combo đã dùng', asArray(customerHistoryData.combo_usage)],
-    ['Phiếu chờ thanh toán', asArray(customerHistoryData.pending)],
-  ]
+  const customerComboPurchaseHistory = filterTourRows(allCustomerComboPurchases.map((purchase) => ({ ...purchase, created_at: purchase?.effective_at || purchase?.purchased_at || purchase?.created_at })), customerHistoryFilters)
+  const customerComboUsageHistory = filterTourRows(asArray(customerHistoryData.combo_usage), customerHistoryFilters)
+  const comboPurchaseReceptionist = (purchase) => purchase?.receptionist || purchase?.actor || asArray(customerHistoryData.invoices).find((invoice) => String(invoice?.purchased_combo_id || '') === String(purchase?.id || ''))?.actor || purchase?.lk || purchase?.created_by || 'Chưa có thông tin'
   const selectedRecords = validRecords.filter((record, index) => selectedIds.has(recordId(record, index)))
   const allDisplayedSelected = displayedRecords.length > 0 && displayedRecords.every((record, index) => selectedIds.has(recordId(record, index)))
 
@@ -1361,6 +1358,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Khách hàng này chưa có mã ổn định để xem lịch sử.')
       return
     }
+    setCustomerHistoryFilters({ preset: 'month', ...tourDateRange('month') })
     setCustomerHistoryModal({ customerId, customer, data: null, error: '' })
     setCustomerHistoryBusy(true)
     try {
@@ -1379,7 +1377,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     setActionBusy('export-customer-detail')
     setError('')
     try {
-      await veraApi.exportLiveTourExcel('customer_detail', { customer_id: customerId })
+      await veraApi.exportLiveTourExcel('customer_detail', compactExportQuery({ customer_id: customerId, date_from: customerHistoryFilters.date_from, date_to: customerHistoryFilters.date_to }))
       setNotice('Đã tạo file lịch sử chi tiết khách hàng.')
     } catch (err) {
       setError(err.message || 'Không xuất được lịch sử khách hàng.')
@@ -1722,8 +1720,30 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       {customerHistoryModal.error && <div className="error-box">{customerHistoryModal.error}</div>}
       {!customerHistoryBusy && customerHistoryModal.data && <div className="live-tour-history-sections">
         {(!canPaidInvoiceView || !canInvoiceView || !canPending || !canReports) && <p>Chỉ hiển thị các phần được cấp quyền. Nội dung hóa đơn hoặc báo cáo chưa được cấp quyền sẽ không được tải.</p>}
-        <div className="live-tour-history-summary">{Object.entries(customerHistoryData.summary || {}).map(([key, value]) => <div className="live-tour-report-metric" key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{/amount|revenue|tip|total|money/i.test(key) ? formatMoney(value) : String(value)}</strong></div>)}</div>
-        {customerHistorySections.map(([label, items]) => <section className="live-tour-catalog-section" key={label}><h3>{label} ({items.length})</h3>{items.length ? <div className="live-tour-history-list">{items.slice(0, 100).map((item, index) => <article key={itemId(item, index)}><strong>{item?.service || item?.combo_name || item?.bill_no || item?.employee_name || `${label} ${index + 1}`}</strong><span>{item?.payment_method || item?.status || item?.room || ''}</span><small>{item?.business_date || item?.effective_at || item?.created_at || item?.at || ''}</small>{Number.isFinite(Number(item?.total ?? item?.amount)) && <small>{formatMoney(item?.total ?? item?.amount)}</small>}</article>)}</div> : <div className="live-tour-empty">Chưa có dữ liệu.</div>}</section>)}
+        <div className="live-tour-customer-history-filter" role="group" aria-label="Lọc thời gian lịch sử Combo">
+          <label><span>Thời gian</span><select value={customerHistoryFilters.preset} onChange={(event) => { const preset = event.target.value; setCustomerHistoryFilters({ preset, ...tourDateRange(preset) }) }}><option value="all">Tất cả</option><option value="month">Tháng này</option><option value="last-month">Tháng trước</option><option value="custom">Tùy chỉnh</option></select></label>
+          {customerHistoryFilters.preset === 'custom' && <><label><span>Từ ngày</span><input type="date" value={customerHistoryFilters.date_from} max={customerHistoryFilters.date_to || undefined} onChange={(event) => setCustomerHistoryFilters((current) => ({ ...current, date_from: event.target.value }))}/></label><label><span>Đến ngày</span><input type="date" value={customerHistoryFilters.date_to} min={customerHistoryFilters.date_from || undefined} onChange={(event) => setCustomerHistoryFilters((current) => ({ ...current, date_to: event.target.value }))}/></label></>}
+        </div>
+        <section className="live-tour-catalog-section live-tour-combo-purchase-history"><h3>Lịch sử mua Combo ({customerComboPurchaseHistory.length})</h3>
+          {customerComboPurchaseHistory.length ? <div className="live-tour-combo-purchase-list">{customerComboPurchaseHistory.map((purchase, index) => <article className="live-tour-combo-purchase-detail" key={itemId(purchase, index)}>
+            <dl>
+              <div><dt>Ngày mua:</dt><dd>{bookingTimeLabel(purchase?.effective_at || purchase?.purchased_at || purchase?.created_at)}</dd></div>
+              <div><dt>Gói dịch vụ combo:</dt><dd>{purchase?.combo_name || itemLabel(purchase, `Combo ${index + 1}`)}</dd></div>
+              <div><dt>Số vé đã mua:</dt><dd>{purchase?.total ?? 0}</dd></div>
+              <div><dt>Thành tiền:</dt><dd>{formatMoney(purchase?.price ?? purchase?.amount ?? 0)}</dd></div>
+              <div><dt>Lễ tân:</dt><dd>{comboPurchaseReceptionist(purchase)}</dd></div>
+              <div><dt>Số vé đã sử dụng:</dt><dd>{purchase?.used ?? Math.max(0, Number(purchase?.total || 0) - Number(purchase?.remaining || 0))}</dd></div>
+              <div><dt>Số vé còn lại:</dt><dd>{purchase?.remaining ?? purchase?.balance ?? 0}</dd></div>
+            </dl>
+          </article>)}</div> : <div className="live-tour-empty">Khách hàng chưa mua combo.</div>}
+        </section>
+        <section className="live-tour-catalog-section"><h3>Lịch sử sử dụng vé Combo ({customerComboUsageHistory.length})</h3>
+          {customerComboUsageHistory.length ? <div className="live-tour-history-list">{customerComboUsageHistory.slice(0, 100).map((usage, index) => {
+            const purchase = customerComboPurchaseHistory.find((item) => String(item?.id || '') === String(usage?.combo_purchase_id || ''))
+            const usedServices = asArray(usage?.entries).map((entry) => `${entry?.service || 'Dịch vụ'}${entry?.units ? ` (${entry.units} vé)` : ''}`).join(' · ')
+            return <article key={itemId(usage, index)}><strong>{purchase?.combo_name || 'Gói Combo'} · sử dụng {usage?.units ?? 0} vé</strong><span>{usedServices || 'Chưa ghi dịch vụ'}</span><small>Ngày sử dụng: {bookingTimeLabel(usage?.effective_at || usage?.created_at || usage?.at)}</small><small>Hóa đơn: {usage?.bill_no || usage?.invoice_id || 'Chưa có'} · Lễ tân: {usage?.actor || 'Chưa có thông tin'}</small><small>Số vé: {usage?.remaining_before ?? '—'} → {usage?.remaining_after ?? '—'}</small></article>
+          })}</div> : <div className="live-tour-empty">Khách hàng chưa sử dụng vé Combo.</div>}
+        </section>
       </div>}
       <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={() => setCustomerHistoryModal(null)}>Đóng</button><button type="button" className="primary-button" disabled={!canExportKind('customer_detail') || customerHistoryBusy || Boolean(actionBusy)} onClick={exportCustomerHistory}><Download size={13}/> Xuất chi tiết khách hàng</button></div>
     </LiveTourModal>}

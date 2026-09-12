@@ -2336,6 +2336,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             "business_date": financial_timing["business_date"],
             "backdate_one_day": financial_timing["backdate_one_day"],
             "correction_reason": financial_timing["correction_reason"],
+            "actor": actor,
             "note": str(payload.get("note") or ""),
         }
         customer["combo_purchases"].append(purchase)
@@ -2417,6 +2418,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
                     allow_blank_as_zero=True,
                 ),
                 "purchased_at": str(row_payload.get("purchased_at") or _iso(now)),
+                "actor": actor,
                 "note": str(row_payload.get("note") or ""),
             }
             customer["combo_purchases"].append(purchase)
@@ -3178,11 +3180,11 @@ def _customer_detail_excel_bytes(
             item.get("payment_method"),
         ] for item in history["services"]]),
         ("Combo_da_mua", [
-            "Ngày hiệu lực", "Combo", "Tổng vé", "Đã dùng", "Còn lại", "Giá", "Ghi chú",
+            "Ngày hiệu lực", "Combo", "Tổng vé", "Thành tiền", "Lễ tân", "Đã dùng", "Còn lại", "Ghi chú",
         ], [[
             item.get("effective_at", item.get("purchased_at")), item.get("combo_name"),
-            item.get("total"), item.get("used"), item.get("remaining"), item.get("price"),
-            item.get("note"),
+            item.get("total"), item.get("price"), item.get("actor") or next((invoice.get("actor") for invoice in history["invoices"] if str(invoice.get("purchased_combo_id") or "") == str(item.get("id") or "")), "") or item.get("lk") or item.get("created_by"), item.get("used"),
+            item.get("remaining"), item.get("note"),
         ] for item in history["combo_purchases"]]),
         ("Combo_su_dung", [
             "Ngày hiệu lực", "Ngày kinh doanh", "Mã hóa đơn", "Combo", "Số vé dùng",
