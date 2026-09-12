@@ -125,6 +125,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Lịch sử & sao lưu",
         "Danh mục",
         "Xuất bảng tua",
+        "Import Excel",
         "Xuất doanh thu",
         "Xuất tiền TIP",
         "Xuất khách hàng",
@@ -135,6 +136,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
 
     missing = sorted(label for label in expected_labels if label not in source)
     assert not missing, f"Live Tour is missing controls/workspaces: {', '.join(missing)}"
+    assert "Làm mới Live Tour" not in source
 
     controls = source.split('className="panel live-tour-operator live-tour-controls"', 1)[1].split('</section>', 1)[0]
     assert '<section hidden className="panel live-tour-operator live-tour-controls"' not in source

@@ -22,9 +22,9 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field
@@ -3238,6 +3238,82 @@ def _excel_bytes(
     return output.getvalue(), f"Live_Tour_{title}_{_business_date(now).strftime('%Y%m%d')}.xlsx"
 
 
+def _board_import_rows(content: bytes) -> list[dict[str, Any]]:
+    if not content:
+        raise HTTPException(400, "Chưa chọn file Excel.")
+    try:
+        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(400, "File Import không phải Excel .xlsx hợp lệ.") from exc
+    try:
+        sheet = workbook["Bang_tua"] if "Bang_tua" in workbook.sheetnames else workbook.active
+        values = sheet.iter_rows(values_only=True)
+        headers = [str(value or "").strip() for value in next(values, ())]
+        if "Tên nhân viên" not in headers:
+            raise HTTPException(400, "File Import thiếu cột 'Tên nhân viên'. Hãy dùng file Xuất bảng tua từ Live Tour.")
+        if len(headers) != len(set(headers)):
+            raise HTTPException(400, "File Import có tên cột bị trùng.")
+        rows = []
+        for row_number, values_row in enumerate(values, 2):
+            record = {headers[index]: value for index, value in enumerate(values_row[:len(headers)]) if headers[index]}
+            if not any(value not in (None, "") for value in record.values()):
+                continue
+            name = str(record.get("Tên nhân viên") or "").strip()
+            if not name:
+                raise HTTPException(400, f"Dòng {row_number} thiếu Tên nhân viên.")
+            record["_excel_row"] = row_number
+            rows.append(record)
+            if len(rows) > 5000:
+                raise HTTPException(400, "File Import vượt quá 5.000 nhân viên.")
+        if not rows:
+            raise HTTPException(400, "File Import không có dòng dữ liệu nhân viên.")
+        return rows
+    finally:
+        workbook.close()
+
+
+def _import_board_into_state(state: dict[str, Any], rows: list[dict[str, Any]], now: datetime) -> int:
+    existing_by_name: dict[str, dict[str, Any]] = {}
+    for employee in state["employees"]:
+        key = _norm(employee.get("name"))
+        if key in existing_by_name:
+            raise HTTPException(409, f"Bảng tua đang có tên nhân viên bị trùng: {employee.get('name', '')}.")
+        existing_by_name[key] = employee
+    seen: set[str] = set()
+    updates: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for index, record in enumerate(rows):
+        key = _norm(record.get("Tên nhân viên"))
+        if key in seen:
+            raise HTTPException(400, f"Tên nhân viên bị trùng trong file Import: {record.get('Tên nhân viên')}.")
+        seen.add(key)
+        current = existing_by_name.get(key)
+        if current is None:
+            raise HTTPException(400, f"Không tìm thấy nhân viên trong Bảng tua: {record.get('Tên nhân viên')}.")
+        parsed = _source_employee(record, index, now)
+        if parsed is None:
+            raise HTTPException(400, f"Dòng {record.get('_excel_row')} không hợp lệ.")
+        parsed["vip"] = _norm(record.get("VIP")) in {"vip", "1", "true", "yes", "x", "co"}
+        parsed["completion_note"] = str(record.get("Kết quả hoàn thành") or "").strip()
+        parsed["payment_status"] = str(record.get("TT thanh toán") or "").strip()
+        parsed["break_remaining_minutes"] = _duration_value(record.get("TG nghỉ còn lại"))
+        parsed["wait_minutes"] = _duration_value(record.get("TG khách chờ"))
+        parsed["steam_elapsed_minutes"] = _duration_value(record.get("TG Xông Hơi"))
+        updates.append((current, parsed))
+    mutable = {
+        "stt", "appointment", "service", "request", "request_source", "room", "status", "duration",
+        "booked_at", "started_at", "completed_at", "payment_status", "completion_note", "tour_count",
+        "request_count", "work_status", "shift", "break_started_at", "clock_out", "clock_in",
+        "break_remaining_minutes", "steam_elapsed_minutes", "wait_minutes", "completion_delta_minutes",
+        "note", "vip", "sort_index",
+    }
+    for current, parsed in updates:
+        for field in mutable:
+            current[field] = deepcopy(parsed.get(field))
+        current["service_price"] = None
+        current["service_price_source"] = "board_excel_import"
+    return len(updates)
+
+
 COPY_BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Thao tác", "Lịch hẹn", "Trạng thái", "Phòng",
     "TG CÒN LẠI", "Yêu cầu", "Dịch vụ", "Đi làm", "Vào ca", "Breaktime", "TG nghỉ còn lại",
@@ -3662,6 +3738,39 @@ def install_live_tour_routes(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
         )
+
+    @app.post("/v2/live-tour/import.xlsx")
+    async def live_tour_import_excel(
+        request: Request,
+        expected_revision: int = Query(..., ge=0),
+        ident: identity_type = Depends(current_identity),
+    ):
+        if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được Import Excel vào Bảng tua.")
+        length = int(request.headers.get("content-length") or 0)
+        if length > 5 * 1024 * 1024:
+            raise HTTPException(413, "File Excel vượt quá 5 MB.")
+        content = await request.body()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(413, "File Excel vượt quá 5 MB.")
+        rows = _board_import_rows(content)
+        now = datetime.now(timezone)
+        actor = str(ident.employee_username or ident.full_name or "web_v2")
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_admin")
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            state, revision = read_state(conn, now, for_update=True)
+            if expected_revision != revision:
+                raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi Import lại.")
+            working = deepcopy(state)
+            imported = _import_board_into_state(working, rows, now)
+            working["updated_at"] = _iso(now)
+            working["business_date"] = _business_date(now).isoformat()
+            _audit(working, "board_excel_import", {"imported": imported}, actor, now)
+            next_revision = _write_state(conn, working, revision, actor)
+            grants = permissions(conn, ident)
+        response = _state_response(working, next_revision, now, **grants)
+        return {**response, "ok": True, "imported": imported, "message": f"Đã Import và lưu {imported} nhân viên vào Bảng tua."}
 
     @app.get("/v2/live-tour/export.png")
     def live_tour_export_png(

@@ -665,6 +665,46 @@ def test_source_employee_maps_vip_break_booking_and_steam_fields_without_overloa
     assert mapped["wait_minutes"] is None
 
 
+def test_board_excel_export_can_be_imported_back_into_existing_employee_ids():
+    source_employee = employee("e1", "Ánh", vip=True)
+    source_employee.update({
+        "appointment": "19:30", "service": "Body 90", "request": "YC", "room": "19.1",
+        "status": "ĐANG THỰC HIỆN", "duration": 90, "started_at": "2026-09-05T14:30:00+07:00",
+        "tour_count": 2, "request_count": 3, "note": "Khách quen", "wait_minutes": 5,
+    })
+    exported_state = state_with(source_employee)
+    content, _ = live._excel_bytes(exported_state, "board", NOW)
+    rows = live._board_import_rows(content)
+    target_employee = employee("e99", "Ánh")
+    target_state = state_with(target_employee)
+
+    imported = live._import_board_into_state(target_state, rows, NOW)
+
+    restored = target_state["employees"][0]
+    assert imported == 1
+    assert restored["id"] == "e99"
+    assert restored["appointment"] == "19:30"
+    assert restored["service"] == "Body 90"
+    assert restored["request"] == "YC"
+    assert restored["room"] == "19.1"
+    assert restored["started_at"] == "2026-09-05T14:30:00+07:00"
+    assert restored["tour_count"] == 2
+    assert restored["request_count"] == 3
+    assert restored["vip"] is True
+    assert restored["note"] == "Khách quen"
+
+
+def test_board_excel_import_rejects_unknown_and_duplicate_employees_atomically():
+    state = state_with(employee("e1", "An"))
+    before = deepcopy(state)
+    with pytest.raises(HTTPException, match="Không tìm thấy nhân viên"):
+        live._import_board_into_state(state, [{"Tên nhân viên": "Bình"}], NOW)
+    assert state == before
+    with pytest.raises(HTTPException, match="bị trùng"):
+        live._import_board_into_state(state, [{"Tên nhân viên": "An"}, {"Tên nhân viên": "An"}], NOW)
+    assert state == before
+
+
 def test_bootstrap_service_prices_are_reconciled_from_catalog_for_combined_rows():
     existing = employee("e1", "An")
     state = state_with(existing)

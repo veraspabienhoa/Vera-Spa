@@ -352,6 +352,7 @@ export const veraApi = {
     const params = liveTourExportParams(kind, query)
     return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)
   },
+  importLiveTourExcel: (file, expectedRevision) => upload('/v2/live-tour/import.xlsx', file, { expected_revision: expectedRevision }),
   ktvShifts: () => request('/v2/staff/ktv-shifts'),
   saveKtvShift: (id, body) => request(`/v2/staff/ktv-shifts${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
   deleteKtvShift: (id, revision) => request(`/v2/staff/ktv-shifts/${encodeURIComponent(id)}?expected_revision=${revision}`, { method: 'DELETE' }),

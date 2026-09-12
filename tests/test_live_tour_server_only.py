@@ -179,11 +179,11 @@ def test_existing_financial_and_operating_state_survives_without_external_recove
     assert "sync_status" not in data["state"]
 
 
-def test_live_tour_ui_and_api_have_no_external_source_connections():
+def test_live_tour_ui_and_api_have_no_automatic_external_source_connections():
     root = Path(__file__).resolve().parents[1]
     frontend = (root / "web-v2/src/pages/LiveTourPage.jsx").read_text()
     calls = re.findall(r"veraApi\.(\w+)\(", frontend)
-    assert set(calls) <= {"liveTour", "liveTourAction", "liveTourCustomerHistory", "exportLiveTourExcel", "readLiveTourPng"}
+    assert set(calls) <= {"liveTour", "liveTourAction", "liveTourCustomerHistory", "exportLiveTourExcel", "importLiveTourExcel", "readLiveTourPng"}
     for token in ("syncLeaves", "TourVera", "Google Drive", "openPurchaseReport", "merge_current_tour"):
         assert token not in frontend
     backend = (root / "vera_web_v2_live_tour.py").read_text()

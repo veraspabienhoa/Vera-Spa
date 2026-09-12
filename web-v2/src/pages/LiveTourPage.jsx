@@ -12,7 +12,7 @@ import { EMPTY_TOUR_FILTERS, filterTourRows } from '../lib/liveTourFilters'
 import {
   BellRing, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
   ExternalLink, History, LayoutGrid, PauseCircle, Play, Plus,
-  Printer, RefreshCw, Search, Share2, Trash2, X,
+  Printer, RefreshCw, Search, Share2, Trash2, Upload, X,
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -581,6 +581,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const previousPendingCountRef = useRef(0)
   const pendingAnnouncementSequenceRef = useRef(0)
   const pendingReminderTimerRef = useRef(null)
+  const boardImportInputRef = useRef(null)
   const workspaceRef = useRef(null)
   const isAdmin = String(user?.role || '').trim().toLowerCase() === 'admin'
   const capabilities = data.capabilities && typeof data.capabilities === 'object' ? data.capabilities : {}
@@ -601,6 +602,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canInvoiceDelete = canPending && canInvoiceView && capability('invoice_delete', isAdmin || user?.permissions?.live_tour_invoice_delete === true)
   const canCustomers = capability('customers_view', isAdmin || user?.permissions?.live_tour_customers_view === true)
   const canImportCombo = isAdmin && canAdmin && canPayment && canCustomers
+  const canImportBoard = isAdmin && canAdmin
   const canReports = capability('reports_view', isAdmin || user?.permissions?.live_tour_reports_view === true)
   const canHistory = capability('history_view', isAdmin || user?.permissions?.live_tour_history_view === true)
   const canBackup = capability('backup', isAdmin || user?.permissions?.live_tour_backup === true)
@@ -1275,6 +1277,37 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
   }
 
+  const importBoard = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || actionBusy) return
+    if (data.revision == null) {
+      setError('Hãy tải Live Tour thành công trước khi Import Excel.')
+      return
+    }
+    if (!/\.xlsx$/i.test(file.name)) {
+      setError('Hãy chọn file Excel định dạng .xlsx được xuất từ Bảng tua.')
+      return
+    }
+    if (!window.confirm(`Import dữ liệu từ "${file.name}" và lưu vào Bảng tua?`)) return
+    setActionBusy('import-board')
+    setError('')
+    setNotice('')
+    try {
+      const result = await veraApi.importLiveTourExcel(file, data.revision)
+      const next = { ...EMPTY_LIVE_TOUR, ...result }
+      setData(next)
+      saveCachedLiveTour(cacheKey, next)
+      setSelectedIds(new Set())
+      setNotice(result.message || `Đã Import và lưu ${result.imported || 0} nhân viên vào Bảng tua.`)
+    } catch (err) {
+      if (isRevisionConflict(err)) await load(true, true)
+      setError(err.message || 'Không Import được Excel vào Bảng tua.')
+    } finally {
+      setActionBusy('')
+    }
+  }
+
   const openCustomerHistory = async (customer) => {
     if (!canCustomers) {
       setError('Tài khoản chưa được cấp quyền xem lịch sử khách hàng.')
@@ -1376,8 +1409,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         </div>
         <div className="tour-heading-actions">
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
+          {canImportBoard && <><input ref={boardImportInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={importBoard}/><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => boardImportInputRef.current?.click()}><Upload size={16}/> Import Excel</button></>}
           {canExport && <><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board')}><Download size={16}/> Xuất bảng tua</button><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/> Copy B.Tua</button></>}
-          <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới Live Tour</button>
+          <button type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button>
         </div>
       </div>
       {error && <div className="error-box">{error}</div>}
