@@ -197,7 +197,7 @@ function groupCount(records, key) {
 }
 
 function prioritizeRecords(records, columns, activeFilter) {
-  if (records.some(record => record._manual_order)) return [...records].sort((a, b) => Number(a._sort_index || 0) - Number(b._sort_index || 0))
+  if (records.some(record => record._manual_order)) return [...records].sort((a, b) => Number(hasGroup(a, 'leave')) - Number(hasGroup(b, 'leave')) || Number(a._sort_index || 0) - Number(b._sort_index || 0))
   const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
   const startedColumn = findColumn(columns, ['TG BAT DAU THUC HIEN', 'BAT DAU THUC HIEN'])
   return records.map((record, index) => ({ record, index })).sort((left, right) => {

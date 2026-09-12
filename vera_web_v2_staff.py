@@ -476,7 +476,7 @@ def install_staff_routes(
             "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save",
             "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
             "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
-            "employees_visibility_manage",
+            "employees_visibility_manage", "ktv_shift_view", "ktv_shift_create", "ktv_shift_edit", "ktv_shift_delete",
         )
         output = {key: feature_allowed(conn, ident, key) for key in keys}
         # Xóa nhân viên là thao tác quản trị tài khoản chỉ dựa trên vai trò

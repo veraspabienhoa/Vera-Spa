@@ -163,6 +163,7 @@ def install_shift_break_admin_routes(
         department_updates = {row.department.strip(): row for row in body.departments if row.department.strip()}
 
         with engine_instance().begin() as conn:
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:shift:shift_definitions'))"))
             definitions = _as_list(_setting(conn, "shift_definitions", []))
             break_config = _as_dict(_setting(conn, "shift_break_config", {}))
 

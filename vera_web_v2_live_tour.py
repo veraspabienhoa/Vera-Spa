@@ -802,7 +802,8 @@ def _source_employee(record: dict[str, Any], index: int, now: datetime) -> dict[
 def _employee_directory(conn) -> list[dict[str, Any]]:
     return [dict(row) for row in conn.execute(text("""
         SELECT username, COALESCE(full_name, '') AS full_name,
-               lower(btrim(COALESCE(role,''))) AS role, COALESCE(payload,'{}'::jsonb) AS payload, COALESCE(work_shift,'') AS work_shift
+               lower(btrim(COALESCE(role,''))) AS role, COALESCE(payload,'{}'::jsonb) AS payload, COALESCE(work_shift,'') AS work_shift,
+               (SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='shift_definitions' LIMIT 1) AS shift_definitions
         FROM employees
         ORDER BY lower(username)
     """)).mappings().all()]
@@ -817,7 +818,7 @@ def _new_directory_employee(row, index):
         "duration": None, "service_price": 0, "booked_at": "", "started_at": "",
         "completed_at": "", "payment_status": "", "wait_minutes": None,
         "completion_delta_minutes": None, "steam_elapsed_minutes": None,
-        "tour_count": 0, "request_count": 0, "work_status": "Nghỉ", "shift": _directory_shift(row.get("work_shift")),
+        "tour_count": 0, "request_count": 0, "work_status": "Nghỉ", "shift": _directory_shift(row.get("work_shift"), row.get("shift_definitions")),
         "break_started_at": "", "clock_out": "", "clock_in": "", "note": "",
         "hidden": False, "vip": False, "sort_index": index,
     }
@@ -2015,8 +2016,11 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         result["break_event"] = end_event
     elif action in {"reorder", "admin_reorder"}:
         employee = _employee(state, payload.get("employee_id"))
-        # Manual moves cannot override the displayed start time or leave status.
-        ordered = _ordered_employees(state["employees"], now)
+        # Positions refer to visible roster members; retained assignments are not rows.
+        retained = [row for row in state["employees"] if row.get("roster_eligible") is False]
+        ordered = _ordered_employees([row for row in state["employees"] if row.get("roster_eligible") is not False], now)
+        if employee not in ordered:
+            raise HTTPException(409, "Nhân viên không còn trong danh sách bảng tua.")
         peers = list(ordered) if action == "admin_reorder" else [item for item in ordered if _employee_time_key(item, now) == _employee_time_key(employee, now)]
         current = peers.index(employee)
         direction = str(payload.get("direction") or "").lower()
@@ -2036,11 +2040,12 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         peer_ids = {item["id"] for item in peers}
         peer_iter = iter(peers)
         ordered = [next(peer_iter) if item["id"] in peer_ids else item for item in ordered]
+        ordered = [item for item in ordered if _norm(item.get("work_status")) != "nghi phep"] + [item for item in ordered if _norm(item.get("work_status")) == "nghi phep"]
         for index, item in enumerate(ordered):
             item["sort_index"] = index
             if action == "admin_reorder":
                 item["manual_order"] = True
-        state["employees"] = ordered
+        state["employees"] = ordered + retained
         result["employee"] = employee
     elif action == "set_vip":
         employee = _employee(state, payload.get("employee_id"))
@@ -2420,7 +2425,7 @@ def _employee_time_key(employee: dict[str, Any], now: datetime) -> tuple[int, in
 
 def _ordered_employees(employees: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
     if any(item.get("manual_order") for item in employees):
-        return sorted(employees, key=lambda item: int(item.get("sort_index") or 0))
+        return sorted(employees, key=lambda item: (_norm(item.get("work_status")) == "nghi phep", int(item.get("sort_index") or 0)))
     return sorted(employees, key=lambda item: (
         *_employee_time_key(item, now), int(item.get("sort_index") or 0), _norm(item.get("name")),
     ))
@@ -2486,7 +2491,7 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "Kết quả hoàn thành": employee.get("completion_note", ""),
         "SL tua": int(employee.get("tour_count") or 0), "SL yêu cầu": int(employee.get("request_count") or 0),
         "Tổng SL": int(employee.get("tour_count") or 0) + int(employee.get("request_count") or 0),
-        "Đi làm": employee.get("work_status", ""), "Vào ca": employee.get("shift", ""),
+        "Đi làm": employee.get("work_status", ""), "Vào ca": "" if _norm(employee.get("work_status")) == "nghi phep" else employee.get("shift", ""),
         "Breaktime": _display_datetime(employee.get("break_started_at")),
         "TG nghỉ còn lại": break_remaining,
         "Giờ ra": employee.get("clock_out", ""), "Giờ vào": employee.get("clock_in", ""),

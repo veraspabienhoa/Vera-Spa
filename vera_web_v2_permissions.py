@@ -85,6 +85,12 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "shift_assignment_edit": "Sửa phân ca", "shift_plan_edit": "Lưu kế hoạch hẹn ngày",
         "shift_assignment_clear": "Xóa phân ca", "shift_import": "Import phân ca", "shift_export_pdf": "Export ca",
     },
+    "Cài đặt ca Leader / Nhân viên": {
+        "ktv_shift_view": "Xem cài đặt ca Leader / Nhân viên",
+        "ktv_shift_create": "Thêm ca Leader / Nhân viên",
+        "ktv_shift_edit": "Sửa ca Leader / Nhân viên",
+        "ktv_shift_delete": "Xóa ca Leader / Nhân viên",
+    },
     "Hợp đồng": {
         "contract_1_view": "Xem Hợp đồng lao động",
         "contract_1_export_self": "Xuất hợp đồng của chính mình",

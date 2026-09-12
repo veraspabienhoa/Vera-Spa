@@ -316,8 +316,8 @@ def test_vera_invoice_sequence_continues_after_legacy_live_numbers():
     assert state['invoices'][0]['bill_no'] == 'LIVE-20260905-0042'
 
 
-@pytest.mark.parametrize('direction,steps,target', [('up',1,3),('up',3,1),('up',5,0),('down',1,5),('down',3,7),('down',5,8),('bottom',1,8),('top',1,0)])
-def test_admin_reorder_moves_across_start_times_and_leave_to_actual_position(direction, steps, target):
+@pytest.mark.parametrize('direction,steps,target', [('up',1,3),('up',3,1),('up',5,0),('down',1,5),('down',3,7),('down',5,7),('bottom',1,7),('top',1,0)])
+def test_admin_reorder_moves_across_start_times_but_keeps_leave_last(direction, steps, target):
     workers = [employee(f'e{i}', f'Worker {i}') for i in range(9)]
     for i, worker in enumerate(workers):
         worker.update(sort_index=i, service='Body', status='Đang thực hiện', started_at=f'2026-09-05T{10+i:02d}:00:00+07:00')
@@ -326,6 +326,7 @@ def test_admin_reorder_moves_across_start_times_and_leave_to_actual_position(dir
     act(state, 'admin_reorder', {'employee_id':'e4','direction':direction,'steps':steps})
     ordered = live._ordered_employees(state['employees'], NOW)
     assert ordered[target]['id'] == 'e4'
+    assert ordered[-1]['work_status'] == 'Nghỉ phép'
     assert all(worker['manual_order'] for worker in ordered)
     assert [row['sort_index'] for row in ordered] == list(range(9))
     restored = deepcopy(state)

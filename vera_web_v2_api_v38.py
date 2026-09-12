@@ -60,6 +60,7 @@ from vera_web_v2_purchase_reconcile_v2 import install_purchase_reconcile_v2
 from vera_web_v2_revenue_leave_list import install_revenue_leave_list_routes
 from vera_web_v2_revenue_report_target import install_revenue_report_target
 from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
+from vera_web_v2_ktv_shifts import install_ktv_shift_routes
 from vera_web_v2_staff_security import install_staff_security_routes
 from vera_web_v2_staff_status_sort import install_staff_status_sort
 from vera_web_v2_support_shift_break import install_support_shift_break
@@ -182,6 +183,7 @@ install_staff_security_routes(_shared.app, engine_instance=_api._engine_instance
 install_contract_1_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, norm=_api._norm, identity_type=_api.Identity)
 install_staff_status_sort(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_shift_break_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+install_ktv_shift_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed)
 install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_tour_leave_sync_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, invalidate_tour_cache=invalidate_tour_cache)
 install_tour_source_routes(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity, invalidate_tour_cache=invalidate_tour_cache)
