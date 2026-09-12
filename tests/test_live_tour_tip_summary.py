@@ -36,3 +36,19 @@ def test_empty_tip_export_has_zero_total_and_keeps_detail_sheet():
     assert workbook.active['C1'].value == 0
     assert workbook.active.max_row == 2
     assert workbook['Tip'].max_row == 1
+    assert workbook.active.freeze_panes == 'A3'
+    assert workbook.active.auto_filter.ref == 'A2:C2'
+
+
+def test_tip_summary_fits_long_names_and_formatted_amounts():
+    name = 'Nguyễn Thị Nhân Viên Có Tên Rất Dài'
+    amount = 1234567890123
+    state = state_with()
+    state['reports'] = [{'employee_name': name, 'tip': amount}]
+    content, _ = live._excel_bytes(state, 'tip', NOW)
+    sheet = load_workbook(BytesIO(content)).active
+    assert sheet.column_dimensions['B'].width >= len(name) + 5
+    assert sheet.column_dimensions['C'].width >= len(f'{amount:,.0f} đ') + 5
+    assert all(sheet.column_dimensions[col].bestFit for col in 'ABC')
+    assert sheet.freeze_panes == 'A3'
+    assert sheet.auto_filter.ref == 'A2:C3'

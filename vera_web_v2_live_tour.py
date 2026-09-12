@@ -3382,8 +3382,20 @@ def _tip_summary_sheet(workbook, state, bounds):
         row[2].number_format = '#,##0" đ"'
     sheet.row_dimensions[1].height = 30
     sheet.row_dimensions[2].height = 24
-    for column, width in (("A", 7), ("B", 32), ("C", 22)):
-        sheet.column_dimensions[column].width = width
+    # Fit displayed content, including currency separators/suffix and filter arrows.
+    # The merged date title is handled separately so it does not widen STT.
+    for index, column in enumerate(("A", "B", "C"), 1):
+        lengths = []
+        for row in sheet.iter_rows(min_row=1 if column == "C" else 2,
+                                   min_col=index, max_col=index):
+            value = row[0].value
+            display = f"{value:,.0f} đ" if column == "C" and isinstance(value, (int, float)) else str(value or "")
+            lengths.append(max((len(line) for line in display.splitlines()), default=0))
+        sheet.column_dimensions[column].width = max(lengths, default=0) + 5
+        sheet.column_dimensions[column].bestFit = True
+    title_width = len(date_label) + 4
+    if sheet.column_dimensions['A'].width + sheet.column_dimensions['B'].width < title_width:
+        sheet.column_dimensions['B'].width = title_width - sheet.column_dimensions['A'].width
     sheet.freeze_panes = "A3"
     sheet.auto_filter.ref = f"A2:C{sheet.max_row}"
     sheet.sheet_view.showGridLines = False
