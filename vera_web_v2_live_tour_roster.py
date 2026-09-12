@@ -49,8 +49,10 @@ def reconcile(state, directory, make_employee):
         worker['roster_eligible'] = bool(row and eligible(row) and key(row['username']) not in assigned)
         if row:
             worker.update(name=row['username'], username=row['username'], role=str(row.get('role') or '').strip().lower())
-            if 'work_shift' in row:
-                worker['assigned_shift'] = shift_label(row.get('work_shift'), row.get('shift_definitions'))
+            if 'daily_shift' in row:
+                worker['shift_checkin_date'] = row['shift_checkin_date']
+            if 'work_shift' in row or 'daily_shift' in row:
+                worker['assigned_shift'] = row.get('daily_shift', shift_label(row.get('work_shift'), row.get('shift_definitions')))
                 worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else worker['assigned_shift']
             assigned.add(key(row['username']))
     # The directory owns membership now that manual roster removal is retired.
@@ -58,10 +60,12 @@ def reconcile(state, directory, make_employee):
     for row in directory:
         if eligible(row) and key(row['username']) not in assigned:
             worker = make_employee(row, len(state['employees']))
+            if 'daily_shift' in row:
+                worker['shift_checkin_date'] = row['shift_checkin_date']
             worker['roster_eligible'] = True
             state['employees'].append(worker)
-            if 'work_shift' in row:
-                worker['assigned_shift'] = shift_label(row.get('work_shift'), row.get('shift_definitions'))
+            if 'work_shift' in row or 'daily_shift' in row:
+                worker['assigned_shift'] = row.get('daily_shift', shift_label(row.get('work_shift'), row.get('shift_definitions')))
                 worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else worker['assigned_shift']
             assigned.add(key(row['username']))
     state['employee_directory'] = [

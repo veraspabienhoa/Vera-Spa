@@ -26,6 +26,7 @@ import LiveTourAppointmentInput from '../components/LiveTourAppointmentInput'
 import LiveTourTransactionDialog from '../components/LiveTourTransactionDialog'
 import LiveTourPageItems from '../components/LiveTourPageItems'
 import LiveTourCheckoutCustomer from '../components/LiveTourCheckoutCustomer'
+import LiveTourComboImportFields from '../components/LiveTourComboImportFields'
 import LiveTourTipInput from '../components/LiveTourTipInput'
 import { bookingDateTime, bookingTimeLabel, defaultTipMode } from '../lib/liveTourCheckout'
 import { checkoutBookingTime, discountAmount } from '../lib/liveTourBooking'
@@ -864,7 +865,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         bill_no: form.bill_no, note: form.note,
       }
     } else if (modal.kind === 'combo_import') {
-      payload = { purchases: [{ customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone, combo_id: form.combo_id, total: Number(form.remaining || 0), used: 0, note: form.note }] }
+      payload = { purchases: [{ customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone, combo_id: form.combo_id, total: Number(form.remaining || 0), used: 0, component_remaining: form.component_remaining, note: form.note }] }
     } else if (modal.kind === 'room_upsert') {
       payload = { id: modal.item?._id ?? modal.item?.id, name: form.room || form.code }
     } else if (modal.kind === 'service_upsert') {
@@ -1428,8 +1429,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <div className="live-tour-controls-actions">
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_shift', { shift: 'Ca 1' })}>Ca 1</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_shift', { shift: 'Ca 2' })}>Ca 2</button>
+              <span>Ca tự cập nhật sau check-in theo lịch làm hôm nay.</span>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Nghỉ giữa ca</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc nghỉ giữa ca</button>
               </div>
@@ -1705,7 +1705,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             {form.backdate_one_day && <label className="live-tour-field"><span>Lý do điều chỉnh</span><textarea value={form.correction_reason} minLength="3" onChange={(event) => setForm((current) => ({ ...current, correction_reason: event.target.value }))} required placeholder="Bắt buộc ghi rõ lý do…"/></label>}
           </div>}
 
-          {modal.kind === 'combo_import' && <><LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} customerRequired/><LiveTourSearchSelect label="Combo" placeholder="Gõ để tìm và chọn combo…" required value={form.combo_id} options={combos.filter((combo) => !combo.components?.length).map((combo, index) => ({ value: itemId(combo, index), label: itemLabel(combo), detail: `${combo.tickets ?? 0} lượt · ${formatMoney(combo.price ?? 0)}` }))} onChange={(comboId) => setForm((current) => ({ ...current, combo_id: comboId }))}/><label className="live-tour-field"><span>Số lượt còn lại</span><input type="number" min="0" value={form.remaining} onChange={(event) => setForm((current) => ({ ...current, remaining: event.target.value }))} required/></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
+          {modal.kind === 'combo_import' && <LiveTourComboImportFields customers={customers} combos={combos} form={form} setForm={setForm}/>}
 
           {modal.kind === 'room_upsert' && <><label className="live-tour-field"><span>Mã phòng / giường</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value, room: event.target.value }))} required autoFocus/></label><p>Phòng 16–21 tự động thuộc nhóm VIP; các phòng khác là Standard.</p></>}
           {modal.kind === 'service_upsert' && <><label className="live-tour-field"><span>Mã dịch vụ</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên dịch vụ</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Thời lượng (phút)</span><input type="number" min="0" value={form.duration} onChange={(event) => setForm((current) => ({ ...current, duration: event.target.value }))}/></label><label className="live-tour-field"><span>Đơn giá</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
