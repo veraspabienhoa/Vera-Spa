@@ -1,0 +1,19 @@
+name: Quick checkout isolated workspace
+on:
+  push:
+    branches: [codex/quick-checkout-combo-date]
+    paths: [.github/workflows/codex-quick-checkout-workspace.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Export source only
+        run: git archive --format=tar -o /tmp/vera-source.tar HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quick-checkout-source
+          path: /tmp/vera-source.tar
+          retention-days: 1
