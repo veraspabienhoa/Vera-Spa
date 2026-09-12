@@ -485,12 +485,12 @@ function canRunAction(action, capabilities) {
   return capabilities.operate
 }
 
-function LiveTourModal({ title, onClose, children, fitViewport = false, busy = false }) {
+function LiveTourModal({ title, onClose, children, fitViewport = false, busy = false, className = '' }) {
   return fitViewport ? <LiveTourTransactionDialog title={title} onClose={onClose} busy={busy} className="tour-payment-dialog">{children}</LiveTourTransactionDialog>
-    : <LiveTourLegacyModal title={title} onClose={onClose}>{children}</LiveTourLegacyModal>
+    : <LiveTourLegacyModal title={title} onClose={onClose} className={className}>{children}</LiveTourLegacyModal>
 }
 
-function LiveTourLegacyModal({ title, onClose, children }) {
+function LiveTourLegacyModal({ title, onClose, children, className = '' }) {
   const dialogRef = useRef(null)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
@@ -524,7 +524,7 @@ function LiveTourLegacyModal({ title, onClose, children }) {
   }, [])
 
   return <div className="live-tour-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-    <section ref={dialogRef} tabIndex="-1" className="live-tour-modal" role="dialog" aria-modal="true" aria-label={title}>
+    <section ref={dialogRef} tabIndex="-1" className={`live-tour-modal ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title}>
       <div className="live-tour-modal-head"><strong>{title}</strong><button type="button" className="icon-button" onClick={onClose} aria-label="Đóng"><X size={18}/></button></div>
       {children}
     </section>
@@ -1635,7 +1635,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </div>}
     </section>
 
-    {comboLookupOpen && canViewComboPackages && <LiveTourModal title="Kiểm tra Gói Combo khách hàng" onClose={() => setComboLookupOpen(false)}>
+    {comboLookupOpen && canViewComboPackages && <LiveTourModal className="live-tour-combo-modal" title="Kiểm tra Gói Combo khách hàng" onClose={() => setComboLookupOpen(false)}>
       <div className="live-tour-combo-lookup">
         <div className="live-tour-panel-toolbar"><p>Tìm khách hàng để xem số vé còn lại, ngày mua và toàn bộ lịch sử sử dụng combo.</p><button type="button" className="secondary-button" disabled={!canExportKind('customers') || Boolean(actionBusy)} onClick={() => exportData('customers')}><Download size={13}/> Xuất Excel</button></div>
         <label className="live-tour-customer-search"><Search size={14}/><ClearableSearchInput autoFocus type="search" aria-label="Tìm khách hàng trong Gói Combo" autoComplete="off" value={comboLookupSearch} onChange={(event) => setComboLookupSearch(event.target.value)} placeholder="Tìm theo tên khách hàng hoặc số điện thoại…"/></label>
