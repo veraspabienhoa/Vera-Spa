@@ -109,6 +109,9 @@
 .live-tour-page .tour-room-share-tools{display:flex;flex:0 0 auto;align-items:center;gap:4px}
 .live-tour-page .tour-room-share-tools .tour-room-share-control{background:#155b78;border-color:#0d465f;color:#fff;font-family:inherit;font-weight:900}
 .live-tour-page .tour-room-share-tools button:hover{background:#0d465f}
+.live-tour-page .tour-inline-reorder{position:sticky;left:0;display:flex;align-items:center;gap:4px;width:max-content;margin-top:4px;padding:4px;border:1px solid #b9cec2;border-radius:5px;background:#f3faf6}
+.live-tour-page .tour-inline-reorder input{width:60px;min-width:0;min-height:28px;padding:3px 5px;font-size:12px;box-sizing:border-box}
+.live-tour-page .tour-inline-reorder button{min-height:28px;padding:3px 8px;font-size:12px;white-space:nowrap}
 .live-tour-page .tour-room-panel .tour-room-grid{grid-template-columns:repeat(var(--room-columns,1),minmax(0,1fr));min-width:0;width:100%;max-width:100%;box-sizing:border-box}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-card{container-type:inline-size;box-sizing:border-box;min-width:0}
 .live-tour-page .tour-room-card .tour-room-card-head>strong{font-size:18px;font-weight:900;white-space:nowrap}
