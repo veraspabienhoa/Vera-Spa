@@ -1177,6 +1177,7 @@ def _capture_tour_position(employee: dict[str, Any], now: datetime, state: dict 
     return {
         "board_index": _ordered_employees(state["employees"], now).index(employee) if state else None,
         "sort_index": employee.get("sort_index", 0),
+        "manual_order": any(row.get("manual_order") for row in state["employees"]) if state else False,
         "display": {column: record.get(column, "") for column in ("TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC")},
         "counter_key": "request_count" if _norm(employee.get("request")) == "yc" else "tour_count",
         "counter_day": _counter_business_date(now).isoformat(),
@@ -1209,6 +1210,10 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
         employee["request_count"] = int(employee.get("request_count") or 0) + 1
     else:
         employee["tour_count"] = int(employee.get("tour_count") or 0) + 1
+        # A manual move lasts until the next standard tour starts. Clear the
+        # whole board override so API, browser and exports use start-time order.
+        for row in state["employees"]:
+            row.pop("manual_order", None)
     employee["status"] = "Đang thực hiện"
     employee["started_at"] = _iso(now)
     employee["employee_change_minutes"] = (state.get("payment_settings") or {}).get("employee_change_minutes", 10)
@@ -1757,11 +1762,12 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         _clear_assignment(source, now)
         source["sort_index"] = original_position["sort_index"]
         source["last_assignment_display"] = original_position["display"]
-        if original_position.get("board_index") is not None and any(row.get("manual_order") for row in state["employees"]):
+        if original_position.get("board_index") is not None and (original_position.get("manual_order") or any(row.get("manual_order") for row in state["employees"])):
             restored_order = [row for row in _ordered_employees(state["employees"], now) if row["id"] != source["id"]]
             restored_order.insert(min(original_position["board_index"], len(restored_order)), source)
             for index, row in enumerate(restored_order):
                 row["sort_index"] = index
+                row["manual_order"] = True
         if original_position["counter_day"] == _counter_business_date(now).isoformat():
             source[counter_key] = max(0, int(source.get(counter_key) or 0) - 1)
             target[counter_key] = int(target.get(counter_key) or 0) + 1
