@@ -18,7 +18,7 @@ export default function LiveTourFilters({ value, onChange, rows }) {
       <LiveTourSearchSelect label="Dịch vụ" placeholder="Tìm dịch vụ" options={options.service} value={value.service} searchValue={value.service} onSearch={text => change({ service: text })} onChange={text => change({ service: text })} showAllOptions emptyLabel="Tất cả"/>
     </div>
     <div className="live-tour-filters-actions">
-      <button type="button" className="secondary-button live-tour-filters-reset" onClick={() => onChange({ ...EMPTY_TOUR_FILTERS })}>Xóa bộ lọc</button>
+      <button type="button" className="secondary-button live-tour-filters-reset" onClick={() => onChange({ ...EMPTY_TOUR_FILTERS, preset: 'today', ...tourDateRange('today') })}>Hôm nay</button>
     </div>
   </div>
 }

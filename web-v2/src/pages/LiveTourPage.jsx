@@ -8,7 +8,7 @@ import { tourStartOrder } from '../lib/liveTourOrder'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
-import { EMPTY_TOUR_FILTERS, filterTourRows } from '../lib/liveTourFilters'
+import { EMPTY_TOUR_FILTERS, filterTourRows, tourDateRange } from '../lib/liveTourFilters'
 import {
   BellRing, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
   ExternalLink, History, LayoutGrid, PauseCircle, Play, Plus,
@@ -64,7 +64,6 @@ const EXPORT_KINDS = [
   ['breaks', 'Xuất nghỉ giữa ca'],
 ]
 const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'pending', 'history', 'breaks'])
-const EMPTY_EXPORT_FILTERS = { date_from: '', date_to: '', time_from: '', time_to: '' }
 const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone'])
 
 function hasLiveTourExportAccess(kind, capabilities) {
@@ -197,6 +196,19 @@ function hasGroup(record, key) {
 
 function groupCount(records, key) {
   return records.reduce((count, record) => count + (hasGroup(record, key) ? 1 : 0), 0)
+}
+
+function datetimeLocalValue(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).replace(' ', 'T').slice(0, 16) : ''
+}
+
+function LiveTourStartTimeInput({ record, disabled, onSave }) {
+  const source = record?._employee_change_started_at || ''
+  const [draft, setDraft] = useState(() => datetimeLocalValue(source))
+  useEffect(() => setDraft(datetimeLocalValue(source)), [source])
+  return <input className="live-tour-start-time-input" type="datetime-local" aria-label={`TG bắt đầu thực hiện ${record?.['Tên nhân viên'] || ''}`} value={draft} disabled={disabled || !source} onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft && draft !== datetimeLocalValue(source)) onSave(draft) }}/>
 }
 
 function prioritizeRecords(records, columns, activeFilter) {
@@ -557,7 +569,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [employeePickId, setEmployeePickId] = useState('')
   const [roomSegment, setRoomSegment] = useState('all')
   const [customerContext, setCustomerContext] = useState(null)
-  const [listFilters, setListFilters] = useState({ ...EMPTY_TOUR_FILTERS })
+  const [listFilters, setListFilters] = useState(() => ({ ...EMPTY_TOUR_FILTERS, preset: 'today', ...tourDateRange('today') }))
   const [selectedRoomKey, setSelectedRoomKey] = useState('')
   const [clockMs, setClockMs] = useState(Date.now())
   const [activePanel, setActivePanel] = useState('pending')
@@ -573,7 +585,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerHistoryModal, setCustomerHistoryModal] = useState(null)
   const [customerHistoryBusy, setCustomerHistoryBusy] = useState(false)
-  const [exportFilters, setExportFilters] = useState(EMPTY_EXPORT_FILTERS)
   const [customColumns, setCustomColumns] = useState(null)
   const [customScope, setCustomScope] = useState('displayed')
   const requestEntriesRef = useRef(new Map())
@@ -584,6 +595,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const boardImportInputRef = useRef(null)
   const workspaceRef = useRef(null)
   const isAdmin = String(user?.role || '').trim().toLowerCase() === 'admin'
+  const normalizedRole = String(user?.role || '').trim().toLowerCase()
   const capabilities = data.capabilities && typeof data.capabilities === 'object' ? data.capabilities : {}
   const capability = (name, fallback) => Object.prototype.hasOwnProperty.call(capabilities, name) ? capabilities[name] === true : fallback
   const canEditAppointment = capability('appointment_edit', false)
@@ -603,6 +615,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canCustomers = capability('customers_view', isAdmin || user?.permissions?.live_tour_customers_view === true)
   const canImportCombo = isAdmin && canAdmin && canPayment && canCustomers
   const canImportBoard = isAdmin && canAdmin
+  const canEditStartedAt = ['admin', 'quanly'].includes(normalizedRole) && canOperate
+  const canViewComboPackages = ['admin', 'quanly', 'letan'].includes(normalizedRole) && canCustomers
   const canReports = capability('reports_view', isAdmin || user?.permissions?.live_tour_reports_view === true)
   const canHistory = capability('history_view', isAdmin || user?.permissions?.live_tour_history_view === true)
   const canBackup = capability('backup', isAdmin || user?.permissions?.live_tour_backup === true)
@@ -915,7 +929,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const employeeColumn = employeeNameColumn(columns)
     return needle ? shiftRecords.filter((record) => searchTextMatches(cellValue(record, employeeColumn), needle)) : shiftRecords
   }, [columns, employeePickId, employeeSearch, shiftRecords])
-  const displayedRecords = useMemo(() => prioritizeRecords(searchedRecords, columns, activeFilter), [activeFilter, columns, searchedRecords])
+  const displayedRecords = useMemo(() => {
+    const filtered = activeFilter === 'all' ? searchedRecords : searchedRecords.filter((record) => hasGroup(record, activeFilter))
+    return prioritizeRecords(filtered, columns, activeFilter)
+  }, [activeFilter, columns, searchedRecords])
 
 
 
@@ -937,6 +954,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const serviceColumn = serviceNameColumn(columns)
   const statusColumn = findColumn(columns, ['TRANG THAI'])
   const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
+  const startedAtColumn = findColumn(columns, ['TG BAT DAU THUC HIEN'])
   const requestColumn = findColumn(columns, ['YEU CAU'])
   const openEmployeeBooking = (record) => {
     const name = cellValue(record, employeeColumn) || 'Nhân viên'
@@ -1054,7 +1072,15 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const reports = filterTourRows(allReports, listFilters)
   const visibleInvoices = filterTourRows(asArray(data.state?.invoices), listFilters)
 
-  const backups = asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)
+  const historyMatches = (item) => filterTourRows([{
+    ...item, effective_at: item.effective_at || item.at || item.created_at || item.timestamp,
+    customer_name: item.customer_name || item.before?.name || item.after?.name || '',
+    entries: [{ employee_name: item.employee_name || item.actor || '', service: item.service || item.action || item.event_type || '' }],
+  }], listFilters).length > 0
+  const filteredCustomerChanges = asArray(data.customer_changes).filter(historyMatches)
+  const filteredInvoiceChanges = [...asArray(data.pending_changes), ...asArray(data.invoice_changes)].filter(historyMatches)
+  const filteredBreakEvents = asArray(data.break_events).filter(historyMatches)
+  const backups = (asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)).filter(historyMatches)
   const filteredCustomers = customers.filter((customer) => customerMatches({ ...customer, name: itemLabel(customer) }, customerSearch))
   const quickCheckoutEmployees = [...asArray(data.state?.employees), ...asArray(data.retained_assignments)]
   const quickCheckoutMatches = validRecords.filter((record) => isQuickCheckoutEligible(record, columns)).map((record) => {
@@ -1266,7 +1292,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Tài khoản chưa được cấp đủ quyền để xuất loại dữ liệu Live Tour này.')
       return
     }
-    const query = FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery(['pending', 'revenue', 'tip'].includes(kind) ? { ...listFilters, preset: '' } : exportFilters) : {}
+    const query = FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery({ ...listFilters, preset: '' }) : {}
     if (kind === 'custom') {
       query.columns = (customColumns ?? columns).filter((column) => columns.includes(column))
       if (!query.columns.length) { setError('Hãy chọn ít nhất một cột để xuất.'); return }
@@ -1422,6 +1448,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           <span className="live-tour-customer-count"><span>Số khách</span><strong>{customerCount}</strong></span>
         </div>
         <div className="tour-heading-actions">
+          {canViewComboPackages && <button type="button" className="secondary-button" onClick={() => { setActivePanel('customers'); window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}><Search size={16}/> Gói Combo</button>}
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
           {canImportBoard && <><input ref={boardImportInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={importBoard}/><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => boardImportInputRef.current?.click()}><Upload size={16}/> Import Excel</button></>}
           {canExport && <><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board')}><Download size={16}/> Xuất bảng tua</button><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/> Copy B.Tua</button></>}
@@ -1537,7 +1564,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     <section className="panel tour-table-panel tour-records-panel">
       <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
-        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { if (isQuickCheckoutEligible(item, columns) && canPayment) { setError(''); openModal('checkout', { rowIds: [id] }) } else openEmployeeBooking(item) }}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? index + 1 : String(breakCellValue(item, column, clockMs))}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
+        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { if (isQuickCheckoutEligible(item, columns) && canPayment) { setError(''); openModal('checkout', { rowIds: [id] }) } else openEmployeeBooking(item) }}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === startedAtColumn && canEditStartedAt ? <LiveTourStartTimeInput record={item} disabled={Boolean(actionBusy)} onSave={(started_at) => executeAction('update_started_at', { started_at }, [id])}/> : column === sttColumn(columns) ? index + 1 : String(breakCellValue(item, column, clockMs))}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
@@ -1551,16 +1578,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => setActivePanel(key)} key={key}>{label}{key === 'pending' && allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>
         })}
       </div>
-      {canExport && activePanel === 'history' && <div className="live-tour-export-filters" aria-label="Bộ lọc thời gian xuất dữ liệu">
-        <strong>Bộ lọc xuất dữ liệu</strong>
-        <label><span>Từ ngày</span><input type="date" max={exportFilters.date_to || undefined} value={exportFilters.date_from} onChange={(event) => setExportFilters((current) => ({ ...current, date_from: event.target.value }))}/></label>
-        <label><span>Đến ngày</span><input type="date" min={exportFilters.date_from || undefined} value={exportFilters.date_to} onChange={(event) => setExportFilters((current) => ({ ...current, date_to: event.target.value }))}/></label>
-        <label><span>Từ giờ</span><input type="time" value={exportFilters.time_from} onChange={(event) => setExportFilters((current) => ({ ...current, time_from: event.target.value }))}/></label>
-        <label><span>Đến giờ</span><input type="time" value={exportFilters.time_to} onChange={(event) => setExportFilters((current) => ({ ...current, time_to: event.target.value }))}/></label>
-        <button type="button" className="secondary-button" disabled={!Object.values(exportFilters).some(Boolean)} onClick={() => setExportFilters(EMPTY_EXPORT_FILTERS)}>Xóa bộ lọc</button>
-        <small>Áp dụng cho xuất lịch sử và nghỉ giữa ca.</small>
-      </div>}
-      {['pending', 'invoices', 'reports'].includes(activePanel) && <LiveTourFilters value={listFilters} onChange={setListFilters} rows={activePanel === 'pending' ? allPendingPayments : activePanel === 'invoices' ? asArray(data.state?.invoices) : allReports}/>}
+      {['pending', 'invoices', 'reports', 'history'].includes(activePanel) && <LiveTourFilters
+        value={listFilters}
+        onChange={setListFilters}
+        rows={activePanel === 'pending' ? allPendingPayments : activePanel === 'invoices' ? asArray(data.state?.invoices) : activePanel === 'reports' ? allReports : [...asArray(data.customer_changes), ...asArray(data.pending_changes), ...asArray(data.invoice_changes), ...asArray(data.break_events), ...asArray(data.backups)]}
+      />}
       {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
 
       {activePanel === 'pending' && canPending && <div className="live-tour-panel-body" id="live-tour-pending-panel" role="tabpanel" aria-label="Hóa đơn chờ thanh toán">
@@ -1603,9 +1625,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong>
             <span>{customer?.phone || 'Chưa có số điện thoại'}</span>
             <small>Số dư combo: {customer?.combo_balance ?? customer?.remaining_tickets ?? customer?.balance ?? 0}</small>
-            {customerComboPurchases(customer).map((combo, comboIndex) => <div key={itemId(combo, comboIndex)}><small>{itemLabel(combo)} · còn {combo?.remaining ?? combo?.balance ?? 0}</small>{capabilities.customer_combo_edit && <button className="text-button" onClick={() => { setError(''); setCustomerContext({ customer, purchase: combo, mode: 'edit', revision: data.revision }) }}>Sửa combo</button>}{capabilities.customer_combo_delete && <button className="text-button" onClick={() => { setError(''); setCustomerContext({ customer, purchase: combo, mode: 'delete', revision: data.revision }) }}>Xóa combo</button>}</div>)}
+            {customerComboPurchases(customer).map((combo, comboIndex) => <div key={itemId(combo, comboIndex)}><small>{itemLabel(combo)} · còn {combo?.remaining ?? combo?.balance ?? 0}/{combo?.total ?? ''} vé · mua {bookingTimeLabel(combo?.purchased_at || combo?.created_at)}</small>{capabilities.customer_combo_edit && <button className="text-button" onClick={() => { setError(''); setCustomerContext({ customer, purchase: combo, mode: 'edit', revision: data.revision }) }}>Sửa combo</button>}{capabilities.customer_combo_delete && <button className="text-button" onClick={() => { setError(''); setCustomerContext({ customer, purchase: combo, mode: 'delete', revision: data.revision }) }}>Xóa combo</button>}</div>)}
             <div className="live-tour-card-actions">{capabilities.customers_edit && <button className="secondary-button" onClick={() => { setError(''); setCustomerContext({ customer, mode: 'edit', revision: data.revision }) }}>Sửa khách hàng</button>}{capabilities.customers_delete && <button className="secondary-button danger-button" onClick={() => { setError(''); setCustomerContext({ customer, mode: 'delete', revision: data.revision }) }}>Xóa khách hàng</button>}</div>
-            <div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canCustomers} onClick={() => openCustomerHistory(customer)}><History size={12}/> Lịch sử</button><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { item: customer, rowIds: [], defaults: { customer_id: stableCustomerId(customer), customer_name: itemLabel(customer), phone: customer?.phone || customer?.customer_phone || '' } })}><Plus size={12}/> Mua combo</button></div>
+            <div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={!canCustomers} onClick={() => openCustomerHistory(customer)}><History size={12}/> Lịch sử sử dụng</button><button type="button" className="secondary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { item: customer, rowIds: [], defaults: { customer_id: stableCustomerId(customer), customer_name: itemLabel(customer), phone: customer?.phone || customer?.customer_phone || '' } })}><Plus size={12}/> Mua combo</button></div>
           </article>)}
           {!filteredCustomers.length && <div className="live-tour-empty">Không tìm thấy khách hàng phù hợp.</div>}
         </div>
@@ -1627,15 +1649,15 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </div>}
 
       {activePanel === 'history' && (canHistory || canBackup) && <div className="live-tour-panel-body">
-        {canHistory && canCustomers && asArray(data.customer_changes).length > 0 && <div className="live-tour-catalog-section"><h3>Lịch sử sửa / xóa khách hàng và combo</h3>{asArray(data.customer_changes).slice().reverse().map(change => <details className="live-tour-data-card" key={change.id}><summary>{change.at} · {change.actor} · {change.before?.name || change.before?.combo_name}</summary><p>Lý do: {change.reason}</p><p>{change.before?.remaining != null ? `Số vé: ${change.before.remaining} → ${change.after?.deleted_at ? 'Đã xóa' : change.after?.remaining}` : `${change.before?.name} → ${change.after?.deleted_at ? 'Đã xóa' : change.after?.name}`}</p></details>)}</div>}
-        {canHistory && <LiveTourInvoiceChanges changes={[...asArray(data.pending_changes), ...asArray(data.invoice_changes)]}/>}
+        {canHistory && canCustomers && filteredCustomerChanges.length > 0 && <div className="live-tour-catalog-section"><h3>Lịch sử sửa / xóa khách hàng và combo</h3>{filteredCustomerChanges.slice().reverse().map(change => <details className="live-tour-data-card" key={change.id}><summary>{change.at} · {change.actor} · {change.before?.name || change.before?.combo_name}</summary><p>Lý do: {change.reason}</p><p>{change.before?.remaining != null ? `Số vé: ${change.before.remaining} → ${change.after?.deleted_at ? 'Đã xóa' : change.after?.remaining}` : `${change.before?.name} → ${change.after?.deleted_at ? 'Đã xóa' : change.after?.name}`}</p></details>)}</div>}
+        {canHistory && <LiveTourInvoiceChanges changes={filteredInvoiceChanges}/>}
         {canHistory && <div className="live-tour-catalog-section">
           <div className="live-tour-panel-toolbar"><h3>LỊCH SỬ NGHỈ GIỮA CA</h3><button type="button" className="secondary-button" disabled={!canExportKind('breaks')} onClick={() => exportData('breaks')}><Download size={13}/> Xuất nghỉ giữa ca</button></div>
-          <div className="live-tour-history-list">{asArray(data.break_events).slice().reverse().map((event, index) => <article key={event.id || index}>
+          <div className="live-tour-history-list">{filteredBreakEvents.slice().reverse().map((event, index) => <article key={event.id || index}>
             <strong>{event.employee_name} · {event.event_type === 'start' ? 'Bắt đầu nghỉ' : 'Vào lại'}</strong>
             <span>{event.at} · {event.outcome || 'Định mức 90 phút'}{event.minutes != null ? ` · ${event.minutes} phút` : ''}</span>
             <small>{event.actor}</small>
-          </article>)}{!asArray(data.break_events).length && <div className="live-tour-empty">Chưa có lịch sử nghỉ giữa ca.</div>}</div>
+          </article>)}{!filteredBreakEvents.length && <div className="live-tour-empty">Chưa có lịch sử nghỉ giữa ca trong bộ lọc.</div>}</div>
         </div>}
         <div className="live-tour-panel-toolbar"><h2>LỊCH SỬ & SAO LƯU</h2><div className="live-tour-panel-toolbar-actions">{canBackup && <button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => executeAction('backup', { name: `Backup ${new Date().toLocaleString('vi-VN')}` }, [])}><History size={13}/> Tạo bản sao lưu</button>}{canHistory && <button type="button" className="secondary-button" disabled={!canExportKind('history')} onClick={() => exportData('history')}><Download size={13}/> Xuất lịch sử</button>}</div></div>
         {canBackup && <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{item?.created_at || item?.timestamp || ''}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => { if (window.confirm('Khôi phục bản sao này? Chỉ phục hồi cấu hình/bảng tua khi không còn phiên mở; sổ hóa đơn, vé và lịch sử không bị quay lùi.')) void executeAction('restore', { backup_id: item?._id ?? item?.id }, []) }}>Khôi phục</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có bản sao lưu.</div>}</div>}

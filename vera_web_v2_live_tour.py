@@ -75,7 +75,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
-    "update_booking", "cancel_booking", "change_employee", "update_appointment", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
+    "update_booking", "cancel_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Lịch hẹn", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -1781,6 +1781,18 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             raise HTTPException(400, "Lịch hẹn phải là một dòng, tối đa 200 ký tự.")
         employee = _employee(state, payload.get("employee_id"))
         employee["appointment"] = appointment.strip()
+        result["employee"] = employee
+    elif action == "update_started_at":
+        employee = _employee(state, payload.get("employee_id"))
+        if _norm(employee.get("status")) not in {"dang thuc hien", "dang su dung"} or not employee.get("service"):
+            raise HTTPException(409, "Chỉ được nhập TG bắt đầu cho nhân viên đang thực hiện dịch vụ.")
+        started_at = _parse_datetime(payload.get("started_at"))
+        if not started_at or not 2000 <= started_at.year <= 2100:
+            raise HTTPException(400, "TG bắt đầu thực hiện không hợp lệ.")
+        local_now = now.astimezone(VN_TZ)
+        if started_at > local_now + timedelta(minutes=5):
+            raise HTTPException(400, "TG bắt đầu thực hiện không được ở tương lai.")
+        employee["started_at"] = _iso(started_at)
         result["employee"] = employee
     elif action == "change_employee":
         if len(employee_ids) > 1:
@@ -3588,6 +3600,8 @@ def install_live_tour_routes(
         _reject_external_action(action)
         if action == "update_appointment" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly", "letan"}:
             raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được sửa lịch hẹn.")
+        if action == "update_started_at" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly"}:
+            raise HTTPException(403, "Chỉ Admin và Quản lý được nhập TG bắt đầu thực hiện.")
         if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được nhập combo.")
         payload = deepcopy(body.payload)

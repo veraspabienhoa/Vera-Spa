@@ -30,7 +30,7 @@ function LiveTourMultiBookingDialog({ data, context, canOperate, canBook, canCus
   const [message, setMessage] = useState('')
   const updateRow = (index, patch) => setRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
   const removeRow = (index) => setRows((current) => current.length === 1 ? current : current.filter((_, rowIndex) => rowIndex !== index))
-  const addRow = () => setRows((current) => [...current, blankRow(current.map((row) => row.room))])
+  const addRow = () => setRows((current) => current.length >= groupRooms.length ? current : [...current, blankRow(current.map((row) => row.room))])
   const submit = async (event) => {
     event.preventDefault(); setMessage('')
     if (rows.some((row) => !row.employee_id || !row.service_id || !row.room)) return setMessage('Mỗi dòng phải chọn nhân viên, dịch vụ và phòng/giường.')
@@ -65,7 +65,7 @@ function LiveTourMultiBookingDialog({ data, context, canOperate, canBook, canCus
           {rows.length > 1 && <button type="button" className="icon-button tour-multi-remove" aria-label={`Xóa dòng ${index + 1}`} onClick={() => removeRow(index)}><Trash2 size={16}/></button>}
         </div>
       })}</div>
-      <button type="button" className="secondary-button tour-multi-add" onClick={addRow}><Plus size={15}/> Thêm dòng</button>
+      <button type="button" className="secondary-button tour-multi-add" disabled={rows.length >= groupRooms.length} onClick={addRow}><Plus size={15}/> Thêm dòng ({rows.length}/{groupRooms.length})</button>
       <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea value={note} onChange={(event) => setNote(event.target.value)}/></label>
       <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(rows.reduce((total, row) => total + Number(catalog.find((item) => item.id === row.service_id)?.price || 0), 0))}</strong></div>
       <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canBook && <button type="submit" className="secondary-button" value="book">Đặt lịch</button>}{canOperate && <button type="submit" className="primary-button" value="start">Thực hiện</button>}</div>

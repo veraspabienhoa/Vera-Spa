@@ -123,6 +123,31 @@ def test_booking_then_start_increments_only_request_counter():
     assert ktv["request_count"] == 1
 
 
+def test_update_started_at_accepts_active_service_and_rejects_invalid_times():
+    ktv = employee("e1", "An")
+    ktv.update({"service": "Body 90", "room": "1.1", "status": "Đang thực hiện", "started_at": NOW.isoformat()})
+    state = state_with(ktv)
+    corrected = NOW - timedelta(minutes=15)
+
+    result = live._apply_action(state, "update_started_at", {
+        "employee_id": "e1", "started_at": corrected.isoformat(),
+    }, "admin", NOW)
+
+    assert result["employee"]["started_at"] == corrected.isoformat()
+    with pytest.raises(HTTPException) as future_error:
+        live._apply_action(state, "update_started_at", {
+            "employee_id": "e1", "started_at": (NOW + timedelta(minutes=6)).isoformat(),
+        }, "admin", NOW)
+    assert future_error.value.status_code == 400
+
+    ktv["status"] = "Đang chờ"
+    with pytest.raises(HTTPException) as inactive_error:
+        live._apply_action(state, "update_started_at", {
+            "employee_id": "e1", "started_at": corrected.isoformat(),
+        }, "admin", NOW)
+    assert inactive_error.value.status_code == 409
+
+
 def test_multi_booking_allocates_distinct_beds_in_requested_room_group():
     first = employee("e1", "An")
     second = employee("e2", "Bình")

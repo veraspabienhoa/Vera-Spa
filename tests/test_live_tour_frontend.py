@@ -90,6 +90,7 @@ def test_live_tour_wires_every_vba_equivalent_action_to_the_backend():
         "combo_delete",
         "combo_purchase",
         "combo_import",
+        "update_started_at",
         "backup",
         "restore",
         "clear_expired",
@@ -334,19 +335,16 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
     source = _source(LIVE_TOUR)
     api = _source(API)
 
-    assert "const EMPTY_EXPORT_FILTERS = { date_from: '', date_to: '', time_from: '', time_to: '' }" in source
-    assert "const [exportFilters, setExportFilters] = useState(EMPTY_EXPORT_FILTERS)" in source
-    assert 'aria-label="Bộ lọc thời gian xuất dữ liệu"' in source
-    assert source.count('type="date"') >= 2
-    assert source.count('type="time"') >= 2
-    for key in ("date_from", "date_to", "time_from", "time_to"):
-        assert f"exportFilters.{key}" in source
+    assert "preset: 'today', ...tourDateRange('today')" in source
+    assert "<LiveTourFilters" in source
+    for key in ("date_from", "date_to"):
         assert f"'{key}'" in api
 
     export_flow = source[
         source.index("const exportData") : source.index("const removeCatalogItem")
     ]
     assert "FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery" in export_flow
+    assert "...listFilters, preset: ''" in export_flow
     assert "...listFilters" in export_flow
     assert "veraApi.exportLiveTourExcel(kind, query)" in export_flow
     assert "veraApi.readLiveTourPng()" in source

@@ -14,6 +14,8 @@ Object.defineProperties(globalThis, {
 })
 const { createRoot } = await import('react-dom/client')
 const require = createRequire(import.meta.url)
+const TODAY_VN = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
+const TODAY_VN_LABEL = TODAY_VN.split('-').reverse().join('/')
 const built = await build({
   entryPoints: [fileURLToPath(new URL('../src/pages/LiveTourPage.jsx', import.meta.url))],
   bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic',
@@ -354,8 +356,8 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
 test('quick checkout searches pending invoice by room and retains the selected invoice source', async () => {
   const f = await fixture({ payable: true, setup(data) {
     data.capabilities.pending_view = true; data.capabilities.invoice_view = true
-    data.pending_payments = [{ id: 'p-old', customer_name: '', booked_at: '2026-09-09T13:00:00+07:00',
-      entries: [{ employee_id: 'e1', employee_name: 'An An', room: '3.1', service: 'Body 90', price: 100, price_source: 'catalog', booked_at: '2026-09-09T13:00:00+07:00', started_at: '2026-09-09T13:05:00+07:00' }] }]
+    data.pending_payments = [{ id: 'p-old', customer_name: '', booked_at: `${TODAY_VN}T13:00:00+07:00`,
+      entries: [{ employee_id: 'e1', employee_name: 'An An', room: '3.1', service: 'Body 90', price: 100, price_source: 'catalog', booked_at: `${TODAY_VN}T13:00:00+07:00`, started_at: `${TODAY_VN}T13:05:00+07:00` }] }]
   } })
   try {
     await act(() => [...document.querySelectorAll('.tour-records-panel input[type=checkbox]')][0].click())
@@ -373,14 +375,14 @@ test('quick checkout searches pending invoice by room and retains the selected i
 test('pending cards display staff-room-service and both booking and execution timestamps', async () => {
   const f = await fixture({ setup(data) {
     data.capabilities.pending_view = true; data.capabilities.invoice_view = true
-    data.pending_payments = [{ id: 'p1', entries: [{ employee_name: 'An An', room: '1.1', service: 'Body 90',
-      booked_at: '2026-09-09T13:00:00+07:00', started_at: '2026-09-09T13:05:00+07:00' }] }]
+    data.pending_payments = [{ id: 'p1', booked_at: `${TODAY_VN}T13:00:00+07:00`, entries: [{ employee_name: 'An An', room: '1.1', service: 'Body 90',
+      booked_at: `${TODAY_VN}T13:00:00+07:00`, started_at: `${TODAY_VN}T13:05:00+07:00` }] }]
   } })
   try {
     const card = document.querySelector('#live-tour-pending-panel .live-tour-data-card')
     assert.match(card.textContent, /An An – 1\.1 – Body 90/)
     assert.match(card.textContent, /Khách lẻ/)
-    assert.match(card.textContent, /Booking: 13:00 09\/09\/2026 · Thực hiện: 13:05 09\/09\/2026/)
+    assert.match(card.textContent, new RegExp(`Booking: 13:00 ${TODAY_VN_LABEL.replaceAll('/', '\\/')} · Thực hiện: 13:05 ${TODAY_VN_LABEL.replaceAll('/', '\\/')}`))
     assert.ok(!document.querySelector('input[placeholder="Nhập lịch hẹn…"]'))
   } finally { await f.dispose() }
 })
@@ -405,8 +407,8 @@ test('board orders the standard start column across dates, ignoring remaining ti
     const leave = [...document.querySelectorAll('button.tour-metric-card')].find((button) => button.textContent.includes('Nghỉ phép'))
     assert.ok(leave)
     await act(() => leave.click())
-    assert.deepEqual(names(), ['Chưa thực hiện', 'Bắt đầu trước', 'Đã thanh toán', 'Mới bắt đầu', 'Nghỉ phép hôm nay'])
-    assert.deepEqual([...document.querySelectorAll('.tour-records-panel tbody .tour-col-stt')].map((cell) => cell.textContent), ['1', '2', '3', '4', '5'])
+    assert.deepEqual(names(), ['Nghỉ phép hôm nay'])
+    assert.deepEqual([...document.querySelectorAll('.tour-records-panel tbody .tour-col-stt')].map((cell) => cell.textContent), ['1'])
   } finally { await f.dispose() }
 })
 
