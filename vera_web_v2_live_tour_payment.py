@@ -14,6 +14,13 @@ def default_settings():
     ]}
 
 
+def service_subtotal(invoice):
+    """Prepaid ticket redemption never charges the catalog service price again."""
+    if str(invoice.get('payment_method') or '').upper() == 'COMBO' and not invoice.get('purchased_combo_id'):
+        return 0
+    return invoice.get('subtotal', sum(row.get('price') or 0 for row in invoice.get('entries', [])))
+
+
 def settings_update(payload, money):
     if not isinstance(payload.get('auto_print'), bool):
         raise HTTPException(400, 'Tự động in phải là giá trị đúng/sai.')

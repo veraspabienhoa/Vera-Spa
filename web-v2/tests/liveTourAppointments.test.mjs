@@ -214,6 +214,24 @@ test('payment keeps its fields and save button together, then restores the page 
   } finally { await f.dispose() }
 })
 
+test('prepaid combo checkout shows zero service charge while retaining service and employee', async () => {
+  const f = await fixture({ payable: true, setup(data) {
+    data.capabilities.customers_view = true
+    data.customers = [{ id: 'c1', name: 'Khách Combo', phone: '0901234567', combo_purchases: [
+      { id: 'cp1', combo_name: 'Combo 13', remaining: 13, total: 13 }] }]
+    Object.assign(data.state.employees[0], { customer_id: 'c1', customer_name: 'Khách Combo', customer_phone: '0901234567' })
+  } })
+  try {
+    await act(async () => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    const dialog = document.querySelector('.tour-transaction-dialog')
+    const combo = [...dialog.querySelectorAll('label')].find(label => label.textContent.includes('Trừ vé combo')).querySelector('select')
+    await act(() => { combo.value = 'cp1'; combo.dispatchEvent(new dom.window.Event('change', { bubbles: true })) })
+    const totals = [...dialog.querySelectorAll('.live-tour-checkout-total strong')].map(node => node.textContent)
+    assert.deepEqual(totals, ['0 đ', '0 đ', '0 đ'])
+    assert.match(dialog.querySelector('.live-tour-checkout-entry').textContent, /An An.*Body 90.*0 đ/)
+  } finally { await f.dispose() }
+})
+
 test('the complete form fits desktop, tablet, portrait, landscape and keyboard viewports', () => {
   for (const [width, height, contentHeight] of [[1440, 900, 660], [768, 1024, 670], [390, 844, 730], [320, 568, 760], [844, 390, 620], [390, 320, 730]]) {
     const contentWidth = Math.min(1040, width - 16)

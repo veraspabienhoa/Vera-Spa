@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from vera_web_v2_live_tour_payment import default_settings as _default_payment_settings, settings_update as _payment_settings_update, payment_values as _payment_values
 from vera_web_v2_live_tour_payment import profile_bank as _profile_bank, selected_bank as _selected_bank
+from vera_web_v2_live_tour_payment import service_subtotal as _invoice_service_subtotal
 from vera_web_v2_live_tour_daily import sync_daily as _sync_daily
 from vera_web_v2_live_tour_checkin import with_checkin as _directory_with_checkin
 from vera_web_v2_combo_import import import_terms as _combo_import_terms
@@ -1516,6 +1517,9 @@ def _checkout_mutating(
             entry["price_source"] = "manual"
     elif manual_subtotal_raw not in (None, ""):
         raise HTTPException(400, "Dịch vụ đã có giá danh mục nên không được ghi đè giá vé.")
+    catalog_subtotal = subtotal
+    if pays_with_combo:
+        subtotal = 0
     discount, tip, payment_details = _payment_values(state, payload, subtotal, _bounded_money, MAX_MONEY)
     default_total = max(0, subtotal - discount) + tip
     if default_total > MAX_MONEY:
@@ -1569,7 +1573,7 @@ def _checkout_mutating(
         "pricing_source": pricing_source,
         "combo_purchase_id": combo_purchase_id, "combo_units": combo_units,
         "combo_units_source": "server_purchase_components" if combo_purchase is not None and "component_balances" in combo_purchase else "server_service_catalog",
-        "combo_covered_amount": subtotal if combo_purchase is not None and "component_balances" in combo_purchase else 0,
+        "combo_covered_amount": catalog_subtotal if combo_purchase is not None else 0,
         "combo_component_debits": deepcopy(debit_plan),
         "entries": entries, "note": str(payload.get("note") or ""), "quick": quick,
         **({"source": "quick_booking"} if manual_booking else {}),
@@ -3141,7 +3145,7 @@ def _export_rows(
         headers = ["Ngày", "Số bill", "Khách hàng", "Điện thoại", "Tên nhân viên", "Tiền dịch vụ", "Giảm giá", "Tiền Tip", "Tổng tiền", "Thanh toán", "Người tạo"]
         rows = [[item.get("business_date"), item.get("bill_no"), item.get("customer_name"), item.get("customer_phone"),
                  ", ".join(dict.fromkeys(entry["employee_name"] for entry in item.get("entries", []) if entry.get("employee_name"))),
-                 item.get("subtotal", sum(entry.get("price") or 0 for entry in item.get("entries", []))),
+                 _invoice_service_subtotal(item),
                  item.get("discount") or 0, item.get("tip") or 0, item.get("total") or 0,
                  item.get("payment_method"), item.get("actor")]
                 for item in state["invoices"] if _event_in_export_bounds(item, bounds)]
@@ -3229,7 +3233,7 @@ def _customer_detail_excel_bytes(
         ], [[
             item.get("effective_at", item.get("created_at")),
             item.get("recorded_at", item.get("created_at")), item.get("business_date"),
-            item.get("bill_no"), item.get("payment_method"), item.get("subtotal"),
+            item.get("bill_no"), item.get("payment_method"), _invoice_service_subtotal(item),
             item.get("discount"), item.get("tip"), item.get("total"), item.get("actor"),
             item.get("note"),
         ] for item in history["invoices"]]),

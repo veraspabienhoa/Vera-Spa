@@ -83,12 +83,13 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
                 raise HTTPException(400, "Dòng hóa đơn không tồn tại hoặc bị trùng.")
             seen.add(index)
             invoice["entries"][index].update(price=money(edit["price"], label="Giá dịch vụ"), price_source="paid_correction")
-        subtotal = money(sum(int(row.get("price") or 0) for row in invoice["entries"]), label="Tạm tính")
+        catalog_subtotal = money(sum(int(row.get("price") or 0) for row in invoice["entries"]), label="Tạm tính")
+        covered = invoice.get("payment_method") == "COMBO" and not invoice.get("purchased_combo_id")
+        subtotal = 0 if covered else catalog_subtotal
         discount, tip, _ = payment_values(working, {"discount": payload.get("discount", invoice.get("discount", 0)), "tip": payload.get("tip", invoice.get("tip", 0))}, subtotal, money, max_money)
         method = canonical_method(payload.get("payment_method", invoice.get("payment_method")), quick=True)
         if (method == "COMBO") != (invoice.get("payment_method") == "COMBO"):
             raise HTTPException(400, "Không đổi qua lại COMBO trên hóa đơn đã thanh toán. Hãy hủy hóa đơn và lập lại để đối soát vé.")
-        covered = invoice.get("combo_units_source") == "server_purchase_components"
         if covered and discount:
             raise HTTPException(400, "Lượt combo đã trả tiền khi mua, không giảm giá thêm khi dùng lượt.")
         total = money(tip if covered else subtotal - discount + tip, label="Tổng thanh toán")
@@ -103,7 +104,7 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
         invoice.update(subtotal=subtotal, discount=discount, tip=tip, total=total, payment_method=method,
                        updated_at=iso(now), updated_by=actor)
         if covered:
-            invoice["combo_covered_amount"] = subtotal
+            invoice["combo_covered_amount"] = catalog_subtotal
         if invoice.get("purchased_combo_id"):
             purchase.update(price=subtotal - discount, updated_at=iso(now))
         for index, report in enumerate(reports):

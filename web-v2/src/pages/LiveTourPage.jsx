@@ -855,8 +855,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           correction_reason: form.booking_reason.trim() } } : {}),
         ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
         payment_method: paymentMethod, bill_no: form.bill_no, bank_selection: form.bank_selection || 'auto',
-        ticket_no: form.ticket_no, discount: Number(form.discount || 0),
-        discount_mode: form.discount_mode, discount_percent: Number(form.discount_percent || 0),
+        ticket_no: form.ticket_no, discount: form.combo_purchase_id ? 0 : Number(form.discount || 0),
+        discount_mode: form.discount_mode, discount_percent: form.combo_purchase_id ? 0 : Number(form.discount_percent || 0),
         tip: form.tip_mode === 'cards' ? 0 : Number(form.tip || 0), tip_card_ids: form.tip_mode === 'cards' ? form.tip_card_ids : [],
         combo_purchase_id: form.combo_purchase_id || null,
         ...(checkoutRequiresTicketPrice ? { ticket_price: ticketPrice } : {}),
@@ -1154,11 +1154,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const checkoutAllZeroPricing = checkoutPreviewEntries.length > 0 && checkoutPreviewEntries.every((entry) => entry.preview_price === 0)
   const checkoutRequiresTicketPrice = ['checkout', 'quick_checkout'].includes(modal?.kind)
     && !checkoutUsesCombo && checkoutAllZeroPricing
-  const checkoutEffectiveSubtotal = checkoutRequiresTicketPrice && Number(form.ticket_price) > 0
+  const checkoutEffectiveSubtotal = checkoutUsesCombo ? 0 : checkoutRequiresTicketPrice && Number(form.ticket_price) > 0
     ? Number(form.ticket_price)
     : checkoutPreviewSubtotal
   const checkoutTipPreview = form.tip_mode === 'cards' ? form.tip_card_ids.reduce((sum, id) => sum + Number(asArray(data.payment_settings?.tip_cards).find(card => card.id === id)?.amount || 0), 0) : Math.max(0, Number(form.tip || 0))
-  const checkoutDiscountPreview = discountAmount(checkoutEffectiveSubtotal, form.discount_mode, form.discount_mode === 'percent' ? form.discount_percent : form.discount)
+  const checkoutDiscountPreview = checkoutUsesCombo ? 0 : discountAmount(checkoutEffectiveSubtotal, form.discount_mode, form.discount_mode === 'percent' ? form.discount_percent : form.discount)
   const checkoutPreviewTotal = selectedCheckoutCombo ? checkoutTipPreview : Number.isFinite(checkoutEffectiveSubtotal)
     ? Math.max(0, checkoutEffectiveSubtotal - checkoutDiscountPreview) + checkoutTipPreview
     : null
@@ -1729,7 +1729,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} disabled={!canCustomers} onSelectCustomer={manualQuickBooking ? chooseQuickCustomer : undefined}/>
             <div className="live-tour-checkout-preview wide">
               <strong>Dịch vụ</strong>
-              <LiveTourPageItems items={checkoutPreviewEntries} label="Dịch vụ thanh toán">{(entry, index) => <div className="live-tour-checkout-entry" key={`${entry.employee_id || 'entry'}:${index}`}><span>{entry.employee_name || `Dòng ${index + 1}`} · {entry.service || 'Chưa có dịch vụ'}{entry.room ? ` · ${entry.room}` : ''}</span><strong>{Number.isFinite(entry.preview_price) ? formatMoney(entry.preview_price) : 'Server sẽ xác nhận giá'}</strong><small>{entry.ticket_units} vé combo theo định mức dịch vụ</small></div>}</LiveTourPageItems>
+              <LiveTourPageItems items={checkoutPreviewEntries} label="Dịch vụ thanh toán">{(entry, index) => <div className="live-tour-checkout-entry" key={`${entry.employee_id || 'entry'}:${index}`}><span>{entry.employee_name || `Dòng ${index + 1}`} · {entry.service || 'Chưa có dịch vụ'}{entry.room ? ` · ${entry.room}` : ''}</span><strong>{Number.isFinite(entry.preview_price) ? formatMoney(checkoutUsesCombo ? 0 : entry.preview_price) : 'Server sẽ xác nhận giá'}</strong><small>{entry.ticket_units} vé combo theo định mức dịch vụ</small></div>}</LiveTourPageItems>
               {!checkoutPreviewEntries.length && <div className="live-tour-empty">Không có dịch vụ hợp lệ để xem trước thanh toán.</div>}
               {!checkoutUsesCombo && checkoutHasUnresolvedPricing && <div className="warning-box">Có dịch vụ chưa khớp danh mục. Cần sửa dịch vụ hoặc danh mục trước khi thanh toán.</div>}
               {!checkoutUsesCombo && checkoutHasMixedPricing && <div className="warning-box">Không thể gộp dịch vụ đã có giá và dịch vụ giá 0. Hãy cấu hình giá hoặc tách lần thanh toán.</div>}
@@ -1738,7 +1738,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value, ...(event.target.value === 'COMBO' ? {} : { combo_purchase_id: '' }) }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option><option value="COMBO" disabled={!form.combo_purchase_id}>COMBO · chọn combo đã mua</option></select></label>
             <label className="live-tour-field"><span>Trừ vé combo</span><select value={form.combo_purchase_id} onChange={(event) => {
               setForm((current) => ({
-                ...current, ...(manualQuickBooking ? { service_id: '' } : {}), combo_purchase_id: event.target.value, discount: eligibleCheckoutCombos.find(({ purchase }) => purchase.id === event.target.value)?.purchase.component_balances ? '0' : current.discount, discount_mode: 'amount', discount_percent: '0',
+                ...current, ...(manualQuickBooking ? { service_id: '' } : {}), combo_purchase_id: event.target.value, discount: event.target.value ? '0' : current.discount, discount_mode: 'amount', discount_percent: '0',
                 payment_method: event.target.value ? 'COMBO' : current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
               }))
             }} disabled={!form.customer_id}><option value="">Không trừ combo</option>{eligibleCheckoutCombos.map(({ purchase }, index) => {
@@ -1751,8 +1751,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             {checkoutRequiresTicketPrice && <label className="live-tour-field wide"><span>Giá vé (dịch vụ chưa có giá danh mục)</span><input type="number" min="1" max="1000000000" step="1000" value={form.ticket_price} onChange={(event) => setForm((current) => ({ ...current, ticket_price: event.target.value }))} required/></label>}
             <label className="live-tour-field"><span>Số hóa đơn</span><input value={form.bill_no} onChange={(event) => setForm((current) => ({ ...current, bill_no: event.target.value }))}/></label>
             <label className="live-tour-field"><span>Số vé</span><input value={form.ticket_no} onChange={(event) => setForm((current) => ({ ...current, ticket_no: event.target.value }))}/></label>
-            <label className="live-tour-field"><span>Loại giảm giá</span><select value={form.discount_mode} disabled={Boolean(selectedCheckoutCombo?.component_balances)} onChange={(event) => setForm((current) => ({ ...current, discount_mode: event.target.value }))}><option value="amount">Số tiền (đ)</option><option value="percent">Tỷ lệ (%)</option></select></label>
-            <label className="live-tour-field"><span>Giảm giá {form.discount_mode === 'percent' ? '(%)' : '(đ)'}</span><input type="number" min="0" max={form.discount_mode === 'percent' ? '100' : undefined} step={form.discount_mode === 'percent' ? '0.01' : '1'} readOnly={Boolean(selectedCheckoutCombo?.component_balances)} value={form.discount_mode === 'percent' ? form.discount_percent : form.discount} onChange={(event) => setForm((current) => ({ ...current, [current.discount_mode === 'percent' ? 'discount_percent' : 'discount']: event.target.value }))}/><small>{Number.isFinite(checkoutDiscountPreview) ? formatMoney(checkoutDiscountPreview) : ''}</small></label>
+            <label className="live-tour-field"><span>Loại giảm giá</span><select value={form.discount_mode} disabled={checkoutUsesCombo} onChange={(event) => setForm((current) => ({ ...current, discount_mode: event.target.value }))}><option value="amount">Số tiền (đ)</option><option value="percent">Tỷ lệ (%)</option></select></label>
+            <label className="live-tour-field"><span>Giảm giá {form.discount_mode === 'percent' ? '(%)' : '(đ)'}</span><input type="number" min="0" max={form.discount_mode === 'percent' ? '100' : undefined} step={form.discount_mode === 'percent' ? '0.01' : '1'} readOnly={checkoutUsesCombo} value={checkoutUsesCombo ? '0' : form.discount_mode === 'percent' ? form.discount_percent : form.discount} onChange={(event) => setForm((current) => ({ ...current, [current.discount_mode === 'percent' ? 'discount_percent' : 'discount']: event.target.value }))}/><small>{Number.isFinite(checkoutDiscountPreview) ? formatMoney(checkoutDiscountPreview) : ''}</small></label>
             <p className="wide">Tài khoản người thanh toán: {data.payment_settings?.user_bank ? `${data.payment_settings.user_bank.account_name} · ${data.payment_settings.user_bank.bank_id} · ${data.payment_settings.user_bank.account_no}` : 'Chưa cấu hình ngân hàng trong hồ sơ người thanh toán.'}</p>
             {!checkoutHasUnresolvedPricing && <LiveTourPaymentQr bank={data.payment_settings?.user_bank} amount={checkoutPreviewTotal} reference={form.bill_no || 'VERA SPA'}/>}
             <LiveTourTipInput key={tipPreferenceKey} form={form} setForm={setForm} cards={asArray(data.payment_settings?.tip_cards)} preferenceKey={tipPreferenceKey} total={checkoutTipPreview}/>

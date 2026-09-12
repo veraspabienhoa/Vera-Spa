@@ -257,11 +257,12 @@ def test_checkout_is_atomic_for_invoice_report_combo_and_preserves_vip():
 
     invoice = live._checkout(state, {
         "employee_ids": ["e1", "e2"], "customer_id": "c1",
-        "discount": 50, "tip": 30, "payment_method": "COMBO",
+        "discount": 0, "tip": 30, "payment_method": "COMBO",
         "combo_purchase_id": "cp1", "combo_units": 999,
     }, "admin", NOW, False)
 
-    assert invoice["total"] == 280  # 100 + 200 - 50 + 30 tip
+    assert invoice["subtotal"] == 0
+    assert invoice["total"] == 30  # Prepaid services: collect TIP only.
     assert invoice["bill_no"] == "VERA-20260905-0001"
     assert invoice["combo_units"] == 2
     assert invoice["payment_method"] == "COMBO"

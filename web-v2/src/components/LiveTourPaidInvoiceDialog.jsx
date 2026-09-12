@@ -1,3 +1,4 @@
+import { isComboRedemption } from '../lib/paymentPresentation'
 import { invoiceLocalTime } from '../lib/liveTourFilters'
 import { useState } from 'react'
 import { X } from 'lucide-react'
@@ -11,14 +12,14 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
   const deleting = mode === 'delete'
   const dialog = useDialogFocus(() => { if (!busy) onClose() })
   const [prices, setPrices] = useState(() => item.entries.map((entry) => String(entry.price || 0)))
-  const [discount, setDiscount] = useState(String(item.discount || 0))
+  const [discount, setDiscount] = useState(String(isComboRedemption(item) ? 0 : item.discount || 0))
   const [tip, setTip] = useState(String(item.tip || 0))
   const [method, setMethod] = useState(item.payment_method)
   const [note, setNote] = useState(item.note || '')
   const [reason, setReason] = useState('')
   const [invoiceAt, setInvoiceAt] = useState(() => invoiceLocalTime(item))
-  const covered = item.combo_units_source === 'server_purchase_components'
-  const subtotal = prices.reduce((sum, price) => sum + Number(price || 0), 0)
+  const covered = isComboRedemption(item)
+  const subtotal = covered ? 0 : prices.reduce((sum, price) => sum + Number(price || 0), 0)
   const total = covered ? Number(tip || 0) : subtotal - Number(discount || 0) + Number(tip || 0)
   const submit = async (event) => {
     event.preventDefault()
@@ -42,7 +43,7 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {!deleting && canEditDate && true && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><input type="datetime-local" required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
         {item.entries.map((entry, index) => <div className="wide live-tour-data-card" key={index}><strong>{entry.employee_name || 'Bán combo'} · {entry.service}</strong><small>{entry.room}</small>
-          {deleting ? <span>{money(entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><input type="number" min="0" max="10000000000" step="1" required value={prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
+          {deleting ? <span>{money(covered ? 0 : entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><input type="number" min="0" max="10000000000" step="1" required disabled={covered} value={covered ? '0' : prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
         </div>)}
         {!deleting && <>
           <label className="live-tour-field"><span>Giảm giá (đ)</span><input type="number" min="0" max={subtotal} step="1" required disabled={covered} value={discount} onChange={(event) => setDiscount(event.target.value)}/></label>

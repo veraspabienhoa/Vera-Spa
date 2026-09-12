@@ -42,6 +42,12 @@ test('receipt shows separate booking users, VN dates and payment user; reprintin
     await render({ ...invoice, payment_bank: undefined, entries: [{ service: 'Body', price: 300 }] }, bank)
     assert.equal(receipt.querySelector('img'), null)
     assert.match(receipt.textContent, /Chưa ghi nhận người đặt/)
+    await render({ ...invoice, payment_method: 'COMBO', subtotal: 300, combo_covered_amount: 300, total: 50, tip: 50 }, bank)
+    assert.match(receipt.textContent, /Tiền dịch vụ0 đ/)
+    assert.deepEqual([...receipt.querySelectorAll('tbody tr')].map(row => row.lastElementChild.textContent), ['0 đ', '0 đ'])
+    assert.match(receipt.textContent, /Tổng tiền50 đ/)
+    await render({ ...invoice, purchased_combo_id: 'sale', entries: [{ service: 'Mua Combo', price: 300 }] }, bank)
+    assert.match(receipt.textContent, /Tiền dịch vụ300 đ/)
   } finally {
     await act(async () => root.unmount())
   }
