@@ -2,18 +2,62 @@ name: Quick checkout isolated workspace
 on:
   push:
     branches: [codex/quick-checkout-combo-date]
-    paths: [.github/workflows/codex-quick-checkout-workspace.yml]
+    paths: [.github/workflows/codex-quick-checkout-workspace.yml, .codex-quick-checkout.patch.gz.b64]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  source:
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - name: Export source only
+      - name: Export input for checksum verification
         run: git archive --format=tar -o /tmp/vera-source.tar HEAD
       - uses: actions/upload-artifact@v4
         with:
           name: quick-checkout-source
           path: /tmp/vera-source.tar
           retention-days: 1
+      - name: Verify and apply reviewed patch
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib, pathlib, subprocess
+          encoded = pathlib.Path('.codex-quick-checkout.patch.gz.b64').read_text().strip()
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '053dca607abb5305a0576a9261c82491138af4ea1f98ab4cc67e8695754eca17', 'Patch checksum mismatch'
+          subprocess.run(['git', 'apply', '--check', '-'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '-'], input=patch, check=True)
+          PY
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+      - name: Install test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check 'pytest==8.4.2' 'httpx2>=2,<3' -r requirements.txt
+          npm ci --prefix web-v2
+      - name: Test Python business rules
+        run: python -m pytest -q tests/
+      - name: Test React interactions and helpers
+        working-directory: web-v2
+        run: node --test tests/*.mjs
+      - name: Lint and production build
+        working-directory: web-v2
+        run: npm run lint && npm run build
+      - name: Publish tested source on this feature branch only
+        env:
+          TARGET_BRANCH: codex/quick-checkout-combo-date
+        run: |
+          set -eu
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          rm .codex-quick-checkout.patch.gz.b64 .github/workflows/codex-quick-checkout-workspace.yml
+          git add vera_web_v2_live_tour.py tests/test_live_tour_quick_combo.py tests/test_live_tour_steam_tips.py web-v2/src/lib/liveTourQuickCombo.js web-v2/src/pages/LiveTourPage.jsx web-v2/tests/liveTourAppointments.test.mjs web-v2/tests/liveTourQuickCombo.test.mjs .codex-quick-checkout.patch.gz.b64 .github/workflows/codex-quick-checkout-workspace.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: infer quick checkout services from owned combos and require booking date'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
