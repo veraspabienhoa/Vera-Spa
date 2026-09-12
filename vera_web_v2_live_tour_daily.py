@@ -9,7 +9,7 @@ FULL_DAY_REASONS = {
 }
 
 
-def sync_daily(state, directory, leaves):
+def sync_daily(state, directory, leaves, *, automatic=False):
     """Match usernames first, unique full names second; keep every service intact."""
     rows = {key(row['username']): row for row in directory}
     name_owners = {}
@@ -34,6 +34,8 @@ def sync_daily(state, directory, leaves):
         # Partial-day events (late arrival/early departure/support) remain working.
         absent = any(key(reason) in FULL_DAY_REASONS for reason in reasons)
         status = 'Nghỉ phép' if absent else 'Đi làm'
+        if automatic and not records and not worker.get('synced_leave_reason'):
+            continue
         previous_reason = worker.get('synced_leave_reason', '')
         current = worker.get('appointment', '')
         # Remove only our previous suffix, preserving receptionist appointments.

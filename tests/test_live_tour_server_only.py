@@ -46,6 +46,8 @@ class SettingsDatabase:
             if self.fail_employee_read:
                 raise RuntimeError("database unavailable")
             rows = deepcopy(self.directory)
+        elif "FROM leave_records" in sql:
+            rows = deepcopy(getattr(self, "leaves", []))
         elif "FROM vera_dataset_cache" in sql:
             rows = deepcopy(self.datasets)
         elif "SELECT value_json" in sql:
