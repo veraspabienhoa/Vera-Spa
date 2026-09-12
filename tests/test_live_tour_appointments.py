@@ -63,7 +63,8 @@ def test_old_pending_checkout_does_not_clear_new_booking_or_appointment():
     assert worker["appointment"] == "18:00" and worker["note"] == "Giữ ghi chú"
     assert "last_assignment_display" not in worker
     record = live._employee_record(worker, NOW)
-    assert record["TG bắt đầu thực hiện YC"] == "" and record["Kết quả hoàn thành"] == ""
+    assert record["TG bắt đầu thực hiện YC"] == live._display_datetime(NOW)
+    assert record["Kết quả hoàn thành"] == ""
     before = deepcopy(worker)
     live._apply_action(state, "checkout", {"pending_id": pending["id"], "payment_method": "TIỀN MẶT"}, "tester", NOW)
     assert state["employees"][0] == before

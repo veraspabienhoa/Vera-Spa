@@ -14,7 +14,7 @@ import LiveTourPageItems from './LiveTourPageItems'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 
-function LiveTourMultiBookingDialog({ data, context, canOperate, canBook, canCustomers, busy, error, onAction, onClose }) {
+function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, busy, error, onAction, onClose }) {
   const employees = data.state?.employees || []
   const catalog = data.services || []
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
@@ -43,7 +43,7 @@ function LiveTourMultiBookingDialog({ data, context, canOperate, canBook, canCus
     const bookings = rows.map((row) => ({
       employee_id: row.employee_id, service_items: [{ service_id: row.service_id, quantity: 1 }], room: row.room,
       request: row.request, note, ...(canCustomers ? { customer_id: row.customer_id || null } : {}),
-      start_now: event.nativeEvent.submitter?.value === 'start',
+      start_now: false,
     }))
     const result = await onAction('multi_booking', { bookings }, [])
     if (result) onClose()
@@ -68,7 +68,7 @@ function LiveTourMultiBookingDialog({ data, context, canOperate, canBook, canCus
       <button type="button" className="secondary-button tour-multi-add" disabled={rows.length >= groupRooms.length} onClick={addRow}><Plus size={15}/> Thêm dòng ({rows.length}/{groupRooms.length})</button>
       <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea value={note} onChange={(event) => setNote(event.target.value)}/></label>
       <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(rows.reduce((total, row) => total + Number(catalog.find((item) => item.id === row.service_id)?.price || 0), 0))}</strong></div>
-      <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canBook && <button type="submit" className="secondary-button" value="book">Đặt lịch</button>}{canOperate && <button type="submit" className="primary-button" value="start">Thực hiện</button>}</div>
+      <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canBook && <button type="submit" className="primary-button" value="book">Đặt lịch</button>}</div>
     </fieldset></form>
   </LiveTourTransactionDialog>
 }
@@ -123,7 +123,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
     if (items.some((row) => !Number.isInteger(Number(row.quantity)) || Number(row.quantity) < 1 || Number(row.quantity) > 30)) { setMessage('Số lượng mỗi dịch vụ phải từ 1 đến 30.'); return }
     if (!employeeId || !room || !items.length) { setMessage('Hãy chọn nhân viên, ít nhất một dịch vụ và phòng/giường.'); return }
     const result = await onAction(editing ? 'update_booking' : 'booking', {
-      ...bookingPayload(), start_now: event.nativeEvent.submitter?.value === 'start',
+      ...bookingPayload(), start_now: false,
     }, [])
     if (result) onClose()
   }
@@ -165,7 +165,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
         <label className="live-tour-field"><span>Yêu cầu</span><select data-booking-step value={request} disabled={doing} onChange={(event) => { setRequest(event.target.value); advanceBookingField(event.currentTarget) }}><option value="">Để trống</option><option value="YC">YC</option></select></label>
         <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea data-booking-step value={note} onChange={(event) => setNote(event.target.value)}/></label>
         <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(bookingTotal(items, catalog))}</strong></div>
-        <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{(editing ? canOperate : canBook) && <><button type="submit" className="secondary-button" value="book" disabled={!employeeId || Boolean(comboError || roomState.error)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{!doing && canOperate && <button type="submit" className="primary-button" value="start" disabled={!employeeId || Boolean(comboError || roomState.error)}>Thực hiện</button>}{doing && canOperate && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}{canPayment && tourNameKey(employee?.status) === 'cho thanh toan' && <button type="button" className="primary-button" onClick={() => onCheckout(null, employee)}>Thanh toán</button>}</div>
+        <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{(editing ? canOperate : canBook) && <><button type="submit" className="primary-button" value="book" disabled={!employeeId || Boolean(comboError || roomState.error)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{doing && canOperate && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}{canPayment && tourNameKey(employee?.status) === 'cho thanh toan' && <button type="button" className="primary-button" onClick={() => onCheckout(null, employee)}>Thanh toán</button>}</div>
       </fieldset></form>}
   </LiveTourTransactionDialog>
 }

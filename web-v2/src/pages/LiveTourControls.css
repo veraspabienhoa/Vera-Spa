@@ -20,6 +20,14 @@
 .live-tour-controls-group,
 .live-tour-controls-actions { display: contents; }
 
+.live-tour-page .tour-table .tour-col-status {
+  width: 100px;
+  min-width: 100px;
+  max-width: none;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 .live-tour-page .live-tour-controls-actions > button,
 .live-tour-page .live-tour-controls-actions > select {
   flex: 1 1 auto;

@@ -918,7 +918,23 @@ RETAINED_ASSIGNMENT_COLUMNS = (
 )
 
 
+def _board_starts(employee):
+    """Persistent board times, independent of the current service's countdown."""
+    retained = employee.get("last_assignment_display") or {}
+    return {field: employee.get(field, retained.get(column) or (
+        employee.get("started_at", "") if (_norm(employee.get("request")) == "yc") == yc else ""
+    )) for field, column, yc in (
+        ("board_started_at", "TG bắt đầu thực hiện", False),
+        ("board_yc_started_at", "TG bắt đầu thực hiện YC", True),
+    )}
+
+
+def _preserve_board_starts(employee):
+    employee.update(_board_starts(employee))
+
+
 def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
+    _preserve_board_starts(employee)
     # Retain display history separately from the live booking. Old timestamps,
     # prices and combo reservations must never become a second payable service.
     record = _employee_record(employee, now)
@@ -1170,6 +1186,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
     if any(payload.get(key) for key in ("customer_id", "customer_name", "customer_phone", "phone")):
         customer = _customer(state, payload)
     combo = _booking_combo(state, customer, payload, {"service": service, "service_items": service_items}, now)
+    _preserve_board_starts(employee)
     employee.pop("last_assignment_display", None)
     employee.update({
         **combo,
@@ -1234,6 +1251,8 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
         # whole board override so API, browser and exports use start-time order.
         for row in state["employees"]:
             row.pop("manual_order", None)
+    _preserve_board_starts(employee)
+    employee["board_yc_started_at" if _norm(employee.get("request")) == "yc" else "board_started_at"] = _iso(now)
     employee["status"] = "Đang thực hiện"
     employee["started_at"] = _iso(now)
     employee["employee_change_minutes"] = (state.get("payment_settings") or {}).get("employee_change_minutes", 10)
@@ -1731,6 +1750,21 @@ def _reject_external_action(action: str) -> None:
 
 def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime) -> dict[str, Any]:
     action = str(action or "").strip().lower()
+    # Preserve legacy display values when an action replaces booking/backup data.
+    # Only start and reorder explicitly write the persistent board fields.
+    previous = {row["id"]: _board_starts(row) for row in state["employees"]}
+    result = _apply_action_impl(state, action, payload, actor, now)
+    for row in state["employees"]:
+        for field, value in previous.get(row["id"], {}).items():
+            if action == "restore":
+                row[field] = value
+            elif _board_starts(row)[field] != value and field not in row:
+                row.setdefault(field, value)
+    return result
+
+
+def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime) -> dict[str, Any]:
+    action = str(action or "").strip().lower()
     _reject_external_action(action)
     _ensure_counter_day(state, now)
     financial_timing = _financial_timing(payload, now) if action in BACKDATE_ACTIONS else None
@@ -1783,17 +1817,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         employee["appointment"] = appointment.strip()
         result["employee"] = employee
     elif action == "update_started_at":
-        employee = _employee(state, payload.get("employee_id"))
-        if _norm(employee.get("status")) not in {"dang thuc hien", "dang su dung"} or not employee.get("service"):
-            raise HTTPException(409, "Chỉ được nhập TG bắt đầu cho nhân viên đang thực hiện dịch vụ.")
-        started_at = _parse_datetime(payload.get("started_at"))
-        if not started_at or not 2000 <= started_at.year <= 2100:
-            raise HTTPException(400, "TG bắt đầu thực hiện không hợp lệ.")
-        local_now = now.astimezone(VN_TZ)
-        if started_at > local_now + timedelta(minutes=5):
-            raise HTTPException(400, "TG bắt đầu thực hiện không được ở tương lai.")
-        employee["started_at"] = _iso(started_at)
-        result["employee"] = employee
+        raise HTTPException(403, "TG bắt đầu chỉ thay đổi khi bấm Thực hiện hoặc di chuyển thứ tự tua.")
     elif action == "change_employee":
         if len(employee_ids) > 1:
             raise HTTPException(400, "Chỉ đổi một nhân viên mỗi lần.")
@@ -2132,6 +2156,13 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             if action == "admin_reorder":
                 item["manual_order"] = True
         state["employees"] = ordered + retained
+        position = ordered.index(employee)
+        if len(ordered) > 1:
+            neighbor = ordered[position - 1] if position else ordered[1]
+            neighbor_start = _parse_datetime(_board_starts(neighbor)["board_started_at"])
+            if neighbor_start:
+                _preserve_board_starts(employee)
+                employee["board_started_at"] = _iso(neighbor_start + timedelta(seconds=1 if position else -1))
         result["employee"] = employee
     elif action == "set_vip":
         employee = _employee(state, payload.get("employee_id"))
@@ -2558,8 +2589,9 @@ def _row_style(employee: dict[str, Any], remaining: int | None) -> tuple[str, li
 def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
     remaining, deadline = _remaining(employee, now)
     style, groups = _row_style(employee, remaining)
-    request_start = employee.get("started_at") if _norm(employee.get("request")) == "yc" else ""
-    standard_start = employee.get("started_at") if _norm(employee.get("request")) != "yc" else ""
+    starts = _board_starts(employee)
+    request_start = starts["board_yc_started_at"]
+    standard_start = starts["board_started_at"]
     break_remaining: int | str = ""
     break_started = _parse_datetime(employee.get("break_started_at"))
     attendance_break = employee.get("attendance_break") or {}
@@ -2613,6 +2645,8 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
     if record["_payment_pending"]:
         for column in ("Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu", "Dịch vụ"):
             record[column] = ""
+    record["TG bắt đầu thực hiện"] = _display_datetime(standard_start)
+    record["TG bắt đầu thực hiện YC"] = _display_datetime(request_start)
     return record
 
 
@@ -3334,6 +3368,7 @@ def _import_board_into_state(state: dict[str, Any], rows: list[dict[str, Any]], 
         "note", "vip", "sort_index",
     }
     for current, parsed in updates:
+        _preserve_board_starts(current)
         for field in mutable:
             current[field] = deepcopy(parsed.get(field))
         current["service_price"] = None

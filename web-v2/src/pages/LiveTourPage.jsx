@@ -197,19 +197,6 @@ function groupCount(records, key) {
   return records.reduce((count, record) => count + (hasGroup(record, key) ? 1 : 0), 0)
 }
 
-function datetimeLocalValue(value) {
-  if (!value) return ''
-  const parsed = new Date(value)
-  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).replace(' ', 'T').slice(0, 16) : ''
-}
-
-function LiveTourStartTimeInput({ record, disabled, onSave }) {
-  const source = record?._employee_change_started_at || ''
-  const [draft, setDraft] = useState(() => datetimeLocalValue(source))
-  useEffect(() => setDraft(datetimeLocalValue(source)), [source])
-  return <input className="live-tour-start-time-input" type="datetime-local" aria-label={`TG bắt đầu thực hiện ${record?.['Tên nhân viên'] || ''}`} value={draft} disabled={disabled || !source} onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft && draft !== datetimeLocalValue(source)) onSave(draft) }}/>
-}
-
 function prioritizeRecords(records, columns, activeFilter) {
   if (records.some(record => record._manual_order)) return [...records].sort((a, b) => Number(hasGroup(a, 'leave')) - Number(hasGroup(b, 'leave')) || Number(a._sort_index || 0) - Number(b._sort_index || 0))
   const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
@@ -616,7 +603,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canInvoiceDelete = canPending && canInvoiceView && capability('invoice_delete', isAdmin || user?.permissions?.live_tour_invoice_delete === true)
   const canCustomers = capability('customers_view', isAdmin || user?.permissions?.live_tour_customers_view === true)
   const canImportCombo = isAdmin && canAdmin && canPayment && canCustomers
-  const canEditStartedAt = ['admin', 'quanly'].includes(normalizedRole) && canOperate
   const canEndBreak = ['admin', 'quanly', 'letan'].includes(normalizedRole)
   const canViewComboPackages = ['admin', 'quanly', 'letan'].includes(normalizedRole) && canCustomers
   const canReports = capability('reports_view', isAdmin || user?.permissions?.live_tour_reports_view === true)
@@ -956,7 +942,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const serviceColumn = serviceNameColumn(columns)
   const statusColumn = findColumn(columns, ['TRANG THAI'])
   const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
-  const startedAtColumn = findColumn(columns, ['TG BAT DAU THUC HIEN'])
   const requestColumn = findColumn(columns, ['YEU CAU'])
   const openEmployeeBooking = (record) => {
     const name = cellValue(record, employeeColumn) || 'Nhân viên'
@@ -1523,7 +1508,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     <section className="panel tour-table-panel tour-records-panel">
       <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
-        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { if (isQuickCheckoutEligible(item, columns) && canPayment) { setError(''); openModal('checkout', { rowIds: [id] }) } else openEmployeeBooking(item) }}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === startedAtColumn && canEditStartedAt ? <LiveTourStartTimeInput record={item} disabled={Boolean(actionBusy)} onSave={(started_at) => executeAction('update_started_at', { started_at }, [id])}/> : column === sttColumn(columns) ? index + 1 : String(breakCellValue(item, column, clockMs))}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
+        return <tr className={rowClass(item, selectedIds.has(id))} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" disabled={!canOperate && !canPayment && !canBook} onClick={() => { if (isQuickCheckoutEligible(item, columns) && canPayment) { setError(''); openModal('checkout', { rowIds: [id] }) } else openEmployeeBooking(item) }}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? index + 1 : (column === statusColumn && hasGroup(item, 'doing') ? 'Thực hiện' : String(breakCellValue(item, column, clockMs)))}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>

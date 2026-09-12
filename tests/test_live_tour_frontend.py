@@ -90,7 +90,6 @@ def test_live_tour_wires_every_vba_equivalent_action_to_the_backend():
         "combo_delete",
         "combo_purchase",
         "combo_import",
-        "update_started_at",
         "backup",
         "restore",
         "clear_expired",
