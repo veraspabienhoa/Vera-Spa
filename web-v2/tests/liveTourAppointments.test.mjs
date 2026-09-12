@@ -324,7 +324,7 @@ test('TIP has two exclusive rows, remembers default and sends only the selected 
 test('manual quick invoice chooses canonical staff, room, service and booking time without board selection', async () => {
   const f = await fixture({ setup(data) {
     data.capabilities.booking = true
-    data.state.employees = [{ id: 'e1', name: 'An An', shift: 'Ca 1', service: '', status: '' }]
+    data.state.employees = [{ id: 'e1', name: 'An An', work_status: 'Đi làm', shift: 'Ca 1', service: '', status: '' }]
     data.state.rooms = [{ name: '1.1', active: true }]
   } })
   try {
@@ -334,6 +334,8 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
     await chooseOption(inputFor('Nhân viên'), 'An An', f)
     await chooseOption(inputFor('Phòng / giường'), '1.1', f)
     await chooseOption(inputFor('Dịch vụ'), 'Body 90', f)
+    assert.equal(inputFor('Ngày booking').value, '')
+    await f.type(inputFor('Ngày booking'), new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()))
     await f.type(inputFor('Giờ booking'), '09:30')
     await f.save(document.querySelector('.tour-transaction-dialog form'))
     assert.equal(f.writes.length, 1)

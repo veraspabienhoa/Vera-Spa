@@ -1,3 +1,4 @@
+import { notifyLeaveChange } from './leaveRefresh'
 import { getCurrentSession, isSupabaseConfigured, refreshCurrentSession, supabase } from './supabase'
 import { apiErrorMessage } from './apiError'
 import { summarizeLeaveRecordDays } from './leaveStats'
@@ -318,9 +319,9 @@ export const veraApi = {
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),
   deleteStorageData: (body) => request('/v2/storage', { method: 'DELETE', body: JSON.stringify(body) }),
-  createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }),
-  updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }),
+  createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }).then(notifyLeaveChange),
+  updateLeave: (recordUid, body) => request(`/v2/leave/records/${encodeURIComponent(recordUid)}`, { method: 'PATCH', body: JSON.stringify(body) }).then(notifyLeaveChange),
+  deleteLeaves: (recordUids) => request('/v2/leave/records', { method: 'DELETE', body: JSON.stringify({ record_uids: recordUids }) }).then(notifyLeaveChange),
   watchDates: () => request('/v2/leave/watch-dates'),
   setWatchDate: (watchedDate, watching) => request('/v2/leave/watch-dates', {
     method: 'POST',
@@ -369,6 +370,6 @@ export const veraApi = {
     if (employee.trim()) params.set('employee', employee.trim())
     return download(`/v2/leave/export.xlsx?${params}`, `vera-lich-nghi-${start}-${end}.xlsx`)
   },
-  syncLeaveSource: () => request('/v2/leave/source-sync', { method: 'POST' }),
-  importLeaveExcel: (file) => upload('/v2/leave/import.xlsx', file),
+  syncLeaveSource: () => request('/v2/leave/source-sync', { method: 'POST' }).then(notifyLeaveChange),
+  importLeaveExcel: (file) => upload('/v2/leave/import.xlsx', file).then(notifyLeaveChange),
 }

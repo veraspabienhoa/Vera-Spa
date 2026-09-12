@@ -1,7 +1,7 @@
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import { customerMatches } from '../lib/customerSearch'
 
-export default function LiveTourCheckoutCustomer({ customers, form, setForm, disabled, customerRequired = false }) {
+export default function LiveTourCheckoutCustomer({ customers, form, setForm, disabled, customerRequired = false, onSelectCustomer }) {
   const options = customers.map((customer) => ({
     value: String(customer.id || customer._id || customer.customer_id || ''),
     label: customer.name || customer.customer_name || '',
@@ -11,7 +11,8 @@ export default function LiveTourCheckoutCustomer({ customers, form, setForm, dis
     const customer = options.find((option) => option.value === id)
     setForm((current) => ({ ...current, customer_id: id,
       customer_name: customer?.label || '', phone: customer?.detail || '',
-      combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))
+      combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
+      ...onSelectCustomer?.(customers.find(row => String(row.id || row._id || row.customer_id) === id)) }))
   }
   const type = (field, query) => setForm((current) => ({ ...current, customer_id: '',
     // When replacing a linked customer, never keep the previous person's other field.

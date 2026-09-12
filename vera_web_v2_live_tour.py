@@ -1018,6 +1018,8 @@ def _service_selection(state, payload, now):
 
 
 def _entry_ticket_units(state, entry):
+    if entry.get("price_source") == "combo_ticket":
+        return 1
     if entry.get("service_items"):
         return sum(row.get("ticket_units", 1) * row["quantity"] for row in entry["service_items"])
     return _service_ticket_units(state, entry.get("service"))
@@ -1127,8 +1129,18 @@ def _resolved_service_price(state: dict[str, Any], entry: dict[str, Any]) -> int
     return int(stored_value)
 
 
+def _require_checked_in(employee, now):
+    if (_shift_bucket(employee) not in {"ca1", "ca2"}
+            or _norm(employee.get("work_status")) != "di lam"
+            or (employee.get("shift_checkin_date") and (
+                employee["shift_checkin_date"] != now.astimezone(VN_TZ).date().isoformat()
+                or not employee.get("assigned_shift")))):
+        raise HTTPException(409, "Nhân viên chưa vào ca hoặc đang nghỉ phép, không thể đặt Booking.")
+
+
 def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> dict[str, Any]:
     employee = _employee(state, payload.get("employee_id"))
+    _require_checked_in(employee, now)
     if employee.get("roster_eligible") is False:
         raise HTTPException(409, "Chỉ xếp tua cho Leader/Nhân viên đang làm việc trong danh sách nhân viên.")
     if _norm(employee.get("work_status")) != "di lam":
@@ -1314,7 +1326,7 @@ def _service_ticket_units(state: dict[str, Any], service_name: Any) -> int:
 def _quick_booking_at(booking, now):
     if not isinstance(booking, dict) or set(booking) - {"employee_id", "room", "service_items", "booked_at", "correction_reason"}:
         raise HTTPException(400, "Thông tin nhập thanh toán nhanh không hợp lệ.")
-    raw = booking.get("booked_at", _iso(now))
+    raw = booking.get("booked_at")
     booked = _parse_datetime(raw)
     if not isinstance(raw, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})", raw) or not booked or not 2000 <= booked.year <= 2100:
         raise HTTPException(400, "Hãy chọn ngày và giờ booking hợp lệ.")
@@ -1325,10 +1337,37 @@ def _quick_booking_at(booking, now):
     return booked
 
 
-def _quick_booking_entry(state, booking, now):
+def _quick_booking_entry(state, booking, now, payment=None):
     booked = _quick_booking_at(booking, now)
-    service, duration, price, items = _service_selection(state, booking, booked)
-    if all(re.match(r"^xong hoi(?:\b|$)", _norm(item['name'])) for item in items):
+    selection = dict(booking)
+    generic_combo = None
+    if not selection.get("service_items") and (payment or {}).get("combo_purchase_id"):
+        customer = next((row for row in state["customers"] if row["id"] == payment.get("customer_id")), None)
+        purchase = next((row for row in (customer or {}).get("combo_purchases", []) if row["id"] == payment["combo_purchase_id"]), None)
+        if not purchase:
+            raise HTTPException(404, "Không tìm thấy combo đã mua của khách hàng.")
+        available = _available_combo(state, customer["id"], purchase)
+        require_available(available, booked.date(), "Combo đã mua")
+        if available["remaining"] <= 0:
+            raise HTTPException(409, "Combo không còn vé khả dụng.")
+        if "component_balances" in available:
+            selection["service_items"] = [
+                {"service_id": part["service_id"], "quantity": 1}
+                for part in available["component_balances"] if part["remaining"] > 0
+                and any(row["id"] == part["service_id"] and row.get("active") is not False
+                        and (not row.get("starts_on") or row["starts_on"] <= booked.date().isoformat())
+                        and (row.get("unlimited", True) or not row.get("expires_on") or row["expires_on"] >= booked.date().isoformat())
+                        for row in state["services"])
+            ]
+            if not selection["service_items"]:
+                raise HTTPException(409, "Combo không còn dịch vụ khả dụng.")
+        else:
+            generic_combo = purchase
+    if generic_combo:
+        service, duration, price, items = f"Vé combo · {generic_combo.get('combo_name') or 'Combo'}", 0, 0, []
+    else:
+        service, duration, price, items = _service_selection(state, selection, booked)
+    if items and all(re.match(r"^xong hoi(?:\b|$)", _norm(item['name'])) for item in items):
         return {"employee_id": "", "employee_name": "", "room": "", "service": service,
                 "service_items": items, "duration": duration, "price": price,
                 "price_source": "catalog", "booked_at": _iso(booked), "request": ""}
@@ -1337,12 +1376,14 @@ def _quick_booking_entry(state, booking, now):
     employee = _employee(state, booking.get("employee_id"))
     if employee.get("hidden") or employee.get("roster_eligible") is False:
         raise HTTPException(409, "Chọn nhân viên đang có trong danh sách phục vụ.")
+    if booked.date() == now.astimezone(VN_TZ).date():
+        _require_checked_in(employee, now)
     room = _catalog_item(state, "rooms", booking)
     if not room or room.get("active") is False:
         raise HTTPException(400, "Hãy chọn phòng/giường đang sử dụng trong danh mục.")
     return {"employee_id": employee["id"], "employee_name": employee["name"],
             "room": room["name"], "service": service, "service_items": items,
-            "duration": duration, "price": price, "price_source": "catalog",
+            "duration": duration, "price": price, "price_source": "combo_ticket" if generic_combo else "catalog",
             "booked_at": _iso(booked), "request": ""}
 
 
@@ -1364,7 +1405,7 @@ def _checkout_mutating(
     if "quick_booking" in payload:
         if not quick or pending_id or direct_ids:
             raise HTTPException(400, "Không được trộn nhập thanh toán nhanh với hóa đơn hoặc dòng đang chờ thanh toán.")
-        entries = [_quick_booking_entry(state, manual_booking, now)]
+        entries = [_quick_booking_entry(state, manual_booking, now, payload)]
     elif pending:
         entries = deepcopy(list(pending.get("entries") or []))
     else:
@@ -2887,8 +2928,15 @@ def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[
     if row:
         state = _normalize_state(row.get("value_json"), now)
         revision = int(row.get("revision") or 0)
-        if _reconcile_roster(state, _employee_directory(conn, now), _new_directory_employee):
-            revision = _write_state(conn, state, revision, "live_tour_employee_directory")
+        before = deepcopy(state)
+        directory = _employee_directory(conn, now)
+        _reconcile_roster(state, directory, _new_directory_employee)
+        leaves = [dict(item) for item in conn.execute(text(
+            "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
+        ), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]
+        _sync_daily(state, directory, leaves, automatic=True)
+        if state != before:
+            revision = _write_state(conn, state, revision, "live_tour_daily_projection")
         return state, revision
     state = _bootstrap_state(conn, now)
     conn.execute(text("""

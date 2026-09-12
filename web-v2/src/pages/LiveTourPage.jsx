@@ -1,3 +1,4 @@
+import { watchLeaveChanges } from '../lib/leaveRefresh'
 import { canChangeEmployee } from '../lib/liveTourEmployeeChange'
 import LiveTourPaymentQr from '../components/LiveTourPaymentQr'
 import { searchTextMatches } from '../lib/searchText'
@@ -32,7 +33,7 @@ import { bookingDateTime, bookingTimeLabel, defaultTipMode } from '../lib/liveTo
 import { checkoutBookingTime, discountAmount } from '../lib/liveTourBooking'
 import { copyPngToClipboard } from '../lib/clipboardImage'
 import './LiveTourControls.css'
-import { availableBookingPurchase } from '../lib/liveTourComboBooking'
+import { availableBookingPurchase, comboBookingItems, preferredBookingCombo } from '../lib/liveTourComboBooking'
 import { customerMatches } from '../lib/customerSearch'
 import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, vietnamDate } from '../lib/serviceCatalog'
 
@@ -605,8 +606,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
   const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, pending: canPending, invoiceView: canInvoiceView, paidInvoiceView: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory })
   const load = useCallback(async (refresh = false, quiet = false) => {
-    if (!quiet) setBusy(true)
-    setError('')
+    if (!quiet) { setBusy(true); setError('') }
     try {
       const next = { ...EMPTY_LIVE_TOUR, ...await veraApi.liveTour(refresh) }
       setData(next)
@@ -626,8 +626,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
   useEffect(() => {
     if (!modal && !bookingContext && !pendingContext && !customerContext) void load(false, initiallyCached.current)
-    const interval = window.setInterval(() => { if (!actionBusy && !modal && !bookingContext && !pendingContext && !customerContext) void load(false, true) }, 10000)
-    return () => window.clearInterval(interval)
+    const interval = window.setInterval(() => { if (!actionBusy) void load(false, true) }, 3000)
+    const stopWatching = watchLeaveChanges(() => { if (!actionBusy) void load(false, true) })
+    return () => { window.clearInterval(interval); stopWatching() }
   }, [actionBusy, load, modal, bookingContext, pendingContext, customerContext])
 
   useEffect(() => {
@@ -780,7 +781,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       ...EMPTY_FORM,
       print_after: data.payment_settings?.auto_print === true,
       tip_mode: defaultTipMode(tipPreferenceKey),
-      booking_date: bookingDateTime().date, booking_time: bookingDateTime().time,
+      booking_date: '', booking_time: bookingDateTime().time,
       ...context.defaults,
       room: source.room ?? (kind === 'room_upsert' ? source.name : source.code) ?? context.defaults?.room ?? '',
       service: source.service ?? source.name ?? context.defaults?.service ?? '',
@@ -820,10 +821,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     let payload = modal.kind === 'change_employee' ? { target_employee_id: form.target_employee_id } : { ...form }
     if (modal.kind === 'change_employee' && !form.target_employee_id) { setError('Hãy chọn nhân viên thay thế.'); return }
     if (['checkout', 'quick_checkout'].includes(modal.kind)) {
-      if (manualQuickBooking && (!canBook || (!quickSteam && (!form.employee_id || !form.room)) || !form.service_id || !form.booking_date || !form.booking_time)) {
+      if (manualQuickBooking && (!canBook || (!quickSteam && (!form.employee_id || !form.room)) || (!form.service_id && !form.combo_purchase_id) || !form.booking_date || !form.booking_time)) {
         setError('Hãy chọn nhân viên, phòng, dịch vụ và ngày giờ booking.'); return
       }
-      if (manualQuickBooking && !quickSteam && form.booking_date < vietnamDate(clockMs) && (!canAdmin || form.booking_reason.trim().length < 3)) {
+      if (manualQuickBooking && form.booking_date < vietnamDate(clockMs) && (!canAdmin || form.booking_reason.trim().length < 3)) {
         setError('Nhập booking trước hôm nay cần quyền Admin và lý do điều chỉnh.'); return
       }
       const paymentMethod = form.combo_purchase_id ? 'COMBO' : form.payment_method === 'COMBO' ? 'TIỀN MẶT' : form.payment_method
@@ -843,8 +844,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       payload = {
         pending_id: form.pending_id || null,
         ...(manualQuickBooking ? { quick_booking: { employee_id: quickSteam ? '' : form.employee_id, room: quickSteam ? '' : form.room,
-          service_items: [{ service_id: form.service_id, quantity: 1 }],
-          booked_at: quickSteam ? `${bookingDateTime().date}T${bookingDateTime().time}:00+07:00` : `${form.booking_date}T${form.booking_time}:00+07:00`,
+          service_items: quickServiceItems,
+          booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
           correction_reason: form.booking_reason.trim() } } : {}),
         ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
         payment_method: paymentMethod, bill_no: form.bill_no, bank_selection: form.bank_selection || 'auto',
@@ -1019,7 +1020,17 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const allPendingPayments = asArray(data.pending_payments).length ? asArray(data.pending_payments) : asArray(data.pending).length ? asArray(data.pending) : asArray(data.state?.pending)
   const customers = asArray(data.customers).length ? asArray(data.customers) : asArray(data.state?.customers)
   const services = asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services)
-  const quickSteam = manualQuickBooking && /^XONG HOI(?:\b|$)/.test(normalizedColumn(services.find(item => item.id === form.service_id)?.name))
+  const quickCustomer = customers.find(item => String(item.id) === form.customer_id)
+  const quickPurchase = customerComboPurchases(quickCustomer || {}).map(item => availableBookingPurchase(item)).find(item => String(item.id) === form.combo_purchase_id)
+  const quickServiceItems = form.service_id ? [{ service_id: form.service_id, quantity: 1 }]
+    : quickPurchase ? comboBookingItems(quickPurchase, services, form.booking_date || vietnamDate(clockMs)) : []
+  const quickSelectedServices = quickServiceItems.map(part => services.find(item => item.id === part.service_id)).filter(Boolean)
+  const quickSteam = manualQuickBooking && quickSelectedServices.length > 0 && quickSelectedServices.every(item => /^XONG HOI(?:\b|$)/.test(normalizedColumn(item.name)))
+  const chooseQuickCustomer = (customer) => {
+    const purchase = preferredBookingCombo(customer, services, form.booking_date || vietnamDate(clockMs))
+    const usable = purchase && purchase.remaining > 0 && catalogIsAvailable(purchase, form.booking_date || vietnamDate(clockMs))
+    return { service_id: '', combo_purchase_id: usable ? String(purchase.id) : '', payment_method: usable ? 'COMBO' : 'TIỀN MẶT', discount: '0', discount_percent: '0', discount_mode: 'amount' }
+  }
   const combos = asArray(data.combo_catalog).length ? asArray(data.combo_catalog) : asArray(data.catalogs?.combos).length ? asArray(data.catalogs?.combos) : asArray(data.state?.combos)
   const allReports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
   const pendingPayments = filterTourRows(allPendingPayments, listFilters)
@@ -1053,12 +1064,15 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     if (!['checkout', 'quick_checkout'].includes(modal?.kind)) return []
     if (manualQuickBooking) {
       const employee = quickCheckoutEmployees.find((row) => stableEmployeeId(row) === form.employee_id)
-      const service = services.find((item) => item.id === form.service_id)
+      const service = quickSelectedServices.length ? {
+        name: quickSelectedServices.map(item => item.name).join(' & '),
+        price: quickSelectedServices.reduce((sum, item) => sum + Number(item.price || 0), 0),
+      } : quickPurchase && !quickPurchase.component_balances ? { name: `Vé combo · ${quickPurchase.combo_name || 'Combo'}`, price: 0 } : null
       if (!service) return []
       return [{ employee_id: quickSteam ? '' : employee?.id || '', employee_name: quickSteam ? '' : employee?.name || '', room: quickSteam ? '' : form.room,
         service: service.name, price: service.price, price_source: 'catalog',
         booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
-        service_items: [{ service_id: service.id, quantity: 1, unit_price: service.price, ticket_units: service.ticket_units ?? 1 }] }]
+        service_items: quickServiceItems.map(part => ({ ...part, unit_price: services.find(item => item.id === part.service_id)?.price, ticket_units: services.find(item => item.id === part.service_id)?.ticket_units ?? 1 })) }]
     }
     const pendingEntries = asArray(modal?.item?.entries)
     if (pendingEntries.length) return pendingEntries
@@ -1088,7 +1102,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const saleableCombos = combos.filter((item) => catalogIsAvailable(item, effectiveCatalogDate) && asArray(item.components).every((part) => services.some((service) => service.id === part.service_id && catalogIsAvailable(service, effectiveCatalogDate))))
   const eligibleCheckoutCombos = purchasedCombos.map(({ customer, purchase }) => ({ customer, purchase: availableBookingPurchase(purchase, checkoutSourceEntries) })).filter(({ customer, purchase }) => {
     const customerId = String(customer?._id ?? customer?.id ?? customer?.customer_id ?? '')
-    return customerId && customerId === String(form.customer_id || '') && comboUsagePreview(purchase, checkoutSourceEntries, services, effectiveCatalogDate).eligible
+    return customerId && customerId === String(form.customer_id || '') && (manualQuickBooking && !form.service_id ? catalogIsAvailable(purchase, effectiveCatalogDate) && purchase.remaining > 0 && (!purchase.component_balances || comboBookingItems(purchase, services, effectiveCatalogDate).length > 0) : comboUsagePreview(purchase, checkoutSourceEntries, services, effectiveCatalogDate).eligible)
   })
   const selectedCheckoutCombo = eligibleCheckoutCombos.find(({ purchase }) => String(purchase.id ?? purchase._id) === form.combo_purchase_id)?.purchase
   const selectedComboPreview = comboUsagePreview(selectedCheckoutCombo, checkoutSourceEntries, services, effectiveCatalogDate)
@@ -1311,7 +1325,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       .live-tour-page .tour-heading-title{min-width:0;display:flex;align-items:center;gap:8px}.live-tour-page .tour-heading-title h1{margin:0;color:var(--green-950);font-family:Georgia,serif;font-size:14px;line-height:1}.live-tour-status{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 4px;color:#17603f;background:#dff4e8;font-size:8px;font-weight:900}.live-tour-status:before{content:'';width:7px;height:7px;border-radius:50%;background:#23a861;box-shadow:0 0 0 3px rgba(35,168,97,.16)}
       .live-tour-page .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}.live-tour-page .tour-table tr.live-tour-selected td{box-shadow:inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-table tr.live-tour-selected td:first-child{box-shadow:inset 2px 0 #173c30,inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}
       .live-tour-page .tour-shift-filter{display:flex;flex:0 0 auto;align-items:center;gap:4px;margin:0}.live-tour-page .tour-shift-filter button{flex:0 0 auto;min-width:48px;min-height:15px;padding:0 6px;border-radius:5px;font-size:9px;line-height:1.1;white-space:nowrap}
-      .live-tour-page .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}.live-tour-page .tour-heading-actions button{min-height:17px;padding:0 6px;font-size:9px;line-height:1.1}.live-tour-page .tour-heading-actions button svg{width:12px;height:12px}.live-tour-page .tour-topbar>.icon-button{width:auto;min-width:20px;height:20px;min-height:20px;flex:0 0 auto;padding:0 3px;border-radius:4px;font-size:9px}.live-tour-page .tour-topbar>.icon-button svg{width:14px;height:14px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
+      .live-tour-page .tour-heading-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}.live-tour-page .tour-heading-actions button{min-height:34px;padding:6px 12px;font-family:inherit;font-size:13px;line-height:1.25;font-weight:900;border-radius:999px;background:#204e40;color:#fff;border:1px solid #204e40}.live-tour-page .tour-heading-actions button svg{width:16px;height:16px}.live-tour-page .tour-topbar>.icon-button{width:auto;min-width:20px;height:20px;min-height:20px;flex:0 0 auto;padding:0 3px;border-radius:4px;font-size:9px}.live-tour-page .tour-topbar>.icon-button svg{width:14px;height:14px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
       .live-tour-payment-reminder{display:flex;align-items:center;gap:6px;min-height:23px;margin:0;padding:0 6px;border:1px solid #e9ad57;border-radius:9px;color:#64350d;background:#fff3d7;box-shadow:0 3px 12px rgba(124,73,17,.12);font-size:10px}.live-tour-payment-reminder strong{font-size:10px}.live-tour-payment-reminder>svg{width:12px;height:12px;flex-shrink:0}.live-tour-payment-reminder span{flex:1}.live-tour-payment-reminder button{min-height:20px;padding:0 6px;font-size:9px;line-height:1.1}.live-tour-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
       .live-tour-page .tour-control-layout{min-width:0}.live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(8,minmax(120px,1fr));gap:6px;max-width:100%;margin:0;padding:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:thin}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-height:15px;gap:4px;border-radius:4px;padding:0 4px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{font-size:8px;white-space:nowrap}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:13px;line-height:1}
       .live-tour-page .tour-room-segment-buttons{display:flex;flex:0 0 auto;align-items:center;gap:4px}.live-tour-page .tour-room-segment-button{flex:0 0 auto;min-width:0;min-height:15px;border:1px solid transparent;border-radius:4px;padding:0 6px;display:flex;align-items:center;justify-content:center;gap:5px;color:#fff;font-weight:900;text-align:center;white-space:nowrap}.live-tour-page .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.live-tour-page .tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.live-tour-page .tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}.live-tour-page .tour-room-segment-button svg{width:11px;height:11px;flex-shrink:0}.live-tour-page .tour-room-segment-button span{font-size:9px;line-height:1.1}.live-tour-page .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
@@ -1325,7 +1339,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       .live-tour-page .tour-legend{padding:9px}.live-tour-page .tour-legend .panel-title-row{margin-bottom:5px}.live-tour-page .tour-legend .panel-title-row h2{font-size:14px}.live-tour-page .tour-legend .panel-title-row p{font-size:9px}.live-tour-page .tour-legend-grid{gap:4px}.live-tour-page .tour-legend-grid span{padding:4px 7px;font-size:8px}
       .live-tour-operator{padding:10px;overflow:hidden}.live-tour-operator-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.live-tour-operator-title{display:flex;align-items:center;gap:7px}.live-tour-operator-title strong{font-size:14px}.live-tour-pending-badge{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:999px;padding:4px 8px;color:#8c271f;background:#ffe7e3;font-family:inherit;font-size:9px;font-weight:900;cursor:pointer}.live-tour-pending-badge:focus-visible{outline:2px solid #8c271f;outline-offset:2px}.live-tour-pending-badge:disabled{cursor:default;opacity:.65}.live-tour-pending-badge.has-items{animation:live-tour-pulse 1.5s ease-in-out infinite}@keyframes live-tour-pulse{50%{box-shadow:0 0 0 5px rgba(198,53,40,.12)}}.live-tour-panel-tabs{display:flex;gap:5px;overflow-x:auto;padding:3px 0}.live-tour-panel-tabs button{flex:0 0 auto;min-height:31px;padding:5px 10px;font-size:9px}.live-tour-export-filters{display:grid;grid-template-columns:auto repeat(4,minmax(105px,1fr)) auto;align-items:end;gap:6px;margin:7px 0;padding:8px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-export-filters>strong{align-self:center;font-size:9px}.live-tour-export-filters label{display:grid;gap:3px;color:#526a60;font-size:8px;font-weight:800}.live-tour-export-filters input{width:100%;min-width:0;box-sizing:border-box;padding:5px 6px;font-size:9px}.live-tour-export-filters small{grid-column:1/-1;color:#6d7e76;font-size:8px}.live-tour-export-filters button{min-height:29px;padding:4px 8px;font-size:9px}.live-tour-panel-body{margin-top:4px;padding:9px;border:1px solid #d9e4de;border-radius:10px;background:#fff}.live-tour-panel-toolbar{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap;margin-bottom:8px}.live-tour-panel-toolbar h2{margin:0;font-size:14px}.live-tour-panel-toolbar-actions{display:flex;gap:5px;flex-wrap:wrap}.live-tour-panel-toolbar button{min-height:30px;padding:5px 8px;font-size:9px}.live-tour-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:7px}.live-tour-data-card{display:grid;gap:4px;padding:8px;border:1px solid #dbe5df;border-radius:9px;background:#f8faf9;font-size:9px}.live-tour-data-card strong{font-size:11px}.live-tour-data-card small{color:#66776f}.live-tour-card-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}.live-tour-card-actions button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-empty{padding:14px;color:#687970;background:#f6f8f7;border-radius:8px;font-size:10px;text-align:center}.live-tour-report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:6px;margin-bottom:8px}.live-tour-report-metric{padding:9px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-report-metric span{display:block;color:#65766e;font-size:8px}.live-tour-report-metric strong{display:block;margin-top:3px;font-size:14px}.live-tour-catalog-section{margin-top:10px}.live-tour-catalog-section h3{margin:0 0 6px;font-size:11px}.live-tour-customer-search{position:relative;min-width:min(300px,100%)}.live-tour-customer-search svg{position:absolute;left:8px;top:50%;transform:translateY(-50%)}.live-tour-customer-search input{width:100%;height:30px;padding:5px 7px 5px 27px;font-size:9px}
       .live-tour-modal-backdrop{position:fixed;inset:0;z-index:1600;display:grid;place-items:center;padding:12px;background:rgba(14,31,25,.55)}.live-tour-modal{width:min(760px,100%);max-height:calc(100vh - 24px);overflow:auto;border-radius:14px;padding:13px;background:#fff;box-shadow:0 18px 55px rgba(0,0,0,.28)}.live-tour-modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.live-tour-modal-head strong{font:700 18px Georgia,serif;color:#173c30}.live-tour-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.live-tour-form-grid>.wide{grid-column:1/-1}.live-tour-field{display:grid;gap:4px}.live-tour-field.wide{grid-column:1/-1}.live-tour-field span{font-size:9px;font-weight:850;color:#435d52}.live-tour-field input,.live-tour-field select,.live-tour-field textarea{width:100%;min-width:0;box-sizing:border-box;padding:7px 8px;font-size:10px}.live-tour-field textarea{min-height:62px;resize:vertical}.live-tour-check-field{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:800}.live-tour-multi-booking{grid-column:1/-1;display:grid;gap:6px}.live-tour-multi-row{display:grid;grid-template-columns:minmax(105px,.7fr) repeat(3,minmax(95px,1fr));gap:5px;align-items:center;padding:6px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-multi-row strong{font-size:9px}.live-tour-multi-row input,.live-tour-multi-row select{width:100%;min-width:0;padding:6px;font-size:9px}.live-tour-modal-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:12px}.live-tour-modal-actions button{min-height:34px}
-      .live-tour-employee-picker{grid-column:1/-1;display:grid;gap:5px;max-height:220px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-employee-picker button{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(150px,1fr);gap:3px 9px;padding:7px 9px;border:1px solid #d9e3dd;border-radius:8px;color:#173c30;background:#fff;text-align:left}.live-tour-employee-picker button.selected{border-color:#173c30;background:#e7f3ed;box-shadow:inset 3px 0 #173c30}.live-tour-employee-picker button strong{font-size:10px}.live-tour-employee-picker button span,.live-tour-employee-picker button small{font-size:8px}.live-tour-employee-picker button small{grid-column:1/-1;color:#697b72}.live-tour-employee-picked{grid-column:1/-1;padding:6px 8px;border-radius:7px;color:#185238;background:#e3f4ea;font-size:9px;font-weight:850}
+      .live-tour-page .tour-table .tour-col-employee,.live-tour-page .tour-table .tour-col-employee .text-button{color:#000;opacity:1}.live-tour-employee-picker{grid-column:1/-1;display:grid;gap:5px;max-height:220px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:9px;background:#f7faf8}.live-tour-employee-picker button{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(150px,1fr);gap:3px 9px;padding:7px 9px;border:1px solid #d9e3dd;border-radius:8px;color:#173c30;background:#fff;text-align:left}.live-tour-employee-picker button.selected{border-color:#173c30;background:#e7f3ed;box-shadow:inset 3px 0 #173c30}.live-tour-employee-picker button strong{font-size:10px}.live-tour-employee-picker button span,.live-tour-employee-picker button small{font-size:8px}.live-tour-employee-picker button small{grid-column:1/-1;color:#697b72}.live-tour-employee-picked{grid-column:1/-1;padding:6px 8px;border-radius:7px;color:#185238;background:#e3f4ea;font-size:9px;font-weight:850}
       .live-tour-checkout-preview{display:grid;gap:6px;padding:9px;border:1px solid #cfe0d7;border-radius:9px;background:#f6faf8}.live-tour-checkout-preview>strong{color:#173c30;font-size:10px}.live-tour-checkout-preview>small{color:#65766e;font-size:8px}.live-tour-checkout-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:6px;border-radius:7px;background:#fff;font-size:9px}.live-tour-checkout-entry span{overflow:hidden;text-overflow:ellipsis}.live-tour-checkout-entry small{grid-column:1/-1;color:#697b72;font-size:8px}.live-tour-checkout-total{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding-top:6px;border-top:1px solid #d8e4de;font-size:9px}.live-tour-combo-deduction{padding:7px;border-radius:8px;color:#4c3b0c;background:#fff4cf;font-size:9px}.live-tour-customer-selected{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;background:#e6f4ec;font-size:9px}.live-tour-customer-selected button{min-height:27px;padding:4px 7px;font-size:8px}.live-tour-customer-picker{display:grid;gap:4px;max-height:150px;overflow:auto;padding:5px;border:1px solid #dce6e1;border-radius:8px;background:#f7faf8}.live-tour-customer-picker button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid #dce6e1;border-radius:7px;color:#173c30;background:#fff;text-align:left}.live-tour-customer-picker button span{color:#64776e;font-size:8px}.live-tour-correction{display:grid;gap:7px;padding:9px;border:1px solid #e8c985;border-radius:9px;background:#fff9e9}.live-tour-history-sections{display:grid;gap:10px}.live-tour-history-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}.live-tour-history-list{display:grid;gap:5px;max-height:260px;overflow:auto}.live-tour-history-list article{padding:7px;border:1px solid #dce6e1;border-radius:8px;background:#f8faf9;font-size:9px}.live-tour-history-list article strong,.live-tour-history-list article span,.live-tour-history-list article small{display:block;margin-top:2px}
       @media(min-width:641px){.live-tour-page .tour-room-detail{max-height:none;overflow:visible}.live-tour-page .tour-room-detail.vip-19{max-height:none;overflow:visible}}
       @media(prefers-reduced-motion:reduce){.live-tour-page .tour-room-card.search-match{animation:none;outline:4px solid #ee3f62;outline-offset:1px;background:#55f0cf}}
@@ -1641,19 +1655,21 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
                 {selectedQuickCheckoutRecord && <small className="live-tour-employee-picked">{cellValue(selectedQuickCheckoutRecord, employeeColumn)} · {checkoutSourceEntries[0]?.service || cellValue(selectedQuickCheckoutRecord, serviceColumn)}</small>}
               </div>}
               {manualQuickBooking && <>
-                <LiveTourSearchSelect label="Dịch vụ" required value={form.service_id} options={quickBookingServices.map((service) => ({ value: service.id, label: service.name, detail: formatMoney(service.price) }))} onChange={(id) => setForm((current) => ({ ...current, service_id: id }))}/>
                 {!quickSteam && <>
-                <LiveTourSearchSelect label="Nhân viên" required value={form.employee_id} options={quickCheckoutEmployees.filter((row) => !row.hidden && row.roster_eligible !== false).map((row) => ({ value: stableEmployeeId(row), label: row.name, detail: row.shift }))} onChange={(id) => setForm((current) => ({ ...current, employee_id: id }))}/>
-                <LiveTourSearchSelect label="Phòng / giường" showAllOptions filterOption={roomOptionMatches} required value={form.room} options={catalogRooms.filter((room) => room.active !== false).map((room) => ({ value: room.name, label: room.name, group: bookingRoomGroup(room.name, catalogRooms) }))} onChange={(room) => setForm((current) => ({ ...current, room }))}/>
-                <div className="tour-booking-datetime"><label className="live-tour-field"><span>Ngày booking</span><input type="date" required min={canAdmin ? '2000-01-01' : vietnamDate(clockMs)} max={vietnamDate(clockMs)} value={form.booking_date} onChange={(event) => setForm((current) => ({ ...current, booking_date: event.target.value }))}/></label><label className="live-tour-field"><span>Giờ booking</span><input type="time" required value={form.booking_time} onChange={(event) => setForm((current) => ({ ...current, booking_time: event.target.value }))}/></label></div>
-                {form.booking_date < vietnamDate(clockMs) && <label className="live-tour-field wide"><span>Lý do nhập lùi ngày</span><input required minLength={3} value={form.booking_reason} onChange={(event) => setForm((current) => ({ ...current, booking_reason: event.target.value }))}/></label>}
+                <LiveTourSearchSelect label="Nhân viên" required value={form.employee_id} options={quickCheckoutEmployees.filter((row) => !row.hidden && row.roster_eligible !== false && (form.booking_date && form.booking_date < vietnamDate(clockMs) || normalizedColumn(row.work_status) === 'DI LAM' && ['CA 1', 'CA 2'].includes(normalizedColumn(row.shift)))).map((row) => ({ value: stableEmployeeId(row), label: row.name, detail: row.shift }))} onChange={(id) => setForm((current) => ({ ...current, employee_id: id }))}/>
                 </>}
+                <LiveTourSearchSelect label={form.combo_purchase_id ? "Dịch vụ (tự động từ combo)" : "Dịch vụ"} required={!form.combo_purchase_id} placeholder={quickSelectedServices.map(item => item.name).join(" & ") || (quickPurchase ? "Dùng 1 vé combo" : "Tìm và chọn…")} value={form.service_id} options={quickBookingServices.map((service) => ({ value: service.id, label: service.name, detail: formatMoney(service.price) }))} onChange={(id) => setForm((current) => ({ ...current, service_id: id }))}/>
+                {!quickSteam && <>
+                <LiveTourSearchSelect label="Phòng / giường" showAllOptions filterOption={roomOptionMatches} required value={form.room} options={catalogRooms.filter((room) => room.active !== false).map((room) => ({ value: room.name, label: room.name, group: bookingRoomGroup(room.name, catalogRooms) }))} onChange={(room) => setForm((current) => ({ ...current, room }))}/>
+                </>}
+                <div className="tour-booking-datetime"><label className="live-tour-field"><span>Ngày booking</span><input type="date" required min={canAdmin ? '2000-01-01' : vietnamDate(clockMs)} max={vietnamDate(clockMs)} value={form.booking_date} onChange={(event) => setForm((current) => ({ ...current, booking_date: event.target.value }))}/></label><label className="live-tour-field"><span>Giờ booking</span><input type="time" required value={form.booking_time} onChange={(event) => setForm((current) => ({ ...current, booking_time: event.target.value }))}/></label></div>
+                {form.booking_date && form.booking_date < vietnamDate(clockMs) && <label className="live-tour-field wide"><span>Lý do nhập lùi ngày</span><input required minLength={3} value={form.booking_reason} onChange={(event) => setForm((current) => ({ ...current, booking_reason: event.target.value }))}/></label>}
               </>}
             </>}
             {!quickSteam && <div className="tour-checkout-context wide" aria-label="Nhân viên và phòng thanh toán">
               {checkoutSourceEntries.length ? <LiveTourPageItems items={checkoutSourceEntries} label="Nhân viên thanh toán">{(entry, index) => <div key={`${entry.employee_id}:${index}`}><strong>{entry.employee_name || 'Chưa có nhân viên'}</strong><span>Phòng: <strong>{entry.room || '—'}</strong></span></div>}</LiveTourPageItems> : <span>Chọn nhân viên và phòng ở trên.</span>}
             </div>}
-            <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} disabled={!canCustomers}/>
+            <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} disabled={!canCustomers} onSelectCustomer={manualQuickBooking ? chooseQuickCustomer : undefined}/>
             <div className="live-tour-checkout-preview wide">
               <strong>Dịch vụ</strong>
               <LiveTourPageItems items={checkoutPreviewEntries} label="Dịch vụ thanh toán">{(entry, index) => <div className="live-tour-checkout-entry" key={`${entry.employee_id || 'entry'}:${index}`}><span>{entry.employee_name || `Dòng ${index + 1}`} · {entry.service || 'Chưa có dịch vụ'}{entry.room ? ` · ${entry.room}` : ''}</span><strong>{Number.isFinite(entry.preview_price) ? formatMoney(entry.preview_price) : 'Server sẽ xác nhận giá'}</strong><small>{entry.ticket_units} vé combo theo định mức dịch vụ</small></div>}</LiveTourPageItems>
@@ -1665,7 +1681,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value, ...(event.target.value === 'COMBO' ? {} : { combo_purchase_id: '' }) }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option><option value="COMBO" disabled={!form.combo_purchase_id}>COMBO · chọn combo đã mua</option></select></label>
             <label className="live-tour-field"><span>Trừ vé combo</span><select value={form.combo_purchase_id} onChange={(event) => {
               setForm((current) => ({
-                ...current, combo_purchase_id: event.target.value, discount: eligibleCheckoutCombos.find(({ purchase }) => purchase.id === event.target.value)?.purchase.component_balances ? '0' : current.discount, discount_mode: 'amount', discount_percent: '0',
+                ...current, ...(manualQuickBooking ? { service_id: '' } : {}), combo_purchase_id: event.target.value, discount: eligibleCheckoutCombos.find(({ purchase }) => purchase.id === event.target.value)?.purchase.component_balances ? '0' : current.discount, discount_mode: 'amount', discount_percent: '0',
                 payment_method: event.target.value ? 'COMBO' : current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
               }))
             }} disabled={!form.customer_id}><option value="">Không trừ combo</option>{eligibleCheckoutCombos.map(({ purchase }, index) => {
