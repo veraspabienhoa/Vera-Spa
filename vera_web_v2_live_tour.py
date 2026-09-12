@@ -945,7 +945,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
     for key in ("combo_purchase_id", "combo_reserved_units", "combo_reserved_components"):
         employee.pop(key, None)
     for key in (
-        "service", "request", "request_source", "room", "status", "booked_at",
+        "service", "request", "request_source", "room", "status", "booked_at", "booking_actor",
         "started_at", "completed_at", "payment_status", "customer_id", "customer_name",
         "customer_phone", "booking_id",
         "service_price_source", "completion_note",
@@ -1158,7 +1158,7 @@ def _require_checked_in(employee, now):
         raise HTTPException(409, "Nhân viên chưa vào ca hoặc đang nghỉ phép, không thể đặt Booking.")
 
 
-def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> dict[str, Any]:
+def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, actor: str = "") -> dict[str, Any]:
     employee = _employee(state, payload.get("employee_id"))
     _require_checked_in(employee, now)
     if employee.get("roster_eligible") is False:
@@ -1195,7 +1195,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
         "service_price_source": "catalog",
         "request": request, "request_source": "auto_yc_ca1" if auto_request else "manual",
         "room": room,
-        "status": "Đang chờ", "duration": duration, "booked_at": _iso(now),
+        "status": "Đang chờ", "duration": duration, "booked_at": _iso(now), "booking_actor": actor,
         "started_at": "", "completed_at": "", "wait_minutes": None,
         "completion_note": "", "completion_delta_minutes": None, "steam_elapsed_minutes": None,
         "payment_status": "", "customer_id": str((customer or {}).get("id") or ""),
@@ -1428,7 +1428,7 @@ def _checkout_mutating(
     if "quick_booking" in payload:
         if not quick or pending_id or direct_ids:
             raise HTTPException(400, "Không được trộn nhập thanh toán nhanh với hóa đơn hoặc dòng đang chờ thanh toán.")
-        entries = [_quick_booking_entry(state, manual_booking, now, payload)]
+        entries = [{**_quick_booking_entry(state, manual_booking, now, payload), "booking_actor": actor}]
     elif pending:
         entries = deepcopy(list(pending.get("entries") or []))
     else:
@@ -1438,6 +1438,7 @@ def _checkout_mutating(
             raise HTTPException(409, "Chỉ thanh toán dịch vụ đã Hoàn thành/CHO THANH TOÁN.")
         entries = [{
             "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
+            "booking_actor": item.get("booking_actor", ""),
             "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
             "combo_purchase_id": item.get("combo_purchase_id", ""),
             "combo_reserved_units": item.get("combo_reserved_units", 0),
@@ -1806,7 +1807,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         result = _sync_daily(state, payload["directory"], payload["leaves"], today=payload.get("today", ""))
         payload = {"updated": result["updated"]}
     elif action == "booking":
-        result["employee"] = _booking(state, payload, now)
+        result["employee"] = _booking(state, payload, now, actor)
     elif action == "update_appointment":
         if len(employee_ids) > 1 or (employee_ids and employee_ids[0] != str(payload.get("employee_id") or "")):
             raise HTTPException(400, "Hãy chọn đúng một nhân viên để lưu lịch hẹn.")
@@ -1841,7 +1842,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         target_position["counter_key"] = counter_key
         target_position["counter_day"] = original_position["counter_day"]
         fields = ("service", "service_items", "service_price", "service_price_source", "duration",
-                  "request", "request_source", "room", "status", "booked_at", "booking_id",
+                  "request", "request_source", "room", "status", "booked_at", "booking_actor", "booking_id",
                   "started_at", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
                   "completion_delta_minutes", "steam_elapsed_minutes", "customer_id", "customer_name",
                   "customer_phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components", "note")
@@ -1934,7 +1935,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         for row in rows:
             row_payload = dict(row)
             row_payload.setdefault("auto_yc_ca1", bool(payload.get("auto_yc_ca1")))
-            booked.append(_booking(working, row_payload, now))
+            booked.append(_booking(working, row_payload, now, actor))
         state.clear()
         state.update(working)
         result["employees"] = booked
@@ -1995,6 +1996,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             "customer_phone": str((customer or {}).get("phone") or canonical_identity.get("customer_phone") or ""),
             "entries": [{
                 "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
+                "booking_actor": item.get("booking_actor", ""),
                 "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
                 "combo_purchase_id": item.get("combo_purchase_id", ""),
                 "combo_reserved_units": item.get("combo_reserved_units", 0),
@@ -3125,8 +3127,13 @@ def _export_rows(
         title, headers, rows = _export_rows(state, "board", now, include_hidden=include_hidden, bounds=bounds)
         return "Tuy_chinh", headers, rows
     if kind == "revenue":
-        headers = ["Ngày", "Số bill", "Khách hàng", "Điện thoại", "Tổng tiền", "Giảm giá", "Tip", "Thanh toán", "Người tạo"]
-        rows = [[item.get("business_date"), item.get("bill_no"), item.get("customer_name"), item.get("customer_phone"), item.get("total"), item.get("discount"), item.get("tip"), item.get("payment_method"), item.get("actor")] for item in state["invoices"] if _event_in_export_bounds(item, bounds)]
+        headers = ["Ngày", "Số bill", "Khách hàng", "Điện thoại", "Tên nhân viên", "Tiền dịch vụ", "Giảm giá", "Tiền Tip", "Tổng tiền", "Thanh toán", "Người tạo"]
+        rows = [[item.get("business_date"), item.get("bill_no"), item.get("customer_name"), item.get("customer_phone"),
+                 ", ".join(dict.fromkeys(entry["employee_name"] for entry in item.get("entries", []) if entry.get("employee_name"))),
+                 item.get("subtotal", sum(entry.get("price") or 0 for entry in item.get("entries", []))),
+                 item.get("discount") or 0, item.get("tip") or 0, item.get("total") or 0,
+                 item.get("payment_method"), item.get("actor")]
+                for item in state["invoices"] if _event_in_export_bounds(item, bounds)]
         return "Doanh_thu", headers, rows
     if kind == "tip":
         headers = ["Ngày", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Tip", "Người tạo"]
@@ -3286,6 +3293,17 @@ def _excel_bytes(
     sheet.title = title[:31]
     _fill_excel_sheet(sheet, headers, rows)
     if kind == "revenue":
+        total_row = sheet.max_row + 1
+        sheet.cell(total_row, 1, "Tổng cộng")
+        for label in ("Tiền dịch vụ", "Giảm giá", "Tiền Tip", "Tổng tiền"):
+            column = headers.index(label) + 1
+            letter = sheet.cell(1, column).column_letter
+            sheet.cell(total_row, column, f"=SUBTOTAL(109,{letter}2:{letter}{total_row - 1})" if rows else 0)
+            for row_number in range(2, total_row + 1):
+                sheet.cell(row_number, column).number_format = '#,##0" đ"'
+        for cell in sheet[total_row]:
+            cell.font = Font(bold=True, color="174E3B")
+            cell.fill = PatternFill("solid", fgColor="EAF3EE")
         # A separate worksheet prevents estimated service values from being
         # mistaken for collected revenue or booked invoice transactions.
         expected = workbook.create_sheet("Du_kien_chua_xuat_bill")
@@ -3517,7 +3535,7 @@ def install_live_tour_routes(
 
     def permissions(conn, ident) -> dict[str, bool]:
         viewer_bank = None
-        if str(getattr(ident, "role", "")).strip().lower() == "letan" and feature_allowed(conn, ident, "live_tour_payment"):
+        if feature_allowed(conn, ident, "live_tour_payment"):
             bank_row = conn.execute(text("SELECT full_name, bank_name, bank_account FROM employees WHERE username=:username"), {"username": ident.employee_username}).mappings().first()
             viewer_bank = _profile_bank(dict(bank_row)) if bank_row else None
         can_admin = bool(feature_allowed(conn, ident, "live_tour_admin"))

@@ -132,9 +132,9 @@ def test_report_export_selector_matches_same_invoice_line(monkeypatch):
     client,_=scoped_client(monkeypatch,state,ALL)
     base={'kind':'revenue','date_from':'2026-09-05','date_to':'2026-09-05','employee':'An'}
     data=client.get('/v2/live-tour/export.xlsx',params={**base,'service':'Foot'})
-    assert data.status_code==200 and load_workbook(BytesIO(data.content)).active.max_row==1
+    assert data.status_code==200 and load_workbook(BytesIO(data.content)).active.max_row==2
     data=client.get('/v2/live-tour/export.xlsx',params={**base,'service':'Body'})
-    assert load_workbook(BytesIO(data.content)).active.max_row==2
+    assert load_workbook(BytesIO(data.content)).active.max_row==3
 
 
 def test_full_board_image_starts_at_header_and_grows_for_every_row():

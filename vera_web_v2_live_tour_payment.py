@@ -104,4 +104,6 @@ def selected_bank(settings, viewer_bank, selection='auto'):
         raise HTTPException(400, 'Lựa chọn tài khoản nhận tiền không hợp lệ.')
     if selection == 'user' and not viewer_bank:
         raise HTTPException(409, 'Hồ sơ tài khoản đăng nhập chưa có ngân hàng hợp lệ.')
-    return deepcopy(viewer_bank if selection in {'auto', 'user'} and viewer_bank else settings.get('bank') or {'enabled': False})
+    # Legacy clients may still send "default"; it must never redirect payment
+    # away from the authenticated cashier's account.
+    return deepcopy(viewer_bank or {'enabled': False})

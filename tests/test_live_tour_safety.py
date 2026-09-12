@@ -98,7 +98,9 @@ def test_expected_revenue_is_separate_and_follows_pending_without_double_count()
     assert live._state_response(state, 2, NOW, can_payment=True)["reports"]["expected_unbilled_revenue"] == 100
     content, _ = live._excel_bytes(state, "revenue", NOW)
     workbook = load_workbook(BytesIO(content))
-    assert workbook["Doanh_thu"].max_row == 1
+    assert workbook["Doanh_thu"].max_row == 2
+    assert workbook["Doanh_thu"].cell(2, 1).value == "Tổng cộng"
+    assert workbook["Doanh_thu"].cell(2, 9).value == 0
     assert workbook["Du_kien_chua_xuat_bill"].cell(2, 5).value == 100
     live._apply_action(state, "checkout", {"pending_id": pending["id"], "payment_method": "TIỀN MẶT"}, "admin", NOW)
     reports = live._state_response(state, 3, NOW, can_payment=True)["reports"]

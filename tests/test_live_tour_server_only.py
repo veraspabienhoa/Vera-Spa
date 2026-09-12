@@ -41,7 +41,9 @@ class SettingsDatabase:
         params = params or {}
         rows = []
         count = 1
-        if "FROM employees" in sql:
+        if "SELECT full_name, bank_name, bank_account" in sql:
+            rows = [row for row in self.directory if row.get('username') == params.get('username')]
+        elif "FROM employees" in sql:
             self.employee_reads += 1
             if self.fail_employee_read:
                 raise RuntimeError("database unavailable")

@@ -86,15 +86,18 @@ def test_system_shift_label(label, expected):
     assert shift_label(label) == expected
 
 
-def test_bank_selection_uses_profile_and_default_without_shared_mutation():
+def test_bank_selection_always_uses_cashier_profile_without_shared_mutation():
     profile = profile_bank({'bank_name':'Vietcombank', 'bank_account':'0123456789', 'full_name':'Nguyễn An'})
     settings = default_settings()
     settings['bank'] = {'enabled':True,'bank_id':'ACB','account_no':'987654321','account_name':'VERA'}
     assert selected_bank(settings, profile)['account_no'] == '0123456789'
     snapshot = selected_bank(settings, profile, 'default')
-    assert snapshot['account_no'] == '987654321'
+    assert snapshot['account_no'] == '0123456789'
     settings['bank']['account_no'] = '111111111'
-    assert snapshot['account_no'] == '987654321'
+    profile['account_no'] = '222222222'
+    assert snapshot['account_no'] == '0123456789'
+    assert selected_bank(settings, None) == {'enabled': False}
+    assert selected_bank(settings, None, 'default') == {'enabled': False}
     assert profile_bank({'bank_name':'VCB', 'bank_account':'invalid', 'full_name':'An'}) is None
     with pytest.raises(HTTPException): selected_bank(settings, None, 'user')
 
@@ -130,8 +133,9 @@ def test_reorder_route_honors_grant_and_denial(role, denied):
         assert response.json()['records'][-1]['_id'] == 'e1'
 
 
-@pytest.mark.parametrize('selection,account', [('auto','0123456789'),('default','987654321')])
-def test_checkout_bank_snapshot_is_persisted_and_retry_is_stable(selection, account):
+@pytest.mark.parametrize('role', ['admin', 'letan', 'quanly'])
+@pytest.mark.parametrize('selection,account', [('auto','0123456789'),('default','0123456789')])
+def test_checkout_bank_snapshot_is_persisted_and_retry_is_stable(selection, account, role):
     from test_live_tour_server_only import SettingsDatabase
     from test_live_tour_safety import payable_state
     class BankDatabase(SettingsDatabase):
@@ -145,7 +149,7 @@ def test_checkout_bank_snapshot_is_persisted_and_retry_is_stable(selection, acco
     state = payable_state()
     state['payment_settings']['bank'] = {'enabled':True, 'bank_id':'ACB', 'account_no':'987654321', 'account_name':'VERA'}
     db = BankDatabase(state)
-    client = route_client(db)
+    client = route_client(db, role=role)
     current = client.get('/v2/live-tour').json()
     assert current['payment_settings']['user_bank']['account_no'] == '0123456789'
     body = {'action':'checkout','expected_revision':current['revision'], 'idempotency_key':'bank-snapshot-checkout',

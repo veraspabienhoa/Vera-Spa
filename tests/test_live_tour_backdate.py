@@ -142,6 +142,12 @@ class _Connection:
         class _Result:
             rowcount = 1
 
+            def mappings(self):
+                return self
+
+            def first(self):
+                return None
+
             @staticmethod
             def scalar():
                 return True
