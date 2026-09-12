@@ -1434,6 +1434,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>TIÊU CHUẨN</span></button>
               <button type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP</span></button>
             </div>
+            <div className="tour-room-share-tools" role="group" aria-label="Sao chép và chia sẻ nhân viên đã chọn">
+              <span className="tour-room-segment-button tour-room-share-control"><span>{selectedRoomKey ? `${areaLabel(selectedRoom)} · ${selectedRoomRecords.length} nhân viên` : `Đã chọn ${selectedIds.size} nhân viên`}</span></span>
+              <button type="button" className="tour-room-segment-button tour-room-share-control" onClick={copySelectedSummary}><ClipboardCopy size={14}/><span>Sao chép</span></button>
+              <button type="button" className="tour-room-segment-button tour-room-share-control" onClick={shareSelectedSummary}><Share2 size={14}/><span>Chia sẻ</span></button>
+            </div>
           </div>
           <div className="tour-room-grid" style={{ '--room-columns': Math.max(1, Math.ceil(displayedRooms.length / 2)) }}>
             {displayedRooms.map((room) => {
@@ -1498,9 +1503,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             onSearch={(query) => { setEmployeeSearch(query); if (employeePickId) setSelectedIds(new Set()); setEmployeePickId('') }}
             onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])) }}/>
           {canEditAppointment && appointmentEditor(appointmentTarget, true)}
-          <span className="live-tour-selection-summary">{selectedRoomKey ? `${areaLabel(selectedRoom)} · ${selectedRoomRecords.length} nhân viên` : `Đã chọn ${selectedIds.size} nhân viên`}</span>
-          <button type="button" className="secondary-button live-tour-quick-button" onClick={copySelectedSummary}><ClipboardCopy size={14}/> Sao chép</button>
-          <button type="button" className="secondary-button live-tour-quick-button" onClick={shareSelectedSummary}><Share2 size={14}/> Chia sẻ</button>
         </div>
       </section>
     </div>
