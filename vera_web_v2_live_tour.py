@@ -3150,6 +3150,12 @@ def _excel_bytes(
     return output.getvalue(), f"Live_Tour_{title}_{_business_date(now).strftime('%Y%m%d')}.xlsx"
 
 
+COPY_BOARD_COLUMNS = [
+    "STT", "Tên nhân viên", "Thao tác", "Lịch hẹn", "Trạng thái", "Phòng",
+    "TG CÒN LẠI", "Yêu cầu", "Dịch vụ", "Đi làm", "Vào ca", "Breaktime", "TG nghỉ còn lại",
+]
+
+
 def _png_bytes(state: dict[str, Any], now: datetime, *, include_hidden: bool = False) -> bytes:
     import textwrap
     employees = [item for item in _ordered_employees(state["employees"], now) if item.get("roster_eligible") is not False]
@@ -3161,11 +3167,11 @@ def _png_bytes(state: dict[str, Any], now: datetime, *, include_hidden: bool = F
     except OSError:
         font = ImageFont.load_default(size=14)
         bold = font
-    widths = [65 if c == "STT" else 210 if c in {"Tên nhân viên", "Dịch vụ", "Ghi chú"} else 155 for c in BOARD_COLUMNS]
+    widths = [65 if c == "STT" else 210 if c in {"Tên nhân viên", "Dịch vụ", "Ghi chú"} else 155 for c in COPY_BOARD_COLUMNS]
     def cells(values):
         return ["\n".join(textwrap.wrap(str(value if value is not None else ""), max(6, (width-16)//9)) or [""])
                 for value, width in zip(values, widths)]
-    rendered = [cells(BOARD_COLUMNS)] + [cells([r.get(c, "") for c in BOARD_COLUMNS]) for r in records]
+    rendered = [cells(COPY_BOARD_COLUMNS)] + [cells([("Thực hiện · Hoàn thành" if c == "Thao tác" else r.get(c, "")) for c in COPY_BOARD_COLUMNS]) for r in records]
     heights = [max(len(c.split("\n")) for c in row)*20+16 for row in rendered]
     image = Image.new("RGB", (sum(widths), sum(heights)), "white")
     draw = ImageDraw.Draw(image)
