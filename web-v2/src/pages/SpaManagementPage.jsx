@@ -2,7 +2,7 @@ import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { customerMatches } from '../lib/customerSearch'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
-import { Download, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Download, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { catalogPayload, newCatalogForm } from '../lib/serviceCatalog'
@@ -142,12 +142,37 @@ export default function SpaManagementPage({ user, mode }) {
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
   const services = data?.services || []
   const catalogItems = [...services.map((item) => ({ ...item, catalog_kind: 'service' })), ...(data?.combos || []).map((item) => ({ ...item, catalog_kind: 'combo' }))]
+    .map((item, sourceIndex) => ({ ...item, sourceIndex }))
+    .sort((left, right) => {
+      const leftOrder = Number(left.display_order)
+      const rightOrder = Number(right.display_order)
+      if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder)) return leftOrder - rightOrder
+      if (Number.isFinite(leftOrder)) return -1
+      if (Number.isFinite(rightOrder)) return 1
+      return left.sourceIndex - right.sourceIndex
+    })
   const groups = [...new Set(catalogItems.map((item) => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
   const rows = (customersPage ? data?.customers : tab === 'services' ? catalogItems : data?.service_areas) || []
   const filtered = rows.filter((item) => (customersPage ? customerMatches(item, search) : searchTextMatches([item.name, item.group], search)) && (customersPage || tab !== 'services' || serviceFilter === 'all' || item.catalog_kind === serviceFilter))
   const title = customersPage ? 'Khách hàng' : 'Cài đặt'
   const addKind = customersPage ? 'customer' : tab === 'services' ? 'choose-service' : 'area'
   const editTitle = editor?.kind === 'choose-service' ? 'Chọn loại dịch vụ' : editor?.kind === 'history' ? `Lịch sử · ${editor.value.customer.name}` : `${editor?.existing ? 'Sửa' : 'Thêm'} ${editor?.kind === 'customer' ? 'khách hàng' : editor?.kind === 'area' ? 'khu vực dịch vụ' : editor?.kind === 'combo' ? 'dịch vụ combo' : 'dịch vụ đơn lẻ'}`
+  const rowKey = (item) => tab === 'services' ? `${item.catalog_kind}:${item.id}` : String(item.id)
+  const moveItem = (item, offset) => {
+    const visibleIndex = filtered.findIndex((row) => rowKey(row) === rowKey(item))
+    const neighbor = filtered[visibleIndex + offset]
+    if (!neighbor) return
+    const allRows = tab === 'services' ? catalogItems : (data?.service_areas || [])
+    const orderedIds = allRows.map(rowKey)
+    const from = orderedIds.indexOf(rowKey(item))
+    const to = orderedIds.indexOf(rowKey(neighbor))
+    ;[orderedIds[from], orderedIds[to]] = [orderedIds[to], orderedIds[from]]
+    void mutate('settings_reorder', { scope: tab === 'services' ? 'catalog' : 'service_areas', ordered_ids: orderedIds })
+  }
+  const moveDisabled = (item, offset) => {
+    const index = filtered.findIndex((row) => rowKey(row) === rowKey(item))
+    return busy || index < 0 || index + offset < 0 || index + offset >= filtered.length
+  }
 
   if (!allowed) return <div className="error-box" role="alert">Tài khoản chưa được cấp quyền mở {title}.</div>
 
@@ -169,9 +194,9 @@ export default function SpaManagementPage({ user, mode }) {
           <td><span className="spa-badge">{item.catalog_kind === 'combo' ? 'Combo' : 'Đơn lẻ'}</span></td>
           <td>{item.catalog_kind === 'combo' ? item.components?.length ? <ul className="spa-component-summary">{item.components.map((part) => <li key={part.service_id}>{services.find((service) => service.id === part.service_id)?.name || part.service_name} × {part.quantity} lượt</li>)}</ul> : 'Combo vé hiện có' : item.duration == null ? 'Không giới hạn' : `${item.duration} phút`}</td>
           <td>{money(item.price)}</td><td>{item.catalog_kind === 'combo' ? item.tickets : item.sessions ?? 1}</td>
-          <td><div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor(item.catalog_kind, item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove(item.catalog_kind, item)}><Trash2 size={14}/> Xóa</button></div></td>
+          <td><div className="spa-actions"><button className="secondary-button" disabled={moveDisabled(item, -1)} onClick={() => moveItem(item, -1)}><ArrowUp size={14}/> Lên</button><button className="secondary-button" disabled={moveDisabled(item, 1)} onClick={() => moveItem(item, 1)}><ArrowDown size={14}/> Xuống</button><button className="secondary-button" disabled={busy} onClick={() => openEditor(item.catalog_kind, item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove(item.catalog_kind, item)}><Trash2 size={14}/> Xóa</button></div></td>
         </tr>)}</tbody></table></div>
-          : <div className="spa-card-grid">{filtered.map((item) => <article className="spa-card" key={item.id}><div className="spa-card-heading"><h3>{item.name}</h3><span className="spa-badge">{areaLabels[item.kind]}</span></div>{item.kind === 'room' ? <><p>{item.beds.length} giường</p><ul className="spa-bed-list">{item.beds.map((bed) => <li key={bed.id}>{bed.name}{bed.active === false ? ' · Ngừng sử dụng' : ''}</li>)}</ul></> : <p>Vị trí phục vụ độc lập</p>}<div className="spa-actions"><button className="secondary-button" disabled={busy} onClick={() => openEditor('area', item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove('area', item)}><Trash2 size={14}/> Xóa</button></div></article>)}</div>}
+          : <div className="spa-card-grid spa-settings-list">{filtered.map((item) => <article className="spa-card" key={item.id}><div className="spa-card-heading"><h3>{item.name}</h3><span className="spa-badge">{areaLabels[item.kind]}</span></div>{item.kind === 'room' ? <><p>{item.beds.length} giường</p><ul className="spa-bed-list">{item.beds.map((bed) => <li key={bed.id}>{bed.name}{bed.active === false ? ' · Ngừng sử dụng' : ''}</li>)}</ul></> : <p>Vị trí phục vụ độc lập</p>}<div className="spa-actions"><button className="secondary-button" disabled={moveDisabled(item, -1)} onClick={() => moveItem(item, -1)}><ArrowUp size={14}/> Lên</button><button className="secondary-button" disabled={moveDisabled(item, 1)} onClick={() => moveItem(item, 1)}><ArrowDown size={14}/> Xuống</button><button className="secondary-button" disabled={busy} onClick={() => openEditor('area', item)}>Sửa</button><button className="secondary-button danger-button" disabled={busy} onClick={() => remove('area', item)}><Trash2 size={14}/> Xóa</button></div></article>)}</div>}
     </section>
     {customerContext && <LiveTourCustomerDialog context={customerContext} busy={busy} error={error} onAction={mutate} onClose={() => setCustomerContext(null)}/>}
     {editor && <Editor title={editTitle} onClose={() => { setEditor(null); setError('') }} busy={busy}>

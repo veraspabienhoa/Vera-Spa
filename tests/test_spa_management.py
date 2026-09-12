@@ -166,6 +166,37 @@ def test_adding_a_duplicate_service_cannot_overwrite_its_price():
     assert state == before
 
 
+def test_settings_reorder_persists_service_combo_and_area_display_order():
+    state = state_with()
+    catalog_ids = [*(f"service:{item['id']}" for item in state["services"]), *(f"combo:{item['id']}" for item in state["combos"])]
+    reversed_catalog = list(reversed(catalog_ids))
+    action(state, "settings_reorder", {"scope": "catalog", "ordered_ids": reversed_catalog})
+    actual_catalog = sorted(
+        [(f"service:{item['id']}", item["display_order"]) for item in state["services"]]
+        + [(f"combo:{item['id']}", item["display_order"]) for item in state["combos"]],
+        key=lambda value: value[1],
+    )
+    assert [value[0] for value in actual_catalog] == reversed_catalog
+
+    first = area(state, "Sen A")
+    second = area(state, "Sen B")
+    area_ids = [str(item["id"]) for item in live._service_areas(state)]
+    reordered_areas = [second["id"], first["id"], *(value for value in area_ids if value not in {first["id"], second["id"]})]
+    action(state, "settings_reorder", {"scope": "service_areas", "ordered_ids": reordered_areas})
+    reopened = live._normalize_state(state, NOW)
+    assert [item["id"] for item in live._service_areas(reopened)] == reordered_areas
+
+
+def test_settings_reorder_rejects_missing_or_duplicate_items_without_changing_state():
+    state = state_with()
+    catalog_ids = [*(f"service:{item['id']}" for item in state["services"]), *(f"combo:{item['id']}" for item in state["combos"])]
+    for ordered_ids in [catalog_ids[:-1], [catalog_ids[0], *catalog_ids]]:
+        before = deepcopy(state)
+        with pytest.raises(HTTPException):
+            action(state, "settings_reorder", {"scope": "catalog", "ordered_ids": ordered_ids})
+        assert state == before
+
+
 def test_new_menus_persist_on_server_with_revision_and_idempotency():
     database = SettingsDatabase()
     _, client = app_client(database)

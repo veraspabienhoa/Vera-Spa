@@ -75,7 +75,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "reorder", "admin_reorder", "sync_daily_status",
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
-    "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
+    "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete", "settings_reorder",
     "update_booking", "cancel_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
 }
 BOARD_COLUMNS = [
@@ -549,7 +549,37 @@ def _service_areas(state: dict[str, Any]) -> list[dict[str, Any]]:
     for name in state.get("physical_rooms", []):
         if not any(_norm(area["name"]) == _norm(name) for area in areas.values()):
             areas[f"legacy:{name}"] = {"id": f"legacy:{name}", "name": name, "kind": "room", "beds": []}
-    return list(areas.values())
+    projected = list(areas.values())
+    saved_order = state.get("service_area_order")
+    if isinstance(saved_order, list):
+        positions = {str(area_id): index for index, area_id in enumerate(saved_order)}
+        projected.sort(key=lambda area: positions.get(str(area["id"]), len(positions)))
+    return projected
+
+
+def _settings_reorder(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    scope = str(payload.get("scope") or "").strip()
+    ordered_ids = payload.get("ordered_ids")
+    if not isinstance(ordered_ids, list) or not ordered_ids or any(not isinstance(value, str) or not value.strip() for value in ordered_ids):
+        raise HTTPException(400, "Thứ tự hiển thị không hợp lệ.")
+    if len(set(ordered_ids)) != len(ordered_ids):
+        raise HTTPException(400, "Thứ tự hiển thị có mục bị trùng.")
+    if scope == "catalog":
+        items = [("service", item) for item in state["services"]] + [("combo", item) for item in state["combos"]]
+        current_ids = [f"{kind}:{item['id']}" for kind, item in items]
+        if set(ordered_ids) != set(current_ids):
+            raise HTTPException(409, "Danh sách dịch vụ đã thay đổi; hãy làm mới rồi thử lại.")
+        positions = {key: index for index, key in enumerate(ordered_ids)}
+        for kind, item in items:
+            item["display_order"] = positions[f"{kind}:{item['id']}"]
+        return {"ordered_ids": ordered_ids}
+    if scope == "service_areas":
+        current_ids = [str(area["id"]) for area in _service_areas(state)]
+        if set(ordered_ids) != set(current_ids):
+            raise HTTPException(409, "Danh sách khu vực đã thay đổi; hãy làm mới rồi thử lại.")
+        state["service_area_order"] = ordered_ids
+        return {"ordered_ids": ordered_ids}
+    raise HTTPException(400, "Loại danh sách cần sắp xếp không hợp lệ.")
 
 
 def _service_area_change(state: dict[str, Any], payload: dict[str, Any], *, delete: bool = False) -> dict[str, Any]:
@@ -1749,7 +1779,7 @@ def _required_action_feature(action: str) -> str:
     if action in {
         "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
-        "clear_expired", "clear_expired_preview", "combo_import", "set_vip", "service_area_upsert", "service_area_delete", "payment_settings_update",
+        "clear_expired", "clear_expired_preview", "combo_import", "set_vip", "service_area_upsert", "service_area_delete", "settings_reorder", "payment_settings_update",
     }:
         return "live_tour_admin"
     return "live_tour_operate"
@@ -2242,6 +2272,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if before:
             state.setdefault("customer_changes", []).append({"id": str(uuid4()), "customer_id": customer_id, "action": action, "at": _iso(now), "actor": actor, "reason": payload["reason"].strip(), "before": before, "after": deepcopy(customer)})
         result = {"customer": deepcopy(customer)}
+    elif action == "settings_reorder":
+        result = _settings_reorder(state, payload)
     elif action in {"service_area_upsert", "service_area_delete"}:
         result = _service_area_change(state, payload, delete=action == "service_area_delete")
     elif action in {"room_upsert", "service_upsert", "combo_upsert"}:

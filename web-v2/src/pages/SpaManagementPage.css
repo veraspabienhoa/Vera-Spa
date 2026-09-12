@@ -16,6 +16,7 @@
 .spa-management th{font-size:13px; color:#536a5e; background:#f4f8f5}
 .spa-management td small{display:block; color:#6c7c76}
 .spa-card-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr)); gap:14px}
+.spa-settings-list{grid-template-columns:minmax(0,1fr)}
 .spa-card{border:1px solid #dce6df; border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:10px; min-width:0}
 .spa-card h3,.spa-card p{margin:0}
 .spa-card-heading{display:flex; align-items:center; justify-content:space-between; gap:8px}
