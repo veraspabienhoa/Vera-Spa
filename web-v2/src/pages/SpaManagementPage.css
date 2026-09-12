@@ -18,7 +18,7 @@
 .spa-card-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr)); gap:14px}
 .spa-settings-list{grid-template-columns:minmax(0,1fr)}
 .spa-settings-list>.spa-card{border-top:2px solid #afc8bb;border-bottom:2px solid #afc8bb;padding:12px 16px}
-.spa-area-summary{justify-content:flex-start;flex-wrap:wrap}.spa-card-heading.spa-area-summary h3{flex:0 0 auto;font-size:16px}.spa-area-summary .spa-bed-list{margin:0}
+.spa-card-heading.spa-area-summary{justify-content:flex-start;flex-wrap:wrap;text-align:left}.spa-card-heading.spa-area-summary h3{flex:0 0 auto;font-size:16px}.spa-area-summary .spa-bed-list{margin:0;justify-content:flex-start}
 .spa-management tr[data-sort-key]>td{border-top:2px solid #afc8bb;border-bottom:2px solid #afc8bb}
 .spa-card{border:1px solid #dce6df; border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:10px; min-width:0}
 .spa-card h3,.spa-card p{margin:0}
