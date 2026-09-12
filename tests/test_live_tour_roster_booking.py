@@ -314,3 +314,45 @@ def test_vera_invoice_sequence_continues_after_legacy_live_numbers():
     state['bill_counters'] = {}
     assert live._next_bill_no(state, {}, NOW) == 'VERA-20260905-0043'
     assert state['invoices'][0]['bill_no'] == 'LIVE-20260905-0042'
+
+
+@pytest.mark.parametrize('direction,steps,target', [('up',1,3),('up',3,1),('up',5,0),('down',1,5),('down',3,7),('down',5,8),('bottom',1,8),('top',1,0)])
+def test_admin_reorder_moves_across_start_times_and_leave_to_actual_position(direction, steps, target):
+    workers = [employee(f'e{i}', f'Worker {i}') for i in range(9)]
+    for i, worker in enumerate(workers):
+        worker.update(sort_index=i, service='Body', status='Đang thực hiện', started_at=f'2026-09-05T{10+i:02d}:00:00+07:00')
+    workers[-1]['work_status'] = 'Nghỉ phép'
+    state = state_with(*workers)
+    act(state, 'admin_reorder', {'employee_id':'e4','direction':direction,'steps':steps})
+    ordered = live._ordered_employees(state['employees'], NOW)
+    assert ordered[target]['id'] == 'e4'
+    assert all(worker['manual_order'] for worker in ordered)
+    assert [row['sort_index'] for row in ordered] == list(range(9))
+    restored = deepcopy(state)
+    assert [r['id'] for r in live._ordered_employees(restored['employees'], NOW)] == [r['id'] for r in ordered]
+
+
+def test_admin_direct_stt_and_cancel_waiting_booking_release_reservations():
+    state = state_with(employee('e1','An'), employee('e2','Bình'))
+    act(state, 'admin_reorder', {'employee_id':'e1','direction':'position','position':2})
+    assert live._ordered_employees(state['employees'], NOW)[-1]['id'] == 'e1'
+    worker = next(row for row in state['employees'] if row['id']=='e1')
+    worker.update(status='Đang chờ', service='Body', room='1.1', combo_purchase_id='combo1', combo_reserved_units=1)
+    act(state, 'cancel_booking', {'employee_id':'e1'})
+    assert worker['room'] == '' and worker['service'] == ''
+    assert 'combo_reserved_units' not in worker
+    assert not state['invoices'] and not state['pending']
+    worker.update(status='Đang thực hiện', service='Body')
+    next(row for row in state['employees'] if row['id']=='e2').update(status='Đang chờ', service='Body', room='1.2')
+    before = deepcopy(state)
+    with pytest.raises(HTTPException):
+        act(state, 'cancel_booking', {'employee_ids':['e2','e1']})
+    assert state == before
+    assert live._required_action_feature('admin_reorder') == 'live_tour_admin'
+
+
+def test_admin_reorder_rejects_non_admin_even_with_feature_grants(monkeypatch):
+    client, shared = api_client(monkeypatch)
+    result = client.post('/v2/live-tour/action', json={'action':'admin_reorder','expected_revision':1,'idempotency_key':'admin-order-test','payload':{'employee_id':'e1','direction':'bottom'}})
+    assert result.status_code == 403
+    assert shared['revision'] == 1

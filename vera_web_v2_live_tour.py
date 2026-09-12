@@ -64,7 +64,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "pending_update", "pending_delete",
     "booking", "multi_booking", "start", "add_minutes", "complete", "move_pending",
     "checkout", "quick_checkout", "set_work_status", "set_shift", "start_break", "end_break",
-    "reorder",
+    "reorder", "admin_reorder",
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
@@ -1627,6 +1627,8 @@ def _change_pending(state, action, payload, actor, now):
 
 
 def _required_action_feature(action: str) -> str:
+    if action == "admin_reorder":
+        return "live_tour_admin"
     if action == "update_appointment":
         return "live_tour_view"
     if action in {"report_invoice_update", "report_invoice_delete"}:
@@ -1666,7 +1668,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
     _ensure_counter_day(state, now)
     financial_timing = _financial_timing(payload, now) if action in BACKDATE_ACTIONS else None
     batch_actions = {
-        "start", "add_minutes", "complete", "set_work_status", "set_shift", "start_break", "reorder",
+        "start", "add_minutes", "complete", "set_work_status", "set_shift", "start_break", "reorder", "admin_reorder",
         "end_break", "set_vip",
         "replace_service", "add_service", "finish_to_pending", "cancel_booking",
     }
@@ -1997,11 +1999,11 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         state["break_events"].append(end_event)
         result["employee"] = employee
         result["break_event"] = end_event
-    elif action == "reorder":
+    elif action in {"reorder", "admin_reorder"}:
         employee = _employee(state, payload.get("employee_id"))
         # Manual moves cannot override the displayed start time or leave status.
         ordered = _ordered_employees(state["employees"], now)
-        peers = [item for item in ordered if _employee_time_key(item, now) == _employee_time_key(employee, now)]
+        peers = list(ordered) if action == "admin_reorder" else [item for item in ordered if _employee_time_key(item, now) == _employee_time_key(employee, now)]
         current = peers.index(employee)
         direction = str(payload.get("direction") or "").lower()
         steps = int(_bounded_number(
@@ -2011,7 +2013,9 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         if steps not in {1, 3, 5}:
             raise HTTPException(400, "Bước di chuyển chỉ nhận 1, 3 hoặc 5.")
         target = 0 if direction == "top" else len(peers) - 1 if direction == "bottom" else current - steps if direction == "up" else current + steps if direction == "down" else current
-        if direction not in {"top", "bottom", "up", "down"}:
+        if direction == "position" and action == "admin_reorder":
+            target = int(_bounded_number(payload.get("position"), label="STT", minimum=1, maximum=len(peers), integer=True)) - 1
+        elif direction not in {"top", "bottom", "up", "down"}:
             raise HTTPException(400, "Hướng sắp xếp không hợp lệ.")
         peers.pop(current)
         peers.insert(max(0, min(target, len(peers))), employee)
@@ -2020,6 +2024,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         ordered = [next(peer_iter) if item["id"] in peer_ids else item for item in ordered]
         for index, item in enumerate(ordered):
             item["sort_index"] = index
+            if action == "admin_reorder":
+                item["manual_order"] = True
         state["employees"] = ordered
         result["employee"] = employee
     elif action == "set_vip":
@@ -2399,6 +2405,8 @@ def _employee_time_key(employee: dict[str, Any], now: datetime) -> tuple[int, in
 
 
 def _ordered_employees(employees: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+    if any(item.get("manual_order") for item in employees):
+        return sorted(employees, key=lambda item: int(item.get("sort_index") or 0))
     return sorted(employees, key=lambda item: (
         *_employee_time_key(item, now), int(item.get("sort_index") or 0), _norm(item.get("name")),
     ))
@@ -2478,7 +2486,7 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_employee_change_until": _iso(_employee_change_until(employee)) if _employee_change_until(employee) else "",
         "_employee_change_started_at": employee.get("started_at", ""),
         "_countdown_deadline": deadline, "_attendance_break_active": bool(employee.get("break_started_at")),
-        "_hidden": bool(employee.get("hidden")), "_active_booking": _active_booking(employee),
+        "_manual_order": bool(employee.get("manual_order")), "_sort_index": employee.get("sort_index", 0), "_hidden": bool(employee.get("hidden")), "_active_booking": _active_booking(employee),
         "_payment_pending": _norm(employee.get("status")) == "cho thanh toan",
         "_private_service": _is_private_service(employee.get("service")),
     }
@@ -3379,6 +3387,8 @@ def install_live_tour_routes(
             raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được sửa lịch hẹn.")
         if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được nhập combo.")
+        if action == "admin_reorder" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được đổi STT toàn bảng.")
         payload = deepcopy(body.payload)
         actor = str(ident.employee_username or ident.full_name or "web_v2")
         idempotency_key = str(body.idempotency_key or payload.get("idempotency_key") or "").strip()

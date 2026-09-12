@@ -5,7 +5,7 @@ export const tourNameKey = (value) => String(value || '').normalize('NFD').repla
 export function bookingEmployees(employees) {
   const ranking = (worker) => tourStartOrder(employeeTourStart(worker))
   return employees.filter((worker) => worker.roster_eligible !== false && !worker.hidden && tourNameKey(worker.work_status) === 'di lam' && ['ca 1', 'ca 2'].includes(tourNameKey(worker.shift)) && !worker.break_started_at && tourNameKey(worker.status) !== 'cho thanh toan')
-    .sort((a, b) => { const x = ranking(a), y = ranking(b); return x[0] - y[0] || x[1] - y[1] || Number(a.sort_index || 0) - Number(b.sort_index || 0) || tourNameKey(a.name).localeCompare(tourNameKey(b.name)) })
+    .sort((a, b) => { if (employees.some(worker => worker.manual_order)) return Number(a.sort_index || 0) - Number(b.sort_index || 0); const x = ranking(a), y = ranking(b); return x[0] - y[0] || x[1] - y[1] || Number(a.sort_index || 0) - Number(b.sort_index || 0) || tourNameKey(a.name).localeCompare(tourNameKey(b.name)) })
 }
 
 export function bookingServiceItems(worker, catalog) {
