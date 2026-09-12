@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 
 def default_settings():
-    return {'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
+    return {'employee_change_minutes': 10, 'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
         {'id': f'tip-{amount}', 'name': f'{amount:,} đ'.replace(',', '.'), 'amount': amount}
         for amount in (50000, 100000, 200000, 300000, 500000)
     ]}
@@ -43,7 +43,10 @@ def settings_update(payload, money):
         raise HTTPException(400, 'Thông tin ngân hàng quá dài.')
     if bank['enabled'] and (not re.fullmatch(r'[A-Za-z0-9]{2,20}', bank['bank_id']) or not re.fullmatch(r'[0-9]{6,19}', bank['account_no']) or not bank['account_name']):
         raise HTTPException(400, 'Cần mã ngân hàng, số tài khoản từ 6–19 chữ số và tên chủ tài khoản.')
-    return {'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
+    minutes = payload.get('employee_change_minutes', 10)
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 180:
+        raise HTTPException(400, 'Thời hạn đổi nhân viên phải từ 1 đến 180 phút.')
+    return {'employee_change_minutes': minutes, 'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
             'tip_cards': sorted(result, key=lambda card: card['amount'])}
 
 
@@ -83,3 +86,22 @@ def payment_values(state, payload, subtotal, money, max_money):
     if tip > max_money:
         raise HTTPException(400, 'Tổng TIP vượt giới hạn cho phép.')
     return discount, tip, {'discount_mode': mode, 'discount_percent': float(percent) if percent is not None else None, 'tip_cards': cards}
+
+
+def profile_bank(row):
+    """Profile stores VietQR shortName; never invent an account or bank code."""
+    bank = {'enabled': True, 'bank_id': str(row.get('bank_name') or '').strip(),
+            'account_no': str(row.get('bank_account') or '').strip(),
+            'account_name': str(row.get('full_name') or '').strip()}
+    if (not re.fullmatch(r'[A-Za-z0-9]{2,20}', bank['bank_id'])
+            or not re.fullmatch(r'[0-9]{6,19}', bank['account_no']) or not bank['account_name']):
+        return None
+    return bank
+
+
+def selected_bank(settings, viewer_bank, selection='auto'):
+    if selection not in {'auto', 'user', 'default'}:
+        raise HTTPException(400, 'Lựa chọn tài khoản nhận tiền không hợp lệ.')
+    if selection == 'user' and not viewer_bank:
+        raise HTTPException(409, 'Hồ sơ tài khoản đăng nhập chưa có ngân hàng hợp lệ.')
+    return deepcopy(viewer_bank if selection in {'auto', 'user'} and viewer_bank else settings.get('bank') or {'enabled': False})

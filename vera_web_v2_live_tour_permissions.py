@@ -12,6 +12,7 @@ LEGACY_FEATURE_INHERITANCE = {
 }
 # Edit/delete did not exist before: never inherit those destructive privileges.
 CAPABILITY_FEATURES = {
+    "reorder": "live_tour_reorder",
     "invoice_date_edit": "live_tour_invoice_date_edit",
     "customers_edit": "live_tour_customers_edit",
     "customers_delete": "live_tour_customers_delete",

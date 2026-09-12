@@ -56,6 +56,14 @@ class RouteConnection:
         class Result:
             rowcount = 1
 
+            def mappings(self):
+                return self
+
+            @staticmethod
+            def first():
+                # Generic route fixtures have no cashier bank profile.
+                return None
+
             @staticmethod
             def scalar():
                 return True

@@ -28,6 +28,9 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from vera_web_v2_live_tour_payment import default_settings as _default_payment_settings, settings_update as _payment_settings_update, payment_values as _payment_values
+from vera_web_v2_live_tour_payment import profile_bank as _profile_bank, selected_bank as _selected_bank
+from vera_web_v2_live_tour_daily import sync_daily as _sync_daily
+from vera_web_v2_live_tour_roster import shift_label as _directory_shift
 from vera_web_v2_live_tour_roster import eligible as _roster_eligible, reconcile as _reconcile_roster
 from vera_web_v2_service_catalog import catalog_details, component_debits, purchase_terms, require_available
 from vera_web_v2_live_tour_permissions import CAPABILITY_FEATURES, EXPORT_FEATURES
@@ -64,7 +67,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "pending_update", "pending_delete",
     "booking", "multi_booking", "start", "add_minutes", "complete", "move_pending",
     "checkout", "quick_checkout", "set_work_status", "set_shift", "start_break", "end_break",
-    "reorder", "admin_reorder",
+    "reorder", "admin_reorder", "sync_daily_status",
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete",
@@ -799,7 +802,7 @@ def _source_employee(record: dict[str, Any], index: int, now: datetime) -> dict[
 def _employee_directory(conn) -> list[dict[str, Any]]:
     return [dict(row) for row in conn.execute(text("""
         SELECT username, COALESCE(full_name, '') AS full_name,
-               lower(btrim(COALESCE(role,''))) AS role, COALESCE(payload,'{}'::jsonb) AS payload
+               lower(btrim(COALESCE(role,''))) AS role, COALESCE(payload,'{}'::jsonb) AS payload, COALESCE(work_shift,'') AS work_shift
         FROM employees
         ORDER BY lower(username)
     """)).mappings().all()]
@@ -814,7 +817,7 @@ def _new_directory_employee(row, index):
         "duration": None, "service_price": 0, "booked_at": "", "started_at": "",
         "completed_at": "", "payment_status": "", "wait_minutes": None,
         "completion_delta_minutes": None, "steam_elapsed_minutes": None,
-        "tour_count": 0, "request_count": 0, "work_status": "Nghỉ", "shift": "",
+        "tour_count": 0, "request_count": 0, "work_status": "Nghỉ", "shift": _directory_shift(row.get("work_shift")),
         "break_started_at": "", "clock_out": "", "clock_in": "", "note": "",
         "hidden": False, "vip": False, "sort_index": index,
     }
@@ -915,6 +918,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
     employee["last_assignment_display"] = {column: record[column] for column in RETAINED_ASSIGNMENT_COLUMNS}
     employee.pop("service_items", None)
     employee.pop("pre_start_tour_position", None)
+    employee.pop("employee_change_minutes", None)
     for key in ("combo_purchase_id", "combo_reserved_units", "combo_reserved_components"):
         employee.pop(key, None)
     for key in (
@@ -1167,9 +1171,10 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime) -> d
     return employee
 
 
-def _capture_tour_position(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
+def _capture_tour_position(employee: dict[str, Any], now: datetime, state: dict | None = None) -> dict[str, Any]:
     record = _employee_record(employee, now)
     return {
+        "board_index": _ordered_employees(state["employees"], now).index(employee) if state else None,
         "sort_index": employee.get("sort_index", 0),
         "display": {column: record.get(column, "") for column in ("TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC")},
         "counter_key": "request_count" if _norm(employee.get("request")) == "yc" else "tour_count",
@@ -1182,7 +1187,7 @@ def _employee_change_until(employee: dict[str, Any]) -> datetime | None:
     if (_norm(employee.get("status")) != "dang thuc hien" or not started
             or employee.get("completed_at") or not employee.get("pre_start_tour_position")):
         return None
-    return started + timedelta(minutes=10)
+    return started + timedelta(minutes=employee.get("employee_change_minutes", 10))
 
 
 def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime) -> None:
@@ -1198,13 +1203,14 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
     if employee.get("combo_purchase_id"):
         customer = _customer(state, {"customer_id": employee.get("customer_id")}, create=False)
         employee.update(_booking_combo(state, customer, {}, employee, now, employee))
-    employee["pre_start_tour_position"] = _capture_tour_position(employee, now)
+    employee["pre_start_tour_position"] = _capture_tour_position(employee, now, state)
     if _norm(employee.get("request")) == "yc":
         employee["request_count"] = int(employee.get("request_count") or 0) + 1
     else:
         employee["tour_count"] = int(employee.get("tour_count") or 0) + 1
     employee["status"] = "Đang thực hiện"
     employee["started_at"] = _iso(now)
+    employee["employee_change_minutes"] = (state.get("payment_settings") or {}).get("employee_change_minutes", 10)
     booked_at = _parse_datetime(employee.get("booked_at"))
     employee["wait_minutes"] = max(0, int(round((now.astimezone(VN_TZ) - booked_at).total_seconds() / 60))) if booked_at else 0
     employee["completed_at"] = ""
@@ -1627,8 +1633,8 @@ def _change_pending(state, action, payload, actor, now):
 
 
 def _required_action_feature(action: str) -> str:
-    if action == "admin_reorder":
-        return "live_tour_admin"
+    if action in {"reorder", "admin_reorder"}:
+        return "live_tour_reorder"
     if action == "update_appointment":
         return "live_tour_view"
     if action in {"report_invoice_update", "report_invoice_delete"}:
@@ -1701,6 +1707,9 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         result = _apply_action(state, "start" if action == "start_room" else "finish_to_pending",
                                {"employee_ids": [row["id"] for row in members]}, actor, now)
         result["room"] = canonical_room
+    elif action == "sync_daily_status":
+        result = _sync_daily(state, payload["directory"], payload["leaves"])
+        payload = {"updated": result["updated"]}
     elif action == "booking":
         result["employee"] = _booking(state, payload, now)
     elif action == "update_appointment":
@@ -1722,7 +1731,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         deadline = _employee_change_until(source)
         started = _parse_datetime(source.get("started_at"))
         if not deadline or not started or not started <= now.astimezone(VN_TZ) <= deadline:
-            raise HTTPException(409, "Chỉ đổi nhân viên đang thực hiện trong 10 phút đầu; phiên cần có vị trí tua trước khi bắt đầu.")
+            raise HTTPException(409, f"Chỉ đổi nhân viên trong {source.get('employee_change_minutes', 10)} phút đầu; phiên cần có vị trí tua trước khi bắt đầu.")
         if (target.get("roster_eligible") is False or _norm(target.get("work_status")) != "di lam"
                 or _shift_bucket(target) not in {"ca1", "ca2"} or target.get("break_started_at")
                 or _has_unsettled_work(target)):
@@ -1730,13 +1739,13 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         # Keep the original service clock: repeated replacement cannot reopen the
         # ten-minute window. Each employee retains their own pre-service position.
         original_position = deepcopy(source["pre_start_tour_position"])
-        target_position = _capture_tour_position(target, now)
+        target_position = _capture_tour_position(target, now, state)
         counter_key = original_position["counter_key"]
         target_position["counter_key"] = counter_key
         target_position["counter_day"] = original_position["counter_day"]
         fields = ("service", "service_items", "service_price", "service_price_source", "duration",
                   "request", "request_source", "room", "status", "booked_at", "booking_id",
-                  "started_at", "completed_at", "wait_minutes", "payment_status", "completion_note",
+                  "started_at", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
                   "completion_delta_minutes", "steam_elapsed_minutes", "customer_id", "customer_name",
                   "customer_phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components", "note")
         assignment = {key: deepcopy(source[key]) for key in fields if key in source}
@@ -1747,6 +1756,11 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         _clear_assignment(source, now)
         source["sort_index"] = original_position["sort_index"]
         source["last_assignment_display"] = original_position["display"]
+        if original_position.get("board_index") is not None and any(row.get("manual_order") for row in state["employees"]):
+            restored_order = [row for row in _ordered_employees(state["employees"], now) if row["id"] != source["id"]]
+            restored_order.insert(min(original_position["board_index"], len(restored_order)), source)
+            for index, row in enumerate(restored_order):
+                row["sort_index"] = index
         if original_position["counter_day"] == _counter_business_date(now).isoformat():
             source[counter_key] = max(0, int(source.get(counter_key) or 0) - 1)
             target[counter_key] = int(target.get(counter_key) or 0) + 1
@@ -2659,6 +2673,8 @@ def _state_response(
     can_pending_view: bool | None = None, can_customers_view: bool | None = None,
     can_reports_view: bool | None = None, can_history_view: bool | None = None,
     can_backup: bool | None = None,
+    can_reorder: bool = False,
+    viewer_bank: dict | None = None,
     can_invoice_date_edit: bool = False,
     can_customers_edit: bool = False,
     can_customers_delete: bool = False,
@@ -2773,7 +2789,7 @@ def _state_response(
         # Root aliases keep the API convenient for both the copied Tour UI and
         # the richer Live Tour operator drawers.
         "services": state["services"], "combo_catalog": state["combos"],
-        "payment_settings": deepcopy(state.get("payment_settings") or _default_payment_settings()) if can_payment or can_admin or can_paid_invoice_view else {},
+        "payment_settings": {**deepcopy(state.get("payment_settings") or _default_payment_settings()), **({"user_bank": deepcopy(viewer_bank)} if viewer_bank else {})} if can_payment or can_admin or can_paid_invoice_view else {},
         "employee_directory": deepcopy(state.get("employee_directory", [])) if can_admin else [],
         "retained_assignments": [deepcopy(row) if customer_pii else _redact_customer_pii(row) for row in state["employees"] if row.get("roster_eligible") is False and (row.get("service") or row.get("break_started_at"))] if can_operate or can_payment or can_admin else [],
         "customers": customers, "pending_payments": state["pending"] if pending_access else [],
@@ -2800,7 +2816,7 @@ def _state_response(
             "backups": public_backups,
         },
         "capabilities": {
-            "appointment_edit": can_appointment_edit,
+            "appointment_edit": can_appointment_edit, "reorder": can_reorder,
             "admin": can_admin, "catalog_admin": can_admin, "manage_catalog": can_admin,
             "operate": can_operate, "payment": can_payment, "export": can_export,
             "booking": can_booking, "invoice_view": can_invoice_view,
@@ -3256,10 +3272,15 @@ def install_live_tour_routes(
     timezone = vn_tz or VN_TZ
 
     def permissions(conn, ident) -> dict[str, bool]:
+        viewer_bank = None
+        if str(getattr(ident, "role", "")).strip().lower() == "letan" and feature_allowed(conn, ident, "live_tour_payment"):
+            bank_row = conn.execute(text("SELECT full_name, bank_name, bank_account FROM employees WHERE username=:username"), {"username": ident.employee_username}).mappings().first()
+            viewer_bank = _profile_bank(dict(bank_row)) if bank_row else None
         can_admin = bool(feature_allowed(conn, ident, "live_tour_admin"))
         can_operate = bool(feature_allowed(conn, ident, "live_tour_operate"))
         return {
             "can_appointment_edit": str(getattr(ident, "role", "") or "").strip().lower() in {"admin", "quanly", "letan"} and bool(feature_allowed(conn, ident, "live_tour_view")),
+            "viewer_bank": viewer_bank,
             "can_admin": can_admin, "can_operate": can_operate,
             "can_payment": bool(feature_allowed(conn, ident, "live_tour_payment")),
             "can_export": bool(feature_allowed(conn, ident, "live_tour_export")),
@@ -3387,8 +3408,6 @@ def install_live_tour_routes(
             raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được sửa lịch hẹn.")
         if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được nhập combo.")
-        if action == "admin_reorder" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
-            raise HTTPException(403, "Chỉ Admin được đổi STT toàn bảng.")
         payload = deepcopy(body.payload)
         actor = str(ident.employee_username or ident.full_name or "web_v2")
         idempotency_key = str(body.idempotency_key or payload.get("idempotency_key") or "").strip()
@@ -3462,7 +3481,15 @@ def install_live_tour_routes(
             # A defensive copy guarantees multi-step actions never leak a partial
             # mutation into the value written after an exception.
             working = deepcopy(state)
+            if action == "sync_daily_status":
+                payload = {**payload, "directory": _employee_directory(conn), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
             result = _apply_action(working, action, payload, actor, now)
+            if action in {"checkout", "quick_checkout", "combo_purchase"} and result.get("invoice"):
+                bank = _selected_bank(working.get("payment_settings") or {}, grants.get("viewer_bank"), payload.get("bank_selection", "auto"))
+                result["invoice"]["payment_bank"] = bank
+                for invoice in working["invoices"]:
+                    if invoice["id"] == result["invoice"]["id"]:
+                        invoice["payment_bank"] = deepcopy(bank)
             if idempotency_key:
                 _remember_idempotency(
                     working, idempotency_key, action=action, actor=actor,
