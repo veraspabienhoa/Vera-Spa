@@ -144,6 +144,7 @@
 .live-tour-page .live-tour-panel-tabs{flex-wrap:wrap;overflow:visible}
 .live-tour-page .live-tour-panel-tabs button{font-size:18px;font-weight:900;min-height:40px}
 @media(max-width:768px){
+  .live-tour-page .live-tour-desktop-only{display:none!important}
   .live-tour-page div.tour-topbar{flex-wrap:wrap;gap:8px;min-width:0;width:100%;max-width:100%;box-sizing:border-box;overflow:visible}
   .live-tour-page .tour-topbar .tour-heading-title{flex:1;gap:8px}
   .live-tour-page .tour-topbar .tour-heading-title h1{font-size:16px;white-space:nowrap}
