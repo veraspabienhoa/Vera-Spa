@@ -38,9 +38,12 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
     state: { employees: payable ? [{ id: 'e1', name: 'An An', status: 'CHO THANH TOÁN', service: 'Body 90', room: '1.1', service_price: 100 }] : [] } }
   setup?.(data)
   const writes = []
+  const exports = []
   let fail = conflict
   globalThis.__tourTestApi = {
     liveTour: async () => structuredClone(data),
+    liveTourCustomerHistory: async (customerId) => ({ customer: structuredClone(data.customers.find((customer) => customer.id === customerId)), summary: { combo_remaining: 7 }, combo_purchases: structuredClone(data.customers.find((customer) => customer.id === customerId)?.combo_purchases || []), combo_usage: [{ id: 'u1', service: 'Body 90', business_date: TODAY_VN }], invoices: [], reports: [], pending: [] }),
+    exportLiveTourExcel: async (kind, query) => { exports.push({ kind, query }) },
     liveTourAction: async (body) => {
       writes.push(body)
       if (fail) { fail = false; data.revision++; throw Object.assign(new Error('Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.'), { status: 409 }) }
@@ -62,7 +65,7 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   const search = () => document.querySelector('.tour-employee-search input')
   const quick = () => document.querySelector('.live-tour-appointment-editor.quick')
   const save = async (form) => act(async () => form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })))
-  return { data, writes, type, search, quick, save, dispose: async () => { await act(() => root.unmount()) } }
+  return { data, writes, exports, type, search, quick, save, dispose: async () => { await act(() => root.unmount()) } }
 }
 
 test('quick appointment sits beside search, rejects ambiguous names and saves only the exact employee', async () => {
@@ -527,6 +530,36 @@ test('admin bottom and direct STT actions target selected employee; manual order
     const actions = [...document.querySelectorAll('.live-tour-controls-actions button')]
     const add = actions.findIndex(b => b.textContent === 'Thêm dịch vụ')
     assert.equal(actions[add + 1].textContent, 'Hủy Booking')
+  } finally { await f.dispose() }
+})
+
+test('combo lookup opens directly, searches customers, exports Excel and opens history from customer cards', async () => {
+  const f = await fixture({ role: 'admin', setup(data) {
+    data.capabilities.customers_view = true
+    data.capabilities.export = true
+    data.capabilities.invoice_view = true
+    data.capabilities.paid_invoice_view = true
+    data.capabilities.pending_view = true
+    data.capabilities.reports_view = true
+    data.customers = [
+      { id: 'c1', name: 'Anh Lưu', phone: '0919442626', combo_purchases: [{ id: 'cp1', combo_name: 'Combo PR', total: 8, remaining: 7, purchased_at: `${TODAY_VN}T13:39:00+07:00` }] },
+      { id: 'c2', name: 'Anh Hiền', phone: '0987653921', combo_purchases: [{ id: 'cp2', combo_name: 'Combo VIP', total: 10, remaining: 10, purchased_at: `${TODAY_VN}T14:06:00+07:00` }] },
+    ]
+  } })
+  try {
+    for (const label of ['Hóa đơn chờ thanh toán', 'Hóa đơn đã thanh toán', 'Báo cáo', 'Khách hàng', 'Gói Combo']) assert.ok([...document.querySelectorAll('.tour-heading-actions button')].some((button) => button.textContent.includes(label)))
+    await clickText('Gói Combo')
+    const search = document.querySelector('input[aria-label="Tìm khách hàng trong Gói Combo"]')
+    assert.ok(search)
+    assert.equal(document.querySelectorAll('.live-tour-combo-customer').length, 2)
+    await f.type(search, '0919442626')
+    assert.equal(document.querySelectorAll('.live-tour-combo-customer').length, 1)
+    assert.match(document.querySelector('.live-tour-combo-customer').textContent, /Anh Lưu.*còn 7\/8 vé/s)
+    await clickText('Xuất Excel', document.querySelector('.live-tour-combo-lookup'))
+    assert.deepEqual(f.exports[0], { kind: 'customers', query: {} })
+    await act(async () => document.querySelector('.live-tour-combo-customer').click())
+    assert.match(document.body.textContent, /Lịch sử khách hàng · Anh Lưu/)
+    assert.match(document.body.textContent, /Lượt combo đã dùng \(1\)/)
   } finally { await f.dispose() }
 })
 

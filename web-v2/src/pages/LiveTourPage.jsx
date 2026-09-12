@@ -583,6 +583,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [expiredPreview, setExpiredPreview] = useState(null)
   const [expiredGrace, setExpiredGrace] = useState('15')
   const [customerSearch, setCustomerSearch] = useState('')
+  const [comboLookupOpen, setComboLookupOpen] = useState(false)
+  const [comboLookupSearch, setComboLookupSearch] = useState('')
   const [customerHistoryModal, setCustomerHistoryModal] = useState(null)
   const [customerHistoryBusy, setCustomerHistoryBusy] = useState(false)
   const [customColumns, setCustomColumns] = useState(null)
@@ -1082,6 +1084,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const filteredBreakEvents = asArray(data.break_events).filter(historyMatches)
   const backups = (asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)).filter(historyMatches)
   const filteredCustomers = customers.filter((customer) => customerMatches({ ...customer, name: itemLabel(customer) }, customerSearch))
+  const comboLookupCustomers = customers.filter((customer) => customerComboPurchases(customer).length > 0 && customerMatches({ ...customer, name: itemLabel(customer) }, comboLookupSearch))
   const quickCheckoutEmployees = [...asArray(data.state?.employees), ...asArray(data.retained_assignments)]
   const quickCheckoutMatches = validRecords.filter((record) => isQuickCheckoutEligible(record, columns)).map((record) => {
     const id = stableEmployeeId(record), employee = quickCheckoutEmployees.find((row) => stableEmployeeId(row) === id)
@@ -1385,6 +1388,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
   }
 
+  const openWorkspacePanel = (panel) => {
+    setActivePanel(panel)
+    window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+
   const removeCatalogItem = (action, item) => {
     if (window.confirm(`Xóa “${itemLabel(item)}” khỏi danh mục?`)) void executeAction(action, { id: item?.id, code: item?.code }, [])
   }
@@ -1448,7 +1456,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           <span className="live-tour-customer-count"><span>Số khách</span><strong>{customerCount}</strong></span>
         </div>
         <div className="tour-heading-actions">
-          {canViewComboPackages && <button type="button" className="secondary-button" onClick={() => { setActivePanel('customers'); window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}><Search size={16}/> Gói Combo</button>}
+          {canPending && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('pending')}>Hóa đơn chờ thanh toán{allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>}
+          {canPaidInvoiceView && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('invoices')}>Hóa đơn đã thanh toán</button>}
+          {canReports && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('reports')}>Báo cáo</button>}
+          {canCustomers && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('customers')}>Khách hàng</button>}
+          {canViewComboPackages && <button type="button" className="secondary-button" onClick={() => { setComboLookupSearch(''); setComboLookupOpen(true) }}><Search size={16}/> Gói Combo</button>}
           <button type="button" className="secondary-button" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
           {canImportBoard && <><input ref={boardImportInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={importBoard}/><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => boardImportInputRef.current?.click()}><Upload size={16}/> Import Excel</button></>}
           {canExport && <><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => exportData('board')}><Download size={16}/> Xuất bảng tua</button><button type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/> Copy B.Tua</button></>}
@@ -1621,7 +1633,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { rowIds: [] })}><Plus size={13}/> Mua combo cho khách hàng</button>{isAdmin && <button type="button" className="secondary-button" disabled={!canImportCombo} onClick={() => openModal('combo_import')}>Nhập combo</button>}<button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
         <label className="live-tour-customer-search"><Search size={14}/><input type="search" aria-label="Tìm tên hoặc số điện thoại khách hàng" autoComplete="off" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
         <div className="live-tour-card-grid" style={{ marginTop: 8 }}>
-          {filteredCustomers.map((customer, index) => <article className="live-tour-data-card" key={itemId(customer, index)}>
+          {filteredCustomers.map((customer, index) => <article className="live-tour-data-card live-tour-customer-card" role="button" tabIndex="0" aria-label={`Xem lịch sử ${itemLabel(customer, `Khách hàng ${index + 1}`)}`} onClick={(event) => { if (!event.target.closest('button')) void openCustomerHistory(customer) }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.target.closest('button')) void openCustomerHistory(customer) }} key={itemId(customer, index)}>
             <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong>
             <span>{customer?.phone || 'Chưa có số điện thoại'}</span>
             <small>Số dư combo: {customer?.combo_balance ?? customer?.remaining_tickets ?? customer?.balance ?? 0}</small>
@@ -1687,6 +1699,23 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         </>}
       </div>}
     </section>
+
+    {comboLookupOpen && canViewComboPackages && <LiveTourModal title="Kiểm tra Gói Combo khách hàng" onClose={() => setComboLookupOpen(false)}>
+      <div className="live-tour-combo-lookup">
+        <div className="live-tour-panel-toolbar"><p>Tìm khách hàng để xem số vé còn lại, ngày mua và toàn bộ lịch sử sử dụng combo.</p><button type="button" className="secondary-button" disabled={!canExportKind('customers') || Boolean(actionBusy)} onClick={() => exportData('customers')}><Download size={13}/> Xuất Excel</button></div>
+        <label className="live-tour-customer-search"><Search size={14}/><input autoFocus type="search" aria-label="Tìm khách hàng trong Gói Combo" autoComplete="off" value={comboLookupSearch} onChange={(event) => setComboLookupSearch(event.target.value)} placeholder="Tìm theo tên khách hàng hoặc số điện thoại…"/></label>
+        <div className="live-tour-card-grid live-tour-combo-lookup-grid">
+          {comboLookupCustomers.map((customer, index) => <button type="button" className="live-tour-data-card live-tour-combo-customer" onClick={() => openCustomerHistory(customer)} key={itemId(customer, index)}>
+            <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong><span>{customer?.phone || 'Chưa có số điện thoại'}</span>
+            <small>Tổng vé còn lại: {customerComboPurchases(customer).reduce((sum, combo) => sum + Number(combo?.remaining ?? combo?.balance ?? 0), 0)}</small>
+            {customerComboPurchases(customer).map((combo, comboIndex) => <small key={itemId(combo, comboIndex)}><b>{itemLabel(combo)}</b> · còn {combo?.remaining ?? combo?.balance ?? 0}/{combo?.total ?? ''} vé · mua {bookingTimeLabel(combo?.purchased_at || combo?.created_at)}</small>)}
+            <span className="live-tour-combo-history-link"><History size={13}/> Xem lịch sử mua và sử dụng</span>
+          </button>)}
+          {!comboLookupCustomers.length && <div className="live-tour-empty">Không tìm thấy khách hàng có Gói Combo phù hợp.</div>}
+        </div>
+      </div>
+      <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={() => setComboLookupOpen(false)}>Đóng</button></div>
+    </LiveTourModal>}
 
     {customerHistoryModal && canCustomers && <LiveTourModal title={`Lịch sử khách hàng · ${itemLabel(customerHistoryData.customer || customerHistoryModal.customer, 'Khách hàng')}`} onClose={() => setCustomerHistoryModal(null)}>
       {customerHistoryBusy && <div className="live-tour-empty">Đang tải lịch sử chính xác theo mã khách hàng…</div>}
