@@ -100,6 +100,20 @@ def test_non_admin_cannot_import_even_with_all_features(monkeypatch, role, batch
     assert shared == before
 
 
+def test_admin_can_import_combo_for_selected_existing_customer(monkeypatch):
+    client, shared = import_client(monkeypatch, 'admin')
+    existing = {'id': 'customer-1', 'name': 'Nguyễn An', 'phone': '0901234567', 'combo_purchases': []}
+    shared['state']['customers'] = [existing]
+    payload = {'purchases': [{'customer_id': existing['id'], 'customer_name': existing['name'],
+        'customer_phone': existing['phone'], 'combo_id': 'import-combo', 'total': 4, 'used': 0}]}
+
+    response = post(client, shared, 'combo_import', payload)
+
+    assert response.status_code == 200, response.text
+    assert len(shared['state']['customers']) == 1
+    assert shared['state']['customers'][0]['combo_purchases'][0]['remaining'] == 4
+
+
 def test_admin_can_import_and_retry_without_recording_new_revenue(monkeypatch):
     client, shared = import_client(monkeypatch, 'admin')
     payload = {'purchases': [{'customer_name': 'Khách nhập', 'combo_id': 'import-combo', 'total': 5, 'used': 0}]}
