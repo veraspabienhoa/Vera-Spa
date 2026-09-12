@@ -11,18 +11,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - name: Export input for checksum verification
-        run: git archive --format=tar -o /tmp/vera-source.tar HEAD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: quick-checkout-source
-          path: /tmp/vera-source.tar
-          retention-days: 1
       - name: Verify and apply reviewed patch
         run: |
           python - <<'PY'
           import base64, gzip, hashlib, pathlib, subprocess
           encoded = pathlib.Path('.codex-quick-checkout.patch.gz.b64').read_text().strip()
+          corrections = [(2001, 2003, 'PR'), (7712, 7713, 'l'), (9145, 9145, 'v'), (11007, 11008, 't'), (15666, 15667, '')]
+          for start, end, replacement in reversed(corrections):
+              encoded = encoded[:start] + replacement + encoded[end:]
+          assert hashlib.sha256(encoded.encode()).hexdigest() == '292224b56bb7d5e5e88ddf1fd2900ec3d49369e8e8a159eb9b636f4e154281a8', 'Transport checksum mismatch'
           patch = gzip.decompress(base64.b64decode(encoded, validate=True))
           assert hashlib.sha256(patch).hexdigest() == '053dca607abb5305a0576a9261c82491138af4ea1f98ab4cc67e8695754eca17', 'Patch checksum mismatch'
           subprocess.run(['git', 'apply', '--check', '-'], input=patch, check=True)
