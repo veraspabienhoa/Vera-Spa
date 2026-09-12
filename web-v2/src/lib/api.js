@@ -351,6 +351,9 @@ export const veraApi = {
     const params = liveTourExportParams(kind, query)
     return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)
   },
+  ktvShifts: () => request('/v2/staff/ktv-shifts'),
+  saveKtvShift: (id, body) => request(`/v2/staff/ktv-shifts${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
+  deleteKtvShift: (id, revision) => request(`/v2/staff/ktv-shifts/${encodeURIComponent(id)}?expected_revision=${revision}`, { method: 'DELETE' }),
   readLiveTourPng: async (query = {}) => {
     const params = liveTourExportParams('board', query)
     const response = await binaryResponse(`/v2/live-tour/export.png?${params}`, { cache: 'no-store' })

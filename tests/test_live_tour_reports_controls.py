@@ -139,9 +139,11 @@ def test_report_export_selector_matches_same_invoice_line(monkeypatch):
 
 def test_full_board_image_starts_at_header_and_grows_for_every_row():
     state=state_with(employee('e1','Thiên Kim'))
+    original=live._png_bytes(state,NOW)
     state['employees'][0]['note']='Ghi chú dài '*30
-    first=Image.open(BytesIO(live._png_bytes(state,NOW)))
-    assert first.width > 4000
+    assert live._png_bytes(state,NOW) == original  # Omitted columns never enter the copy.
+    first=Image.open(BytesIO(original))
+    assert 1900 < first.width < 2500  # Thirteen readable columns, not the entire ledger.
     assert first.getpixel((10,2)) == (23,78,59)
     state['employees'] += [employee(f'e{i}',f'Nhân viên {i}') for i in range(2,45)]
     second=Image.open(BytesIO(live._png_bytes(state,NOW)))

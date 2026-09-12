@@ -9,7 +9,21 @@ def key(value):
     return ' '.join(''.join(c for c in value if unicodedata.category(c) != 'Mn').replace('đ', 'd').split())
 
 
-def shift_label(value):
+def display_shift_label(item):
+    name, start, end = (str(item.get(k) or '').strip() for k in ('Tên ca', 'Giờ bắt đầu', 'Giờ kết thúc'))
+    label = f'{name} ({start} - {end})' if name and start and end else name
+    if str(item.get('Ghi chú') or '').strip().casefold() == 'không đổi' and 'không đổi' not in label.casefold():
+        label += ' (Không đổi)'
+    return label
+
+
+def shift_label(value, definitions=None):
+    matches = [item for item in (definitions or []) if isinstance(item, dict)
+               and key(item.get('Bộ phận') or 'Nhân viên + Leader') == key('Nhân viên + Leader')
+               and key(item.get('Trạng thái')) != 'da xoa'
+               and key(value) in {key(item.get('Tên ca')), key(display_shift_label(item))}]
+    if len(matches) == 1 and matches[0].get('Ca chính') in {'Ca 1', 'Ca 2'}:
+        return matches[0]['Ca chính']
     match = re.match(r'^ca\s*([12])(?:\b|\()', key(value))
     return f'Ca {match.group(1)}' if match else ''
 
@@ -36,7 +50,8 @@ def reconcile(state, directory, make_employee):
         if row:
             worker.update(name=row['username'], username=row['username'], role=str(row.get('role') or '').strip().lower())
             if 'work_shift' in row:
-                worker['shift'] = shift_label(row.get('work_shift'))
+                worker['assigned_shift'] = shift_label(row.get('work_shift'), row.get('shift_definitions'))
+                worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else worker['assigned_shift']
             assigned.add(key(row['username']))
     # The directory owns membership now that manual roster removal is retired.
     state.pop('roster_excluded_usernames', None)
@@ -46,7 +61,8 @@ def reconcile(state, directory, make_employee):
             worker['roster_eligible'] = True
             state['employees'].append(worker)
             if 'work_shift' in row:
-                worker['shift'] = shift_label(row.get('work_shift'))
+                worker['assigned_shift'] = shift_label(row.get('work_shift'), row.get('shift_definitions'))
+                worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else worker['assigned_shift']
             assigned.add(key(row['username']))
     state['employee_directory'] = [
         {'username': row['username'], 'name': row['username'], 'role': str(row['role']).strip().lower()}

@@ -43,5 +43,10 @@ def sync_daily(state, directory, leaves):
         appointment = ' · '.join(filter(None, [current, reason]))
         if worker.get('work_status') != status or worker.get('appointment', '') != appointment:
             changed += 1
+        if absent:
+            worker.setdefault('assigned_shift', worker.get('shift', ''))
+            worker['shift'] = ''
+        else:
+            worker['shift'] = worker.get('assigned_shift', worker.get('shift', ''))
         worker.update(work_status=status, appointment=appointment, synced_leave_reason=reason)
     return {'updated': changed, 'message': f'Đã cập nhật lịch nghỉ cho {changed} nhân viên.'}

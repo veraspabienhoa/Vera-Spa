@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
 import EmployeeIdentityPanel from './EmployeeIdentityPanel'
+import KtvShiftSettingsPanel from './KtvShiftSettingsPanel'
 import VeraDateInput from '../components/VeraDateInput'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
 
@@ -410,6 +411,8 @@ export default function EmployeePage({ user }) {
           ><div className="metric-icon"><Icon size={21} /></div><div><span>{label}</span><strong>{value}</strong></div></button>
         ))}
       </div>
+
+      {permissions.ktv_shift_view && <KtvShiftSettingsPanel onChanged={() => load(true)}/>}
 
       <section className="panel staff-control-panel">
         <div className="staff-toolbar">
