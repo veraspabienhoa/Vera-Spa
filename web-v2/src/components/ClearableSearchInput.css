@@ -1,0 +1,7 @@
+.clearable-search-input{display:flex;align-items:center;position:relative;min-width:0;width:100%;flex:1}
+.clearable-search-input input{width:100%;min-width:0;box-sizing:border-box;padding-right:68px!important}
+.clearable-search-input input::-webkit-search-cancel-button,.clearable-search-input input::-webkit-search-decoration{display:none;-webkit-appearance:none}
+.clearable-search-input .search-clear-button{position:absolute;right:4px;top:50%;transform:translateY(-50%);min-width:56px;min-height:32px;padding:5px 8px;border:1px solid #cbdcd1;border-radius:6px;background:#edf5ee;color:#174e3b;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.clearable-search-input .search-clear-button:hover{background:#d7eade}
+.clearable-search-input .search-clear-button:focus-visible{outline:2px solid #174e3b;outline-offset:2px}
+.live-tour-search-select .clearable-search-input input{padding:12px;border:1px solid #cbdcd1;border-radius:9px;font:inherit}

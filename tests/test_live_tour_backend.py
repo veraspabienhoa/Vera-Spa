@@ -1483,7 +1483,7 @@ def test_room_occupancy_includes_retained_pr_without_customer_data_and_releases_
     assert not response['state']['employees']
     assert response['room_assignments'] == [{
         'id': 'e1', 'room': '1.1', 'service': '90 PR Tiêu chuẩn',
-        'status': 'Đang chờ', 'private': True,
+        'status': 'Đang chờ', 'private': True, 'private_room_share_group': '',
     }]
     state['employees'][0]['status'] = 'Chờ thanh toán'
     assert live._state_response(state, 2, NOW)['room_assignments'] == []

@@ -142,7 +142,22 @@ export function startSearchableDropdowns(doc = document) {
     list.className = 'vera-searchable-dropdown-options'
     list.setAttribute('role', 'listbox')
     list.setAttribute('aria-label', label)
-    if (!listId) menu.append(input)
+    if (!listId) {
+      const search = doc.createElement('div')
+      search.className = 'vera-dropdown-search-line'
+      const clear = doc.createElement('button')
+      clear.type = 'button'
+      clear.textContent = 'Clear'
+      clear.className = 'vera-dropdown-clear'
+      clear.setAttribute('aria-label', `Clear ${label}`)
+      clear.addEventListener('click', () => {
+        input.value = ''
+        input.dispatchEvent(new win.Event('input', { bubbles: true }))
+        input.focus({ preventScroll: true })
+      })
+      search.append(input, clear)
+      menu.append(search)
+    }
     menu.append(list)
     // The host is outside React-owned children; never insert proxy siblings in
     // keyed table rows (filtering/removing rows must remain safe).

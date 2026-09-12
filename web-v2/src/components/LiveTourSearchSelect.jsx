@@ -3,6 +3,7 @@ import { createPortal, flushSync } from 'react-dom'
 import { advanceBookingField } from '../lib/advanceBookingField'
 import { searchTextMatches, scrollSearchOption } from '../lib/searchText'
 import './LiveTourSearchSelect.css'
+import ClearableSearchInput from './ClearableSearchInput'
 
 export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, advanceOnSelect = false, invalid = false }) {
   const id = useId(), root = useRef(null), input = useRef(null), menu = useRef(null), side = useRef(null)
@@ -64,7 +65,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
     if (!root.current?.contains(event.relatedTarget) && !menu.current?.contains(event.relatedTarget)) { close(); if (!freeSearch) setQuery(selected?.label || '') }
   }}>
     {!hideLabel && <label htmlFor={id}>{label}</label>}
-    <input ref={input} data-booking-step={advanceOnSelect ? true : undefined} aria-invalid={invalid || undefined} id={id} type={freeSearch ? 'search' : 'text'} inputMode={inputMode} aria-label={hideLabel ? label : undefined} role="combobox" aria-autocomplete="list" aria-expanded={open && !disabled} aria-controls={`${id}-options`} aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined} autoComplete="off" value={query} required={required} disabled={disabled} placeholder={placeholder}
+    <ClearableSearchInput ref={input} onClear={() => { onChange(''); onSearch?.(''); setQuery(''); setIndex(0) }} data-booking-step={advanceOnSelect ? true : undefined} aria-invalid={invalid || undefined} id={id} type={freeSearch ? 'search' : 'text'} inputMode={inputMode} aria-label={hideLabel ? label : undefined} role="combobox" aria-autocomplete="list" aria-expanded={open && !disabled} aria-controls={`${id}-options`} aria-activedescendant={open && matches[activeIndex] ? `${id}-${activeIndex}` : undefined} autoComplete="off" value={query} required={required} disabled={disabled} placeholder={placeholder}
       onFocus={() => { setOpen(true); if (!freeSearch) setQuery(''); setIndex(0) }}
       onChange={(event) => { typing.current = Boolean(value); setQuery(event.target.value); onSearch?.(event.target.value); setOpen(true); setIndex(0); if (value && !freeSearch) onChange('') }}
       onKeyDown={(event) => {

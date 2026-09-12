@@ -1,3 +1,4 @@
+import ClearableSearchInput from '../components/ClearableSearchInput'
 import { Activity, Archive, BellRing, CalendarDays, Download, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
@@ -187,7 +188,7 @@ export default function AdminChangesPage() {
     <section className="panel data-toolbar"><div className="audit-toolbar-content">
       <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
       {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<VeraDateInput aria-label="Đến ngày" min={start} value={end} onChange={(e) => setEnd(e.target.value)}/></label></div>}
-      <div className="audit-search-line"><label>Người thực hiện<input type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-total">{data.changes?.length || 0} thay đổi</div></div>
+      <div className="audit-search-line"><label>Người thực hiện<ClearableSearchInput type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-total">{data.changes?.length || 0} thay đổi</div></div>
     </div></section>
 
     <section className="panel audit-list audit-detailed">{(data.changes || []).map((item) => <article key={item.id}><span className={`audit-operation ${item.event_type}`}>{labels[item.event_type] || item.event_type}</span><div><strong>{item.employee_name || 'Lịch nghỉ'}</strong><p>{item.detail || 'Thay đổi lịch nghỉ'}</p><FieldChanges item={item} />{item.actor && <small>Người thực hiện: <b>{item.actor}</b></small>}</div><time>{formatTime(item.created_at)}</time></article>)}{!data.changes?.length && <div className="setup-note">Không có thay đổi phù hợp bộ lọc.</div>}</section>

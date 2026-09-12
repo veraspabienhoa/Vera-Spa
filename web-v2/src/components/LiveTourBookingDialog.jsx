@@ -14,14 +14,15 @@ import LiveTourPageItems from './LiveTourPageItems'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 
-function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, busy, error, onAction, onClose }) {
+function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, canSharePrivateRoom, busy, error, onAction, onClose }) {
+  const [sharePrivateRoom, setSharePrivateRoom] = useState(false)
   const employees = data.state?.employees || []
   const catalog = data.services || []
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
   const eligibleEmployees = bookingEmployees(employees)
   const groupRooms = rooms.filter((item) => bookingRoomGroup(item.name, rooms) === context.roomGroup)
   const blankRow = (usedRooms = []) => {
-    const available = bookingRoomState(rooms, data.room_assignments || employees, catalog, '', '', []).options
+    const available = bookingRoomState(rooms, data.room_assignments || employees, catalog, '', '', [], sharePrivateRoom).options
       .filter((option) => option.group === context.roomGroup && !option.className && !usedRooms.includes(option.value))
     return { employee_id: '', customer_id: '', service_id: '', room: available[0]?.value || groupRooms[0]?.name || '', request: '' }
   }
@@ -37,13 +38,13 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, busy
     if (new Set(rows.map((row) => row.employee_id)).size !== rows.length) return setMessage('Một nhân viên không thể xuất hiện ở nhiều dòng booking.')
     if (new Set(rows.map((row) => tourNameKey(row.room))).size !== rows.length) return setMessage('Mỗi nhân viên phải được chọn một giường khác nhau.')
     for (const row of rows) {
-      const state = bookingRoomState(rooms, data.room_assignments || employees, catalog, row.employee_id, row.room, [{ service_id: row.service_id, quantity: 1 }])
+      const state = bookingRoomState(rooms, data.room_assignments || employees, catalog, row.employee_id, row.room, [{ service_id: row.service_id, quantity: 1 }], sharePrivateRoom)
       if (state.error) return setMessage(state.error)
     }
     const bookings = rows.map((row) => ({
       employee_id: row.employee_id, service_items: [{ service_id: row.service_id, quantity: 1 }], room: row.room,
       request: row.request, note, ...(canCustomers ? { customer_id: row.customer_id || null } : {}),
-      start_now: false,
+      start_now: false, share_private_room: sharePrivateRoom,
     }))
     const result = await onAction('multi_booking', { bookings }, [])
     if (result) onClose()
@@ -54,8 +55,9 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, busy
   return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog tour-multi-booking-dialog" title={`Đặt lịch · ${context.roomLabel}`}>
     {(error || message) && <p className="error-box" role="alert">{error || message}</p>}
     <form onSubmit={submit}><fieldset disabled={busy} className="tour-multi-booking-form">
+      {canSharePrivateRoom && <label className="wide"><input type="checkbox" checked={sharePrivateRoom} onChange={event => setSharePrivateRoom(event.target.checked)}/> Cho khách dùng chung phòng PR</label>}
       <div className="tour-multi-booking-rows">{rows.map((row, index) => {
-        const roomOptions = bookingRoomState(rooms, data.room_assignments || employees, catalog, row.employee_id, row.room, row.service_id ? [{ service_id: row.service_id, quantity: 1 }] : []).options.filter((option) => option.group === context.roomGroup)
+        const roomOptions = bookingRoomState(rooms, data.room_assignments || employees, catalog, row.employee_id, row.room, row.service_id ? [{ service_id: row.service_id, quantity: 1 }] : [], sharePrivateRoom).options.filter((option) => option.group === context.roomGroup)
         return <div className="tour-multi-booking-row" key={index}>
           <LiveTourSearchSelect label="Nhân viên *" options={employeeOptions.filter((option) => option.value === row.employee_id || !rows.some((item) => item.employee_id === option.value))} value={row.employee_id} onChange={(value) => updateRow(index, { employee_id: value })} required/>
           {canCustomers && <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={customerOptions} value={row.customer_id} onChange={(value) => updateRow(index, { customer_id: value })}/>}
@@ -73,7 +75,8 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, busy
   </LiveTourTransactionDialog>
 }
 
-export default function LiveTourBookingDialog({ data, context, canOperate, canBook, canCustomers, canPayment, busy, error, onAction, onClose, onCheckout }) {
+export default function LiveTourBookingDialog({ data, context, canOperate, canBook, canCustomers, canPayment, canSharePrivateRoom, busy, error, onAction, onClose, onCheckout }) {
+  const [sharePrivateRoom, setSharePrivateRoom] = useState(false)
   const employees = [...(data.state?.employees || []), ...(data.retained_assignments || [])]
   const initial = employees.find((row) => row.id === context.employeeId)
   const catalog = data.services || []
@@ -89,7 +92,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   const [message, setMessage] = useState('')
   const employee = employees.find((row) => row.id === employeeId)
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
-  const roomState = bookingRoomState(rooms, data.room_assignments || employees, catalog, employeeId, room, items)
+  const roomState = bookingRoomState(rooms, data.room_assignments || employees, catalog, employeeId, room, items, sharePrivateRoom)
   const editing = Boolean(employee?.service)
   const doing = ['dang thuc hien', 'dang su dung'].includes(tourNameKey(employee?.status))
   const selectedCustomer = (data.customers || []).find((row) => row.id === customerId)
@@ -108,6 +111,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   }
   const bookingPayload = () => ({
     employee_id: employeeId, service_items: items, room, request, note,
+    ...(!editing ? { share_private_room: sharePrivateRoom } : {}),
     ...(canCustomers ? { customer_id: customerId || null, customer_name: selectedCustomer?.name || '', customer_phone: selectedCustomer?.phone || '', combo_purchase_id: comboId || '' } : {}),
   })
   const selectEmployee = (id) => {
@@ -145,12 +149,13 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   const serviceOptions = catalog.filter((item) => catalogIsAvailable(item) && !items.some((row) => row.service_id === item.id)
     && (!selectedCombo?.component_balances || selectedCombo.component_balances.some((part) => part.service_id === item.id && part.remaining > 0)))
     .map((item) => ({ value: item.id, label: item.name, detail: `${item.duration ?? '∞'} phút · ${money(item.price)}` }))
-  if (context.roomGroup && !context.employeeId) return <LiveTourMultiBookingDialog data={data} context={context} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} busy={busy} error={error} onAction={onAction} onClose={onClose}/>
+  if (context.roomGroup && !context.employeeId) return <LiveTourMultiBookingDialog data={data} context={context} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canSharePrivateRoom={canSharePrivateRoom} busy={busy} error={error} onAction={onAction} onClose={onClose}/>
   return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog"
     title={completed ? 'Đã hoàn thành dịch vụ' : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}>
     {(roomState.error || error || message) && <p className="error-box" role="alert">{roomState.error || error || message}</p>}
     {completed ? <><p>Đã chuyển dịch vụ vào Chờ thanh toán. {employee?.name} đã rảnh để nhận lịch mới.</p><div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canPayment && <button type="button" className="primary-button" onClick={() => onCheckout(completed)}>Thanh toán</button>}</div></>
       : <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
+        {canSharePrivateRoom && !editing && <label className="wide"><input type="checkbox" checked={sharePrivateRoom} onChange={event => { setSharePrivateRoom(event.target.checked); setMessage('') }}/> Cho khách dùng chung phòng PR</label>}
         {context.employeeId ? <p className="wide"><strong>Nhân viên: {employee?.name}</strong>{editing && ` · ${employee.status}`}</p> : <div className="wide"><LiveTourSearchSelect advanceOnSelect label="Nhân viên *" options={employeeOptions} value={employeeId} onChange={selectEmployee} required/></div>}
         {canCustomers && <div className="tour-booking-customer"><LiveTourSearchSelect advanceOnSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={(data.customers || []).map((row) => ({ value: row.id, label: row.name, detail: row.phone, badge: customerTicketLabel(row) }))} value={customerId} onChange={selectCustomer} disabled={Boolean(editing && employee?.customer_id)}/><small>{customerId ? selectedCustomer?.phone : 'Để trống là Khách lẻ'}</small>{selectedCustomer && <strong className="tour-customer-ticket-count" aria-live="polite">{customerTicketLabel(selectedCustomer)}</strong>}</div>}
         {canCustomers && purchases.length > 0 && <div className="tour-booking-combo">

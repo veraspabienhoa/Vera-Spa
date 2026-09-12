@@ -23,7 +23,7 @@ const rows = [
 test('suggestions include all invoice entries and report rows without duplicates', () => {
   const options = tourFilterOptions([...rows, { employee_name: 'Thúy Vy', customer_name: 'Khách Đào', service: 'Facial' }])
   assert.equal(options.employee.length, 3)
-  assert.equal(options.customer.length, 2)
+  assert.equal(options.customer.length, 3)
   assert.equal(options.service.length, 3)
   assert.deepEqual(tourFilterOptions(), { employee: [], customer: [], service: [] })
   assert.deepEqual(filterTourRows(rows, { employee: 'my duyen', service: 'foot' }), [])
@@ -57,10 +57,14 @@ test('typing, choosing, clearing and switching lists update searches immediately
     current = { ...EMPTY_TOUR_FILTERS }
     await act(render)
     await act(() => input('Khách hàng').focus())
-    await act(() => [...document.querySelectorAll('[role=option]')].find(x => x.textContent === 'Khách Đào').click())
+    await act(() => [...document.querySelectorAll('[role=option]')].find(x => x.textContent === 'Khách Đào - 0901234567').click())
     assert.deepEqual(filterTourRows(rows, current).map(x => x.id), ['a'])
     await type(input('Khách hàng'), '090 123 4567')
     assert.equal(filterTourRows(rows, current).length, 1)
+    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', 'Khách Đào - 0901234567'])
+    await act(() => input('Khách hàng').closest('.clearable-search-input').querySelector('button').click())
+    assert.equal(current.customer, '')
+    assert.equal(input('Khách hàng').value, '')
     source = [{ employee_name: 'Thúy Vy', service: 'Facial', customer_name: 'Khách Mới' }]
     await act(render)
     await act(() => document.querySelector('.live-tour-filters-reset').click())
@@ -82,7 +86,7 @@ test('customer and service catalogs remain searchable when the active panel has 
   try {
     await act(() => root.render(React.createElement(module.exports.default, props)))
     await act(() => input('Khách hàng').focus())
-    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', '0919442626', 'Anh Lưu'])
+    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', 'Anh Lưu - 0919442626'])
     await act(() => input('Dịch vụ').focus())
     assert.deepEqual([...document.querySelectorAll('[role=option]')].map(x => x.textContent), ['Tất cả', '90 Tiêu chuẩn'])
   } finally { await act(() => root.unmount()) }

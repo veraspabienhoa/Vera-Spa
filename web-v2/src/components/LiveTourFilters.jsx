@@ -1,6 +1,7 @@
 import './LiveTourFilters.css'
 import { useMemo } from 'react'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
+import { customerMatches } from '../lib/customerSearch'
 import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
 export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [] }) {
@@ -8,10 +9,10 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
     const result = tourFilterOptions(rows)
     const merge = (key, labels) => {
       const unique = new Map(result[key].map((option) => [option.label, option]))
-      labels.filter(Boolean).forEach((label) => unique.set(String(label), { value: String(label), label: String(label) }))
+      labels.filter(Boolean).forEach((label) => unique.set(String(label), { value: key === 'customer' ? String(label).replace(' - ', ' ') : String(label), label: String(label) }))
       result[key] = [...unique.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi'))
     }
-    merge('customer', customers.flatMap((customer) => [customer?.name, customer?.phone]))
+    merge('customer', customers.map((customer) => [customer?.name, customer?.phone].filter(Boolean).join(' - ')))
     merge('service', services.map((service) => service?.name || service?.service))
     return result
   }, [customers, rows, services])
@@ -24,7 +25,7 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
     </div>
     <div className="live-tour-filters-row live-tour-filters-search">
       <LiveTourSearchSelect label="Nhân viên" placeholder="Tìm tên nhân viên" options={options.employee} value={value.employee} searchValue={value.employee} onSearch={text => change({ employee: text })} onChange={text => change({ employee: text })} showAllOptions emptyLabel="Tất cả"/>
-      <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" options={options.customer} value={value.customer} searchValue={value.customer} onSearch={text => change({ customer: text })} onChange={text => change({ customer: text })} showAllOptions emptyLabel="Tất cả"/>
+      <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={(option, query) => { const [name, phone] = option.label.split(' - '); return customerMatches({ name, phone }, query) }} options={options.customer} value={value.customer} searchValue={value.customer} onSearch={text => change({ customer: text })} onChange={text => change({ customer: text })} showAllOptions emptyLabel="Tất cả"/>
       <LiveTourSearchSelect label="Dịch vụ" placeholder="Tìm dịch vụ" options={options.service} value={value.service} searchValue={value.service} onSearch={text => change({ service: text })} onChange={text => change({ service: text })} showAllOptions emptyLabel="Tất cả"/>
     </div>
     <div className="live-tour-filters-actions">

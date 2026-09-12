@@ -19,7 +19,7 @@ export function isPrivateBooking(service, catalog) {
     || /(^|[^a-z0-9])p\s*\.?\s*rieng(?=$|[^a-z0-9])/.test(name)
     || catalog.some(item => item.private && name.split(/\s*&\s*/).includes(tourNameKey(item.name)))
 }
-export function bookingRoomState(rooms, employees, catalog, employeeId, selectedRoom, items = []) {
+export function bookingRoomState(rooms, employees, catalog, employeeId, selectedRoom, items = [], sharePrivateRoom = false) {
   const active = employees.filter(row => row.id !== employeeId && row.room && ['dang cho', 'dang thuc hien', 'dang su dung'].includes(tourNameKey(row.status)))
   const group = bookingRoomGroup(selectedRoom, rooms)
   const occupants = active.filter(row => bookingRoomGroup(row.room, rooms) === group)
@@ -28,14 +28,16 @@ export function bookingRoomState(rooms, employees, catalog, employeeId, selected
     return service && (service.private || isPrivateBooking(service.name, catalog))
   })
   const locked = occupants.some(row => (row.private || isPrivateBooking(row.service, catalog)))
-  const error = !selectedRoom ? '' : locked ? `Phòng ${group} đang bị khóa toàn phòng bởi dịch vụ PR.`
-    : requestedPrivate && occupants.length ? `Không thể đặt dịch vụ PR: Phòng ${group} đang có khách. PR cần toàn phòng trống.`
+  const shared = sharePrivateRoom || (employees.find(row => row.id === employeeId)?.private_room_share_group === group && occupants.every(row => row.private_room_share_group === group))
+  const error = !selectedRoom ? '' : locked && !shared ? `Phòng ${group} đang bị khóa toàn phòng bởi dịch vụ PR.`
+    : requestedPrivate && occupants.length && !shared ? `Không thể đặt dịch vụ PR: Phòng ${group} đang có khách. PR cần toàn phòng trống.`
     : occupants.some(row => tourNameKey(row.room) === tourNameKey(selectedRoom)) ? `Giường/phòng ${selectedRoom} đang được sử dụng.` : ''
   const options = rooms.filter(row => row.active !== false).flatMap(row => {
     const roomGroup = bookingRoomGroup(row.name, rooms)
     const busy = active.filter(worker => bookingRoomGroup(worker.room, rooms) === roomGroup)
-    if (busy.some(worker => (worker.private || isPrivateBooking(worker.service, catalog)))) return []
+    if (!sharePrivateRoom && busy.some(worker => (worker.private || isPrivateBooking(worker.service, catalog))) && !(shared && roomGroup === group)) return []
     const busyAtPosition = busy.filter(worker => tourNameKey(worker.room) === tourNameKey(row.name))
+    if (sharePrivateRoom && busyAtPosition.length) return []
     return [{ value: row.name, label: row.name, group: roomGroup,
       className: busyAtPosition.length ? 'tour-room-option-occupied' : '',
       detail: [row.area_name, ...busyAtPosition.map(worker => `${worker.room}: ${worker.service} · ${tourNameKey(worker.status) === 'dang thuc hien' ? 'Thực hiện' : worker.status}`)].filter(Boolean).join(' · ') }]

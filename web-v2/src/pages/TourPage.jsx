@@ -1,3 +1,4 @@
+import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { Clock3, Crown, DoorOpen, ExternalLink, LayoutGrid, Link2, RefreshCw, Save, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -515,7 +516,7 @@ export default function TourPage({ user }) {
         </div>}
       </div>
       <div className="tour-quick-tools">
-        <label className="tour-employee-search" aria-label="Tìm nhanh tên nhân viên"><Search size={16}/><input type="search" value={employeeSearch} placeholder="Tìm nhanh tên nhân viên…" onChange={(event) => setEmployeeSearch(event.target.value)} /></label>
+        <label className="tour-employee-search" aria-label="Tìm nhanh tên nhân viên"><Search size={16}/><ClearableSearchInput type="search" value={employeeSearch} placeholder="Tìm nhanh tên nhân viên…" onChange={(event) => setEmployeeSearch(event.target.value)} /></label>
       </div>
       </section>
     </div>

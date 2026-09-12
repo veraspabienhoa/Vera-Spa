@@ -140,6 +140,8 @@ def _definition_for_shift(
     role: str,
 ) -> dict[str, Any]:
     wanted = v42._norm(shift_name)
+    if not wanted:
+        return {}
     department = ROLE_DEPARTMENT.get(role, "")
     candidates = []
     for item in definitions:
@@ -147,12 +149,14 @@ def _definition_for_shift(
         if not name or str(item.get("Trạng thái") or "").strip().casefold() == "đã xóa":
             continue
         item_department = str(item.get("Bộ phận") or "").strip()
+        if department and v42._norm(item_department) != v42._norm(department):
+            continue
         score = 0
         if v42._norm(name) == wanted:
             score += 100
         elif wanted and (v42._norm(name) in wanted or wanted in v42._norm(name)):
             score += 50
-        if department and item_department == department:
+        if score and department and item_department == department:
             score += 10
         if score:
             candidates.append((score, item))
@@ -185,6 +189,7 @@ def _placeholder_record(
             attendance_expected = False
             attendance_note = "Nghỉ theo Lịch làm việc"
     elif role in {"quanly", "letan", "locker", "tapvu"}:
+        shift_name, shift_start, shift_end = "", "", ""
         attendance_expected = False
         attendance_note = "Chưa xếp Lịch làm việc trong ngày"
     elif not shift_name:
@@ -192,7 +197,7 @@ def _placeholder_record(
         attendance_note = "Chưa phân ca làm việc"
 
     definition = _definition_for_shift(shift_name, definitions, role)
-    if definition:
+    if definition and not schedule:
         shift_name = str(definition.get("Tên ca") or shift_name).strip()
         shift_start = str(definition.get("Giờ bắt đầu") or shift_start).strip()
         shift_end = str(definition.get("Giờ kết thúc") or shift_end).strip()
@@ -385,6 +390,13 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
                 base["shift_start"] = str(schedule.get("start_time") or base.get("shift_start") or "").strip()
                 base["shift_end"] = str(schedule.get("end_time") or base.get("shift_end") or "").strip()
 
+        if role in {"quanly", "letan", "locker", "tapvu"}:
+            scheduled = bool(schedule and v42._norm(schedule.get("shift_code")) != "nghi")
+            base["shift"] = str((schedule or {}).get("shift_code") or "")
+            base["shift_start"] = str((schedule or {}).get("start_time") or "") if scheduled else ""
+            base["shift_end"] = str((schedule or {}).get("end_time") or "") if scheduled else ""
+            base["attendance_note"] = "" if scheduled else ("Nghỉ theo Lịch làm việc" if schedule else "Chưa xếp Lịch làm việc trong ngày")
+
         raw_code = v42._first(representative, v42.CODE_ALIASES)
         if raw_code:
             base["employee_code"] = str(raw_code).strip()
@@ -397,7 +409,7 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
             if faceid.get("raw_faceid_count", 0) >= 2
             else "TimeSoft"
         )
-        base["attendance_expected"] = True
+        base["attendance_expected"] = scheduled if role in {"quanly", "letan", "locker", "tapvu"} else True
         base["attendance_roster_only"] = False
         output.append(base)
 

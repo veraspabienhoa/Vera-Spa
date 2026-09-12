@@ -23,7 +23,7 @@ const built = await build({
   plugins: [{ name: 'mock-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const veraApi = globalThis.__tourTestApi;', loader: 'js' }))
-    b.onResolve({ filter: /^\.\.\/components\// }, (args) => /LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput)$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
+b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(ClearableSearchInput|LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
     b.onLoad({ filter: /.*/, namespace: 'dialog' }, () => ({ contents: 'export default function Dialog(){return null}', loader: 'js' }))
   } }],
 })
@@ -480,6 +480,31 @@ test('booking dropdown shows all room results and reports a PR collision immedia
     await chooseOption(input, '16', f)
     assert.equal(document.querySelector('.tour-booking-dialog [role=alert]'), null)
     assert.equal(input.value, '16.1')
+  } finally { await f.dispose() }
+})
+
+test('reception can explicitly share a PR room using only its free beds', async () => {
+  const f = await fixture({ role: 'letan', setup(data) {
+    data.capabilities.booking = true
+    data.services.push({ id: 'pr', name: '90 PR Tiêu chuẩn', price: 300000 })
+    data.state.employees = [{ id:'e1', name:'An An', shift:'Ca 1', work_status:'Đi làm', service:'', status:'' },
+      { id:'busy', room:'2.1', service:'90 PR Tiêu chuẩn', status:'Đang chờ' }]
+    data.state.rooms = ['2.1','2.2','4'].map(name => ({name}))
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await chooseOption(inputFor('Dịch vụ'), 'PR', f)
+    const input = inputFor('Phòng / giường *')
+    await f.type(input, '2')
+    assert.equal(document.querySelectorAll('.tour-search-scroll [role=option]').length, 0)
+    const toggle = [...document.querySelectorAll('.tour-booking-dialog label')].find(label => label.textContent.includes('Cho khách dùng chung phòng PR')).querySelector('input')
+    await act(() => toggle.click())
+    await chooseOption(input, '2', f)
+    assert.equal(input.value, '2.2')
+    assert.equal(document.querySelector('.tour-booking-dialog [role=alert]'), null)
+    await act(async () => document.querySelector('.tour-booking-dialog button[value=book]').click())
+    assert.equal(f.writes[0].payload.room, '2.2')
+    assert.equal(f.writes[0].payload.share_private_room, true)
   } finally { await f.dispose() }
 })
 

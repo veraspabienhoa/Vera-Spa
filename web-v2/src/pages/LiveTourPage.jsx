@@ -1,3 +1,4 @@
+import ClearableSearchInput from '../components/ClearableSearchInput'
 import { breakCellValue } from '../lib/liveTourBreaktime'
 import { watchLeaveChanges } from '../lib/leaveRefresh'
 import { canChangeEmployee } from '../lib/liveTourEmployeeChange'
@@ -1565,7 +1566,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
       {activePanel === 'customers' && canCustomers && <div className="live-tour-panel-body">
         <div className="live-tour-panel-toolbar"><h2>KHÁCH HÀNG</h2><div className="live-tour-panel-toolbar-actions"><button type="button" className="primary-button" disabled={!canPayment} onClick={() => openModal('combo_purchase', { rowIds: [] })}><Plus size={13}/> Mua combo cho khách hàng</button>{isAdmin && <button type="button" className="secondary-button" disabled={!canImportCombo} onClick={() => openModal('combo_import')}>Nhập combo</button>}<button type="button" className="secondary-button" disabled={!canExportKind('customers')} onClick={() => exportData('customers')}><Download size={13}/> Xuất khách hàng</button></div></div>
-        <label className="live-tour-customer-search"><Search size={14}/><input type="search" aria-label="Tìm tên hoặc số điện thoại khách hàng" autoComplete="off" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
+        <label className="live-tour-customer-search"><Search size={14}/><ClearableSearchInput type="search" aria-label="Tìm tên hoặc số điện thoại khách hàng" autoComplete="off" value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Tìm tên hoặc số điện thoại khách hàng…"/></label>
         <div className="live-tour-card-grid" style={{ marginTop: 8 }}>
           {filteredCustomers.map((customer, index) => <article className="live-tour-data-card live-tour-customer-card" role="button" tabIndex="0" aria-label={`Xem lịch sử ${itemLabel(customer, `Khách hàng ${index + 1}`)}`} onClick={(event) => { if (!event.target.closest('button')) void openCustomerHistory(customer) }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.target.closest('button')) void openCustomerHistory(customer) }} key={itemId(customer, index)}>
             <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong>
@@ -1637,7 +1638,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     {comboLookupOpen && canViewComboPackages && <LiveTourModal title="Kiểm tra Gói Combo khách hàng" onClose={() => setComboLookupOpen(false)}>
       <div className="live-tour-combo-lookup">
         <div className="live-tour-panel-toolbar"><p>Tìm khách hàng để xem số vé còn lại, ngày mua và toàn bộ lịch sử sử dụng combo.</p><button type="button" className="secondary-button" disabled={!canExportKind('customers') || Boolean(actionBusy)} onClick={() => exportData('customers')}><Download size={13}/> Xuất Excel</button></div>
-        <label className="live-tour-customer-search"><Search size={14}/><input autoFocus type="search" aria-label="Tìm khách hàng trong Gói Combo" autoComplete="off" value={comboLookupSearch} onChange={(event) => setComboLookupSearch(event.target.value)} placeholder="Tìm theo tên khách hàng hoặc số điện thoại…"/></label>
+        <label className="live-tour-customer-search"><Search size={14}/><ClearableSearchInput autoFocus type="search" aria-label="Tìm khách hàng trong Gói Combo" autoComplete="off" value={comboLookupSearch} onChange={(event) => setComboLookupSearch(event.target.value)} placeholder="Tìm theo tên khách hàng hoặc số điện thoại…"/></label>
         <div className="live-tour-card-grid live-tour-combo-lookup-grid">
           {comboLookupCustomers.map((customer, index) => <button type="button" className="live-tour-data-card live-tour-combo-customer" onClick={() => openCustomerHistory(customer)} key={itemId(customer, index)}>
             <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong><span>{customer?.phone || 'Chưa có số điện thoại'}</span>
@@ -1797,7 +1798,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </form>
     </LiveTourModal>}
 
-    {bookingContext && <LiveTourBookingDialog data={data} context={bookingContext} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
+{bookingContext && <LiveTourBookingDialog data={data} context={bookingContext} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
     {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} canEditDate={capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {customerContext && <LiveTourCustomerDialog context={customerContext} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
     {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} canEditDate={capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}

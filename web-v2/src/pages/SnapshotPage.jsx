@@ -1,3 +1,4 @@
+import ClearableSearchInput from '../components/ClearableSearchInput'
 import { BellRing, CalendarDays, Download, Power, RefreshCw, ScanLine, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
@@ -302,9 +303,9 @@ export default function SnapshotPage({ user }) {
         </div>
         {period === 'Tùy chỉnh' && <div className="attendance-date-custom"><label><CalendarDays size={15} /> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }} /></label><label><CalendarDays size={15} /> Đến ngày<VeraDateInput aria-label="Đến ngày" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label></div>}
         <div className="attendance-search-grid">
-          <label>Tên nhân viên<input type="search" value={filters.employee} onChange={(e) => setFilters({...filters, employee:e.target.value})} placeholder="Tìm tên nhân viên" list="attendance-employees" /></label>
-          <label>Bộ phận<input type="search" value={filters.department} onChange={(e) => setFilters({...filters, department:e.target.value})} placeholder="Tìm bộ phận" list="attendance-departments" /></label>
-          <label>Ca làm việc<input type="search" value={filters.shift} onChange={(e) => setFilters({...filters, shift:e.target.value})} placeholder="Tìm ca làm việc" list="attendance-shifts" /></label>
+          <label>Tên nhân viên<ClearableSearchInput type="search" value={filters.employee} onChange={(e) => setFilters({...filters, employee:e.target.value})} placeholder="Tìm tên nhân viên" list="attendance-employees" /></label>
+          <label>Bộ phận<ClearableSearchInput type="search" value={filters.department} onChange={(e) => setFilters({...filters, department:e.target.value})} placeholder="Tìm bộ phận" list="attendance-departments" /></label>
+          <label>Ca làm việc<ClearableSearchInput type="search" value={filters.shift} onChange={(e) => setFilters({...filters, shift:e.target.value})} placeholder="Tìm ca làm việc" list="attendance-shifts" /></label>
           <datalist id="attendance-employees">{(options.employees || []).map((value) => <option key={value} value={value}/>)}</datalist>
           <datalist id="attendance-departments">{(options.departments || []).map((value) => <option key={value} value={value}/>)}</datalist>
           <datalist id="attendance-shifts">{(options.shifts || []).map((value) => <option key={value} value={value}/>)}</datalist>

@@ -1,3 +1,4 @@
+import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { ArrowRightCircle, CheckCircle2, Download, Mail, Plus, RefreshCw, Save, Search, Settings2, Trash2, Upload, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -472,7 +473,7 @@ export default function PayrollPageEnhanced({ user }) {
     {draft?.rows?.length > 0 && <section className="panel payroll-draft-panel">
       <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
       <div className="payroll-search-toolbar">
-        <label className="payroll-search-box">Tìm tên nhân viên<Search size={16} /><input type="search" value={draftSearch} disabled={isBusy} placeholder={`Tìm trong ${draft.period_label}`} onChange={(event) => setDraftSearch(event.target.value)} /></label>
+        <label className="payroll-search-box">Tìm tên nhân viên<Search size={16} /><ClearableSearchInput type="search" value={draftSearch} disabled={isBusy} placeholder={`Tìm trong ${draft.period_label}`} onChange={(event) => setDraftSearch(event.target.value)} /></label>
         <div><strong>Hiển thị {visibleDraftRows.length}/{draftRows.length} nhân viên</strong></div>
       </div>
       {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllSelected} disabled={isBusy || !visibleDraftRows.length} /> Chọn tất cả nhân viên đang hiển thị để gửi email</label>}

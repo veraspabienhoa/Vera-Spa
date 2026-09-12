@@ -1,3 +1,4 @@
+import ClearableSearchInput from '../components/ClearableSearchInput'
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
@@ -869,7 +870,7 @@ export default function LeaveRegistrationPage({ user }) {
             <div className="statistics-employee-search">
               <label className="employee-search-field statistics-employee-search-field">
                 <span><Search size={15} aria-hidden="true" /> Tên nhân viên</span>
-                <input
+                <ClearableSearchInput
                   type="search"
                   value={statsEmployeeSearch}
                   onChange={(event) => setStatsEmployeeSearch(event.target.value)}
@@ -1029,7 +1030,7 @@ export default function LeaveRegistrationPage({ user }) {
             )}
             <label className="employee-search-field">
               <span><Search size={15} aria-hidden="true" /> Tên nhân viên</span>
-              <input
+              <ClearableSearchInput
                 type="search"
                 value={employeeSearch}
                 onChange={(event) => {

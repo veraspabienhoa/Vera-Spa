@@ -1,3 +1,4 @@
+import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Search, Trash2, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -221,7 +222,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
             <div className="payroll-personal-metric"><span>TỔNG CÒN LẠI</span><strong>{money(totals.remaining_total)}</strong></div>
             <div className="payroll-personal-metric warning"><span>NGHĨA VỤ CHƯA HOÀN THÀNH</span><strong>{money(totals.obligation_total)}</strong></div>
           </div>
-          <label className="payroll-personal-search"><Search size={16}/><input type="search" value={search} placeholder="Tìm Leader / Nhân viên" onChange={(event) => setSearch(event.target.value)} /></label>
+          <label className="payroll-personal-search"><Search size={16}/><ClearableSearchInput type="search" value={search} placeholder="Tìm Leader / Nhân viên" onChange={(event) => setSearch(event.target.value)} /></label>
 
           <div className="payroll-personal-section-title"><h3>ĐANG CÒN ĐÓNG TIỀN TÍCH LŨY ({activeRows.length})</h3></div>
           <AdminTrackingTable rows={activeRows} editable onAdd={addAccumulation} onEdit={editAccumulation} onDelete={deleteAccumulation} busyEmployee={busyEmployee} emptyText="Không có Leader/Nhân viên đang còn đóng tiền tích lũy." />

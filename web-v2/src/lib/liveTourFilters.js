@@ -43,12 +43,12 @@ export function tourFilterOptions(rows = []) {
   const values = { employee: new Set(), customer: new Set(), service: new Set() }
   const add = (key, value) => { if (String(value || '').trim()) values[key].add(String(value).trim()) }
   for (const row of rows) {
-    add('customer', row.customer_name)
+    add('customer', [row.customer_name, row.customer_phone].filter(Boolean).join(' - '))
     for (const entry of row.entries?.length ? row.entries : [row]) {
       add('employee', entry.employee_name)
       add('service', entry.service)
     }
   }
   return Object.fromEntries(Object.entries(values).map(([key, items]) => [key,
-    [...items].sort((a, b) => a.localeCompare(b, 'vi')).map(label => ({ value: label, label }))]))
+    [...items].sort((a, b) => a.localeCompare(b, 'vi')).map(label => ({ value: key === 'customer' ? label.replace(' - ', ' ') : label, label }))]))
 }

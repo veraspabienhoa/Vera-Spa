@@ -895,7 +895,7 @@ def _catalog_referenced(state: dict[str, Any], kind: str, item: dict[str, Any]) 
     return any(name == _norm(entry.get(field)) or name in {_norm(value) for value in str(entry.get(field) or "").split("&")} or (kind == "services" and any(part.get("service_id") == item["id"] for part in entry.get("service_items", []))) for entry in entries)
 
 
-def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room: str, service: str) -> None:
+def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room: str, service: str, *, share_private_room: bool = False) -> None:
     wanted_room = _norm(room)
     wanted_group = _norm(_catalog_room_group(state, room))
     wanted_private = _catalog_private_service(state, service)
@@ -906,6 +906,10 @@ def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room
         same_bed = _norm(current_room) == wanted_room
         same_group = _norm(_catalog_room_group(state, current_room)) == wanted_group
         current_private = _catalog_private_service(state, employee.get("service"))
+        shared = share_private_room or (candidate.get("private_room_share_group") == wanted_group
+                                       and employee.get("private_room_share_group") == wanted_group)
+        if same_group and not same_bed and shared:
+            continue
         if same_bed or (same_group and (wanted_private or current_private)):
             if wanted_private or current_private:
                 raise HTTPException(409, f"Phòng {wanted_group} đang bị khóa toàn phòng bởi dịch vụ PR.")
@@ -945,7 +949,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
     for key in ("combo_purchase_id", "combo_reserved_units", "combo_reserved_components"):
         employee.pop(key, None)
     for key in (
-        "service", "request", "request_source", "room", "status", "booked_at", "booking_actor",
+        "service", "request", "request_source", "room", "status", "booked_at", "booking_actor", "private_room_share_group",
         "started_at", "completed_at", "payment_status", "customer_id", "customer_name",
         "customer_phone", "booking_id",
         "service_price_source", "completion_note",
@@ -1181,7 +1185,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
         raise HTTPException(400, "Vị trí phục vụ đã ngừng sử dụng.")
     request, auto_request = _auto_yc_ca1(now, employee, payload.get("request"), bool(payload.get("auto_yc_ca1")))
     service, duration, price, service_items = _service_selection(state, {**payload, "request": request}, now)
-    _check_room_collision(state, employee, room, service)
+    _check_room_collision(state, employee, room, service, share_private_room=payload.get("share_private_room") is True)
     customer = None
     if any(payload.get(key) for key in ("customer_id", "customer_name", "customer_phone", "phone")):
         customer = _customer(state, payload)
@@ -1204,6 +1208,12 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
         "note": str(payload.get("note", employee.get("note")) or ""),
         "vip": bool(payload.get("vip", employee.get("vip", False))),
     })
+    employee.pop("private_room_share_group", None)
+    if payload.get("share_private_room") is True:
+        group = _norm(_catalog_room_group(state, room))
+        for occupant in state["employees"]:
+            if _active_booking(occupant) and _norm(_catalog_room_group(state, occupant.get("room"))) == group:
+                occupant["private_room_share_group"] = group
     if payload.get("start_now"):
         _start_employee(state, employee, now)
     return employee
@@ -1842,7 +1852,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         target_position["counter_key"] = counter_key
         target_position["counter_day"] = original_position["counter_day"]
         fields = ("service", "service_items", "service_price", "service_price_source", "duration",
-                  "request", "request_source", "room", "status", "booked_at", "booking_actor", "booking_id",
+                  "request", "request_source", "room", "status", "booked_at", "booking_actor", "booking_id", "private_room_share_group",
                   "started_at", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
                   "completion_delta_minutes", "steam_elapsed_minutes", "customer_id", "customer_name",
                   "customer_phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components", "note")
@@ -2919,6 +2929,7 @@ def _state_response(
         "available_rooms": available_groups, "available_beds": available, "metric_snapshots": metrics,
         # Occupancy must include hidden/retained staff without exposing customer data.
         "room_assignments": [{"id": row["id"], "room": row.get("room", ""),
+                              "private_room_share_group": row.get("private_room_share_group", ""),
                               "service": row.get("service", ""), "status": row.get("status", ""),
                               "private": _catalog_private_service(state, row.get("service"))}
                              for row in state["employees"] if _active_booking(row)],
@@ -3673,6 +3684,10 @@ def install_live_tour_routes(
         if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được nhập combo.")
         payload = deepcopy(body.payload)
+        sharing = [payload, *[row for row in (payload.get("bookings") or []) if isinstance(row, dict)]]
+        if any(row.get("share_private_room") for row in sharing):
+            if action not in {"booking", "multi_booking"} or str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly", "letan"}:
+                raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được chủ động đặt chung phòng PR.")
         actor = str(ident.employee_username or ident.full_name or "web_v2")
         idempotency_key = str(body.idempotency_key or payload.get("idempotency_key") or "").strip()
         if idempotency_key and not 8 <= len(idempotency_key) <= 160:
