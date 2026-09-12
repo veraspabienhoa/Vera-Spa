@@ -86,3 +86,5 @@
 
 .live-tour-page .tour-room-grid .tour-room-card.has-standard-service{background:#fff0c2}
 .live-tour-page .tour-room-services{font-size:9px;line-height:1.25;font-weight:700;overflow-wrap:anywhere;white-space:normal;margin-top:2px}
+
+.live-tour-page .live-tour-controls-actions>input{width:42px;min-width:0;height:18px;padding:0 2px;font:inherit;font-size:10px}@media(max-width:820px){.live-tour-controls-grid{grid-template-columns:repeat(10,max-content)}.live-tour-page .live-tour-controls-actions>input{height:24px}}

@@ -26,7 +26,7 @@ const built = await build({
   } }],
 })
 
-async function fixture({ canEdit = true, conflict = false, payable = false, setup, preserveStorage = false } = {}) {
+async function fixture({ canEdit = true, conflict = false, payable = false, setup, preserveStorage = false, role } = {}) {
   if (!preserveStorage) dom.window.localStorage.clear()
   const records = ['An An', 'An Bình'].map((name, i) => ({ _id: `e${i + 1}`, 'Tên nhân viên': name, 'STT': i + 1,
     'Lịch hẹn': i ? '' : '16:00', 'Vào ca': 'Ca 1', 'Trạng thái': '', 'Dịch vụ': '', 'Phòng': '',
@@ -52,7 +52,7 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   const module = { exports: {} }
   new Function('require', 'module', 'exports', built.outputFiles[0].text)(require, module, module.exports)
   const root = createRoot(document.querySelector('#root'))
-  await act(async () => root.render(React.createElement(module.exports.default, { user: { role: canEdit ? 'letan' : 'nhanvien', permissions: {} } })))
+  await act(async () => root.render(React.createElement(module.exports.default, { user: { role: role || (canEdit ? 'letan' : 'nhanvien'), permissions: {} } })))
   const type = async (input, value) => act(() => {
     Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, value)
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
@@ -503,6 +503,27 @@ test('booking advances on selection and Enter, skips quantities, and permits ret
     assert.equal(document.querySelectorAll('.tour-booking-item').length, 2)
     assert.equal(document.activeElement, room)
     assert.equal(f.writes.length, 0)
+  } finally { await f.dispose() }
+})
+
+test('admin bottom and direct STT actions target selected employee; manual order survives frontend sorting', async () => {
+  const f = await fixture({ role: 'admin', setup(data) {
+    data.records[0]._manual_order = true; data.records[0]._sort_index = 1
+    data.records[1]._manual_order = true; data.records[1]._sort_index = 0
+  } })
+  try {
+    const tableRows = [...document.querySelectorAll('.tour-records-panel tbody tr')]
+    assert.ok(tableRows[0].textContent.includes('An Bình'))
+    await act(() => tableRows[0].querySelector('input[type=checkbox]').click())
+    await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Xuống cuối').click())
+    assert.equal(f.writes[0].action, 'admin_reorder')
+    assert.equal(f.writes[0].payload.direction, 'bottom')
+    await f.type(document.querySelector('input[aria-label="STT mới"]'), '1')
+    await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Đổi STT').click())
+    assert.equal(f.writes[1].payload.position, 1)
+    const actions = [...document.querySelectorAll('.live-tour-controls-actions button')]
+    const add = actions.findIndex(b => b.textContent === 'Thêm dịch vụ')
+    assert.equal(actions[add + 1].textContent, 'Hủy Booking')
   } finally { await f.dispose() }
 })
 

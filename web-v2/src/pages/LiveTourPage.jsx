@@ -197,6 +197,7 @@ function groupCount(records, key) {
 }
 
 function prioritizeRecords(records, columns, activeFilter) {
+  if (records.some(record => record._manual_order)) return [...records].sort((a, b) => Number(a._sort_index || 0) - Number(b._sort_index || 0))
   const priorityGroup = activeFilter === 'finishing' ? 'available' : activeFilter
   const startedColumn = findColumn(columns, ['TG BAT DAU THUC HIEN', 'BAT DAU THUC HIEN'])
   return records.map((record, index) => ({ record, index })).sort((left, right) => {
@@ -458,7 +459,7 @@ const PAYMENT_ACTIONS = new Set(['checkout', 'quick_checkout', 'move_pending', '
 const ADMIN_ACTIONS = new Set([
   'room_upsert', 'room_delete', 'service_upsert', 'service_delete',
   'combo_upsert', 'combo_delete', 'combo_import', 'backup', 'restore', 'clear_expired',
-  'set_vip', 'payment_settings_update',
+  'set_vip', 'payment_settings_update', 'admin_reorder',
 ])
 
 function canRunAction(action, capabilities) {
@@ -557,6 +558,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [clockMs, setClockMs] = useState(Date.now())
   const [activePanel, setActivePanel] = useState('pending')
   const [reorderSteps, setReorderSteps] = useState('1')
+  const [targetPosition, setTargetPosition] = useState('')
   const [modal, setModal] = useState(null)
   const [bookingContext, setBookingContext] = useState(null)
   const [pendingContext, setPendingContext] = useState(null)
@@ -678,7 +680,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       } else {
         await load(true, true)
       }
-      setSelectedIds(new Set())
+      if (!['reorder', 'admin_reorder'].includes(action)) setSelectedIds(new Set())
       setNotice(result?.message === 'Đã cập nhật Live Tour.' ? '' : result?.message || '')
       return result
     } catch (err) {
@@ -1432,10 +1434,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <div className="live-tour-controls-group" role="group" aria-label="Thứ tự">
               <div className="live-tour-controls-actions">
               <select value={reorderSteps} onChange={(event) => setReorderSteps(event.target.value)} aria-label="Số vị trí di chuyển"><option value="1">1 dòng</option><option value="3">3 dòng</option><option value="5">5 dòng</option></select>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
+              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected(isAdmin ? 'admin_reorder' : 'reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
+              {isAdmin && <><input type="number" aria-label="STT mới" placeholder="STT" min="1" step="1" value={targetPosition} onChange={event => setTargetPosition(event.target.value)}/><button type="button" className="secondary-button" disabled={selectedIds.size !== 1 || Boolean(actionBusy) || !Number.isInteger(Number(targetPosition)) || Number(targetPosition) < 1} onClick={() => runSingleSelected('admin_reorder', { direction: 'position', position: Number(targetPosition) })}>Đổi STT</button></>}
               </div>
             </div>
             <div className="live-tour-controls-group" role="group" aria-label="Nhân viên & dịch vụ">
