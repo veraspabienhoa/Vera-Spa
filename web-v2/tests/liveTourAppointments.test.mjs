@@ -524,13 +524,16 @@ test('admin bottom and direct STT actions target selected employee; manual order
     await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Xuống cuối').click())
     assert.equal(f.writes[0].action, 'admin_reorder')
     assert.equal(f.writes[0].payload.direction, 'bottom')
+    assert.equal(document.querySelector('.tour-records-panel tbody input[type=checkbox]').checked, false)
+    await act(() => document.querySelector('.tour-records-panel tbody input[type=checkbox]').click())
     await f.type(document.querySelector('input[aria-label="STT mới"]'), '1')
     await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Đổi STT').click())
     assert.equal(f.writes[1].payload.position, 1)
+    assert.equal(document.querySelector('.tour-records-panel tbody input[type=checkbox]').checked, false)
     const actions = [...document.querySelectorAll('.live-tour-controls-actions > button')].map(button => button.textContent.trim())
     assert.deepEqual(actions.slice(0, 10), [
       'Cập nhật lịch nghỉ', 'Thanh toán nhanh', 'Đi làm', 'Nghỉ phép',
-      'Nghỉ giữa ca', 'Hủy Booking', 'Đổi nhân viên', 'Đánh dấu VIP',
+      'Nghỉ giữa ca', 'Hủy Booking', 'Đổi nhân viên', 'Kết thúc nghỉ',
       'Xuống cuối', 'Lên đầu',
     ])
   } finally { await f.dispose() }

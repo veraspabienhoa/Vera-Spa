@@ -11,7 +11,7 @@ import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import { EMPTY_TOUR_FILTERS, filterTourRows, tourDateRange } from '../lib/liveTourFilters'
 import {
   BellRing, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
-  ExternalLink, History, LayoutGrid, PauseCircle, Plus,
+  ExternalLink, History, LayoutGrid, PauseCircle, Play, Plus,
   Printer, RefreshCw, Search, Share2, Trash2, X,
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -701,7 +701,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       } else {
         await load(true, true)
       }
-      if (!['reorder', 'admin_reorder'].includes(action)) setSelectedIds(new Set())
+      setSelectedIds(new Set())
       setNotice(result?.message === 'Đã cập nhật Live Tour.' ? '' : result?.message || '')
       return result
     } catch (err) {
@@ -1493,7 +1493,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Nghỉ giữa ca</button>
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
               <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
-              <button type="button" className="secondary-button" disabled={!canAdmin || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_vip', { vip: true })}><Crown size={13}/> Đánh dấu VIP</button>
+              <button type="button" className="secondary-button" title={selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) ? 'Giờ vào tự động cập nhật từ Chấm công' : ''} disabled={!canOperate || !selectedIds.size || selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active) || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc nghỉ</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'top', steps: 1 })}>Lên đầu</button>
               {canReorder ? <input type="number" aria-label="STT mới" placeholder="STT" min="1" step="1" value={targetPosition} onChange={event => setTargetPosition(event.target.value)}/> : <span/>}
@@ -1501,7 +1501,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <select value={reorderSteps} onChange={(event) => setReorderSteps(event.target.value)} aria-label="Số vị trí di chuyển"><option value="1">1 dòng</option><option value="3">3 dòng</option><option value="5">5 dòng</option></select>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'up', steps: Number(reorderSteps) })}>Lên {reorderSteps}</button>
               <button type="button" className="secondary-button" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
-              <button type="button" className="secondary-button" disabled={!canAdmin || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_vip', { vip: false })}>Bỏ VIP</button>
             </div>
           </div>
         </section>

@@ -114,7 +114,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Ca 1",
         "Ca 2",
         "Nghỉ giữa ca",
-        "Đánh dấu VIP",
+        "Kết thúc nghỉ",
         "Khách hàng",
         "Báo cáo",
         "Lịch sử & sao lưu",
@@ -138,11 +138,11 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
     assert 'live-tour-controls-label' not in controls
     for label in ('Thực hiện đã chọn', 'Hoàn thành', 'Chờ thanh toán', 'Thanh toán'):
         assert f'> {label}</button>' not in controls and f'>{label}</button>' not in controls
-    for label in ('Cập nhật lịch nghỉ', 'Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Nghỉ giữa ca', 'Hủy Booking', 'Đổi nhân viên', 'Đánh dấu VIP', 'Xuống cuối', 'Lên đầu', 'STT', 'Đổi STT', 'Bỏ VIP'):
+    for label in ('Cập nhật lịch nghỉ', 'Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Nghỉ giữa ca', 'Kết thúc nghỉ', 'Hủy Booking', 'Đổi nhân viên', 'Xuống cuối', 'Lên đầu', 'STT', 'Đổi STT'):
         assert label in controls
     assert 'Lên {reorderSteps}' in controls
     assert 'Xuống {reorderSteps}' in controls
-    for label in ('Kết thúc nghỉ giữa ca', 'Đổi dịch vụ', 'Thêm dịch vụ'):
+    for label in ('Đánh dấu VIP', 'Bỏ VIP', 'Kết thúc nghỉ giữa ca', 'Đổi dịch vụ', 'Thêm dịch vụ'):
         assert label not in controls
     assert "Import Excel" not in source
     assert "Xuất bảng tua" not in source
