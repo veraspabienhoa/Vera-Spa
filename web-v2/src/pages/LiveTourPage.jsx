@@ -33,6 +33,7 @@ import { checkoutBookingTime, discountAmount } from '../lib/liveTourBooking'
 import { copyPngToClipboard } from '../lib/clipboardImage'
 import './LiveTourControls.css'
 import { availableBookingPurchase } from '../lib/liveTourComboBooking'
+import { autoQuickCombo, quickComboEntry, quickComboPurchases } from '../lib/liveTourQuickCombo'
 import { customerMatches } from '../lib/customerSearch'
 import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, vietnamDate } from '../lib/serviceCatalog'
 
@@ -530,7 +531,7 @@ function LiveTourLegacyModal({ title, onClose, children }) {
 }
 
 const EMPTY_FORM = {
-  checkout_source: 'pending', service_id: '', booking_date: '', booking_time: '', booking_reason: '',
+  checkout_source: 'pending', service_id: '', booking_date: '', booking_time: '', booking_reason: '', quick_combo_auto: true,
   target_employee_id: '', employee_id: '', employee_search: '', room: '', service: '', request: '', appointment: '', customer_id: '', customer_name: '', phone: '',
   discount: '0', discount_mode: 'amount', discount_percent: '0', tip: '0', tip_mode: 'manual', tip_card_ids: [], print_after: false, ticket_price: '', payment_method: 'TIỀN MẶT', bill_no: '', ticket_no: '',
   bank_selection: 'auto', pending_id: '', combo_purchase_id: '', note: '', name: '', shift: '', combo_id: '', quantity: '1', remaining: '', amount: '0', code: '', duration: '60', vip: false,
@@ -776,11 +777,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const sourceComboId = context.item ? source.combo_purchase_id || '' : capturedComboIds.size === 1 ? [...capturedComboIds][0] : ''
     const sourceIsCapturedEmployee = !context.item && Boolean(capturedCustomer)
     setError('')
-    setForm({
+    const initialForm = {
       ...EMPTY_FORM,
       print_after: data.payment_settings?.auto_print === true,
       tip_mode: defaultTipMode(tipPreferenceKey),
-      booking_date: bookingDateTime().date, booking_time: bookingDateTime().time,
+      booking_date: kind === 'quick_checkout' ? '' : bookingDateTime().date, booking_time: bookingDateTime().time,
       ...context.defaults,
       room: source.room ?? (kind === 'room_upsert' ? source.name : source.code) ?? context.defaults?.room ?? '',
       service: source.service ?? source.name ?? context.defaults?.service ?? '',
@@ -800,7 +801,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       amount: kind === 'combo_purchase' ? '' : String(source.amount ?? source.price ?? context.defaults?.amount ?? '0'),
       quantity: String(source.quantity ?? source.tickets ?? context.defaults?.quantity ?? '1'),
       vip: Boolean(source.is_vip ?? (source.type ? normalizedColumn(source.type) === 'VIP' : context.defaults?.vip)),
-    })
+    }
+    setForm(kind === 'quick_checkout' && initialForm.checkout_source === 'manual'
+      ? autoQuickCombo(initialForm, customers, services, vietnamDate(clockMs)) : initialForm)
     setModal({ kind, ...context, ...(capturedRowIds !== undefined ? { rowIds: capturedRowIds } : {}) })
   }
 
@@ -820,10 +823,16 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     let payload = modal.kind === 'change_employee' ? { target_employee_id: form.target_employee_id } : { ...form }
     if (modal.kind === 'change_employee' && !form.target_employee_id) { setError('Hãy chọn nhân viên thay thế.'); return }
     if (['checkout', 'quick_checkout'].includes(modal.kind)) {
-      if (manualQuickBooking && (!canBook || (!quickSteam && (!form.employee_id || !form.room)) || !form.service_id || !form.booking_date || !form.booking_time)) {
-        setError('Hãy chọn nhân viên, phòng, dịch vụ và ngày giờ booking.'); return
+      if (manualQuickBooking && (!form.booking_date || !form.booking_time)) {
+        setError('Bắt buộc nhập ngày và giờ booking.'); return
       }
-      if (manualQuickBooking && !quickSteam && form.booking_date < vietnamDate(clockMs) && (!canAdmin || form.booking_reason.trim().length < 3)) {
+      if (manualQuickBooking && (!canBook || (!quickSteam && (!form.employee_id || !form.room)) || (!form.combo_purchase_id && !form.service_id))) {
+        setError('Hãy chọn nhân viên, phòng và dịch vụ hoặc combo còn lượt của khách.'); return
+      }
+      if (manualQuickBooking && form.combo_purchase_id && !selectedCheckoutCombo) {
+        setError('Combo không còn phù hợp với ngày booking. Hãy chọn lại.'); return
+      }
+      if (manualQuickBooking && form.booking_date < vietnamDate(clockMs) && (!canAdmin || form.booking_reason.trim().length < 3)) {
         setError('Nhập booking trước hôm nay cần quyền Admin và lý do điều chỉnh.'); return
       }
       const paymentMethod = form.combo_purchase_id ? 'COMBO' : form.payment_method === 'COMBO' ? 'TIỀN MẶT' : form.payment_method
@@ -843,8 +852,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       payload = {
         pending_id: form.pending_id || null,
         ...(manualQuickBooking ? { quick_booking: { employee_id: quickSteam ? '' : form.employee_id, room: quickSteam ? '' : form.room,
-          service_items: [{ service_id: form.service_id, quantity: 1 }],
-          booked_at: quickSteam ? `${bookingDateTime().date}T${bookingDateTime().time}:00+07:00` : `${form.booking_date}T${form.booking_time}:00+07:00`,
+          ...(!form.combo_purchase_id ? { service_items: [{ service_id: form.service_id, quantity: 1 }] } : {}),
+          booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
           correction_reason: form.booking_reason.trim() } } : {}),
         ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
         payment_method: paymentMethod, bill_no: form.bill_no, bank_selection: form.bank_selection || 'auto',
@@ -1019,7 +1028,28 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const allPendingPayments = asArray(data.pending_payments).length ? asArray(data.pending_payments) : asArray(data.pending).length ? asArray(data.pending) : asArray(data.state?.pending)
   const customers = asArray(data.customers).length ? asArray(data.customers) : asArray(data.state?.customers)
   const services = asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services)
-  const quickSteam = manualQuickBooking && /^XONG HOI(?:\b|$)/.test(normalizedColumn(services.find(item => item.id === form.service_id)?.name))
+  const quickBookingDay = form.booking_date || vietnamDate(clockMs)
+  const quickCustomer = customers.find(customer => String(customer.id || customer._id || customer.customer_id || '') === String(form.customer_id || ''))
+  const quickPurchases = quickComboPurchases(quickCustomer, services, quickBookingDay)
+  const quickPurchase = manualQuickBooking ? quickPurchases.find(purchase => purchase.id === form.combo_purchase_id) : null
+  const quickComboPreview = quickComboEntry(quickPurchase, services, quickBookingDay)
+  const quickServiceNames = form.combo_purchase_id ? (quickComboPreview?.service_items || []).map(item => item.name)
+    : [services.find(item => item.id === form.service_id)?.name].filter(Boolean)
+  const quickSteam = manualQuickBooking && quickServiceNames.length > 0 && quickServiceNames.every(name => /^XONG HOI(?:\b|$)/.test(normalizedColumn(name)))
+  const setCheckoutCustomerForm = (update) => setForm(current => {
+    const next = typeof update === 'function' ? update(current) : update
+    if (!manualQuickBooking) return next
+    // The shared picker resets the previous identity/combo. Resolve the new
+    // customer's entitlement immediately, including selection by telephone.
+    return autoQuickCombo({ ...next, ...(current.combo_purchase_id ? { service_id: '' } : {}) }, customers, services, vietnamDate(clockMs))
+  })
+  const chooseQuickBookingDate = (day) => setForm(current => {
+    const next = { ...current, booking_date: day }
+    // Keep an explicit selection stable; an expired/reserved combo must not
+    // silently turn into another combo or a cash payment after a refresh.
+    return current.quick_combo_auto && !current.combo_purchase_id
+      ? autoQuickCombo(next, customers, services, vietnamDate(clockMs)) : next
+  })
   const combos = asArray(data.combo_catalog).length ? asArray(data.combo_catalog) : asArray(data.catalogs?.combos).length ? asArray(data.catalogs?.combos) : asArray(data.state?.combos)
   const allReports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
   const pendingPayments = filterTourRows(allPendingPayments, listFilters)
@@ -1054,11 +1084,14 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     if (manualQuickBooking) {
       const employee = quickCheckoutEmployees.find((row) => stableEmployeeId(row) === form.employee_id)
       const service = services.find((item) => item.id === form.service_id)
-      if (!service) return []
-      return [{ employee_id: quickSteam ? '' : employee?.id || '', employee_name: quickSteam ? '' : employee?.name || '', room: quickSteam ? '' : form.room,
+      const entry = form.combo_purchase_id ? quickComboPreview : service ? {
         service: service.name, price: service.price, price_source: 'catalog',
-        booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
-        service_items: [{ service_id: service.id, quantity: 1, unit_price: service.price, ticket_units: service.ticket_units ?? 1 }] }]
+        service_items: [{ service_id: service.id, quantity: 1, unit_price: service.price, ticket_units: service.ticket_units ?? 1 }],
+      } : null
+      if (!entry) return []
+      return [{ ...entry, employee_id: quickSteam ? '' : employee?.id || '', employee_name: quickSteam ? '' : employee?.name || '', room: quickSteam ? '' : form.room,
+        booked_at: form.booking_date && form.booking_time ? `${form.booking_date}T${form.booking_time}:00+07:00` : '',
+      }]
     }
     const pendingEntries = asArray(modal?.item?.entries)
     if (pendingEntries.length) return pendingEntries
@@ -1080,13 +1113,13 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       return record ? { employee_id: id, employee_name: cellValue(record, employeeColumn), service: cellValue(record, serviceColumn), room: cellValue(record, roomColumn) } : null
     }).filter((entry) => entry?.service)
   })()
-  const effectiveCatalogDate = ['checkout', 'quick_checkout'].includes(modal?.kind)
+  const effectiveCatalogDate = manualQuickBooking ? quickBookingDay : ['checkout', 'quick_checkout'].includes(modal?.kind)
     ? vietnamDate(checkoutBookingTime(checkoutSourceEntries, modal?.item, clockMs))
     : catalogTransactionDate(clockMs, form.backdate_one_day)
   const quickBookingServices = services.filter((item) => catalogIsAvailable(item, form.booking_date || vietnamDate(clockMs)))
   const bookableServices = services.filter((item) => catalogIsAvailable(item, vietnamDate(clockMs)))
   const saleableCombos = combos.filter((item) => catalogIsAvailable(item, effectiveCatalogDate) && asArray(item.components).every((part) => services.some((service) => service.id === part.service_id && catalogIsAvailable(service, effectiveCatalogDate))))
-  const eligibleCheckoutCombos = purchasedCombos.map(({ customer, purchase }) => ({ customer, purchase: availableBookingPurchase(purchase, checkoutSourceEntries) })).filter(({ customer, purchase }) => {
+  const eligibleCheckoutCombos = manualQuickBooking ? quickPurchases.map(purchase => ({ customer: quickCustomer, purchase })) : purchasedCombos.map(({ customer, purchase }) => ({ customer, purchase: availableBookingPurchase(purchase, checkoutSourceEntries) })).filter(({ customer, purchase }) => {
     const customerId = String(customer?._id ?? customer?.id ?? customer?.customer_id ?? '')
     return customerId && customerId === String(form.customer_id || '') && comboUsagePreview(purchase, checkoutSourceEntries, services, effectiveCatalogDate).eligible
   })
@@ -1095,7 +1128,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const checkoutPreviewEntries = checkoutSourceEntries.map((entry) => ({
     ...entry,
     preview_price: previewEntryPrice(entry, services),
-    ticket_units: entry.service_items?.length ? entry.service_items.reduce((sum, item) => sum + Number(item.ticket_units ?? 1) * Number(item.quantity), 0) : previewEntryTicketUnits(entry, services),
+    ticket_units: entry.price_source === 'combo_ticket' ? 1 : entry.service_items?.length ? entry.service_items.reduce((sum, item) => sum + Number(item.ticket_units ?? 1) * Number(item.quantity), 0) : previewEntryTicketUnits(entry, services),
   }))
   const checkoutPreviewSubtotal = checkoutPreviewEntries.length && checkoutPreviewEntries.every((entry) => Number.isFinite(entry.preview_price))
     ? checkoutPreviewEntries.reduce((sum, entry) => sum + entry.preview_price, 0)
@@ -1641,19 +1674,18 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
                 {selectedQuickCheckoutRecord && <small className="live-tour-employee-picked">{cellValue(selectedQuickCheckoutRecord, employeeColumn)} · {checkoutSourceEntries[0]?.service || cellValue(selectedQuickCheckoutRecord, serviceColumn)}</small>}
               </div>}
               {manualQuickBooking && <>
-                <LiveTourSearchSelect label="Dịch vụ" required value={form.service_id} options={quickBookingServices.map((service) => ({ value: service.id, label: service.name, detail: formatMoney(service.price) }))} onChange={(id) => setForm((current) => ({ ...current, service_id: id }))}/>
-                {!quickSteam && <>
-                <LiveTourSearchSelect label="Nhân viên" required value={form.employee_id} options={quickCheckoutEmployees.filter((row) => !row.hidden && row.roster_eligible !== false).map((row) => ({ value: stableEmployeeId(row), label: row.name, detail: row.shift }))} onChange={(id) => setForm((current) => ({ ...current, employee_id: id }))}/>
-                <LiveTourSearchSelect label="Phòng / giường" showAllOptions filterOption={roomOptionMatches} required value={form.room} options={catalogRooms.filter((room) => room.active !== false).map((room) => ({ value: room.name, label: room.name, group: bookingRoomGroup(room.name, catalogRooms) }))} onChange={(room) => setForm((current) => ({ ...current, room }))}/>
-                <div className="tour-booking-datetime"><label className="live-tour-field"><span>Ngày booking</span><input type="date" required min={canAdmin ? '2000-01-01' : vietnamDate(clockMs)} max={vietnamDate(clockMs)} value={form.booking_date} onChange={(event) => setForm((current) => ({ ...current, booking_date: event.target.value }))}/></label><label className="live-tour-field"><span>Giờ booking</span><input type="time" required value={form.booking_time} onChange={(event) => setForm((current) => ({ ...current, booking_time: event.target.value }))}/></label></div>
-                {form.booking_date < vietnamDate(clockMs) && <label className="live-tour-field wide"><span>Lý do nhập lùi ngày</span><input required minLength={3} value={form.booking_reason} onChange={(event) => setForm((current) => ({ ...current, booking_reason: event.target.value }))}/></label>}
-                </>}
+                {!quickSteam && <LiveTourSearchSelect label="Nhân viên" required value={form.employee_id} options={quickCheckoutEmployees.filter((row) => !row.hidden && row.roster_eligible !== false).map((row) => ({ value: stableEmployeeId(row), label: row.name, detail: row.shift }))} onChange={(id) => setForm((current) => ({ ...current, employee_id: id }))}/>}
+                {form.combo_purchase_id ? <label className="live-tour-field"><span>Dịch vụ từ combo</span><input aria-label="Dịch vụ từ combo" readOnly value={quickComboPreview?.service || 'Chọn combo phù hợp với ngày booking'}/></label>
+                  : <LiveTourSearchSelect label="Dịch vụ" required value={form.service_id} options={quickBookingServices.map((service) => ({ value: service.id, label: service.name, detail: formatMoney(service.price) }))} onChange={(id) => setForm((current) => ({ ...current, service_id: id }))}/>}
+                {!quickSteam && <LiveTourSearchSelect label="Phòng / giường" showAllOptions filterOption={roomOptionMatches} required value={form.room} options={catalogRooms.filter((room) => room.active !== false).map((room) => ({ value: room.name, label: room.name, group: bookingRoomGroup(room.name, catalogRooms) }))} onChange={(room) => setForm((current) => ({ ...current, room }))}/>}
+                <div className="tour-booking-datetime"><label className="live-tour-field"><span>Ngày booking *</span><input aria-label="Ngày booking" type="date" required min={canAdmin ? '2000-01-01' : vietnamDate(clockMs)} max={vietnamDate(clockMs)} value={form.booking_date} onChange={(event) => chooseQuickBookingDate(event.target.value)}/></label><label className="live-tour-field"><span>Giờ booking</span><input aria-label="Giờ booking" type="time" required value={form.booking_time} onChange={(event) => setForm((current) => ({ ...current, booking_time: event.target.value }))}/></label></div>
+                {form.booking_date && form.booking_date < vietnamDate(clockMs) && <label className="live-tour-field wide"><span>Lý do nhập lùi ngày</span><input required minLength={3} value={form.booking_reason} onChange={(event) => setForm((current) => ({ ...current, booking_reason: event.target.value }))}/></label>}
               </>}
             </>}
             {!quickSteam && <div className="tour-checkout-context wide" aria-label="Nhân viên và phòng thanh toán">
               {checkoutSourceEntries.length ? <LiveTourPageItems items={checkoutSourceEntries} label="Nhân viên thanh toán">{(entry, index) => <div key={`${entry.employee_id}:${index}`}><strong>{entry.employee_name || 'Chưa có nhân viên'}</strong><span>Phòng: <strong>{entry.room || '—'}</strong></span></div>}</LiveTourPageItems> : <span>Chọn nhân viên và phòng ở trên.</span>}
             </div>}
-            <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} disabled={!canCustomers}/>
+            <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setCheckoutCustomerForm} disabled={!canCustomers}/>
             <div className="live-tour-checkout-preview wide">
               <strong>Dịch vụ</strong>
               <LiveTourPageItems items={checkoutPreviewEntries} label="Dịch vụ thanh toán">{(entry, index) => <div className="live-tour-checkout-entry" key={`${entry.employee_id || 'entry'}:${index}`}><span>{entry.employee_name || `Dòng ${index + 1}`} · {entry.service || 'Chưa có dịch vụ'}{entry.room ? ` · ${entry.room}` : ''}</span><strong>{Number.isFinite(entry.preview_price) ? formatMoney(entry.preview_price) : 'Server sẽ xác nhận giá'}</strong><small>{entry.ticket_units} vé combo theo định mức dịch vụ</small></div>}</LiveTourPageItems>
@@ -1662,24 +1694,24 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               {!checkoutUsesCombo && checkoutHasMixedPricing && <div className="warning-box">Không thể gộp dịch vụ đã có giá và dịch vụ giá 0. Hãy cấu hình giá hoặc tách lần thanh toán.</div>}
               <div className="live-tour-checkout-total" aria-live="polite"><span>Tiền dịch vụ</span><strong>{Number.isFinite(checkoutEffectiveSubtotal) ? formatMoney(checkoutEffectiveSubtotal) : 'Chọn dịch vụ'}</strong><span>Tiền Tip</span><strong>{formatMoney(checkoutTipPreview)}</strong><span>Tổng thanh toán</span><strong>{Number.isFinite(checkoutPreviewTotal) ? formatMoney(checkoutPreviewTotal) : 'Chọn dịch vụ'}</strong></div>
             </div>
-            <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value, ...(event.target.value === 'COMBO' ? {} : { combo_purchase_id: '' }) }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option><option value="COMBO" disabled={!form.combo_purchase_id}>COMBO · chọn combo đã mua</option></select></label>
+            <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, quick_combo_auto: false, payment_method: event.target.value, ...(event.target.value === 'COMBO' ? {} : { combo_purchase_id: '' }) }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option><option value="COMBO" disabled={!form.combo_purchase_id}>COMBO · chọn combo đã mua</option></select></label>
             <label className="live-tour-field"><span>Trừ vé combo</span><select value={form.combo_purchase_id} onChange={(event) => {
               setForm((current) => ({
-                ...current, combo_purchase_id: event.target.value, discount: eligibleCheckoutCombos.find(({ purchase }) => purchase.id === event.target.value)?.purchase.component_balances ? '0' : current.discount, discount_mode: 'amount', discount_percent: '0',
+                ...current, quick_combo_auto: false, ...(manualQuickBooking ? { service_id: '' } : {}), combo_purchase_id: event.target.value, discount: eligibleCheckoutCombos.find(({ purchase }) => purchase.id === event.target.value)?.purchase.component_balances || (manualQuickBooking && event.target.value) ? '0' : current.discount, discount_mode: 'amount', discount_percent: '0',
                 payment_method: event.target.value ? 'COMBO' : current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
               }))
             }} disabled={!form.customer_id}><option value="">Không trừ combo</option>{eligibleCheckoutCombos.map(({ purchase }, index) => {
               const purchaseId = String(purchase?._id ?? purchase?.id ?? '')
               return <option value={purchaseId} key={purchaseId || index}>{purchase.combo_name || 'Combo'} · còn {purchase.remaining} {purchase.component_balances ? 'lượt' : 'vé'}{purchase.unlimited === false && purchase.expires_on ? ` · HSD ${purchase.expires_on.split('-').reverse().join('/')}` : ''}</option>
             })}</select></label>
-            {form.combo_purchase_id && <div className="live-tour-combo-deduction wide">Trừ <strong>{checkoutPreviewComboUnits} {selectedCheckoutCombo?.component_balances ? 'lượt dịch vụ trong combo' : 'vé combo'}</strong>.{selectedCheckoutCombo?.component_balances && ' Dịch vụ đã trả trước; thanh toán TIP.'}</div>}
+            {form.combo_purchase_id && <div className="live-tour-combo-deduction wide">Trừ <strong>{checkoutPreviewComboUnits} {selectedCheckoutCombo?.component_balances ? 'lượt dịch vụ trong combo' : 'vé combo'}</strong>.{(selectedCheckoutCombo?.component_balances || quickPurchase) && ' Dịch vụ đã trả trước; thanh toán TIP.'}{manualQuickBooking && ' Chỉ trừ lượt sau khi lưu thanh toán thành công.'}</div>}
             {selectedCheckoutCombo?.component_balances && <LiveTourPageItems className="wide" items={selectedCheckoutCombo.component_balances} label="Số lượt combo" pageSize={1}>{(item) => <small key={item.service_id}>{services.find((service) => service.id === item.service_id)?.name || item.service_name}: còn {item.remaining} / {item.total} lượt</small>}</LiveTourPageItems>}
             {form.combo_purchase_id && !selectedCheckoutCombo && <p className="error-box wide" role="alert">Combo không còn phù hợp với dịch vụ hoặc ngày thanh toán. Hãy chọn lại.</p>}
             {checkoutRequiresTicketPrice && <label className="live-tour-field wide"><span>Giá vé (dịch vụ chưa có giá danh mục)</span><input type="number" min="1" max="1000000000" step="1000" value={form.ticket_price} onChange={(event) => setForm((current) => ({ ...current, ticket_price: event.target.value }))} required/></label>}
             <label className="live-tour-field"><span>Số hóa đơn</span><input value={form.bill_no} onChange={(event) => setForm((current) => ({ ...current, bill_no: event.target.value }))}/></label>
             <label className="live-tour-field"><span>Số vé</span><input value={form.ticket_no} onChange={(event) => setForm((current) => ({ ...current, ticket_no: event.target.value }))}/></label>
-            <label className="live-tour-field"><span>Loại giảm giá</span><select value={form.discount_mode} disabled={Boolean(selectedCheckoutCombo?.component_balances)} onChange={(event) => setForm((current) => ({ ...current, discount_mode: event.target.value }))}><option value="amount">Số tiền (đ)</option><option value="percent">Tỷ lệ (%)</option></select></label>
-            <label className="live-tour-field"><span>Giảm giá {form.discount_mode === 'percent' ? '(%)' : '(đ)'}</span><input type="number" min="0" max={form.discount_mode === 'percent' ? '100' : undefined} step={form.discount_mode === 'percent' ? '0.01' : '1'} readOnly={Boolean(selectedCheckoutCombo?.component_balances)} value={form.discount_mode === 'percent' ? form.discount_percent : form.discount} onChange={(event) => setForm((current) => ({ ...current, [current.discount_mode === 'percent' ? 'discount_percent' : 'discount']: event.target.value }))}/><small>{Number.isFinite(checkoutDiscountPreview) ? formatMoney(checkoutDiscountPreview) : ''}</small></label>
+            <label className="live-tour-field"><span>Loại giảm giá</span><select value={form.discount_mode} disabled={Boolean(selectedCheckoutCombo?.component_balances || quickPurchase)} onChange={(event) => setForm((current) => ({ ...current, discount_mode: event.target.value }))}><option value="amount">Số tiền (đ)</option><option value="percent">Tỷ lệ (%)</option></select></label>
+            <label className="live-tour-field"><span>Giảm giá {form.discount_mode === 'percent' ? '(%)' : '(đ)'}</span><input type="number" min="0" max={form.discount_mode === 'percent' ? '100' : undefined} step={form.discount_mode === 'percent' ? '0.01' : '1'} readOnly={Boolean(selectedCheckoutCombo?.component_balances || quickPurchase)} value={form.discount_mode === 'percent' ? form.discount_percent : form.discount} onChange={(event) => setForm((current) => ({ ...current, [current.discount_mode === 'percent' ? 'discount_percent' : 'discount']: event.target.value }))}/><small>{Number.isFinite(checkoutDiscountPreview) ? formatMoney(checkoutDiscountPreview) : ''}</small></label>
             <label className="live-tour-field wide"><span>Tài khoản nhận chuyển khoản</span><select value={form.bank_selection || 'auto'} onChange={event => setForm(current => ({ ...current, bank_selection: event.target.value }))}><option value="auto">{data.payment_settings?.user_bank ? `Tài khoản của tôi · ${data.payment_settings.user_bank.account_name} · ${data.payment_settings.user_bank.account_no}` : 'Tài khoản mặc định'}</option><option value="default">Tài khoản mặc định khác{data.payment_settings?.bank?.account_no ? ` · ${data.payment_settings.bank.account_no}` : ' (chưa cấu hình)'}</option></select></label>
             {!checkoutHasUnresolvedPricing && <LiveTourPaymentQr bank={form.bank_selection !== 'default' && data.payment_settings?.user_bank || data.payment_settings?.bank} amount={checkoutPreviewTotal} reference={form.bill_no || 'VERA SPA'}/>}
             <LiveTourTipInput key={tipPreferenceKey} form={form} setForm={setForm} cards={asArray(data.payment_settings?.tip_cards)} preferenceKey={tipPreferenceKey} total={checkoutTipPreview}/>

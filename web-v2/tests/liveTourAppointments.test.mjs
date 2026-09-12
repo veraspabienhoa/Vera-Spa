@@ -334,6 +334,8 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
     await chooseOption(inputFor('Nhân viên'), 'An An', f)
     await chooseOption(inputFor('Phòng / giường'), '1.1', f)
     await chooseOption(inputFor('Dịch vụ'), 'Body 90', f)
+    assert.equal(inputFor('Ngày booking *').value, '')
+    await f.type(inputFor('Ngày booking *'), new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }))
     await f.type(inputFor('Giờ booking'), '09:30')
     await f.save(document.querySelector('.tour-transaction-dialog form'))
     assert.equal(f.writes.length, 1)
@@ -525,3 +527,97 @@ test('admin bottom and direct STT actions target selected employee; manual order
 })
 
 test.after(() => dom.window.close())
+
+const todayBooking = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+const quickComboSetup = (data) => {
+  data.capabilities.booking = true
+  data.capabilities.customers_view = true
+  data.state.employees = [{ id: 'e1', name: 'An An', shift: 'Ca 1', service: '', status: '' }]
+  data.state.rooms = [{ name: '1.1', active: true }]
+  data.customers = [{ id: 'c1', name: 'Khách Combo', phone: '0901234567', combo_purchases: [{ id: 'p1', combo_name: 'Combo Body', remaining: 3, total: 3,
+    component_balances: [{ service_id: 'body', service_name: 'Body 90', remaining: 3, total: 3 }] }] },
+  { id: 'c2', name: 'Khách lẻ mới', phone: '0909999999', combo_purchases: [] }]
+}
+
+test('quick customer auto selects combo without service, places employee first, and requires date before submitting', async () => {
+  const f = await fixture({ setup: quickComboSetup })
+  try {
+    await clickText('Thanh toán nhanh')
+    const employeeInput = inputFor('Nhân viên'), serviceInput = inputFor('Dịch vụ')
+    assert.ok(employeeInput.compareDocumentPosition(serviceInput) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING)
+    await chooseOption(employeeInput, 'An An', f)
+    await chooseOption(inputFor('Phòng / giường'), '1.1', f)
+    await chooseOption(inputFor('Khách hàng'), 'Khách Combo', f)
+    assert.equal(document.querySelector('input[aria-label="Dịch vụ từ combo"]').readOnly, true)
+    assert.equal(document.querySelector('input[aria-label="Dịch vụ từ combo"]').required, false)
+    assert.equal(document.querySelector('input[aria-label="Dịch vụ từ combo"]').value, 'Body 90')
+    assert.match(document.querySelector('.live-tour-combo-deduction').textContent, /Trừ 1 lượt/)
+    const date = inputFor('Ngày booking *')
+    assert.equal(date.required, true)
+    assert.equal(date.value, '')
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes.length, 0)
+    assert.match(document.querySelector('.tour-transaction-dialog').textContent, /Bắt buộc nhập ngày/)
+    await f.type(date, todayBooking())
+    await f.type(inputFor('Giờ booking'), '00:01')
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes.length, 1)
+    assert.equal(f.writes[0].payload.combo_purchase_id, 'p1')
+    assert.equal(f.writes[0].payload.payment_method, 'COMBO')
+    assert.equal(f.writes[0].payload.quick_booking.service_items, undefined)
+    assert.equal(f.writes[0].payload.quick_booking.booked_at, `${todayBooking()}T00:01:00+07:00`)
+    assert.equal(f.data.customers[0].combo_purchases[0].remaining, 3) // no optimistic debit
+  } finally { await f.dispose() }
+})
+
+test('quick customer selection by telephone auto selects combo and switching customers clears it', async () => {
+  const f = await fixture({ setup: quickComboSetup })
+  try {
+    await clickText('Thanh toán nhanh')
+    await chooseOption(inputFor('Điện thoại'), '0901234567', f)
+    assert.equal(inputFor('Khách hàng').value, 'Khách Combo')
+    assert.ok(document.querySelector('input[aria-label="Dịch vụ từ combo"]'))
+    await chooseOption(inputFor('Điện thoại'), '0909999999', f)
+    assert.equal(inputFor('Khách hàng').value, 'Khách lẻ mới')
+    assert.equal(document.querySelector('input[aria-label="Dịch vụ từ combo"]'), null)
+    assert.equal(inputFor('Dịch vụ').required, true)
+    assert.equal(inputFor('Dịch vụ').value, '')
+    assert.equal(document.querySelector('.live-tour-combo-deduction'), null)
+    assert.equal(f.writes.length, 0)
+  } finally { await f.dispose() }
+})
+
+test('quick steam keeps date visible and required while omitting employee and room', async () => {
+  const f = await fixture({ setup(data) {
+    quickComboSetup(data)
+    data.services.push({ id: 'steam', name: 'Xông hơi', price: 100000 })
+  } })
+  try {
+    await clickText('Thanh toán nhanh')
+    await chooseOption(inputFor('Dịch vụ'), 'Xông hơi', f)
+    assert.ok(inputFor('Ngày booking *').required)
+    assert.equal(document.querySelector('.tour-checkout-context'), null)
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes.length, 0)
+    await f.type(inputFor('Ngày booking *'), todayBooking())
+    await f.type(inputFor('Giờ booking'), '00:02')
+    await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes.length, 1)
+    assert.equal(f.writes[0].payload.quick_booking.employee_id, '')
+    assert.equal(f.writes[0].payload.quick_booking.room, '')
+    assert.equal(f.writes[0].payload.quick_booking.booked_at, `${todayBooking()}T00:02:00+07:00`)
+  } finally { await f.dispose() }
+})
+
+test('explicitly opting out of combo restores required service and survives date changes', async () => {
+  const f = await fixture({ setup: quickComboSetup })
+  try {
+    await clickText('Thanh toán nhanh')
+    await chooseOption(inputFor('Khách hàng'), 'Khách Combo', f)
+    const select = [...document.querySelectorAll('label')].find(label => label.querySelector('span')?.textContent === 'Trừ vé combo').querySelector('select')
+    await act(() => { select.value = ''; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })) })
+    await f.type(inputFor('Ngày booking *'), todayBooking())
+    assert.equal(document.querySelector('input[aria-label="Dịch vụ từ combo"]'), null)
+    assert.equal(inputFor('Dịch vụ').required, true)
+  } finally { await f.dispose() }
+})
