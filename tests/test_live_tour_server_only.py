@@ -21,6 +21,7 @@ class SettingsDatabase:
         self.revision = 7 if stored else 0
         self.employee_reads = 0
         self.fail_employee_read = False
+        self.datasets = []
         self.directory = deepcopy(directory) if directory is not None else (
             [{"username": row.get("username") or row["name"], "full_name": row["name"], "role": row.get("role", "nhanvien"), "payload": {}} for row in stored.get("employees", [])]
             if stored else [{"username": "server-ktv", "full_name": "Nhân viên máy chủ", "role": "nhanvien", "payload": {"Đi làm": "Đi làm", "Vào ca": "Ca 2"}}]
@@ -45,6 +46,8 @@ class SettingsDatabase:
             if self.fail_employee_read:
                 raise RuntimeError("database unavailable")
             rows = deepcopy(self.directory)
+        elif "FROM vera_dataset_cache" in sql:
+            rows = deepcopy(self.datasets)
         elif "SELECT value_json" in sql:
             rows = [{"value_json": deepcopy(self.stored), "revision": self.revision}] if self.stored else []
         elif "INSERT INTO vera_app_setting" in sql:
@@ -110,13 +113,19 @@ def test_first_boot_database_error_does_not_save_an_empty_board():
     assert len(database.stored["employees"]) == 1
 
 
-def test_booking_is_persisted_and_read_by_a_new_app_instance():
+def test_booking_is_persisted_and_read_by_a_new_app_instance(monkeypatch):
+    class FixedDateTime(live.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(live, 'datetime', FixedDateTime)
     database = SettingsDatabase()
+    database.datasets = [{'payload': [{'EmployeeName': 'server-ktv', 'WorkDateStr': NOW.strftime('%d/%m/%Y'), 'MachineTimeCheckInStr': '09:00', 'WorkTimeName': 'Ca 1'}]}]
     _, first = app_client(database)
     data = first.get("/v2/live-tour").json()
     worker_id = data["state"]["employees"][0]["id"]
     for number, (action, payload) in enumerate([
-        ("set_work_status", {"status": "Đi làm"}), ("set_shift", {"shift": "Ca 1"}),
+        ("set_work_status", {"status": "Đi làm"}),
         ("booking", {"service": "Body 90", "room": "1.1"}), ("start", {}),
     ]):
         result = first.post("/v2/live-tour/action", json={"action": action,
@@ -129,7 +138,7 @@ def test_booking_is_persisted_and_read_by_a_new_app_instance():
     assert loaded["state"]["employees"] == data["state"]["employees"]
     assert loaded["revision"] == data["revision"]
     assert loaded["state"]["employees"][0]["service"] == "Body 90"
-    assert database.employee_reads == 6
+    assert database.employee_reads == 5
 
 
 @pytest.mark.parametrize("action", ["sync_leaves", "merge_current_tour", "merge_current_tour_preview", " SYNC_LEAVES "])
@@ -161,7 +170,7 @@ def test_existing_financial_and_operating_state_survives_without_external_recove
         if key != "employees":
             assert database.stored[key] == value
     for key, value in state["employees"][0].items():
-        assert database.stored["employees"][0][key] == value
+        assert database.stored["employees"][0][key] == ('' if key == 'shift' else value)
     assert database.employee_reads == 1
     assert data["state"]["invoices"] == state["invoices"]
     assert all(data["state"]["customers"][0][key] == value for key, value in state["customers"][0].items())

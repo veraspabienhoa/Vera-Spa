@@ -74,7 +74,6 @@ def test_live_tour_wires_every_vba_equivalent_action_to_the_backend():
         "checkout",
         "quick_checkout",
         "set_work_status",
-        "set_shift",
         "start_break",
         "end_break",
         "reorder",
@@ -144,7 +143,7 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
     assert 'live-tour-controls-label' not in controls
     for label in ('Thực hiện đã chọn', 'Hoàn thành', 'Chờ thanh toán', 'Thanh toán'):
         assert f'> {label}</button>' not in controls and f'>{label}</button>' not in controls
-    for label in ('Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Ca 1', 'Ca 2', 'Nghỉ giữa ca', 'Kết thúc nghỉ giữa ca', 'Đánh dấu VIP', 'Bỏ VIP', 'Đổi dịch vụ', 'Thêm dịch vụ'):
+    for label in ('Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Ca tự cập nhật sau check-in', 'Nghỉ giữa ca', 'Kết thúc nghỉ giữa ca', 'Đánh dấu VIP', 'Bỏ VIP', 'Đổi dịch vụ', 'Thêm dịch vụ'):
         assert label in controls
 
 

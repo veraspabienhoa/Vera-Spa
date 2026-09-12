@@ -192,7 +192,7 @@ def test_directory_shift_refreshes_board_without_resetting_service():
     db = SettingsDatabase(state_with(worker), directory=[{'username':'An','role':'nhanvien','full_name':'An','payload':{},'work_shift':'Ca 2 (14:00-22:00)'}])
     _, client = app_client(db)
     current = client.get('/v2/live-tour').json()
-    assert current['records'][0]['Vào ca'] == 'Ca 2'
+    assert current['records'][0]['Vào ca'] == ''
     assert current['records'][0]['Dịch vụ'] == 'Body'
     db.directory[0]['work_shift'] = 'Ca 1 (10:00-18:00)'
-    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == 'Ca 1'
+    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == ''

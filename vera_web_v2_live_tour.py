@@ -30,6 +30,8 @@ from sqlalchemy import text
 from vera_web_v2_live_tour_payment import default_settings as _default_payment_settings, settings_update as _payment_settings_update, payment_values as _payment_values
 from vera_web_v2_live_tour_payment import profile_bank as _profile_bank, selected_bank as _selected_bank
 from vera_web_v2_live_tour_daily import sync_daily as _sync_daily
+from vera_web_v2_live_tour_checkin import with_checkin as _directory_with_checkin
+from vera_web_v2_combo_import import import_terms as _combo_import_terms
 from vera_web_v2_live_tour_roster import shift_label as _directory_shift
 from vera_web_v2_live_tour_roster import eligible as _roster_eligible, reconcile as _reconcile_roster
 from vera_web_v2_service_catalog import catalog_details, component_debits, purchase_terms, require_available
@@ -799,14 +801,16 @@ def _source_employee(record: dict[str, Any], index: int, now: datetime) -> dict[
     }
 
 
-def _employee_directory(conn) -> list[dict[str, Any]]:
-    return [dict(row) for row in conn.execute(text("""
+def _employee_directory(conn, now=None) -> list[dict[str, Any]]:
+    rows = [dict(row) for row in conn.execute(text("""
         SELECT username, COALESCE(full_name, '') AS full_name,
                lower(btrim(COALESCE(role,''))) AS role, COALESCE(payload,'{}'::jsonb) AS payload, COALESCE(work_shift,'') AS work_shift,
+               shift_start_date, rotation_cycle,
                (SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='shift_definitions' LIMIT 1) AS shift_definitions
         FROM employees
         ORDER BY lower(username)
     """)).mappings().all()]
+    return _directory_with_checkin(conn, rows, (now or datetime.now(VN_TZ)).astimezone(VN_TZ))
 
 
 def _new_directory_employee(row, index):
@@ -830,7 +834,7 @@ def _database_employees(conn) -> list[dict[str, Any]]:
 
 def _bootstrap_state(conn, now: datetime) -> dict[str, Any]:
     state = _empty_state(now)
-    _reconcile_roster(state, _employee_directory(conn), _new_directory_employee)
+    _reconcile_roster(state, _employee_directory(conn, now), _new_directory_employee)
     state["bootstrap_source"] = "employees"
     state["storage_mode"] = "server"
     return state
@@ -1945,6 +1949,8 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
         result["employee"] = employee
     elif action == "set_shift":
         employee = _employee(state, payload.get("employee_id"))
+        if employee.get("shift_checkin_date"):
+            raise HTTPException(409, "Ca được tự động cập nhật theo lịch làm và check-in hôm nay.")
         next_shift = _canonical_shift(payload.get("shift"), allow_blank=True)
         if _norm(employee.get("work_status")) != "di lam":
             raise HTTPException(409, "Chỉ xếp ca cho nhân viên đang Đi làm.")
@@ -2319,12 +2325,9 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             raise HTTPException(400, "Không có dữ liệu combo để import.")
         for row in source_rows:
             row_payload = dict(row)
-            customer = _customer(state, row_payload)
             combo = _catalog_item(state, "combos", row_payload)
-            if not customer or not combo:
+            if not combo:
                 raise HTTPException(400, "Dòng import combo thiếu khách hàng hoặc combo hợp lệ.")
-            if combo.get("components"):
-                raise HTTPException(400, "Combo có dịch vụ thành phần cần ghi nhận bằng Mua combo để lưu đúng số lượt từng dịch vụ.")
             total = int(_bounded_number(
                 row_payload.get("total", row_payload.get("tickets", combo.get("tickets"))),
                 label="Tổng số vé combo", minimum=1, maximum=MAX_TICKET_UNITS, integer=True,
@@ -2335,7 +2338,12 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
             ))
             if used > total:
                 raise HTTPException(400, "Số vé combo đã dùng không thể lớn hơn tổng vé.")
+            terms = _combo_import_terms(combo, row_payload, state["services"], now.astimezone(VN_TZ).date(), total, used, _bounded_number)
+            customer = _customer(state, row_payload)
+            if not customer:
+                raise HTTPException(400, "Dòng import combo thiếu khách hàng hợp lệ.")
             purchase = {
+                **terms,
                 "id": str(row_payload.get("id") or uuid4()), "combo_id": combo.get("id"),
                 "combo_name": combo.get("name"), "total": total, "used": used,
                 "remaining": total - used, "price": _bounded_money(
@@ -2873,7 +2881,7 @@ def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[
     if row:
         state = _normalize_state(row.get("value_json"), now)
         revision = int(row.get("revision") or 0)
-        if _reconcile_roster(state, _employee_directory(conn), _new_directory_employee):
+        if _reconcile_roster(state, _employee_directory(conn, now), _new_directory_employee):
             revision = _write_state(conn, state, revision, "live_tour_employee_directory")
         return state, revision
     state = _bootstrap_state(conn, now)
