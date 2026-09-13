@@ -397,7 +397,7 @@ test('quick checkout searches pending invoice by room and retains the selected i
   } finally { await f.dispose() }
 })
 
-test('pending cards display staff-room-service and both booking and execution timestamps', async () => {
+test('pending cards display staff-service-room and both booking and execution timestamps', async () => {
   const f = await fixture({ setup(data) {
     data.capabilities.pending_view = true; data.capabilities.invoice_view = true
     data.pending_payments = [{ id: 'p1', booked_at: `${TODAY_VN}T13:00:00+07:00`, entries: [{ employee_name: 'An An', room: '1.1', service: 'Body 90',
@@ -405,7 +405,7 @@ test('pending cards display staff-room-service and both booking and execution ti
   } })
   try {
     const card = document.querySelector('#live-tour-pending-panel .live-tour-data-card')
-    assert.match(card.textContent, /An An – 1\.1 – Body 90/)
+    assert.match(card.textContent, /An An – Body 90 – 1\.1/)
     assert.match(card.textContent, /Khách lẻ/)
     assert.match(card.textContent, new RegExp(`Booking: 13:00 ${TODAY_VN_LABEL.replaceAll('/', '\\/')} · Thực hiện: 13:05 ${TODAY_VN_LABEL.replaceAll('/', '\\/')}`))
     assert.ok(!document.querySelector('input[placeholder="Nhập lịch hẹn…"]'))
