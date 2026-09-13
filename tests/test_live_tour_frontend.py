@@ -9,6 +9,7 @@ APP = ROOT / "web-v2/src/App.jsx"
 SHELL = ROOT / "web-v2/src/components/AppShell.jsx"
 API = ROOT / "web-v2/src/lib/api.js"
 LIVE_TOUR = ROOT / "web-v2/src/pages/LiveTourPage.jsx"
+LIVE_TOUR_CONTROLS = ROOT / "web-v2/src/pages/LiveTourControls.css"
 
 
 def _source(path: Path) -> str:
@@ -169,6 +170,20 @@ def test_room_cards_have_clear_state_borders_and_accessible_motion():
     assert ".tour-room-card.state-waiting:not(.vip)" in source
     assert "@media(prefers-reduced-motion:reduce)" in source
     assert ".tour-room-card{transition:none}" in source
+
+
+def test_live_tour_room_board_is_compact_without_horizontal_overflow():
+    controls = _source(LIVE_TOUR_CONTROLS)
+
+    assert ".tour-room-table-panel > .live-tour-controls" in controls
+    assert ".tour-room-table-panel {" in controls
+    assert controls.count("border-bottom: 0 !important") == 2
+    assert ".tour-records-panel {\n  border-top: 0 !important" not in controls
+    assert "grid-template-columns:repeat(var(--room-columns,1),minmax(0,1fr))" in controls
+    assert "min-height:66px" in controls
+    assert "min-height:64.6px" in controls
+    assert "max-width:100%" in controls
+    assert "overflow:hidden" in controls
 
 
 def test_live_tour_reuses_an_idempotency_key_until_the_same_request_succeeds():
