@@ -6,6 +6,15 @@
   box-shadow: none;
 }
 
+/* Remove only the two upper horizontal separators below the room board. The
+   lower line at the start of the employee table stays visible. */
+.live-tour-page .tour-room-table-panel > .live-tour-controls {
+  border-bottom: 0 !important;
+}
+.live-tour-page .tour-room-table-panel {
+  border-bottom: 0 !important;
+}
+
 .live-tour-controls-grid {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -143,27 +152,27 @@
 .live-tour-page .tour-inline-reorder{position:sticky;left:0;display:flex;align-items:center;gap:4px;width:max-content;margin-top:4px;padding:4px;border:1px solid #b9cec2;border-radius:5px;background:#f3faf6}
 .live-tour-page .tour-inline-reorder input{width:60px;min-width:0;min-height:28px;padding:3px 5px;font-size:12px;box-sizing:border-box}
 .live-tour-page .tour-inline-reorder button{min-height:28px;padding:3px 8px;font-size:12px;white-space:nowrap}
-.live-tour-page .tour-room-panel .tour-room-grid{grid-template-columns:repeat(var(--room-columns,1),minmax(0,1fr));min-width:0;width:100%;max-width:100%;box-sizing:border-box}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-card{container-type:inline-size;box-sizing:border-box;min-width:0}
+.live-tour-page .tour-room-panel .tour-room-grid{grid-template-columns:repeat(var(--room-columns,1),minmax(0,1fr));min-width:0;width:100%;max-width:100%;box-sizing:border-box;overflow:hidden}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-card{container-type:inline-size;box-sizing:border-box;min-width:0;max-width:100%;min-height:66px;gap:3.4px;overflow:hidden}
 .live-tour-page .tour-room-card .tour-room-card-head>strong{font-size:18px;font-weight:900;white-space:nowrap}
 .live-tour-page .tour-room-card .tour-room-type{flex-shrink:0;white-space:nowrap;margin:0;font-size:9px;padding:2px 4px}
 .live-tour-page .tour-room-customer-count{color:#b91c1c;font-weight:800;font-size:13px;margin:3px 0;text-align:center}
 .live-tour-page .tour-room-staff{font-size:6.5px;font-weight:800;line-height:1.5;text-align:left}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown{font-size:27px}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown svg{width:33px;height:33px}
-.live-tour-page .tour-room-panel .tour-room-grid .room-actions button{font-size:14px;min-height:28px;padding:0 2px}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown{font-size:23px}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown svg{width:28px;height:28px}
+.live-tour-page .tour-room-panel .tour-room-grid .room-actions button{font-size:12px;min-height:24px;padding:0 2px}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-card-head{gap:2px}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-card-head>strong{font-size:min(18px,11cqw)}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-type{font-size:min(9px,5cqw);padding:1px 2px}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown{font-size:min(27px,16cqw);gap:2px;white-space:normal;overflow-wrap:anywhere}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-card-head>strong{font-size:min(15.3px,9.35cqw)}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-type{font-size:min(7.65px,4.25cqw);padding:1px 2px}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown{font-size:min(23px,13.6cqw);gap:2px;white-space:normal;overflow-wrap:anywhere}
 .live-tour-page .tour-room-countdown .tour-room-countdown-label{font-size:66.666667%}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown svg{width:min(33px,16cqw);height:min(33px,16cqw)}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-customer-count{font-size:min(13px,9cqw);overflow-wrap:anywhere}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-staff{overflow-wrap:anywhere}
-.live-tour-page .tour-room-panel .tour-room-grid .room-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
-.live-tour-page .tour-room-panel .tour-room-grid .room-actions button{font-size:min(14px,8cqw);white-space:normal;overflow-wrap:anywhere;flex-wrap:wrap}
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-booking-button{padding:4px 2px}
-.live-tour-page .tour-room-panel .tour-room-grid .has-private-service .tour-room-booking-button{padding-right:2px;padding-bottom:27px}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown svg{width:min(28px,13.6cqw);height:min(28px,13.6cqw)}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-customer-count{font-size:min(11px,7.65cqw);margin:2.5px 0;overflow-wrap:anywhere}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-staff{font-size:5.5px;overflow-wrap:anywhere}
+.live-tour-page .tour-room-panel .tour-room-grid .room-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;padding-top:1.7px}
+.live-tour-page .tour-room-panel .tour-room-grid .room-actions button{font-size:min(12px,6.8cqw);min-height:24px;white-space:normal;overflow-wrap:anywhere;flex-wrap:wrap}
+.live-tour-page .tour-room-panel .tour-room-grid .tour-room-booking-button{gap:4.25px;padding:3.4px 2px;min-height:64.6px}
+.live-tour-page .tour-room-panel .tour-room-grid .has-private-service .tour-room-booking-button{padding-right:2px;padding-bottom:23px}
 .live-tour-page .live-tour-panel-tabs{flex-wrap:wrap;overflow:visible}
 .live-tour-page .live-tour-panel-tabs button{font-size:18px;font-weight:900;min-height:40px}
 @media(max-width:768px){
