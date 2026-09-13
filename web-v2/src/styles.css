@@ -1081,7 +1081,7 @@ tr:last-child td { border-bottom: 0; }
 .vera-dropdown-search-line input{width:100%;padding-right:68px!important}
 .vera-dropdown-search-line input::-webkit-search-cancel-button{display:none;-webkit-appearance:none}
 .vera-dropdown-search-line .vera-dropdown-clear{position:absolute;right:5px;min-height:34px;min-width:56px;padding:5px 8px;border:1px solid #cbdcd1;border-radius:6px;color:#174e3b;background:#edf5ee;font-weight:700;cursor:pointer}
-.vera-dropdown-search-line .vera-dropdown-clear:hover{background:#d7eade}
+
 
 /* Date format is independent of browser locale on desktop and mobile. */
 .vera-datetime-input { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .7fr); gap: 8px; width: 100%; min-width: 0; }
