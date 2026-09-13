@@ -49,8 +49,12 @@ async function forceFreshAttendance(originalFetch) {
 
   refreshPromise = (async () => {
     const session = await getCurrentSession()
-    const headers = new Headers({ Accept: 'application/json' })
-    if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+    if (!session?.access_token) {
+      lastResult = { ok: false, skipped: true, reason: 'no_auth_session' }
+      lastRefreshAt = Date.now()
+      return lastResult
+    }
+    const headers = new Headers({ Accept: 'application/json', Authorization: `Bearer ${session.access_token}` })
     const response = await originalFetch(`${API_BASE}${CHECK_PATH}`, {
       method: 'POST',
       headers,
@@ -58,6 +62,10 @@ async function forceFreshAttendance(originalFetch) {
     })
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
+      if (response.status === 401) {
+        lastResult = { ok: false, skipped: true, reason: 'unauthorized', status: response.status }
+        return lastResult
+      }
       throw new Error(payload.detail || payload.message || `Không kiểm tra được nguồn TimeSoft (HTTP ${response.status}).`)
     }
     lastRefreshAt = Date.now()
