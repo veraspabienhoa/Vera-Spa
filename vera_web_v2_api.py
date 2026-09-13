@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import hmac
+import logging
 from io import BytesIO
 import json
 import math
@@ -632,7 +633,14 @@ def _current_local_identity(token: str) -> Identity:
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"Web V2 local auth: identity lookup unavailable: {type(exc).__name__}")
+        cause = getattr(exc, "orig", None)
+        sqlstate = getattr(cause, "sqlstate", None) or getattr(cause, "pgcode", None) or "unknown"
+        # Do not log the exception string: SQLAlchemy may include session
+        # parameters or database credentials in it.
+        logging.getLogger(__name__).error(
+            "Web V2 local auth: identity lookup unavailable: %s; cause=%s; sqlstate=%s",
+            type(exc).__name__, type(cause).__name__, sqlstate,
+        )
         raise HTTPException(503, "Không xác minh được phiên đăng nhập PostgreSQL.") from exc
 
     if credential_changed:

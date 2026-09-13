@@ -80,6 +80,7 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(isAuthConfigured)
   const [authError, setAuthError] = useState('')
+  const [authRetry, setAuthRetry] = useState(0)
   const [page, setPage] = useState('leave')
   const [pageRefreshRevision, setPageRefreshRevision] = useState(0)
   const [longLeaveRevision, setLongLeaveRevision] = useState(0)
@@ -87,30 +88,47 @@ export default function App() {
   useEffect(() => {
     if (!isAuthConfigured) return undefined
     let mounted = true
+    let verification = 0
     const applySession = async (nextSession) => {
       if (!mounted) return
+      const attempt = ++verification
       setSession(nextSession); setAuthError('')
       if (!nextSession) { setProfile(null); setLoading(false); return }
+      setLoading(true)
+      setProfile(null)
       try {
         // Verify the persisted token before opening business pages. The shared
         // API client refreshes a stale token once on 401, preventing a locally
         // cached session from opening an app where every data table is blank.
         const me = await veraApi.me()
-        if (!me?.employee_username || me?.is_active === false) throw new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
-        if (mounted) {
+        if (!me?.employee_username || me?.is_active === false) {
+          const error = new Error('Tài khoản chưa được liên kết với nhân viên VERA đang hoạt động.')
+          error.status = 403
+          throw error
+        }
+        if (mounted && attempt === verification) {
           setProfile(me)
           setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readActivePage(nextSession.user))
         }
       } catch (err) {
-        if (mounted) { setProfile(null); setAuthError(err.message || 'Không xác minh được hồ sơ VERA.'); await signOutVera(); setSession(null) }
-      } finally { if (mounted) setLoading(false) }
+        if (mounted && attempt === verification) {
+          setProfile(null)
+          setAuthError(err.message || 'Không xác minh được hồ sơ VERA.')
+          // A database outage must not revoke a valid session. Business pages
+          // remain gated by profile verification until the operator retries.
+          if (err.status === 401 || err.status === 403) {
+            await signOutVera()
+            if (mounted && attempt === verification) setSession(null)
+          }
+        }
+      } finally { if (mounted && attempt === verification) setLoading(false) }
     }
     getCurrentSession().then(applySession).catch((err) => {
       if (mounted) { setAuthError(err.message || 'Không mở được phiên đăng nhập VERA.'); setLoading(false) }
     })
     const unsubscribe = onVeraAuthStateChange((_event, nextSession) => applySession(nextSession))
     return () => { mounted = false; unsubscribe() }
-  }, [standaloneRequest])
+  }, [standaloneRequest, authRetry])
 
   // Every authenticated account keeps an already-approved Web Push endpoint
   // synchronized with the backend. This is especially important on iPhone:
@@ -170,7 +188,7 @@ export default function App() {
     user_metadata: { ...(user.user_metadata || {}), full_name: profile.full_name || profile.employee_username },
   } : null
 
-  if (!shellUser) return <div className="boot-screen">Đang xác minh hồ sơ VERA SPA…</div>
+  if (!shellUser) return <div className="boot-screen"><div><p role="alert">{authError || 'Đang xác minh hồ sơ VERA SPA…'}</p><button type="button" className="primary-button" onClick={() => setAuthRetry(value => value + 1)}>Thử xác minh lại</button><button type="button" className="secondary-button" onClick={signOut}>Đăng xuất</button></div></div>
 
   return (
     <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
