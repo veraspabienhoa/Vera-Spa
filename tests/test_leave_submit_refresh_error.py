@@ -74,7 +74,7 @@ function harness(failedRead = '', failedCreate = false) {
   await success.submit({ preventDefault() {} })
   assert.equal(success.state.error, '')
   assert.equal(success.state.warnings.length, 1)
-  assert.deepEqual(success.calls, ['create', 'leaveDailyStats', 'leaveRecords', 'leaveReasons', 'employees', 'watch'])
+  assert.deepEqual(success.calls, ['create', 'leaveRecords', 'leaveDailyStats', 'leaveReasons', 'employees', 'watch'])
   const initial = harness('leaveDailyStats')
   assert.equal(await initial.load(), false)
   assert.match(initial.state.error, /Không tải được/)
