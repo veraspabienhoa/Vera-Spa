@@ -145,6 +145,7 @@
 .live-tour-page .live-tour-panel-tabs button{font-size:18px;font-weight:900;min-height:40px}
 @media(max-width:768px){
   .live-tour-page .live-tour-desktop-only{display:none!important}
+  .live-tour-page .live-tour-mobile-reorder-hidden{display:none!important}
   .page-wrap.live-tour-page-wrap,.live-tour-page{min-width:0!important;width:100%!important;max-width:100%!important;box-sizing:border-box;overflow-x:hidden!important}
   .live-tour-page>*{min-width:0;max-width:100%;box-sizing:border-box}
   .live-tour-page div.tour-topbar{flex-wrap:wrap;gap:8px;min-width:0;width:100%;max-width:100%;box-sizing:border-box;overflow:visible}
@@ -175,4 +176,11 @@
   .live-tour-page .responsive-data-table.tour-table table{width:100%!important;min-width:0!important;max-width:100%;table-layout:fixed}
   .live-tour-page .responsive-data-table.tour-table th,
   .live-tour-page .responsive-data-table.tour-table td{min-width:0!important;max-width:none;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+  .live-tour-page .tour-table .live-tour-actions-col{width:75px!important;min-width:75px!important;max-width:75px!important}
+  .live-tour-page .tour-table .live-tour-actions-col .live-tour-service-actions{display:flex;flex-direction:column;gap:2px}
+  .live-tour-page .tour-table .live-tour-actions-col .live-tour-service-actions button{width:100%;min-width:0;min-height:24px;padding:2px 1px;font-size:8px}
+  .live-tour-page .tour-table .tour-col-employee{width:26%;white-space:nowrap!important;overflow-wrap:normal;word-break:normal}
+  .live-tour-page .tour-table .tour-col-employee>.text-button{display:block;width:100%;min-width:0;overflow:hidden;white-space:nowrap;text-align:left;font-size:clamp(6px,2vw,9px);letter-spacing:-.02em}
+  .live-tour-page .tour-table .tour-col-appointment{container-type:inline-size}
+  .live-tour-page .tour-table .tour-col-appointment .live-tour-appointment-editor:not(.quick) input{width:var(--appointment-mobile-width,133.333333%);max-width:none;height:var(--appointment-mobile-height,34.666667px);min-height:var(--appointment-mobile-height,34.666667px);transform:scale(var(--appointment-mobile-scale,.75));transform-origin:left top}
 }

@@ -432,7 +432,7 @@ test('board orders the standard start column across dates, ignoring remaining ti
     assert.ok(leave)
     await act(() => leave.click())
     assert.deepEqual(names(), ['Nghỉ phép hôm nay'])
-    assert.deepEqual([...document.querySelectorAll('.tour-records-panel tbody .tour-col-stt')].map((cell) => cell.textContent), ['1'])
+    assert.deepEqual([...document.querySelectorAll('.tour-records-panel tbody .tour-col-stt')].map((cell) => cell.textContent), ['2'])
   } finally { await f.dispose() }
 })
 
@@ -582,6 +582,11 @@ test('admin bottom and direct STT actions target selected employee; manual order
       'Hủy Booking', 'Đổi nhân viên', 'Nghỉ giữa ca', 'Kết thúc nghỉ',
       'Xuống cuối', 'Lên đầu',
     ])
+    for (const label of ['Xuống cuối', 'Lên đầu', 'Lên 1', 'Xuống 1']) {
+      assert.ok([...document.querySelectorAll('.live-tour-controls-actions > button')].find(button => button.textContent === label).classList.contains('live-tour-mobile-reorder-hidden'))
+    }
+    assert.ok(document.querySelector('select[aria-label="Số vị trí di chuyển"]').classList.contains('live-tour-mobile-reorder-hidden'))
+    assert.equal(document.querySelector('input[aria-label="Lịch hẹn của An Bình"]').style.getPropertyValue('--appointment-mobile-scale'), '0.75')
   } finally { await f.dispose() }
 })
 

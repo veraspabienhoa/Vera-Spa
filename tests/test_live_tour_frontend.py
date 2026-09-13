@@ -530,4 +530,4 @@ console.log(JSON.stringify(['all','leave','doing','available'].map(filter =>
 """
     result = subprocess.run(['node', '--input-type=module', '-e', script], check=True, capture_output=True, text=True)
     assert json.loads(result.stdout) == [['blank', 'early', 'tie', 'middle', 'late', 'invalid', 'leave']] * 4
-    assert 'column === sttColumn(columns) ? index + 1' in source
+    assert "column === sttColumn(columns) ? String(item[column] ?? '')" in source

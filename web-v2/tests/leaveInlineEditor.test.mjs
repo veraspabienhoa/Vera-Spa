@@ -13,6 +13,7 @@ const built = await build({
   entryPoints: [fileURLToPath(new URL('../src/pages/LeaveRegistrationPage.jsx', import.meta.url))],
   bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic',
   external: ['react', 'react/jsx-runtime', 'lucide-react'],
+  loader: { '.css': 'empty' },
   plugins: [{ name: 'mock-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/(api|data|watchBell|pushNotifications)$/ }, (args) => ({ path: args.path.split('/').at(-1), namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents: {

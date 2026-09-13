@@ -49,7 +49,7 @@ test('all TIP cards are visible and receipt shows VERA brand, address and exact 
   await act(() => root.render(React.createElement(Tip, { form: { tip_mode: 'cards', tip_card_ids: [] }, setForm() {}, cards, total: 0, preferenceKey: 'test' })))
   assert.equal(document.querySelectorAll('.tour-tip-cards button').length, 6)
   assert.equal(document.querySelector('.tour-tip-cards button').textContent, '+ 10.000 đ')
-  await act(() => root.render(React.createElement(Receipt, { invoice: { id: 'i', bill_no: 'LIVE-20260911-0005', total: 150000, entries: [] }, paymentSettings: { bank }, onClose() {} })))
+  await act(() => root.render(React.createElement(Receipt, { invoice: { id: 'i', bill_no: 'LIVE-20260911-0005', total: 150000, entries: [], payment_bank: bank }, paymentSettings: { bank }, onClose() {} })))
   assert.equal(document.querySelector('.tour-receipt h2').textContent, 'VERA SPA')
   assert.equal(document.querySelector('.vera-receipt-address').textContent, '193 Trương Định, Tam Hiệp, Đồng Nai')
   assert.ok(document.querySelector('.tour-receipt').textContent.includes('VERA-20260911-0005'))
