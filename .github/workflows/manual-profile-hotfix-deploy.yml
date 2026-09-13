@@ -18,6 +18,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Configure SSH
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -29,6 +32,16 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+      - name: Report runtime before deployment
+        timeout-minutes: 2
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); cd "$(readlink -f "/proc/${pid}/cwd")"; /opt/vera-spa/.venv/bin/python -' \
+            < vera_vps_runtime_diagnostics.py
 
       - name: Deploy current main commit
         env:
@@ -90,3 +103,14 @@ jobs:
           else:
               raise SystemExit(f'Production local Auth health check failed: {last_error}')
           PY
+
+      - name: Report runtime after deployment
+        if: always()
+        timeout-minutes: 2
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); cd "$(readlink -f "/proc/${pid}/cwd")"; /opt/vera-spa/.venv/bin/python -' \
+            < vera_vps_runtime_diagnostics.py
