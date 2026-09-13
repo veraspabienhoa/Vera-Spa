@@ -4,12 +4,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_postlogin_restores_each_users_last_active_page():
+def test_postlogin_defaults_to_live_tour_but_preserves_page_on_reverification():
     source = (ROOT / "web-v2/src/App.jsx").read_text(encoding="utf-8")
 
     assert "TOUR_DEFAULT_ROLES" not in source
     assert "ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'" in source
-    assert "window.localStorage.getItem(activePageStorageKey(user))" in source
+    assert "const readActivePage = () => 'live-tour'" in source
+    assert "verifiedUser.current !== nextSession.user.id" in source
     assert "window.localStorage.setItem(activePageStorageKey(user), page)" in source
     assert "standaloneRequest.enabled ? standaloneRequest.page : readActivePage(nextSession.user)" in source
     assert "rememberActivePage(user, nextPage)" in source

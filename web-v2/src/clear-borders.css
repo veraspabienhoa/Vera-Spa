@@ -93,6 +93,24 @@
   body :is(input, textarea, select) { transition: none; }
 }
 
+body button.date-link,
+body button.employee-highlight-button { border: 0 !important; }
+body :is(.date-link, .date-toolbar button, .date-picker-control, .vera-date-picker-button) { transition: none !important; }
+body :is(.date-link, .date-toolbar button, .date-picker-control):hover,
+body :is(.date-link, .date-toolbar button, .date-picker-control):active {
+  transform: none !important;
+  filter: none !important;
+}
+body .vera-date-picker-button:hover,
+body .vera-date-picker-button:active {
+  transform: translateY(-50%) !important;
+  filter: none !important;
+  color: var(--green-800) !important;
+  background: #edf4f0 !important;
+}
+body .date-link:hover { color: #203c31 !important; }
+body .date-toolbar button:hover { background: #f2f5f3; }
+
 /* Live Tour exception: retain the outer frame and STT header grid only.
    Applies to desktop, mobile and print; leave status colors and focus intact. */
 body .live-tour-page .tour-table table {

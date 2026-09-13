@@ -6,13 +6,12 @@
   box-shadow: none;
 }
 
-/* Remove only the two upper horizontal separators below the room board. The
-   lower line at the start of the employee table stays visible. */
+/* Restore both separators below the room board and quick controls. */
 .live-tour-page .tour-room-table-panel > .live-tour-controls {
-  border-bottom: 0 !important;
+  border-bottom: 2px solid #37634f !important;
 }
 .live-tour-page .tour-room-table-panel {
-  border-bottom: 0 !important;
+  border-bottom: 2px solid #37634f !important;
 }
 
 .live-tour-controls-grid {
