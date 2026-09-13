@@ -1,0 +1,92 @@
+.live-tour-report-table {
+  overflow-x: hidden;
+}
+
+.live-tour-report-table table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  font-size: clamp(10px, .82vw, 13px);
+}
+
+.live-tour-report-table th,
+.live-tour-report-table td {
+  min-width: 0;
+  padding: 9px 6px;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.live-tour-report-table th:nth-child(1) { width: 12%; }
+.live-tour-report-table th:nth-child(2) { width: 13%; }
+.live-tour-report-table th:nth-child(3) { width: 20%; }
+.live-tour-report-table .report-money-column { width: 9%; }
+.live-tour-report-table .report-actions-column { width: 19%; }
+
+.report-money-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-total-cell { font-weight: 900; }
+
+.report-invoice-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.report-invoice-actions .secondary-button {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 3px;
+  white-space: nowrap;
+  font-size: clamp(9px, .72vw, 12px);
+}
+
+@media (max-width: 760px) {
+  .live-tour-report-table { border: 0 !important; }
+  .live-tour-report-table table,
+  .live-tour-report-table tbody,
+  .live-tour-report-table tr,
+  .live-tour-report-table td { display: block; width: 100%; }
+  .live-tour-report-table table { border: 0 !important; font-size: 11px; }
+  .live-tour-report-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .live-tour-report-table tr {
+    box-sizing: border-box;
+    margin-bottom: 10px;
+    border: 2px solid var(--table-header-border, #264f3c);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .live-tour-report-table td {
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: minmax(100px, 38%) minmax(0, 1fr);
+    gap: 8px;
+    padding: 7px 9px;
+    text-align: left;
+    white-space: normal;
+  }
+  .live-tour-report-table td::before {
+    content: attr(data-label);
+    color: #315345;
+    font-weight: 800;
+  }
+  .live-tour-report-table .report-actions-cell { grid-template-columns: 1fr; }
+  .live-tour-report-table .report-actions-cell::before { content: none; }
+  .report-invoice-actions .secondary-button { min-height: 34px; padding: 6px 2px; font-size: 10px; }
+}
