@@ -10,6 +10,13 @@ const module = { exports: {} }
 new Function('require', 'module', 'exports', result.outputFiles[0].text)(createRequire(import.meta.url), module, module.exports)
 const render = props => renderToStaticMarkup(React.createElement(module.exports.default, { target: 'Nhân viên', ...props }))
 
+test('active service can finish even when a new booking cannot start', () => {
+  const html = render({ canStart: false, waiting: 1, doing: 1 })
+  assert.match(html, /Hoàn thành/)
+  assert.doesNotMatch(html, /Thực hiện/)
+  assert.doesNotMatch(render({ canStart: false, waiting: 1 }), /<button/)
+})
+
 test('idle → booked → doing → completed exposes only the applicable actions', () => {
   assert.doesNotMatch(render({}), /<button/)
   const waiting = render({ waiting: 1 })
