@@ -31,6 +31,7 @@ import vera_auto_check as auto_check
 import vera_auto_penalty_notifications as penalty_notifications
 import vera_web_v2_attendance_break_alerts as break_alerts
 import vera_web_v2_snapshot as snapshot
+from vera_partial_leave_hours import EARLY_REASONS, daily_clock
 
 
 RELEASE = "outside-leave-restriction-2026-09-04-v5-exact-reasons"
@@ -61,9 +62,7 @@ def _norm(value: Any) -> str:
 
 
 RESTRICTED_LEAVE_REASON_KEYS = frozenset(_norm(reason) for reason in RESTRICTED_LEAVE_REASONS)
-EARLY_LEAVE_REASON_KEYS = frozenset(
-    _norm(reason) for reason in RESTRICTED_LEAVE_REASONS if "Về sớm" in reason
-)
+EARLY_LEAVE_REASON_KEYS = frozenset(EARLY_REASONS)
 
 
 def _restricted_leave_reason(value: Any) -> bool:
@@ -84,7 +83,7 @@ def _local_naive(value: Any) -> datetime | None:
 
 def _restriction_map(conn, start: date, end: date) -> dict[tuple[date, str], dict[str, Any]]:
     rows = conn.execute(text("""
-        SELECT leave_date, employee_name, leave_reason, created_at
+        SELECT leave_date, employee_name, COALESCE(NULLIF(leave_reason, ''), leave_type) AS leave_reason, created_at
         FROM leave_records
         WHERE leave_date BETWEEN :start_date AND :end_date
         ORDER BY leave_date, employee_name, created_at
@@ -92,7 +91,7 @@ def _restriction_map(conn, start: date, end: date) -> dict[tuple[date, str], dic
     output: dict[tuple[date, str], dict[str, Any]] = {}
     for row in rows:
         reason = str(row.get("leave_reason") or "").strip()
-        if not _restricted_leave_reason(reason):
+        if not _restricted_leave_reason(reason) and not _early_leave_reason(reason):
             continue
         key = (row["leave_date"], _norm(row.get("employee_name")))
         entry = output.setdefault(key, {"reasons": [], "early_leave_registered_at": None})
@@ -191,7 +190,8 @@ def _scheduled_early_checkout(
     """
     if not any(_early_leave_reason(reason) for reason in reasons):
         return None
-    if break_out.time() < CUTOFF:
+    cutoff = time.fromisoformat(item.get('scheduled_early_leave_time') or '17:00')
+    if break_out.time() < cutoff:
         return None
     if early_leave_registered_at is None or early_leave_registered_at > break_out:
         return None
@@ -267,7 +267,19 @@ def _apply_restrictions_and_penalties(
             continue
 
         reasons = list(restriction.get("reasons") or [])
+        if any(_early_leave_reason(reason) for reason in reasons):
+            item['scheduled_early_leave_time'] = daily_clock(conn, work_day, item.get('employee_name'), 'early') or '17:00'
         restriction_text = " / ".join(reasons)
+        if not any(_restricted_leave_reason(reason) for reason in reasons):
+            # Medical/general early leave changes checkout recognition only;
+            # it does not introduce a new outside-break penalty policy.
+            departure = _parse_clock(item.get('break_out'), work_day)
+            checkout = _scheduled_early_checkout(item, work_day=work_day, reasons=reasons,
+                early_leave_registered_at=restriction.get('early_leave_registered_at'), break_out=departure) if departure else None
+            if checkout is not None:
+                _mark_final_early_checkout(item, checkout=checkout, restriction_text=restriction_text)
+            output.append(item)
+            continue
         item["break_restricted_reason"] = restriction_text
         item["break_alert_suppressed"] = True
         item["break_status"] = f"KHÔNG ĐƯỢC SỬ DỤNG GIỜ RA NGOÀI · {restriction_text}"

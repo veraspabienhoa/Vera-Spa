@@ -43,6 +43,19 @@ def test_scheduled_early_leave_checkout_is_not_break():
     assert "KHÔNG NGHỈ GIỮA CA" in item["break_status"]
 
 
+def test_configured_ca1_early_leave_at_1500_and_medical_reason():
+    item = {**_bich_nhu_item(), 'scheduled_early_leave_time': '15:00', 'faceid_last': '15:00:24', 'break_out': '15:00:22'}
+    checkout = _scheduled_early_checkout(item, work_day=date(2026, 8, 31),
+        reasons=['Về sớm bệnh có giấy khám hoặc được quản lý duyệt'],
+        early_leave_registered_at=datetime(2026, 8, 31, 9),
+        break_out=datetime(2026, 8, 31, 15, 0, 22))
+    assert checkout == datetime(2026, 8, 31, 15, 0, 24)
+    item['scheduled_early_leave_time'] = '15:30'
+    assert _scheduled_early_checkout(item, work_day=date(2026, 8, 31),
+        reasons=['Về sớm'], early_leave_registered_at=datetime(2026, 8, 31, 9),
+        break_out=datetime(2026, 8, 31, 15, 0, 22)) is None
+
+
 def test_late_entered_early_leave_keeps_outside_event_for_penalty():
     item = _bich_nhu_item()
     checkout = _scheduled_early_checkout(

@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text
 
 import vera_progressive_penalty as progressive_penalty
+from vera_partial_leave_hours import LATE_REASONS, daily_clock
 
 VN_TZ = timezone(timedelta(hours=7))
 RELEASE = "auto-check-pg-v3-employee-notification"
@@ -22,11 +23,7 @@ DEFAULT_CONFIG = {
 }
 MIN_AUTOMATIC_LATE_PENALTY_MINUTES = 5
 
-REGISTERED_LATE_REASONS = {
-    "di tre phat sinh",
-    "di tre co phep",
-    "di tre khong phep",
-}
+REGISTERED_LATE_REASONS = LATE_REASONS
 REGISTERED_LATE_BASELINE_MINUTES = 17 * 60
 
 
@@ -234,15 +231,13 @@ def late_support_for_day(conn, work_date: date, employee: str) -> tuple[list[str
 
 
 def registered_late_for_day(conn, work_date: date, employee: str) -> tuple[list[str], int, str]:
-    """Return a same-day registered late reason and its 17:00 baseline.
+    """Use today's configured staff shift clock for a registered late arrival.
 
-    These three registrations have historically moved the employee's standard
-    check-in to 17:00 for that day. The frequent PostgreSQL penalty path must
-    preserve the same rule instead of charging against the employee's normal
-    shift start.
+    Retain the legacy baseline only when a staff shift cannot be resolved.
+    Generated penalties never grant their own later arrival allowance.
     """
     rows = conn.execute(text("""
-        SELECT employee_name, leave_reason, source_sheet_id, updated_by
+        SELECT employee_name, COALESCE(NULLIF(leave_reason, ''), leave_type) AS leave_reason, source_sheet_id, updated_by
         FROM leave_records
         WHERE leave_date=:day
           AND COALESCE(source_sheet_id, '') <> 'postgres:auto_check'
@@ -255,9 +250,11 @@ def registered_late_for_day(conn, work_date: date, employee: str) -> tuple[list[
         and str(row.get("source_sheet_id", "") or "") != "postgres:auto_check"
         and not _norm(row.get("updated_by", "")).startswith("auto update")
     ]
+    clock = daily_clock(conn, work_date, employee, 'late') if reasons else None
+    baseline = sum(int(part) * factor for part, factor in zip(clock.split(':'), (60, 1))) if clock else REGISTERED_LATE_BASELINE_MINUTES
     return (
         reasons,
-        REGISTERED_LATE_BASELINE_MINUTES,
+        baseline,
         reasons[0] if reasons else "",
     )
 
