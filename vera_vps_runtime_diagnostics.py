@@ -42,7 +42,7 @@ def report_journal() -> None:
         return
     result = subprocess.run(
         ['journalctl', '-q', '-u', unit[1], '--since', '20 minutes ago',
-         '--no-pager', '-o', 'json', '-n', '1800'],
+         '--no-pager', '--reverse', '-o', 'json', '-n', '1800'],
         capture_output=True, text=True, timeout=10,
     )
     if result.returncode:
@@ -61,7 +61,8 @@ def report_journal() -> None:
             counts[summary] += 1
             stamp = str(entry.get('__REALTIME_TIMESTAMP', ''))
             if stamp.isdigit():
-                last_seen[summary] = datetime.fromtimestamp(int(stamp) / 1_000_000, timezone.utc).isoformat()
+                observed = datetime.fromtimestamp(int(stamp) / 1_000_000, timezone.utc).isoformat()
+                last_seen[summary] = max(last_seen.get(summary, ''), observed)
     print(f'RUNTIME: journal_records={records} (last 20 minutes, at most 1800 records)')
     for summary, count in counts.items():
         print(f'RUNTIME: count={count} last_utc={last_seen.get(summary, "unknown")} {summary}')
