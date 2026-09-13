@@ -67,6 +67,7 @@ jobs:
             "SQLAlchemy>=2.0,<3" \
             "fastapi>=0.115,<1" \
             "requests>=2.31,<3" \
+            "gspread>=6,<7" \
             "openpyxl>=3.1,<4"
 
       - name: Compile affected Python modules
