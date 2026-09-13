@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { advanceBookingField } from '../lib/advanceBookingField'
 import { bookingRoomGroup, bookingRoomState, roomOptionMatches } from '../lib/liveTourRooms'
@@ -15,12 +15,22 @@ import { isBeforeShiftReady } from '../lib/liveTourShiftReady'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 
+function useBookingClock() {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
+}
+
 function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, canSharePrivateRoom, busy, error, onAction, onClose }) {
   const [sharePrivateRoom, setSharePrivateRoom] = useState(false)
   const employees = data.state?.employees || []
   const catalog = data.services || []
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
-  const eligibleEmployees = bookingEmployees(employees)
+  const bookingClock = useBookingClock()
+  const eligibleEmployees = bookingEmployees(employees, bookingClock)
   const groupRooms = rooms.filter((item) => bookingRoomGroup(item.name, rooms) === context.roomGroup)
   const blankRow = (usedRooms = []) => {
     const available = bookingRoomState(rooms, data.room_assignments || employees, catalog, '', '', [], sharePrivateRoom).options
@@ -148,7 +158,8 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
     const result = await onAction('finish_to_pending', changed ? bookingPayload() : { employee_id: employeeId }, [])
     if (result) setCompleted(result.result.pending)
   }
-  const employeeOptions = bookingEmployees(employees).map((row) => {
+  const bookingClock = useBookingClock()
+  const employeeOptions = bookingEmployees(employees, bookingClock).map((row) => {
     const remaining = row.started_at && row.duration != null ? Math.ceil((new Date(row.started_at).getTime() + Number(row.duration) * 60000 - Date.now()) / 60000) : null
     return { value: row.id, label: row.name, detail: !row.service ? 'Đang rảnh' : `${row.status}${remaining !== null ? ` · ${remaining <= 15 ? 'Sắp xong · ' : ''}Còn ${remaining} phút` : ''} · ${row.room}` }
   })
