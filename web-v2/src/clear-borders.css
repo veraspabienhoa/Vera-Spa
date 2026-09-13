@@ -92,3 +92,18 @@
 @media (prefers-reduced-motion: reduce) {
   body :is(input, textarea, select) { transition: none; }
 }
+
+/* Live Tour exception: retain the outer frame and STT header grid only.
+   Applies to desktop, mobile and print; leave status colors and focus intact. */
+body .live-tour-page .tour-table table {
+  border: 2px solid #264f3c !important;
+}
+body .live-tour-page .tour-table tbody,
+body .live-tour-page .tour-table tbody tr,
+body .live-tour-page .tour-table tr.tour-row-before-shift td.tour-col-employee,
+body .live-tour-page .tour-table tbody tr > :is(td, th) {
+  border: 0 !important;
+}
+body .live-tour-page .tour-table thead :is(th, td) {
+  border: 2px solid #264f3c !important;
+}
