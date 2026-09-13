@@ -614,7 +614,13 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canBackup = capability('backup', isAdmin || user?.permissions?.live_tour_backup === true)
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
   const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, pending: canPending, invoiceView: canInvoiceView, paidInvoiceView: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory })
+  const loadPending = useRef(false)
   const load = useCallback(async (refresh = false, quiet = false) => {
+    // Polls must not consume another backend connection while a read is pending.
+    if (quiet && loadPending.current) return
+    // Explicit reloads wait for the previous read, then fetch fresh state.
+    while (loadPending.current) await new Promise((resolve) => setTimeout(resolve, 100))
+    loadPending.current = true
     if (!quiet) { setBusy(true); setError('') }
     try {
       const next = { ...EMPTY_LIVE_TOUR, ...await veraApi.liveTour(refresh) }
@@ -629,6 +635,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       if (err.status === 403) { setModal(null); setBookingContext(null); setPendingContext(null); setReceipt(null); setCustomerHistoryModal(null) }
       setError(err.message || 'Không tải được Live Tour.')
     } finally {
+      loadPending.current = false
       if (!quiet) setBusy(false)
     }
   }, [cacheKey])

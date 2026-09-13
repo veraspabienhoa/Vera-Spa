@@ -62,10 +62,13 @@ class SettingsDatabase:
             else:
                 self.stored, self.revision = json.loads(params["value"]), self.revision + 1
         else:
-            assert "pg_advisory_xact_lock" in sql, sql
+            assert "pg_try_advisory_xact_lock" in sql, sql
 
         class Result:
             rowcount = count
+            def scalar(self):
+                assert "pg_try_advisory_xact_lock" in sql
+                return True
             def mappings(self): return self
             def all(self): return rows
             def first(self): return rows[0] if rows else None
