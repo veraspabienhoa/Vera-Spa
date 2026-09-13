@@ -22,6 +22,7 @@ import { startSearchableDropdowns } from './lib/searchableDropdowns'
 import './styles.css'
 import './searchable-dropdowns.css'
 import './visibility-cleanup.css'
+import './clear-borders.css'
 
 void registerVeraServiceWorker().catch(() => {})
 startPurchaseReconcileAlertWatcher()

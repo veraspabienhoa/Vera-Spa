@@ -1,0 +1,37 @@
+/* Shared screen treatment; printed invoices retain their print stylesheet. */
+@media screen {
+  :root { --line: #94b3a5; --control-border: #4c806b; }
+
+  body :is(.panel, .card, .login-card, .modal-card, .modal-content,
+    .live-tour-modal, .identity-editor-card, .identity-camera-card,
+    .employee-media-draft, .identity-editor-section, .tour-booking-combo) {
+    border: 2px solid #46765f;
+    box-shadow: 0 5px 18px rgb(24 67 47 / 12%);
+  }
+
+  body :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='range']):not([type='color']), textarea, select) {
+    box-sizing: border-box;
+    border: 2px solid var(--control-border);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  body :is(input, textarea, select):hover:not(:disabled) { border-color: #225e45; }
+  body :is(input, textarea, select):focus-visible {
+    border-color: #96701f;
+    outline: 2px solid #d5ae50;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgb(213 174 80 / 16%);
+  }
+  body :is(input, textarea, select)[aria-invalid='true'] { border-color: #bc3434; }
+  body :is(input, textarea, select):disabled { border-color: #8d9d95; }
+  body :is(fieldset, .table-wrap, .table-container, .tour-booking-row) { border: 2px solid #86a695; }
+  body :is(.tour-search-popup, [role='listbox'], .searchable-dropdown-menu) {
+    border: 2px solid #2d6e52;
+    box-shadow: 0 8px 24px rgb(20 54 38 / 22%);
+  }
+  body :is(.primary-button, .secondary-button) { border-width: 2px; }
+  body .secondary-button { border-color: #618b76; }
+  body .primary-button { border-color: #123d2b; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body :is(input, textarea, select) { transition: none; }
+}
