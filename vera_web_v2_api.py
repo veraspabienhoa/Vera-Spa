@@ -143,6 +143,11 @@ def _engine_instance():
     return _engine
 
 
+def _auth_engine_instance():
+    from vera_web_v2_auth_pool import auth_engine
+    return auth_engine(_engine_instance())
+
+
 def _google_client():
     global _gspread
     if _gspread is None:
@@ -572,7 +577,7 @@ def _current_local_identity(token: str) -> Identity:
     credential_changed = False
     identity: Identity | None = None
     try:
-        engine = _engine_instance()
+        engine = _auth_engine_instance()
         ensure_local_auth_schema(engine)
         with engine.begin() as conn:
             rows = conn.execute(text(f"""
@@ -638,8 +643,9 @@ def _current_local_identity(token: str) -> Identity:
         # Do not log the exception string: SQLAlchemy may include session
         # parameters or database credentials in it.
         logging.getLogger(__name__).error(
-            "Web V2 local auth: identity lookup unavailable: %s; cause=%s; sqlstate=%s",
+            "Web V2 local auth: identity lookup unavailable: %s; cause=%s; sqlstate=%s; pool=%s",
             type(exc).__name__, type(cause).__name__, sqlstate,
+            engine.pool.status() if "engine" in locals() else "unavailable",
         )
         raise HTTPException(503, "Không xác minh được phiên đăng nhập PostgreSQL.") from exc
 
@@ -1560,7 +1566,7 @@ def health():
 
 @app.get("/v2/me")
 def me(ident: Identity = Depends(current_identity)):
-    with _engine_instance().connect() as conn:
+    with _auth_engine_instance().connect() as conn:
         permission_payload = _permission_payload(conn)
         permissions = {
             feature: _feature_allowed(conn, ident, feature, permission_payload)
