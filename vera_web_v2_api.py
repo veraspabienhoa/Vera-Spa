@@ -248,9 +248,9 @@ def _field(row: dict, *names: str, default=""):
     return default
 
 
-def _reason_item(conn, reason: str) -> dict:
+def _reason_item(conn, reason: str, *, policy_rows: list[dict] | None = None) -> dict:
     wanted = _norm(reason)
-    for row in _policy_rows(conn):
+    for row in _policy_rows(conn) if policy_rows is None else policy_rows:
         name = str(_field(row, "Lý do nghỉ", default="") or "").strip()
         if _norm(name) == wanted:
             detail = str(_field(row, "Chi tiết", default="") or "").strip()
@@ -1719,11 +1719,12 @@ def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(cu
         _require_feature(conn, ident, "leave")
         can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
         output = []
-        for row in _policy_rows(conn):
+        policy_rows = _policy_rows(conn)
+        for row in policy_rows:
             name = str(_field(row, "Lý do nghỉ", default="") or "").strip()
             if not name:
                 continue
-            item = _reason_item(conn, name)
+            item = _reason_item(conn, name, policy_rows=policy_rows)
             allowed = _role_tokens(item["allowed_roles"])
             if allowed and ident.role not in allowed:
                 continue
