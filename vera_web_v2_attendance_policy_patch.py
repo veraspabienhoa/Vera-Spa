@@ -232,7 +232,9 @@ def install_attendance_policy_patch() -> None:
         # 17:00. Because a group is anchored by its first scan, tolerate 16:55.
         if len(groups) == 2:
             checkout = groups[1]
-            if checkout.time() >= EARLY_CHECKOUT_GROUP_START and outside_rule._same_event(checkout, break_out, 5 * 60):
+            configured = item.get('scheduled_early_leave_time')
+            threshold = (datetime.combine(work_day, time.fromisoformat(configured)) - timedelta(minutes=5)).time() if configured else EARLY_CHECKOUT_GROUP_START
+            if checkout.time() >= threshold and outside_rule._same_event(checkout, break_out, 5 * 60):
                 return checkout
 
         return original_scheduled_early_checkout(
