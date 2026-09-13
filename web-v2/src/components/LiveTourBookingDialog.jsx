@@ -104,6 +104,8 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   const employee = employees.find((row) => row.id === employeeId)
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
   const roomState = bookingRoomState(rooms, data.room_assignments || employees, catalog, employeeId, room, items, sharePrivateRoom)
+  const awaitingPayment = tourNameKey(employee?.status) === 'cho thanh toan'
+  const hasPayableService = Boolean(employee?.service || employee?.service_items?.length)
   const editing = Boolean(employee?.service)
   const doing = ['dang thuc hien', 'dang su dung'].includes(tourNameKey(employee?.status))
   const autoRequest = !doing && (employee?.request_source === 'auto_shift_ready' || isBeforeShiftReady({
@@ -147,6 +149,14 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
     }, [])
     if (result) onClose()
   }
+  const retainBillAndBook = async () => {
+    if (!awaitingPayment || !hasPayableService || !canPayment || !canBook || busy) return
+    const result = await onAction('move_pending', { employee_id: employeeId }, [])
+    if (result?.result?.pending) {
+      setItems([]); setRoom(''); setRequest(''); setCustomerId(''); setComboId(''); setNote(''); setServiceId('')
+      setMessage('')
+    }
+  }
   const finish = async () => {
     setMessage('')
     const changed = JSON.stringify(items) !== JSON.stringify(bookingServiceItems(employee, catalog))
@@ -167,9 +177,20 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
     .map((item) => ({ value: item.id, label: item.name, detail: `${item.duration ?? '∞'} phút · ${money(item.price)}${selectedCombo?.component_balances && !selectedCombo.component_balances.some(part => part.service_id === item.id) ? ' · Mua thêm ngoài combo' : ''}` }))
   if (context.roomGroup && !context.employeeId) return <LiveTourMultiBookingDialog data={data} context={context} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canSharePrivateRoom={canSharePrivateRoom} busy={busy} error={error} onAction={onAction} onClose={onClose}/>
   return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog"
-    title={completed ? 'Đã hoàn thành dịch vụ' : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}>
+    title={completed ? 'Đã hoàn thành dịch vụ' : awaitingPayment ? `Booking · ${employee?.name}` : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}>
     {(roomState.error || error || message) && <p className="error-box" role="alert">{roomState.error || error || message}</p>}
     {completed ? <><p>Đã chuyển dịch vụ vào Chờ thanh toán. {employee?.name} đã rảnh để nhận lịch mới.</p><div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canPayment && <button type="button" className="primary-button" onClick={() => onCheckout(completed)}>Thanh toán</button>}</div></>
+      : awaitingPayment ? <>
+        <p><strong>{employee?.name}</strong> còn phiên dịch vụ đã hoàn thành, chưa chuyển khỏi dòng nhân viên.</p>
+        {hasPayableService ? <p>{employee.service} · {employee.room}</p> : <p className="error-box" role="alert">Phiên này đang có trạng thái Chờ thanh toán nhưng thiếu dữ liệu dịch vụ. Hãy làm mới Bảng tua và kiểm tra hóa đơn cũ trước khi đặt lịch mới.</p>}
+        <div className="live-tour-modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>Đóng</button>
+          {canPayment && hasPayableService && <>
+            {canBook && <button type="button" className="primary-button" disabled={busy} onClick={retainBillAndBook}>Giữ hóa đơn chờ và đặt lịch mới</button>}
+            <button type="button" className="secondary-button" disabled={busy} onClick={() => onCheckout(null, employee)}>Thanh toán</button>
+          </>}
+        </div>
+      </>
       : <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {canSharePrivateRoom && !editing && <label className="wide"><input type="checkbox" checked={sharePrivateRoom} onChange={event => { setSharePrivateRoom(event.target.checked); setMessage('') }}/> Cho khách dùng chung phòng PR</label>}
         {context.employeeId ? <p className="wide"><strong>Nhân viên: {employee?.name}</strong>{editing && ` · ${employee.status}`}</p> : <div className="wide"><LiveTourSearchSelect advanceOnSelect label="Nhân viên *" options={employeeOptions} value={employeeId} onChange={selectEmployee} required/></div>}
@@ -186,7 +207,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
         <label className="live-tour-field"><span>Yêu cầu</span><select data-booking-step value={autoRequest ? 'YC' : request} disabled={doing || autoRequest} onChange={(event) => { setRequest(event.target.value); advanceBookingField(event.currentTarget) }}><option value="">Để trống</option><option value="YC">YC</option></select>{autoRequest && <small>Tự gắn YC cho booking trước giờ lên tua trong cài đặt.</small>}</label>
         <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea data-booking-step value={note} onChange={(event) => setNote(event.target.value)}/></label>
         <div className="wide tour-booking-total"><span>{selectedCombo ? 'Tiền dịch vụ mua thêm ngoài combo' : 'Tiền dịch vụ'}</span><strong>{money(selectedCombo ? comboExtraSubtotal(selectedCombo, [{ service_items: items }], catalog) : bookingTotal(items, catalog))}</strong></div>
-        <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{(editing ? canOperate : canBook) && <><button type="submit" className="primary-button" value="book" disabled={!employeeId || Boolean(comboError || roomState.error)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{doing && canOperate && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}{canPayment && tourNameKey(employee?.status) === 'cho thanh toan' && <button type="button" className="primary-button" onClick={() => onCheckout(null, employee)}>Thanh toán</button>}</div>
+        <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{(editing ? canOperate : canBook) && <><button type="submit" className="primary-button" value="book" disabled={!employeeId || Boolean(comboError || roomState.error)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{doing && canOperate && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}</div>
       </fieldset></form>}
   </LiveTourTransactionDialog>
 }
