@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
-import { EMPTY_TOUR_FILTERS, filterTourRows, tourFilterOptions } from '../src/lib/liveTourFilters.js'
+import { defaultTourMonthFilters, EMPTY_TOUR_FILTERS, filterTourRows, tourFilterOptions } from '../src/lib/liveTourFilters.js'
 const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
 Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
@@ -20,6 +20,11 @@ const rows = [
   { id: 'a', customer_name: 'Khách Đào', customer_phone: '0901234567', entries: [{ employee_name: 'Mỹ Duyên', service: 'Body 90' }, { employee_name: 'An An', service: 'Foot 60' }] },
   { id: 'b', customer_name: 'Khách Bình', entries: [{ employee_name: 'An An', service: 'Body 90' }] },
 ]
+test('reports can start with the current Vietnam month selected', () => {
+  assert.deepEqual(defaultTourMonthFilters(new Date('2026-09-13T05:00:00Z')), {
+    ...EMPTY_TOUR_FILTERS, preset: 'month', date_from: '2026-09-01', date_to: '2026-09-30',
+  })
+})
 test('suggestions include all invoice entries and report rows without duplicates', () => {
   const options = tourFilterOptions([...rows, { employee_name: 'Thúy Vy', customer_name: 'Khách Đào', service: 'Facial' }])
   assert.equal(options.employee.length, 3)

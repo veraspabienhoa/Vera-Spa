@@ -5,7 +5,7 @@ import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourReceipt from '../components/LiveTourReceipt'
-import { EMPTY_TOUR_FILTERS, filterTourRows } from '../lib/liveTourFilters'
+import { defaultTourMonthFilters, filterTourRows } from '../lib/liveTourFilters'
 import { invoiceMoneyValues } from '../lib/liveTourInvoiceMoney'
 import './SpaManagementPage.css'
 import './LiveTourReportsPage.css'
@@ -14,7 +14,7 @@ const money = v => `${Number(v || 0).toLocaleString('vi-VN')} đ`
 export default function LiveTourReportsPage({ user }) {
   const allowed = user?.role === 'admin' || user?.permissions?.live_tour_reports_view === true
   const [data, setData] = useState({ invoices: [], reports: [], capabilities: {} })
-  const [filters, setFilters] = useState({ ...EMPTY_TOUR_FILTERS })
+  const [filters, setFilters] = useState(defaultTourMonthFilters)
   const [tab, setTab] = useState('invoices')
   const [context, setContext] = useState(null)
   const [receipt, setReceipt] = useState(null)
