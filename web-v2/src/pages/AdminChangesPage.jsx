@@ -1,3 +1,4 @@
+import { formatVeraDateTime } from '../lib/veraDate'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { Activity, Archive, BellRing, CalendarDays, Download, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -6,7 +7,7 @@ import { disablePushNotifications, enablePushNotifications, readPushState, syncE
 import VeraDateInput from '../components/VeraDateInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
-const formatTime = (value) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value)) : '—'
+const formatTime = (value) => formatVeraDateTime(value)
 const labels = { insert: 'Đăng ký mới', update: 'Sửa lịch nghỉ', delete: 'Xóa lịch nghỉ' }
 const snapshotFields = [
   ['employee_name', 'Nhân viên'], ['leave_date', 'Ngày'], ['leave_reason', 'Lý do nghỉ'],

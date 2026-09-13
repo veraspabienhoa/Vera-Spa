@@ -1,3 +1,4 @@
+import { formatVeraDate } from '../lib/veraDate'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Search, Trash2, WalletCards } from 'lucide-react'
@@ -57,11 +58,11 @@ function PeriodTable({ periods }) {
       <thead><tr><th>Kỳ lương</th><th>Từ ngày</th><th>Đến ngày</th><th>Tích lũy đã đóng</th><th>Hoàn trả tích lũy</th><th>Ngày lưu</th></tr></thead>
       <tbody>{(periods || []).map((item, index) => <tr key={`${item.batch}-${item.start}-${index}`}>
         <td><strong>{item.batch}</strong></td>
-        <td>{item.start || '—'}</td>
-        <td>{item.end || '—'}</td>
+        <td>{formatVeraDate(item.start, '—')}</td>
+        <td>{formatVeraDate(item.end, '—')}</td>
         <td className="money-cell"><strong>{money(item.contribution)}</strong></td>
         <td className="money-cell">{money(item.refund)}</td>
-        <td>{item.saved_date || '—'}</td>
+        <td>{formatVeraDate(item.saved_date, '—')}</td>
       </tr>)}</tbody>
     </table>
     {!(periods || []).length && <div className="setup-note">Chưa có kỳ lương ghi nhận Tích lũy.</div>}

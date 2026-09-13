@@ -198,3 +198,15 @@ test('customer and invoice search preserve phone formatting without partial-word
   assert.equal(filterTourRows(rows, { employee: 'An An' }).length, 1)
   assert.equal(filterTourRows(rows, { employee: 'an an', service: 'body 90' }).length, 1)
 })
+
+test('Clear closes the native select search menu and restores focus without reopening', () => {
+  const f = fixture()
+  try {
+    f.type(f.open(), 'linh')
+    f.doc.querySelector('.vera-dropdown-clear').click()
+    assert.equal(f.doc.querySelector('.vera-searchable-dropdown'), null)
+    assert.equal(f.doc.activeElement, f.doc.querySelector('select'))
+    f.open()
+    assert.ok(f.doc.querySelector('.vera-searchable-dropdown'))
+  } finally { f.dispose() }
+})

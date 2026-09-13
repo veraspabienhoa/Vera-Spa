@@ -23,7 +23,7 @@ const built = await build({
   plugins: [{ name: 'mock-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const veraApi = globalThis.__tourTestApi;', loader: 'js' }))
-b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(ClearableSearchInput|LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
+b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(VeraDateInput|ClearableSearchInput|LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
     b.onLoad({ filter: /.*/, namespace: 'dialog' }, () => ({ contents: 'export default function Dialog(){return null}', loader: 'js' }))
   } }],
 })
@@ -361,7 +361,8 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
     await chooseOption(inputFor('Phòng / giường'), '1.1', f)
     await chooseOption(inputFor('Dịch vụ'), 'Body 90', f)
     assert.equal(inputFor('Ngày booking').value, '')
-    await f.type(inputFor('Ngày booking'), new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()))
+    await f.type(inputFor('Ngày booking'), TODAY_VN_LABEL)
+    assert.equal(inputFor('Ngày booking').value, TODAY_VN_LABEL)
     await f.type(inputFor('Giờ booking'), '09:30')
     await f.save(document.querySelector('.tour-transaction-dialog form'))
     assert.equal(f.writes.length, 1)

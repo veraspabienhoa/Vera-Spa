@@ -1,3 +1,4 @@
+import { formatVeraDateTime } from '../lib/veraDate'
 import { receiptNumber, isComboRedemption } from '../lib/paymentPresentation'
 import LiveTourPaymentQr from './LiveTourPaymentQr'
 import { useCallback, useEffect, useRef } from 'react'
@@ -7,7 +8,7 @@ import './LiveTourReceipt.css'
 import useDialogFocus from '../lib/useDialogFocus'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
-const dateTime = (value) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'Chưa ghi nhận'
+const dateTime = value => formatVeraDateTime(value, 'Chưa ghi nhận')
 
 export default function LiveTourReceipt({ invoice, autoPrint, onClose }) {
   const prepaid = isComboRedemption(invoice)

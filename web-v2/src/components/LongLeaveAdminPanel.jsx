@@ -1,3 +1,4 @@
+import { formatVeraDate } from '../lib/veraDate'
 import { CheckCircle2, Clock3, RefreshCw, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
@@ -107,7 +108,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
         const resignation = item.request_type === 'Nghỉ việc'
         return <article className="long-leave-pending-card" key={item.id}>
           <div className="long-leave-pending-head">
-            <div><strong>{item.full_name || item.employee_name}</strong><small>{item.employee_name} · {item.id} · gửi {item.submitted_date || '—'} {item.submitted_time || ''}</small></div>
+            <div><strong>{item.full_name || item.employee_name}</strong><small>{item.employee_name} · {item.id} · gửi {formatVeraDate(item.submitted_date, '—')} {item.submitted_time || ''}</small></div>
             <span className={`long-leave-request-type ${annual ? 'annual' : ''} ${resignation ? 'resignation' : ''}`}>{item.request_type}</span>
           </div>
           <div className="long-leave-pending-meta">

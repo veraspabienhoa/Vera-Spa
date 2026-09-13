@@ -1,3 +1,4 @@
+import { formatVeraDateTime } from '../lib/veraDate'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { customerMatches } from '../lib/customerSearch'
@@ -36,13 +37,13 @@ function CustomerHistory({ value }) {
   return <div className="spa-history">
     <div className="spa-summary">{canPaid && <><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span></>}<span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
     {canPaid ? <><h3>Dịch vụ đã sử dụng</h3>
-    <div className="responsive-data-table"><table><thead><tr><th>Ngày / hóa đơn</th><th>Dịch vụ</th><th>Nhân viên</th><th>Vị trí</th><th>Giá dịch vụ</th></tr></thead><tbody>{value.services.map((item) => <tr key={item.id}><td>{item.business_date}<small>{item.bill_no}</small></td><td>{item.service}</td><td>{item.employee_name}</td><td>{item.room}</td><td>{money(item.price)}</td></tr>)}</tbody></table></div>
+    <div className="responsive-data-table"><table><thead><tr><th>Ngày / hóa đơn</th><th>Dịch vụ</th><th>Nhân viên</th><th>Vị trí</th><th>Giá dịch vụ</th></tr></thead><tbody>{value.services.map((item) => <tr key={item.id}><td>{formatVeraDateTime(item.business_date)}<small>{item.bill_no}</small></td><td>{item.service}</td><td>{item.employee_name}</td><td>{item.room}</td><td>{money(item.price)}</td></tr>)}</tbody></table></div>
     {!value.services.length && <p>Chưa có dịch vụ đã thanh toán.</p>}</> : <p>Chưa được cấp quyền xem hóa đơn đã thanh toán.</p>}
     <h3>Combo đã mua</h3>
-    <div className="spa-card-grid">{value.combo_purchases.map((item, index) => <article className="spa-card" key={item.id || index}><strong>{item.combo_name}</strong><span>{item.purchased_at || item.created_at || item.lk}</span><span>Đã dùng {item.used || 0} / {item.total || 0} {item.component_balances ? 'lượt' : 'vé'} · Còn {item.remaining || 0} {item.component_balances ? 'lượt' : 'vé'}</span>{item.component_balances?.map((part) => <span key={part.service_id}>{part.service_name}: còn {part.remaining} / {part.total} lượt</span>)}{item.unlimited === false && item.expires_on && <small>Hạn dùng: {item.expires_on.split('-').reverse().join('/')}</small>}</article>)}</div>
+    <div className="spa-card-grid">{value.combo_purchases.map((item, index) => <article className="spa-card" key={item.id || index}><strong>{item.combo_name}</strong><span>{formatVeraDateTime(item.purchased_at || item.created_at || item.lk)}</span><span>Đã dùng {item.used || 0} / {item.total || 0} {item.component_balances ? 'lượt' : 'vé'} · Còn {item.remaining || 0} {item.component_balances ? 'lượt' : 'vé'}</span>{item.component_balances?.map((part) => <span key={part.service_id}>{part.service_name}: còn {part.remaining} / {part.total} lượt</span>)}{item.unlimited === false && item.expires_on && <small>Hạn dùng: {item.expires_on.split('-').reverse().join('/')}</small>}</article>)}</div>
     {!value.combo_purchases.length && <p>Chưa mua combo.</p>}
     {canPending ? <><h3>Chờ thanh toán ({value.pending.length})</h3>
-    {value.pending.map((item) => <p key={item.id}>{item.created_at} · {(item.entries || []).map((entry) => entry.service).join(', ')}</p>)}</> : <p>Chưa được cấp quyền xem hóa đơn chờ thanh toán.</p>}
+    {value.pending.map((item) => <p key={item.id}>{formatVeraDateTime(item.created_at)} · {(item.entries || []).map((entry) => entry.service).join(', ')}</p>)}</> : <p>Chưa được cấp quyền xem hóa đơn chờ thanh toán.</p>}
   </div>
 }
 

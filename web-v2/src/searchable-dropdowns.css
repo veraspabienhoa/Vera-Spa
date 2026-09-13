@@ -64,3 +64,5 @@
 }
 .vera-searchable-dropdown { overflow: hidden; overflow-anchor: none; }
 .vera-searchable-dropdown-options { flex: 1; scrollbar-gutter: stable; }
+
+.vera-dropdown-clear { transition: none; }

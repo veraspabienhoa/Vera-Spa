@@ -33,9 +33,9 @@ test('receipt shows separate booking users, VN dates and payment user; reprintin
   try {
     await render(invoice, { ...bank, account_no: '999999999' })
     const receipt = document.getElementById('live-tour-receipt')
-    assert.match(receipt.textContent, /Ngày giờ booking · Người đặt:.*10:00:00.*11\/9\/2026.*user1/)
-    assert.match(receipt.textContent, /Ngày giờ booking · Người đặt:.*12:00:00.*11\/9\/2026.*user3/)
-    assert.match(receipt.textContent, /Ngày giờ thanh toán · Người thanh toán:.*11:30:00.*12\/9\/2026.*user2/)
+    assert.match(receipt.textContent, /Ngày giờ booking · Người đặt:.*11\/09\/2026.*10:00:00.*user1/)
+    assert.match(receipt.textContent, /Ngày giờ booking · Người đặt:.*11\/09\/2026.*12:00:00.*user3/)
+    assert.match(receipt.textContent, /Ngày giờ thanh toán · Người thanh toán:.*12\/09\/2026.*11:30:00.*user2/)
     assert.match(receipt.querySelector('img').src, /VCB-0123456789-compact2/)
     await render(invoice, { ...bank, account_no: '888888888' })
     assert.match(receipt.querySelector('img').src, /VCB-0123456789-compact2/)

@@ -1,3 +1,4 @@
+import VeraDateInput from './VeraDateInput'
 import './LiveTourFilters.css'
 import { useMemo } from 'react'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
@@ -25,8 +26,8 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
   return <div className="live-tour-filters" role="group" aria-label="Bộ lọc danh sách">
     <div className="live-tour-filters-row live-tour-filters-dates">
       <label className="live-tour-filters-preset"><span>Thời gian</span><select value={value.preset} onChange={e => change({ preset: e.target.value, ...tourDateRange(e.target.value) })}>{TOUR_DATE_PRESETS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></label>
-      <label><span>Từ ngày</span><input type="date" value={value.date_from} max={value.date_to || undefined} onChange={e => change({ date_from: e.target.value, preset: 'custom' })}/></label>
-      <label><span>Đến ngày</span><input type="date" value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date_to: e.target.value, preset: 'custom' })}/></label>
+      <label><span>Từ ngày</span><VeraDateInput value={value.date_from} max={value.date_to || undefined} onChange={e => change({ date_from: e.target.value, preset: 'custom' })}/></label>
+      <label><span>Đến ngày</span><VeraDateInput value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date_to: e.target.value, preset: 'custom' })}/></label>
     </div>
     <div className="live-tour-filters-row live-tour-filters-search">
       <LiveTourSearchSelect label="Số hóa đơn" placeholder="Nhập hoặc chọn số hóa đơn" options={options.bill_no} value={value.bill_no || ''} searchValue={value.bill_no || ''} onSearch={text => change({ bill_no: text })} onChange={text => change({ bill_no: text })} showAllOptions emptyLabel="Tất cả"/>

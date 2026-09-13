@@ -187,8 +187,8 @@ body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: clip; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; transition: background-color .18s ease, color .18s ease, border-color .18s ease, box-shadow .18s ease, filter .18s ease, transform .18s ease; }
 button:disabled { cursor: not-allowed; opacity: .6; }
-button:not(:disabled):not(.disabled):hover { filter: brightness(.9) saturate(1.14); transform: translateY(-1px); }
-button:not(:disabled):not(.disabled):active { filter: brightness(.84) saturate(1.08); transform: translateY(0) scale(.99); }
+button:not(:disabled):not(.disabled):not(.search-clear-button):not(.vera-dropdown-clear):hover { filter: brightness(.9) saturate(1.14); transform: translateY(-1px); }
+button:not(:disabled):not(.disabled):not(.search-clear-button):not(.vera-dropdown-clear):active { filter: brightness(.84) saturate(1.08); transform: translateY(0) scale(.99); }
 
 .vera-date-input { position: relative; display: flex; align-items: stretch; width: 100%; min-width: 0; }
 .vera-date-input > input[type="text"] { width: 100%; min-width: 0; padding-right: 38px; }
@@ -1081,4 +1081,10 @@ tr:last-child td { border-bottom: 0; }
 .vera-dropdown-search-line input{width:100%;padding-right:68px!important}
 .vera-dropdown-search-line input::-webkit-search-cancel-button{display:none;-webkit-appearance:none}
 .vera-dropdown-search-line .vera-dropdown-clear{position:absolute;right:5px;min-height:34px;min-width:56px;padding:5px 8px;border:1px solid #cbdcd1;border-radius:6px;color:#174e3b;background:#edf5ee;font-weight:700;cursor:pointer}
-.vera-dropdown-search-line .vera-dropdown-clear:hover{background:#d7eade}
+
+
+/* Date format is independent of browser locale on desktop and mobile. */
+.vera-datetime-input { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .7fr); gap: 8px; width: 100%; min-width: 0; }
+.vera-datetime-input > input { min-width: 0; width: 100%; }
+.vera-date-input > input[type="text"] { padding-right: 40px !important; }
+@media (max-width: 380px) { .vera-datetime-input { grid-template-columns: minmax(0, 1fr); } }

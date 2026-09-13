@@ -209,7 +209,7 @@ def test_report_excel_preserves_money_filters_and_customer_read_grants(monkeypat
     assert len(rows) == 2
     actual = dict(zip(rows[0], rows[1]))
     assert actual['Tổng tiền'] == report['total'] and actual['Tip'] == report['tip']
-    assert actual['Khách hàng'] == 'Khách Á' and actual['Ngày giờ hóa đơn'] == report['effective_at']
+    assert actual['Khách hàng'] == 'Khách Á' and actual['Ngày giờ hóa đơn'] == live._display_datetime(report['effective_at'])
     grants = {'live_tour_reports_view', 'live_tour_export'}
     client, _ = scoped_client(monkeypatch, state, grants)
     response = client.get('/v2/live-tour/export.xlsx', params={'kind':'reports'})
@@ -228,7 +228,7 @@ def test_pending_excel_uses_corrected_booking_time(monkeypatch):
     client, _ = scoped_client(monkeypatch, state, ALL)
     response = client.get('/v2/live-tour/export.xlsx', params={'kind':'pending', 'date_from':'2026-09-02', 'date_to':'2026-09-02'})
     rows = list(load_workbook(BytesIO(response.content)).active.values)
-    assert len(rows) == 2 and rows[1][0] == '2026-09-02T09:14:00+07:00'
+    assert len(rows) == 2 and rows[1][0] == '02/09/2026 09:14:00'
 
 
 def test_customer_export_omits_deleted_profiles_and_purchases():

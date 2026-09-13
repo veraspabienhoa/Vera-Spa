@@ -1,3 +1,4 @@
+import { formatVeraDateTime } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -274,7 +275,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     </section>
     <section className="panel department-payroll-history">
       <div className="panel-title-row"><div><h2><History size={18} /> LỊCH SỬ BẢNG LƯƠNG</h2><p>Bảng đã hoàn thành có thể mở lại, chỉnh sửa và hoàn thành lại để cập nhật đúng bản cũ.</p></div><button className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} /> Làm mới</button></div>
-      <div className="department-history-list">{history.map((item) => <article key={item.id}><div><strong>Tháng {item.month_label}</strong><span>{item.employee_count} nhân viên · {item.source_label || 'Chấm công'} · Thực nhận {money(item.total_net)}</span><small>Lưu bởi {item.saved_by || '—'} · {item.saved_at ? new Date(item.saved_at).toLocaleString('vi-VN') : '—'}</small></div>{canSave && <button className="secondary-button" type="button" disabled={Boolean(busy)} onClick={() => openHistory(item.id)}><History size={15} /> Mở để sửa</button>}</article>)}</div>
+      <div className="department-history-list">{history.map((item) => <article key={item.id}><div><strong>Tháng {item.month_label}</strong><span>{item.employee_count} nhân viên · {item.source_label || 'Chấm công'} · Thực nhận {money(item.total_net)}</span><small>Lưu bởi {item.saved_by || '—'} · {item.saved_at ? formatVeraDateTime(item.saved_at) : '—'}</small></div>{canSave && <button className="secondary-button" type="button" disabled={Boolean(busy)} onClick={() => openHistory(item.id)}><History size={15} /> Mở để sửa</button>}</article>)}</div>
       {!history.length && <div className="setup-note">Chưa có lịch sử bảng Lương hành chánh.</div>}
     </section>
   </div>
