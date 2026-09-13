@@ -94,6 +94,52 @@ Chẩn đoán tiếp theo về Đăng ký nghỉ tải chậm được ghi riên
 quy lặp trong API và chờ nhiều phần dữ liệu ở giao diện. Chưa có bằng chứng từ
 video rằng lỗi hết nhóm kết nối trước đó tái diễn.
 
+## Rà soát đăng nhập phía trình duyệt sau lần deploy tiếp theo
+
+### Bằng chứng và giới hạn kết luận
+
+- Người dùng tiếp tục báo không đăng nhập được. Hai ảnh kiểm tra mới đều có
+  `ok=true` tại `/v2/health` và `/v2/auth/health` (`provider=postgres-local`).
+  Điều này không chứng minh thao tác đăng nhập hoặc `/v2/me` thành công.
+- Main được đối chiếu lúc rà soát là
+  `21f81ab4eaf1bc6eab188ae19e63c13fe62b7103`, đã deploy qua
+  [run 34759912065](https://github.com/veraspabienhoa/Vera-Spa/actions/runs/34759912065).
+  Không suy ra nguyên nhân lỗi đăng nhập từ riêng trạng thái deploy thành công.
+- Chưa có request/response của lần đăng nhập lỗi trên trình duyệt người dùng.
+  Các lỗi bên dưới được xác nhận bằng mã nguồn và kiểm thử mô phỏng; chưa đủ
+  bằng chứng khẳng định chúng là nguyên nhân duy nhất trên production.
+
+### Lỗi tái hiện và bản sửa
+
+1. `supabase.js` có mặc định API production nhưng `api.js` không có; cách xử lý
+   khoảng trắng cũng khác nhau. Với biến build thiếu hoặc có khoảng trắng,
+   login và xác minh hồ sơ có thể gọi khác backend. Dùng chung `apiConfig.js`,
+   giữ override local/staging và không chuyển sang Supabase Auth khi API lỗi.
+2. Refresh gặp lỗi mạng, 429 hoặc 5xx có thể xóa refresh token đang lưu. Chỉ xóa
+   khi máy chủ xác nhận 401/403; lỗi tạm thời giữ token để thử lại. Không coi
+   access token hết hạn hoặc hồ sơ lưu cục bộ là bằng chứng xác thực.
+3. `/v2/me` trả 401 rồi refresh trả 503: vòng thử lại giữ response 401 cũ và có
+   thể làm App đăng xuất nhầm. Tách refresh khỏi vòng thử lại transport, truyền
+   đúng lỗi refresh, và chỉ refresh một lần cho mỗi request bị từ chối.
+4. Login/refresh/xác minh hồ sơ không có thời hạn chờ. Thêm deadline **15 giây
+   cho mỗi request**, gồm đọc body, và màn hình thử xác minh lại khi khôi phục
+   phiên thất bại tạm thời. Không áp deadline ngắn này cho payroll/export.
+5. Response HTTP 200 sai định dạng không được ghi đè phiên hợp lệ. Tiếp tục giữ
+   single-flight refresh và bảo vệ phiên đăng nhập mới trước kết quả refresh cũ.
+
+Kiểm thử `authSessionTransport.test.mjs` tái hiện lỗi trên mã cũ và kiểm chứng
+phục hồi, timeout, 401/403, response lỗi, refresh đồng thời và đăng xuất.
+`authRecovery.test.mjs` kiểm chứng giao diện không mở dữ liệu khi PostgreSQL hoặc
+refresh chưa xác minh được, có thể thử lại và vẫn từ chối tài khoản bị khóa.
+Hai bộ được đưa vào CI. Không sửa schema, dữ liệu, DNS hoặc cơ chế xác thực
+PostgreSQL. Cần xác minh lại đăng nhập và dữ liệu thực tế **sau khi bản sửa được
+merge/deploy**; mục này không phải xác nhận production đã phục hồi.
+
+Kiểm chứng cục bộ bản sửa: **1.035 kiểm thử Python**, **122 kiểm thử Web V2**
+(gồm 24 kiểm thử xác thực/phục hồi) đạt; build production thành công. Cập nhật
+kiểm thử đăng xuất cũ để kiểm tra thu hồi refresh token của phiên hiện tại,
+thay vì dựa vào một comment về Supabase SDK đã không còn được gọi.
+
 ## Kiểm tra hồi quy cần giữ
 
 ```bash

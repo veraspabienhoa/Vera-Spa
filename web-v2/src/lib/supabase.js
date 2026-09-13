@@ -1,13 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
+import { apiBase } from './apiConfig'
+import { authJsonRequest } from './authTransport'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()
-// api.veraspa.vn is the canonical production backend. Keep an env override for
-// local/staging builds, but never let a production browser silently fall back
-// to calling the Supabase Edge Function directly when the API has a transient
-// error. That fallback hid the real backend failure behind the generic SDK
-// message "Failed to send a request to the Edge Function".
-const apiBase = (import.meta.env.VITE_VERA_API_BASE_URL?.trim() || 'https://api.veraspa.vn').replace(/\/$/, '')
 const API_SESSION_KEY = 'vera-v2-api-auth-session'
 const apiAuthListeners = new Set()
 let refreshState = null
@@ -82,16 +78,21 @@ const clearApiSession = (expectedRefreshToken = '') => {
 }
 
 const apiAuthRequest = async (path, body) => {
-  const response = await fetch(`${apiBase}${path}`, {
+  const { response, payload } = await authJsonRequest(`${apiBase}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const error = new Error(payload.detail || payload.message || 'Không đăng nhập được vào máy chủ VERA.')
+    const error = new Error(payload?.detail || payload?.message || 'Không đăng nhập được vào máy chủ VERA.')
     error.status = response.status
     throw error
+  }
+  if (path !== '/v2/auth/logout' && (
+    typeof payload?.access_token !== 'string' || !payload.access_token ||
+    typeof payload?.refresh_token !== 'string' || !payload.refresh_token || !payload?.user?.id
+  )) {
+    throw Object.assign(new Error('Máy chủ VERA trả phiên đăng nhập không hợp lệ. Vui lòng thử lại.'), { status: 502 })
   }
   return payload
 }
@@ -142,7 +143,9 @@ export async function refreshCurrentSession(session = readApiSession()) {
   } catch (error) {
     const current = readStoredApiSession() || readApiSession()
     if (current?.refresh_token && current.refresh_token !== attemptedToken) return current
-    if (clearApiSession(attemptedToken)) notifyApiAuth('SIGNED_OUT', null)
+    // Only a confirmed rejection revokes local credentials. A rollout, network
+    // failure or timeout must remain retryable without losing the refresh token.
+    if ((error.status === 401 || error.status === 403) && clearApiSession(attemptedToken)) notifyApiAuth('SIGNED_OUT', null)
     throw error
   }
 }
@@ -153,12 +156,15 @@ export async function getCurrentSession() {
     const now = Math.floor(Date.now() / 1000)
     if (Number(apiSession.expires_at || 0) > now + 90) return apiSession
     try {
-      return await refreshApiSession(apiSession)
-    } catch {
+      return await refreshCurrentSession(apiSession)
+    } catch (error) {
       const current = readStoredApiSession() || readApiSession()
       if (current?.refresh_token && current.refresh_token !== apiSession.refresh_token) return current
-      if (Number(apiSession.expires_at || 0) > now + 5) return current || apiSession
-      if (clearApiSession(apiSession.refresh_token)) notifyApiAuth('SIGNED_OUT', null)
+      if (error.status === 401 || error.status === 403 || !current) return null
+      if (Number(current.expires_at || 0) > Math.floor(Date.now() / 1000) + 5) return current
+      // Do not return an expired access token or a cached profile as proof of
+      // authentication. The UI offers retry while keeping business pages gated.
+      throw error
     }
   }
   return null

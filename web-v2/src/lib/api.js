@@ -2,8 +2,9 @@ import { notifyLeaveChange } from './leaveRefresh'
 import { getCurrentSession, isSupabaseConfigured, refreshCurrentSession, supabase } from './supabase'
 import { apiErrorMessage } from './apiError'
 import { summarizeLeaveRecordDays } from './leaveStats'
+import { apiBase } from './apiConfig'
+import { authJsonRequest } from './authTransport'
 
-const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 export const isApiConfigured = Boolean(apiBase)
 export const isReadConfigured = Boolean(apiBase || isSupabaseConfigured)
 
@@ -15,33 +16,38 @@ async function request(path, options = {}) {
   headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
 
-  let response
-  let lastError
   const method = String(options.method || 'GET').toUpperCase()
   // Cloud Run can need a few seconds to wake or switch revisions. Three GET
   // attempts prevent a transient rollout/cold-start from becoming a false
   // "Failed to fetch" screen while keeping writes single-shot.
-  const attempts = method === 'GET' || path === '/v2/payroll/history/sync-legacy'
+  const attempts = path === '/v2/me' ? 1 : method === 'GET' || path === '/v2/payroll/history/sync-legacy'
     ? 3
     : path === '/v2/payroll/save' ? 2 : 1
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      response = await fetch(`${apiBase}${path}`, { ...options, headers })
-      if (response.status === 401 && session?.refresh_token) {
-        session = await refreshCurrentSession(session)
-        if (session?.access_token) {
-          headers.set('Authorization', `Bearer ${session.access_token}`)
-          response = await fetch(`${apiBase}${path}`, { ...options, headers })
-        }
+  const send = async () => {
+    let lastError
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        if (path === '/v2/me') return await authJsonRequest(`${apiBase}${path}`, { ...options, headers })
+        const response = await fetch(`${apiBase}${path}`, { ...options, headers })
+        return { response, payload: await response.json().catch(() => ({})) }
+      } catch (error) {
+        lastError = error
+        if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 1200))
       }
-      break
-    } catch (error) {
-      lastError = error
-      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 1200))
+    }
+    if (path === '/v2/me') throw lastError
+    throw new Error(`Không kết nối được máy chủ VERA sau ${attempts} lần thử. Vui lòng bấm Làm mới. (${lastError?.message || 'Lỗi mạng'})`)
+  }
+  let { response, payload } = await send()
+  if (response.status === 401 && session?.refresh_token) {
+    // Keep refresh outside transport retries: its 503/timeout must propagate,
+    // not be replaced by the original 401 and trigger a false logout in App.
+    session = await refreshCurrentSession(session)
+    if (session?.access_token) {
+      headers.set('Authorization', `Bearer ${session.access_token}`)
+      ;({ response, payload } = await send())
     }
   }
-  if (!response) throw new Error(`Không kết nối được máy chủ VERA sau ${attempts} lần thử. Vui lòng bấm Làm mới. (${lastError?.message || 'Lỗi mạng'})`)
-  const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     const error = new Error(apiErrorMessage(payload, response.status))
     error.status = response.status

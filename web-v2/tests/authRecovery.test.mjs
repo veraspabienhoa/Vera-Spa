@@ -10,7 +10,18 @@ const built = await build({ entryPoints: ['src/App.jsx'], bundle: true, write: f
   b.onResolve({ filter: /^\.\// }, args => args.kind === 'entry-point' ? undefined : ({ path: args.path, namespace: 'fixture' }))
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ loader: 'js', contents:
     args.path.endsWith('/api') ? 'export const veraApi = { me: () => globalThis.authFixture.me() };' :
-    args.path.endsWith('/supabase') ? 'export const isAuthConfigured = true; export const getCurrentSession = async () => globalThis.authFixture.session; export const onVeraAuthStateChange = () => () => {}; export const signOutVera = async () => { globalThis.authFixture.signouts++; };' :
+    args.path.endsWith('/supabase') ? `
+      export const isAuthConfigured = true;
+      export const getCurrentSession = async () => globalThis.authFixture.getSession ? globalThis.authFixture.getSession() : globalThis.authFixture.session;
+      export const onVeraAuthStateChange = listener => {
+        globalThis.authFixture.listener = listener;
+        return () => { globalThis.authFixture.listener = null; };
+      };
+      export const signOutVera = async () => {
+        globalThis.authFixture.signouts++;
+        globalThis.authFixture.listener?.('SIGNED_OUT', null);
+      };
+    ` :
     args.path.endsWith('/pushNotifications') ? 'export const ensureGrantedPushSubscription = async () => {};' :
     `export default function Stub() { return ${JSON.stringify(args.path.endsWith('/AppShell') ? 'BUSINESS' : args.path.endsWith('/LoginPage') ? 'LOGIN' : '')}; }`,
   }))
@@ -37,6 +48,32 @@ test('503 preserves the session and gates business pages; retry recovers; 401 si
     fixture.me = async () => { throw Object.assign(new Error('expired'), { status: 401 }) }
     await act(async () => root.render(React.createElement(module.exports.default, { key: 'new' })))
     assert.equal(fixture.signouts, 1)
+    assert.match(document.body.textContent, /LOGIN/)
+
+    // An expired access token with a temporarily unavailable refresh endpoint
+    // must offer recovery on startup, without trusting the saved profile.
+    fixture.session.vera_profile = { employee_username: 'cached', role: 'admin' }
+    fixture.getSession = async () => { throw Object.assign(new Error('Refresh temporarily unavailable'), { status: 503 }) }
+    await act(async () => root.render(React.createElement(module.exports.default, { key: 'startup-refresh' })))
+    assert.match(document.body.textContent, /Refresh temporarily unavailable/)
+    assert.match(document.body.textContent, /Thử xác minh lại/)
+    assert.doesNotMatch(document.body.textContent, /BUSINESS|LOGIN/)
+    assert.equal(fixture.signouts, 1)
+    fixture.getSession = async () => fixture.session
+    fixture.me = async () => ({ employee_username: 'test', role: 'admin', is_active: true })
+    await act(async () => document.querySelector('button').click())
+    assert.match(document.body.textContent, /BUSINESS/)
+
+    fixture.me = async () => ({ employee_username: 'test', is_active: false })
+    await act(async () => root.render(React.createElement(module.exports.default, { key: 'locked' })))
+    assert.equal(fixture.signouts, 2)
+    assert.match(document.body.textContent, /LOGIN/)
+
+    fixture.getSession = async () => { throw new Error('Network unavailable') }
+    await act(async () => root.render(React.createElement(module.exports.default, { key: 'recovery-signout' })))
+    assert.match(document.body.textContent, /Thử xác minh lại/)
+    await act(async () => Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Đăng xuất').click())
+    assert.equal(fixture.signouts, 3)
     assert.match(document.body.textContent, /LOGIN/)
   } finally {
     await act(async () => root.unmount())

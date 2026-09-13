@@ -16,6 +16,11 @@ Preserve these reliability constraints:
 - Keep the bounded local-auth pool separate from the business pool. Continue
   verifying session revocation and account locks in PostgreSQL; do not substitute
   cached identities or bypass authentication to make health checks pass.
+- Browser login, refresh and profile verification share `apiConfig.js`. Preserve
+  saved refresh credentials on network/timeout/5xx failures, but keep business
+  pages gated until server verification succeeds. Confirmed 401/403 rejection
+  must still sign out. Keep `authRecovery.test.mjs` and
+  `authSessionTransport.test.mjs` in CI when changing these paths.
 - For changes to these paths, run the relevant regressions in
   `tests/test_attendance_connection_reuse.py`, `tests/test_auth_pool.py`,
   `tests/test_auto_penalty_employee_notifications.py`, and

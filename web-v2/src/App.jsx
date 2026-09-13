@@ -80,6 +80,7 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(isAuthConfigured)
   const [authError, setAuthError] = useState('')
+  const [sessionRecoveryError, setSessionRecoveryError] = useState(false)
   const [authRetry, setAuthRetry] = useState(0)
   const [page, setPage] = useState('leave')
   const [pageRefreshRevision, setPageRefreshRevision] = useState(0)
@@ -89,10 +90,13 @@ export default function App() {
     if (!isAuthConfigured) return undefined
     let mounted = true
     let verification = 0
+    setLoading(true)
+    setProfile(null)
+    setSessionRecoveryError(false)
     const applySession = async (nextSession) => {
       if (!mounted) return
       const attempt = ++verification
-      setSession(nextSession); setAuthError('')
+      setSession(nextSession); setAuthError(''); setSessionRecoveryError(false)
       if (!nextSession) { setProfile(null); setLoading(false); return }
       setLoading(true)
       setProfile(null)
@@ -124,7 +128,13 @@ export default function App() {
       } finally { if (mounted && attempt === verification) setLoading(false) }
     }
     getCurrentSession().then(applySession).catch((err) => {
-      if (mounted) { setAuthError(err.message || 'Không mở được phiên đăng nhập VERA.'); setLoading(false) }
+      // A transient refresh error on startup is recoverable. Do not open the
+      // app from cached profile data or force the operator to log in again.
+      if (mounted && verification === 0) {
+        setSessionRecoveryError(true)
+        setAuthError(err.message || 'Không mở được phiên đăng nhập VERA.')
+        setLoading(false)
+      }
     })
     const unsubscribe = onVeraAuthStateChange((_event, nextSession) => applySession(nextSession))
     return () => { mounted = false; unsubscribe() }
@@ -161,10 +171,9 @@ export default function App() {
 
   if (loading) return <div className="boot-screen">Đang mở VERA SPA…</div>
   const user = session?.user
-  if (!user) return <LoginPage externalError={authError} />
+  if (!user && !sessionRecoveryError) return <LoginPage externalError={authError} />
 
-  // signOutVera keeps the Supabase fallback local-only: signOut({ scope: 'local' }).
-  const signOut = async () => { setProfile(null); if (session) await signOutVera() }
+  const signOut = async () => { setProfile(null); await signOutVera() }
   const changePage = (nextPage) => {
     if (standaloneRequest.enabled) {
       const url = new URL(window.location.href)
