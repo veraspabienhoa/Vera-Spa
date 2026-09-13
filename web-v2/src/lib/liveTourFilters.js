@@ -23,6 +23,9 @@ export function tourDateRange(preset, now = new Date()) {
   }
   return { date_from: day(start), date_to: day(end) }
 }
+export function defaultTourMonthFilters(now = new Date()) {
+  return { ...EMPTY_TOUR_FILTERS, preset: 'month', ...tourDateRange('month', now) }
+}
 export function filterTourRows(rows, filters) {
   return rows.filter(row => {
     if (filters.bill_no && !invoiceNumbers(row).some(number => String(number).toLowerCase().includes(filters.bill_no.trim().toLowerCase()))) return false
