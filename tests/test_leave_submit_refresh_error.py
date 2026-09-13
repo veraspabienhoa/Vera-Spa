@@ -13,7 +13,8 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const vm = require('node:vm')
 const source = fs.readFileSync('web-v2/src/pages/LeaveRegistrationPage.jsx', 'utf8')
-const loadSource = source.slice(source.indexOf('  const load = useCallback('), source.indexOf('  useEffect(() => { load()'))
+const loadSource = source.slice(source.indexOf('  const load = useCallback('), source.indexOf('  useEffect(() => {\n    const loader'))
+const loaderSource = fs.readFileSync('web-v2/src/lib/leavePageLoader.js', 'utf8').replace('export function', 'function')
 const submitStart = source.indexOf('  const submit = async (event) => {')
 const submitSource = source.slice(submitStart, source.indexOf('\n  return (', submitStart))
 function harness(failedRead = '', failedCreate = false) {
@@ -23,7 +24,8 @@ function harness(failedRead = '', failedCreate = false) {
   const context = {
     isApiConfigured: true, canCreate: true, canChooseEmployee: true,
     dateIsPast: false, date: '2026-09-09', rangeStart: '', rangeEnd: '',
-    listRangeStart: '', listRangeEnd: '', statsEmployeeFilter: '',
+    listRangeStart: '', listRangeEnd: '', statsEmployeeFilter: '', identityKey: 'test',
+    recordReasonsRevision: { current: 0 }, recordReasonsRef: { current: {} }, latestLoad: { current: null },
     form: { employee_name: 'Test', leave_reason: 'Nghỉ CÓ phép', detail: '' },
     emptyForm: {}, selectedReason: {}, user: {}, useCallback: fn => fn,
     refreshWatchDates: async () => { calls.push('watch') },
@@ -51,7 +53,7 @@ function harness(failedRead = '', failedCreate = false) {
     }
   }
   vm.createContext(context)
-  vm.runInContext(loadSource + submitSource + '\nthis.handlers = { load, submit }', context)
+  vm.runInContext(loaderSource + '\nconst pageLoader = { current: createLeavePageLoader() };\n' + loadSource + submitSource + '\nthis.handlers = { load, submit }', context)
   return { state, calls, ...context.handlers }
 }
 (async () => {

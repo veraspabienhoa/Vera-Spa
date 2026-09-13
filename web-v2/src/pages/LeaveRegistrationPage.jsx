@@ -1,6 +1,7 @@
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createLeavePageLoader } from '../lib/leavePageLoader'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { numberInputDisplayValue } from '../lib/numberInput'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
@@ -120,7 +121,14 @@ export default function LeaveRegistrationPage({ user }) {
   const [selectedUids, setSelectedUids] = useState([])
   const [reasonDrafts, setReasonDrafts] = useState({})
   const [form, setForm] = useState(emptyForm)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(true)
+  const [loadState, setLoadState] = useState({ daily: 'loading', records: 'loading', reasons: 'loading', employees: 'loading' })
+  const pageLoader = useRef(null)
+  const latestLoad = useRef(null)
+  if (!pageLoader.current) pageLoader.current = createLeavePageLoader()
+  const recordReasonsRef = useRef({})
+  const recordReasonsRevision = useRef(0)
+  const identityKey = JSON.stringify([user?.employee_username, user?.role, user?.permissions])
   const [saving, setSaving] = useState(false)
   const [managing, setManaging] = useState(false)
   const [message, setMessage] = useState('')
@@ -163,6 +171,7 @@ export default function LeaveRegistrationPage({ user }) {
   const canDeleteRecord = (item) => canDeleteLeaveRecord({ ...recordPermissionContext(item), allowedByPermission: canDelete })
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
+    && loadState.reasons === 'ready' && loadState.employees === 'ready'
     && (employeeSelfService || user?.permissions?.leave_create !== false)
     && !user?.registration_locked
     && !dateIsPast
@@ -191,82 +200,101 @@ export default function LeaveRegistrationPage({ user }) {
 
   const load = useCallback(async (options = {}) => {
     const afterSave = options?.afterSave === true
-    setBusy(true)
-    if (!afterSave) setError('')
-    let loadSource = 'dữ liệu đăng ký nghỉ'
-    try {
-      if (isApiConfigured) {
-        // Keep the four reads sequential. The VPS intentionally uses a small
-        // PostgreSQL pool; firing all requests together immediately after an
-        // insert could exhaust it and show HTTP 500 even though the record was
-        // already committed successfully.
-        loadSource = 'thống kê lịch nghỉ'
-        const dailyData = await veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
-        loadSource = 'danh sách lịch nghỉ'
-        const recordData = await veraApi.leaveRecords(listRangeStart, listRangeEnd)
-        loadSource = 'danh sách lý do nghỉ'
-        const reasonData = await veraApi.leaveReasons(date)
-        loadSource = 'danh sách nhân viên'
-        const employeeData = await veraApi.employees()
-        setDailyStats(dailyData.days || [])
-        const loadedRecords = recordData.records || []
-        setRecords(loadedRecords)
-        setReasonDrafts(Object.fromEntries(loadedRecords.map((item) => [item.record_uid, item.leave_reason])))
-        setSelectedUids([])
-        setReasons(reasonData.reasons || [])
-        setRecordReasonsByDate({ [date]: reasonData.reasons || [] })
-        setRecordReasonErrors({})
-        setEmployeeSelfServicePolicy({
-          enabled: reasonData.employee_self_service_policy?.enabled !== false,
-          regular_notice_days: Number(reasonData.employee_self_service_policy?.regular_notice_days ?? 3),
-          unpaid_notice_days: Number(reasonData.employee_self_service_policy?.unpaid_notice_days ?? 1),
-        })
-        setLetanLeavePolicy({
-          enabled: reasonData.letan_leave_policy?.enabled !== false,
-          groups: (reasonData.letan_leave_policy?.groups || []).map((group) => ({
-            ...group,
-            reasons: [...(group.reasons || [])],
-          })),
-        })
-        setEmployees(employeeData.employees || [])
-      } else {
-        const dailyData = await loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
-        const recordData = await loadLeaveRecords(listRangeStart, listRangeEnd)
-        const reasonData = await loadLeaveReasons(date)
-        const employeeData = await loadEmployees()
-        setDailyStats(dailyData)
-        setRecords(recordData)
-        setReasonDrafts(Object.fromEntries(recordData.map((item) => [item.record_uid, item.leave_reason])))
-        setSelectedUids([])
-        setReasons(reasonData.map((name) => ({ name, requires_manual_penalty: false })))
-        setEmployees(employeeData)
-      }
-      setError('')
-      return true
-    } catch (err) {
-      if (!afterSave) {
-        setError(`Không tải được ${loadSource}: ${err.message || 'Lỗi PostgreSQL/Supabase.'}`)
-      }
-      return false
-    } finally {
-      setBusy(false)
-    }
-  }, [date, listRangeEnd, listRangeStart, rangeEnd, rangeStart, statsEmployeeFilter])
+    const sources = { daily: 'thống kê lịch nghỉ', records: 'danh sách lịch nghỉ', reasons: 'danh sách lý do nghỉ', employees: 'danh sách nhân viên' }
+    const key = (...parts) => JSON.stringify([identityKey, ...parts])
+    const jobs = [
+      { id: 'daily', key: key(rangeStart, rangeEnd, statsEmployeeFilter), read: () => isApiConfigured
+        ? veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
+        : loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter).then((days) => ({ days })) },
+      { id: 'records', key: key(listRangeStart, listRangeEnd), read: () => isApiConfigured
+        ? veraApi.leaveRecords(listRangeStart, listRangeEnd)
+        : loadLeaveRecords(listRangeStart, listRangeEnd).then((records) => ({ records })) },
+      { id: 'reasons', key: key(date), read: () => isApiConfigured
+        ? veraApi.leaveReasons(date)
+        : loadLeaveReasons(date).then((names) => ({ reasons: names.map((name) => ({ name, requires_manual_penalty: false })) })) },
+      { id: 'employees', key: key('employees'), read: () => isApiConfigured
+        ? veraApi.employees()
+        : loadEmployees().then((employees) => ({ employees })) },
+    ]
+    return pageLoader.current.run(jobs, {
+      onlyChanged: options?.onlyChanged === true && !afterSave,
+      onStart(ids) {
+        setBusy(ids.length > 0)
+        if (!afterSave) setError('')
+        setLoadState((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, 'loading'])) }))
+        if (ids.includes('reasons')) {
+          recordReasonsRevision.current += 1
+          recordReasonsRef.current = {}
+          setRecordReasonsByDate({})
+          setRecordReasonErrors({})
+        }
+      },
+      onData(id, data) {
+        // Publish each result immediately; a slow catalog must not hide records.
+        if (id === 'daily') setDailyStats(data.days || [])
+        if (id === 'records') {
+          const loadedRecords = data.records || []
+          setRecords(loadedRecords)
+          setReasonDrafts(Object.fromEntries(loadedRecords.map((item) => [item.record_uid, item.leave_reason])))
+          setSelectedUids([])
+        }
+        if (id === 'reasons') {
+          setReasons(data.reasons || [])
+          recordReasonsRef.current = { ...recordReasonsRef.current, [date]: data.reasons || [] }
+          setRecordReasonsByDate(recordReasonsRef.current)
+          if (isApiConfigured) {
+            setEmployeeSelfServicePolicy({
+              enabled: data.employee_self_service_policy?.enabled !== false,
+              regular_notice_days: Number(data.employee_self_service_policy?.regular_notice_days ?? 3),
+              unpaid_notice_days: Number(data.employee_self_service_policy?.unpaid_notice_days ?? 1),
+            })
+            setLetanLeavePolicy({
+              enabled: data.letan_leave_policy?.enabled !== false,
+              groups: (data.letan_leave_policy?.groups || []).map((group) => ({ ...group, reasons: [...(group.reasons || [])] })),
+            })
+          }
+        }
+        if (id === 'employees') setEmployees(data.employees || [])
+        setLoadState((current) => ({ ...current, [id]: 'ready' }))
+      },
+      onError(id, err) {
+        setLoadState((current) => ({ ...current, [id]: 'error' }))
+        if (id === 'reasons') setRecordReasonErrors((current) => ({ ...current, [date]: err.message || 'Không tải được lý do nghỉ.' }))
+        if (!afterSave) {
+          setError((current) => [current, `Không tải được ${sources[id]}: ${err.message || 'Lỗi PostgreSQL/Supabase.'}`].filter(Boolean).join(' '))
+        }
+      },
+      onFinish() { setBusy(false) },
+    })
+  }, [date, identityKey, listRangeEnd, listRangeStart, rangeEnd, rangeStart, statsEmployeeFilter])
+  latestLoad.current = load
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const loader = pageLoader.current
+    void load({ onlyChanged: true })
+    return () => {
+      loader.invalidate()
+      recordReasonsRevision.current += 1
+    }
+  }, [load])
 
   const fetchRecordReasons = useCallback(async (recordDate, isActive = () => true) => {
-    if (isActive()) setRecordReasonErrors((current) => ({ ...current, [recordDate]: '' }))
+    const revision = recordReasonsRevision.current
+    const currentRequest = () => isActive() && revision === recordReasonsRevision.current
+    if (currentRequest()) setRecordReasonErrors((current) => ({ ...current, [recordDate]: '' }))
     try {
       const result = await veraApi.leaveReasons(recordDate)
-      if (isActive()) setRecordReasonsByDate((current) => ({ ...current, [recordDate]: result.reasons || [] }))
+      if (currentRequest()) {
+        recordReasonsRef.current = { ...recordReasonsRef.current, [recordDate]: result.reasons || [] }
+        setRecordReasonsByDate(recordReasonsRef.current)
+      }
     } catch (err) {
-      if (isActive()) setRecordReasonErrors((current) => ({ ...current, [recordDate]: err.message || 'Không tải được lý do nghỉ.' }))
+      if (currentRequest()) setRecordReasonErrors((current) => ({ ...current, [recordDate]: err.message || 'Không tải được lý do nghỉ.' }))
     }
   }, [])
 
   useEffect(() => {
-    if (!isApiConfigured) return undefined
+    if (!isApiConfigured || busy || pageLoader.current.isLoading()) return undefined
     let active = true
     const editableDates = [...new Set(records
       .filter((item) => canEditLeaveRecord({
@@ -281,7 +309,7 @@ export default function LeaveRegistrationPage({ user }) {
         letanLeavePolicy,
       }))
       .map((item) => item.leave_date))]
-      .filter((recordDate) => recordDate && recordDate !== date)
+      .filter((recordDate) => recordDate && recordDate !== date && !recordReasonsRef.current[recordDate])
 
     const loadEditableDateReasons = async () => {
       // One read per distinct date, sequentially for the VPS connection pool.
@@ -293,7 +321,7 @@ export default function LeaveRegistrationPage({ user }) {
     }
     void loadEditableDateReasons()
     return () => { active = false }
-  }, [canEdit, date, employeeSelfServicePolicy, letanLeavePolicy, records, role, user?.employee_username, fetchRecordReasons])
+  }, [busy, canEdit, date, employeeSelfServicePolicy, letanLeavePolicy, records, role, user?.employee_username, fetchRecordReasons])
 
   useEffect(() => {
     refreshWatchDates()
@@ -362,8 +390,8 @@ export default function LeaveRegistrationPage({ user }) {
     && reasonDrafts[item.record_uid]
     && reasonDrafts[item.record_uid] !== item.leave_reason
   ))
-  const canEditVisibleRecord = filteredRecords.some((item) => canEditRecord(item))
-  const canDeleteVisibleRecord = filteredRecords.some((item) => canDeleteRecord(item))
+  const canEditVisibleRecord = loadState.records === 'ready' && filteredRecords.some((item) => canEditRecord(item))
+  const canDeleteVisibleRecord = loadState.records === 'ready' && filteredRecords.some((item) => canDeleteRecord(item))
   const deletableSelectedUids = selectedUids.filter((uid) => {
     const item = records.find((record) => record.record_uid === uid)
     return item && canDeleteRecord(item)
@@ -465,7 +493,7 @@ export default function LeaveRegistrationPage({ user }) {
         }
         await veraApi.updateLeave(item.record_uid, payload)
       }
-      const refreshed = await load({ afterSave: true })
+      const refreshed = await latestLoad.current({ afterSave: true })
       if (!refreshed) {
         setWarnings((current) => [
           ...current,
@@ -497,7 +525,7 @@ export default function LeaveRegistrationPage({ user }) {
     setListActionNotice(null)
     try {
       await veraApi.deleteLeaves(deletableSelectedUids)
-      await load()
+      await latestLoad.current({ afterSave: true })
       await refreshWatchDates()
       setListActionNotice({
         action: 'delete',
@@ -657,7 +685,7 @@ export default function LeaveRegistrationPage({ user }) {
       })
       setWarnings(result.warnings || [])
       setMessage('Đã ghi lịch nghỉ THÀNH CÔNG')
-      const refreshed = await load({ afterSave: true })
+      const refreshed = await latestLoad.current({ afterSave: true })
       if (!refreshed) {
         setWarnings((current) => [...current, 'Lịch nghỉ đã được lưu, nhưng chưa thể làm mới dữ liệu hiển thị. Vui lòng bấm Làm mới; không cần ghi lại lịch nghỉ.'])
       }
@@ -773,10 +801,10 @@ export default function LeaveRegistrationPage({ user }) {
             <select
               value={form.employee_name}
               onChange={(e) => setForm((current) => ({ ...current, employee_name: e.target.value }))}
-              disabled={!canChooseEmployee}
+              disabled={!canChooseEmployee || loadState.employees !== 'ready'}
               required
             >
-              <option value="">-- Chọn nhân viên --</option>
+              <option value="">{loadState.employees === 'loading' ? 'Đang tải nhân viên…' : loadState.employees === 'error' ? 'Chưa tải được nhân viên' : '-- Chọn nhân viên --'}</option>
               {registrationEmployees.map((employee) => (
                 <option key={employee.username} value={employee.username}>
                   {shortEmployeeName(employee.username)}
@@ -787,13 +815,14 @@ export default function LeaveRegistrationPage({ user }) {
             <label>Lý do nghỉ</label>
             <select
               value={form.leave_reason}
+              disabled={loadState.reasons !== 'ready'}
               onChange={(e) => {
                 const leaveReason = e.target.value
                 setForm((current) => ({ ...current, leave_reason: leaveReason, manual_penalty: '' }))
               }}
               required
             >
-              <option value="">-- Chọn lý do nghỉ --</option>
+              <option value="">{loadState.reasons === 'loading' ? 'Đang tải lý do nghỉ…' : loadState.reasons === 'error' ? 'Chưa tải được lý do nghỉ' : '-- Chọn lý do nghỉ --'}</option>
               {reasons.map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
             </select>
 
@@ -842,7 +871,7 @@ export default function LeaveRegistrationPage({ user }) {
               </p>
             </div>
             <div className="list-actions statistics-title-actions">
-              {canViewPenalty && <div className="penalty-chip">Tổng tiền phạt: {statsTotalPenalty.toLocaleString('vi-VN')}đ</div>}
+              {canViewPenalty && <div className="penalty-chip">Tổng tiền phạt: {loadState.daily === 'ready' ? `${statsTotalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}
               <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
                 <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
               </button>
@@ -908,7 +937,7 @@ export default function LeaveRegistrationPage({ user }) {
               </div>
             </div>
           </div>
-          <div className="table-wrap daily-summary-wrap">
+          <div className="table-wrap daily-summary-wrap" aria-busy={loadState.daily === 'loading'}>
             <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
               <colgroup>
                 <col className="daily-col-date" />
@@ -931,7 +960,9 @@ export default function LeaveRegistrationPage({ user }) {
                 </tr>
               </thead>
               <tbody>
-                {dailyStats.length === 0 ? (
+                {loadState.daily !== 'ready' ? (
+                  <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell" role="status">{loadState.daily === 'loading' ? 'Đang tải thống kê lịch nghỉ…' : 'Chưa tải được thống kê. Vui lòng bấm Làm mới.'}</td></tr>
+                ) : dailyStats.length === 0 ? (
                   <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">{statsEmployeeFilter ? `Không có dữ liệu của ${statsEmployeeFilter} trong khoảng thời gian này.` : 'Không có dữ liệu trong khoảng thời gian này.'}</td></tr>
                 ) : dailyStats.map((day) => (
                   <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
@@ -971,7 +1002,7 @@ export default function LeaveRegistrationPage({ user }) {
               <h2>DANH SÁCH</h2>
               <p>
                 Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {' '}
-                {listRangeStart === listRangeEnd
+                {loadState.records === 'loading' ? 'Đang tải lịch nghỉ…' : loadState.records === 'error' ? 'Chưa tải được lịch nghỉ.' : listRangeStart === listRangeEnd
                   ? `${weekdayForDate(listRangeStart)} có ${filteredRecords.length} lịch nghỉ.`
                   : `Có ${filteredRecords.length} lịch nghỉ.`}
               </p>
@@ -985,7 +1016,7 @@ export default function LeaveRegistrationPage({ user }) {
               {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEditVisibleRecord && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDeleteVisibleRecord && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || deletableSelectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
-              {canViewPenalty && <div className="penalty-chip">Phạt: {totalPenalty.toLocaleString('vi-VN')}đ</div>}
+              {canViewPenalty && <div className="penalty-chip">Phạt: {loadState.records === 'ready' ? `${totalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}
           </div>
           {listActionNotice && (
             <div
@@ -1046,7 +1077,7 @@ export default function LeaveRegistrationPage({ user }) {
               {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
             </datalist>
           </div>
-          <div className="table-wrap leave-list-wrap">
+          <div className="table-wrap leave-list-wrap" aria-busy={loadState.records === 'loading'}>
             <table className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
               <colgroup>
                 <col className="leave-col-select" />
@@ -1059,7 +1090,9 @@ export default function LeaveRegistrationPage({ user }) {
               </colgroup>
               <thead><tr><th className="select-column">Chọn</th><th>Ngày</th><th>Thứ</th><th>Nhân viên</th><th>Lý do</th><th>Chi tiết</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
               <tbody>
-                {filteredRecords.length === 0 ? (
+                {loadState.records !== 'ready' ? (
+                  <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell" role="status">{loadState.records === 'loading' ? 'Đang tải danh sách lịch nghỉ…' : 'Chưa tải được danh sách. Vui lòng bấm Làm mới.'}</td></tr>
+                ) : filteredRecords.length === 0 ? (
                   <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">Không có lịch nghỉ phù hợp bộ lọc.</td></tr>
                 ) : filteredRecords.map((item) => (
                   <tr key={item.record_uid || `${item.employee_name}-${item.leave_reason}`}>

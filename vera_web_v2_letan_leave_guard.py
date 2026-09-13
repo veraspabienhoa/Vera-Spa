@@ -143,11 +143,12 @@ def _install_admin_reason_catalog(app, api_module) -> None:
                 api_module._require_feature(conn, ident, "leave")
                 can_view_penalty = api_module._feature_allowed(conn, ident, "employee_penalty_view")
                 output = []
-                for policy_row in api_module._policy_rows(conn):
+                policy_rows = api_module._policy_rows(conn)
+                for policy_row in policy_rows:
                     name = str(api_module._field(policy_row, "Lý do nghỉ", default="") or "").strip()
                     if not name:
                         continue
-                    item = api_module._reason_item(conn, name)
+                    item = api_module._reason_item(conn, name, policy_rows=policy_rows)
                     output.append({
                         "name": item["name"],
                         "leave_type": item["leave_type"],

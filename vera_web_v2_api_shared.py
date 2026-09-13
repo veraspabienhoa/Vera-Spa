@@ -55,9 +55,11 @@ from vera_progressive_penalty import (
 )
 
 
-def _reason_item(conn, reason: str) -> dict:
+def _reason_item(conn, reason: str, *, policy_rows: list[dict] | None = None) -> dict:
     try:
-        return reason_item(_api._policy_rows(conn), reason)
+        # Catalog routes reuse one request-local snapshot. Write validation
+        # still reads the current policy through the caller's connection.
+        return reason_item(_api._policy_rows(conn) if policy_rows is None else policy_rows, reason)
     except LeaveRuleError as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
 

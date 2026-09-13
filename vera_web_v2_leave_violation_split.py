@@ -56,12 +56,13 @@ def install_leave_violation_split_routes(
             violations: list[dict[str, Any]] = []
             seen: set[str] = set()
 
-            for row in policy_rows(conn):
+            rows = policy_rows(conn)
+            for row in rows:
                 name = str(field(row, "Lý do nghỉ", default="") or "").strip()
                 key = norm(name)
                 if not name or key in seen:
                     continue
-                item = reason_item(conn, name)
+                item = reason_item(conn, name, policy_rows=rows)
                 allowed = role_tokens(item.get("allowed_roles", ""))
                 if allowed and role not in allowed:
                     continue
@@ -108,12 +109,13 @@ def install_leave_violation_split_routes(
             require_feature(conn, ident, "leave")
             items: list[dict[str, str]] = []
             seen: set[str] = set()
-            for row in policy_rows(conn):
+            rows = policy_rows(conn)
+            for row in rows:
                 name = str(field(row, "Lý do nghỉ", default="") or "").strip()
                 key = norm(name)
                 if not name or key in seen:
                     continue
-                item = reason_item(conn, name)
+                item = reason_item(conn, name, policy_rows=rows)
                 leave_type = str(item.get("leave_type", "") or "").strip()
                 items.append({
                     "name": item["name"],

@@ -89,6 +89,11 @@ Các lỗi `DefaultCredentialsError`/`JSONDecodeError` ở tác vụ đối soá
 chẩn đoán cấu hình riêng nếu tái diễn; bản sửa nhóm kết nối không chứng minh các
 cấu hình tích hợp đó đã được khắc phục. Không gộp chúng với lỗi hết kết nối.
 
+Chẩn đoán tiếp theo về Đăng ký nghỉ tải chậm được ghi riêng tại
+[hồ sơ tối ưu tải lịch nghỉ](leave-loading-performance-2026-09-13.md): đọc Nội
+quy lặp trong API và chờ nhiều phần dữ liệu ở giao diện. Chưa có bằng chứng từ
+video rằng lỗi hết nhóm kết nối trước đó tái diễn.
+
 ## Kiểm tra hồi quy cần giữ
 
 ```bash
