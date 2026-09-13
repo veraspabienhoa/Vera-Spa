@@ -10,12 +10,13 @@ const ClearableSearchInput = forwardRef(function ClearableSearchInput({ onClear,
     node.dispatchEvent(new node.ownerDocument.defaultView.Event('input', { bubbles: true }))
     node.focus()
     onClear?.()
+    node.dispatchEvent(new node.ownerDocument.defaultView.Event('vera-search-clear', { bubbles: true }))
   }
   return <span className="clearable-search-input"><input {...props} ref={node => {
     input.current = node
     if (typeof forwardedRef === 'function') forwardedRef(node)
     else if (forwardedRef) forwardedRef.current = node
-  }}/>{Boolean(props.value) && <button type="button" className="search-clear-button" disabled={props.disabled || props.readOnly} aria-label={`Clear ${props['aria-label'] || props.placeholder || ''}`} onClick={clear}>Clear</button>}</span>
+  }}/>{Boolean(props.value) && <button type="button" className="search-clear-button" disabled={props.disabled || props.readOnly} aria-label={`Clear ${props['aria-label'] || props.placeholder || ''}`} onMouseDown={event => event.preventDefault()} onClick={clear}>Clear</button>}</span>
 })
 
 export default ClearableSearchInput

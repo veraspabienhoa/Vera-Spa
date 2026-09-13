@@ -3039,6 +3039,8 @@ def _state_response(
         # the richer Live Tour operator drawers.
         "services": state["services"], "combo_catalog": state["combos"],
         "payment_settings": {**deepcopy(state.get("payment_settings") or _default_payment_settings()), **({"user_bank": deepcopy(viewer_bank)} if viewer_bank else {})} if can_payment or can_admin or can_paid_invoice_view else {},
+        # Booking visibility is public to Live Tour viewers, independent of payment permissions.
+        "booking_settings": {"employee_available_minutes": (state.get("payment_settings") or {}).get("booking_available_minutes", 30)},
         "employee_directory": deepcopy(state.get("employee_directory", [])) if can_admin else [],
         "retained_assignments": [deepcopy(row) if customer_pii else _redact_customer_pii(row) for row in state["employees"] if row.get("roster_eligible") is False and (row.get("service") or row.get("break_started_at"))] if can_operate or can_payment or can_admin else [],
         "customers": customers, "pending_payments": state["pending"] if pending_access else [],
@@ -3321,8 +3323,18 @@ def _excel_literal(value: Any) -> Any:
 
 def _fill_excel_sheet(sheet, headers: list[Any], rows: list[list[Any]]) -> None:
     sheet.append([_excel_literal(value) for value in headers])
+    date_columns = {index for index, header in enumerate(headers)
+                    if str(header).startswith("Ngày") or header in {"Bắt đầu", "Kết thúc", "TG bắt đầu thực hiện"}}
     for row in rows:
-        sheet.append([_excel_literal(value) for value in row])
+        display = []
+        for index, value in enumerate(row):
+            if index in date_columns and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value or "")):
+                parsed = _parse_datetime(value)
+                value = parsed.strftime("%d/%m/%Y") if parsed else value
+            elif index in date_columns and re.match(r"\d{4}-\d{2}-\d{2}[T ]", str(value or "")):
+                value = _display_datetime(value)
+            display.append(_excel_literal(value))
+        sheet.append(display)
     header_fill = PatternFill("solid", fgColor="174E3B")
     for cell in sheet[1]:
         cell.fill = header_fill

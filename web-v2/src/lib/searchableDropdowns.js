@@ -153,7 +153,7 @@ export function startSearchableDropdowns(doc = document) {
       clear.addEventListener('click', () => {
         input.value = ''
         input.dispatchEvent(new win.Event('input', { bubbles: true }))
-        input.focus({ preventScroll: true })
+        close(true)
       })
       search.append(input, clear)
       menu.append(search)
@@ -223,6 +223,7 @@ export function startSearchableDropdowns(doc = document) {
     }),
     listen(doc, 'change', (event) => { if (event.target === active?.source) render() }),
     listen(doc, 'reset', () => close()),
+    listen(doc, 'vera-search-clear', () => close()),
   ]
   if (win.visualViewport) cleanup.push(listen(win.visualViewport, 'resize', position), listen(win.visualViewport, 'scroll', position))
   win.__veraSearchableDropdownsStop = () => { close(); cleanup.forEach((stop) => stop()); delete win.__veraSearchableDropdownsStop }

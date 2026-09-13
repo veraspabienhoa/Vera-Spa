@@ -1,3 +1,4 @@
+import { formatVeraDateTime } from '../lib/veraDate'
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, CalendarDays, Database, Download, Pause, Play, RefreshCw, ShieldCheck } from 'lucide-react'
 import { veraApi } from '../lib/api'
@@ -47,8 +48,7 @@ const displayDate = (value) => {
 
 const dateTimeText = (value) => {
   if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN')
+  return formatVeraDateTime(value)
 }
 
 export default function AutoCheckPage({ user }) {
@@ -196,6 +196,6 @@ export default function AutoCheckPage({ user }) {
       {tourMessage && <div className="success-box tour-cache-message">{tourMessage}</div>}
     </div>}
 
-    <div className="panel auto-check-card"><div className="auto-check-history-head"><div><h2>Lịch sử ghi nhận</h2><div className="auto-check-period">{displayDate(startDate)} – {displayDate(endDate)} · {(data?.events || []).length} dòng</div></div><button className="secondary-button" onClick={exportExcel} disabled={exporting || loading}><Download size={17}/> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div><div className="table-scroll"><table className="auto-check-table"><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Lý do</th><th>Nguồn</th><th>Phút</th></tr></thead><tbody>{(data?.events || []).map((row, i) => <tr key={`${row.created_at}-${i}`}><td>{displayDate(row.work_date)}</td><td><b>{row.employee_name}</b></td><td>{row.reason}</td><td>{row.source}</td><td>{row.minutes}</td></tr>)}{!data?.events?.length && <tr><td colSpan="5">Không có vi phạm Auto Check trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></div>
+    <div className="panel auto-check-card"><div className="auto-check-history-head"><div><h2>Lịch sử ghi nhận</h2><div className="auto-check-period">{displayDate(startDate)} – {displayDate(endDate)} · {(data?.events || []).length} dòng</div></div><button className="secondary-button" onClick={exportExcel} disabled={exporting || loading}><Download size={17}/> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div><div className="table-scroll"><table className="auto-check-table"><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Lý do</th><th>Nguồn</th><th>Phút</th></tr></thead><tbody>{(data?.events || []).map((row, i) => <tr key={`${formatVeraDateTime(row.created_at)}-${i}`}><td>{displayDate(row.work_date)}</td><td><b>{row.employee_name}</b></td><td>{row.reason}</td><td>{row.source}</td><td>{row.minutes}</td></tr>)}{!data?.events?.length && <tr><td colSpan="5">Không có vi phạm Auto Check trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></div>
   </section>
 }

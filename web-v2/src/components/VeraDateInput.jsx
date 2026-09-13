@@ -1,25 +1,7 @@
 import { CalendarDays } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
-const VN_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/
-
-export function formatVeraDate(value) {
-  const raw = String(value || '').trim()
-  const iso = raw.match(ISO_DATE)
-  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`
-  return VN_DATE.test(raw) ? raw : ''
-}
-
-export function parseVeraDate(value) {
-  const match = String(value || '').trim().match(VN_DATE)
-  if (!match) return ''
-  const iso = `${match[3]}-${match[2]}-${match[1]}`
-  const parsed = new Date(`${iso}T00:00:00`)
-  if (Number.isNaN(parsed.getTime())) return ''
-  if (parsed.getFullYear() !== Number(match[3]) || parsed.getMonth() + 1 !== Number(match[2]) || parsed.getDate() !== Number(match[1])) return ''
-  return iso
-}
+import { ISO_DATE, formatVeraDate, parseVeraDate } from '../lib/veraDate'
 
 function typedDate(value) {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 8)
@@ -38,6 +20,7 @@ export default function VeraDateInput({
   useEffect(() => {
     setDisplay(formatVeraDate(value))
     setInvalid(false)
+    textRef.current?.setCustomValidity('')
   }, [value])
 
   const emit = (nextValue) => onChange?.({
@@ -57,7 +40,7 @@ export default function VeraDateInput({
     const outOfRange = Boolean(iso && ((min && iso < min) || (max && iso > max)))
     const hasError = (complete && !iso) || outOfRange || (!allowPartial && !iso)
     setInvalid(hasError)
-    textRef.current?.setCustomValidity(hasError ? 'Ngày phải đúng định dạng dd/mm/yyyy và nằm trong phạm vi cho phép.' : '')
+    textRef.current?.setCustomValidity((!iso || outOfRange) ? 'Ngày phải đúng định dạng dd/mm/yyyy và nằm trong phạm vi cho phép.' : '')
     if (iso && !outOfRange) emit(iso)
   }
 
@@ -88,6 +71,8 @@ export default function VeraDateInput({
       name={name}
       type="text"
       inputMode="numeric"
+      pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
+      maxLength={10}
       autoComplete="off"
       placeholder="dd/mm/yyyy"
       value={display}

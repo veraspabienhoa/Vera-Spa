@@ -30,7 +30,7 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, canS
   const catalog = data.services || []
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
   const bookingClock = useBookingClock()
-  const eligibleEmployees = bookingEmployees(employees, bookingClock)
+  const eligibleEmployees = bookingEmployees(employees, bookingClock, data.booking_settings?.employee_available_minutes)
   const groupRooms = rooms.filter((item) => bookingRoomGroup(item.name, rooms) === context.roomGroup)
   const blankRow = (usedRooms = []) => {
     const available = bookingRoomState(rooms, data.room_assignments || employees, catalog, '', '', [], sharePrivateRoom).options
@@ -169,7 +169,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
     if (result) setCompleted(result.result.pending)
   }
   const bookingClock = useBookingClock()
-  const employeeOptions = bookingEmployees(employees, bookingClock).map((row) => {
+  const employeeOptions = bookingEmployees(employees, bookingClock, data.booking_settings?.employee_available_minutes).map((row) => {
     const remaining = row.started_at && row.duration != null ? Math.ceil((new Date(row.started_at).getTime() + Number(row.duration) * 60000 - Date.now()) / 60000) : null
     return { value: row.id, label: row.name, detail: !row.service ? 'Đang rảnh' : `${row.status}${remaining !== null ? ` · ${remaining <= 15 ? 'Sắp xong · ' : ''}Còn ${remaining} phút` : ''} · ${row.room}` }
   })

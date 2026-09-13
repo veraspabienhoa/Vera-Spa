@@ -2,7 +2,8 @@ import { employeeTourStart, tourStartOrder } from './liveTourOrder.js'
 
 export const tourNameKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLowerCase().replace(/\s+/g, ' ')
 
-export function bookingEmployees(employees, now = Date.now()) {
+export function bookingEmployees(employees, now = Date.now(), configuredMinutes = 30) {
+  const minutes = Number.isInteger(configuredMinutes) && configuredMinutes >= 1 && configuredMinutes <= 180 ? configuredMinutes : 30
   const ranking = (worker) => tourStartOrder(employeeTourStart(worker))
   return employees.filter((worker) => worker.roster_eligible !== false && !worker.hidden && tourNameKey(worker.work_status) === 'di lam' && ['ca 1', 'ca 2'].includes(tourNameKey(worker.shift)) && !worker.break_started_at && tourNameKey(worker.status) !== 'cho thanh toan')
     .filter(worker => {
@@ -11,7 +12,7 @@ export function bookingEmployees(employees, now = Date.now()) {
       if (!['dang thuc hien', 'dang su dung'].includes(status)) return true
       const started = Date.parse(worker.started_at)
       if (!Number.isFinite(started) || worker.duration == null || !Number.isFinite(Number(worker.duration))) return false
-      return started + Number(worker.duration) * 60000 - now <= 30 * 60000
+      return started + Number(worker.duration) * 60000 - now < minutes * 60000
     })
     .sort((a, b) => { if (employees.some(worker => worker.manual_order)) return Number(a.sort_index || 0) - Number(b.sort_index || 0); const x = ranking(a), y = ranking(b); return x[0] - y[0] || x[1] - y[1] || Number(a.sort_index || 0) - Number(b.sort_index || 0) || tourNameKey(a.name).localeCompare(tourNameKey(b.name)) })
 }
