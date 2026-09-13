@@ -201,7 +201,7 @@ def install_operations_v41(
         ident: identity_type = Depends(current_identity),
     ):
         _validate_range(start, end, max_days=63)
-        with engine_instance().connect() as conn:
+        with engine_instance().begin() as conn:
             require_feature(conn, ident, "snapshot_today")
             all_records = snapshot_module._records(conn, start, end)
         records = _snapshot_filter(all_records, employee, department, shift)
@@ -225,7 +225,7 @@ def install_operations_v41(
         ident: identity_type = Depends(current_identity),
     ):
         _validate_range(start, end, max_days=63)
-        with engine_instance().connect() as conn:
+        with engine_instance().begin() as conn:
             require_feature(conn, ident, "snapshot_export")
             all_records = snapshot_module._records(conn, start, end)
         records = _snapshot_filter(all_records, employee, department, shift)

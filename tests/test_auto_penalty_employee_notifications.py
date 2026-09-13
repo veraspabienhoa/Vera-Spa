@@ -20,14 +20,16 @@ def test_auto_event_has_retryable_employee_notification_outbox():
     assert "employee_notified_at=CASE WHEN :sent > 0 OR :suppressed THEN NOW()" in notifier
 
 
-def test_every_current_automatic_penalty_path_dispatches_employee_push():
+def test_committed_penalty_outbox_is_drained_by_background_worker():
     sync = source("timesoft_sync_job.py")
     break_return = source("vera_web_v2_break_return_penalty.py")
     outside = source("vera_web_v2_outside_leave_rule.py")
 
     assert "penalty_notifications.notify_pending(engine)" in sync
-    assert "penalty_notifications.notify_pending(engine_instance())" in break_return
-    assert "penalty_notifications.notify_pending(engine_instance())" in outside
+    # Projection runs inside callers' transactions and must not synchronously
+    # acquire another connection or send network requests before commit.
+    assert "notify_pending(" not in break_return
+    assert "notify_pending(" not in outside
 
 
 def test_notification_identifies_penalty_and_employee_without_duplicates():

@@ -15,7 +15,6 @@ import math
 from typing import Any, Callable
 
 import vera_auto_check as auto_check
-import vera_auto_penalty_notifications as penalty_notifications
 import vera_web_v2_attendance_break_alerts as alerts
 import vera_web_v2_snapshot as snapshot
 from vera_attendance_rules import break_return_deadline
@@ -108,8 +107,7 @@ def install_break_return_penalty(
             deadline = fact["deadline"]
             late_minutes = fact["late_minutes"]
             if catalog is None:
-                with engine_instance().connect() as catalog_conn:
-                    catalog = auto_check.load_catalog(catalog_conn)
+                catalog = auto_check.load_catalog(conn)
             reason_item = auto_check.outside_reason(catalog or {}, late_minutes)
             if not reason_item:
                 item["break_return_penalty_error"] = "Nội quy chưa có lý do Ra ngoài vào muộn phù hợp."
@@ -124,9 +122,9 @@ def install_break_return_penalty(
                 f" · FaceID vào lại {break_in.strftime('%H:%M:%S')}"
             )
             try:
-                with engine_instance().begin() as write_conn:
+                with conn.begin_nested():
                     ok, message = auto_check.save_violation(
-                        write_conn,
+                        conn,
                         work_date=work_day,
                         employee=employee,
                         reason_item=reason_item,
@@ -144,7 +142,8 @@ def install_break_return_penalty(
 
             output.append(item)
 
-        penalty_notifications.notify_pending(engine_instance())
+        # The TimeSoft job drains the committed notification outbox. Never check
+        # out another connection or deliver push while the caller holds DB locks.
 
         return output
 
