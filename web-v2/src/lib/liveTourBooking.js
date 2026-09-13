@@ -2,9 +2,19 @@ import { employeeTourStart, tourStartOrder } from './liveTourOrder.js'
 
 export const tourNameKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLowerCase().replace(/\s+/g, ' ')
 
-export function bookingEmployees(employees, now = Date.now(), configuredMinutes = 30) {
+export function bookingEmployees(employees, now = Date.now(), configuredMinutes = 30, boardRecords = []) {
   const minutes = Number.isInteger(configuredMinutes) && configuredMinutes >= 1 && configuredMinutes <= 180 ? configuredMinutes : 30
   const ranking = (worker) => tourStartOrder(employeeTourStart(worker))
+  // The server numbers the full board after applying tour order. Imported stt,
+  // sort_index and historical start times are not that displayed STT.
+  const boardPositions = new Map(boardRecords.flatMap(record => {
+    const id = String(record._employee_id ?? record.employee_id ?? '').trim()
+    const position = Number(record.STT)
+    return id && Number.isInteger(position) && position > 0 ? [[id, position]] : []
+  }))
+  const manualOrder = employees.some(worker => worker.manual_order)
+  const idlePosition = worker => boardPositions.get(String(worker.id)) ?? Number.MAX_SAFE_INTEGER
+  const isIdle = worker => !worker.service && !['dang thuc hien', 'dang su dung'].includes(tourNameKey(worker.status))
   return employees.filter((worker) => worker.roster_eligible !== false && !worker.hidden && tourNameKey(worker.work_status) === 'di lam' && ['ca 1', 'ca 2'].includes(tourNameKey(worker.shift)) && !worker.break_started_at && tourNameKey(worker.status) !== 'cho thanh toan')
     .filter(worker => {
       const status = tourNameKey(worker.status)
@@ -14,7 +24,14 @@ export function bookingEmployees(employees, now = Date.now(), configuredMinutes 
       if (!Number.isFinite(started) || worker.duration == null || !Number.isFinite(Number(worker.duration))) return false
       return started + Number(worker.duration) * 60000 - now < minutes * 60000
     })
-    .sort((a, b) => { if (employees.some(worker => worker.manual_order)) return Number(a.sort_index || 0) - Number(b.sort_index || 0); const x = ranking(a), y = ranking(b); return x[0] - y[0] || x[1] - y[1] || Number(a.sort_index || 0) - Number(b.sort_index || 0) || tourNameKey(a.name).localeCompare(tourNameKey(b.name)) })
+    .sort((a, b) => {
+      const aIdle = isIdle(a), bIdle = isIdle(b)
+      if (aIdle !== bIdle) return aIdle ? -1 : 1
+      if (aIdle) return idlePosition(a) - idlePosition(b) || Number(a.sort_index || 0) - Number(b.sort_index || 0)
+      if (manualOrder) return Number(a.sort_index || 0) - Number(b.sort_index || 0)
+      const x = ranking(a), y = ranking(b)
+      return x[0] - y[0] || x[1] - y[1] || Number(a.sort_index || 0) - Number(b.sort_index || 0) || tourNameKey(a.name).localeCompare(tourNameKey(b.name))
+    })
 }
 
 export function bookingServiceItems(worker, catalog) {

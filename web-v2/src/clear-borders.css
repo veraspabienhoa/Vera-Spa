@@ -1,6 +1,11 @@
 /* Shared screen treatment; printed invoices retain their print stylesheet. */
 @media screen {
-  :root { --line: #94b3a5; --control-border: #4c806b; }
+  :root {
+    --line: #789785;
+    --control-border: #37634f;
+    --table-border: #587561;
+    --table-header-border: #264f3c;
+  }
 
   body :is(.panel, .card, .login-card, .modal-card, .modal-content,
     .live-tour-modal, .identity-editor-card, .identity-camera-card,
@@ -23,14 +28,66 @@
   }
   body :is(input, textarea, select)[aria-invalid='true'] { border-color: #bc3434; }
   body :is(input, textarea, select):disabled { border-color: #8d9d95; }
-  body :is(fieldset, .table-wrap, .table-container, .tour-booking-row) { border: 2px solid #86a695; }
+  body :is(fieldset, .table-wrap, .table-container, .tour-booking-row,
+    .schedule-scroll, .staff-desktop-table, .rules-desktop-table,
+    .daily-quota-table-wrap, .responsive-data-table) {
+    box-sizing: border-box;
+    border: 2px solid var(--control-border) !important;
+  }
+
+  /* Border-only overrides also cover styles embedded by older modules. Keep
+     their widths, scrolling, sticky cells and status/background colors. */
+  body :is(table, [role='table'], [role='grid']) {
+    border: 2px solid var(--table-header-border) !important;
+  }
+  body :is(th, td, [role='columnheader'], [role='rowheader'], [role='gridcell']) {
+    border: 2px solid var(--table-border) !important;
+  }
+  body :is(thead th, thead td, [role='columnheader']) {
+    border-color: var(--table-header-border) !important;
+  }
+  body :is(tfoot th, tfoot td) { border-top-color: var(--table-header-border) !important; }
+  body .tour-table tr.tour-row-before-shift td.tour-col-employee {
+    border-left: 3px solid #087bbd !important;
+  }
+  body :is(.page-heading, .schedule-head, .live-tour-modal-head,
+    .staff-heading, .rules-heading, .shift-editor-head, .combo-sale-head,
+    .payroll-personal-heading, .payroll-personal-section-title,
+    .long-leave-admin-heading, .tour-room-panel-head, .spa-card-heading,
+    .spa-editor-heading, .leave-list-personal-summary-head) {
+    border-bottom: 2px solid var(--control-border) !important;
+    padding-bottom: 8px;
+  }
   body :is(.tour-search-popup, [role='listbox'], .searchable-dropdown-menu) {
     border: 2px solid #2d6e52;
     box-shadow: 0 8px 24px rgb(20 54 38 / 22%);
   }
-  body :is(.primary-button, .secondary-button) { border-width: 2px; }
-  body .secondary-button { border-color: #618b76; }
-  body .primary-button { border-color: #123d2b; }
+  body :is(button, [role='button'], input[type='button'], input[type='submit'], input[type='reset'],
+    a.primary-button, a.secondary-button, a.danger-button) {
+    box-sizing: border-box;
+    border: var(--vera-button-border-width, 2px) solid var(--vera-button-border, var(--control-border)) !important;
+  }
+  body .primary-button { --vera-button-border: #123d2b; }
+  body :is(.danger-button, .combo-delete, .danger-zone button) { --vera-button-border: #a62f35; }
+  body :is(.sidebar, .mobile-nav) :is(button, [role='button']) { --vera-button-border: #83b19a; }
+  body :is(.tour-room-card, .tour-room-segment-button).standard { --vera-button-border: #176b89; }
+  body .tour-room-card { --vera-button-border: var(--room-border, #176b89); }
+  body .tour-room-card.vip { --vera-button-border-width: 3px; }
+  body .tour-room-segment-button.vip { --vera-button-border: #8b641b; }
+  body :is(button:disabled, button.disabled, [role='button'][aria-disabled='true']) {
+    opacity: .72 !important;
+  }
+
+  /* Clear keeps its existing centered position and never animates on hover. */
+  body :is(.search-clear-button, .vera-dropdown-clear) {
+    transition: none !important;
+  }
+}
+@media print {
+  /* The schedule/report PDF uses the same legible grid. Thermal receipt layout
+     continues to be controlled by LiveTourReceipt.css. */
+  body :is(table, th, td):not(.tour-receipt *) { border: 1.5pt solid #587561 !important; }
+  body thead :is(th, td):not(.tour-receipt *) { border-color: #264f3c !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   body :is(input, textarea, select) { transition: none; }

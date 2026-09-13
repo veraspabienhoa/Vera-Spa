@@ -27,3 +27,32 @@ test('booking still hides waiting, unchecked/leave, breaks, hidden and unknown-d
     assert.equal(bookingEmployees([busy('busy', 40)], now, invalid).length, 0)
   }
 })
+
+test('idle suggestions use full-board STT, not imported numbers, start history or alphabetical order', () => {
+  const idle = (id, extra = {}) => ({ ...base, id, name: id, service: '', status: '', ...extra })
+  const rows = [
+    idle('Bích Nhu', { stt: '1', sort_index: 0 }),
+    idle('Cẩm Nhung', { sort_index: 1, last_assignment_display: { 'TG bắt đầu thực hiện': '13/09/2026 09:00' } }),
+    idle('Tường San', { stt: '39', sort_index: 8, last_assignment_display: { 'TG bắt đầu thực hiện': '13/09/2026 10:00' } }),
+    idle('Mụi Mụi', { sort_index: 5 }),
+    idle('Nghỉ phép', { work_status: 'Nghỉ phép' }),
+    idle('Nghỉ giữa ca', { break_started_at: base.started_at }),
+    busy('busy', 20, { service: '90 VIP', request: 'YC', sort_index: -1 }),
+  ]
+  const records = rows.map((row, index) => ({ _employee_id: row.id, STT: [18, 12, 1, 6, 2, 3, 25][index] }))
+  const originalIds = rows.map(row => row.id)
+  const expected = ['Tường San', 'Mụi Mụi', 'Cẩm Nhung', 'Bích Nhu', 'busy']
+  assert.deepEqual(bookingEmployees(rows, now, 30, records).map(row => row.id), expected)
+  assert.deepEqual(rows.map(row => row.id), originalIds)
+  assert.deepEqual(bookingEmployees(rows.map(row => ({ ...row, manual_order: true })), now, 30, records).map(row => row.id), expected)
+  // A newer board snapshot controls the next render, even with unchanged state order.
+  const moved = records.map(row => ({ ...row, STT: row._employee_id === 'Bích Nhu' ? 1 : Number(row.STT) + 1 }))
+  assert.equal(bookingEmployees(rows, now, 30, moved)[0].id, 'Bích Nhu')
+})
+
+test('missing/invalid board STT uses stable state order after numbered idle employees', () => {
+  const rows = [3, 1, 2].map(id => ({ ...base, id, service: '', status: '', sort_index: id }))
+  const records = [{ employee_id: 3, STT: '10' }, { employee_id: 2, STT: '' }, { employee_id: 1, STT: -1 }]
+  assert.deepEqual(bookingEmployees(rows, now, 30, records).map(row => row.id), [3, 1, 2])
+  assert.deepEqual(bookingEmployees(rows, now).map(row => row.id), [1, 2, 3])
+})

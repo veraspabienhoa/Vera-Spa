@@ -39,3 +39,9 @@ from hypotheses and historical configuration from current configuration.
 - Web V2 date fields use `VeraDateInput`; date/time fields use `VeraDateTimeInput`. Use `formatVeraDate` / `formatVeraDateTime` from `web-v2/src/lib/veraDate.js` for display. Do not introduce visible native `date` / `datetime-local` inputs whose format depends on the browser locale.
 - Keep API/database values in their existing ISO formats. Convert at the presentation boundary only; preserve the Vietnam business timezone (`Asia/Ho_Chi_Minh`) and existing date-range semantics. Month-only periods and clock-only fields retain their respective formats.
 - Validate real dates, leap years, incomplete input and min/max limits. A partly edited date must not submit the previous saved date silently.
+
+## Shared UI requirements
+
+- Booking suggestions marked “Đang rảnh” follow the employee's displayed STT from the full Live Tour snapshot, matched by employee ID. Do not substitute imported STT, alphabetical order, historical service times or positions in a filtered list. Preserve booking eligibility and the configured remaining-time threshold.
+- Tables, header rows and buttons use clear, solid borders throughout desktop and mobile. Extend `web-v2/src/clear-borders.css` for shared styling; retain danger/selected states, VIP gold borders, shift highlights and keyboard focus. Keep Clear buttons stationary on hover and their menus closed after clearing.
+- Table capture images must also have legible grid lines. Do not change receipt dimensions or financial data to adjust borders.
