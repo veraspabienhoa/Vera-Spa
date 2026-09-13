@@ -3503,6 +3503,12 @@ def _excel_bytes(
     sheet.title = title[:31]
     _fill_excel_sheet(sheet, headers, rows)
     if kind == "tip":
+        # Fit the detail sheet too; the summary has its own merged-title logic.
+        for column in sheet.columns:
+            width = max((max((len(line) for line in str(cell.value or "").splitlines()), default=0) for cell in column), default=0) + 5
+            dimension = sheet.column_dimensions[column[0].column_letter]
+            dimension.width = min(255, max(10, width))
+            dimension.bestFit = True
         _tip_summary_sheet(workbook, state, bounds)
     if kind == "revenue":
         total_row = sheet.max_row + 1

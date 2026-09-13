@@ -93,6 +93,26 @@
   body :is(input, textarea, select) { transition: none; }
 }
 
+/* Compact page headings throughout the application. */
+body .page-heading { padding:8px 0; margin:0 0 12px; min-height:0; gap:10px; align-items:center; flex-wrap:wrap; }
+body .page-heading h1 { font-size:clamp(24px,3vw,32px); line-height:1.15; margin:2px 0; }
+body .page-heading p { margin:4px 0 0; font-size:12px; line-height:1.35; }
+body .page-heading .eyebrow { font-size:10px; }
+
+.live-tour-page .tour-payment-settings { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; }
+.live-tour-page .tour-payment-settings > h3,.live-tour-page .tour-payment-settings > fieldset,.live-tour-page .tour-payment-settings > strong,.live-tour-page .tour-payment-settings > .live-tour-card-actions { grid-column:1/-1; }
+.live-tour-page .tour-payment-settings fieldset,.tour-partial-leave-settings fieldset { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; min-width:0; padding:12px; }
+.live-tour-page .tour-payment-settings fieldset > p,.live-tour-page .tour-payment-settings fieldset > small,.tour-partial-leave-settings fieldset > p { grid-column:1/-1; margin:0; }
+.live-tour-page .tour-payment-settings label,.tour-partial-leave-settings label { display:grid; gap:5px; min-width:0; }
+.live-tour-page .tour-payment-settings input:not([type=checkbox]),.tour-partial-leave-settings input { width:100%; min-width:0; box-sizing:border-box; }
+.live-tour-page .tour-payment-settings .live-tour-check-field { display:flex; align-items:center; }
+.tour-partial-leave-settings summary { cursor:pointer; font-weight:700; }
+.tour-partial-leave-settings form { margin-top:12px; }
+@media(max-width:700px) {
+  .live-tour-page .tour-payment-settings,.live-tour-page .tour-payment-settings fieldset,.tour-partial-leave-settings fieldset { grid-template-columns:minmax(0,1fr); }
+  .live-tour-page .tour-payment-setting-row { min-width:0; }
+}
+
 body button.date-link,
 body button.employee-highlight-button { border: 0 !important; }
 body :is(.date-link, .date-toolbar button, .date-picker-control, .vera-date-picker-button) { transition: none !important; }
