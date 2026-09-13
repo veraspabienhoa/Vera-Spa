@@ -34,7 +34,7 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
     'Lịch hẹn': i ? '' : '16:00', 'Vào ca': 'Ca 1', 'Trạng thái': '', 'Dịch vụ': '', 'Phòng': '',
     _tour_groups: ['working', 'available'], _payment_pending: payable && !i }))
   const data = { revision: 1, columns: ['STT', 'Tên nhân viên', 'Trạng thái', 'Phòng', 'Dịch vụ', 'Lịch hẹn', 'Vào ca'], records,
-    capabilities: { appointment_edit: canEdit, operate: true, payment: true }, services: [{ id: 'body', name: 'Body 90', price: 100 }],
+    capabilities: { appointment_edit: canEdit, operate: true, payment: true, invoice_view: true, pending_view: true }, services: [{ id: 'body', name: 'Body 90', price: 100 }],
     state: { employees: payable ? [{ id: 'e1', name: 'An An', status: 'CHO THANH TOÁN', service: 'Body 90', room: '1.1', service_price: 100 }] : [] } }
   setup?.(data)
   const writes = []
@@ -122,7 +122,7 @@ test('viewers without appointment capability see the value without an editor', a
 test('cleared board columns still show canonical service and room in checkout', async () => {
   const f = await fixture({ payable: true })
   try {
-    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await openEmployeePayment()
     assert.match(document.querySelector('.tour-checkout-context').textContent, /An An.*1\.1/)
     assert.match(document.querySelector('.tour-transaction-dialog').textContent, /Body 90/)
   } finally { await f.dispose() }
@@ -202,7 +202,7 @@ test('booking keeps all services in the payload while displaying a bounded list 
 test('payment keeps its fields and save button together, then restores the page after closing', async () => {
   const f = await fixture({ payable: true })
   try {
-    await act(async () => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await openEmployeePayment()
     const dialog = document.querySelector('.tour-transaction-dialog[aria-label="Thanh toán"]')
     assert.ok(dialog)
     for (const label of ['Khách hàng', 'Điện thoại', 'Phương thức thanh toán', 'Trừ vé combo', 'Số hóa đơn', 'Số vé', 'Giảm giá', 'Tiền TIP', 'Ghi chú']) assert.ok(dialog.textContent.includes(label), label)
@@ -222,7 +222,7 @@ test('prepaid combo checkout shows zero service charge while retaining service a
     Object.assign(data.state.employees[0], { customer_id: 'c1', customer_name: 'Khách Combo', customer_phone: '0901234567' })
   } })
   try {
-    await act(async () => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await openEmployeePayment()
     const dialog = document.querySelector('.tour-transaction-dialog')
     const combo = [...dialog.querySelectorAll('label')].find(label => label.textContent.includes('Trừ vé combo')).querySelector('select')
     await act(() => { combo.value = 'cp1'; combo.dispatchEvent(new dom.window.Event('change', { bubbles: true })) })
@@ -253,7 +253,7 @@ test('the mounted payment form refits when the visible viewport changes', async 
   } })
   const f = await fixture({ payable: true })
   try {
-    await act(async () => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await openEmployeePayment()
     const frame = document.querySelector('.tour-transaction-frame')
     assert.equal(Number(frame.dataset.scale), 1)
     view.height = 320
@@ -301,7 +301,7 @@ test('customer can be found by either field and selecting synchronizes both with
     data.customers = Array.from({ length: 12 }, (_, i) => ({ id: `c${i}`, name: `Khách ${i}`, phone: `09012345${String(i).padStart(2, '0')}` }))
   } })
   try {
-    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await openEmployeePayment()
     await chooseOption(inputFor('Khách hàng'), 'Khách 11', f)
     assert.equal(inputFor('Điện thoại').value, '0901234511')
     await act(() => inputFor('Điện thoại').focus())
@@ -323,7 +323,7 @@ test('TIP has two exclusive rows, remembers default and sends only the selected 
     data.payment_settings = { auto_print: false, tip_cards: [{ id: 'tip50', name: '50.000 đ', amount: 50000 }] }
   } })
   try {
-    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await openEmployeePayment()
     const tip = () => document.querySelector('.tour-tip-input')
     assert.equal(tip().querySelectorAll('.tour-tip-mode input[type=checkbox]').length, 2)
     await act(() => tip().querySelector('button[aria-label="Mặc định: Chọn thẻ tiền TIP"]').click())
@@ -337,7 +337,7 @@ test('TIP has two exclusive rows, remembers default and sends only the selected 
     await f.save(document.querySelector('.tour-transaction-dialog form'))
     assert.equal(f.writes[0].payload.tip, 0)
     assert.deepEqual(f.writes[0].payload.tip_card_ids, ['tip50', 'tip50'])
-    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await openEmployeePayment()
     assert.equal(tip().querySelectorAll('.tour-tip-mode input')[1].checked, true)
     await act(() => tip().querySelectorAll('.tour-tip-mode input')[0].click())
     await f.type(inputFor('Tiền TIP'), '125000')
@@ -631,3 +631,81 @@ test('combo lookup opens directly, searches customers, exports Excel and opens h
 })
 
 test.after(() => dom.window.close())
+
+async function openEmployeePayment() {
+  await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+  assert.ok(document.querySelector('.tour-booking-dialog'))
+  assert.equal(document.querySelector('.tour-transaction-dialog[aria-label="Thanh toán"]'), null)
+  await act(() => [...document.querySelectorAll('.tour-booking-dialog button')].find(button => button.textContent === 'Thanh toán').click())
+}
+
+for (const staleFlag of [false, true]) test(`employee name opens booking even with stale payment flag: ${staleFlag}`, async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.booking = true
+    data.records[0]['Tên nhân viên'] = 'Hải My'
+    data.records[0]._payment_pending = staleFlag
+    data.state.employees = [{ id: 'e1', name: 'Hải My', status: '', service: '', work_status: 'Đi làm', shift: 'Ca 1' }]
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    assert.match(document.querySelector('.tour-booking-dialog').textContent, /Hải My/)
+    assert.equal(document.querySelector('.tour-transaction-dialog[aria-label="Thanh toán"]'), null)
+    assert.ok([...document.querySelectorAll('.tour-booking-dialog button')].some(button => button.textContent === 'Đặt lịch'))
+    assert.equal(f.writes.length, 0)
+  } finally { await f.dispose() }
+})
+
+test('pending status without service gives a clear message instead of an empty payment form', async () => {
+  const f = await fixture({ payable: true, setup(data) { data.state.employees[0].service = '' } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    assert.match(document.querySelector('.tour-booking-dialog').textContent, /thiếu dữ liệu dịch vụ/)
+    assert.equal([...document.querySelectorAll('.tour-booking-dialog button')].some(button => button.textContent === 'Thanh toán'), false)
+    assert.equal(f.writes.length, 0)
+  } finally { await f.dispose() }
+})
+
+test('keeping the old bill frees the employee for a new booking only after a successful action', async () => {
+  const f = await fixture({ payable: true, setup(data) { data.capabilities.booking = true } })
+  try {
+    const pending = { id: 'old-bill', entries: [{ employee_id: 'e1', service: 'Body 90', price: 100 }] }
+    globalThis.__tourTestApi.liveTourAction = async body => {
+      f.writes.push(body)
+      assert.equal(body.action, 'move_pending')
+      assert.equal(body.payload.employee_id, 'e1')
+      f.data.state.pending = [pending]
+      Object.assign(f.data.state.employees[0], { status: '', service: '', room: '', service_items: [] })
+      f.data.records[0]._payment_pending = false
+      return { ...structuredClone(f.data), result: { pending } }
+    }
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    assert.equal(f.writes.length, 0)
+    await act(async () => [...document.querySelectorAll('.tour-booking-dialog button')].find(button => button.textContent === 'Giữ hóa đơn chờ và đặt lịch mới').click())
+    assert.equal(f.writes.length, 1)
+    assert.deepEqual(f.data.state.pending, [pending])
+    assert.ok([...document.querySelectorAll('.tour-booking-dialog button')].some(button => button.textContent === 'Đặt lịch'))
+    assert.equal(document.querySelector('.tour-transaction-dialog[aria-label="Thanh toán"]'), null)
+  } finally { await f.dispose() }
+})
+
+test('a failed pending transfer preserves the old assignment and does not open payment', async () => {
+  const f = await fixture({ payable: true, setup(data) { data.capabilities.booking = true } })
+  try {
+    const before = structuredClone(f.data.state.employees)
+    globalThis.__tourTestApi.liveTourAction = async () => { throw new Error('Không lưu được hóa đơn chờ') }
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    await act(async () => [...document.querySelectorAll('.tour-booking-dialog button')].find(button => button.textContent === 'Giữ hóa đơn chờ và đặt lịch mới').click())
+    assert.deepEqual(f.data.state.employees, before)
+    assert.match(document.querySelector('.tour-booking-dialog').textContent, /Không lưu được hóa đơn chờ/)
+    assert.equal(document.querySelector('.tour-transaction-dialog[aria-label="Thanh toán"]'), null)
+  } finally { await f.dispose() }
+})
+
+test('booking permission alone cannot move or settle the old bill', async () => {
+  const f = await fixture({ payable: true, setup(data) { data.capabilities.booking = true; data.capabilities.payment = false } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    assert.deepEqual([...document.querySelectorAll('.tour-booking-dialog .live-tour-modal-actions button')].map(button => button.textContent), ['Đóng'])
+    assert.equal(f.writes.length, 0)
+  } finally { await f.dispose() }
+})
