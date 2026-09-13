@@ -31,10 +31,32 @@ function Field({ label, children }) {
   return <label className="spa-field"><span>{label}</span>{children}</label>
 }
 
-function CustomerHistory({ value }) {
+function CustomerHistory({ value, canExport }) {
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const exportRunning = useRef(false)
+  // The existing workbook includes invoices/reports as well as combo ledgers.
+  const allowed = canExport === true && ['customers_view', 'invoice_view', 'paid_invoice_view', 'pending_view', 'reports_view']
+    .every((key) => value.capabilities?.[key] === true)
+  const exportHistory = async () => {
+    if (!allowed || !value.customer?.id || exportRunning.current) return
+    exportRunning.current = true
+    setExporting(true); setExportError('')
+    try {
+      await veraApi.exportLiveTourExcel('customer_detail', { customer_id: value.customer.id })
+    } catch (err) {
+      setExportError(err.message || 'Không xuất được Excel. Vui lòng thử lại.')
+    } finally {
+      exportRunning.current = false
+      setExporting(false)
+    }
+  }
   const canPaid = value.capabilities?.paid_invoice_view !== false
   const canPending = value.capabilities?.pending_view !== false && value.capabilities?.invoice_view !== false
   return <div className="spa-history">
+    <div className="spa-actions"><button type="button" className="secondary-button" disabled={!allowed || exporting} onClick={exportHistory}><Download size={16}/>{exporting ? 'Đang xuất…' : 'Xuất Excel mua / sử dụng combo'}</button></div>
+    {!allowed && <p>Cần quyền xuất Excel và xem đầy đủ lịch sử khách hàng, hóa đơn, chờ thanh toán, báo cáo để xuất file chi tiết.</p>}
+    {exportError && <p role="alert">{exportError}</p>}
     <div className="spa-summary">{canPaid && <><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span></>}<span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
     {canPaid ? <><h3>Dịch vụ đã sử dụng</h3>
     <div className="responsive-data-table"><table><thead><tr><th>Ngày / hóa đơn</th><th>Dịch vụ</th><th>Nhân viên</th><th>Vị trí</th><th>Giá dịch vụ</th></tr></thead><tbody>{value.services.map((item) => <tr key={item.id}><td>{formatVeraDateTime(item.business_date)}<small>{item.bill_no}</small></td><td>{item.service}</td><td>{item.employee_name}</td><td>{item.room}</td><td>{money(item.price)}</td></tr>)}</tbody></table></div>
@@ -246,7 +268,7 @@ export default function SpaManagementPage({ user, mode }) {
     {customerContext && <LiveTourCustomerDialog context={customerContext} busy={busy} error={error} onAction={mutate} onClose={() => setCustomerContext(null)}/>}
     {editor && <Editor title={editTitle} onClose={() => { setEditor(null); setError('') }} busy={busy}>
       {error && <div className="error-box" role="alert">{error}</div>}
-      {editor.kind === 'choose-service' ? <ServiceTypePicker onChoose={(kind) => openEditor(kind)}/> : editor.kind === 'history' ? <CustomerHistory value={editor.value}/> : <form onSubmit={submit}><fieldset disabled={busy} className="spa-form">
+      {editor.kind === 'choose-service' ? <ServiceTypePicker onChoose={(kind) => openEditor(kind)}/> : editor.kind === 'history' ? <CustomerHistory key={editor.value.customer.id} value={editor.value} canExport={data?.can_export}/> : <form onSubmit={submit}><fieldset disabled={busy} className="spa-form">
         {editor.kind === 'customer' && <><Field label="Tên khách hàng"><input required maxLength={150} value={form.customer_name} onChange={(event) => set('customer_name', event.target.value)}/></Field><Field label="Số điện thoại"><input type="tel" maxLength={30} value={form.customer_phone} onChange={(event) => set('customer_phone', event.target.value)}/></Field></>}
         {['service', 'combo'].includes(editor.kind) && <ServiceCatalogForm kind={editor.kind} form={form} setForm={setForm} services={services} groups={groups} existing={editor.existing}/>}
         {editor.kind === 'area' && <>
