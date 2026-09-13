@@ -8,6 +8,7 @@ never spam unchanged mismatch alerts.
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from fastapi import BackgroundTasks, Depends
 
@@ -15,7 +16,8 @@ import vera_web_v2_purchase_reconcile as base
 import vera_web_v2_purchase_reconcile_v2 as v2
 
 
-RELEASE = "purchase-reconcile-alert-check-2026-08-31-v1"
+RELEASE = "purchase-reconcile-alert-check-2026-08-31-v2-safe-degraded"
+LOGGER = logging.getLogger(__name__)
 
 
 def install_purchase_reconcile_alert_check(
@@ -46,18 +48,34 @@ def install_purchase_reconcile_alert_check(
         start = today.replace(day=1)
         end = today
 
-        purchase_content = base._drive_download_purchase_report()
-        purchase_all = base._parse_purchase_report(purchase_content, norm)
-        revenue_values = (
-            google_client()
-            .open_by_key(base.REVENUE_SPREADSHEET_ID)
-            .worksheet(base.REVENUE_WORKSHEET)
-            .get_all_values()
-        )
-        ledger_all = base._parse_revenue_input(revenue_values, norm)
-        purchase_rows = base._filtered(purchase_all, start, end)
-        ledger_rows = base._filtered(ledger_all, start, end)
-        comparison_rows = base._comparison(purchase_rows, ledger_rows)
+        try:
+            purchase_content = base._drive_download_purchase_report()
+            purchase_all = base._parse_purchase_report(purchase_content, norm)
+            revenue_values = (
+                google_client()
+                .open_by_key(base.REVENUE_SPREADSHEET_ID)
+                .worksheet(base.REVENUE_WORKSHEET)
+                .get_all_values()
+            )
+            ledger_all = base._parse_revenue_input(revenue_values, norm)
+            purchase_rows = base._filtered(purchase_all, start, end)
+            ledger_rows = base._filtered(ledger_all, start, end)
+            comparison_rows = base._comparison(purchase_rows, ledger_rows)
+        except Exception as exc:  # pragma: no cover - depends on production Google credentials/network
+            # This endpoint is a best-effort watcher.  A bad/missing Google
+            # credential, Drive outage, or temporary source error must not make
+            # the customer's active page surface a 500.
+            LOGGER.exception("Purchase reconcile alert check skipped because source data is unavailable")
+            return {
+                "ok": False,
+                "skipped": True,
+                "reason": "source_unavailable",
+                "release": RELEASE,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "error_type": type(exc).__name__,
+                "message": "Không kiểm tra được cảnh báo đối soát mua hàng; trang chính vẫn hoạt động.",
+            }
 
         background_tasks.add_task(
             v2._dispatch_mismatch_alerts,
@@ -82,6 +100,7 @@ def install_purchase_reconcile_alert_check(
             "target_roles": list(v2.TARGET_ROLES),
             "range": "current_month",
             "deduplicated": True,
+            "failure_policy": "source errors are logged and returned as skipped instead of HTTP 500",
         }
 
     app.state.purchase_reconcile_alert_check_installed = True
