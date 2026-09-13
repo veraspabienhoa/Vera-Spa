@@ -131,20 +131,6 @@ body .vera-date-picker-button:active {
 body .date-link:hover { color: #203c31 !important; }
 body .date-toolbar button:hover { background: #f2f5f3; }
 
-/* Live Tour exception: retain the outer frame and STT header grid only.
-   Applies to desktop, mobile and print; leave status colors and focus intact. */
-body .live-tour-page .tour-table table {
-  border: 2px solid #264f3c !important;
-}
-body .live-tour-page .tour-table tbody,
-body .live-tour-page .tour-table tbody tr,
-body .live-tour-page .tour-table tr.tour-row-before-shift td.tour-col-employee,
-body .live-tour-page .tour-table tbody tr > :is(td, th) {
-  border: 0 !important;
-}
-body .live-tour-page .tour-table thead :is(th, td) {
-  border: 2px solid #264f3c !important;
-}
 /* Keep wide data inside its own panel, including standalone pages. */
 body .main-area, body .feature-page, body .panel, body .responsive-data-table {
   min-width: 0; max-width: 100%; box-sizing: border-box;
@@ -170,4 +156,19 @@ body .department-payroll-table input[type=checkbox] { align-self: flex-start; }
   body .department-payroll-table td { font-size: 13px; }
   body .department-payroll-table td:nth-child(3) { grid-column: 1 / -1; }
   body .department-payroll-actions { position: static; flex-wrap: wrap; }
+}
+
+/* Live Tour exception: retain the outer frame and STT header grid only.
+   Applies to desktop, mobile and print; leave status colors and focus intact. */
+body .live-tour-page .tour-table table {
+  border: 2px solid #264f3c !important;
+}
+body .live-tour-page .tour-table tbody,
+body .live-tour-page .tour-table tbody tr,
+body .live-tour-page .tour-table tr.tour-row-before-shift td.tour-col-employee,
+body .live-tour-page .tour-table tbody tr > :is(td, th) {
+  border: 0 !important;
+}
+body .live-tour-page .tour-table thead :is(th, td) {
+  border: 2px solid #264f3c !important;
 }

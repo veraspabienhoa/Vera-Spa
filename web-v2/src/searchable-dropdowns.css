@@ -53,6 +53,21 @@
 /* Apply before focus, including controls in portals and dynamically added forms.
    Keep native pinch zoom available; do not alter the viewport scale. */
 @media (pointer: coarse), (max-width: 820px) {
+  .vera-searchable-dropdown {
+    border-width: 2px;
+    padding: 8px;
+    gap: 6px;
+  }
+  .vera-searchable-dropdown .vera-dropdown-search-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+  .vera-searchable-dropdown .vera-dropdown-search-line > input {
+    width: 100%; min-width: 0; min-height: 46px; font-size: 16px !important; font-weight: 700;
+  }
+  .vera-searchable-dropdown-options { min-height: 88px; }
   html body input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   html body select, html body textarea,
   html body #root input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),

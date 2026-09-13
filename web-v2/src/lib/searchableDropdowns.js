@@ -18,6 +18,7 @@ export function startSearchableDropdowns(doc = document) {
   let restoringFocus = false
   const isSelect = (node) => node instanceof win.HTMLSelectElement && !node.multiple && Number(node.size || 0) <= 1
   const isDatalist = (node) => node instanceof win.HTMLInputElement && Boolean(node.getAttribute('list') || (active?.source === node && active.listId))
+  const compactViewport = () => win.innerWidth <= 820 || Boolean(win.matchMedia?.('(pointer: coarse)').matches)
   const available = (node) => (isSelect(node) || isDatalist(node)) && node.isConnected && !node.matches(':disabled') && !node.readOnly
   const optionsFor = (state, query = '') => dropdownOptions(state.source, query, state.listId ? doc.getElementById(state.listId)?.options || [] : state.source.options)
   const listen = (node, type, handler, options) => {
@@ -50,6 +51,14 @@ export function startSearchableDropdowns(doc = document) {
     const height = view?.height || win.innerHeight
     const offsetTop = view?.offsetTop || 0
     const offsetLeft = view?.offsetLeft || 0
+    if (active.compact) {
+      const menuHeight = Math.max(0, Math.min(340, height - 16))
+      Object.assign(active.menu.style, {
+        left: `${offsetLeft + 8}px`, width: `${Math.max(0, width - 16)}px`,
+        height: `${menuHeight}px`, maxHeight: `${menuHeight}px`, top: `${offsetTop + 8}px`,
+      })
+      return
+    }
     const roomBelow = offsetTop + height - rect.bottom - 8
     const roomAbove = rect.top - offsetTop - 8
     // Choose a side once per opening. Filtering cannot flip or move the input.
@@ -115,24 +124,25 @@ export function startSearchableDropdowns(doc = document) {
   }
   const open = (source, query = '') => {
     if (!available(source)) return
-    if (active?.source === source) { if (!active.listId) active.input.focus({ preventScroll: true }); return }
+    if (active?.source === source) { if (active.input !== source) active.input.focus({ preventScroll: true }); return }
     close()
     const menu = doc.createElement('div')
     menu.className = 'vera-searchable-dropdown'
     const listId = isDatalist(source) ? source.getAttribute('list') : null
-    const input = listId ? source : doc.createElement('input')
-    if (!listId) {
+    const compact = compactViewport()
+    const input = listId && !compact ? source : doc.createElement('input')
+    if (input !== source) {
       input.type = 'search'
       input.autocomplete = 'off'
       input.spellcheck = false
-      input.placeholder = 'Gõ để tìm…'
-      input.value = query
+      input.placeholder = listId ? source.placeholder || 'Gõ để tìm…' : 'Gõ để tìm…'
+      input.value = listId ? source.value : query
     }
     const labelNode = source.labels?.[0]?.cloneNode(true)
     labelNode?.querySelectorAll('select, input, button, textarea').forEach((node) => node.remove())
     const label = source.getAttribute('aria-label') || labelNode?.textContent?.trim() || 'Lựa chọn'
     const attributes = Object.fromEntries(['aria-expanded', 'aria-controls', ...(listId ? ['list', 'role', 'aria-autocomplete', 'aria-activedescendant'] : [])].map((key) => [key, source.getAttribute(key)]))
-    if (!listId) input.setAttribute('aria-label', `Tìm kiếm: ${label}`)
+    if (input !== source) input.setAttribute('aria-label', `Tìm kiếm: ${label}`)
     input.setAttribute('role', 'combobox')
     input.setAttribute('aria-autocomplete', 'list')
     input.setAttribute('aria-expanded', 'true')
@@ -142,7 +152,7 @@ export function startSearchableDropdowns(doc = document) {
     list.className = 'vera-searchable-dropdown-options'
     list.setAttribute('role', 'listbox')
     list.setAttribute('aria-label', label)
-    if (!listId) {
+    if (input !== source) {
       const search = doc.createElement('div')
       search.className = 'vera-dropdown-search-line'
       const clear = doc.createElement('button')
@@ -152,7 +162,10 @@ export function startSearchableDropdowns(doc = document) {
       clear.setAttribute('aria-label', `Clear ${label}`)
       clear.addEventListener('click', () => {
         input.value = ''
-        input.dispatchEvent(new win.Event('input', { bubbles: true }))
+        if (listId) {
+          Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set.call(source, '')
+          source.dispatchEvent(new win.Event('input', { bubbles: true }))
+        } else input.dispatchEvent(new win.Event('input', { bubbles: true }))
         close(true)
       })
       search.append(input, clear)
@@ -173,11 +186,18 @@ export function startSearchableDropdowns(doc = document) {
       const next = signature()
       if (next !== previous) { previous = next; render() }
     })
-    active = { source, menu, input, list, listId, rows: [], index: -1, observer, attributes, removeInputListener: listen(input, 'input', render) }
+    const inputChanged = () => {
+      if (listId && input !== source) {
+        Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set.call(source, input.value)
+        source.dispatchEvent(new win.Event('input', { bubbles: true }))
+      }
+      render()
+    }
+    active = { source, menu, input, list, listId, compact, rows: [], index: -1, observer, attributes, removeInputListener: listen(input, 'input', inputChanged) }
     menu.addEventListener('pointerdown', (event) => { if (event.pointerType !== 'touch' && event.target.closest('button')) event.preventDefault() })
     observer.observe(doc.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'value', 'label', 'selected'] })
     render()
-    if (!listId) input.focus({ preventScroll: true })
+    if (input !== source) input.focus({ preventScroll: true })
   }
   const pointerdown = (event) => {
     if (active?.menu.contains(event.target)) return

@@ -888,7 +888,7 @@ tr:last-child td { border-bottom: 0; }
   .leave-records-table .select-column input { width: 16px; height: 16px; }
   .leave-records-table .reason-edit-cell, .leave-records-table .detail-cell { min-width: 0; }
   .leave-records-table .reason-edit-cell select { min-width: 0; padding: 7px 3px; border-radius: 8px; font-size: 10px; }
-  .leave-records-table .list-date-link { font-size: 7px; font-weight: 700; letter-spacing: -.05em; white-space: nowrap; }
+  .leave-records-table .list-date-link { display:block; width:100%; max-width:100%; min-width:0; padding:0; font-size:clamp(5.5px,1.5vw,7px); line-height:1.15; font-weight:800; letter-spacing:-.06em; white-space:nowrap; text-align:center; }
   .leave-records-table .weekday-cell { font-size: 7px; letter-spacing: -.04em; white-space: normal; }
   .leave-records-table .detail-cell { font-size: 9px; line-height: 1.25; }
   .leave-records-table .money-cell, .leave-records-table td.right { min-width: 0; font-size: 7px; white-space: normal; letter-spacing: -.03em; }
