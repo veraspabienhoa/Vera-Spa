@@ -104,6 +104,32 @@ jobs:
               raise SystemExit(f'Production local Auth health check failed: {last_error}')
           PY
 
+      - name: Verify production business database health
+        timeout-minutes: 2
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          request = urllib.request.Request(
+              'https://api.veraspa.vn/v2/health',
+              headers={
+                  'Accept': 'application/json',
+                  'Cache-Control': 'no-cache',
+                  'Origin': 'https://app.veraspa.vn',
+                  'User-Agent': 'Mozilla/5.0 Chrome/140 Safari/537.36',
+              },
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  payload = json.load(response)
+              if payload.get('ok') is not True:
+                  raise RuntimeError('Business database health is not ready')
+          except Exception as exc:
+              raise SystemExit(f'Production business database health failed: {type(exc).__name__}')
+          print('Production business database health OK')
+          PY
+
       - name: Report runtime after deployment
         if: always()
         timeout-minutes: 2

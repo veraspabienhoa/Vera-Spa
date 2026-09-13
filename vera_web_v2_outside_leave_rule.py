@@ -28,7 +28,6 @@ from typing import Any, Callable
 from sqlalchemy import text
 
 import vera_auto_check as auto_check
-import vera_auto_penalty_notifications as penalty_notifications
 import vera_web_v2_attendance_break_alerts as break_alerts
 import vera_web_v2_snapshot as snapshot
 from vera_partial_leave_hours import EARLY_REASONS, daily_clock
@@ -313,8 +312,7 @@ def _apply_restrictions_and_penalties(
             continue
 
         if catalog is None:
-            with engine_instance().connect() as catalog_conn:
-                catalog = auto_check.load_catalog(catalog_conn)
+            catalog = auto_check.load_catalog(conn)
 
         reason_item, minutes, calculation = _violation_for(
             catalog=catalog or {},
@@ -334,9 +332,9 @@ def _apply_restrictions_and_penalties(
         detail += f" · Dữ liệu ra ngoài: {source}"
 
         try:
-            with engine_instance().begin() as write_conn:
+            with conn.begin_nested():
                 ok, message = auto_check.save_violation(
-                    write_conn,
+                    conn,
                     work_date=work_day,
                     employee=str(item.get("employee_name") or "").strip(),
                     reason_item=reason_item,
@@ -358,7 +356,8 @@ def _apply_restrictions_and_penalties(
 
         output.append(item)
 
-    penalty_notifications.notify_pending(engine_instance())
+    # The TimeSoft job drains the committed notification outbox. Never check
+    # out another connection or deliver push while the caller holds DB locks.
     return output
 
 

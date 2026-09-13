@@ -298,7 +298,7 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
     @app.get("/v2/snapshot")
     def snapshot(start: date = Query(...), end: date = Query(...), ident: identity_type = Depends(current_identity)):
         dates(start, end)
-        with engine_instance().connect() as conn:
+        with engine_instance().begin() as conn:
             require_feature(conn, ident, "snapshot_today")
             records = _records(conn, start, end)
         return {"records": records, "count": len(records), "start": start.isoformat(), "end": end.isoformat(), "data_scope": "attendance_only"}
@@ -306,7 +306,7 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
     @app.get("/v2/snapshot/export.xlsx")
     def snapshot_export(start: date = Query(...), end: date = Query(...), ident: identity_type = Depends(current_identity)):
         dates(start, end)
-        with engine_instance().connect() as conn:
+        with engine_instance().begin() as conn:
             require_feature(conn, ident, "snapshot_export")
             records = _records(conn, start, end)
         columns = [
