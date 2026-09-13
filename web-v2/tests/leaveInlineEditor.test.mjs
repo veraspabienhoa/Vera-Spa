@@ -182,7 +182,7 @@ test('loading is distinguished from empty data and a statistics failure still lo
     catalog: { [day]: [{ name: 'Nghỉ CÓ phép' }] }, setupApi(api) { api.leaveDailyStats = () => statistics } })
   try {
     assert.match(f.dom.window.document.querySelector('.daily-summary-wrap').textContent, /Đang tải thống kê lịch nghỉ/)
-    assert.match(f.dom.window.document.querySelector('.leave-list-wrap').textContent, /Đang tải danh sách lịch nghỉ/)
+    assert.match(f.dom.window.document.querySelector('.leave-list-wrap').textContent, /survives-stats-error/)
     assert.ok(!f.dom.window.document.querySelector('.leave-list-wrap').textContent.includes('Không có lịch nghỉ'))
     await act(async () => failStatistics(Error('Tạm thời không tải được thống kê')))
     assert.match(f.dom.window.document.querySelector('.daily-summary-wrap').textContent, /Chưa tải được thống kê/)

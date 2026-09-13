@@ -48,3 +48,17 @@ def test_busy_bootstrap_does_not_return_fabricated_state(monkeypatch):
     monkeypatch.setattr(live, 'try_state_lock', lambda *_: False)
     assert client.get('/v2/live-tour').status_code == 503
     assert db.stored is None
+
+
+@pytest.mark.parametrize('path', ['/v2/live-tour/reports', '/v2/live-tour/customers'])
+def test_lookup_reads_skip_lock_and_projection_even_when_free(monkeypatch, path):
+    db, client = initialized()
+    before, revision = deepcopy(db.stored), db.revision
+    def forbidden(*args, **kwargs):
+        raise AssertionError('lookup must not lock or refresh attendance')
+    monkeypatch.setattr(live, 'try_state_lock', forbidden)
+    monkeypatch.setattr(live, '_read_state', forbidden)
+    response = client.get(path)
+    assert response.status_code == 200
+    assert response.json()['revision'] == revision
+    assert db.stored == before

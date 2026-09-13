@@ -1,5 +1,24 @@
 # Đăng ký nghỉ tải chậm — 13/09/2026
 
+## Bổ sung sau PR 110: leave/customers/reports
+
+Người dùng báo ba trang standalone còn chậm. Chưa có đo thời gian API trong
+phiên đăng nhập hiện tại, không khẳng định mọi độ trễ cùng một nguyên nhân.
+Code xác nhận GET customers/reports vẫn gọi read_board với projection khi lấy
+được khóa: kéo theo attendance/daily writes không cần cho tra cứu lịch sử.
+Hai route và lịch sử khách hàng nay đọc trạng thái đã commit mà không lấy
+khóa/projection; chỉ bootstrap lần đầu cần khóa. Quyền/revision giữ nguyên.
+Khách hàng/hóa đơn tiếp tục thấy các mutation đã commit ở lần tải kế tiếp.
+
+Leave loader vẫn tuần tự để không gây burst vào pool, nhưng records được tải
+trước daily stats. Test trình duyệt giữ thống kê ở trạng thái pending và xác
+nhận danh sách đã xuất hiện; kiểm tra lỗi thống kê không phá bản sửa đang nhập.
+Không tuyên bố đã tối ưu thời gian thực thi API thống kê hoặc phân trang ledger.
+
+Kiểm chứng: 1049 Python, 14 frontend leave tests đạt; build thành công.
+Chưa push/deploy, chưa đo tải production. Sau deploy đo từng API khi cùng
+user/bộ lọc, kiểm tra quyền và mở lịch sử/đổi bộ lọc/lưu sửa.
+
 ## Bằng chứng
 
 Kiểm tra mã `57af8d554eff6190ea589729e2b7bdf8ad421225`, cùng phiên bản được

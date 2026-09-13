@@ -203,12 +203,12 @@ export default function LeaveRegistrationPage({ user }) {
     const sources = { daily: 'thống kê lịch nghỉ', records: 'danh sách lịch nghỉ', reasons: 'danh sách lý do nghỉ', employees: 'danh sách nhân viên' }
     const key = (...parts) => JSON.stringify([identityKey, ...parts])
     const jobs = [
-      { id: 'daily', key: key(rangeStart, rangeEnd, statsEmployeeFilter), read: () => isApiConfigured
-        ? veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
-        : loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter).then((days) => ({ days })) },
       { id: 'records', key: key(listRangeStart, listRangeEnd), read: () => isApiConfigured
         ? veraApi.leaveRecords(listRangeStart, listRangeEnd)
         : loadLeaveRecords(listRangeStart, listRangeEnd).then((records) => ({ records })) },
+      { id: 'daily', key: key(rangeStart, rangeEnd, statsEmployeeFilter), read: () => isApiConfigured
+        ? veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
+        : loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter).then((days) => ({ days })) },
       { id: 'reasons', key: key(date), read: () => isApiConfigured
         ? veraApi.leaveReasons(date)
         : loadLeaveReasons(date).then((names) => ({ reasons: names.map((name) => ({ name, requires_manual_penalty: false })) })) },

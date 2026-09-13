@@ -18,7 +18,7 @@ def test_leave_page_avoids_parallel_database_burst_after_insert():
     loader = (ROOT / "web-v2/src/lib/leavePageLoader.js").read_text(encoding="utf-8")
 
     assert "Promise.all([" not in page
-    assert page.index("id: 'daily'") < page.index("id: 'records'") < page.index("id: 'reasons'") < page.index("id: 'employees'")
+    assert page.index("id: 'records'") < page.index("id: 'daily'") < page.index("id: 'reasons'") < page.index("id: 'employees'")
     assert "const result = tail.then(async () =>" in loader
     assert "const data = await job.read()" in loader
     assert "options?.onlyChanged === true && !afterSave" in page
