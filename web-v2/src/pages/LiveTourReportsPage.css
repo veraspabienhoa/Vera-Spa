@@ -31,16 +31,17 @@
 
 .report-total-cell { font-weight: 900; }
 
-.report-invoice-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.live-tour-report-table .spa-actions.report-invoice-actions {
+  display: flex !important;
+  flex-wrap: nowrap !important;
   gap: 4px;
   width: 100%;
   min-width: 0;
 }
 
-.report-invoice-actions .secondary-button {
-  width: 100%;
+.live-tour-report-table .report-invoice-actions .secondary-button {
+  flex: 1 1 0;
+  width: auto;
   min-width: 0;
   padding: 7px 3px;
   white-space: nowrap;
@@ -88,5 +89,5 @@
   }
   .live-tour-report-table .report-actions-cell { grid-template-columns: 1fr; }
   .live-tour-report-table .report-actions-cell::before { content: none; }
-  .report-invoice-actions .secondary-button { min-height: 34px; padding: 6px 2px; font-size: 10px; }
+  .live-tour-report-table .report-invoice-actions .secondary-button { min-height: 34px; padding: 6px 2px; font-size: 10px; }
 }
