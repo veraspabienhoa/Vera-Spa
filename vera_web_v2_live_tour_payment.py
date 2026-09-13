@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 
 def default_settings():
-    return {'employee_change_minutes': 10, 'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
+    return {'shift_ready_times': {'shift2': '13:00', 'support1': '12:00', 'support2': '14:00'}, 'employee_change_minutes': 10, 'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
         {'id': f'tip-{amount}', 'name': f'{amount:,} đ'.replace(',', '.'), 'amount': amount}
         for amount in (50000, 100000, 200000, 300000, 500000)
     ]}
@@ -53,7 +53,10 @@ def settings_update(payload, money):
     minutes = payload.get('employee_change_minutes', 10)
     if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 180:
         raise HTTPException(400, 'Thời hạn đổi nhân viên phải từ 1 đến 180 phút.')
-    return {'employee_change_minutes': minutes, 'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
+    ready_times = payload.get('shift_ready_times', default_settings()['shift_ready_times'])
+    if not isinstance(ready_times, dict) or any(not isinstance(ready_times.get(key), str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', ready_times[key]) for key in ('shift2', 'support1', 'support2')):
+        raise HTTPException(400, 'Giờ hết đánh dấu ca phải có định dạng HH:MM (00:00–23:59).')
+    return {'shift_ready_times': {key: ready_times[key] for key in ('shift2', 'support1', 'support2')}, 'employee_change_minutes': minutes, 'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
             'tip_cards': sorted(result, key=lambda card: card['amount'])}
 
 

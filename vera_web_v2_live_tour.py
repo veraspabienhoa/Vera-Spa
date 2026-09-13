@@ -2688,6 +2688,8 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_id": employee.get("id"), "id": employee.get("id"),
         "employee_id": employee.get("id"), "_employee_id": employee.get("id"),
         "_row_style": style, "_tour_groups": groups,
+        "_shift_checkin_date": employee.get("shift_checkin_date", ""),
+        "_daily_support_reason": employee.get("synced_leave_reason", ""),
         "_employee_change_until": _iso(_employee_change_until(employee)) if _employee_change_until(employee) else "",
         "_employee_change_started_at": employee.get("started_at", ""),
         "_break_countdown_deadline": attendance_break.get("deadline", "") if not attendance_break.get("in") else "",
