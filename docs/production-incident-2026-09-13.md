@@ -1,5 +1,23 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## Tái diễn lúc 16:37 UTC — bản vá giảm nghẽn, chưa deploy
+
+VPS xác nhận commit 5fe64c818e5a59303048bb3cbf77134928a5c95f, không có
+thay đổi tracked. Log: pool size 10, overflow 20, timeout 30 giây;
+10 kết nối chờ advisory lock và một giao dịch idle in transaction 19 giây.
+Chưa xác định PID giữ khóa hoặc tác vụ cụ thể giữ khóa lâu nhất.
+
+Bản vá sử dụng pg_try_advisory_xact_lock trên cùng conn/giao dịch: khi bận,
+trả 503 Retry-After 3 và rollback qua context manager, không xếp hàng giữ
+kết nối. Không bỏ khóa, thay đổi idempotency, quyền hay số tiền. Giao diện
+bỏ qua poll nền khi lần tải trước chưa xong; tải rõ ràng đợi lần trước rồi
+đọc mới. Đây là giảm tải/giảm khuếch đại sự cố, chưa phải bằng chứng loại bỏ
+mọi nguyên nhân giữ khóa. Không tự retry mutation thanh toán.
+
+Chưa sửa schema payroll, mật khẩu hoặc đồng bộ Pages trong bản vá này.
+Phải kiểm chứng hai health và booking/payment/combos trên môi trường thử
+trước production; vẫn cần đo thời gian attendance và permissions trong khóa.
+
 Người dùng đã xác nhận sau bản sửa: **đăng nhập được và dữ liệu đã hiển thị**.
 Hồ sơ này được lưu theo yêu cầu của người dùng để tránh lặp lại lỗi.
 

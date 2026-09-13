@@ -7,6 +7,7 @@ booking/payment operation is committed as one PostgreSQL transaction.
 from __future__ import annotations
 
 from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
+from vera_web_v2_live_tour_lock import acquire_state_lock
 
 import hashlib
 import json
@@ -3741,7 +3742,7 @@ def install_live_tour_routes(
         while not scheduler_stop.is_set():
             try:
                 with engine_instance().begin() as conn:
-                    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+                    acquire_state_lock(conn, STATE_LOCK)
                     # Do not bootstrap an unused board from a background task.
                     exists = conn.execute(text("SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
                                           {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
@@ -3849,7 +3850,7 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_view")
             # Creation and reads share the same lock only for the first bootstrap.
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, revision = read_state(conn, now)
             grants = permissions(conn, ident)
         return _state_response(
@@ -3862,7 +3863,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_reports_view")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, revision = read_state(conn, now)
             grants = permissions(conn, ident)
         public = _state_response(state, revision, now, **grants)
@@ -3874,7 +3875,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, revision = read_state(conn, now)
             can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
         return {"revision": revision, "customers": [dict(deepcopy(c), combo_purchases=[deepcopy(p) for p in c.get("combo_purchases", []) if not p.get("deleted_at")]) for c in state["customers"] if not c.get("deleted_at")], "can_export": can_export}
@@ -3884,7 +3885,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_admin")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, revision = read_state(conn, now)
         return {"revision": revision, "services": deepcopy(state["services"]), "combos": deepcopy(state["combos"]), "service_areas": _service_areas(state)}
 
@@ -3896,7 +3897,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, _ = read_state(conn, now)
             grants = permissions(conn, ident)
         readable = deepcopy(state)
@@ -3987,7 +3988,7 @@ def install_live_tour_routes(
                 require_feature(conn, ident, "live_tour_customers_view")
             if action in {"checkout", "quick_checkout"} and _contains_customer_pii(payload):
                 require_feature(conn, ident, "live_tour_customers_view")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, revision = read_state(conn, now, for_update=True)
             previous = _idempotency_replay(
                 state, idempotency_key, action=action, actor=actor, payload_hash=payload_hash,
@@ -4064,7 +4065,7 @@ def install_live_tour_routes(
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):
                 require_feature(conn, ident, feature)
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, _ = read_state(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
@@ -4108,7 +4109,7 @@ def install_live_tour_routes(
         actor = str(ident.employee_username or ident.full_name or "web_v2")
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_admin")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, revision = read_state(conn, now, for_update=True)
             if expected_revision != revision:
                 raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi Import lại.")
@@ -4132,7 +4133,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": STATE_LOCK})
+            acquire_state_lock(conn, STATE_LOCK)
             state, _ = read_state(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
