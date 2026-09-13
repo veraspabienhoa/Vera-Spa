@@ -50,3 +50,12 @@ def test_other_reports_reject_custom_selection_instead_of_ignoring_it():
     with pytest.raises(HTTPException) as error:
         live._excel_bytes(state_with(employee("e1", "An")), "revenue", NOW, employee_ids=["e1"])
     assert error.value.status_code == 400
+
+
+def test_invoice_number_export_filter_matches_history_and_backup_numbers():
+    bounds = {'bill_no': ' vera-0012 '}
+    assert live._event_in_export_bounds({'bill_no': 'VERA-0012'}, bounds)
+    assert live._event_in_export_bounds({'before': {'bill_no': 'VERA-0012'}}, bounds)
+    assert live._event_in_export_bounds({'bill_numbers': ['VERA-0012', 'VERA-0013']}, bounds)
+    assert not live._event_in_export_bounds({'bill_no': 'VERA-0013'}, bounds)
+    assert not live._event_in_export_bounds({}, bounds)

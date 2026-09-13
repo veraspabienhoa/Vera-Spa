@@ -410,6 +410,9 @@ def install_attendance_break_alerts(app, *, engine_instance: Callable[[], Any], 
                 })
                 _save_state(conn, fact["key"], state)
             viewer_alerts = _viewer_alerts(facts, ident, now, bool(freshness["fresh"]))
+            if freshness['fresh']:
+                from vera_missing_checkin_notifications import viewer_missing_checkins
+                viewer_alerts.extend(viewer_missing_checkins(conn, ident, now))
 
         delivery_result = _send_payloads(api_module, engine_instance, deliveries)
         return {

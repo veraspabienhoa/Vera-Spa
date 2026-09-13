@@ -25,7 +25,7 @@ test('suggestions include all invoice entries and report rows without duplicates
   assert.equal(options.employee.length, 3)
   assert.equal(options.customer.length, 3)
   assert.equal(options.service.length, 3)
-  assert.deepEqual(tourFilterOptions(), { employee: [], customer: [], service: [] })
+  assert.deepEqual(tourFilterOptions(), { employee: [], customer: [], service: [], bill_no: [] })
   assert.deepEqual(filterTourRows(rows, { employee: 'my duyen', service: 'foot' }), [])
 })
 test('typing, choosing, clearing and switching lists update searches immediately', async () => {
