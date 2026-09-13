@@ -1,6 +1,10 @@
 import { getCurrentSession } from './supabase'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
+const MIN_CHECK_INTERVAL_MS = 12_000
+let breakAlertCheckPromise = null
+let breakAlertLastCheckedAt = 0
+let breakAlertLastPayload = { alerts: [], alert_count: 0, degraded: false }
 
 async function authHeaders() {
   const session = await getCurrentSession()
@@ -9,15 +13,44 @@ async function authHeaders() {
   return headers
 }
 
+function degradedBreakAlertPayload(status = 0, payload = {}) {
+  return {
+    alerts: [],
+    alert_count: 0,
+    degraded: true,
+    status,
+    message: payload.detail || payload.message || 'Tạm thời không kiểm tra được cảnh báo nghỉ giữa ca.',
+  }
+}
+
 export async function checkAttendanceBreakAlerts() {
   if (!apiBase) return { alerts: [], alert_count: 0 }
-  const response = await fetch(`${apiBase}/v2/attendance/break-alerts/check`, {
-    method: 'POST',
-    headers: await authHeaders(),
-  })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
-  return payload
+  const now = Date.now()
+  if (breakAlertCheckPromise) return breakAlertCheckPromise
+  if (now - breakAlertLastCheckedAt < MIN_CHECK_INTERVAL_MS) return breakAlertLastPayload
+
+  breakAlertCheckPromise = (async () => {
+    try {
+      const response = await fetch(`${apiBase}/v2/attendance/break-alerts/check`, {
+        method: 'POST',
+        headers: await authHeaders(),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if ([500, 502, 503, 504].includes(response.status)) return degradedBreakAlertPayload(response.status, payload)
+        throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+      }
+      breakAlertLastPayload = payload
+      return payload
+    } catch (error) {
+      breakAlertLastPayload = degradedBreakAlertPayload(0, { message: error?.message })
+      return breakAlertLastPayload
+    } finally {
+      breakAlertLastCheckedAt = Date.now()
+      breakAlertCheckPromise = null
+    }
+  })()
+  return breakAlertCheckPromise
 }
 
 export async function getAttendanceBreakAlertControl() {
