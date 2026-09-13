@@ -3636,7 +3636,8 @@ def _png_bytes(state: dict[str, Any], now: datetime, *, include_hidden: bool = F
         fill = "#174e3b" if i == 0 else palette.get(records[i-1]["_row_style"], "#ffffff")
         x = 0
         for value, width in zip(row, widths):
-            draw.rectangle((x, y, x+width-1, y+height-1), fill=fill, outline="#d5dfda")
+            draw.rectangle((x, y, x+width-1, y+height-1), fill=fill,
+                           outline="#a9cdbb" if i == 0 else "#587561", width=2)
             draw.multiline_text((x+8, y+8), value, font=bold if i == 0 else font, fill="white" if i == 0 else "#15251f", spacing=3)
             x += width
         y += height

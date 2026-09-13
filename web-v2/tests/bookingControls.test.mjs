@@ -146,3 +146,29 @@ test('admin can submit a custom booking threshold alongside existing settings', 
     assert.deepEqual(payload.tip_cards, [])
   } finally { await dispose() }
 })
+
+test('single and room booking keep full-board STT when opening and searching idle employees', async () => {
+  const BookingDialog = await component('LiveTourBookingDialog')
+  const names = ['Bích Nhu', 'Cẩm Nhung', 'Tường San', 'Ngọc Nhung']
+  const employees = names.map((name, index) => ({ id: `e${index}`, name, service: '', status: '', work_status: 'Đi làm', shift: 'Ca 1', sort_index: index }))
+  const data = {
+    state: { employees, rooms: [{ name: '2.1', active: true }] }, services: [],
+    records: employees.map((row, index) => ({ _employee_id: row.id, STT: [18, 12, 1, 6][index] })),
+  }
+  for (const context of [{}, { roomGroup: '2' }]) {
+    const dispose = await render(() => React.createElement(BookingDialog, { data, context, canBook: true, onClose() {} }))
+    try {
+      // Let the dialog's initial focus frame settle before opening suggestions.
+      await act(async () => { await new Promise(resolve => window.requestAnimationFrame(resolve)) })
+      const input = document.querySelector('input[role="combobox"]')
+      await act(() => input.focus())
+      const labels = () => [...document.querySelectorAll('[role="option"] .tour-select-option-heading > strong')].map(item => item.textContent)
+      assert.deepEqual(labels(), ['Tường San', 'Ngọc Nhung', 'Cẩm Nhung', 'Bích Nhu'])
+      await type(input, 'Nhung')
+      assert.deepEqual(labels(), ['Ngọc Nhung', 'Cẩm Nhung'])
+      await act(() => document.querySelector('[role="option"]').click())
+      assert.equal(input.value, 'Ngọc Nhung')
+      assert.equal(document.getElementById(input.getAttribute('aria-controls')), null)
+    } finally { await dispose() }
+  }
+})

@@ -877,8 +877,9 @@ export default function WorkSchedulePage({ user }) {
       const drawCell = (x, y, width, height, fill, text, options = {}) => {
         context.fillStyle = fill
         context.fillRect(x, y, width, height)
-        context.strokeStyle = '#d8e3de'
-        context.strokeRect(x, y, width, height)
+        context.strokeStyle = '#587561'
+        context.lineWidth = 2
+        context.strokeRect(x + 1, y + 1, width - 2, height - 2)
         context.font = `${options.bold ? '700' : '500'} ${options.size || 11}px Arial, sans-serif`
         context.fillStyle = options.color || '#183d31'
         context.textAlign = options.align || 'center'
