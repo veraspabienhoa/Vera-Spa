@@ -17,7 +17,7 @@ def default_settings():
 def service_subtotal(invoice):
     """Prepaid ticket redemption never charges the catalog service price again."""
     if str(invoice.get('payment_method') or '').upper() == 'COMBO' and not invoice.get('purchased_combo_id'):
-        return 0
+        return invoice.get('combo_extra_subtotal', 0)
     return invoice.get('subtotal', sum(row.get('price') or 0 for row in invoice.get('entries', [])))
 
 

@@ -80,7 +80,7 @@ def test_edit_uses_own_reservation_and_explicit_cash_releases_it():
     action(state, "booking", booking(customer, owned, skin, "e2"))
 
 
-@pytest.mark.parametrize("edit_action", ["add_service", "replace_service"])
+@pytest.mark.parametrize("edit_action", ["replace_service"])
 def test_other_service_edit_actions_cannot_bypass_combo_entitlements(edit_action):
     state, skin, _, customer, owned = setup()
     action(state, "booking", booking(customer, owned, skin))
@@ -88,6 +88,53 @@ def test_other_service_edit_actions_cannot_bypass_combo_entitlements(edit_action
     with pytest.raises(HTTPException):
         action(state, edit_action, {"employee_id": "e1", "service": "Body 70"})
     assert state == before
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_combo_with_retail_extra_reserves_only_combo_and_charges_extra(pending):
+    from vera_web_v2_live_tour_payment import service_subtotal
+    state, skin, _, customer, owned = setup()
+    extra = next(row for row in state["services"] if row["name"] == "Body 70")
+    extra["price"] = 170000
+    payload = booking(customer, owned, skin)
+    payload["service_items"].append({"service_id": extra["id"], "quantity": 2, "unit_price": 1})
+    action(state, "booking", payload)
+    assert state["employees"][0]["combo_reserved_units"] == 1
+    action(state, "start", {"employee_id": "e1"})
+    source = {"employee_id": "e1"}
+    if pending:
+        source = {"pending_id": action(state, "finish_to_pending", source)["pending"]["id"]}
+    else:
+        action(state, "complete", source)
+    invoice = action(state, "checkout", {**source, "combo_purchase_id": owned["id"], "payment_method": "COMBO", "tip": 50000})["invoice"]
+    assert invoice["combo_units"] == 1
+    assert invoice["subtotal"] == service_subtotal(invoice) == 340000
+    assert invoice["total"] == 390000
+    assert invoice["combo_covered_amount"] == skin["price"]
+    assert state["customers"][0]["combo_purchases"][0]["remaining"] == 2
+
+
+@pytest.mark.parametrize("shift,reason,hour,minute,expected", [
+    ("Ca 2", "", 12, 59, "YC"), ("Ca 2", "", 13, 0, ""),
+    ("Ca 1", "Hỗ trợ Ca 1", 11, 59, "YC"), ("Ca 1", "Hỗ trợ Ca 1", 12, 0, ""),
+    ("Ca 1", "Hỗ trợ Ca 2", 13, 59, "YC"), ("Ca 1", "Hỗ trợ Ca 2", 14, 0, ""),
+])
+def test_booking_auto_yc_before_configured_shift(shift, reason, hour, minute, expected):
+    state, skin, _, customer, owned = setup()
+    state["employees"][0].update(shift=shift, assigned_shift=shift, shift_checkin_date=NOW.date().isoformat(), synced_leave_reason=reason)
+    action(state, "booking", booking(customer, owned, skin), NOW.replace(hour=hour, minute=minute))
+    assert state["employees"][0]["request"] == expected
+
+
+def test_auto_yc_uses_custom_cutoff_and_ignores_yesterday_checkin():
+    state, *_ = setup()
+    worker = state["employees"][0]
+    worker.update(shift="Ca 2", shift_checkin_date=NOW.date().isoformat())
+    state["payment_settings"]["shift_ready_times"] = {"shift2": "15:30"}
+    assert live._before_shift_ready(state, worker, NOW)
+    assert not live._before_shift_ready(state, worker, NOW.replace(hour=15, minute=30))
+    worker["shift_checkin_date"] = "2026-09-04"
+    assert not live._before_shift_ready(state, worker, NOW)
 
 
 @pytest.mark.parametrize("pending", [False, True])

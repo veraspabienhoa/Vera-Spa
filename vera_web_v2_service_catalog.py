@@ -121,7 +121,7 @@ def purchase_terms(combo, quantity, services, day):
     return terms
 
 
-def component_debits(purchase, entries, services, day, *, check_balance=True):
+def component_debits(purchase, entries, services, day, *, check_balance=True, allow_extras=False):
     """Return a validated debit plan; callers commit it with the invoice."""
     require_available(purchase, day, "Combo đã mua")
     if "component_balances" not in purchase:
@@ -145,6 +145,8 @@ def component_debits(purchase, entries, services, day, *, check_balance=True):
     for identifier, units in required.items():
         item = next((row for row in balances if row["service_id"] == identifier), None)
         if item is None:
+            if allow_extras:
+                continue
             raise HTTPException(409, "Dịch vụ thanh toán không thuộc combo đã mua.")
         if check_balance and item["remaining"] < units:
             raise HTTPException(409, f"{item['service_name']} trong combo chỉ còn {item['remaining']} lượt.")
