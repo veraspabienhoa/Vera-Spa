@@ -46,6 +46,19 @@ export function catalogIsAvailable(item, day = vietnamDate()) {
 
 const key = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLowerCase().replace(/\s+/g, ' ')
 
+export function comboExtraSubtotal(purchase, entries, services) {
+  if (!purchase?.component_balances) return 0
+  const covered = new Set(purchase.component_balances.map(part => part.service_id))
+  return entries.reduce((total, entry) => {
+    const exact = services.find(service => key(service.name) === key(entry.service))
+    const items = entry.service_items?.length ? entry.service_items : (exact ? [exact.name] : String(entry.service || '').split('&')).map(name => {
+      const service = services.find(row => key(row.name) === key(name.trim()))
+      return { service_id: service?.id, quantity: 1 }
+    })
+    return total + items.reduce((sum, item) => sum + (covered.has(item.service_id) ? 0 : Number(item.unit_price ?? services.find(row => row.id === item.service_id)?.price ?? 0) * Number(item.quantity)), 0)
+  }, 0)
+}
+
 export function comboUsagePreview(purchase, entries, services, day = vietnamDate()) {
   if (!purchase || !catalogIsAvailable(purchase, day)) return { eligible: false, units: 0 }
   if (!Array.isArray(purchase.component_balances)) return { eligible: Number(purchase.remaining) > 0, units: null }
@@ -63,6 +76,7 @@ export function comboUsagePreview(purchase, entries, services, day = vietnamDate
       required.set(service.id, (required.get(service.id) || 0) + 1)
     }
   }
+  for (const id of required.keys()) if (!purchase.component_balances.some(row => row.service_id === id)) required.delete(id)
   const units = [...required.values()].reduce((sum, count) => sum + count, 0)
   return { units, eligible: units > 0 && units <= Number(purchase.remaining) && [...required].every(([id, count]) => purchase.component_balances.some((row) => row.service_id === id && Number(row.remaining) >= count)) }
 }

@@ -38,7 +38,7 @@ import { copyPngToClipboard } from '../lib/clipboardImage'
 import './LiveTourControls.css'
 import { availableBookingPurchase, comboBookingItems, preferredBookingCombo } from '../lib/liveTourComboBooking'
 import { customerMatches } from '../lib/customerSearch'
-import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, vietnamDate } from '../lib/serviceCatalog'
+import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, comboExtraSubtotal, vietnamDate } from '../lib/serviceCatalog'
 
 const EMPTY_LIVE_TOUR = {
   columns: [], records: [], rooms: {}, available_rooms: [], services: [], combo_catalog: [],
@@ -1155,12 +1155,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const checkoutAllZeroPricing = checkoutPreviewEntries.length > 0 && checkoutPreviewEntries.every((entry) => entry.preview_price === 0)
   const checkoutRequiresTicketPrice = ['checkout', 'quick_checkout'].includes(modal?.kind)
     && !checkoutUsesCombo && checkoutAllZeroPricing
-  const checkoutEffectiveSubtotal = checkoutUsesCombo ? 0 : checkoutRequiresTicketPrice && Number(form.ticket_price) > 0
+  const checkoutEffectiveSubtotal = checkoutUsesCombo ? comboExtraSubtotal(selectedCheckoutCombo, checkoutSourceEntries, services) : checkoutRequiresTicketPrice && Number(form.ticket_price) > 0
     ? Number(form.ticket_price)
     : checkoutPreviewSubtotal
   const checkoutTipPreview = form.tip_mode === 'cards' ? form.tip_card_ids.reduce((sum, id) => sum + Number(asArray(data.payment_settings?.tip_cards).find(card => card.id === id)?.amount || 0), 0) : Math.max(0, Number(form.tip || 0))
   const checkoutDiscountPreview = checkoutUsesCombo ? 0 : discountAmount(checkoutEffectiveSubtotal, form.discount_mode, form.discount_mode === 'percent' ? form.discount_percent : form.discount)
-  const checkoutPreviewTotal = selectedCheckoutCombo ? checkoutTipPreview : Number.isFinite(checkoutEffectiveSubtotal)
+  const checkoutPreviewTotal = Number.isFinite(checkoutEffectiveSubtotal)
     ? Math.max(0, checkoutEffectiveSubtotal - checkoutDiscountPreview) + checkoutTipPreview
     : null
   const checkoutPreviewComboUnits = selectedCheckoutCombo?.component_balances ? selectedComboPreview.units : checkoutPreviewEntries.reduce((sum, entry) => sum + Number(entry.ticket_units || 0), 0)
@@ -1731,7 +1731,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} disabled={!canCustomers} onSelectCustomer={manualQuickBooking ? chooseQuickCustomer : undefined}/>
             <div className="live-tour-checkout-preview wide">
               <strong>Dịch vụ</strong>
-              <LiveTourPageItems items={checkoutPreviewEntries} label="Dịch vụ thanh toán">{(entry, index) => <div className="live-tour-checkout-entry" key={`${entry.employee_id || 'entry'}:${index}`}><span>{entry.employee_name || `Dòng ${index + 1}`} · {entry.service || 'Chưa có dịch vụ'}{entry.room ? ` · ${entry.room}` : ''}</span><strong>{Number.isFinite(entry.preview_price) ? formatMoney(checkoutUsesCombo ? 0 : entry.preview_price) : 'Server sẽ xác nhận giá'}</strong><small>{entry.ticket_units} vé combo theo định mức dịch vụ</small></div>}</LiveTourPageItems>
+              <LiveTourPageItems items={checkoutPreviewEntries} label="Dịch vụ thanh toán">{(entry, index) => <div className="live-tour-checkout-entry" key={`${entry.employee_id || 'entry'}:${index}`}><span>{entry.employee_name || `Dòng ${index + 1}`} · {entry.service || 'Chưa có dịch vụ'}{entry.room ? ` · ${entry.room}` : ''}</span><strong>{Number.isFinite(entry.preview_price) ? formatMoney(checkoutUsesCombo ? comboExtraSubtotal(selectedCheckoutCombo, [entry], services) : entry.preview_price) : 'Server sẽ xác nhận giá'}</strong><small>{entry.ticket_units} vé combo theo định mức dịch vụ</small></div>}</LiveTourPageItems>
               {!checkoutPreviewEntries.length && <div className="live-tour-empty">Không có dịch vụ hợp lệ để xem trước thanh toán.</div>}
               {!checkoutUsesCombo && checkoutHasUnresolvedPricing && <div className="warning-box">Có dịch vụ chưa khớp danh mục. Cần sửa dịch vụ hoặc danh mục trước khi thanh toán.</div>}
               {!checkoutUsesCombo && checkoutHasMixedPricing && <div className="warning-box">Không thể gộp dịch vụ đã có giá và dịch vụ giá 0. Hãy cấu hình giá hoặc tách lần thanh toán.</div>}

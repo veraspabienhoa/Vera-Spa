@@ -294,6 +294,42 @@ def _auto_yc_ca1(now: datetime, employee: dict[str, Any], request: Any, enabled:
     return ("YC" if auto else requested), auto
 
 
+def _before_shift_ready(state, employee, now):
+    local = now.astimezone(VN_TZ)
+    if employee.get("shift_checkin_date") != local.date().isoformat():
+        return False
+    reason = _norm(employee.get("synced_leave_reason"))
+    key = ("support2" if re.search(r"ho tro ca\s*2\b", reason) else
+           "support1" if re.search(r"ho tro ca\s*1\b", reason) else
+           "shift2" if _norm(employee.get("shift")) == "ca 2" else "")
+    if not key or not employee.get("shift"):
+        return False
+    defaults = {"shift2": "13:00", "support1": "12:00", "support2": "14:00"}
+    cutoff = (state.get("payment_settings", {}).get("shift_ready_times") or {}).get(key) or defaults[key]
+    return local.strftime("%H:%M") < cutoff
+
+
+def _combo_extra_subtotal(state, purchase, entries):
+    if "component_balances" not in purchase:
+        return 0
+    covered = {part["service_id"] for part in purchase["component_balances"]}
+    for entry in entries:
+        if not entry.get("service_items"):
+            name = str(entry.get("service") or "")
+            exact = next((row for row in state["services"] if _norm(row["name"]) == _norm(name)), None)
+            names = [name] if exact else name.split("&")
+            resolved = []
+            for part in names:
+                service = next((row for row in state["services"] if _norm(row["name"]) == _norm(part)), None)
+                if not service:
+                    raise HTTPException(409, "Không nhận diện được dịch vụ mua thêm để tính tiền.")
+                resolved.append({"service_id": service["id"], "name": service["name"], "unit_price": service.get("price", 0), "quantity": 1})
+            entry["service_items"] = resolved
+        entry["combo_extra_subtotal"] = sum(item["unit_price"] * item["quantity"]
+            for item in entry["service_items"] if item["service_id"] not in covered)
+    return sum(entry["combo_extra_subtotal"] for entry in entries)
+
+
 def _number(value: Any, default: float = 0) -> float:
     if value in (None, "") or isinstance(value, bool):
         return default
@@ -1132,7 +1168,7 @@ def _booking_combo(state, customer, payload, entry, now, employee=None):
     available = _available_combo(state, customer["id"], purchase, employee_ids=[employee.get("id")])
     if available["remaining"] <= 0:
         raise HTTPException(409, "Combo còn 0 vé có thể đặt lịch (đã hết hoặc đã được giữ chỗ).")
-    plan = component_debits(available, [entry], state["services"], now.astimezone(VN_TZ).date())
+    plan = component_debits(available, [entry], state["services"], now.astimezone(VN_TZ).date(), allow_extras=True)
     units = sum(row["units"] for row in plan) if "component_balances" in purchase else _entry_ticket_units(state, entry)
     if units <= 0 or units > available["remaining"] or units > MAX_TICKET_UNITS:
         raise HTTPException(409, f"Combo chỉ còn {available['remaining']} vé có thể đặt lịch, không đủ dùng {units} vé.")
@@ -1218,6 +1254,9 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
     if room_item.get("active") is False:
         raise HTTPException(400, "Vị trí phục vụ đã ngừng sử dụng.")
     request, auto_request = _auto_yc_ca1(now, employee, payload.get("request"), bool(payload.get("auto_yc_ca1")))
+    before_shift = _before_shift_ready(state, employee, now)
+    if before_shift:
+        request = "YC"
     service, duration, price, service_items = _service_selection(state, {**payload, "request": request}, now)
     _check_room_collision(state, employee, room, service, share_private_room=payload.get("share_private_room") is True)
     customer = None
@@ -1231,7 +1270,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
         "appointment": str(payload.get("appointment", employee.get("appointment")) or "").strip(),
         "service": service, "service_price": price, "service_items": service_items,
         "service_price_source": "catalog",
-        "request": request, "request_source": "auto_yc_ca1" if auto_request else "manual",
+        "request": request, "request_source": "auto_shift_ready" if before_shift else "auto_yc_ca1" if auto_request else "manual",
         "room": room,
         "status": "Đang chờ", "duration": duration, "booked_at": _iso(_adjust_booking_time(now)), "booking_created_at": _iso(now), "booking_actor": actor,
         "started_at": "", "completed_at": "", "wait_minutes": None,
@@ -1559,7 +1598,8 @@ def _checkout_mutating(
         raise HTTPException(400, "Dịch vụ đã có giá danh mục nên không được ghi đè giá vé.")
     catalog_subtotal = subtotal
     if pays_with_combo:
-        subtotal = 0
+        purchase = next((item for item in (customer or {}).get("combo_purchases", []) if str(item.get("id")) == combo_purchase_id), {})
+        subtotal = _combo_extra_subtotal(state, purchase, entries)
     discount, tip, payment_details = _payment_values(state, payload, subtotal, _bounded_money, MAX_MONEY)
     default_total = max(0, subtotal - discount) + tip
     if default_total > MAX_MONEY:
@@ -1577,12 +1617,12 @@ def _checkout_mutating(
             raise HTTPException(404, "Không tìm thấy combo đã mua của khách hàng.")
         available_combo = _available_combo(state, customer["id"], combo_purchase,
                                           employee_ids=direct_ids, pending_id=pending_id)
-        debit_plan = component_debits(available_combo, entries, state["services"], timing["effective_datetime"].astimezone(VN_TZ).date())
+        debit_plan = component_debits(available_combo, entries, state["services"], timing["effective_datetime"].astimezone(VN_TZ).date(), allow_extras=True)
         if "component_balances" in combo_purchase:
             combo_units = sum(item["units"] for item in debit_plan)
             if discount:
                 raise HTTPException(400, "Combo dịch vụ đã thanh toán khi mua; không áp dụng giảm giá lần nữa khi dùng lượt.")
-            total = tip  # Service revenue was recorded at purchase, not at redemption.
+            total = subtotal + tip
         if combo_units > MAX_TICKET_UNITS:
             raise HTTPException(400, f"Số lượt combo trừ không được vượt quá {MAX_TICKET_UNITS}.")
         remaining = int(combo_purchase.get("remaining") or 0)
@@ -1613,7 +1653,8 @@ def _checkout_mutating(
         "pricing_source": pricing_source,
         "combo_purchase_id": combo_purchase_id, "combo_units": combo_units,
         "combo_units_source": "server_purchase_components" if combo_purchase is not None and "component_balances" in combo_purchase else "server_service_catalog",
-        "combo_covered_amount": catalog_subtotal if combo_purchase is not None else 0,
+        "combo_covered_amount": catalog_subtotal - subtotal if combo_purchase is not None else 0,
+        "combo_extra_subtotal": subtotal if combo_purchase is not None else 0,
         "combo_component_debits": deepcopy(debit_plan),
         "entries": entries, "note": str(payload.get("note") or ""), "quick": quick,
         **({"source": "quick_booking"} if manual_booking else {}),
@@ -1654,7 +1695,7 @@ def _checkout_mutating(
             "payment_method": invoice["payment_method"], "tip": allocated_tip,
             "total": allocated_total, "note": invoice["note"],
             "combo_units": (
-                sum(item["units"] for item in component_debits(combo_purchase, [entry], state["services"], timing["effective_datetime"].astimezone(VN_TZ).date(), check_balance=False))
+                sum(item["units"] for item in component_debits(combo_purchase, [entry], state["services"], timing["effective_datetime"].astimezone(VN_TZ).date(), check_balance=False, allow_extras=True))
                 if combo_purchase is not None and "component_balances" in combo_purchase
                 else _entry_ticket_units(state, entry) if combo_purchase_id else 0
             ),
@@ -1934,6 +1975,9 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:
             raise HTTPException(409, "Chỉ sửa booking đang chờ hoặc đang thực hiện.")
         request = str(payload.get("request", employee.get("request", "")))
+        if not employee.get("started_at") and (employee.get("request_source") == "auto_shift_ready" or _before_shift_ready(state, employee, now)):
+            request = "YC"
+            employee["request_source"] = "auto_shift_ready"
         if request not in {"", "YC"}:
             raise HTTPException(400, "Yêu cầu chỉ nhận trống hoặc YC.")
         if request != employee.get("request", "") and employee.get("started_at"):

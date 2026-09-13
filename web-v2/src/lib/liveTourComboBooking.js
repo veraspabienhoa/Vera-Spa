@@ -46,7 +46,7 @@ export function comboBookingError(purchase, items, services, day = vietnamDate()
     if (!service || !catalogIsAvailable(service, day)) return 'Dịch vụ trong combo hiện không khả dụng.'
     if (!Number.isInteger(item.quantity) || item.quantity < 1) return 'Số lượng dịch vụ phải là số nguyên dương.'
     const part = purchase.component_balances?.find((row) => row.service_id === item.service_id)
-    if (purchase.component_balances && !part) return 'Dịch vụ đã chọn không thuộc combo của khách.'
+    if (purchase.component_balances && !part) continue
     if (part && item.quantity > part.remaining) return `${service.name} chỉ còn ${part.remaining} lượt có thể đặt lịch.`
     units += item.quantity * (part ? 1 : Number(service.ticket_units ?? 1))
   }

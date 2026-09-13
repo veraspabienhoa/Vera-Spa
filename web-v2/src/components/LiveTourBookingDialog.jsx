@@ -4,13 +4,14 @@ import { advanceBookingField } from '../lib/advanceBookingField'
 import { bookingRoomGroup, bookingRoomState, roomOptionMatches } from '../lib/liveTourRooms'
 import { Plus, Trash2 } from 'lucide-react'
 import { bookingEmployees, bookingServiceItems, bookingTotal, tourNameKey } from '../lib/liveTourBooking'
-import { catalogIsAvailable } from '../lib/serviceCatalog'
+import { catalogIsAvailable, comboExtraSubtotal } from '../lib/serviceCatalog'
 import { customerOptionMatches } from '../lib/customerSearch'
 import { availableBookingPurchase, comboBookingError, comboBookingItems, customerPurchases, customerTicketLabel, preferredBookingCombo } from '../lib/liveTourComboBooking'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import './LiveTourBookingDialog.css'
 import LiveTourTransactionDialog from './LiveTourTransactionDialog'
 import LiveTourPageItems from './LiveTourPageItems'
+import { isBeforeShiftReady } from '../lib/liveTourShiftReady'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 
@@ -95,6 +96,11 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
   const roomState = bookingRoomState(rooms, data.room_assignments || employees, catalog, employeeId, room, items, sharePrivateRoom)
   const editing = Boolean(employee?.service)
   const doing = ['dang thuc hien', 'dang su dung'].includes(tourNameKey(employee?.status))
+  const autoRequest = !doing && (employee?.request_source === 'auto_shift_ready' || isBeforeShiftReady({
+    _shift_checkin_date: employee?.shift_checkin_date,
+    'Vào ca': employee?.shift,
+    _daily_support_reason: employee?.synced_leave_reason,
+  }, data.payment_settings?.shift_ready_times, Date.now()))
   const selectedCustomer = (data.customers || []).find((row) => row.id === customerId)
   const purchases = customerPurchases(selectedCustomer).map((purchase) => availableBookingPurchase(purchase, employee ? [employee] : []))
   const selectedCombo = purchases.find((purchase) => purchase.id === comboId)
@@ -110,7 +116,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
     if (id) setItems(comboBookingItems(purchases.find((purchase) => purchase.id === id), catalog))
   }
   const bookingPayload = () => ({
-    employee_id: employeeId, service_items: items, room, request, note,
+    employee_id: employeeId, service_items: items, room, request: autoRequest ? 'YC' : request, note,
     ...(!editing ? { share_private_room: sharePrivateRoom } : {}),
     ...(canCustomers ? { customer_id: customerId || null, customer_name: selectedCustomer?.name || '', customer_phone: selectedCustomer?.phone || '', combo_purchase_id: comboId || '' } : {}),
   })
@@ -146,9 +152,8 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
     const remaining = row.started_at && row.duration != null ? Math.ceil((new Date(row.started_at).getTime() + Number(row.duration) * 60000 - Date.now()) / 60000) : null
     return { value: row.id, label: row.name, detail: !row.service ? 'Đang rảnh' : `${row.status}${remaining !== null ? ` · ${remaining <= 15 ? 'Sắp xong · ' : ''}Còn ${remaining} phút` : ''} · ${row.room}` }
   })
-  const serviceOptions = catalog.filter((item) => catalogIsAvailable(item) && !items.some((row) => row.service_id === item.id)
-    && (!selectedCombo?.component_balances || selectedCombo.component_balances.some((part) => part.service_id === item.id && part.remaining > 0)))
-    .map((item) => ({ value: item.id, label: item.name, detail: `${item.duration ?? '∞'} phút · ${money(item.price)}` }))
+  const serviceOptions = catalog.filter((item) => catalogIsAvailable(item) && !items.some((row) => row.service_id === item.id))
+    .map((item) => ({ value: item.id, label: item.name, detail: `${item.duration ?? '∞'} phút · ${money(item.price)}${selectedCombo?.component_balances && !selectedCombo.component_balances.some(part => part.service_id === item.id) ? ' · Mua thêm ngoài combo' : ''}` }))
   if (context.roomGroup && !context.employeeId) return <LiveTourMultiBookingDialog data={data} context={context} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canSharePrivateRoom={canSharePrivateRoom} busy={busy} error={error} onAction={onAction} onClose={onClose}/>
   return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog"
     title={completed ? 'Đã hoàn thành dịch vụ' : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}>
@@ -167,9 +172,9 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
         <div className="tour-booking-service-picker"><LiveTourSearchSelect advanceOnSelect label="Dịch vụ" showAllOptions clearOnSelect value={serviceId} options={serviceOptions} onChange={(id) => { setServiceId(''); if (id) setItems((current) => [...current, { service_id: id, quantity: 1 }]) }}/></div>
         <div className="tour-booking-items"><LiveTourPageItems items={items} label="Dịch vụ đã chọn">{(row, i) => <div className="tour-booking-item" key={row.service_id}><div><strong>{catalog.find((item) => item.id === row.service_id)?.name || row.service_id}</strong><small>{money(catalog.find((item) => item.id === row.service_id)?.price)}</small></div><label>Số lượng<input type="number" min="1" max="30" required value={row.quantity} onChange={(event) => setItems((current) => current.map((item, index) => index === i ? { ...item, quantity: Number(event.target.value) } : item))}/></label><button type="button" className="icon-button" aria-label={`Bỏ dịch vụ ${i + 1}`} onClick={() => setItems((current) => current.filter((_, index) => index !== i))}><Trash2 size={17}/></button></div>}</LiveTourPageItems>{!items.length && <p><Plus size={14}/> Chọn một hoặc nhiều dịch vụ phía trên.</p>}</div>
         <LiveTourSearchSelect advanceOnSelect invalid={Boolean(roomState.error)} label="Phòng / giường *" value={room} required options={roomState.options} showAllOptions filterOption={roomOptionMatches} onChange={(value) => { setRoom(value); setMessage('') }}/>
-        <label className="live-tour-field"><span>Yêu cầu</span><select data-booking-step value={request} disabled={doing} onChange={(event) => { setRequest(event.target.value); advanceBookingField(event.currentTarget) }}><option value="">Để trống</option><option value="YC">YC</option></select></label>
+        <label className="live-tour-field"><span>Yêu cầu</span><select data-booking-step value={autoRequest ? 'YC' : request} disabled={doing || autoRequest} onChange={(event) => { setRequest(event.target.value); advanceBookingField(event.currentTarget) }}><option value="">Để trống</option><option value="YC">YC</option></select>{autoRequest && <small>Tự gắn YC cho booking trước giờ lên tua trong cài đặt.</small>}</label>
         <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea data-booking-step value={note} onChange={(event) => setNote(event.target.value)}/></label>
-        <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(bookingTotal(items, catalog))}</strong></div>
+        <div className="wide tour-booking-total"><span>{selectedCombo ? 'Tiền dịch vụ mua thêm ngoài combo' : 'Tiền dịch vụ'}</span><strong>{money(selectedCombo ? comboExtraSubtotal(selectedCombo, [{ service_items: items }], catalog) : bookingTotal(items, catalog))}</strong></div>
         <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{(editing ? canOperate : canBook) && <><button type="submit" className="primary-button" value="book" disabled={!employeeId || Boolean(comboError || roomState.error)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{doing && canOperate && <button type="button" className="primary-button" onClick={finish}>Hoàn thành</button>}</>}{canPayment && tourNameKey(employee?.status) === 'cho thanh toan' && <button type="button" className="primary-button" onClick={() => onCheckout(null, employee)}>Thanh toán</button>}</div>
       </fieldset></form>}
   </LiveTourTransactionDialog>
