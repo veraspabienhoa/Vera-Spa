@@ -99,6 +99,11 @@ def test_single_device_logout_guard_is_removed_from_web_v2():
     assert "claimCurrentDevice" not in combined
     assert "install_single_device_guard" not in combined
     assert "assert 'install_single_device_guard(' not in source" in workflow_source
-    assert "signOut({ scope: 'local' })" in app_source
+    auth_source = (root / "web-v2/src/lib/supabase.js").read_text(encoding="utf-8")
+    # VERA owns opaque local sessions now; do not assert an obsolete Supabase
+    # SDK call in a comment. Logout revokes only this browser's refresh token.
+    assert "await signOutVera()" in app_source
+    assert "apiAuthRequest('/v2/auth/logout', { refresh_token: session.refresh_token })" in auth_source
+    assert "supabase.auth.signOut" not in auth_source
     assert not (root / "web-v2/src/lib/deviceSession.js").exists()
     assert not (root / "vera_web_v2_single_device.py").exists()
