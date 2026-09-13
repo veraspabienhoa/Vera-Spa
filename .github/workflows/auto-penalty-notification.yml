@@ -14,6 +14,7 @@ on:
       - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
+      - "tests/test_attendance_connection_reuse.py"
       - "tests/test_missing_checkin_notifications.py"
       - "tests/test_outside_leave_rule.py"
       - ".github/workflows/auto-penalty-notification.yml"
@@ -30,6 +31,7 @@ on:
       - "vera_web_v2_attendance_break_window.py"
       - "vera_web_v2_outside_leave_rule.py"
       - "tests/test_auto_penalty_employee_notifications.py"
+      - "tests/test_attendance_connection_reuse.py"
       - "tests/test_missing_checkin_notifications.py"
       - "tests/test_outside_leave_rule.py"
       - ".github/workflows/auto-penalty-notification.yml"
@@ -128,11 +130,12 @@ jobs:
                   'REQUIRED_AUDIENCES = frozenset({"employee", "letan", "quanly", "admin"})'
                   in sources['vera_missing_checkin_notifications.py']
                   and "('admin','letan','quanly')" in sources['vera_missing_checkin_notifications.py'],
-              'attendance penalty paths dispatch immediately':
-                  'penalty_notifications.notify_pending(engine_instance())'
-                  in sources['vera_web_v2_break_return_penalty.py']
-                  and 'penalty_notifications.notify_pending(engine_instance())'
-                  in sources['vera_web_v2_outside_leave_rule.py'],
+              'attendance penalties record through savepoints without inline push':
+                  all('auto_check.save_violation(' in sources[name]
+                      and 'conn.begin_nested()' in sources[name]
+                      and 'notify_pending(' not in sources[name]
+                      for name in ('vera_web_v2_break_return_penalty.py',
+                                   'vera_web_v2_outside_leave_rule.py')),
               'all break deadlines are capped at 20:00':
                   'BREAK_RETURN_LATEST = time(20, 0, 0)' in sources['vera_attendance_rules.py']
                   and 'break_return_deadline(work_day, break_out, planned)'
@@ -162,4 +165,5 @@ jobs:
         run: |
           python -m pytest -q \
             tests/test_auto_penalty_employee_notifications.py \
+            tests/test_attendance_connection_reuse.py \
             tests/test_missing_checkin_notifications.py
