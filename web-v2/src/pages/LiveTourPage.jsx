@@ -25,6 +25,7 @@ import LiveTourPendingDialog from '../components/LiveTourPendingDialog'
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourInvoiceChanges from '../components/LiveTourInvoiceChanges'
 import LiveTourPaymentSettings from '../components/LiveTourPaymentSettings'
+import LiveTourPartialLeaveSettings from '../components/LiveTourPartialLeaveSettings'
 import LiveTourReceipt from '../components/LiveTourReceipt'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import LiveTourServiceActions from '../components/LiveTourServiceActions'
@@ -1827,5 +1828,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     {customerContext && <LiveTourCustomerDialog context={customerContext} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
     {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} canEditDate={capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {receipt && canPaidInvoiceView && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} paymentSettings={data.payment_settings} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
+    {isAdmin && <LiveTourPartialLeaveSettings key={JSON.stringify(data.payment_settings?.partial_leave_times)} value={data.payment_settings} busy={Boolean(actionBusy)} onSave={payload => executeAction('payment_settings_update', payload, [])}/>}
   </div>
 }

@@ -15,7 +15,7 @@ export default function LiveTourReportsPage({ user }) {
   const allowed = user?.role === 'admin' || user?.permissions?.live_tour_reports_view === true
   const [data, setData] = useState({ invoices: [], reports: [], capabilities: {} })
   const [filters, setFilters] = useState(defaultTourMonthFilters)
-  const [tab, setTab] = useState('invoices')
+  const [tab, setTab] = useState('revenue')
   const [context, setContext] = useState(null)
   const [receipt, setReceipt] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -47,7 +47,7 @@ export default function LiveTourReportsPage({ user }) {
     <div className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Báo cáo</h1><p>Hóa đơn, doanh thu, TIP và các giao dịch combo.</p></div><button className="secondary-button" disabled={busy} onClick={refresh}>Làm mới</button></div>
     {error && <p className="error-box" role="alert">{error}</p>}
     <section className="panel spa-content">
-      <div className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[['invoices', 'Hóa đơn'], ['revenue', 'Doanh thu'], ['tip', 'Tiền TIP'], ['combos', 'Combo']].map(([key,label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
+      <div className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[['revenue', 'Doanh thu'], ['combos', 'Combo']].map(([key,label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
       <LiveTourFilters value={filters} onChange={setFilters} rows={tab === 'invoices' ? data.invoices : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/>
       <LiveTourRevenueSummary rows={rows}/>
       <p>{rows.length} dòng</p>

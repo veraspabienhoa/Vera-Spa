@@ -1,0 +1,20 @@
+.revenue-page { min-width: 0; max-width: 100%; }
+.revenue-page .reconcile-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.revenue-page .reconcile-grid > .report-box { display:flex; flex-direction:column; height:520px; min-width:0; }
+.revenue-page .reconcile-grid .report-scroll { flex:1; min-height:0; max-height:none; }
+.revenue-page .input-report-filters { display:flex; flex-wrap:wrap; align-items:end; gap:8px; padding:8px; min-height:90px; box-sizing:border-box; }
+.revenue-page .input-report-filters label { display:grid; gap:4px; min-width:0; flex:1 1 130px; font-size:12px; }
+.revenue-page .input-report-filters input,.revenue-page .input-report-filters select { min-width:0; width:100%; box-sizing:border-box; }
+@media(max-width:700px) {
+  .revenue-page .reconcile-grid,.revenue-page .revenue-period,.revenue-page .revenue-tip-editor { grid-template-columns:minmax(0,1fr); }
+  .revenue-page .revenue-grid,.revenue-page .reconcile-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .revenue-page .reconcile-head,.revenue-page .revenue-period-card { flex-wrap:wrap; }
+  .revenue-page .reconcile-panel,.revenue-page .revenue-card { padding:10px; min-width:0; }
+  .revenue-page .revenue-card-value { font-size:22px; }
+  .revenue-page .reconcile-head h2,.revenue-page .revenue-source { overflow-wrap:anywhere; }
+  .revenue-page .reconcile-filter,.revenue-page .comparison-filter-bar { width:100%; min-width:0; box-sizing:border-box; }
+  .revenue-page .reconcile-filter label { flex:1 1 130px; min-width:0; }
+  .revenue-page .reconcile-filter input,.revenue-page .reconcile-filter select { width:100%; min-width:0; max-width:100%; box-sizing:border-box; }
+  .revenue-page .report-scroll { width:100%; max-width:100%; min-width:0; overflow:auto; }
+  .revenue-page .revenue-actions > * { max-width:100%; box-sizing:border-box; white-space:normal; }
+}

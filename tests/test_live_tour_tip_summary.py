@@ -52,3 +52,5 @@ def test_tip_summary_fits_long_names_and_formatted_amounts():
     assert all(sheet.column_dimensions[col].bestFit for col in 'ABC')
     assert sheet.freeze_panes == 'A3'
     assert sheet.auto_filter.ref == 'A2:C3'
+    workbook = load_workbook(BytesIO(content))
+    assert all(dimension.bestFit for dimension in workbook['Tip'].column_dimensions.values())
