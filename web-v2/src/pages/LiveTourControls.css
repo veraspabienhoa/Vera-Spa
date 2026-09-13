@@ -20,6 +20,15 @@
 .live-tour-controls-group,
 .live-tour-controls-actions { display: contents; }
 
+.live-tour-page .tour-table tr.tour-row-before-shift td.tour-col-employee {
+  background: #c9eaff !important;
+  color: #073b66 !important;
+  border-left: 3px solid #087bbd;
+}
+.live-tour-page .tour-table tr.tour-row-before-shift td.tour-col-employee > .text-button {
+  color: #073b66 !important;
+}
+
 .live-tour-page .tour-table .tour-col-status {
   width: 100px;
   min-width: 100px;
