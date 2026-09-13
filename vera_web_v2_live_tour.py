@@ -2783,7 +2783,9 @@ def _metric_bucket(employees: list[dict[str, Any]], now: datetime) -> dict[str, 
 
 
 def _public_backup(backup: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in backup.items() if key != "snapshot"}
+    snapshot = backup.get('snapshot') or {}
+    return {**{key: value for key, value in backup.items() if key != "snapshot"},
+            'bill_numbers': sorted({str(row['bill_no']) for row in snapshot.get('invoices', []) + snapshot.get('pending', []) if row.get('bill_no')})}
 
 
 def _history_sort_key(item: dict[str, Any]) -> str:
@@ -3203,6 +3205,15 @@ def _event_in_export_bounds(
 ) -> bool:
     if not any(bounds.values()):
         return True
+    if bounds.get('bill_no'):
+        def numbers(row):
+            if isinstance(row, list):
+                return [number for child in row for number in numbers(child)]
+            if not isinstance(row, dict):
+                return []
+            return [row.get('bill_no', ''), *row.get('bill_numbers', []), *[number for key in ('before', 'after', 'invoice', 'pending', 'payload') for number in numbers(row.get(key))]]
+        if not any(str(bounds['bill_no']).strip().lower() in str(number).lower() for number in numbers(item) if number):
+            return False
     if bounds.get("customer") and _norm(bounds["customer"]) not in _norm(f"{item.get('customer_name', '')} {item.get('customer_phone', '')}"):
         return False
     entries = item.get("entries") or [item]
@@ -4015,7 +4026,7 @@ def install_live_tour_routes(
         date_from: str = Query(default=""), date_to: str = Query(default=""),
         time_from: str = Query(default=""), time_to: str = Query(default=""),
         customer_id: str = Query(default=""),
-        employee: str = "", customer: str = "", service: str = "",
+        employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
         report_kind: str = "",
         columns: list[str] | None = Query(default=None),
         employee_ids: list[str] | None = Query(default=None),
@@ -4035,7 +4046,7 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
-        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), report_kind=report_kind.strip(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending"})
+        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):

@@ -362,12 +362,11 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             {breakAlerts.map((alert) => <div key={alert.tag || alert.key} className={`break-alert-card ${alert.audience === 'employee' ? 'employee' : ''}`}>
               <BellRing size={16} />
               <div>
-                <strong>{alert.audience === 'staff' ? `VÀO LẠI TRỄ · ${alert.employee}` : `NHẮC VÀO LẠI · ${alert.employee}`}</strong>
-                <span>{alert.break_out} → hạn {alert.deadline} · {alert.planned_minutes} phút.</span>
-                <span className="break-alert-timer">{liveAlertTiming(alert, clockMs)}</span>
+                <strong>{alert.kind === 'missing-scheduled-checkin' ? `CHƯA CHECK-IN · ${alert.employee}` : alert.audience === 'staff' ? `VÀO LẠI TRỄ · ${alert.employee}` : `NHẮC VÀO LẠI · ${alert.employee}`}</strong>
+                {alert.kind === 'missing-scheduled-checkin' ? <span>{alert.body}</span> : <><span>{alert.break_out} → hạn {alert.deadline} · {alert.planned_minutes} phút.</span><span className="break-alert-timer">{liveAlertTiming(alert, clockMs)}</span></>}
                 {isAdmin && <div className="break-alert-actions">
                   <button type="button" className="break-alert-dismiss" onClick={() => dismissBreakAlert(alert)}>Tắt trên máy này</button>
-                  <button type="button" className="break-alert-delete-global" disabled={Boolean(deletingBreakAlertTag)} onClick={() => void deleteBreakAlertForAll(alert)}>{deletingBreakAlertTag === alert.tag ? 'Đang xóa…' : 'Xóa cho tất cả'}</button>
+                  {alert.kind !== 'missing-scheduled-checkin' && <button type="button" className="break-alert-delete-global" disabled={Boolean(deletingBreakAlertTag)} onClick={() => void deleteBreakAlertForAll(alert)}>{deletingBreakAlertTag === alert.tag ? 'Đang xóa…' : 'Xóa cho tất cả'}</button>}
                 </div>}
               </div>
             </div>)}

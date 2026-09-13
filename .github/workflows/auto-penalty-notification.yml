@@ -62,7 +62,9 @@ jobs:
           python -m pip install --disable-pip-version-check \
             "pytest==8.4.2" \
             "pandas>=2.2,<4" \
-            "SQLAlchemy>=2.0,<3"
+            "SQLAlchemy>=2.0,<3" \
+            "fastapi>=0.115,<1" \
+            "openpyxl>=3.1,<4"
 
       - name: Compile affected Python modules
         run: |

@@ -16,6 +16,10 @@
   gap: 12px;
   min-width: 0;
 }
+.live-tour-filters-search { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (min-width: 681px) and (max-width: 1100px) {
+  .live-tour-filters-search { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .live-tour-filters label {
   display: grid;

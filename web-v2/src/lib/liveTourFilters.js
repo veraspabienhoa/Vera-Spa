@@ -1,6 +1,11 @@
 import { searchTextMatches } from './searchText.js'
 import { customerMatches } from './customerSearch.js'
-export const EMPTY_TOUR_FILTERS = { preset: 'all', date_from: '', date_to: '', employee: '', customer: '', service: '' }
+export const EMPTY_TOUR_FILTERS = { preset: 'all', date_from: '', date_to: '', employee: '', customer: '', service: '', bill_no: '' }
+export function invoiceNumbers(row) {
+  if (!row || typeof row !== 'object') return []
+  if (Array.isArray(row)) return row.flatMap(invoiceNumbers)
+  return [row.bill_no, ...(row.bill_numbers || []), ...['before', 'after', 'invoice', 'pending', 'payload'].flatMap(key => invoiceNumbers(row[key]))].filter(Boolean)
+}
 export const TOUR_DATE_PRESETS = [['all', 'Tất cả'], ['yesterday', 'Hôm qua'], ['today', 'Hôm nay'], ['last-week', 'Tuần trước'], ['week', 'Tuần này'], ['last-month', 'Tháng trước'], ['month', 'Tháng này'], ['custom', 'Tùy chỉnh']]
 const day = (value) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value)
 export function tourDateRange(preset, now = new Date()) {
@@ -20,6 +25,7 @@ export function tourDateRange(preset, now = new Date()) {
 }
 export function filterTourRows(rows, filters) {
   return rows.filter(row => {
+    if (filters.bill_no && !invoiceNumbers(row).some(number => String(number).toLowerCase().includes(filters.bill_no.trim().toLowerCase()))) return false
     const dateValue = row.effective_at || row.booked_at || row.created_at || row.business_date
     const parsed = dateValue ? new Date(dateValue) : null
     const date = parsed && Number.isFinite(parsed.getTime()) ? day(parsed) : ''
@@ -40,9 +46,10 @@ export function invoiceLocalTime(item) {
 
 // Suggestions come from the full active list, so typing never removes other choices.
 export function tourFilterOptions(rows = []) {
-  const values = { employee: new Set(), customer: new Set(), service: new Set() }
+  const values = { employee: new Set(), customer: new Set(), service: new Set(), bill_no: new Set() }
   const add = (key, value) => { if (String(value || '').trim()) values[key].add(String(value).trim()) }
   for (const row of rows) {
+    invoiceNumbers(row).forEach(number => add('bill_no', number))
     add('customer', [row.customer_name, row.customer_phone].filter(Boolean).join(' - '))
     for (const entry of row.entries?.length ? row.entries : [row]) {
       add('employee', entry.employee_name)
