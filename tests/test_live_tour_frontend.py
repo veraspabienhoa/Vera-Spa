@@ -157,6 +157,20 @@ def test_live_tour_can_open_itself_in_a_standalone_new_tab():
     assert re.search(r"window\.open\([^\n]+['\"]_blank['\"]", source)
 
 
+def test_room_cards_have_clear_state_borders_and_accessible_motion():
+    source = _source(LIVE_TOUR)
+
+    assert "border:2px solid var(--room-border)" in source
+    assert ".tour-room-card.vip{" in source
+    assert "border:3px solid var(--room-border)" in source
+    assert "@media(hover:hover) and (pointer:fine)" in source
+    assert "translateY(-3px) scale(1.012)" in source
+    assert ".tour-room-card.state-green:not(.vip)" in source
+    assert ".tour-room-card.state-waiting:not(.vip)" in source
+    assert "@media(prefers-reduced-motion:reduce)" in source
+    assert ".tour-room-card{transition:none}" in source
+
+
 def test_live_tour_reuses_an_idempotency_key_until_the_same_request_succeeds():
     source = _source(LIVE_TOUR)
 
