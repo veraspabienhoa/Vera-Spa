@@ -187,6 +187,24 @@ test('datalist fields use the same accurate results and preserve free typing', (
   } finally { f.dispose() }
 })
 
+test('mobile search stays at the top of the visible viewport and keeps datalist input in sync', () => {
+  const f = fixture('<label>Nhân viên<input list="names" placeholder="Chọn nhân viên" /></label><datalist id="names"><option value="An An"/><option value="Vân Anh"/></datalist>')
+  try {
+    Object.defineProperty(f.dom.window, 'innerWidth', { value: 390, configurable: true })
+    const source = f.doc.querySelector('input')
+    source.focus()
+    const menu = f.doc.querySelector('.vera-searchable-dropdown')
+    const search = menu.querySelector('input')
+    assert.notEqual(search, source)
+    assert.equal(menu.style.top, '8px')
+    assert.equal(menu.style.left, '8px')
+    assert.equal(menu.style.width, '374px')
+    f.type(search, 'an an')
+    assert.equal(source.value, 'an an')
+    assert.deepEqual([...f.doc.querySelectorAll('[role="option"]')].map((row) => row.textContent), ['An An'])
+  } finally { f.dispose() }
+})
+
 test('customer and invoice search preserve phone formatting without partial-word name matches', async () => {
   const { customerMatches } = await import('../src/lib/customerSearch.js')
   const { filterTourRows } = await import('../src/lib/liveTourFilters.js')
