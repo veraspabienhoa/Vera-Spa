@@ -625,6 +625,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     try {
       const next = { ...EMPTY_LIVE_TOUR, ...await veraApi.liveTour(refresh) }
       setData(next)
+      setError('')
       saveCachedLiveTour(cacheKey, next)
       setSelectedIds((current) => {
         const valid = new Set(asArray(next.records).map((record, index) => recordId(record, index)))

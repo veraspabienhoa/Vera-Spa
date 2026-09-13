@@ -1,5 +1,20 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## Đọc đồng thời sau PR 108
+
+PR 108 đã deploy tại commit 4e6508eda644238adede2b710bc03c9bd95afbe1,
+run 34770662457. Người dùng vẫn gặp thông báo bận và yêu cầu hỗ trợ nhiều user.
+Bản tiếp theo cho GET đọc snapshot đã commit khi không lấy được khóa ngay;
+không chạy attendance/daily projection hoặc ghi snapshot trong nhánh này.
+Các lần đọc có khóa vẫn cập nhật projection như trước để giữ hành vi chấm công.
+Các lần ghi vẫn khóa toàn bộ JSON và kiểm tra revision/idempotency: không tuyên
+bố hỗ trợ ghi song song độc lập theo phòng. User đọc snapshot cũ có thể nhận
+409 khi gửi thao tác; phải tải lại và xác nhận, không tự retry thanh toán.
+Thông báo lỗi tải cũ được xóa khi lần tải kế tiếp thành công.
+
+Kiểm thử mô phỏng 24 GET/8 luồng khi khóa bị giữ, các màn hình phụ và bootstrap
+chưa commit. Đây không phải load test PostgreSQL/VPS thực tế. Chưa deploy bản này.
+
 ## Tái diễn lúc 16:37 UTC — bản vá giảm nghẽn, chưa deploy
 
 VPS xác nhận commit 5fe64c818e5a59303048bb3cbf77134928a5c95f, không có

@@ -7,7 +7,7 @@ booking/payment operation is committed as one PostgreSQL transaction.
 from __future__ import annotations
 
 from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
-from vera_web_v2_live_tour_lock import acquire_state_lock
+from vera_web_v2_live_tour_lock import acquire_state_lock, try_state_lock
 
 import hashlib
 import json
@@ -3789,6 +3789,21 @@ def install_live_tour_routes(
                 revision = _write_state(conn, state, revision, "attendance_break_projection")
         return state, revision
 
+    def read_board(conn, now):
+        # Only one reader refreshes projections. Other users read the last
+        # committed MVCC snapshot; never run projection writes without the lock.
+        if try_state_lock(conn, STATE_LOCK):
+            return read_state(conn, now)
+        row = conn.execute(text("""
+            SELECT value_json, revision FROM vera_app_setting
+            WHERE category=:category AND setting_key=:key
+        """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+        if not row:
+            # First bootstrap has not committed yet. Do not fabricate a board.
+            raise HTTPException(503, "Bảng tua đang khởi tạo. Vui lòng thử lại.",
+                                headers={"Retry-After": "3"})
+        return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 0)
+
     def permissions(conn, ident) -> dict[str, bool]:
         viewer_bank = None
         if feature_allowed(conn, ident, "live_tour_payment"):
@@ -3849,9 +3864,8 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_view")
-            # Creation and reads share the same lock only for the first bootstrap.
-            acquire_state_lock(conn, STATE_LOCK)
-            state, revision = read_state(conn, now)
+            # Concurrent readers can use committed state while a writer is busy.
+            state, revision = read_board(conn, now)
             grants = permissions(conn, ident)
         return _state_response(
             state, revision, now, include_hidden=include_hidden,
@@ -3863,8 +3877,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_reports_view")
-            acquire_state_lock(conn, STATE_LOCK)
-            state, revision = read_state(conn, now)
+            state, revision = read_board(conn, now)
             grants = permissions(conn, ident)
         public = _state_response(state, revision, now, **grants)
         return {"revision": revision, "invoices": public["state"]["invoices"],
@@ -3875,8 +3888,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
-            acquire_state_lock(conn, STATE_LOCK)
-            state, revision = read_state(conn, now)
+            state, revision = read_board(conn, now)
             can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
         return {"revision": revision, "customers": [dict(deepcopy(c), combo_purchases=[deepcopy(p) for p in c.get("combo_purchases", []) if not p.get("deleted_at")]) for c in state["customers"] if not c.get("deleted_at")], "can_export": can_export}
 
@@ -3885,8 +3897,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_admin")
-            acquire_state_lock(conn, STATE_LOCK)
-            state, revision = read_state(conn, now)
+            state, revision = read_board(conn, now)
         return {"revision": revision, "services": deepcopy(state["services"]), "combos": deepcopy(state["combos"]), "service_areas": _service_areas(state)}
 
     @app.get("/v2/live-tour/customers/{customer_id}/history")
@@ -3897,8 +3908,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
-            acquire_state_lock(conn, STATE_LOCK)
-            state, _ = read_state(conn, now)
+            state, _ = read_board(conn, now)
             grants = permissions(conn, ident)
         readable = deepcopy(state)
         if not grants["can_paid_invoice_view"]:
@@ -4065,8 +4075,7 @@ def install_live_tour_routes(
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):
                 require_feature(conn, ident, feature)
-            acquire_state_lock(conn, STATE_LOCK)
-            state, _ = read_state(conn, now)
+            state, _ = read_board(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
             grants = permissions(conn, ident)
@@ -4133,8 +4142,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
-            acquire_state_lock(conn, STATE_LOCK)
-            state, _ = read_state(conn, now)
+            state, _ = read_board(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
         filename = f"Live_Tour_{_business_date(now).strftime('%Y%m%d')}.png"
