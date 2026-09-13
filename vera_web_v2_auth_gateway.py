@@ -176,7 +176,7 @@ def _employment_status(payload: Any) -> str:
 
 def _engine_instance():
     import vera_web_v2_api_shared as shared
-    return shared._api._engine_instance()
+    return shared._api._auth_engine_instance()
 
 
 def _service_role_key() -> str:

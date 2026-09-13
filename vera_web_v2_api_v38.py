@@ -123,7 +123,7 @@ async def extract_profile_image_text(
 
 def _login_profile(employee_username: str) -> dict:
     """Build the verified UI profile without a second Supabase /auth/user hop."""
-    with _api._engine_instance().connect() as conn:
+    with _api._auth_engine_instance().connect() as conn:
         row = conn.execute(text("""
             SELECT username, COALESCE(role,'nhanvien'), COALESCE(full_name,''),
                    COALESCE(email,''),
