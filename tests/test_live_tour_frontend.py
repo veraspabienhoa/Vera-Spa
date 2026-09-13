@@ -28,7 +28,7 @@ def test_live_tour_has_its_own_route_menu_entry_and_permission():
     assert "import('./pages/LiveTourPage')" in app
     assert re.search(r"page\s*===\s*['\"]live-tour['\"].*<LiveTourPage\b", app)
     assert re.search(
-        r"id:\s*['\"]live-tour['\"].*label:\s*['\"]Live Tour['\"].*permission:\s*['\"]live_tour_view['\"]",
+        r"id:\s*['\"]live-tour['\"].*label:\s*['\"]Live Tour['\"]",
         shell,
     )
 
@@ -177,7 +177,7 @@ def test_live_tour_room_board_is_compact_without_horizontal_overflow():
 
     assert ".tour-room-table-panel > .live-tour-controls" in controls
     assert ".tour-room-table-panel {" in controls
-    assert controls.count("border-bottom: 0 !important") == 2
+    assert controls.count("border-bottom: 2px solid #37634f !important") == 2
     assert ".tour-records-panel {\n  border-top: 0 !important" not in controls
     assert "grid-template-columns:repeat(var(--room-columns,1),minmax(0,1fr))" in controls
     assert "min-height:66px" in controls

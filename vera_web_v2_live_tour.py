@@ -3937,6 +3937,8 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         action = body.action.strip().lower()
         _reject_external_action(action)
+        if action == "set_shift" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được xếp Ca 1/Ca 2 thủ công.")
         if action == "update_appointment" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly", "letan"}:
             raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được sửa lịch hẹn.")
         if action == "update_started_at" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly"}:

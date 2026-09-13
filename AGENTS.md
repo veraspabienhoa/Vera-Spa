@@ -47,6 +47,10 @@ from hypotheses and historical configuration from current configuration.
 
 ## Shared UI requirements
 
+- Live Tour is first in the menu and the default after login for every role. Remove the legacy Bảng tua menu entry. Preserve explicit standalone links, mandatory password-change routing and the current page during session re-verification; API permissions remain enforced.
+- Employee service actions are shown only for the applicable state: waiting booking → Start, doing → Finish, otherwise hidden. Do not open booking for an employee without Ca 1/Ca 2, on leave or on break.
+- Admin-only Ca 1/Ca 2 buttons beside quick appointment saving assign the selected employee's shift using the existing checked-in/active-service safeguards. Restore the two separators below the room controls. Date-selection controls must not move on hover; date values and work-schedule employee-name buttons have no extra frame.
+
 - Booking suggestions marked “Đang rảnh” follow the employee's displayed STT from the full Live Tour snapshot, matched by employee ID. Do not substitute imported STT, alphabetical order, historical service times or positions in a filtered list. Preserve booking eligibility and the configured remaining-time threshold.
 - Tables, header rows and buttons use clear, solid borders throughout desktop and mobile. Extend `web-v2/src/clear-borders.css` for shared styling; retain danger/selected states, VIP gold borders, shift highlights and keyboard focus. In the Live Tour table, the employee-name button and inline appointment input have no border because their table cells already provide the grid; retain a focus outline and keep the quick appointment toolbar bordered. Keep Clear buttons stationary on hover and their menus closed after clearing.
 - Live Tour exception (latest user request): remove internal body-cell grid lines, including the before-shift cell border; keep the outer table frame and STT header-row borders on desktop/mobile and print. Preserve status colors, selection feedback and keyboard focus. Other tables retain their grids.

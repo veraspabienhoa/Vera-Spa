@@ -484,6 +484,7 @@ function canRunAction(action, capabilities) {
   if (action === 'combo_purchase') return capabilities.payment && capabilities.customers
   if (action === 'combo_import') return capabilities.isAdmin === true && capabilities.admin && capabilities.payment && capabilities.customers
   if (ADMIN_ACTIONS.has(action)) return capabilities.admin
+  if (action === 'set_shift') return capabilities.isAdmin === true
   if (PAYMENT_ACTIONS.has(action)) return capabilities.payment
   return capabilities.operate
 }
@@ -962,6 +963,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const openEmployeeBooking = (record) => {
     const name = cellValue(record, employeeColumn) || 'Nhân viên'
     setError('')
+    if (!['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA']))))) {
+      setNotice(`${name} chưa vào ca, không thể đặt Booking.`)
+      return
+    }
     if (hasGroup(record, 'leave')) {
       setNotice(`${name} đang nghỉ phép, không thể đặt Booking.`)
       return
@@ -1032,7 +1037,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const counts = roomActionCounts.get(areaKey(room)) || {}
     return canOperate && <LiveTourServiceActions room target={areaLabel(room)} waiting={counts.waiting} doing={counts.doing} busy={Boolean(actionBusy)} onStart={() => runRoomAction(room, 'start_room')} onFinish={() => runRoomAction(room, 'finish_room')}/>
   }
-  const employeeServiceActions = (record) => canOperate && <LiveTourServiceActions target={cellValue(record, employeeColumn)} waiting={hasGroup(record, 'waiting') ? 1 : 0} doing={hasGroup(record, 'doing') ? 1 : 0} busy={Boolean(actionBusy) || !stableEmployeeId(record)} onStart={() => executeAction('start', {}, [stableEmployeeId(record)])} onFinish={() => executeAction('finish_to_pending', {}, [stableEmployeeId(record)])}/>
+  const employeeServiceActions = (record) => canOperate && !hasGroup(record, 'leave') && ['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA'])))) && <LiveTourServiceActions target={cellValue(record, employeeColumn)} waiting={hasGroup(record, 'waiting') && !hasGroup(record, 'doing') ? 1 : 0} doing={hasGroup(record, 'doing') ? 1 : 0} busy={Boolean(actionBusy) || !stableEmployeeId(record)} onStart={() => executeAction('start', {}, [stableEmployeeId(record)])} onFinish={() => executeAction('finish_to_pending', {}, [stableEmployeeId(record)])}/>
   const searchedRoomKeys = useMemo(() => {
     const needle = normalizedColumn(employeeSearch)
     return new Set(needle ? shiftRecords.flatMap((record) => searchTextMatches(cellValue(record, employeeColumn), needle) ? [assignmentAreaKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
@@ -1519,6 +1524,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             onSearch={(query) => { setEmployeeSearch(query); if (employeePickId) setSelectedIds(new Set()); setEmployeePickId('') }}
             onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])) }}/>
           {canEditAppointment && appointmentEditor(appointmentTarget, true)}
+          {isAdmin && <div className="tour-shift-filter" role="group" aria-label="Xếp ca nhân viên đã chọn">{['Ca 1', 'Ca 2'].map((shift) => <button type="button" key={shift} className="secondary-button" disabled={selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('set_shift', { shift })}>{shift}</button>)}</div>}
         </div>
       </section>
     </div>

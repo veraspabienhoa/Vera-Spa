@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import AppShell from './components/AppShell'
 import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
 import ProfileCompletionReminder from './components/ProfileCompletionReminder'
@@ -18,14 +18,7 @@ const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'co
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
-const readActivePage = (user) => {
-  try {
-    const stored = window.localStorage.getItem(activePageStorageKey(user))
-    return VALID_PAGES.has(stored) ? stored : 'leave'
-  } catch {
-    return 'leave'
-  }
-}
+const readActivePage = () => 'live-tour'
 
 const rememberActivePage = (user, page) => {
   if (!user?.id || !VALID_PAGES.has(page)) return
@@ -75,6 +68,7 @@ const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentP
 const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollPanel'))
 const ContractPage = lazyPage(() => import('./pages/ContractPage'))
 export default function App() {
+  const verifiedUser = useRef(null)
   const [standaloneRequest] = useState(readStandalonePageRequest)
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -97,7 +91,7 @@ export default function App() {
       if (!mounted) return
       const attempt = ++verification
       setSession(nextSession); setAuthError(''); setSessionRecoveryError(false)
-      if (!nextSession) { setProfile(null); setLoading(false); return }
+      if (!nextSession) { verifiedUser.current = null; setProfile(null); setLoading(false); return }
       setLoading(true)
       setProfile(null)
       try {
@@ -112,7 +106,10 @@ export default function App() {
         }
         if (mounted && attempt === verification) {
           setProfile(me)
-          setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readActivePage(nextSession.user))
+          if (me.must_change_password || verifiedUser.current !== nextSession.user.id) {
+            setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readActivePage(nextSession.user))
+          }
+          verifiedUser.current = nextSession.user.id
         }
       } catch (err) {
         if (mounted && attempt === verification) {
