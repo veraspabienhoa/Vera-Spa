@@ -24,7 +24,7 @@ import vera_web_v2_snapshot as attendance
 import vera_web_v2_work_schedule as work_schedule
 
 
-RELEASE = "department-payroll-combined-history-schedule-excel-2026-09-05-v5"
+RELEASE = "department-payroll-current-month-schedule-draft-2026-09-14-v6"
 DEPARTMENTS = {
     "quanly": "Quản lý",
     "locker": "Locker",
@@ -185,6 +185,14 @@ def _month_range(month: str) -> tuple[date, date, str]:
         date(year, month_number, calendar.monthrange(year, month_number)[1]),
         f"{month_number:02d}/{year}",
     )
+
+
+def _draft_month_range(month: str, today: date | None = None) -> tuple[date, date, str]:
+    """Return the payable draft period, capped at today for the current month."""
+    start, month_end, label = _month_range(month)
+    current_day = today or datetime.now(VN_TZ).date()
+    end = current_day if start <= current_day <= month_end else month_end
+    return start, end, label
 
 
 def _setting_key(department: str, suffix: str) -> str:
@@ -395,7 +403,7 @@ def _penalty_maps(conn, start: date, end: date, norm: Callable[[Any], str]) -> t
 
 
 def _calculation(conn, department: str, month: str, norm: Callable[[Any], str]) -> dict[str, Any]:
-    start, end, label = _month_range(month)
+    start, end, label = _draft_month_range(month)
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
@@ -513,7 +521,7 @@ def _schedule_totals(
 
 
 def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str]) -> dict[str, Any]:
-    start, end, label = _month_range(month)
+    start, end, label = _draft_month_range(month)
     work_schedule._ensure_schema(conn)
     settings = _settings(conn, department)
     cfg = settings["config"]
@@ -593,7 +601,10 @@ def _combined_calculation(conn, month: str, norm: Callable[[Any], str], source: 
     _, _, label = _month_range(month)
     return {
         "ok": True, "month": month, "month_label": label, "source": source,
-        "source_label": "Lịch làm việc" if source == "schedule" else "Chấm công",
+        "source_label": "Lịch làm việc / Thống kê tháng" if source == "schedule" else "Chấm công",
+        "start": next(iter(settings.values()))["start"] if settings else "",
+        "end": next(iter(settings.values()))["end"] if settings else "",
+        "is_draft": True,
         "departments": settings, "rows": rows,
     }
 
@@ -808,7 +819,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
     @app.get("/v2/department-payroll/combined/calculate")
     def calculate_combined(
         month: str = Query(...),
-        source: str = Query("attendance"),
+        source: str = Query("schedule"),
         ident: identity_type = Depends(current_identity),
     ):
         _month_range(month)

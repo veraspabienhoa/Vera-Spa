@@ -12,6 +12,7 @@ const monthNow = () => {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
+const displayIsoDate = (value) => String(value || '').split('-').reverse().join('/')
 const normalizeSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd').toLowerCase().trim()
 
 async function request(path, options = {}) {
@@ -88,6 +89,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [rows, setRows] = useState([])
   const [history, setHistory] = useState([])
   const [editingHistoryId, setEditingHistoryId] = useState('')
+  const [calculationPeriod, setCalculationPeriod] = useState(null)
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
@@ -117,7 +119,8 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     const result = await request(`/v2/department-payroll/combined/calculate?month=${month}&source=${source}`)
     setRows(result.rows || []); setSelected([])
     setEditingHistoryId('')
-    setNotice({ type: 'success', message: `Đã tính ${result.rows?.length || 0} nhân viên Quản lý, Locker, Lễ tân và Tạp vụ từ ${result.source_label}.` })
+    setCalculationPeriod({ start: result.start, end: result.end, source: result.source_label })
+    setNotice({ type: 'success', message: `Đã tính lương nháp ${result.rows?.length || 0} nhân viên từ ${result.source_label}, kỳ ${displayIsoDate(result.start)} – ${displayIsoDate(result.end)}.` })
   })
 
   const loadDraft = () => run('draft-load', async () => {
@@ -125,6 +128,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     if (!result.rows?.length) throw new Error('Kỳ này chưa có bảng lương nháp.')
     setRows(result.rows); setSelected([])
     setEditingHistoryId('')
+    setCalculationPeriod(null)
     setNotice({ type: 'success', message: 'Đã mở bảng Lương hành chánh nháp.' })
   })
 
@@ -170,6 +174,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const openHistory = (historyId) => run('history-open', async () => {
     const result = await request(`/v2/department-payroll/combined/history/${encodeURIComponent(historyId)}/open`, { method: 'POST' })
     setMonth(result.month); setRows(result.rows || []); setSelected([]); setEditingHistoryId(result.history_id)
+    setCalculationPeriod(null)
     setNotice({ type: 'success', message: result.message })
   })
 
@@ -255,13 +260,14 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
       <div className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Một bảng chung cho Quản lý, Locker, Lễ tân và Tạp vụ. Quản lý/Locker/Lễ tân tính theo giờ; Tạp vụ tính theo 26 ngày công.</p></div></div>
       {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
       <div className="department-payroll-toolbar">
-        <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]); setEditingHistoryId('') }} /></label>
-        <button className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /> Tính từ chấm công</button>
-        <button className="primary-button" disabled={Boolean(busy)} onClick={() => calculate('schedule')}><CalendarDays size={16} /> Tính từ lịch làm việc</button>
+        <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]); setEditingHistoryId(''); setCalculationPeriod(null) }} /></label>
+        <button className="primary-button" disabled={Boolean(busy)} onClick={() => calculate('schedule')}><CalendarDays size={16} /> Tính lương nháp từ Thống kê tháng</button>
+        <button className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /> Đối chiếu chấm công</button>
         <button className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}>Mở bảng nháp</button>
       </div>
 
       {!!rows.length && <>
+        {calculationPeriod && <div className="setup-note"><CalendarDays size={16} /> Lương nháp từ {calculationPeriod.source}: {displayIsoDate(calculationPeriod.start)} – {displayIsoDate(calculationPeriod.end)}. Tháng hiện tại chỉ tính đến hôm nay.</div>}
         {editingHistoryId && <div className="setup-note"><History size={16} /> Đang sửa bảng lương đã lưu. Khi bấm Hoàn thành bảng lương, bản lịch sử này sẽ được cập nhật và giữ nguyên mã.</div>}
         <div className="department-payroll-summary"><span>Nhân viên<strong>{rows.length}</strong></span><span>Tổng ứng lương<strong>{money(totalAdvance)}</strong></span><span>Tổng thực nhận<strong>{money(totalNet)}</strong></span></div>
         <section className="salary-advance-panel">

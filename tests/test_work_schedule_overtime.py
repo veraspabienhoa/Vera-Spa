@@ -52,7 +52,8 @@ def test_schedule_page_has_monthly_statistics_and_clickable_total_highlight():
     assert "employeeMatchesTotal" in source
     assert "Từ giờ tới giờ" in source
     assert "Tổng bộ phận" in source
-    assert "row.work_date <= yesterdayIso" in source
+    assert "row.work_date <= todayIso" in source
+    assert "đến ngày hiện tại" in source
     assert "<th>Ngày nghỉ</th>" in source
     assert "item.offDays += 1" in source
     assert "monthlyStatistics.departmentTotal.offDays" in source

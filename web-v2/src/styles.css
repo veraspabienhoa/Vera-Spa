@@ -915,7 +915,7 @@ tr:last-child td { border-bottom: 0; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: clamp(8px, 2.25vw, 10px) !important;
+    font-size: clamp(4px, 1.125vw, 5px) !important;
     line-height: 1.15;
     font-weight: 700;
   }
@@ -923,7 +923,7 @@ tr:last-child td { border-bottom: 0; }
     display: block;
     max-width: 100%;
     overflow-wrap: anywhere;
-    font-size: clamp(8px, 2.25vw, 10px);
+    font-size: clamp(4px, 1.125vw, 5px);
     line-height: 1.2;
     font-weight: 700;
   }
