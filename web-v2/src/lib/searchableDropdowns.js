@@ -87,9 +87,14 @@ export function startSearchableDropdowns(doc = document) {
   const choose = (row) => {
     if (!active || !row || row.disabled || !available(active.source)) return
     const source = active.source
+    const restoreFocus = !active.compact
     const current = optionsFor(active).find((item) => item.index === row.index && item.value === row.value)
     if (!current || current.disabled) return
-    close(true)
+    // Refocusing a native select opens the iOS picker again immediately after
+    // a choice. Compact layouts should finish the interaction with no focused
+    // select; desktop keeps focus for keyboard navigation.
+    close(restoreFocus)
+    if (!restoreFocus) source.blur()
     if (source.value === row.value) return
     Object.getOwnPropertyDescriptor(isSelect(source) ? win.HTMLSelectElement.prototype : win.HTMLInputElement.prototype, 'value').set.call(source, row.value)
     source.dispatchEvent(new win.Event('input', { bubbles: true }))
@@ -166,7 +171,8 @@ export function startSearchableDropdowns(doc = document) {
           Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set.call(source, '')
           source.dispatchEvent(new win.Event('input', { bubbles: true }))
         } else input.dispatchEvent(new win.Event('input', { bubbles: true }))
-        close(true)
+        close(!compact)
+        if (compact) source.blur()
       })
       search.append(input, clear)
       menu.append(search)
@@ -213,8 +219,8 @@ export function startSearchableDropdowns(doc = document) {
   const keydown = (event) => {
     if (active && (active.menu.contains(event.target) || event.target === active.source)) {
       if (event.isComposing) return
-      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); close(true); return }
-      if (event.key === 'Tab') { close(true); return }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); const source = active.source, restoreFocus = !active.compact; close(restoreFocus); if (!restoreFocus) source.blur(); return }
+      if (event.key === 'Tab') { const source = active.source, restoreFocus = !active.compact; close(restoreFocus); if (!restoreFocus) source.blur(); return }
       if (event.key === 'Enter') { event.preventDefault(); event.stopImmediatePropagation(); choose(active.rows[active.index]); return }
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
         event.preventDefault()
