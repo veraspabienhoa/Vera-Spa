@@ -205,6 +205,23 @@ test('mobile search stays at the top of the visible viewport and keeps datalist 
   } finally { f.dispose() }
 })
 
+test('mobile select closes after choosing without focusing and reopening the native picker', () => {
+  const f = fixture()
+  try {
+    Object.defineProperty(f.dom.window, 'innerWidth', { value: 390, configurable: true })
+    const select = f.doc.querySelector('select')
+    let sourceFocusCount = 0
+    select.addEventListener('focus', () => sourceFocusCount++)
+    const search = f.open(select)
+    f.type(search, 'linh dan')
+    f.doc.querySelector('[role="option"]').click()
+    assert.equal(select.value, 'dan')
+    assert.equal(f.doc.querySelector('.vera-searchable-dropdown'), null)
+    assert.notEqual(f.doc.activeElement, select)
+    assert.equal(sourceFocusCount, 0)
+  } finally { f.dispose() }
+})
+
 test('customer and invoice search preserve phone formatting without partial-word name matches', async () => {
   const { customerMatches } = await import('../src/lib/customerSearch.js')
   const { filterTourRows } = await import('../src/lib/liveTourFilters.js')
