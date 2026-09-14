@@ -6,6 +6,7 @@ from vera_web_v2_department_payroll import (
     DEFAULT_EMAIL_TEMPLATE,
     _attendance_totals,
     _clean_config,
+    _draft_month_range,
     _recalculate,
     _render_template,
     _schedule_totals,
@@ -118,3 +119,18 @@ def test_schedule_source_counts_regular_and_overtime_hours():
     assert totals["minutes_ca2_before_22"] == 270
     assert totals["minutes_ca2_after_22"] == 210
     assert totals["full_days"] == 1
+
+
+def test_current_month_draft_is_capped_at_today():
+    start, end, label = _draft_month_range("2026-09", date(2026, 9, 14))
+
+    assert start == date(2026, 9, 1)
+    assert end == date(2026, 9, 14)
+    assert label == "09/2026"
+
+
+def test_closed_month_draft_uses_the_complete_month():
+    start, end, _ = _draft_month_range("2026-08", date(2026, 9, 14))
+
+    assert start == date(2026, 8, 1)
+    assert end == date(2026, 8, 31)

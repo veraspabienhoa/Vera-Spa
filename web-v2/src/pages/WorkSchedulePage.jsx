@@ -291,9 +291,6 @@ function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave
 export default function WorkSchedulePage({ user }) {
   const today = atNoon()
   const todayIso = isoDate(today)
-  const yesterday = atNoon(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayIso = isoDate(yesterday)
   const [rangeMode, setRangeMode] = useState('week')
   const [month, setMonth] = useState(currentMonthValue())
   const [customStart, setCustomStart] = useState(todayIso)
@@ -826,7 +823,7 @@ export default function WorkSchedulePage({ user }) {
     const byEmployee = Object.fromEntries(employees.map((employee) => [employee.username, {
       username: employee.username, name: systemName(employee), workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0,
     }]))
-    monthlyRows.filter((row) => row.work_date <= yesterdayIso).forEach((row) => {
+    monthlyRows.filter((row) => row.work_date <= todayIso).forEach((row) => {
       const item = byEmployee[row.employee_username]
       if (!item || !row.shift_code) return
       if (row.shift_code === 'Nghỉ') {
@@ -848,7 +845,7 @@ export default function WorkSchedulePage({ user }) {
       overtimeHours: total.overtimeHours + item.overtimeHours,
     }), { workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0 })
     return { rows, departmentTotal }
-  }, [department, employees, monthlyRows, shiftDefinitions, yesterdayIso])
+  }, [department, employees, monthlyRows, shiftDefinitions, todayIso])
 
   const captureFullSchedule = async () => {
     if (loading || captureBusy) return
@@ -1171,7 +1168,7 @@ export default function WorkSchedulePage({ user }) {
       {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {DEPARTMENT_INFO[department].label}.</div>}
     </div>}
     {!loading && <div className="schedule-scroll monthly-statistics">
-      <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến hết ngày hôm qua · {DEPARTMENT_INFO[department].label}</h3>
+      <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến ngày hiện tại · {DEPARTMENT_INFO[department].label}</h3>
       <table>
         <thead><tr><th>Nhân viên</th><th>Ngày làm việc</th><th>Ngày nghỉ</th><th>Ngày Ca 1</th><th>Ngày Ca 2</th><th>Giờ tăng ca</th></tr></thead>
         <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr>)}</tbody>

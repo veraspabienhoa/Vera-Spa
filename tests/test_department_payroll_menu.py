@@ -14,11 +14,25 @@ def test_department_payroll_has_dedicated_menu_and_route():
     assert "page === 'department-payroll' && <DepartmentPayrollPanel" in app
     assert "import DepartmentPayrollPanel" not in payroll
     assert "Chọn tất cả có email" in panel
-    assert "Tính từ lịch làm việc" in panel
+    assert "Tính lương nháp từ Thống kê tháng" in panel
+    assert "Tháng hiện tại chỉ tính đến hôm nay" in panel
     assert "NHÂN VIÊN ỨNG LƯƠNG" in panel
     assert "Hoàn thành bảng lương" in panel
     assert "LỊCH SỬ BẢNG LƯƠNG" in panel
     assert "/v2/department-payroll/combined/history" in panel
+
+
+def test_mobile_leave_reason_text_is_half_sized():
+    styles = (ROOT / "web-v2/src/styles.css").read_text(encoding="utf-8")
+    mobile_reason = styles.split(".leave-records-table .reason-edit-cell select", 1)[1].split("}", 1)[0]
+    assert "font-size: clamp(4px, 1.125vw, 5px) !important" in mobile_reason
+
+
+def test_work_schedule_monthly_statistics_include_today_for_draft_payroll():
+    schedule = (ROOT / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
+    assert "row.work_date <= todayIso" in schedule
+    assert "đến ngày hiện tại" in schedule
+    assert "đến hết ngày hôm qua" not in schedule
 
 
 def test_official_department_payroll_is_one_record_per_month():
