@@ -8,6 +8,7 @@ import { isApiConfigured, veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
 import EmployeeIdentityPanel from './EmployeeIdentityPanel'
 import KtvShiftSettingsPanel from './KtvShiftSettingsPanel'
+import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import VeraDateInput from '../components/VeraDateInput'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
 
@@ -416,20 +417,20 @@ export default function EmployeePage({ user }) {
 
       <section className="panel staff-control-panel">
         <div className="staff-toolbar">
-          <select
-            className="staff-employee-name-dropdown"
-            data-employee-name-dropdown="true"
+          <LiveTourSearchSelect
+            className="staff-employee-name-filter"
+            hideLabel
+            label="Tên nhân viên"
+            placeholder="-- Chọn nhân viên --"
+            emptyLabel="Tất cả nhân viên"
             value={search}
-            onChange={(event) => changeEmployeeSearch(event.target.value)}
-            aria-label="Tên nhân viên"
-          >
-            <option value="">-- Chọn nhân viên --</option>
-            {(data?.employees || []).map((employee) => (
-              <option key={employee.username} value={employee.username}>
-                {shortEmployeeName(employee.username)}
-              </option>
-            ))}
-          </select>
+            options={(data?.employees || []).map((employee) => ({
+              value: employee.username,
+              label: shortEmployeeName(employee.username),
+              detail: employee.full_name && employee.full_name !== employee.username ? employee.full_name : '',
+            }))}
+            onChange={changeEmployeeSearch}
+          />
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Lọc phân quyền">
             <option value="">Tất cả phân quyền</option>
             {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -504,8 +505,8 @@ export default function EmployeePage({ user }) {
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">
             <table className="staff-table">
-              <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-lock"/><col className="staff-col-profile"/><col className="staff-col-admin"/></colgroup>
-              <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Khóa</th><th>Hồ sơ</th><th>Admin</th></tr></thead>
+              <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-profile"/><col className="staff-col-lock"/><col className="staff-col-admin"/></colgroup>
+              <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Hồ sơ</th><th>Khóa</th><th>Admin</th></tr></thead>
               <tbody>{visible.map((employee) => {
                 const draft = drafts[employee.username] || rowDraft(employee)
                 const editable = canManage(employee)
@@ -519,8 +520,8 @@ export default function EmployeePage({ user }) {
                   <td><select value={draft.work_shift} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'work_shift', event.target.value)}><option value="">Chưa chia ca</option>{shiftsFor(employee).map((shift) => <option key={shift}>{shift}</option>)}</select></td>
                   <td><VeraDateInput aria-label={`Ngày bắt đầu ca ${employee.full_name || employee.username}`} value={draft.shift_start_date} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'shift_start_date', event.target.value)} /></td>
                   <td><select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></td>
-                  <td className="center"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} aria-label={`Khóa ${employee.username}`} /></td>
                   <td><button className="text-button staff-edit-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Sửa</button></td>
+                  <td className="center"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} aria-label={`Khóa ${employee.username}`} /></td>
                   <td><div className="list-actions">{isAdmin && permissions.employees_visibility_manage && <button className="secondary-button compact" disabled={Boolean(busy)} onClick={() => setEmployeeHidden(employee, !employee.profile_hidden)}>{employee.profile_hidden ? <Eye size={14}/> : <EyeOff size={14}/>} {employee.profile_hidden ? 'Hiện' : 'Ẩn'}</button>}{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></td>
                 </tr>
               })}</tbody>
