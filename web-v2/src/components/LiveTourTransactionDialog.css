@@ -38,6 +38,7 @@
 .tour-transaction-dialog .live-tour-check-field{font-size:11px;gap:5px;min-height:22px}
 .tour-transaction-dialog .tour-tip-cards .tour-page-items-content{display:flex;gap:5px;flex-wrap:wrap}
 .tour-transaction-dialog .tour-tip-cards button{min-height:39px;padding:6.5px 10.4px;font-size:18.2px;font-weight:800}
+.tour-transaction-dialog .tour-tip-card-count{display:inline-block;margin-left:5px;padding:1px 5px;border-radius:999px;background:#dcece2;font-size:.72em;line-height:1.35}
 .tour-transaction-dialog .live-tour-checkout-entry>strong{font-size:16px;font-weight:800}
 .tour-transaction-dialog input[type=number]{font-weight:700}
 .tour-transaction-dialog .tour-checkout-source{display:flex;gap:6px}

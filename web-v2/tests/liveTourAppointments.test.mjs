@@ -332,6 +332,8 @@ test('TIP has two exclusive rows, remembers default and sends only the selected 
     assert.equal(card.textContent, '+ 50.000 đ')
     await act(() => card.click())
     await act(() => card.click())
+    assert.equal(card.textContent, '+ 50.000 đ×2')
+    assert.match(tip().querySelector('.tour-tip-total').textContent, /100\.000 đ/)
     await act(() => tip().querySelector('[aria-label="Bỏ thẻ TIP 2"]').click())
     await act(() => card.click())
     await f.save(document.querySelector('.tour-transaction-dialog form'))
@@ -350,6 +352,7 @@ test('TIP has two exclusive rows, remembers default and sends only the selected 
 test('manual quick invoice chooses canonical staff, room, service and booking time without board selection', async () => {
   const f = await fixture({ setup(data) {
     data.capabilities.booking = true
+    data.payment_settings = { auto_print: false, tip_cards: [{ id: 'tip50', name: '50.000 đ', amount: 50000 }] }
     data.state.employees = [{ id: 'e1', name: 'An An', work_status: 'Đi làm', shift: 'Ca 1', service: '', status: '' }]
     data.state.rooms = [{ name: '1.1', active: true }]
   } })
@@ -364,6 +367,13 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
     await f.type(inputFor('Ngày booking'), TODAY_VN_LABEL)
     assert.equal(inputFor('Ngày booking').value, TODAY_VN_LABEL)
     await f.type(inputFor('Giờ booking'), '09:30')
+    const tip = document.querySelector('.tour-tip-input')
+    await act(() => tip.querySelectorAll('.tour-tip-mode input')[1].click())
+    const card = tip.querySelector('.tour-tip-cards .tour-page-items-content button')
+    await act(() => card.click())
+    await act(() => card.click())
+    assert.equal(card.textContent, '+ 50.000 đ×2')
+    assert.match(tip.querySelector('.tour-tip-total').textContent, /100\.000 đ/)
     await f.save(document.querySelector('.tour-transaction-dialog form'))
     assert.equal(f.writes.length, 1)
     const body = f.writes[0], entry = body.payload.quick_booking
@@ -371,6 +381,7 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
     assert.equal(entry.employee_id, 'e1')
     assert.equal(entry.room, '1.1')
     assert.deepEqual(entry.service_items, [{ service_id: 'body', quantity: 1 }])
+    assert.deepEqual(body.payload.tip_card_ids, ['tip50', 'tip50'])
     assert.match(entry.booked_at, /T09:30:00\+07:00$/)
     assert.equal(body.payload.employee_ids, undefined)
     assert.equal(body.payload.total, undefined)
