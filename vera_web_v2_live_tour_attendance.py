@@ -21,7 +21,8 @@ class AttendanceBreakReader:
                 # Do not cache unrelated attendance/profile information.
                 fields = ('date', 'employee_name', 'break_out', 'break_in',
                           'break_return_deadline_iso', 'break_return_deadline',
-                          'break_planned_minutes', 'break_source')
+                          'break_planned_minutes', 'break_source',
+                          'break_final_early_checkout', 'check_out')
                 self.rows = [{field: row.get(field) for field in fields} for row in rows]
                 self.day, self.expires = day, self.clock() + self.ttl
             return deepcopy(self.rows)
@@ -79,6 +80,19 @@ def sync_breaks(state, records, now):
         if len(matches) != 1:
             continue  # Missing/ambiguous source must not erase today's known facts.
         row = matches[0]
+        if row.get('break_final_early_checkout') is True:
+            checkout = _stamp(row.get('check_out'), day, tz)
+            if checkout and checkout.date() == day and checkout <= now:
+                # Canonical attendance has reclassified the exit as checkout.
+                # Keep its evidence without showing an ongoing break countdown.
+                worker['attendance_break'] = {
+                    'date': day.isoformat(), 'out': checkout.isoformat(),
+                    'in': '', 'deadline': '', 'source': 'Chấm công',
+                    'final_early_checkout': True,
+                }
+                worker['clock_out'], worker['clock_in'] = checkout.isoformat(), ''
+                worker['break_started_at'] = ''
+            continue
         out = _stamp(row.get('break_out'), day, tz)
         entered = _stamp(row.get('break_in'), day, tz)
         deadline = _stamp(row.get('break_return_deadline_iso') or row.get('break_return_deadline'), day, tz)

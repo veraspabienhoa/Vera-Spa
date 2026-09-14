@@ -3261,7 +3261,7 @@ def _auto_start_waiting(state, now):
     state["auto_start_waiting_date"] = day
 
 
-def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[str, Any], int]:
+def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_records=None) -> tuple[dict[str, Any], int]:
     suffix = " FOR UPDATE" if for_update else ""
     row = conn.execute(text(f"""
         SELECT value_json, revision FROM vera_app_setting
@@ -3280,6 +3280,8 @@ def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[
         leaves = [dict(item) for item in conn.execute(text(
             "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
         ), {"day": leave_day}).mappings().all()]
+        if attendance_records is not None:
+            sync_breaks(state, attendance_records, now.astimezone(VN_TZ))
         _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
         _auto_start_waiting(state, now)
         if state != before:
@@ -3889,7 +3891,7 @@ def install_live_tour_routes(
                     exists = conn.execute(text("SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
                                           {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
                     if exists:
-                        _read_state(conn, datetime.now(timezone), for_update=True)
+                        read_state(conn, datetime.now(timezone), for_update=True)
             except Exception:
                 logging.getLogger(__name__).exception("Live Tour scheduled projection failed; retrying on next tick")
             scheduler_stop.wait(15)
@@ -3923,7 +3925,7 @@ def install_live_tour_routes(
     def read_state(conn, now, *, for_update=False):
         # Runtime callback uses the same installed policy chain as Chấm công.
         records = attendance.read(conn, now.astimezone(timezone).date(), force=for_update) if attendance else None
-        state, revision = _read_state(conn, now, for_update=for_update)
+        state, revision = _read_state(conn, now, for_update=for_update, attendance_records=records)
         if records is not None:
             before = deepcopy(state)
             sync_breaks(state, records, now.astimezone(timezone))

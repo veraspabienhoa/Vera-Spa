@@ -40,18 +40,31 @@ def sync_daily(state, directory, leaves, *, automatic=False, today=''):
         manual_shift_today = bool(manual_shift_day and manual_shift_day == today)
         manual_shift = worker.get('manual_shift', worker.get('shift', ''))
         override_day = str(worker.get('manual_work_status_date') or '')
+        records = by_user.get(username, [])
+        reasons = list(dict.fromkeys(str(row.get('leave_reason') or row.get('leave_type') or '').strip() for row in records))
+        break_fact = worker.get('attendance_break') or {}
+        early_departed = (
+            bool(today) and break_fact.get('date') == today
+            and bool(break_fact.get('out')) and not break_fact.get('in')
+            and any('ve som' in key(reason) for reason in reasons)
+        )
+        if early_departed:
+            # Today's confirmed departure supersedes an earlier manual Đi làm.
+            # Do not let that override pin Nghỉ phép after a real return later.
+            worker.pop('manual_work_status_date', None)
+            worker.pop('manual_work_status_by', None)
+            override_day = ''
         if override_day and override_day != today:
             worker.pop('manual_work_status_date', None)
             worker.pop('manual_work_status_by', None)
-        elif override_day and override_day == today:
+        elif override_day and override_day == today and not early_departed:
             worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else (
                 manual_shift if manual_shift_today else worker.get('assigned_shift', worker.get('shift', ''))
             )
             continue
-        records = by_user.get(username, [])
-        reasons = list(dict.fromkeys(str(row.get('leave_reason') or row.get('leave_type') or '').strip() for row in records))
-        # Partial-day events (late arrival/early departure/support) remain working.
-        absent = any(key(reason) in FULL_DAY_REASONS for reason in reasons)
+        # An early-leave registration alone is not a departure. Require today's
+        # canonical exit without a return; do not finish services or alter money.
+        absent = early_departed or any(key(reason) in FULL_DAY_REASONS for reason in reasons)
         status = 'Nghỉ phép' if absent else 'Đi làm'
         if automatic and not records and not worker.get('synced_leave_reason'):
             continue

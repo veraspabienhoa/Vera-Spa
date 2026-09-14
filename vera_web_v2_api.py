@@ -1472,14 +1472,14 @@ def _rebalance_progressive_rows(conn, target: date, keys: set[str]) -> list[tupl
     if not keys:
         return []
     rows = conn.execute(text("""
-        SELECT record_uid, source_row, leave_date, employee_name, leave_reason, leave_type,
+        SELECT record_uid, source_sheet_id, source_row, leave_date, employee_name, leave_reason, leave_type,
                detail, calculated_days, accumulated_leave, penalty, update_date,
                update_time, updated_by, weekday_label
         FROM leave_records
-        WHERE leave_date=:d AND source_sheet_id=:sid
-        ORDER BY source_row, id
+        WHERE leave_date=:d
+        ORDER BY source_row NULLS LAST, id
         FOR UPDATE
-    """), {"d": target, "sid": LEAVE_SHEET_ID}).mappings().all()
+    """), {"d": target}).mappings().all()
     changed = []
     counters: dict[str, int] = {key: 0 for key in keys}
     weekend_unpaid_enabled = load_weekend_unpaid_enabled(conn)
@@ -1513,8 +1513,13 @@ def _rebalance_progressive_rows(conn, target: date, keys: set[str]) -> list[tupl
         record = _row_record(dict(raw))
         record["detail"] = new_detail
         record["penalty"] = new_penalty
-        _update_record(conn, record, int(raw["source_row"]))
-        changed.append((int(raw["source_row"]), record))
+        source_row = int(raw.get("source_row") or 0)
+        source_sheet_id = str(raw.get("source_sheet_id") or "")
+        _update_record(conn, record, source_row, source_sheet_id)
+        # Recalculate all canonical records, but never map an unrelated or
+        # server-only row onto the MainData mirror (including row zero).
+        if source_sheet_id == LEAVE_SHEET_ID and source_row >= 2:
+            changed.append((source_row, record))
     return changed
 
 
