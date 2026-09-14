@@ -907,7 +907,10 @@ def _database_employees(conn) -> list[dict[str, Any]]:
 
 def _bootstrap_state(conn, now: datetime) -> dict[str, Any]:
     state = _empty_state(now)
-    _reconcile_roster(state, _employee_directory(conn, now), _new_directory_employee)
+    _reconcile_roster(
+        state, _employee_directory(conn, now), _new_directory_employee,
+        today=now.astimezone(VN_TZ).date().isoformat(),
+    )
     state["bootstrap_source"] = "employees"
     state["storage_mode"] = "server"
     return state
@@ -2189,12 +2192,14 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         employee["manual_work_status_date"] = now.astimezone(VN_TZ).date().isoformat()
         employee["manual_work_status_by"] = actor
         if _norm(next_status) == "di lam":
-            employee["shift"] = employee.get("assigned_shift", employee.get("shift", ""))
+            employee["shift"] = (
+                employee.get("manual_shift", employee.get("shift", ""))
+                if employee.get("manual_shift_date") == now.astimezone(VN_TZ).date().isoformat()
+                else employee.get("assigned_shift", employee.get("shift", ""))
+            )
         result["employee"] = employee
     elif action == "set_shift":
         employee = _employee(state, payload.get("employee_id"))
-        if employee.get("shift_checkin_date"):
-            raise HTTPException(409, "Ca được tự động cập nhật theo lịch làm và check-in hôm nay.")
         next_shift = _canonical_shift(payload.get("shift"), allow_blank=True)
         if _norm(employee.get("work_status")) != "di lam":
             raise HTTPException(409, "Chỉ xếp ca cho nhân viên đang Đi làm.")
@@ -2203,6 +2208,9 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if (employee.get("service") or _active_booking(employee)) and next_shift != _canonical_shift(employee.get("shift"), allow_blank=True):
             raise HTTPException(409, "Không được đổi ca khi nhân viên đang có dịch vụ/chưa thanh toán.")
         employee["shift"] = next_shift
+        employee["manual_shift"] = next_shift
+        employee["manual_shift_date"] = now.astimezone(VN_TZ).date().isoformat()
+        employee["manual_shift_by"] = actor
         result["employee"] = employee
     elif action == "start_break":
         employee = _employee(state, payload.get("employee_id"))
@@ -3264,7 +3272,10 @@ def _read_state(conn, now: datetime, *, for_update: bool = False) -> tuple[dict[
         revision = int(row.get("revision") or 0)
         before = deepcopy(state)
         directory = _employee_directory(conn, now)
-        _reconcile_roster(state, directory, _new_directory_employee)
+        _reconcile_roster(
+            state, directory, _new_directory_employee,
+            today=now.astimezone(VN_TZ).date().isoformat(),
+        )
         leave_day = (now.astimezone(VN_TZ) - timedelta(hours=5)).date()
         leaves = [dict(item) for item in conn.execute(text(
             "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
