@@ -1,6 +1,6 @@
-.spa-management{display:grid; gap:18px}
+.spa-management{display:grid; gap:12px}
 .spa-management .page-heading{display:flex; justify-content:space-between; align-items:center; gap:14px}
-.spa-management h1{margin:8px 0; font-family:Georgia,serif; font-size:42px; color:var(--green-950,#173329)}
+.spa-management h1{margin:3px 0; font-family:Georgia,serif; font-size:38px; line-height:1; color:var(--green-950,#173329)}
 .spa-management p{color:var(--muted,#6c7c76)}
 .spa-tabs{display:flex; gap:8px; flex-wrap:wrap}
 .spa-tabs button{padding:12px 18px; border:1px solid #d6e3dc; border-radius:12px; background:white; font:inherit; font-weight:750; color:#244f40; cursor:pointer}
@@ -11,6 +11,11 @@
 .spa-toolbar>span{font-size:13px; color:#65796e}
 .spa-toolbar>.spa-actions{margin-left:auto}
 .spa-actions{display:flex; gap:8px; flex-wrap:wrap}
+.spa-customer-actions{width:100%;align-items:center;flex-wrap:nowrap}
+.spa-customer-actions>span{min-width:0;overflow-wrap:anywhere}
+.spa-history-button{margin-left:auto;flex:0 0 auto}
+.spa-approval-cell{text-align:center}
+.spa-approval-cell input{width:18px;height:18px;accent-color:#204e3e;cursor:pointer}
 .spa-management table{width:100%; border-collapse:collapse; text-align:left}
 .spa-management th,.spa-management td{padding:14px 12px; border-bottom:1px solid #e4ece7}
 .spa-management th{font-size:13px; color:#536a5e; background:#f4f8f5}
@@ -65,6 +70,7 @@
 .spa-management td .spa-actions{min-width:135px}
 .spa-tabs button{flex:1}
 .spa-management .responsive-data-table{overflow-x:auto}
+.spa-customer-actions{min-width:260px!important}
 }
 .spa-wide{grid-column:1/-1}
 .spa-service-types{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:8px 0 18px}

@@ -64,7 +64,7 @@ PROTECTED_IDEMPOTENCY_ACTIONS = frozenset({
     "customer_delete", "customer_combo_update", "customer_combo_delete", "report_invoice_update", "report_invoice_delete",
     "paid_invoice_update", "paid_invoice_delete",
     "pending_update", "pending_delete",
-    "checkout", "quick_checkout", "combo_purchase", "sync_leaves", "finish_to_pending", "start_room", "finish_room",
+    "checkout", "quick_checkout", "combo_purchase", "combo_sale_decide", "sync_leaves", "finish_to_pending", "start_room", "finish_room",
 })
 BACKDATE_ACTIONS = frozenset({"checkout", "quick_checkout", "combo_purchase"})
 CLIENT_FINANCIAL_TIME_FIELDS = frozenset({
@@ -78,7 +78,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "checkout", "quick_checkout", "set_work_status", "set_shift", "start_break", "end_break",
     "reorder", "admin_reorder", "sync_daily_status",
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
-    "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_import", "backup",
+    "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_sale_decide", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete", "settings_reorder",
     "update_booking", "cancel_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
 }
@@ -732,7 +732,7 @@ def _empty_state(now: datetime) -> dict[str, Any]:
         "counter_business_date": _counter_business_date(now).isoformat(),
         "created_at": _iso(now), "updated_at": _iso(now),
         "employees": [], "rooms": rooms, "services": services, "combos": combos,
-        "customers": [], "pending": [], "invoices": [], "reports": [], "combo_usage": [],
+        "customers": [], "pending": [], "invoices": [], "reports": [], "combo_usage": [], "combo_sale_requests": [],
         "break_events": [], "payment_settings": _default_payment_settings(),
         "audit": [], "backups": [], "pending_changes": [], "invoice_changes": [], "customer_changes": [], "bill_counters": {}, "idempotency": {},
     }
@@ -745,7 +745,7 @@ def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
         state["customer_changes"] = []
     if not isinstance(state.get("invoice_changes"), list):
         state["invoice_changes"] = []
-    for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups", "pending_changes"):
+    for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "combo_sale_requests", "break_events", "audit", "backups", "pending_changes"):
         if not isinstance(state.get(key), list):
             state[key] = deepcopy(defaults[key])
     # An explicitly empty catalog is a saved choice, not an uninitialized state.
@@ -1831,7 +1831,7 @@ def _required_action_feature(action: str) -> str:
     if action in {
         "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
-        "clear_expired", "clear_expired_preview", "combo_import", "set_vip", "service_area_upsert", "service_area_delete", "settings_reorder", "payment_settings_update",
+        "clear_expired", "clear_expired_preview", "combo_import", "combo_sale_decide", "set_vip", "service_area_upsert", "service_area_delete", "settings_reorder", "payment_settings_update",
     }:
         return "live_tour_admin"
     return "live_tour_operate"
@@ -1863,8 +1863,39 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
 def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime) -> dict[str, Any]:
     action = str(action or "").strip().lower()
     _reject_external_action(action)
+    requested_action = action
+    decision_actor = actor
+    approval_request = None
+    if action == "combo_sale_decide":
+        approval_request = _find_by_id(
+            state.get("combo_sale_requests", []), payload.get("request_id"), "yêu cầu bán combo",
+        )
+        if approval_request.get("status") != "pending":
+            raise HTTPException(409, "Yêu cầu bán combo này đã được xử lý.")
+        decision = str(payload.get("decision") or "").strip().lower()
+        if decision not in {"approve", "reject"}:
+            raise HTTPException(400, "Quyết định phải là duyệt hoặc từ chối.")
+        if decision == "approve":
+            payload = deepcopy(approval_request.get("payload") or {})
+            for key in CLIENT_FINANCIAL_TIME_FIELDS:
+                payload.pop(key, None)
+            payload.update({
+                "backdate_one_day": False,
+                "correction_reason": "",
+                "_approved_request_id": approval_request.get("id"),
+                "_approver": decision_actor,
+            })
+            actor = str(approval_request.get("requested_by") or actor)
+            action = "combo_purchase"
+        else:
+            action = "combo_sale_reject"
+    if action == "combo_purchase" and not payload.get("_approved_request_id"):
+        combo_for_approval = _catalog_item(state, "combos", payload)
+        actor_role = str(payload.get("_actor_role") or "").strip().lower()
+        if combo_for_approval and combo_for_approval.get("requires_admin_approval") is True and actor_role in {"letan", "quanly"}:
+            action = "combo_purchase_request"
     _ensure_counter_day(state, now)
-    financial_timing = _financial_timing(payload, now) if action in BACKDATE_ACTIONS else None
+    financial_timing = _financial_timing(payload, now) if action in BACKDATE_ACTIONS or action == "combo_purchase_request" else None
     batch_actions = {
         "start", "add_minutes", "complete", "set_work_status", "set_shift", "start_break", "reorder", "admin_reorder",
         "end_break", "set_vip",
@@ -2381,6 +2412,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
                 if flag in incoming and not isinstance(incoming[flag], bool):
                     raise HTTPException(400, f"{flag} phải là giá trị đúng/sai.")
         if kind == "combos":
+            if "requires_admin_approval" in incoming and not isinstance(incoming["requires_admin_approval"], bool):
+                raise HTTPException(400, "Cài đặt Admin duyệt bán phải là giá trị đúng/sai.")
             ticket_source = validated_fields.get("tickets", incoming.get("tickets", incoming.get("quantity", (current or {}).get("tickets"))))
             if ticket_source in (None, ""):
                 ticket_source = 0
@@ -2391,6 +2424,9 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             validated_fields["price"] = _bounded_money(
                 incoming.get("price"), label="Giá combo", allow_blank_as_zero=True,
             )
+            validated_fields["requires_admin_approval"] = incoming.get(
+                "requires_admin_approval", (current or {}).get("requires_admin_approval", False),
+            ) is True
         if current and kind in {"rooms", "services"} and _catalog_referenced(state, kind, current):
             protected = {"name", "active", "duration", "ticket_units", "private", "request_eligible", "non_request_eligible", "request_duration"}
             defaults = {"active": True, "private": _is_private_service(current.get("name")),
@@ -2431,6 +2467,56 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
                 raise HTTPException(409, "Dịch vụ đang thuộc combo hoặc còn lượt khách đã mua; chưa thể xóa.")
         state[kind] = [row for row in state[kind] if row is not item]
         result["deleted_id"] = item.get("id")
+    elif action == "combo_purchase_request":
+        assert financial_timing is not None
+        combo = _catalog_item(state, "combos", payload)
+        if not combo:
+            raise HTTPException(404, "Không tìm thấy combo trong danh mục.")
+        require_available(combo, financial_timing["effective_datetime"].astimezone(VN_TZ).date(), "Combo")
+        quantity_source = payload.get("quantity")
+        if quantity_source in (None, ""):
+            quantity_source = 1
+        quantity = int(_bounded_number(
+            quantity_source, label="Số lượng combo", minimum=1,
+            maximum=MAX_PURCHASE_QUANTITY, integer=True,
+        ))
+        tickets = int(_bounded_number(
+            combo.get("tickets"), label="Số vé combo", minimum=1,
+            maximum=MAX_TICKET_UNITS, integer=True,
+        )) * quantity
+        amount = _bounded_money(
+            combo.get("price"), label="Giá combo", allow_blank_as_zero=True,
+        ) * quantity
+        if tickets > MAX_TICKET_UNITS or amount > MAX_MONEY:
+            raise HTTPException(400, "Số lượng hoặc tổng giá combo vượt giới hạn cho phép.")
+        payment_method = _canonical_payment_method(payload.get("payment_method"), quick=True)
+        if payment_method == "COMBO":
+            raise HTTPException(400, "Không thể dùng chính combo để thanh toán giao dịch mua combo.")
+        customer = _customer(deepcopy(state), payload)
+        if not customer:
+            raise HTTPException(400, "Thiếu thông tin khách hàng.")
+        request = {
+            "id": str(uuid4()), "status": "pending",
+            "requested_at": _iso(now), "requested_by": actor,
+            "customer_id": customer.get("id"), "customer_name": customer.get("name", ""),
+            "customer_phone": customer.get("phone", ""),
+            "combo_id": combo.get("id"), "combo_name": combo.get("name", ""),
+            "quantity": quantity, "tickets": tickets, "amount": amount,
+            "payment_method": payment_method,
+            "payload": {key: deepcopy(value) for key, value in payload.items() if not str(key).startswith("_")},
+        }
+        state["combo_sale_requests"].append(request)
+        result.update({
+            "approval_required": True, "combo_sale_request": deepcopy(request),
+            "message": "Đã gửi yêu cầu bán combo tới Admin. Combo chưa có hiệu lực cho đến khi được duyệt.",
+        })
+    elif action == "combo_sale_reject":
+        assert approval_request is not None
+        approval_request.update({
+            "status": "rejected", "decided_at": _iso(now), "decided_by": decision_actor,
+            "decision_reason": str(payload.get("reason") or "").strip(),
+        })
+        result.update({"combo_sale_request": deepcopy(approval_request), "message": "Đã từ chối yêu cầu bán combo."})
     elif action == "combo_purchase":
         assert financial_timing is not None
         combo = _catalog_item(state, "combos", payload)
@@ -2514,6 +2600,16 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             "note": invoice["note"], "combo_units": tickets,
         })
         result.update({"customer": customer, "purchase": purchase, "invoice": invoice})
+        if approval_request is not None:
+            approval_request.update({
+                "status": "approved", "decided_at": _iso(now), "decided_by": decision_actor,
+                "purchase_id": purchase["id"], "invoice_id": invoice["id"],
+            })
+            result.update({
+                "combo_sale_request": deepcopy(approval_request),
+                "message": "Đã duyệt bán combo. Combo và hóa đơn đã có hiệu lực.",
+            })
+            _audit(state, "combo_purchase", payload, actor, now, timing=financial_timing)
     elif action == "combo_import":
         imported = []
         source_rows = payload.get("purchases")
@@ -2585,7 +2681,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         # back to create duplicate tickets, invoices or combo balances.
         for append_only_key in (
             "customers", "pending", "invoices", "reports", "combo_usage", "break_events", "audit", "backups", "pending_changes",
-            "invoice_changes",
+            "invoice_changes", "combo_sale_requests",
             "bill_counters", "idempotency", "created_at", "sync_status", "customer_changes",
         ):
             restored[append_only_key] = deepcopy(state.get(append_only_key))
@@ -2608,7 +2704,11 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
 
     state["updated_at"] = _iso(now)
     state["business_date"] = _business_date(now).isoformat()
-    _audit(state, action, payload, actor, now, timing=financial_timing)
+    _audit(
+        state, requested_action if requested_action == "combo_sale_decide" else action,
+        payload, decision_actor if requested_action == "combo_sale_decide" else actor,
+        now, timing=financial_timing,
+    )
     return result
 
 
@@ -3047,6 +3147,10 @@ def _state_response(
         "customers": customers, "pending_payments": state["pending"] if pending_access else [],
         "pending": state["pending"] if pending_access else [], "reports": report_summary,
         "pending_count": len(state["pending"]) if can_pending_view else 0,
+        "combo_sale_requests": deepcopy(state.get("combo_sale_requests", [])) if can_admin else [],
+        "combo_sale_request_count": sum(
+            item.get("status") == "pending" for item in state.get("combo_sale_requests", [])
+        ) if can_admin else 0,
         "pending_changes": pending_changes,
         "invoice_changes": invoice_changes,
         "customer_changes": deepcopy(state.get("customer_changes", [])) if can_customers_view and can_history_view else [],
@@ -3864,6 +3968,7 @@ def install_live_tour_routes(
         return {
             "ok": True, "duplicate": duplicate, "action": action,
             "revision": revision, "result": public_result,
+            **({"message": str(result.get("message"))} if result.get("message") else {}),
             **({"capabilities": {name: grants[f"can_{name}"] for name in CAPABILITY_FEATURES}} if action.startswith("report_invoice_") else _state_response(state, revision, now, **grants)),
         }
 
@@ -3951,6 +4056,8 @@ def install_live_tour_routes(
             raise HTTPException(403, "Chỉ Admin và Quản lý được nhập TG bắt đầu thực hiện.")
         if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được nhập combo.")
+        if action == "combo_sale_decide" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được duyệt hoặc từ chối yêu cầu bán combo.")
         payload = deepcopy(body.payload)
         sharing = [payload, *[row for row in (payload.get("bookings") or []) if isinstance(row, dict)]]
         if any(row.get("share_private_room") for row in sharing):
@@ -4007,8 +4114,10 @@ def install_live_tour_routes(
                 require_feature(conn, ident, "live_tour_customers_view")
             if action == "combo_import":
                 require_feature(conn, ident, "live_tour_payment")
-            if action in {"combo_import", "combo_purchase", "customer_upsert"}:
+            if action in {"combo_import", "combo_purchase", "combo_sale_decide", "customer_upsert"}:
                 require_feature(conn, ident, "live_tour_customers_view")
+            if action == "combo_sale_decide":
+                require_feature(conn, ident, "live_tour_payment")
             if action in {"checkout", "quick_checkout"} and _contains_customer_pii(payload):
                 require_feature(conn, ident, "live_tour_customers_view")
             acquire_state_lock(conn, STATE_LOCK)
@@ -4039,8 +4148,10 @@ def install_live_tour_routes(
                 payload["_admin_start"] = True
             if manual_break_allowed:
                 payload["_manual_break_allowed"] = True
+            if action == "combo_purchase":
+                payload["_actor_role"] = str(getattr(ident, "role", "") or "").strip().lower()
             result = _apply_action(working, action, payload, actor, now)
-            if action in {"checkout", "quick_checkout", "combo_purchase"} and result.get("invoice"):
+            if action in {"checkout", "quick_checkout", "combo_purchase", "combo_sale_decide"} and result.get("invoice"):
                 bank = _selected_bank(working.get("payment_settings") or {}, grants.get("viewer_bank"), payload.get("bank_selection", "auto"))
                 result["invoice"]["payment_bank"] = bank
                 for invoice in working["invoices"]:

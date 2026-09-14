@@ -70,6 +70,56 @@ def test_catalog_and_purchase_terms_persist_across_server_restarts():
     assert history["combo_purchases"][0] == owned
 
 
+def test_flagged_combo_waits_for_admin_before_creating_financial_records():
+    state = state_with()
+    combo = state["combos"][0]
+    combo["requires_admin_approval"] = True
+    payload = {
+        "combo_id": combo["id"], "customer_name": "Khách chờ duyệt",
+        "customer_phone": "0901234567", "quantity": 1,
+        "payment_method": "TIỀN MẶT", "_actor_role": "letan",
+    }
+
+    requested = live._apply_action(state, "combo_purchase", payload, "le-tan-a", NOW)
+
+    assert requested["approval_required"] is True
+    assert len(state["combo_sale_requests"]) == 1
+    assert state["combo_sale_requests"][0]["status"] == "pending"
+    assert state["customers"] == []
+    assert state["invoices"] == []
+    assert state["reports"] == []
+
+    approved = live._apply_action(state, "combo_sale_decide", {
+        "request_id": state["combo_sale_requests"][0]["id"], "decision": "approve",
+    }, "admin-a", NOW)
+
+    assert approved["combo_sale_request"]["status"] == "approved"
+    assert state["combo_sale_requests"][0]["decided_by"] == "admin-a"
+    assert len(state["customers"][0]["combo_purchases"]) == 1
+    assert len(state["invoices"]) == 1
+    assert len(state["reports"]) == 1
+
+
+def test_admin_can_reject_combo_sale_without_creating_combo_or_invoice():
+    state = state_with()
+    combo = state["combos"][0]
+    combo["requires_admin_approval"] = True
+    live._apply_action(state, "combo_purchase", {
+        "combo_id": combo["id"], "customer_name": "Khách bị từ chối",
+        "quantity": 1, "payment_method": "TIỀN MẶT", "_actor_role": "quanly",
+    }, "quan-ly-a", NOW)
+
+    rejected = live._apply_action(state, "combo_sale_decide", {
+        "request_id": state["combo_sale_requests"][0]["id"],
+        "decision": "reject", "reason": "Chưa xác nhận thanh toán",
+    }, "admin-a", NOW)
+
+    assert rejected["combo_sale_request"]["status"] == "rejected"
+    assert state["customers"] == []
+    assert state["invoices"] == []
+    assert state["reports"] == []
+
+
 @pytest.mark.parametrize("bad", [
     {"sessions": 0}, {"sessions": True}, {"sessions": 1.5}, {"loyalty_points": -1},
     {"starts_on": "2026-02-30"}, {"starts_on": "09/09/2026"}, {"unlimited": "true"},
