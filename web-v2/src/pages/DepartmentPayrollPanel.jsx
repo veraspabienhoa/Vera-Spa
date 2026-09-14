@@ -262,7 +262,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
       <div className="department-payroll-toolbar">
         <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]); setEditingHistoryId(''); setCalculationPeriod(null) }} /></label>
         <button className="primary-button" disabled={Boolean(busy)} onClick={() => calculate('schedule')}><CalendarDays size={16} /> Tính lương nháp từ Thống kê tháng</button>
-        <button className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /> Đối chiếu chấm công</button>
+        <button className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /> Tính từ chấm công (đối chiếu)</button>
         <button className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}>Mở bảng nháp</button>
       </div>
 
