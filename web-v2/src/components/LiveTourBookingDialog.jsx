@@ -86,7 +86,7 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, canS
   </LiveTourTransactionDialog>
 }
 
-export default function LiveTourBookingDialog({ data, context, canOperate, canBook, canCustomers, canPayment, canSharePrivateRoom, busy, error, onAction, onClose, onCheckout }) {
+export default function LiveTourBookingDialog({ data, context, canAdmin, canOperate, canBook, canCustomers, canPayment, canSharePrivateRoom, busy, error, onAction, onClose, onCheckout }) {
   const [sharePrivateRoom, setSharePrivateRoom] = useState(false)
   const employees = [...(data.state?.employees || []), ...(data.retained_assignments || [])]
   const initial = employees.find((row) => row.id === context.employeeId)
@@ -157,6 +157,15 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
       setMessage('')
     }
   }
+  const clearOrphanPending = async () => {
+    if (!awaitingPayment || hasPayableService || !canAdmin || busy) return
+    if (!window.confirm(`Xóa phiên Chờ thanh toán bị lỗi của ${employee?.name}? Thao tác này chỉ xóa trạng thái treo không có hóa đơn.`)) return
+    const result = await onAction('clear_orphan_pending', {
+      employee_id: employeeId,
+      reason: 'Xóa phiên Chờ thanh toán mồ côi, không có dữ liệu dịch vụ và không có hóa đơn chờ.',
+    }, [])
+    if (result) onClose()
+  }
   const finish = async () => {
     setMessage('')
     const changed = JSON.stringify(items) !== JSON.stringify(bookingServiceItems(employee, catalog))
@@ -185,6 +194,7 @@ export default function LiveTourBookingDialog({ data, context, canOperate, canBo
         {hasPayableService ? <p>{employee.service} · {employee.room}</p> : <p className="error-box" role="alert">Phiên này đang có trạng thái Chờ thanh toán nhưng thiếu dữ liệu dịch vụ. Hãy làm mới Bảng tua và kiểm tra hóa đơn cũ trước khi đặt lịch mới.</p>}
         <div className="live-tour-modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>Đóng</button>
+          {canAdmin && !hasPayableService && <button type="button" className="danger-button" disabled={busy} onClick={clearOrphanPending}>Xóa phiên lỗi</button>}
           {canPayment && hasPayableService && <>
             {canBook && <button type="button" className="primary-button" disabled={busy} onClick={retainBillAndBook}>Giữ hóa đơn chờ và đặt lịch mới</button>}
             <button type="button" className="secondary-button" disabled={busy} onClick={() => onCheckout(null, employee)}>Thanh toán</button>
