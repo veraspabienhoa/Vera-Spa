@@ -18,12 +18,10 @@ function restoreToolbar() {
   const toolbar = document.querySelector('.staff-control-panel .staff-toolbar')
   if (!toolbar) return
 
-  // Keep the toolbar on native React-owned selects, including the employee
-  // dropdown copied from Đăng ký lịch.
+  // Keep the remaining native React-owned filters free of legacy proxy
+  // wrappers. The employee-name filter is now a React search component and is
+  // intentionally outside this compatibility cleanup.
   toolbar.querySelectorAll('select').forEach(removeToolbarProxy)
-
-  const employeeSelect = toolbar.querySelector('select[data-employee-name-dropdown]')
-  if (employeeSelect instanceof HTMLSelectElement) employeeSelect.dataset.veraToolbarStateSynced = '1'
 }
 
 function removeDuplicateListSearch() {
