@@ -116,13 +116,13 @@ function cacheSafeLiveTour(data) {
   delete safeData.result
   const records = asArray(safeData.records)
   const state = safeData.state && typeof safeData.state === 'object'
-    ? { ...safeData.state, employees: [], customers: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], reports: [], audit: [], backups: [] }
+    ? { ...safeData.state, employees: [], customers: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], combo_sale_requests: [], reports: [], audit: [], backups: [] }
     : undefined
   return {
     ...safeData,
     records,
-    customers: [], pending_payments: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], report_rows: [], reports: {},
-    audit: [], history: [], backups: [], pending_changes: [], invoice_changes: [], customer_changes: [], pending_count: 0,
+    customers: [], pending_payments: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], combo_sale_requests: [], report_rows: [], reports: {},
+    audit: [], history: [], backups: [], pending_changes: [], invoice_changes: [], customer_changes: [], pending_count: 0, combo_sale_request_count: 0,
     ...(state ? { state } : {}),
   }
 }
@@ -464,7 +464,7 @@ function isRevisionConflict(error) {
 const PAYMENT_ACTIONS = new Set(['checkout', 'quick_checkout', 'move_pending', 'combo_purchase'])
 const ADMIN_ACTIONS = new Set([
   'room_upsert', 'room_delete', 'service_upsert', 'service_delete',
-  'combo_upsert', 'combo_delete', 'combo_import', 'backup', 'restore', 'clear_expired',
+  'combo_upsert', 'combo_delete', 'combo_import', 'combo_sale_decide', 'backup', 'restore', 'clear_expired',
   'set_vip', 'payment_settings_update',
 ])
 
@@ -541,7 +541,7 @@ const EMPTY_FORM = {
   target_employee_id: '', employee_id: '', employee_search: '', room: '', service: '', request: '', appointment: '', customer_id: '', customer_name: '', phone: '',
   discount: '0', discount_mode: 'amount', discount_percent: '0', tip: '0', tip_mode: 'manual', tip_card_ids: [], print_after: false, ticket_price: '', payment_method: 'TIỀN MẶT', bill_no: '', ticket_no: '',
   bank_selection: 'auto', pending_id: '', combo_purchase_id: '', note: '', name: '', shift: '', combo_id: '', quantity: '1', remaining: '', amount: '0', code: '', duration: '60', vip: false,
-  backdate_one_day: false, correction_reason: '',
+  backdate_one_day: false, correction_reason: '', requires_admin_approval: false,
   ticket_units: '1', private_service: false, request_eligible: true, non_request_eligible: true, request_duration: '',
 }
 
@@ -824,6 +824,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       amount: kind === 'combo_purchase' ? '' : String(source.amount ?? source.price ?? context.defaults?.amount ?? '0'),
       quantity: String(source.quantity ?? source.tickets ?? context.defaults?.quantity ?? '1'),
       vip: Boolean(source.is_vip ?? (source.type ? normalizedColumn(source.type) === 'VIP' : context.defaults?.vip)),
+      requires_admin_approval: source.requires_admin_approval === true,
     })
     setModal({ kind, ...context, ...(capturedRowIds !== undefined ? { rowIds: capturedRowIds } : {}) })
   }
@@ -833,6 +834,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const submitModal = async (event) => {
     event.preventDefault()
     if (!modal) return
+    if (modal.kind === 'combo_approvals') return
     if (modal.kind === 'quick_checkout' && !manualQuickBooking && !form.pending_id && !selectedQuickCheckoutRecord) {
       setError('Hãy tìm và chọn đúng một nhân viên đang chờ thanh toán.')
       return
@@ -897,7 +899,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         ticket_units: Number(form.ticket_units), private: form.private_service, request_eligible: form.request_eligible,
         non_request_eligible: form.non_request_eligible, request_duration: form.request_duration === '' ? null : Number(form.request_duration) }
     } else if (modal.kind === 'combo_upsert') {
-      payload = { id: modal.item?._id ?? modal.item?.id, name: form.service, tickets: Number(form.quantity || 1), price: Number(form.amount || 0) }
+      payload = { id: modal.item?._id ?? modal.item?.id, name: form.service, tickets: Number(form.quantity || 1), price: Number(form.amount || 0), requires_admin_approval: form.requires_admin_approval === true }
     }
     if (action === 'combo_purchase' && form.backdate_one_day) {
       const correctionReason = form.correction_reason.trim()
@@ -1077,6 +1079,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     return { service_id: '', combo_purchase_id: usable ? String(purchase.id) : '', payment_method: usable ? 'COMBO' : 'TIỀN MẶT', discount: '0', discount_percent: '0', discount_mode: 'amount' }
   }
   const combos = asArray(data.combo_catalog).length ? asArray(data.combo_catalog) : asArray(data.catalogs?.combos).length ? asArray(data.catalogs?.combos) : asArray(data.state?.combos)
+  const pendingComboSaleRequests = asArray(data.combo_sale_requests).filter((item) => item?.status === 'pending')
   const allReports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
   const pendingPayments = filterTourRows(allPendingPayments, listFilters)
   const reports = filterTourRows(allReports, listFilters)
@@ -1429,6 +1432,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           <span className="live-tour-customer-count"><span>Số khách</span><strong>{customerCount}</strong></span>
         </div>
         <div className="tour-heading-actions">
+          {isAdmin && <button type="button" className="secondary-button" onClick={() => openModal('combo_approvals')} disabled={Boolean(actionBusy)}>Duyệt bán combo{pendingComboSaleRequests.length ? ` (${pendingComboSaleRequests.length})` : ''}</button>}
+          {canPayment && <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [], defaults: { checkout_source: 'manual' } })} disabled={Boolean(actionBusy)}>Thanh toán nhanh</button>}
           {canPending && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('pending')}>Hóa đơn chờ thanh toán{allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>}
           {canPaidInvoiceView && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('invoices')}>Hóa đơn đã thanh toán</button>}
           {canReports && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('reports')}>Báo cáo</button>}
@@ -1500,7 +1505,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           <div className="live-tour-controls-grid">
             <div className="live-tour-controls-actions" role="group" aria-label="Bảng điều khiển Live Tour">
               <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('sync_daily_status', {}, [])}>Cập nhật lịch nghỉ</button>
-              <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [], defaults: { checkout_source: 'manual' } })} disabled={!canPayment || Boolean(actionBusy)}>Thanh toán nhanh</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
@@ -1655,7 +1659,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         {canManageCatalog && <>
           <div className="live-tour-catalog-section"><div className="live-tour-panel-toolbar"><h3>Phòng / giường</h3><button type="button" className="secondary-button" onClick={() => openModal('room_upsert')}><Plus size={12}/> Thêm phòng</button></div><div className="live-tour-card-grid">{catalogRooms.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{roomLabel(item)}</strong><small>{isVipRoom(item) ? 'VIP' : 'Standard'}</small><div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => openModal('room_upsert', { item })}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeCatalogItem('room_delete', item)}>Xóa</button></div></article>)}</div></div>
           <div className="live-tour-catalog-section"><div className="live-tour-panel-toolbar"><h3>Dịch vụ</h3><button type="button" className="secondary-button" onClick={() => openModal('service_upsert')}><Plus size={12}/> Thêm dịch vụ</button></div>{services.length ? <div className="live-tour-card-grid">{services.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item)}</strong><span>{item?.duration ?? item?.minutes ?? 0} phút · {formatMoney(item?.price ?? item?.amount ?? 0)}</span><div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => openModal('service_upsert', { item })}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeCatalogItem('service_delete', item)}>Xóa</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có dịch vụ.</div>}</div>
-          <div className="live-tour-catalog-section"><div className="live-tour-panel-toolbar"><h3>Combo</h3><button type="button" className="secondary-button" onClick={() => openModal('combo_upsert')}><Plus size={12}/> Thêm combo</button></div>{combos.length ? <div className="live-tour-card-grid">{combos.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item)}</strong><span>{item?.quantity ?? item?.tickets ?? 0} lượt · {formatMoney(item?.price ?? item?.amount ?? 0)}</span><div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => openModal('combo_upsert', { item })}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeCatalogItem('combo_delete', item)}>Xóa</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có combo.</div>}</div>
+          <div className="live-tour-catalog-section"><div className="live-tour-panel-toolbar"><h3>Combo</h3><button type="button" className="secondary-button" onClick={() => openModal('combo_upsert')}><Plus size={12}/> Thêm combo</button></div>{combos.length ? <div className="live-tour-card-grid">{combos.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item)}</strong><span>{item?.quantity ?? item?.tickets ?? 0} lượt · {formatMoney(item?.price ?? item?.amount ?? 0)}</span>{item.requires_admin_approval === true && <small>Admin duyệt bán</small>}<div className="live-tour-card-actions"><button type="button" className="secondary-button" onClick={() => openModal('combo_upsert', { item })}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeCatalogItem('combo_delete', item)}>Xóa</button></div></article>)}</div> : <div className="live-tour-empty">Chưa có combo.</div>}</div>
         </>}
       </div>}
     </section>
@@ -1712,6 +1716,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
     {modal && <LiveTourModal title={{
       checkout: 'Thanh toán', quick_checkout: 'Thanh toán nhanh',
+      combo_approvals: 'Duyệt yêu cầu bán combo',
       change_employee: 'Đổi nhân viên', replace_service: 'Đổi dịch vụ', add_service: 'Thêm dịch vụ',
       combo_purchase: 'Mua combo cho khách hàng', combo_import: 'Nhập combo', room_upsert: modal.item ? 'Sửa phòng' : 'Thêm phòng',
       service_upsert: modal.item ? 'Sửa dịch vụ' : 'Thêm dịch vụ', combo_upsert: modal.item ? 'Sửa combo' : 'Thêm combo',
@@ -1738,7 +1743,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               </div>}
               {manualQuickBooking && <>
                 {!quickSteam && <>
-                <LiveTourSearchSelect label="Nhân viên" required value={form.employee_id} options={quickCheckoutEmployees.filter((row) => !row.hidden && row.roster_eligible !== false && (form.booking_date && form.booking_date < vietnamDate(clockMs) || normalizedColumn(row.work_status) === 'DI LAM' && ['CA 1', 'CA 2'].includes(normalizedColumn(row.shift)) && !row.break_started_at)).map((row) => ({ value: stableEmployeeId(row), label: row.name, detail: row.shift }))} onChange={(id) => setForm((current) => ({ ...current, employee_id: id }))}/>
+                <LiveTourSearchSelect label="Nhân viên" required value={form.employee_id} options={quickCheckoutEmployees.filter((row, index, rows) => row.roster_eligible !== false && rows.findIndex((candidate) => stableEmployeeId(candidate) === stableEmployeeId(row)) === index).map((row) => ({ value: stableEmployeeId(row), label: row.name, detail: row.role || row.shift || 'Nhân viên' }))} onChange={(id) => setForm((current) => ({ ...current, employee_id: id }))}/>
                 </>}
                 <LiveTourSearchSelect label={form.combo_purchase_id ? "Dịch vụ (tự động từ combo)" : "Dịch vụ"} required={!form.combo_purchase_id} placeholder={quickSelectedServices.map(item => item.name).join(" & ") || (quickPurchase ? "Dùng 1 vé combo" : "Tìm và chọn…")} value={form.service_id} options={quickBookingServices.map((service) => ({ value: service.id, label: service.name, detail: formatMoney(service.price) }))} onChange={(id) => setForm((current) => ({ ...current, service_id: id }))}/>
                 {!quickSteam && <>
@@ -1788,6 +1793,19 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
           {['replace_service', 'add_service'].includes(modal.kind) && <><label className="live-tour-field wide"><span>Dịch vụ</span><input list="live-tour-service-change-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required autoFocus/><datalist id="live-tour-service-change-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
 
+          {modal.kind === 'combo_approvals' && <div className="wide live-tour-combo-approvals">
+            {pendingComboSaleRequests.length ? pendingComboSaleRequests.map((request) => <article className="live-tour-data-card" key={request.id}>
+              <strong>{request.combo_name} × {request.quantity || 1}</strong>
+              <span>Khách hàng: <strong>{request.customer_name || 'Chưa có tên'}</strong>{request.customer_phone ? ` · ${request.customer_phone}` : ''}</span>
+              <span>{formatMoney(request.amount)} · {request.payment_method}</span>
+              <small>Người gửi: {request.requested_by || '—'} · {formatVeraDateTime(request.requested_at)}</small>
+              <div className="live-tour-card-actions">
+                <button type="button" className="primary-button" disabled={Boolean(actionBusy)} onClick={() => executeAction('combo_sale_decide', { request_id: request.id, decision: 'approve' }, [])}>Duyệt bán</button>
+                <button type="button" className="secondary-button danger-button" disabled={Boolean(actionBusy)} onClick={() => { const reason = window.prompt('Lý do từ chối (không bắt buộc):', ''); if (reason !== null) void executeAction('combo_sale_decide', { request_id: request.id, decision: 'reject', reason }, []) }}>Không duyệt</button>
+              </div>
+            </article>) : <div className="live-tour-empty">Không có yêu cầu bán combo đang chờ duyệt.</div>}
+          </div>}
+
           {modal.kind === 'combo_purchase' && <>
             <div className="tour-checkout-source wide"><button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [], defaults: { checkout_source: 'manual', customer_id: form.customer_id, customer_name: form.customer_name, phone: form.phone } })}>Thanh toán nhanh</button><button type="button" className="secondary-button" aria-pressed="true">Mua combo cho khách hàng</button></div>
             <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} customerRequired/>
@@ -1817,9 +1835,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             <label className="live-tour-check-field"><input type="checkbox" checked={form.non_request_eligible} onChange={(event) => setForm((current) => ({ ...current, non_request_eligible: event.target.checked }))}/> Cho phép không YC</label>
           </>}
           {modal.kind === 'combo_upsert' && modal.item?.components?.length > 0 && <p className="wide">Số lượt được tính từ dịch vụ thành phần. Để thay đổi thành phần, mở Cài đặt → Cài đặt dịch vụ.</p>}
-          {modal.kind === 'combo_upsert' && <><label className="live-tour-field"><span>Mã combo</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên combo</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Số lượt</span><input type="number" min="1" readOnly={Boolean(modal.item?.components?.length)} value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="live-tour-field"><span>Giá combo</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
+          {modal.kind === 'combo_upsert' && <><label className="live-tour-field"><span>Mã combo</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên combo</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Số lượt</span><input type="number" min="1" readOnly={Boolean(modal.item?.components?.length)} value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))}/></label><label className="live-tour-field"><span>Giá combo</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label><label className="live-tour-check-field wide"><input type="checkbox" checked={form.requires_admin_approval === true} onChange={(event) => setForm((current) => ({ ...current, requires_admin_approval: event.target.checked }))}/> Admin duyệt bán khi Lễ tân hoặc Quản lý bán combo</label></>}
         </div>
-        <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={closeModal}>Hủy</button><button type="submit" className="primary-button" disabled={Boolean(actionBusy) || (checkoutUsesCombo && !selectedCheckoutCombo) || (modal.kind === 'quick_checkout' && !manualQuickBooking && !form.pending_id && !selectedQuickCheckoutRecord) || (['checkout', 'quick_checkout'].includes(modal.kind) && !checkoutUsesCombo && (checkoutHasUnresolvedPricing || checkoutHasMixedPricing))}>{actionBusy ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
+        <div className="live-tour-modal-actions"><button type="button" className="secondary-button" onClick={closeModal}>{modal.kind === 'combo_approvals' ? 'Đóng' : 'Hủy'}</button>{modal.kind !== 'combo_approvals' && <button type="submit" className="primary-button" disabled={Boolean(actionBusy) || (checkoutUsesCombo && !selectedCheckoutCombo) || (modal.kind === 'quick_checkout' && !manualQuickBooking && !form.pending_id && !selectedQuickCheckoutRecord) || (['checkout', 'quick_checkout'].includes(modal.kind) && !checkoutUsesCombo && (checkoutHasUnresolvedPricing || checkoutHasMixedPricing))}>{actionBusy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>}</div>
       </form>
     </LiveTourModal>}
 

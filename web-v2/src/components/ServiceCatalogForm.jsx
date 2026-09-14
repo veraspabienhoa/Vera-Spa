@@ -47,7 +47,7 @@ export default function ServiceCatalogForm({ kind, form, setForm, services, grou
       </div>)}<button className="secondary-button" type="button" disabled={form.steps.length >= 50} onClick={() => set('steps', [...form.steps, { name: '', duration: '0' }])}><Plus size={15}/> Thêm lộ trình</button></div>
       <Field label="Thời lượng (phút)"><input type="number" min="0" max="1440" step="1" value={form.duration ?? ''} placeholder="Để trống nếu không giới hạn" onChange={(event) => set('duration', event.target.value)}/></Field>
     </>}
-    <div className="spa-wide spa-checks"><strong>Loại sử dụng</strong><label><input type="checkbox" checked={form.unlimited} onChange={(event) => set('unlimited', event.target.checked)}/>Vô thời hạn</label></div>
+    <div className="spa-wide spa-checks"><strong>Loại sử dụng</strong><label><input type="checkbox" checked={form.unlimited} onChange={(event) => set('unlimited', event.target.checked)}/>Vô thời hạn</label>{combo && <label><input type="checkbox" checked={form.requires_admin_approval === true} onChange={(event) => set('requires_admin_approval', event.target.checked)}/>Admin duyệt bán khi Lễ tân hoặc Quản lý bán combo</label>}</div>
     {!form.unlimited && <Field label="Ngày hết hạn *"><VeraDateInput required min={form.starts_on} value={form.expires_on} onChange={(event) => set('expires_on', event.target.value)}/></Field>}
     <Field label="Điểm tích lũy"><input type="number" min="0" max="1000000000" step="1" value={form.loyalty_points} onChange={(event) => set('loyalty_points', event.target.value)}/></Field>
     <Field label="Mô tả" wide><textarea rows="3" maxLength={5000} value={form.description} placeholder="Nội dung mô tả" onChange={(event) => set('description', event.target.value)}/></Field>

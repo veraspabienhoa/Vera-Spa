@@ -15,7 +15,7 @@ export function newCatalogForm(kind, item) {
     name: '', group: '', price: '0', duration: '60', sessions: '1', steps: [],
     ticket_units: '1', request_duration: '', private: false, request_eligible: true, non_request_eligible: true,
     active: true, starts_on: item ? '' : vietnamDate(), unlimited: true, expires_on: '', loyalty_points: '0', description: '',
-    tickets: '1', ...item,
+    tickets: '1', requires_admin_approval: false, ...item,
     combo_mode: item && !item.components?.length ? 'generic' : 'components',
     components: item?.components?.length ? item.components : kind === 'combo' && !item ? [{ service_id: '', quantity: '1' }] : [],
   })
@@ -28,7 +28,8 @@ export function catalogPayload(kind, form, existing) {
     loyalty_points: Number(form.loyalty_points || 0), description: form.description, active: form.active,
   }
   if (kind === 'combo') return {
-    ...common, ...(form.combo_mode === 'generic' ? { tickets: Number(form.tickets) } : {
+    ...common, requires_admin_approval: form.requires_admin_approval === true,
+    ...(form.combo_mode === 'generic' ? { tickets: Number(form.tickets) } : {
       components: form.components.map((row) => ({ service_id: row.service_id, quantity: Number(row.quantity) })),
     }),
   }

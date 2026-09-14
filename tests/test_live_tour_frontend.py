@@ -138,8 +138,11 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
     assert 'live-tour-controls-label' not in controls
     for label in ('Thực hiện đã chọn', 'Hoàn thành', 'Chờ thanh toán', 'Thanh toán'):
         assert f'> {label}</button>' not in controls and f'>{label}</button>' not in controls
-    for label in ('Cập nhật lịch nghỉ', 'Thanh toán nhanh', 'Đi làm', 'Nghỉ phép', 'Nghỉ giữa ca', 'Kết thúc nghỉ', 'Hủy Booking', 'Đổi nhân viên', 'Xuống cuối', 'Lên đầu', 'STT', 'Đổi STT'):
+    for label in ('Cập nhật lịch nghỉ', 'Đi làm', 'Nghỉ phép', 'Nghỉ giữa ca', 'Kết thúc nghỉ', 'Hủy Booking', 'Đổi nhân viên', 'Xuống cuối', 'Lên đầu', 'STT', 'Đổi STT'):
         assert label in controls
+    assert 'Thanh toán nhanh' not in controls
+    toolbar = source.split('className="tour-heading-actions"', 1)[1].split('</div>', 1)[0]
+    assert toolbar.index('Thanh toán nhanh') < toolbar.index('Hóa đơn chờ thanh toán')
     assert 'Lên {reorderSteps}' in controls
     assert 'Xuống {reorderSteps}' in controls
     for label in ('Đánh dấu VIP', 'Bỏ VIP', 'Kết thúc nghỉ giữa ca', 'Đổi dịch vụ', 'Thêm dịch vụ'):
