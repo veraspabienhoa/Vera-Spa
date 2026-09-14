@@ -116,6 +116,24 @@ test('incomplete/invalid date edits block submit; valid input and picker retain 
   } finally { await dispose() }
 })
 
+test('date picker falls back to a native click when mobile Safari rejects showPicker', async () => {
+  const dispose = await render(() => React.createElement(DateInput, { value: '2026-09-14', onChange: () => {} }))
+  const native = document.querySelector('input[type="date"]')
+  const original = dom.window.HTMLInputElement.prototype.showPicker
+  let nativeClicks = 0
+  native.addEventListener('click', () => nativeClicks++)
+  dom.window.HTMLInputElement.prototype.showPicker = () => { throw new dom.window.DOMException('Not allowed', 'NotAllowedError') }
+  try {
+    await act(() => document.querySelector('.vera-date-picker-button').click())
+    assert.equal(nativeClicks, 1)
+    assert.equal(native.getAttribute('aria-hidden'), null)
+  } finally {
+    if (original) dom.window.HTMLInputElement.prototype.showPicker = original
+    else delete dom.window.HTMLInputElement.prototype.showPicker
+    await dispose()
+  }
+})
+
 test('invoice datetime retains ISO local payload and blocks partial dates', async () => {
   let stored
   function Form() {

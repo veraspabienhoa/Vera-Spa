@@ -60,8 +60,17 @@ export default function VeraDateInput({
 
   const openPicker = () => {
     if (disabled || readOnly) return
-    if (typeof pickerRef.current?.showPicker === 'function') pickerRef.current.showPicker()
-    else pickerRef.current?.click()
+    const picker = pickerRef.current
+    if (!picker) return
+    try {
+      if (typeof picker.showPicker === 'function') {
+        picker.showPicker()
+        return
+      }
+    } catch {
+      // Safari may expose showPicker but reject it for a programmatic trigger.
+    }
+    picker.click()
   }
 
   return <span className={`vera-date-input ${invalid ? 'invalid' : ''} ${className}`.trim()}>
@@ -85,6 +94,6 @@ export default function VeraDateInput({
       onBlur={() => validateAndEmit(display, false)}
     />
     {!readOnly && <button type="button" className="vera-date-picker-button" disabled={disabled} onClick={openPicker} aria-label={`Chọn ${ariaLabel || 'ngày'}`}><CalendarDays size={16} /></button>}
-    <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled || readOnly} onChange={pickDate} aria-hidden="true" />
+    <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled || readOnly} onChange={pickDate} aria-label={`Lịch ${ariaLabel || 'ngày'}`} />
   </span>
 }
