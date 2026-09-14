@@ -906,6 +906,9 @@ def test_canonical_work_and_shift_transitions_reject_invalid_sequences():
     idle = employee("e4", "Dung")
     idle_state = state_with(idle)
     live._apply_action(idle_state, "set_shift", {"employee_id": "e4", "shift": "14h"}, "admin", NOW)
+    assert idle["manual_shift"] == "Ca 2"
+    assert idle["manual_shift_date"] == NOW.astimezone(live.VN_TZ).date().isoformat()
+    assert idle["manual_shift_by"] == "admin"
     live._apply_action(idle_state, "set_work_status", {"employee_id": "e4", "status": "nghỉ có phép"}, "admin", NOW)
     assert idle["shift"] == "Ca 2"
     assert idle["work_status"] == "Nghỉ phép"
@@ -940,6 +943,57 @@ def test_manual_work_status_overrides_daily_projection_for_the_current_day_only(
     assert worker["work_status"] == expected_next_day
     assert "manual_work_status_date" not in worker
     assert "manual_work_status_by" not in worker
+
+
+def test_manual_shift_overrides_automatic_checkin_for_current_day_only():
+    day = NOW.astimezone(live.VN_TZ).date().isoformat()
+    next_day = (NOW.astimezone(live.VN_TZ).date() + timedelta(days=1)).isoformat()
+    worker = employee("e1", "An", shift="Ca 1")
+    worker.update(username="an", assigned_shift="Ca 1", shift_checkin_date=day)
+    state = state_with(worker)
+    directory = [{
+        "username": "an", "full_name": "An", "role": "nhanvien", "payload": {},
+        "daily_shift": "Ca 1", "shift_checkin_date": day,
+    }]
+
+    live._apply_action(state, "set_shift", {
+        "employee_id": "e1", "shift": "Ca 2",
+    }, "admin", NOW)
+    live._reconcile_roster(state, directory, live._new_directory_employee, today=day)
+    live._sync_daily(state, directory, [], automatic=False, today=day)
+
+    assert worker["shift"] == "Ca 2"
+    assert worker["assigned_shift"] == "Ca 1"
+    assert worker["manual_shift_date"] == day
+
+    live._reconcile_roster(state, directory, live._new_directory_employee, today=next_day)
+    assert worker["shift"] == "Ca 1"
+    assert "manual_shift_date" not in worker
+    live._sync_daily(state, directory, [], automatic=False, today=next_day)
+
+    assert worker["shift"] == "Ca 1"
+    assert "manual_shift" not in worker
+    assert "manual_shift_date" not in worker
+    assert "manual_shift_by" not in worker
+
+
+def test_daily_sync_alone_expires_manual_shift_on_the_next_day():
+    day = NOW.astimezone(live.VN_TZ).date().isoformat()
+    next_day = (NOW.astimezone(live.VN_TZ).date() + timedelta(days=1)).isoformat()
+    worker = employee("e1", "An", shift="Ca 2")
+    worker.update(
+        username="an", assigned_shift="Ca 1", manual_shift="Ca 2",
+        manual_shift_date=day, manual_shift_by="admin",
+    )
+    state = state_with(worker)
+    directory = [{"username": "an", "full_name": "An"}]
+
+    live._sync_daily(state, directory, [], automatic=True, today=next_day)
+
+    assert worker["shift"] == "Ca 1"
+    assert "manual_shift" not in worker
+    assert "manual_shift_date" not in worker
+    assert "manual_shift_by" not in worker
 
 
 def test_normalize_state_canonicalizes_unknown_source_values_safely():

@@ -36,11 +36,18 @@ def eligible(row):
             and bool(str(row.get('username') or '').strip()))
 
 
-def reconcile(state, directory, make_employee):
+def reconcile(state, directory, make_employee, *, today=''):
     before = deepcopy(state)
     by_username = {key(row['username']): row for row in directory if row.get('username')}
     assigned = set()
     for worker in state['employees']:
+        manual_shift_day = str(worker.get('manual_shift_date') or '')
+        if manual_shift_day and today and manual_shift_day != today:
+            worker.pop('manual_shift', None)
+            worker.pop('manual_shift_date', None)
+            worker.pop('manual_shift_by', None)
+            manual_shift_day = ''
+        manual_shift_today = bool(manual_shift_day and (not today or manual_shift_day == today))
         row = by_username.get(key(worker.get('username')))
         if row is None and not worker.get('username'):
             # Imported/free-text rows can be linked only when the name is unique.
@@ -53,7 +60,9 @@ def reconcile(state, directory, make_employee):
                 worker['shift_checkin_date'] = row['shift_checkin_date']
             if 'work_shift' in row or 'daily_shift' in row:
                 worker['assigned_shift'] = row.get('daily_shift', shift_label(row.get('work_shift'), row.get('shift_definitions')))
-                worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else worker['assigned_shift']
+                worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else (
+                    worker.get('manual_shift', worker.get('shift', '')) if manual_shift_today else worker['assigned_shift']
+                )
             assigned.add(key(row['username']))
     # The directory owns membership now that manual roster removal is retired.
     state.pop('roster_excluded_usernames', None)

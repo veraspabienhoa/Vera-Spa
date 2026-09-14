@@ -29,11 +29,24 @@ def sync_daily(state, directory, leaves, *, automatic=False, today=''):
         username = key(worker.get('username') or worker.get('name'))
         if username not in rows:
             continue
+        manual_shift_day = str(worker.get('manual_shift_date') or '')
+        if manual_shift_day and manual_shift_day != today:
+            worker.pop('manual_shift', None)
+            worker.pop('manual_shift_date', None)
+            worker.pop('manual_shift_by', None)
+            manual_shift_day = ''
+            if key(worker.get('work_status')) != 'nghi phep':
+                worker['shift'] = worker.get('assigned_shift', worker.get('shift', ''))
+        manual_shift_today = bool(manual_shift_day and manual_shift_day == today)
+        manual_shift = worker.get('manual_shift', worker.get('shift', ''))
         override_day = str(worker.get('manual_work_status_date') or '')
         if override_day and override_day != today:
             worker.pop('manual_work_status_date', None)
             worker.pop('manual_work_status_by', None)
         elif override_day and override_day == today:
+            worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else (
+                manual_shift if manual_shift_today else worker.get('assigned_shift', worker.get('shift', ''))
+            )
             continue
         records = by_user.get(username, [])
         reasons = list(dict.fromkeys(str(row.get('leave_reason') or row.get('leave_type') or '').strip() for row in records))
@@ -55,6 +68,6 @@ def sync_daily(state, directory, leaves, *, automatic=False, today=''):
             worker.setdefault('assigned_shift', worker.get('shift', ''))
             worker['shift'] = ''
         else:
-            worker['shift'] = worker.get('assigned_shift', worker.get('shift', ''))
+            worker['shift'] = manual_shift if manual_shift_today else worker.get('assigned_shift', worker.get('shift', ''))
         worker.update(work_status=status, appointment=appointment, synced_leave_reason=reason)
     return {'updated': changed, 'message': f'Đã cập nhật lịch nghỉ cho {changed} nhân viên.'}

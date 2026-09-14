@@ -169,8 +169,10 @@ def test_room_cards_have_clear_state_borders_and_accessible_motion():
     assert "border:3px solid var(--room-border)" in source
     assert "@media(hover:hover) and (pointer:fine)" in source
     assert "translateY(-3px) scale(1.012)" in source
-    assert ".tour-room-card.state-green:not(.vip)" in source
-    assert ".tour-room-card.state-waiting:not(.vip)" in source
+    assert ".tour-room-card.state-green{" in source
+    assert ".tour-room-card.state-green:not(.vip)" not in source
+    assert ".tour-room-card.state-waiting{" in source
+    assert ".tour-room-card.state-waiting:not(.vip)" not in source
     assert "@media(prefers-reduced-motion:reduce)" in source
     assert ".tour-room-card{transition:none}" in source
 
