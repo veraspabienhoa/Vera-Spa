@@ -60,6 +60,41 @@ test('booking Clear closes, retains focus and allows intentional reopening by mo
   } finally { await dispose() }
 })
 
+test('employee picker can filter keyed rows without crashing the React tree', async () => {
+  const employees = [
+    { value: 'Kieu Huong', label: 'Kiều Hương' },
+    { value: 'Thuy Vy', label: 'Thúy Vy' },
+    { value: 'Bao Tram', label: 'Bảo Trâm' },
+  ]
+  function Directory() {
+    const [value, setValue] = useState('')
+    const visible = value ? employees.filter((employee) => employee.value === value) : employees
+    return React.createElement('main', { 'data-employee-directory': true },
+      React.createElement(SearchSelect, {
+        hideLabel: true,
+        label: 'Tên nhân viên',
+        value,
+        options: employees,
+        onChange: setValue,
+      }),
+      React.createElement('table', null, React.createElement('tbody', null,
+        visible.map((employee) => React.createElement('tr', { key: employee.value }, React.createElement('td', null, employee.label))),
+      )))
+  }
+  const dispose = await render(Directory)
+  try {
+    const input = document.querySelector('[data-employee-directory] input')
+    await act(() => input.focus())
+    await type(input, 'thuy vy')
+    const option = [...document.querySelectorAll('[role="option"]')].find((row) => row.textContent.includes('Thúy Vy'))
+    assert.ok(option)
+    await act(() => option.click())
+    assert.ok(document.querySelector('[data-employee-directory]'))
+    assert.deepEqual([...document.querySelectorAll('tbody td')].map((cell) => cell.textContent), ['Thúy Vy'])
+    assert.equal(document.querySelector('[role="listbox"]'), null)
+  } finally { await dispose() }
+})
+
 test('datalist Clear closes shared menu and updates React filter', async () => {
   let value
   function Form() {

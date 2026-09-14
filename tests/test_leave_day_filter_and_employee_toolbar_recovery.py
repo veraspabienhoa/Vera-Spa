@@ -25,12 +25,14 @@ def test_manager_and_frontdesk_share_same_day_special_group_ui_rules():
     assert "letanReasonGroup(currentReason, letanGroups)" in source
 
 
-def test_employee_toolbar_keeps_native_name_dropdown_and_other_filters():
+def test_employee_toolbar_keeps_react_name_picker_and_native_other_filters():
     source = (ROOT / "web-v2/src/lib/employeeToolbarRecovery.js").read_text(encoding="utf-8")
     main = (ROOT / "web-v2/src/main.jsx").read_text(encoding="utf-8")
+    page = (ROOT / "web-v2/src/pages/EmployeePage.jsx").read_text(encoding="utf-8")
 
     assert "toolbar.querySelectorAll('select').forEach(removeToolbarProxy)" in source
-    assert "select[data-employee-name-dropdown]" in source
+    assert "select[data-employee-name-dropdown]" not in source
+    assert 'className="staff-employee-name-filter"' in page
     assert ".staff-control-panel .staff-toolbar" in source
     assert ".staff-list-panel .vera-list-name-search" in source
     assert "removeDuplicateListSearch" in source

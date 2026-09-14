@@ -697,7 +697,7 @@ jobs:
               'employee page covers all requested operations': all(label in page for label in ('THÊM NHÂN VIÊN', 'DANH SÁCH NHÂN VIÊN', 'Export Excel', 'Xóa đã chọn', 'Lưu thay đổi')),
               'employee list hides legacy import and keeps refresh in list header': 'Import Excel' not in page and 'importStaffExcel' not in page and page.index('DANH SÁCH NHÂN VIÊN') < page.index('Làm mới'),
               'employee list filters and exports by shift': 'shiftFilter' in page and "params.set('shift', shift)" in client and 'shift: str = Query' in staff_api,
-              'changing employee search closes stale profile': 'const changeEmployeeSearch = (value) =>' in page and "setProfileDraft({})" in page and 'onChange={(event) => changeEmployeeSearch(event.target.value)}' in page,
+              'changing employee search closes stale profile': 'const changeEmployeeSearch = (value) =>' in page and "setProfileDraft({})" in page and 'onChange={changeEmployeeSearch}' in page,
               'employee ordering is role then employment status': 'role_rank.get(row["role"], 99)' in staff_api and 'status_rank.get(row["employment_status"], 99)' in staff_api,
               'mobile employee cards avoid table overflow': 'staff-mobile-list' in page and '.staff-desktop-table { display: none; }' in styles and '.staff-mobile-fields' in styles,
               'employee list fits without horizontal overflow and marks incomplete profiles': 'missingEmployeeProfileFields' in page and 'staff-incomplete-row' in page and '.staff-table { width: 100%; min-width: 0; table-layout: fixed;' in styles and '.staff-col-role { width: 8%; }' in styles and 'min-width: 1220px' not in styles,

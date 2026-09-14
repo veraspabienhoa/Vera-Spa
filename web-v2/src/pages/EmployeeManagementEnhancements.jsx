@@ -201,22 +201,6 @@ export default function EmployeeManagementEnhancements({ user }) {
     const synchronize = () => {
       if (cancelled) return
 
-      // Desktop: keep Hồ sơ immediately before Khóa as requested.
-      const table = document.querySelector('.staff-desktop-table .staff-table')
-      const headRow = table?.querySelector('thead tr')
-      if (headRow) {
-        const headers = Array.from(headRow.children)
-        const profileIndex = headers.findIndex((cell) => String(cell.textContent || '').trim() === 'Hồ sơ')
-        const lockIndex = headers.findIndex((cell) => String(cell.textContent || '').trim() === 'Khóa')
-        if (profileIndex >= 0 && lockIndex >= 0 && profileIndex > lockIndex) {
-          headRow.insertBefore(headers[profileIndex], headers[lockIndex])
-          table.querySelectorAll('tbody tr').forEach((row) => {
-            const cells = Array.from(row.children)
-            if (cells[profileIndex] && cells[lockIndex]) row.insertBefore(cells[profileIndex], cells[lockIndex])
-          })
-        }
-      }
-
       // Hồ sơ nhân viên no longer uses Quận/Huyện. Keep the stored legacy value
       // untouched in the database, but remove the field from the edit UI.
       document.querySelectorAll('.staff-form-panel label').forEach((label) => {

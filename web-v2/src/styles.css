@@ -595,6 +595,9 @@ tr:last-child td { border-bottom: 0; }
 .staff-notice button { width: 28px; height: 28px; border: 0; border-radius: 8px; color: currentColor; background: rgba(255,255,255,.55); font-size: 20px; line-height: 1; }
 .staff-control-panel { display: grid; gap: 12px; padding: 14px; }
 .staff-toolbar { display: grid; grid-template-columns: minmax(240px, 1fr) repeat(4, minmax(135px, 190px)); gap: 9px; }
+.staff-employee-name-filter { position: relative; width: 100%; min-width: 0; }
+.staff-employee-name-filter .clearable-search-input { height: 100%; }
+.staff-employee-name-filter .clearable-search-input input { height: 100%; min-height: 38px; padding: 8px 68px 8px 10px; }
 .staff-search { min-width: 0; position: relative; }
 .staff-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 1; color: #718078; pointer-events: none; }
 .staff-search input { padding-left: 38px; }
