@@ -5,6 +5,13 @@ import { defaultTipMode, money, tipCardLabel } from '../lib/liveTourCheckout'
 export default function LiveTourTipInput({ form, setForm, cards, preferenceKey, total }) {
   const [preferred, setPreferred] = useState(() => defaultTipMode(preferenceKey))
   const [preferenceError, setPreferenceError] = useState('')
+  const selectedCardIds = Array.isArray(form.tip_card_ids) ? form.tip_card_ids : []
+  const selectedCount = (cardId) => selectedCardIds.reduce((count, id) => count + (id === cardId ? 1 : 0), 0)
+  const addTipCard = (cardId) => setForm((current) => {
+    const currentIds = Array.isArray(current.tip_card_ids) ? current.tip_card_ids : []
+    if (currentIds.length >= 30) return current
+    return { ...current, tip_card_ids: [...currentIds, cardId] }
+  })
   const remember = (mode) => {
     try { window.localStorage.setItem(preferenceKey, mode); setPreferred(mode); setPreferenceError('') }
     catch { setPreferenceError('Không lưu được lựa chọn mặc định trên thiết bị này.') }
@@ -16,7 +23,11 @@ export default function LiveTourTipInput({ form, setForm, cards, preferenceKey, 
       <button type="button" className="secondary-button" aria-label={`Mặc định: ${label}`} aria-pressed={preferred === mode} onClick={() => remember(mode)}>{preferred === mode ? 'Mặc định' : 'Đặt mặc định'}</button>
     </div>)}
     {form.tip_mode === 'manual' ? <label className="live-tour-field tour-tip-amount"><span>Tiền TIP</span><input type="number" min="0" max="10000000000" step="1" value={form.tip} onChange={(event) => setForm((current) => ({ ...current, tip: event.target.value }))}/></label>
-      : <div className="tour-tip-cards"><div className="tour-page-items-content">{sortedTipCards(cards).map((card) => <button type="button" className="secondary-button" key={card.id} disabled={form.tip_card_ids.length >= 30} onClick={() => setForm((current) => ({ ...current, tip_card_ids: [...current.tip_card_ids, card.id] }))}>+ {tipCardLabel(card)}</button>)}</div><div className="tour-tip-selected" aria-label="Thẻ TIP đã chọn">{form.tip_card_ids.map((id, index) => <button type="button" className="secondary-button" key={`${id}:${index}`} aria-label={`Bỏ thẻ TIP ${index + 1}`} onClick={() => setForm(current => ({ ...current, tip_card_ids: current.tip_card_ids.filter((_, position) => position !== index) }))}>{tipCardLabel(cards.find(card => card.id === id) || { amount: 0 })} ×</button>)}</div></div>}
+      : <div className="tour-tip-cards"><div className="tour-page-items-content">{sortedTipCards(cards).map((card) => {
+        const count = selectedCount(card.id)
+        const label = tipCardLabel(card)
+        return <button type="button" className="secondary-button" key={card.id} disabled={selectedCardIds.length >= 30} aria-label={`Thêm thẻ TIP ${label}${count ? `; đã chọn ${count} lần` : ''}`} onClick={() => addTipCard(card.id)}>+ {label}{count > 0 && <span className="tour-tip-card-count">×{count}</span>}</button>
+      })}</div><div className="tour-tip-selected" aria-label="Thẻ TIP đã chọn">{selectedCardIds.map((id, index) => <button type="button" className="secondary-button" key={`${id}:${index}`} aria-label={`Bỏ thẻ TIP ${index + 1}`} onClick={() => setForm(current => ({ ...current, tip_card_ids: (Array.isArray(current.tip_card_ids) ? current.tip_card_ids : []).filter((_, position) => position !== index) }))}>{tipCardLabel(cards.find(card => card.id === id) || { amount: 0 })} ×</button>)}</div></div>}
     <p className="tour-tip-total">Tổng TIP: <strong>{money(total)}</strong></p>
     {preferenceError && <small role="alert">{preferenceError}</small>}
   </fieldset>
