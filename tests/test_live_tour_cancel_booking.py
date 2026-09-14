@@ -62,3 +62,46 @@ def test_batch_cancel_rolls_back_if_any_booking_started():
     result = live._apply_action(state, 'cancel_booking', {'employee_ids': ['e1', 'e2']}, 'admin', NOW)
     assert result['count'] == 2
     assert all(not row['service'] for row in state['employees'])
+
+
+def test_admin_can_clear_only_an_orphan_pending_employee():
+    row = employee('e1', 'Hải My')
+    row.update(status='CHO THANH TOÁN', payment_status='CHO THANH TOÁN', completed_at=live._iso(NOW))
+    state = state_with(row)
+    live._ensure_counter_day(state, NOW)
+
+    result = live._apply_action(
+        state, 'clear_orphan_pending',
+        {'employee_id': 'e1', 'reason': 'Xóa phiên mồ côi không có hóa đơn.'},
+        'admin', NOW,
+    )
+
+    assert result['employee']['status'] == ''
+    assert result['employee']['payment_status'] == ''
+    assert state['pending'] == []
+    assert state['audit'][-1]['action'] == 'clear_orphan_pending'
+    assert 'clear_orphan_pending' in live.PROTECTED_IDEMPOTENCY_ACTIONS
+    assert live._required_action_feature('clear_orphan_pending') == 'live_tour_admin'
+
+
+def test_orphan_clear_rejects_real_service_or_pending_invoice():
+    row = employee('e1', 'Hải My')
+    row.update(status='CHO THANH TOÁN', payment_status='CHO THANH TOÁN', completed_at=live._iso(NOW))
+    state = state_with(row)
+    live._ensure_counter_day(state, NOW)
+    state['pending'] = [{'id': 'p1', 'entries': [{'employee_id': 'e1', 'service': '90 PR'}]}]
+    before = deepcopy(state)
+
+    with pytest.raises(HTTPException) as error:
+        live._apply_action(state, 'clear_orphan_pending', {'employee_id': 'e1', 'reason': 'cleanup'}, 'admin', NOW)
+
+    assert error.value.status_code == 409
+    assert state == before
+
+    state['pending'] = []
+    state['employees'][0]['service'] = '90 PR'
+    before = deepcopy(state)
+    with pytest.raises(HTTPException) as error:
+        live._apply_action(state, 'clear_orphan_pending', {'employee_id': 'e1', 'reason': 'cleanup'}, 'admin', NOW)
+    assert error.value.status_code == 409
+    assert state == before
