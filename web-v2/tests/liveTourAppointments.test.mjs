@@ -666,6 +666,26 @@ test('pending status without service gives a clear message instead of an empty p
   } finally { await f.dispose() }
 })
 
+test('admin can clear an orphan pending employee from the booking dialog', async () => {
+  const originalConfirm = window.confirm
+  window.confirm = () => true
+  const f = await fixture({ role: 'admin', payable: true, setup(data) {
+    data.capabilities.admin = true
+    data.state.employees[0].service = ''
+  } })
+  try {
+    await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
+    const clearButton = [...document.querySelectorAll('.tour-booking-dialog button')].find(button => button.textContent === 'Xóa phiên lỗi')
+    assert.ok(clearButton)
+    await act(() => clearButton.click())
+    assert.equal(f.writes[0].action, 'clear_orphan_pending')
+    assert.equal(f.writes[0].payload.employee_id, 'e1')
+  } finally {
+    window.confirm = originalConfirm
+    await f.dispose()
+  }
+})
+
 test('keeping the old bill frees the employee for a new booking only after a successful action', async () => {
   const f = await fixture({ payable: true, setup(data) { data.capabilities.booking = true } })
   try {
