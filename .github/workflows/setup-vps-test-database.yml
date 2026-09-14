@@ -1,0 +1,134 @@
+name: Prepare VPS Test Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Inspect only, or create an empty test database (no production copy)
+        type: choice
+        options: [inspect, create]
+        default: inspect
+        required: true
+
+permissions:
+  contents: read
+
+# Never overlap the deployment workflow; do not cancel production work.
+concurrency:
+  group: vera-spa-production
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure existing pinned SSH access
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$VPS_SSH_KEY"
+          test -n "$VPS_KNOWN_HOSTS"
+          install -d -m 700 "$RUNNER_TEMP/vera-test-ssh"
+          umask 077
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/vera-test-ssh/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$RUNNER_TEMP/vera-test-ssh/known_hosts"
+
+      - name: Verify runtime and prepare isolated empty database
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          MODE: ${{ inputs.mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$MODE" in inspect|create) ;; *) exit 2 ;; esac
+          test -n "$VPS_HOST"
+          test -n "$VPS_USER"
+          [[ "$VPS_HOST" != -* && "$VPS_USER" != -* ]]
+          ssh -i "$RUNNER_TEMP/vera-test-ssh/key" \
+            -o UserKnownHostsFile="$RUNNER_TEMP/vera-test-ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 \
+            "${VPS_USER}@${VPS_HOST}" "timeout 120 bash -s -- '$MODE'" <<'REMOTE'
+          set -euo pipefail
+          mode="$1"
+          # Refuse hosts without the known running VERA application.
+          pid=$(pgrep -n -f '[v]era_web_v2_api_v38:app')
+          release_dir=$(readlink -f "/proc/$pid/cwd")
+          origin=$(git -C "$release_dir" remote get-url origin)
+          case "$origin" in
+            https://github.com/veraspabienhoa/Vera-Spa|https://github.com/veraspabienhoa/Vera-Spa.git|git@github.com:veraspabienhoa/Vera-Spa.git) ;;
+            *) echo 'STOP: unexpected runtime repository'; exit 3 ;;
+          esac
+          printf 'Runtime commit: '
+          git -C "$release_dir" rev-parse HEAD
+          # Requires the existing local PostgreSQL administrator path. Never
+          # extract production passwords or install/restart PostgreSQL here.
+          pg=(sudo -n -u postgres psql -X -v ON_ERROR_STOP=1 -h /var/run/postgresql -p 5432)
+          "${pg[@]}" -d postgres <<'SQL'
+          SET statement_timeout = '10s';
+          SELECT current_setting('server_version') AS postgres_version;
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_database WHERE datname='veraspa') THEN
+              RAISE EXCEPTION 'STOP: expected local production database not found';
+            END IF;
+          END $$;
+          SELECT datname, pg_get_userbyid(datdba) AS owner, datconnlimit
+            FROM pg_database WHERE datname='veraspa_test_concurrency';
+          SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole
+            FROM pg_roles WHERE rolname='vera_test_owner';
+          SQL
+          if [ "$mode" = inspect ]; then
+            echo 'INSPECT ONLY: no database or role created.'
+            exit 0
+          fi
+          # Conservative minimum headroom. This is not permission to run load
+          # tests: CPU/I/O and live production latency must be measured first.
+          disk_kb=$(df -Pk /var/lib/postgresql | awk 'NR==2 {print $4}')
+          mem_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+          test "$disk_kb" -ge 2097152
+          test "$mem_kb" -ge 524288
+          "${pg[@]}" -d postgres <<'SQL'
+          SET statement_timeout = '30s';
+          SET lock_timeout = '2s';
+          -- Never overwrite, adopt or drop a pre-existing database/role.
+          DO $$ BEGIN
+            IF EXISTS (SELECT FROM pg_database WHERE datname='veraspa_test_concurrency')
+              OR EXISTS (SELECT FROM pg_roles WHERE rolname='vera_test_owner') THEN
+              RAISE EXCEPTION 'STOP: test database or owner already exists; inspect before continuing';
+            END IF;
+          END $$;
+          CREATE ROLE vera_test_owner NOLOGIN NOSUPERUSER NOCREATEDB
+            NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 4;
+          -- Start with connections disabled until database ACLs are installed.
+          CREATE DATABASE veraspa_test_concurrency OWNER vera_test_owner
+            TEMPLATE template0 CONNECTION LIMIT 4 ALLOW_CONNECTIONS false;
+          REVOKE ALL ON DATABASE veraspa_test_concurrency FROM PUBLIC;
+          ALTER DATABASE veraspa_test_concurrency SET statement_timeout='15s';
+          ALTER DATABASE veraspa_test_concurrency SET lock_timeout='2s';
+          ALTER DATABASE veraspa_test_concurrency SET idle_in_transaction_session_timeout='15s';
+          ALTER DATABASE veraspa_test_concurrency SET work_mem='4MB';
+          ALTER DATABASE veraspa_test_concurrency SET temp_file_limit='64MB';
+          ALTER DATABASE veraspa_test_concurrency ALLOW_CONNECTIONS true;
+          SQL
+          "${pg[@]}" -d veraspa_test_concurrency <<'SQL'
+          REVOKE ALL ON SCHEMA public FROM PUBLIC;
+          ALTER SCHEMA public OWNER TO vera_test_owner;
+          BEGIN;
+          SET LOCAL ROLE vera_test_owner;
+          CREATE TABLE public.vera_test_environment (
+            purpose text PRIMARY KEY,
+            created_at timestamptz NOT NULL DEFAULT now()
+          );
+          INSERT INTO public.vera_test_environment(purpose)
+            VALUES ('synthetic-concurrency-tests-only');
+          COMMIT;
+          SELECT current_database() AS test_database,
+            has_database_privilege('vera_test_owner', current_database(), 'CREATE') AS owner_ready;
+          SQL
+          echo 'CREATED: empty test database; owner NOLOGIN; no application credentials issued.'
+          echo 'NEXT: configure a restricted test connection and verify isolation before application tests.'
+          REMOTE
