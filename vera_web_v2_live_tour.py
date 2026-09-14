@@ -64,7 +64,7 @@ PROTECTED_IDEMPOTENCY_ACTIONS = frozenset({
     "customer_delete", "customer_combo_update", "customer_combo_delete", "report_invoice_update", "report_invoice_delete",
     "paid_invoice_update", "paid_invoice_delete",
     "pending_update", "pending_delete",
-    "checkout", "quick_checkout", "combo_purchase", "combo_sale_decide", "sync_leaves", "finish_to_pending", "start_room", "finish_room",
+    "checkout", "quick_checkout", "combo_purchase", "combo_sale_decide", "sync_leaves", "finish_to_pending", "start_room", "finish_room", "clear_orphan_pending",
 })
 BACKDATE_ACTIONS = frozenset({"checkout", "quick_checkout", "combo_purchase"})
 CLIENT_FINANCIAL_TIME_FIELDS = frozenset({
@@ -80,7 +80,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_sale_decide", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete", "settings_reorder",
-    "update_booking", "cancel_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room",
+    "update_booking", "cancel_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room", "clear_orphan_pending",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Lịch hẹn", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -1831,7 +1831,7 @@ def _required_action_feature(action: str) -> str:
     if action in {
         "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
-        "clear_expired", "clear_expired_preview", "combo_import", "combo_sale_decide", "set_vip", "service_area_upsert", "service_area_delete", "settings_reorder", "payment_settings_update",
+        "clear_expired", "clear_expired_preview", "combo_import", "combo_sale_decide", "set_vip", "service_area_upsert", "service_area_delete", "settings_reorder", "payment_settings_update", "clear_orphan_pending",
     }:
         return "live_tour_admin"
     return "live_tour_operate"
@@ -2002,6 +2002,27 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         _clear_assignment(employee, now)
         employee.pop("last_assignment_display", None)
         result = {"employee": employee, "cancelled_booking_id": booking_id}
+    elif action == "clear_orphan_pending":
+        employee = _employee(state, payload.get("employee_id"))
+        reason = str(payload.get("reason") or "").strip()
+        if not reason or len(reason) > 1000:
+            raise HTTPException(400, "Nhập lý do xóa phiên lỗi (tối đa 1000 ký tự).")
+        if _norm(employee.get("status")) != "cho thanh toan" or employee.get("service") or employee.get("service_items"):
+            raise HTTPException(409, "Chỉ xóa phiên Chờ thanh toán bị thiếu toàn bộ dữ liệu dịch vụ.")
+        employee_id = str(employee.get("id") or "")
+        booking_id = str(employee.get("booking_id") or "")
+        has_pending_invoice = any(
+            str(entry.get("employee_id") or "") == employee_id
+            or (booking_id and str(entry.get("booking_id") or "") == booking_id)
+            for pending in state.get("pending", [])
+            for entry in pending.get("entries", [])
+        )
+        if has_pending_invoice:
+            raise HTTPException(409, "Phiên này đã có hóa đơn chờ thanh toán. Hãy xóa hóa đơn trong danh sách Chờ thanh toán.")
+        cleared_booking_id = booking_id
+        _clear_assignment(employee, now)
+        employee.pop("last_assignment_display", None)
+        result = {"employee": employee, "cleared_booking_id": cleared_booking_id, "reason": reason}
     elif action == "update_booking":
         employee = _employee(state, payload.get("employee_id"))
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:
