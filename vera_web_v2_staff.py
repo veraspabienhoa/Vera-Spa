@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from vera_web_v2_local_auth import revoke_local_sessions
+import vera_resource_concurrency as resource_concurrency
 
 from vera_web_v2_security import password_policy_error
 from vera_web_v2_staff_security import validate_saved_identity_matches
@@ -310,11 +311,17 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
 
 def _select_staff_rows(
     conn, *, for_update: bool = False, include_deleted: bool = False,
+    username: str | None = None,
 ) -> list[dict[str, Any]]:
     suffix = " FOR UPDATE" if for_update else ""
-    deleted_filter = "" if include_deleted else """
-        WHERE COALESCE(payload->>'__deleted', 'false') <> 'true'
-    """
+    filters = []
+    params: dict[str, Any] = {}
+    if not include_deleted:
+        filters.append("COALESCE(payload->>'__deleted', 'false') <> 'true'")
+    if username is not None:
+        filters.append("lower(btrim(username))=lower(btrim(:target_username))")
+        params["target_username"] = username
+    deleted_filter = (" WHERE " + " AND ".join(filters)) if filters else ""
     rows = conn.execute(text("""
         SELECT username, stt, password_value, role, full_name, birth_date, phone, email,
                address, bank_account, bank_name, monthly_generated, monthly_leave,
@@ -324,7 +331,7 @@ def _select_staff_rows(
         FROM employees
     """ + deleted_filter + """
         ORDER BY COALESCE(stt, 2147483647), username
-    """ + suffix)).mappings().all()
+    """ + suffix), params).mappings().all()
     output = []
     for row in rows:
         item = dict(row)
@@ -813,9 +820,11 @@ def install_staff_routes(
         tx = conn.begin()
         leave_prune = None
         try:
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
+            resource_concurrency.lock_transition(
+                conn, [("employee", username)], legacy_keys=["vera:phase4:employees"],
+            )
             require_feature(conn, ident, "staff_list")
-            rows = _select_staff_rows(conn, for_update=True)
+            rows = _select_staff_rows(conn, for_update=True, username=username)
             row = find_row(rows, username)
             updated = update_database_row(conn, ident, row, values)
             if updated["_status_changed"]:

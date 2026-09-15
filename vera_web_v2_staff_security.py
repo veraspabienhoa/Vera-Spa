@@ -37,6 +37,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image as PdfImage
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import text
+import vera_resource_concurrency as resource_concurrency
 
 from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
@@ -606,7 +607,9 @@ def install_staff_security_routes(
         conn = engine.connect()
         tx = conn.begin()
         try:
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
+            resource_concurrency.lock_transition(
+                conn, [("employee", username)], legacy_keys=["vera:phase4:employees"],
+            )
             require_feature(conn, ident, "employee_edit_save")
             row = employee_row(conn, username, for_update=True)
             if str(row.get("role") or "").lower() == "admin":

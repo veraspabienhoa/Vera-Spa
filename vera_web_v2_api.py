@@ -67,6 +67,7 @@ from vera_web_v2_local_auth import (
     valid_local_token,
 )
 from vera_web_v2_token_cache import VerifiedTokenCache
+import vera_resource_concurrency as resource_concurrency
 
 VN_TZ = timezone(timedelta(hours=7))
 LEAVE_SHEET_ID = os.getenv(
@@ -1566,7 +1567,15 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"ok": True, "service": "vera-web-v2-api", "version": "3.8-payroll-export-settings"}
+    return {
+        "ok": True,
+        "service": "vera-web-v2-api",
+        "version": "3.8-payroll-export-settings",
+        "resource_lock_mode": resource_concurrency.lock_mode(),
+        "live_tour_relational_mode": str(
+            os.getenv("VERA_LIVE_TOUR_RELATIONAL_MODE", "shadow") or "shadow"
+        ).strip().lower(),
+    }
 
 
 @app.get("/v2/me")
@@ -2524,7 +2533,11 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
     old_uid = str(record_uid or "").strip()
     source_row = 0
     try:
-        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+        resource_concurrency.lock_transition(
+            conn,
+            [("leave_record", old_uid)],
+            legacy_keys=["vera:phase4:leave_primary"],
+        )
         old = conn.execute(text("""
             SELECT record_uid, source_sheet_id, source_row, leave_date, employee_name,
                    leave_reason, leave_type, detail, calculated_days, accumulated_leave,
@@ -2534,6 +2547,9 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
         if not old:
             raise HTTPException(404, "Không tìm thấy lịch nghỉ cần sửa.")
         old = dict(old)
+        resource_concurrency.lock_transition(
+            conn, [("leave_employee", old["employee_name"])], legacy_keys=[],
+        )
         source_row = int(old.get("source_row") or 0)
         has_main_mirror = (
             str(old.get("source_sheet_id") or "") == LEAVE_SHEET_ID

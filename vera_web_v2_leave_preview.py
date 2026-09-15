@@ -14,6 +14,7 @@ from typing import Any, Callable
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+import vera_resource_concurrency as resource_concurrency
 
 from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
 
@@ -60,7 +61,11 @@ def install_leave_preview_routes(
         # observes a stable progressive ordinal instead of racing a concurrent
         # registration that is being committed at the same moment.
         with engine_instance().begin() as conn:
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+            resource_concurrency.lock_transition(
+                conn,
+                [("leave_employee", body.employee_name)],
+                legacy_keys=["vera:phase4:leave_primary"],
+            )
             role = str(getattr(ident, "role", "") or "").strip().lower()
             employee_policy = load_employee_self_service_policy(conn)
             if role not in {"nhanvien", "leader", "locker", "tapvu"} or not employee_policy["enabled"]:

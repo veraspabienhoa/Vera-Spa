@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
+import vera_resource_concurrency as resource_concurrency
 
 RELEASE = "leave-sync-queue-2026-09-02.1"
 QUEUE_TABLE = "vera_leave_sheet_sync_queue"
@@ -47,6 +48,7 @@ def _remove_route(app, path: str, method: str):
 
 def _ensure_schema(engine_instance: Callable[[], Any]) -> None:
     with engine_instance().begin() as conn:
+        resource_concurrency.ensure_schema(conn)
         conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS {QUEUE_TABLE} (
                 id BIGSERIAL PRIMARY KEY,
@@ -71,7 +73,10 @@ def _allocate_source_row(conn, leave_sheet_id: str) -> int:
         SELECT COALESCE(MAX(source_row), 1) + 1 FROM leave_records
         WHERE source_sheet_id=:sid AND source_row IS NOT NULL
     """), {"sid": leave_sheet_id}).scalar() or 2
-    return max(2, int(value))
+    return resource_concurrency.next_counter(
+        conn, scope="leave_sheet", counter_key=leave_sheet_id,
+        floor=max(1, int(value) - 1),
+    )
 
 
 def _insert_leave_and_queue(conn, *, api_module, record: dict, source_row: int) -> None:
@@ -212,7 +217,11 @@ def install_leave_sync_queue(app, *, engine_instance, current_identity, require_
         conn = engine_instance().connect()
         tx = conn.begin()
         try:
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+            resource_concurrency.lock_transition(
+                conn,
+                [("leave_employee", body.employee_name)],
+                legacy_keys=["vera:phase4:leave_primary"],
+            )
             role = str(getattr(ident, "role", "") or "").strip().lower()
             employee_policy = api_module.load_employee_self_service_policy(conn)
             if role not in api_module._EMPLOYEE_SELF_SERVICE_ROLES or not employee_policy["enabled"]:

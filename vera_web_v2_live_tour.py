@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
 from vera_web_v2_live_tour_lock import acquire_state_lock, try_state_lock
+import vera_live_tour_relational as relational_store
 
 import hashlib
 import json
@@ -3307,7 +3308,23 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
     return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 1)
 
 
-def _write_state(conn, state: dict[str, Any], revision: int, actor: str) -> int:
+def _write_state(
+    conn, state: dict[str, Any], revision: int, actor: str,
+    *, previous_state: dict[str, Any] | None = None,
+) -> int:
+    if previous_state is None and relational_store.mode() != "off":
+        try:
+            current = conn.execute(text("""
+                SELECT value_json FROM vera_app_setting
+                WHERE category=:category AND setting_key=:key AND revision=:revision
+            """), {
+                "category": STATE_CATEGORY, "key": STATE_KEY, "revision": revision,
+            }).mappings().first()
+            if current:
+                previous_state = _normalize_state(current.get("value_json"), datetime.now(VN_TZ))
+        except Exception:
+            if relational_store.mode() in {"verify", "active"}:
+                raise
     result = conn.execute(text("""
         UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb), source='web_v2',
           updated_by=:actor, revision=revision+1, updated_at=NOW()
@@ -3318,7 +3335,18 @@ def _write_state(conn, state: dict[str, Any], revision: int, actor: str) -> int:
     })
     if getattr(result, "rowcount", 1) != 1:
         raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.")
-    return revision + 1
+    next_revision = revision + 1
+    if relational_store.mode() != "off":
+        try:
+            # Shadow writes share the aggregate transaction. A savepoint keeps a
+            # not-yet-installed shadow schema from taking down production.
+            with conn.begin_nested():
+                relational_store.sync_changes(conn, previous_state, state, next_revision)
+        except Exception:
+            if relational_store.mode() in {"verify", "active"}:
+                raise
+            logging.getLogger(__name__).exception("Live Tour relational shadow write failed")
+    return next_revision
 
 
 def _parse_export_bounds(

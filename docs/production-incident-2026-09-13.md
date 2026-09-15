@@ -1,5 +1,20 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## Nền tảng khóa tài nguyên toàn hệ thống — đang phát triển, chưa deploy
+
+Theo yêu cầu mở rộng ngày 15/09/2026, thiết kế concurrency không chỉ áp dụng
+cho Live Tour. Mã đang phát triển bổ sung primitive dùng chung cho khóa theo
+employee/leave/room/invoice/combo, revision, idempotency, exclusive claim và bộ
+đếm nguyên tử. Các thao tác hồ sơ nhân viên và lịch nghỉ đơn lẻ bắt đầu dùng khóa
+theo tài nguyên trong chế độ chuyển tiếp `hybrid`; batch import/xóa-reindex vẫn
+giữ khóa miền rộng vì chúng thay đổi nhiều hàng.
+
+Live Tour được backfill sang các bảng vật lý riêng theo collection và dual-write
+ở chế độ shadow. Workflow production sẽ chạy migration rồi kiểm tra hash parity.
+Phần này chưa được push/deploy và chưa phải bằng chứng production hỗ trợ toàn bộ
+mutation Live Tour commit song song. Chỉ chuyển `hybrid` sang `resource` sau khi
+mọi writer cũ đã được nâng cấp; không bỏ khóa chung trước cutover.
+
 ## Giảm tranh chấp Live Tour — bản ZIP ngày 15/09/2026
 
 Rà soát tiếp xác nhận đọc snapshot khi khóa bận đã có, nhưng tác vụ projection
