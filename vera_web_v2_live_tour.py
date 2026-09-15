@@ -38,7 +38,7 @@ from vera_web_v2_live_tour_payment import default_settings as _default_payment_s
 from vera_web_v2_live_tour_payment import profile_bank as _profile_bank, selected_bank as _selected_bank
 from vera_web_v2_live_tour_payment import service_subtotal as _invoice_service_subtotal
 from vera_web_v2_live_tour_daily import sync_daily as _sync_daily
-from vera_web_v2_live_tour_checkin import with_checkin as _directory_with_checkin
+from vera_web_v2_live_tour_checkin import with_checkin as _directory_with_checkin, shift_day as _shift_day
 from vera_web_v2_combo_import import import_terms as _combo_import_terms
 from vera_web_v2_live_tour_roster import shift_label as _directory_shift
 from vera_web_v2_live_tour_roster import eligible as _roster_eligible, reconcile as _reconcile_roster
@@ -298,6 +298,8 @@ def _auto_yc_ca1(now: datetime, employee: dict[str, Any], request: Any, enabled:
 
 def _before_shift_ready(state, employee, now):
     local = now.astimezone(VN_TZ)
+    # A retained shift after midnight has already passed its readiness time;
+    # do not reapply this morning's Ca 2/support gate to yesterday's check-in.
     if employee.get("shift_checkin_date") != local.date().isoformat():
         return False
     reason = _norm(employee.get("synced_leave_reason"))
@@ -910,7 +912,7 @@ def _bootstrap_state(conn, now: datetime) -> dict[str, Any]:
     state = _empty_state(now)
     _reconcile_roster(
         state, _employee_directory(conn, now), _new_directory_employee,
-        today=now.astimezone(VN_TZ).date().isoformat(),
+        today=_shift_day(now).isoformat(),
     )
     state["bootstrap_source"] = "employees"
     state["storage_mode"] = "server"
@@ -1229,10 +1231,16 @@ def _resolved_service_price(state: dict[str, Any], entry: dict[str, Any]) -> int
 def _require_checked_in(employee, now):
     if employee.get("break_started_at"):
         raise HTTPException(409, "Nhân viên đang nghỉ giữa ca, chưa có giờ vào lại nên không thể đặt Booking.")
+    day = _shift_day(now).isoformat()
+    # Quick checkout may read the saved snapshot without running projection.
+    # A previous-day Admin override must not authorize a new booking after 02:00.
+    expired_manual = (employee.get("manual_shift_date")
+                      and employee["manual_shift_date"] != day
+                      and employee.get("shift_checkin_date") != day)
     if (_shift_bucket(employee) not in {"ca1", "ca2"}
-            or _norm(employee.get("work_status")) != "di lam"
+            or _norm(employee.get("work_status")) != "di lam" or expired_manual
             or (employee.get("shift_checkin_date") and (
-                employee["shift_checkin_date"] != now.astimezone(VN_TZ).date().isoformat()
+                employee["shift_checkin_date"] != day
                 or not employee.get("assigned_shift")))):
         raise HTTPException(409, "Nhân viên chưa vào ca hoặc đang nghỉ phép, không thể đặt Booking.")
 
@@ -1942,7 +1950,10 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
                                {"employee_ids": [row["id"] for row in members], "_admin_start": payload.get("_admin_start") is True}, actor, now)
         result["room"] = canonical_room
     elif action == "sync_daily_status":
-        result = _sync_daily(state, payload["directory"], payload["leaves"], today=payload.get("today", ""))
+        result = _sync_daily(
+            state, payload["directory"], payload["leaves"],
+            today=payload.get("today", ""), shift_day=_shift_day(now).isoformat(),
+        )
         payload = {"updated": result["updated"]}
     elif action == "booking":
         result["employee"] = _booking(state, payload, now, actor)
@@ -2210,7 +2221,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if _norm(next_status) == "di lam":
             employee["shift"] = (
                 employee.get("manual_shift", employee.get("shift", ""))
-                if employee.get("manual_shift_date") == now.astimezone(VN_TZ).date().isoformat()
+                if employee.get("manual_shift_date") == _shift_day(now).isoformat()
                 else employee.get("assigned_shift", employee.get("shift", ""))
             )
         result["employee"] = employee
@@ -2225,7 +2236,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             raise HTTPException(409, "Không được đổi ca khi nhân viên đang có dịch vụ/chưa thanh toán.")
         employee["shift"] = next_shift
         employee["manual_shift"] = next_shift
-        employee["manual_shift_date"] = now.astimezone(VN_TZ).date().isoformat()
+        employee["manual_shift_date"] = _shift_day(now).isoformat()
         employee["manual_shift_by"] = actor
         result["employee"] = employee
     elif action == "start_break":
@@ -3349,7 +3360,7 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
         directory = _employee_directory(conn, now)
         _reconcile_roster(
             state, directory, _new_directory_employee,
-            today=now.astimezone(VN_TZ).date().isoformat(),
+            today=_shift_day(now).isoformat(),
         )
         leave_day = (now.astimezone(VN_TZ) - timedelta(hours=5)).date()
         leaves = [dict(item) for item in conn.execute(text(
@@ -3357,7 +3368,10 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
         ), {"day": leave_day}).mappings().all()]
         if attendance_records is not None:
             sync_breaks(state, attendance_records, now.astimezone(VN_TZ))
-        _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
+        _sync_daily(
+            state, directory, leaves, automatic=True,
+            today=now.astimezone(VN_TZ).date().isoformat(), shift_day=_shift_day(now).isoformat(),
+        )
         _auto_start_waiting(state, now)
         if state != before:
             revision = _write_state(conn, state, revision, "live_tour_daily_projection")
@@ -4349,7 +4363,7 @@ def install_live_tour_routes(
             # mutation into the value written after an exception.
             working = deepcopy(state)
             if action == "sync_daily_status":
-                payload = {**payload, "today": now.astimezone(VN_TZ).date().isoformat(), "directory": _employee_directory(conn), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
+                payload = {**payload, "today": now.astimezone(VN_TZ).date().isoformat(), "directory": _employee_directory(conn, now), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
             payload.pop("_manual_break_allowed", None)
             payload.pop("_admin_start", None)
             if action in {"start", "start_room"} and str(getattr(ident, "role", "") or "").strip().lower() == "admin":

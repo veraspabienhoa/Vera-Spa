@@ -9,8 +9,11 @@ FULL_DAY_REASONS = {
 }
 
 
-def sync_daily(state, directory, leaves, *, automatic=False, today=''):
+def sync_daily(state, directory, leaves, *, automatic=False, today='', shift_day=None):
     """Match usernames first, unique full names second; keep every service intact."""
+    # Leave/work-status dates keep their existing calendar-day rules. Only the
+    # manual Vào ca override follows the caller's separate 02:00 shift cutoff.
+    effective_shift_day = today if shift_day is None else shift_day
     rows = {key(row['username']): row for row in directory}
     name_owners = {}
     for row in directory:
@@ -30,14 +33,14 @@ def sync_daily(state, directory, leaves, *, automatic=False, today=''):
         if username not in rows:
             continue
         manual_shift_day = str(worker.get('manual_shift_date') or '')
-        if manual_shift_day and manual_shift_day != today:
+        if manual_shift_day and manual_shift_day != effective_shift_day:
             worker.pop('manual_shift', None)
             worker.pop('manual_shift_date', None)
             worker.pop('manual_shift_by', None)
             manual_shift_day = ''
             if key(worker.get('work_status')) != 'nghi phep':
                 worker['shift'] = worker.get('assigned_shift', worker.get('shift', ''))
-        manual_shift_today = bool(manual_shift_day and manual_shift_day == today)
+        manual_shift_today = bool(manual_shift_day and manual_shift_day == effective_shift_day)
         manual_shift = worker.get('manual_shift', worker.get('shift', ''))
         override_day = str(worker.get('manual_work_status_date') or '')
         records = by_user.get(username, [])
