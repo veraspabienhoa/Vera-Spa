@@ -786,7 +786,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Chỉ Admin được nhập combo.')
       return
     }
-    if (kind === 'change_employee' && (context.rowIds?.length !== 1 || !canChangeEmployee(validRecords.find((row) => stableEmployeeId(row) === context.rowIds[0]), clockMs))) {
+    if (kind === 'change_employee' && (data.payment_settings?.employee_change_enabled === false || context.rowIds?.length !== 1 || !canChangeEmployee(validRecords.find((row) => stableEmployeeId(row) === context.rowIds[0]), clockMs))) {
       setError('Chỉ đổi nhân viên đang thực hiện trong thời hạn đổi nhân viên đã cài đặt.'); return
     }
     const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
@@ -1515,7 +1515,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
-              <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>
+              {data.payment_settings?.employee_change_enabled !== false && <button type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}>Đổi nhân viên</button>}
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/> Nghỉ giữa ca</button>
               <button type="button" className="secondary-button" disabled={!(canEndBreak || canOperate) || !selectedIds.size || (!canEndBreak && selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active)) || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/> Kết thúc nghỉ</button>
               <button type="button" className="secondary-button live-tour-mobile-reorder-hidden" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'bottom', steps: 1 })}>Xuống cuối</button>

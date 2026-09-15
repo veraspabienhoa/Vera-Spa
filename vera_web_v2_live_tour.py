@@ -1955,6 +1955,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
     elif action == "change_employee":
         if len(employee_ids) > 1:
             raise HTTPException(400, "Chỉ đổi một nhân viên mỗi lần.")
+        if (state.get("payment_settings") or {}).get("employee_change_enabled", True) is not True:
+            raise HTTPException(409, "Tác vụ đổi nhân viên đang tạm ngưng trong cài đặt Admin.")
         source = _employee(state, payload.get("employee_id"))
         target = _employee(state, payload.get("target_employee_id"))
         if source["id"] == target["id"]:

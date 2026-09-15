@@ -9,7 +9,7 @@ from vera_partial_leave_hours import DEFAULT_HOURS
 
 
 def default_settings():
-    return {'booking_available_minutes': 30, 'partial_leave_times': dict(DEFAULT_HOURS), 'shift_ready_times': {'shift2': '13:00', 'support1': '12:00', 'support2': '14:00'}, 'employee_change_minutes': 10, 'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
+    return {'booking_available_minutes': 30, 'partial_leave_times': dict(DEFAULT_HOURS), 'shift_ready_times': {'shift2': '13:00', 'support1': '12:00', 'support2': '14:00'}, 'employee_change_enabled': True, 'employee_change_minutes': 10, 'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
         {'id': f'tip-{amount}', 'name': f'{amount:,} đ'.replace(',', '.'), 'amount': amount}
         for amount in (50000, 100000, 200000, 300000, 500000)
     ]}
@@ -51,6 +51,9 @@ def settings_update(payload, money):
         raise HTTPException(400, 'Thông tin ngân hàng quá dài.')
     if bank['enabled'] and (not re.fullmatch(r'[A-Za-z0-9]{2,20}', bank['bank_id']) or not re.fullmatch(r'[0-9]{6,19}', bank['account_no']) or not bank['account_name']):
         raise HTTPException(400, 'Cần mã ngân hàng, số tài khoản từ 6–19 chữ số và tên chủ tài khoản.')
+    employee_change_enabled = payload.get('employee_change_enabled', True)
+    if not isinstance(employee_change_enabled, bool):
+        raise HTTPException(400, 'Trạng thái đổi nhân viên phải là giá trị bật/tắt.')
     minutes = payload.get('employee_change_minutes', 10)
     if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 180:
         raise HTTPException(400, 'Thời hạn đổi nhân viên phải từ 1 đến 180 phút.')
@@ -63,7 +66,7 @@ def settings_update(payload, money):
         raise HTTPException(400, 'Giờ đi trễ/về sớm phải có định dạng HH:MM (00:00–23:59).')
     if not isinstance(ready_times, dict) or any(not isinstance(ready_times.get(key), str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', ready_times[key]) for key in ('shift2', 'support1', 'support2')):
         raise HTTPException(400, 'Giờ hết đánh dấu ca phải có định dạng HH:MM (00:00–23:59).')
-    return {'booking_available_minutes': booking_minutes, 'partial_leave_times': dict(partial_times), 'shift_ready_times': {key: ready_times[key] for key in ('shift2', 'support1', 'support2')}, 'employee_change_minutes': minutes, 'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
+    return {'booking_available_minutes': booking_minutes, 'partial_leave_times': dict(partial_times), 'shift_ready_times': {key: ready_times[key] for key in ('shift2', 'support1', 'support2')}, 'employee_change_enabled': employee_change_enabled, 'employee_change_minutes': minutes, 'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
             'tip_cards': sorted(result, key=lambda card: card['amount'])}
 
 

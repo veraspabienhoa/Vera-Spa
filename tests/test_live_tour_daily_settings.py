@@ -35,6 +35,19 @@ def test_new_start_uses_configured_window():
     assert live._employee_change_until(source) == NOW + timedelta(minutes=5)
 
 
+def test_admin_can_pause_employee_change_immediately():
+    state, _, _ = running()
+    state['payment_settings']['employee_change_enabled'] = False
+    with pytest.raises(HTTPException, match='tạm ngưng'):
+        change(state, 30)
+
+
+@pytest.mark.parametrize('value', [None, 0, 1, 'true'])
+def test_invalid_employee_change_toggle_rejected(value):
+    with pytest.raises(HTTPException):
+        settings_update({**default_settings(), 'employee_change_enabled': value}, live._bounded_money)
+
+
 def test_restore_exact_manual_position_after_other_reorder():
     state, source, target = running()
     live._apply_action(state, 'admin_reorder', {'employee_id': 'e1', 'direction': 'bottom'}, 'letan', NOW)
