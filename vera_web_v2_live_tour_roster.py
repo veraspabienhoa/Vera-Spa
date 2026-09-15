@@ -63,6 +63,13 @@ def reconcile(state, directory, make_employee, *, today=''):
                 worker['shift'] = '' if key(worker.get('work_status')) == 'nghi phep' else (
                     worker.get('manual_shift', worker.get('shift', '')) if manual_shift_today else worker['assigned_shift']
                 )
+                # A same-day Admin Ca 1/Ca 2 assignment is the explicit Live Tour
+                # override when TimeSoft has no Face ID check-in. Keep the manual
+                # shift, but do not persist today's projection date as if it were
+                # evidence of a real check-in; the booking guard then accepts the
+                # manual shift without fabricating Face ID attendance data.
+                if manual_shift_today and 'daily_shift' in row and not row.get('daily_shift'):
+                    worker.pop('shift_checkin_date', None)
             assigned.add(key(row['username']))
     # The directory owns membership now that manual roster removal is retired.
     state.pop('roster_excluded_usernames', None)
