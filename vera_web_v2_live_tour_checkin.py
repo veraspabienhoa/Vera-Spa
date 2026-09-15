@@ -27,6 +27,24 @@ def scheduled_shift(row, day):
     return ('Ca 2' if base == 'Ca 1' else 'Ca 1') if periods % 2 else base
 
 
+def _checked_in_shift(row, day, timesoft_shift):
+    """Use the effective staff assignment, not a stale TimeSoft schedule label.
+
+    TimeSoft remains the evidence for check-in. Its shift label is only a
+    fallback when the directory has no usable assignment for this day. An
+    undated legacy assignment applies immediately; a future or invalid date
+    must not silently activate the new shift before its effective date.
+    Same-day Admin overrides are applied later by roster reconciliation.
+    """
+    start_value = str(row.get('shift_start_date') or '').strip()
+    starts_on = _parse_date(start_value)
+    if not start_value or (starts_on is not None and starts_on <= day):
+        assigned = scheduled_shift(row, day)
+        if assigned:
+            return assigned
+    return shift_label(timesoft_shift, row.get('shift_definitions'))
+
+
 def project(directory, datasets, now):
     day = now.date()
     owners = {}
@@ -61,7 +79,7 @@ def project(directory, datasets, now):
                 bucket['shift'] = shift
     for row in directory:
         data = attendance.get(row['username'], {})
-        row['daily_shift'] = (shift_label(data.get('shift'), row.get('shift_definitions')) or scheduled_shift(row, day)) if data.get('checked') else ''
+        row['daily_shift'] = _checked_in_shift(row, day, data.get('shift')) if data.get('checked') else ''
         row['shift_checkin_date'] = day.isoformat()
     return directory
 

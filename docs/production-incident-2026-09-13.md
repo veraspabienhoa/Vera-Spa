@@ -1,5 +1,35 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## Live Tour: ca hồ sơ bị nhãn ca TimeSoft ghi đè — 15/09/2026, chưa deploy
+
+Người dùng báo Thanh Nhã đã được xếp Ca 1 từ 14/09/2026, chu kỳ luân phiên
+14 ngày, nhưng Live Tour ngày 14 và 15/09 vẫn hiện Ca 2. Rà soát ZIP nguồn
+`37ba6cc264e9631e6468f326eb3d0635f4db05f1` xác nhận `project()` trong
+`vera_web_v2_live_tour_checkin.py` ưu tiên `WorkTimeName`/`ShiftName` của TimeSoft
+trước ca tính từ hồ sơ. Kiểm thử với cấu hình đúng như ảnh và TimeSoft còn Ca 2
+đã tái hiện sai lệch ở cả hai ngày; chưa truy vấn dữ liệu production để khẳng
+định đó là nguyên nhân duy nhất trên VPS.
+
+Bản sửa ưu tiên ca hồ sơ đã có hiệu lực, sau khi xác nhận check-in hợp lệ.
+Hồ sơ chưa gán được ca, ngày hiệu lực ở tương lai hoặc ngày không hợp lệ thì
+chỉ dùng nhãn ca TimeSoft dự phòng. Hồ sơ cũ không có ngày bắt đầu vẫn có hiệu
+lực ngay. Giữ nguyên thuật toán luân phiên và các hàm dùng chung với cảnh báo/
+lịch nghỉ, không thay schema, dữ liệu TimeSoft, tài chính hay cơ chế khóa.
+Quyền Admin đổi Ca 1/Ca 2 riêng trong ngày vẫn được áp dụng ở bước reconcile;
+nghỉ phép và kiểm tra check-in không bị bỏ qua. Projection hiện có tự sửa ca
+snapshot ở lần làm mới hoặc tick scheduler thành công, vẫn dùng revision hiện
+hành; không thêm truy vấn hay giao dịch lồng nhau.
+
+Kiểm chứng cục bộ: bộ mới 47/47 đạt (trên mã cũ: 26 lỗi assertion, 21 đạt);
+nhóm trọng tâm 173/173 đạt. Toàn bộ pytest với tiếp tục sau lỗi collection:
+973 đạt, 9 thất bại và 24 lỗi collection do thiếu `gspread`/`google.auth`.
+Chạy lại ZIP gốc cho cùng 9 thất bại và 24 lỗi collection, 926 đạt. Các nhóm
+xác thực/push/chẩn đoán/cảnh báo/lịch nghỉ đã chạy được có 27 test đạt;
+`test_attendance_connection_reuse.py` bị chặn bởi thiếu `gspread`.
+Không coi kết quả này là toàn bộ CI đạt; chưa push, merge, deploy hoặc xác minh
+hai health và màn hình thực tế trên VPS. Kiểm thử mới nằm trong
+`tests/test_live_tour_shift_effective_date.py`, được pytest mặc định của CI thu thập.
+
 ## Live Tour chậm trên mobile/desktop — bản sửa ngày 15/09/2026, chưa deploy
 
 Rà soát mã xác nhận mỗi trang Live Tour mở đang poll ba giây một lần và mỗi
