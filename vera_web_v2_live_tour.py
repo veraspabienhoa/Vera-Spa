@@ -2073,6 +2073,12 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         result = {"pending": pending_result["pending"], "employee": _employee(state, payload.get("employee_id"))}
     elif action == "payment_settings_update":
         state["payment_settings"] = _payment_settings_update(payload, _bounded_money)
+        # Apply the remaining-time threshold immediately to services already in
+        # progress as well as to services started after this settings update.
+        change_minutes = state["payment_settings"]["employee_change_minutes"]
+        for employee in state["employees"]:
+            if _norm(employee.get("status")) == "dang thuc hien" and not employee.get("completed_at"):
+                employee["employee_change_minutes"] = change_minutes
         result["payment_settings"] = deepcopy(state["payment_settings"])
     elif action == "multi_booking":
         rows = payload.get("bookings")

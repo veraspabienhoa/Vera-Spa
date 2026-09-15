@@ -13,18 +13,20 @@ from test_live_tour_backend import NOW, employee, state_with
 from test_live_tour_change_employee import running, change
 
 
-def test_configured_remaining_window_is_captured_and_preserved_by_replacement():
+def test_admin_remaining_window_change_applies_to_active_service_immediately():
     state, source, target = running()
-    # Existing sessions retain the rule in force when they started.
-    state['payment_settings']['employee_change_minutes'] = 20
-    with pytest.raises(HTTPException):
-        change(state, 4200)
-    source['employee_change_minutes'] = 20
-    change(state, 4200)
-    assert target['employee_change_minutes'] == 20
-    assert live._employee_change_allowed(target, NOW + timedelta(minutes=70))
-    with pytest.raises(HTTPException):
-        change(state, 5401, source='e2', target='e3')
+    at_22_minutes_left = NOW + timedelta(minutes=68)
+    assert not live._employee_change_allowed(source, at_22_minutes_left)
+
+    payload = {**default_settings(), 'employee_change_minutes': 90}
+    live._apply_action(state, 'payment_settings_update', payload, 'admin', NOW)
+
+    assert source['employee_change_minutes'] == 90
+    assert live._employee_change_allowed(source, at_22_minutes_left)
+    live._apply_action(state, 'change_employee', {
+        'employee_id': source['id'], 'target_employee_id': target['id'],
+    }, 'admin', at_22_minutes_left)
+    assert target['employee_change_minutes'] == 90
 
 
 def test_new_start_uses_configured_window():
