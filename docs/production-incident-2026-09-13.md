@@ -1,5 +1,23 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## Giảm tranh chấp Live Tour — bản ZIP ngày 15/09/2026
+
+Rà soát tiếp xác nhận đọc snapshot khi khóa bận đã có, nhưng tác vụ projection
+nền vẫn cố lấy khóa mỗi 15 giây và mọi mutation vẫn chạy toàn bộ attendance,
+directory và leave projection trong khóa. Bản sửa cho tác vụ nền bỏ qua tick khi
+operator đang thao tác; tính quyền phản hồi trước khóa; các thay đổi metadata an
+toàn (khu vực/phòng/dịch vụ/combo, thứ tự, lịch hẹn và cài đặt thanh toán) đọc
+aggregate trực tiếp không chạy projection. Booking, bắt đầu/kết thúc dịch vụ,
+nghỉ giữa ca, đổi nhân viên, combo và thanh toán vẫn dùng projection đầy đủ và
+khóa/revision/idempotency để chống xung đột nghiệp vụ.
+
+Thiết kế JSON aggregate vẫn tuần tự hóa các lượt ghi. Bản sửa làm critical
+section ngắn hơn để nhiều tài khoản thao tác gần như đồng thời, nhưng không tuyên
+bố hai mutation ghi được commit song song. Ghi song song độc lập theo nhân viên/
+phòng cần migration sang bảng chuẩn hóa hoặc event/patch rows và kiểm tra khóa
+riêng theo resource; không được bỏ khóa chung khi dữ liệu tài chính còn nằm trong
+một JSON.
+
 ## Đọc đồng thời sau PR 108
 
 PR 108 đã deploy tại commit 4e6508eda644238adede2b710bc03c9bd95afbe1,

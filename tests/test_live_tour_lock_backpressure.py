@@ -31,4 +31,7 @@ def test_busy_lock_returns_retryable_error_without_waiting():
 def test_all_board_locks_use_nonblocking_guard():
     source = (Path(__file__).parents[1] / "vera_web_v2_live_tour.py").read_text()
     assert "pg_advisory_xact_lock(" not in source
-    assert source.count("acquire_state_lock(conn, STATE_LOCK)") == 4
+    assert source.count("acquire_state_lock(conn, STATE_LOCK)") == 3
+    scheduler = source[source.index("    def scheduled_projection():"):source.index("    def start_scheduler():")]
+    assert "try_state_lock(conn, STATE_LOCK)" in scheduler
+    assert "acquire_state_lock(conn, STATE_LOCK)" not in scheduler

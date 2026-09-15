@@ -3886,12 +3886,15 @@ def install_live_tour_routes(
         while not scheduler_stop.is_set():
             try:
                 with engine_instance().begin() as conn:
-                    acquire_state_lock(conn, STATE_LOCK)
-                    # Do not bootstrap an unused board from a background task.
-                    exists = conn.execute(text("SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
-                                          {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
-                    if exists:
-                        read_state(conn, datetime.now(timezone), for_update=True)
+                    # A background refresh must never compete with an operator.
+                    # If a mutation owns the aggregate lock, skip this tick and
+                    # let the next 15-second pass refresh the projections.
+                    if try_state_lock(conn, STATE_LOCK):
+                        # Do not bootstrap an unused board from a background task.
+                        exists = conn.execute(text("SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
+                                              {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+                        if exists:
+                            read_state(conn, datetime.now(timezone), for_update=True)
             except Exception:
                 logging.getLogger(__name__).exception("Live Tour scheduled projection failed; retrying on next tick")
             scheduler_stop.wait(15)
@@ -3932,6 +3935,24 @@ def install_live_tour_routes(
             if state != before:
                 revision = _write_state(conn, state, revision, "attendance_break_projection")
         return state, revision
+
+    def read_state_without_projection(conn, now, *, for_update=False):
+        """Read the aggregate without attendance/directory/leave projection.
+
+        Catalog, ordering and payment-setting mutations do not depend on a fresh
+        attendance projection.  Keeping those SQL reads and possible projection
+        writes outside their critical section materially shortens the global
+        Live Tour lock while preserving revision/idempotency validation.
+        """
+        suffix = " FOR UPDATE" if for_update else ""
+        row = conn.execute(text(f"""
+            SELECT value_json, revision FROM vera_app_setting
+            WHERE category=:category AND setting_key=:key{suffix}
+        """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+        if row:
+            return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 0)
+        # Bootstrap is the only case where the full projection path is needed.
+        return read_state(conn, now, for_update=for_update)
 
     def read_board(conn, now, *, project=True):
         # Only one reader refreshes projections. Other users read the last
@@ -4154,12 +4175,25 @@ def install_live_tour_routes(
                 require_feature(conn, ident, "live_tour_payment")
             if action in {"checkout", "quick_checkout"} and _contains_customer_pii(payload):
                 require_feature(conn, ident, "live_tour_customers_view")
+            # Build response capabilities before entering the global state
+            # critical section. Some grants read employee/payment metadata.
+            grants = permissions(conn, ident)
             acquire_state_lock(conn, STATE_LOCK)
-            state, revision = read_state(conn, now, for_update=True)
+            projection_free_actions = {
+                "admin_reorder", "reorder", "settings_reorder",
+                "payment_settings_update", "service_area_upsert", "service_area_delete",
+                "room_upsert", "room_delete", "service_upsert", "service_delete",
+                "combo_upsert", "combo_delete", "set_vip", "update_appointment",
+                "update_started_at", "add_minutes",
+            }
+            state, revision = (
+                read_state_without_projection(conn, now, for_update=True)
+                if action in projection_free_actions
+                else read_state(conn, now, for_update=True)
+            )
             previous = _idempotency_replay(
                 state, idempotency_key, action=action, actor=actor, payload_hash=payload_hash,
             )
-            grants = permissions(conn, ident)
             if previous:
                 return action_response(
                     state=state, revision=revision, now=now, action=action,
