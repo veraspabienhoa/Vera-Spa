@@ -1,9 +1,29 @@
-"""Project today's TimeSoft check-in and daily shift onto the tour directory."""
-from datetime import timedelta
+"""Project TimeSoft check-in onto Live Tour; each shift day ends at 02:00 VN."""
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from vera_web_v2_attendance_query_perf import _datasets
 from vera_web_v2_attendance_v42 import _canonical_employee, _explicit_work_day, _generic_raw_punch, _parse_date, _parse_datetime, _work_day_for_row
 from vera_web_v2_live_tour_roster import key, shift_label
+
+
+VN_TZ = ZoneInfo('Asia/Ho_Chi_Minh')
+SHIFT_RESET_HOUR = 2
+
+
+def _local_now(now: datetime) -> datetime:
+    # Existing direct callers use naive Vietnam wall time; UTC-aware callers
+    # must be converted before comparing dates or the TimeSoft punch clock.
+    return now.replace(tzinfo=VN_TZ) if now.tzinfo is None else now.astimezone(VN_TZ)
+
+
+def shift_day(now: datetime) -> date:
+    """The Vào ca day, not the invoice, leave, or attendance-report date.
+
+    [00:00, 02:00) still belongs to yesterday. At exactly 02:00, yesterday's
+    Face ID assignment and manual Live Tour shift override both expire.
+    """
+    return (_local_now(now) - timedelta(hours=SHIFT_RESET_HOUR)).date()
 
 
 def scheduled_shift(row, day):
@@ -46,7 +66,8 @@ def _checked_in_shift(row, day, timesoft_shift):
 
 
 def project(directory, datasets, now):
-    day = now.date()
+    now = _local_now(now)
+    day = shift_day(now)
     owners = {}
     for row in directory:
         for alias in {key(row.get('username')), key(row.get('full_name'))} - {''}:
@@ -85,4 +106,9 @@ def project(directory, datasets, now):
 
 
 def with_checkin(conn, directory, now):
-    return project(directory, _datasets(conn, now.date(), now.date()), now) if directory else directory
+    if not directory:
+        return directory
+    day = shift_day(now)
+    # Read the dated snapshot for yesterday until 02:00 even if the rolling
+    # TimeSoft "today" alias has already switched to the new calendar date.
+    return project(directory, _datasets(conn, day, day), now)
