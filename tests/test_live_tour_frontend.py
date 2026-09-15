@@ -547,13 +547,13 @@ def test_live_tour_quick_checkout_is_independent_and_uses_stable_employee_ids():
     ]
     button = next(
         line for line in source.splitlines()
-        if ">Thanh toán nhanh</button>" in line and "disabled={!canPayment || Boolean(actionBusy)}" in line
+        if ">Thanh toán nhanh</button>" in line and "onClick={() => openModal('quick_checkout'" in line
     )
 
     assert "stableEmployeeId(record)" in helper
     assert "_payment_pending" in helper
     assert "CHO THANH TOAN" in helper
-    assert "disabled={!canPayment || Boolean(actionBusy)}" in button
+    assert "disabled={Boolean(actionBusy)}" in button
     assert "selectedIds.size" not in button
     assert "const quickCheckoutMatches" in source
     assert "[stableEmployeeId(selectedQuickCheckoutRecord)]" in source

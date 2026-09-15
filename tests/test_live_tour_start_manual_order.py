@@ -43,7 +43,7 @@ def test_yc_start_keeps_manual_order():
 def test_replacement_restores_pre_start_manual_position():
     state, _ = prepared()
     live._apply_action(state, 'start', {'employee_id': 'e1'}, 'admin', NOW)
-    live._apply_action(state, 'change_employee', {'employee_id': 'e1', 'target_employee_id': 'e3'}, 'admin', NOW + timedelta(seconds=30))
+    live._apply_action(state, 'change_employee', {'employee_id': 'e1', 'target_employee_id': 'e3'}, 'admin', NOW + timedelta(minutes=80))
     assert ids(state)[0] == 'e1'
     assert ids(state)[-1] == 'e4'
     # A subsequent standard start can resume automatic order again.

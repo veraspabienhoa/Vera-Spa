@@ -132,6 +132,7 @@
 .live-tour-page .live-tour-start-time-input{width:100%;min-width:145px;box-sizing:border-box;border:1px solid #b8cfc2;border-radius:5px;padding:4px;background:#fff;color:inherit;font:inherit;font-size:10px}.live-tour-page .live-tour-start-time-input:disabled{border-color:transparent;background:transparent}
 .live-tour-page .live-tour-customer-card{cursor:pointer}.live-tour-page .live-tour-customer-card:hover,.live-tour-page .live-tour-customer-card:focus-visible{border-color:#2f735d;box-shadow:0 4px 14px rgba(31,78,64,.14);outline:none}
 .live-tour-page .live-tour-combo-lookup{display:grid;gap:14px;min-width:0;width:100%;max-width:100%}.live-tour-page .live-tour-combo-lookup .live-tour-panel-toolbar{align-items:center}.live-tour-page .live-tour-combo-lookup .live-tour-panel-toolbar p{margin:0}.live-tour-page .live-tour-combo-lookup-grid{margin-top:0;max-height:55vh;overflow-y:auto;grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),1fr));padding:2px}.live-tour-page .live-tour-combo-customer{width:100%;min-width:0;overflow-wrap:anywhere;text-align:left;font:inherit;color:inherit;cursor:pointer}.live-tour-page .live-tour-combo-customer:hover,.live-tour-page .live-tour-combo-customer:focus-visible{border-color:#2f735d;background:#f2f8f5;outline:none}.live-tour-page .live-tour-combo-customer small{display:block}.live-tour-page .live-tour-combo-history-link{display:flex;align-items:center;gap:5px;color:#1f5d49;font-weight:800}
+.live-tour-page .live-tour-invoice-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;margin-left:8px;padding:0 8px;border:1px solid #2f735d;border-radius:999px;background:#eef7f2;color:#174d3d;font-size:.82em;vertical-align:middle}
 .live-tour-page .live-tour-modal.live-tour-combo-modal{width:min(1200px,100%);max-width:100%;min-width:0;box-sizing:border-box}
 .live-tour-combo-modal .live-tour-modal-head{min-width:0}.live-tour-combo-modal .live-tour-modal-head strong{min-width:0;overflow-wrap:anywhere}.live-tour-combo-modal .live-tour-panel-toolbar>*{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .live-tour-page .live-tour-combo-purchase-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px}.live-tour-page .live-tour-combo-purchase-detail{padding:14px;border:1px solid #cadbd2;border-radius:12px;background:#f8fbf9}.live-tour-page .live-tour-combo-purchase-detail dl{display:grid;gap:8px;margin:0}.live-tour-page .live-tour-combo-purchase-detail dl>div{display:grid;grid-template-columns:minmax(135px,42%) 1fr;gap:10px}.live-tour-page .live-tour-combo-purchase-detail dt{font-weight:800;color:#456357}.live-tour-page .live-tour-combo-purchase-detail dd{margin:0;font-weight:700;color:#173d32;overflow-wrap:anywhere}
@@ -149,9 +150,6 @@
 .live-tour-page .tour-room-panel-head .tour-room-segment-button{min-height:22.5px;padding:0 9px;gap:7.5px;border-radius:6px}
 .live-tour-page .tour-room-panel-head .tour-room-segment-button span{font-size:13.5px}
 .live-tour-page .tour-room-panel-head .tour-room-segment-button svg{width:16.5px;height:16.5px}
-.live-tour-page .tour-inline-reorder{position:sticky;left:0;display:flex;align-items:center;gap:4px;width:max-content;margin-top:4px;padding:4px;border:1px solid #b9cec2;border-radius:5px;background:#f3faf6}
-.live-tour-page .tour-inline-reorder input{width:60px;min-width:0;min-height:28px;padding:3px 5px;font-size:12px;box-sizing:border-box}
-.live-tour-page .tour-inline-reorder button{min-height:28px;padding:3px 8px;font-size:12px;white-space:nowrap}
 .live-tour-page .tour-room-panel .tour-room-grid{grid-template-columns:repeat(var(--room-columns,1),minmax(0,1fr));min-width:0;width:100%;max-width:100%;box-sizing:border-box;overflow:hidden}
 .live-tour-page .tour-room-panel .tour-room-grid .tour-room-card{container-type:inline-size;box-sizing:border-box;min-width:0;max-width:100%;min-height:66px;gap:3.4px;overflow:hidden}
 .live-tour-page .tour-room-card .tour-room-card-head>strong{font-size:18px;font-weight:900;white-space:nowrap}
@@ -204,15 +202,15 @@
   .live-tour-page .live-tour-controls-actions>button,
   .live-tour-page .live-tour-controls-actions>select,
   .live-tour-page .live-tour-controls-actions>input{width:100%;min-width:0;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}
-  .live-tour-page .responsive-data-table.tour-table{width:100%;min-width:0;max-width:100%;overflow-x:hidden!important}
-  .live-tour-page .responsive-data-table.tour-table table{width:100%!important;min-width:0!important;max-width:100%;table-layout:fixed}
+  .live-tour-page .responsive-data-table.tour-table{width:100%;min-width:0;max-width:100%;overflow-x:auto!important}
+  .live-tour-page .responsive-data-table.tour-table table{width:100%!important;min-width:100%!important;max-width:none;table-layout:auto}
   .live-tour-page .responsive-data-table.tour-table th,
   .live-tour-page .responsive-data-table.tour-table td{min-width:0!important;max-width:none;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
-  .live-tour-page .tour-table .live-tour-actions-col{width:75px!important;min-width:75px!important;max-width:75px!important}
+  .live-tour-page .tour-table .live-tour-actions-col{width:1%!important;min-width:max-content!important;max-width:none!important;white-space:nowrap!important}
   .live-tour-page .tour-table .live-tour-actions-col .live-tour-service-actions{display:flex;flex-direction:column;gap:2px}
   .live-tour-page .tour-table .live-tour-actions-col .live-tour-service-actions button{width:100%;min-width:0;min-height:24px;padding:2px 1px;font-size:8px}
-  .live-tour-page .tour-table .tour-col-employee{width:26%;white-space:nowrap!important;overflow-wrap:normal;word-break:normal}
-  .live-tour-page .tour-table .tour-col-employee>.text-button{display:block;width:100%;min-width:0;overflow:hidden;white-space:nowrap;text-align:left;font-size:clamp(6px,2vw,9px);letter-spacing:-.02em}
+  .live-tour-page .tour-table .tour-col-employee{width:1%;min-width:max-content!important;white-space:nowrap!important;overflow-wrap:normal;word-break:normal}
+  .live-tour-page .tour-table .tour-col-employee>.text-button{display:block;width:max-content;min-width:max-content;overflow:visible;white-space:nowrap;text-align:left;font-size:clamp(8px,2.5vw,11px);letter-spacing:-.02em}
   .live-tour-page .tour-table .tour-col-appointment{container-type:inline-size}
   .live-tour-page .tour-table .tour-col-appointment .live-tour-appointment-editor:not(.quick) input{width:var(--appointment-mobile-width,133.333333%);max-width:none;height:var(--appointment-mobile-height,34.666667px);min-height:var(--appointment-mobile-height,34.666667px);transform:scale(var(--appointment-mobile-scale,.75));transform-origin:left top}
 }

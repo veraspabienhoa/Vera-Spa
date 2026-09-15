@@ -1309,12 +1309,17 @@ def _capture_tour_position(employee: dict[str, Any], now: datetime, state: dict 
     }
 
 
-def _employee_change_until(employee: dict[str, Any]) -> datetime | None:
+def _employee_change_allowed(employee: dict[str, Any], now: datetime) -> bool:
+    if (employee.get("completed_at") or not employee.get("pre_start_tour_position")
+            or _norm(employee.get("status")) != "dang thuc hien"):
+        return False
     started = _parse_datetime(employee.get("started_at"))
-    if (_norm(employee.get("status")) != "dang thuc hien" or not started
-            or employee.get("completed_at") or not employee.get("pre_start_tour_position")):
-        return None
-    return started + timedelta(minutes=employee.get("employee_change_minutes", 10))
+    duration = employee.get("duration")
+    limit = employee.get("employee_change_minutes", 10)
+    if not started or duration in (None, ""):
+        return False
+    seconds_left = ((started + timedelta(minutes=float(duration))) - now.astimezone(VN_TZ)).total_seconds()
+    return 0 <= seconds_left <= limit * 60
 
 
 def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime, *, admin_start=False) -> None:
@@ -1961,16 +1966,14 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         target = _employee(state, payload.get("target_employee_id"))
         if source["id"] == target["id"]:
             raise HTTPException(400, "Hãy chọn nhân viên thay thế khác.")
-        deadline = _employee_change_until(source)
-        started = _parse_datetime(source.get("started_at"))
-        if not deadline or not started or not started <= now.astimezone(VN_TZ) <= deadline:
-            raise HTTPException(409, f"Chỉ đổi nhân viên trong {source.get('employee_change_minutes', 10)} phút đầu; phiên cần có vị trí tua trước khi bắt đầu.")
+        if not _employee_change_allowed(source, now):
+            raise HTTPException(409, f"Chỉ đổi nhân viên khi thời gian dịch vụ còn từ 0 đến {source.get('employee_change_minutes', 10)} phút.")
         if (target.get("roster_eligible") is False or _norm(target.get("work_status")) != "di lam"
                 or _shift_bucket(target) not in {"ca1", "ca2"} or target.get("break_started_at")
                 or _has_unsettled_work(target)):
             raise HTTPException(409, "Nhân viên thay thế phải đang đi làm, có ca và đang rảnh.")
-        # Keep the original service clock: repeated replacement cannot reopen the
-        # ten-minute window. Each employee retains their own pre-service position.
+        # Keep the original service clock so a replacement never changes the
+        # configured remaining-time window. Each employee retains their own position.
         original_position = deepcopy(source["pre_start_tour_position"])
         target_position = _capture_tour_position(target, now, state)
         counter_key = original_position["counter_key"]
@@ -2871,8 +2874,7 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_row_style": style, "_tour_groups": groups,
         "_shift_checkin_date": employee.get("shift_checkin_date", ""),
         "_daily_support_reason": employee.get("synced_leave_reason", ""),
-        "_employee_change_until": _iso(_employee_change_until(employee)) if _employee_change_until(employee) else "",
-        "_employee_change_started_at": employee.get("started_at", ""),
+        "_employee_change_allowed": _employee_change_allowed(employee, now),
         "_break_countdown_deadline": attendance_break.get("deadline", "") if not attendance_break.get("in") else "",
         "_break_from_attendance": bool(attendance_break),
         "_countdown_deadline": deadline, "_attendance_break_active": bool(employee.get("break_started_at")),

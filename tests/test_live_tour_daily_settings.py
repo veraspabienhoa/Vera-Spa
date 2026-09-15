@@ -13,18 +13,18 @@ from test_live_tour_backend import NOW, employee, state_with
 from test_live_tour_change_employee import running, change
 
 
-def test_configured_window_is_captured_and_cannot_be_extended_by_replacement():
+def test_configured_remaining_window_is_captured_and_preserved_by_replacement():
     state, source, target = running()
     # Existing sessions retain the rule in force when they started.
     state['payment_settings']['employee_change_minutes'] = 20
     with pytest.raises(HTTPException):
-        change(state, 601)
+        change(state, 4200)
     source['employee_change_minutes'] = 20
-    change(state, 1100)
+    change(state, 4200)
     assert target['employee_change_minutes'] == 20
-    assert live._employee_change_until(target) == NOW + timedelta(minutes=20)
+    assert live._employee_change_allowed(target, NOW + timedelta(minutes=70))
     with pytest.raises(HTTPException):
-        change(state, 1201, source='e2', target='e3')
+        change(state, 5401, source='e2', target='e3')
 
 
 def test_new_start_uses_configured_window():
@@ -32,7 +32,9 @@ def test_new_start_uses_configured_window():
     source.update(status='Đang chờ', started_at='')
     state['payment_settings']['employee_change_minutes'] = 5
     live._apply_action(state, 'start', {'employee_id': source['id']}, 'admin', NOW)
-    assert live._employee_change_until(source) == NOW + timedelta(minutes=5)
+    assert source['employee_change_minutes'] == 5
+    assert not live._employee_change_allowed(source, NOW + timedelta(minutes=84, seconds=59))
+    assert live._employee_change_allowed(source, NOW + timedelta(minutes=85))
 
 
 def test_admin_can_pause_employee_change_immediately():

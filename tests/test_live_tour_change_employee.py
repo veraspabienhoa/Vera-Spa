@@ -21,13 +21,13 @@ def running(request=''):
     return state, source, target
 
 
-def change(state, seconds=300, source='e1', target='e2'):
+def change(state, seconds=4800, source='e1', target='e2'):
     return live._apply_action(state, 'change_employee', {'employee_id': source, 'target_employee_id': target}, 'admin', NOW + timedelta(seconds=seconds))
 
 
-@pytest.mark.parametrize('seconds', [0, 599, 600])
+@pytest.mark.parametrize('seconds', [4800, 5399, 5400])
 @pytest.mark.parametrize('request_kind,counter', [('', 'tour_count'), ('YC', 'request_count')])
-def test_change_in_first_ten_minutes_restores_order_and_moves_counter(seconds, request_kind, counter):
+def test_change_in_last_ten_minutes_restores_order_and_moves_counter(seconds, request_kind, counter):
     state, source, target = running(request_kind)
     source.update(combo_purchase_id='c1', combo_reserved_units=1)
     booking = deepcopy(source)
@@ -50,7 +50,7 @@ def test_change_in_first_ten_minutes_restores_order_and_moves_counter(seconds, r
     assert state['audit'][-1]['action'] == 'change_employee'
 
 
-@pytest.mark.parametrize('seconds', [-1, 601, 1800])
+@pytest.mark.parametrize('seconds', [-1, 0, 4799, 5401, 6000])
 def test_reject_time_outside_window_atomically(seconds):
     state, _, _ = running(); before = deepcopy(state)
     with pytest.raises(HTTPException): change(state, seconds)
@@ -77,18 +77,19 @@ def test_unavailable_target_does_not_mutate_booking(changes):
 
 def test_replacement_does_not_restart_window_and_restores_second_employee():
     state, _, target = running(); old_display = deepcopy(target['last_assignment_display'])
-    change(state, 300)
-    change(state, 500, 'e2', 'e3')
+    change(state, 4800)
+    change(state, 5000, 'e2', 'e3')
     assert target['last_assignment_display']['TG bắt đầu thực hiện'] == old_display['TG bắt đầu thực hiện']
     assert target['tour_count'] == 7
     assert state['employees'][2]['started_at'] == live._iso(NOW)
-    with pytest.raises(HTTPException): change(state, 601, 'e3', 'e1')
+    with pytest.raises(HTTPException): change(state, 5401, 'e3', 'e1')
 
 
 def test_counter_rollover_does_not_restore_yesterday_counts():
     state, source, target = running()
     started = NOW.replace(hour=9, minute=55)
     source['started_at'] = live._iso(started)
+    source['duration'] = 10
     source['pre_start_tour_position']['counter_day'] = live._counter_business_date(started).isoformat()
     state['counter_business_date'] = live._counter_business_date(started).isoformat()
     live._apply_action(state, 'change_employee', {'employee_id': 'e1', 'target_employee_id': 'e2'}, 'admin', started + timedelta(minutes=6))

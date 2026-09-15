@@ -389,19 +389,18 @@ test('manual quick invoice chooses canonical staff, room, service and booking ti
   } finally { await f.dispose() }
 })
 
-test('quick checkout searches pending invoice by room and retains the selected invoice source', async () => {
+test('pending invoice uses standard payment and has no quick-payment button', async () => {
   const f = await fixture({ payable: true, setup(data) {
     data.capabilities.pending_view = true; data.capabilities.invoice_view = true
     data.pending_payments = [{ id: 'p-old', customer_name: '', booked_at: `${TODAY_VN}T13:00:00+07:00`,
       entries: [{ employee_id: 'e1', employee_name: 'An An', room: '3.1', service: 'Body 90', price: 100, price_source: 'catalog', booked_at: `${TODAY_VN}T13:00:00+07:00`, started_at: `${TODAY_VN}T13:05:00+07:00` }] }]
   } })
   try {
-    await act(() => [...document.querySelectorAll('.tour-records-panel input[type=checkbox]')][0].click())
-    await act(() => document.querySelector('#live-tour-pending-panel .live-tour-card-actions .secondary-button').click())
-    const picker = document.querySelector('.live-tour-employee-picker input')
-    await chooseOption(picker, '3.1', f)
+    assert.equal(document.querySelector('#live-tour-pending-panel .live-tour-card-actions').textContent.includes('Thanh toán nhanh'), false)
+    await act(() => document.querySelector('#live-tour-pending-panel .live-tour-card-actions .primary-button').click())
     assert.match(document.querySelector('.tour-checkout-context').textContent, /An An.*3\.1/)
     await f.save(document.querySelector('.tour-transaction-dialog form'))
+    assert.equal(f.writes[0].action, 'checkout')
     assert.equal(f.writes[0].payload.pending_id, 'p-old')
     assert.equal(f.writes[0].payload.employee_ids, undefined)
     assert.equal(f.writes[0].payload.quick_booking, undefined)

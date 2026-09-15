@@ -98,14 +98,10 @@ test('customer and service catalogs remain searchable when the active panel has 
 })
 test.after(() => dom.window.close())
 
-test('employee replacement is available only in the original first ten minutes', async () => {
+test('employee replacement follows the server remaining-time decision', async () => {
   const { canChangeEmployee } = await import('../src/lib/liveTourEmployeeChange.js')
-  const start = Date.parse('2026-09-11T16:00:00+07:00')
-  const row = { _tour_groups: ['doing'], _employee_change_started_at: new Date(start).toISOString(), _employee_change_until: new Date(start + 600000).toISOString() }
-  assert.equal(canChangeEmployee(row, start), true)
-  assert.equal(canChangeEmployee(row, start + 600000), true)
-  assert.equal(canChangeEmployee(row, start + 600001), false)
-  assert.equal(canChangeEmployee(row, start - 1), false)
-  assert.equal(canChangeEmployee({ ...row, _tour_groups: ['waiting'] }, start), false)
-  assert.equal(canChangeEmployee({ ...row, _employee_change_until: '' }, start), false)
+  const row = { _tour_groups: ['doing'], _employee_change_allowed: true }
+  assert.equal(canChangeEmployee(row), true)
+  assert.equal(canChangeEmployee({ ...row, _tour_groups: ['waiting'] }), false)
+  assert.equal(canChangeEmployee({ ...row, _employee_change_allowed: false }), false)
 })
