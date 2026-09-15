@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import test from 'node:test'
 const controls = fs.readFileSync(new URL('../src/pages/LiveTourControls.css', import.meta.url), 'utf8')
 const shared = fs.readFileSync(new URL('../src/clear-borders.css', import.meta.url), 'utf8')
+const serviceActions = fs.readFileSync(new URL('../src/components/LiveTourServiceActions.css', import.meta.url), 'utf8')
+const transactionDialog = fs.readFileSync(new URL('../src/components/LiveTourTransactionDialog.css', import.meta.url), 'utf8')
 
 test('Live Tour removes body grid only and preserves outer frame and header borders', () => {
   const exception = shared.slice(shared.indexOf('/* Live Tour exception:'))
@@ -29,4 +31,14 @@ test('Live Tour reallocates compact column space equally to appointment and stat
   assert.match(controls, /\.tour-col-status\s*\{[\s\S]*?width:\s*153\.5px;[\s\S]*?min-width:\s*153\.5px;[\s\S]*?max-width:\s*153\.5px;/)
   assert.match(controls, /\.tour-col-appointment\{width:153\.5px;min-width:153\.5px;max-width:153\.5px;/)
   assert.match(controls, /\.tour-col-status,\s*\n\s*\.live-tour-page \.tour-table \.tour-col-appointment\{width:25\.75%\}/)
+})
+
+test('Live Tour keeps the desktop action column compact without changing the mobile fit-content layout', () => {
+  assert.match(serviceActions, /\.live-tour-actions-col\{width:90px;min-width:90px\}/)
+  assert.match(controls, /\.tour-table \.live-tour-actions-col\{width:1%!important;min-width:max-content!important;/)
+})
+
+test('mobile payment dialogs scroll the form with touch momentum inside the visual viewport', () => {
+  assert.match(transactionDialog, /\.tour-payment-dialog>form\{[^}]*flex:1 1 auto;[^}]*min-height:0;[^}]*overflow-y:auto;/)
+  assert.match(transactionDialog, /\.tour-payment-dialog>form\{[^}]*-webkit-overflow-scrolling:touch;[^}]*touch-action:pan-y;/)
 })

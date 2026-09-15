@@ -37,7 +37,7 @@ test('new TIP input fills numeric value, formats on blur, sorts and saves openin
   assert.equal(document.querySelector('[aria-label="Mệnh giá thẻ TIP 7"]').value, '25000')
   await act(() => input.blur())
   assert.equal(document.querySelector('[aria-label="Tên thẻ TIP 2"]').value, '25.000 đ')
-  await act(() => document.querySelector('input[type=checkbox]').click())
+  await act(() => document.querySelector('input[aria-label="Mở hóa đơn sau thanh toán"]').click())
   await act(() => document.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })))
   assert.equal(saved.open_receipt, false); assert.equal(saved.auto_print, false)
   assert.deepEqual(saved.tip_cards.map(x => x.amount), [10000, 25000, 50000, 100000, 200000, 300000, 500000])

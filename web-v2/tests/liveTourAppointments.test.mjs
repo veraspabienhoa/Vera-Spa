@@ -434,7 +434,7 @@ test('board orders the standard start column across dates, ignoring remaining ti
       ['late', 'Mới bắt đầu', '01/10/2026 09:00:00', 1, ['doing']],
       ['leave', 'Nghỉ phép hôm nay', '01/08/2026 09:00:00', '', ['leave']],
       ['early', 'Bắt đầu trước', '30/09/2026 22:00:00', 120, ['doing']],
-      ['paid', 'Đã thanh toán', '01/10/2026 08:00:00', '', ['working', 'available']],
+      ['paid', 'Đã thanh toán', '01/10/2026 08:00:00', '', ['working', 'available', 'finishing']],
       ['blank', 'Chưa thực hiện', '', '', ['working', 'available']],
     ].map(([id, name, start, remaining, groups], index) => ({ ...template, _id: id, STT: index + 1,
       'Tên nhân viên': name, 'TG bắt đầu thực hiện': start, 'TG CÒN LẠI': remaining,
@@ -442,6 +442,13 @@ test('board orders the standard start column across dates, ignoring remaining ti
   } })
   try {
     const names = () => [...document.querySelectorAll('.tour-records-panel tbody .tour-col-employee')].map((cell) => cell.textContent.trim())
+    assert.deepEqual(names(), ['Chưa thực hiện', 'Bắt đầu trước', 'Đã thanh toán', 'Mới bắt đầu', 'Nghỉ phép hôm nay'])
+    const metricButtons = [...document.querySelectorAll('button.tour-metric-card')]
+    assert.deepEqual(metricButtons.map((button) => button.querySelector('span').textContent), ['Tất cả', 'Có thể lên tua', 'Đang rảnh', 'Sắp xong', 'Đang chờ', 'Thực hiện', 'Số nhân viên', 'Nghỉ phép', 'Đi làm', 'Nghỉ giữa Ca'])
+    const idle = metricButtons.find((button) => button.textContent.includes('Đang rảnh'))
+    await act(() => idle.click())
+    assert.deepEqual(names(), ['Chưa thực hiện'])
+    await act(() => metricButtons[0].click())
     assert.deepEqual(names(), ['Chưa thực hiện', 'Bắt đầu trước', 'Đã thanh toán', 'Mới bắt đầu', 'Nghỉ phép hôm nay'])
     const leave = [...document.querySelectorAll('button.tour-metric-card')].find((button) => button.textContent.includes('Nghỉ phép'))
     assert.ok(leave)
