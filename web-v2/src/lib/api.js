@@ -351,6 +351,7 @@ export const veraApi = {
   liveTour: (refresh = false, includeHidden = false) => request(`/v2/live-tour?refresh=${refresh ? 'true' : 'false'}&include_hidden=${includeHidden ? 'true' : 'false'}`),
   liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
   liveTourReports: () => request('/v2/live-tour/reports'),
+  liveTourMyTips: () => request('/v2/live-tour/my-tips'),
   spaCustomers: () => request('/v2/live-tour/customers'),
   spaSettings: () => request('/v2/live-tour/settings'),
   liveTourCustomerHistory: (customerId) => request(`/v2/live-tour/customers/${encodeURIComponent(customerId)}/history`),

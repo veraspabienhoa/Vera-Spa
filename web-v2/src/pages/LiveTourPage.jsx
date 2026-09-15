@@ -173,6 +173,12 @@ function recordId(record, index = 0) {
 
 function columnClass(column) {
   const key = normalizedColumn(column)
+  const centered = new Set([
+    'TG CON LAI', 'CON LAI', 'YEU CAU', 'DI LAM', 'VAO CA', 'BREAKTIME', 'TG NGHI CON LAI',
+    'GIO RA', 'GIO VAO', 'GHI CHU', 'THOI LUONG', 'TG BAT DAU THUC HIEN',
+    'TG BAT DAU THUC HIEN YC', 'TT THANH TOAN', 'KET QUA HOAN THANH', 'SL TUA',
+    'SL YEU CAU', 'TONG SL', 'VIP', 'GIO BOOKING', 'TG KHACH CHO', 'TG XONG HOI',
+  ])
   if (key === 'STT' || key === 'SO THU TU') return 'tour-col-stt center'
   if (['TEN NHAN VIEN', 'NHAN VIEN', 'HO VA TEN', 'HO TEN'].includes(key)) return 'tour-col-employee'
   if (key === 'TRANG THAI') return 'tour-col-status center'
@@ -180,7 +186,7 @@ function columnClass(column) {
   if (key === 'PHONG' || key.startsWith('PHONG (')) return 'tour-col-room center'
   if (key === 'YEU CAU' || key.startsWith('YEU CAU (')) return 'tour-col-request center'
   if (key.includes('LICH HEN')) return 'tour-col-appointment'
-  return 'tour-col-mobile-hidden'
+  return `tour-col-mobile-hidden${centered.has(key) ? ' center' : ''}`
 }
 
 function rowClass(record, selected, settings, clockMs = Date.now()) {
@@ -562,7 +568,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [employeePickId, setEmployeePickId] = useState('')
   const [roomSegment, setRoomSegment] = useState('all')
   const [customerContext, setCustomerContext] = useState(null)
-  const [listFilters, setListFilters] = useState(() => ({ ...EMPTY_TOUR_FILTERS, preset: 'today', ...tourDateRange('today') }))
+  const [listFilters, setListFilters] = useState(() => ({ ...EMPTY_TOUR_FILTERS, preset: 'all' }))
   const [selectedRoomKey, setSelectedRoomKey] = useState('')
   const [clockMs, setClockMs] = useState(Date.now())
   const [activePanel, setActivePanel] = useState('pending')
@@ -1365,6 +1371,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   }
 
   const openWorkspacePanel = (panel) => {
+    if (panel === 'pending') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'all' })
     setActivePanel(panel)
     window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
@@ -1504,7 +1511,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         <section className="panel live-tour-operator live-tour-controls" aria-label="Điều khiển">
           <div className="live-tour-controls-grid">
             <div className="live-tour-controls-actions" role="group" aria-label="Bảng điều khiển Live Tour">
-              <button type="button" className="secondary-button" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('sync_daily_status', {}, [])}>Cập nhật lịch nghỉ</button>
+              <button type="button" className="secondary-button live-tour-mobile-sync-hidden" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('sync_daily_status', {}, [])}>Cập nhật lịch nghỉ</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}>Đi làm</button>
               <button type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}>Nghỉ phép</button>
               <button type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}>Hủy Booking</button>
@@ -1548,7 +1555,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       <div className="live-tour-panel-tabs" role="tablist" aria-label="Không gian vận hành Live Tour">
         {PANEL_TABS.map(([key, label]) => {
           const disabled = !({ pending: canPending, invoices: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory || canBackup, catalog: canAdmin })[key]
-          return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => setActivePanel(key)} key={key}>{label}{key === 'pending' && allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>
+          return <button type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => openWorkspacePanel(key)} key={key}>{label}{key === 'pending' && allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>
         })}
       </div>
       {['pending', 'invoices', 'reports', 'history'].includes(activePanel) && <LiveTourFilters

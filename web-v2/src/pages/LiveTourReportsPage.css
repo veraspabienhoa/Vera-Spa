@@ -1,6 +1,7 @@
 .live-tour-report-table {
   overflow-x: hidden;
 }
+.performance-report-table th,.performance-report-table td{text-align:center}.performance-report-table th:first-child,.performance-report-table td:first-child{text-align:left}.report-early{color:#147a43}.report-ontime{color:#72551c}.report-late{color:#b42318}
 
 .live-tour-report-table table {
   width: 100%;
@@ -8,6 +9,7 @@
   table-layout: fixed;
   font-size: clamp(10px, .82vw, 13px);
 }
+@media (min-width:761px){.live-tour-report-table.performance-report-table{overflow-x:auto}.live-tour-report-table.performance-report-table table{min-width:1200px;table-layout:auto}}
 
 .live-tour-report-table th,
 .live-tour-report-table td {

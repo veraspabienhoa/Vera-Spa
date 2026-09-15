@@ -1535,6 +1535,8 @@ def _checkout_mutating(
             "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
             "booking_actor": item.get("booking_actor", ""),
             "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
+            "board_started_at": _board_starts(item)["board_started_at"],
+            "board_yc_started_at": _board_starts(item)["board_yc_started_at"],
             "combo_purchase_id": item.get("combo_purchase_id", ""),
             "combo_reserved_units": item.get("combo_reserved_units", 0),
             "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
@@ -2153,6 +2155,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
                 "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
                 "booking_actor": item.get("booking_actor", ""),
                 "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
+                "board_started_at": _board_starts(item)["board_started_at"],
+                "board_yc_started_at": _board_starts(item)["board_yc_started_at"],
                 "combo_purchase_id": item.get("combo_purchase_id", ""),
                 "combo_reserved_units": item.get("combo_reserved_units", 0),
                 "combo_reserved_components": deepcopy(item.get("combo_reserved_components", [])),
@@ -3039,6 +3043,66 @@ def _readable_audit(events, *, invoice_view, paid_invoice_view, customers_view):
 def _report_rows_with_combo_kind(state):
     sales = {row["id"] for row in state["invoices"] if row.get("purchased_combo_id")}
     return [dict(row, combo_sale=row.get("invoice_id") in sales) for row in state["reports"]]
+
+
+def _personal_tip_rows(state: dict[str, Any], username: str) -> list[dict[str, Any]]:
+    """Return a strict, price-free projection of one employee's allocated tips."""
+    employee_id = _stable_id("employee", username)
+    grouped: dict[str, dict[str, Any]] = {}
+    for index, row in enumerate(state.get("reports", [])):
+        if str(row.get("employee_id") or "") != employee_id and _norm(row.get("employee_name")) != _norm(username):
+            continue
+        invoice_id = str(row.get("invoice_id") or row.get("id") or f"legacy-{index}")
+        item = grouped.setdefault(invoice_id, {
+            "id": invoice_id, "invoice_id": invoice_id, "bill_no": str(row.get("bill_no") or ""),
+            "business_date": row.get("business_date") or "", "effective_at": row.get("effective_at") or row.get("created_at") or "",
+            "employee_id": employee_id, "employee_name": username, "services": [], "rooms": [], "tip": 0,
+        })
+        item["tip"] += int(row.get("tip") or 0)
+        for target, value in (("services", row.get("service")), ("rooms", row.get("room"))):
+            text_value = str(value or "").strip()
+            if text_value and text_value not in item[target]:
+                item[target].append(text_value)
+    return sorted(grouped.values(), key=lambda row: str(row.get("effective_at") or row.get("business_date") or ""), reverse=True)
+
+
+def _service_performance_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build completion and steam-time reporting independent of payment state."""
+    sources: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    for invoice in state.get("invoices", []):
+        sources.extend(("invoice", invoice, entry) for entry in invoice.get("entries", []))
+    for pending in state.get("pending", []):
+        sources.extend(("pending", pending, entry) for entry in pending.get("entries", []))
+    sources.extend(("live", {}, employee) for employee in state.get("employees", []) if employee.get("completed_at"))
+    rows, seen = [], set()
+    for source, parent, entry in sources:
+        started, completed = _parse_datetime(entry.get("started_at")), _parse_datetime(entry.get("completed_at"))
+        if not started or not completed:
+            continue
+        booked, duration = _parse_datetime(entry.get("booked_at")), _duration_value(entry.get("duration"))
+        elapsed = int(round((completed - started).total_seconds() / 60))
+        delta_raw = entry.get("completion_delta_minutes")
+        delta = int(round(float(delta_raw))) if delta_raw not in (None, "") else (elapsed - int(round(duration or 0)) if duration is not None else None)
+        result = "Chưa có thời lượng chuẩn" if delta is None else (f"Sớm {abs(delta)} phút" if delta < 0 else f"Muộn {delta} phút" if delta > 0 else "Đúng giờ")
+        employee_id = str(entry.get("employee_id") or entry.get("id") or "")
+        key = (employee_id, str(entry.get("service") or ""), _iso(started), _iso(completed))
+        if key in seen:
+            continue
+        seen.add(key)
+        starts = _board_starts(entry)
+        rows.append({
+            "id": ":".join(key), "invoice_id": str(parent.get("id") or ""), "bill_no": str(parent.get("bill_no") or ""), "source": source,
+            "business_date": parent.get("business_date") or entry.get("business_date") or completed.astimezone(VN_TZ).date().isoformat(),
+            "effective_at": parent.get("effective_at") or entry.get("effective_at") or _iso(completed),
+            "employee_id": employee_id, "employee_name": entry.get("employee_name") or entry.get("name") or "",
+            "service": entry.get("service") or "", "room": entry.get("room") or "", "request": entry.get("request") or "",
+            "booked_at": _iso(booked) if booked else "", "started_at": _iso(started),
+            "board_started_at": starts.get("board_started_at") or "", "board_yc_started_at": starts.get("board_yc_started_at") or "",
+            "completed_at": _iso(completed), "duration": int(round(duration)) if duration is not None else None,
+            "actual_duration_minutes": elapsed, "completion_delta_minutes": delta, "completion_result": entry.get("completion_note") or result,
+            "steam_minutes": max(0, int(round((started - booked).total_seconds() / 60))) if booked else None,
+        })
+    return sorted(rows, key=lambda row: str(row.get("completed_at") or ""), reverse=True)
 
 
 def _state_response(
@@ -4079,8 +4143,22 @@ def install_live_tour_routes(
             state, revision = read_board(conn, now, project=False)
             grants = permissions(conn, ident)
         public = _state_response(state, revision, now, **grants)
+        is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         return {"revision": revision, "invoices": public["state"]["invoices"],
-                "reports": public["report_rows"], "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
+                "reports": public["report_rows"], "performance": _service_performance_rows(state) if is_admin else [],
+                "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
+
+    @app.get("/v2/live-tour/my-tips")
+    def live_tour_my_tips(ident: identity_type = Depends(current_identity)):
+        role = str(getattr(ident, "role", "") or "").strip().lower()
+        if role not in {"leader", "nhanvien"}:
+            raise HTTPException(403, "Chỉ tài khoản Leader và Nhân viên được xem Trà sữa của chính mình.")
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            state, revision = read_board(conn, now, project=False)
+        rows = _personal_tip_rows(state, str(ident.employee_username or ""))
+        return {"revision": revision, "employee_username": ident.employee_username,
+                "rows": rows, "total_tip": sum(int(row.get("tip") or 0) for row in rows)}
 
     @app.get("/v2/live-tour/customers")
     def spa_customers(ident: identity_type = Depends(current_identity)):

@@ -5,6 +5,7 @@
   border-radius: 5px;
   box-shadow: none;
 }
+@media(max-width:820px){.live-tour-page .live-tour-mobile-sync-hidden{display:none!important}}
 
 /* Restore both separators below the room board and quick controls. */
 .live-tour-page .tour-room-table-panel > .live-tour-controls {

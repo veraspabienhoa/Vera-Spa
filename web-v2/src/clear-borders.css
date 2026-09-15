@@ -135,13 +135,13 @@ body .date-toolbar button:hover { background: #f2f5f3; }
 body .main-area, body .feature-page, body .panel, body .responsive-data-table {
   min-width: 0; max-width: 100%; box-sizing: border-box;
 }
-body .department-payroll-table { max-height: none; overflow: visible; }
-body .department-payroll-table table { width: 100%; min-width: 0; display: block; }
-body .department-payroll-table thead { display: none; }
-body .department-payroll-table tbody { display: grid; gap: 16px; }
-body .department-payroll-table tr { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #37634f; }
-body .department-payroll-table td { display: flex; flex-direction: column; gap: 6px; min-width: 0; width: auto; white-space: normal; overflow-wrap: anywhere; padding: 10px; }
-body .department-payroll-table td::before { content: attr(data-label); font-size: 12px; font-weight: 700; color: #37634f; }
+body .department-payroll-table { max-height: none; overflow-x: auto; }
+body .department-payroll-table table { display: table; }
+body .department-payroll-table thead { display: table-header-group; }
+body .department-payroll-table tbody { display: table-row-group; }
+body .department-payroll-table tr { display: table-row; }
+body .department-payroll-table td { display: table-cell; }
+body .department-payroll-table td::before { content: none; }
 body .department-payroll-table input:not([type=checkbox]) { width: 100%; min-width: 0; box-sizing: border-box; }
 body .department-payroll-table input[type=checkbox] { align-self: flex-start; }
 @media (max-width: 760px) {
@@ -151,10 +151,7 @@ body .department-payroll-table input[type=checkbox] { align-self: flex-start; }
   body .feature-page :where(h1, h2, h3, p, strong, span, button) { overflow-wrap: anywhere; }
   body .feature-page :where(.list-actions, .panel-title-row, .data-toolbar, .page-heading) { flex-wrap: wrap; }
   body .feature-page :where(.responsive-data-table, .table-scroll, .report-scroll) { overflow-x: auto; width: 100%; }
-  body .department-payroll-table { overflow: visible; }
-  body .department-payroll-table tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  body .department-payroll-table td { font-size: 13px; }
-  body .department-payroll-table td:nth-child(3) { grid-column: 1 / -1; }
+  body .department-payroll-table { overflow-x: auto; }
   body .department-payroll-actions { position: static; flex-wrap: wrap; }
 }
 

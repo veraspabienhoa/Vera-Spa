@@ -1,4 +1,5 @@
 import BackToTop from './BackToTop'
+import PopupNotifications from './PopupNotifications'
 import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -6,6 +7,7 @@ import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttend
 
 const items = [
   { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true },
+  { id: 'milk-tea', label: 'Trà sữa', icon: CircleDollarSign, ready: true, roles: ['leader', 'nhanvien'] },
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker'] },
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
@@ -309,8 +311,9 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
 
         <div className="menu-caption">MENU</div>
         <nav className="nav-list">
-          {items.filter(({ id, permission, anyPermission, adminOnly }) => {
+          {items.filter(({ id, permission, anyPermission, adminOnly, roles }) => {
             if (user?.must_change_password && id !== 'profile') return false
+            if (roles && !roles.includes(String(user?.role || '').toLowerCase())) return false
             if (user?.role === 'admin') return true
             if (adminOnly) return false
             if (permission && user?.permissions?.[permission] !== true) return false
@@ -376,6 +379,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
         </div>
       </main>
       <BackToTop/>
+      <PopupNotifications/>
     </div>
   )
 }

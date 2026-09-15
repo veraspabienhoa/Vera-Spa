@@ -367,7 +367,8 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
     source = _source(LIVE_TOUR)
     api = _source(API)
 
-    assert "preset: 'today', ...tourDateRange('today')" in source
+    assert "preset: 'all'" in source
+    assert "if (panel === 'pending') setListFilters" in source
     assert "<LiveTourFilters" in source
     for key in ("date_from", "date_to"):
         assert f"'{key}'" in api
@@ -391,6 +392,26 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
     assert "'include_hidden'" in api_helper
     assert "liveTourExportParams(kind, query)" in api
     assert "liveTourExportParams('board', query)" in api
+
+
+def test_tip_menu_reports_popups_and_mobile_controls_are_wired():
+    root = Path(__file__).resolve().parents[1] / "web-v2/src"
+    app = (root / "App.jsx").read_text(encoding="utf-8")
+    shell = (root / "components/AppShell.jsx").read_text(encoding="utf-8")
+    milk_tea = (root / "pages/MilkTeaPage.jsx").read_text(encoding="utf-8")
+    reports = (root / "pages/LiveTourReportsPage.jsx").read_text(encoding="utf-8")
+    popup = (root / "components/PopupNotifications.jsx").read_text(encoding="utf-8")
+    controls = (root / "pages/LiveTourControls.css").read_text(encoding="utf-8")
+
+    assert "id: 'milk-tea', label: 'Trà sữa'" in shell
+    assert "roles: ['leader', 'nhanvien']" in shell and "page === 'milk-tea'" in app
+    for label in ("Hôm qua", "Hôm nay", "Tuần trước", "Tuần này", "Tháng trước", "Tháng này", "Tùy chỉnh"):
+        assert label in milk_tea or label in (root / "lib/liveTourFilters.js").read_text(encoding="utf-8")
+    assert 'data-label="Tiền dịch vụ"' not in milk_tea and "liveTourMyTips" in milk_tea
+    assert "['tip', 'Tiền Tip']" in reports and "['performance', 'Thời gian dịch vụ']" in reports
+    assert "TG bắt đầu thực hiện YC" in reports and "TG Xông Hơi" in reports
+    assert "PopupNotifications" in shell and "MutationObserver" in popup
+    assert ".live-tour-mobile-sync-hidden{display:none" in controls
 
 
 def test_live_tour_pending_reminder_runs_on_zero_to_positive_then_every_15_minutes():
