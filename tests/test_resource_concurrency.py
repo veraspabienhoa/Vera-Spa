@@ -75,5 +75,11 @@ def test_employee_and_leave_writes_use_scoped_transition_locks():
 
 def test_deploy_applies_and_verifies_concurrency_schema():
     workflow = (ROOT / ".github/workflows/deploy-vps.yml").read_text(encoding="utf-8")
+    migration = (ROOT / "vera_vps_concurrency_schema.py").read_text(encoding="utf-8")
     assert "vera_vps_concurrency_schema.py" in workflow
     assert "--apply --verify" in workflow
+    assert "load_managed_runtime_environment()" in migration
+    assert "_running_api_environment()" in migration
+    assert "poolclass=NullPool" in migration
+    assert "no migration committed" in migration
+    assert "vera_postgres.get_engine" not in migration

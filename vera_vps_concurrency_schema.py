@@ -3,12 +3,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 import vera_live_tour_relational as live_tour
-import vera_postgres
 import vera_resource_concurrency as concurrency
+from vera_vps_data_check import (
+    RUNTIME_ENV_KEYS,
+    _database_url,
+    _running_api_environment,
+    load_managed_runtime_environment,
+)
 
 
 REQUIRED_TABLES = (
@@ -97,8 +104,25 @@ def _verify(conn) -> dict:
     }
 
 
-def run(*, apply: bool = False, verify: bool = False) -> dict:
-    engine = vera_postgres.get_engine()
+def _runtime_engine():
+    loaded = load_managed_runtime_environment()
+    environment = (
+        {key: os.environ.get(key, "") for key in RUNTIME_ENV_KEYS}
+        if loaded else _running_api_environment()
+    )
+    if not environment:
+        raise RuntimeError("runtime environment unavailable")
+    sslmode = str(environment.get("DB_SSLMODE", "require") or "require").strip().lower()
+    if sslmode not in {"require", "verify-ca", "verify-full"}:
+        sslmode = "require"
+    return create_engine(
+        _database_url(environment), poolclass=NullPool,
+        connect_args={"sslmode": sslmode, "connect_timeout": 10},
+    )
+
+
+def run(*, apply: bool = False, verify: bool = False, engine=None) -> dict:
+    engine = engine or _runtime_engine()
     context = engine.begin() if apply else engine.connect()
     with context as conn:
         conn.execute(text("SET LOCAL lock_timeout = '5s'"))
@@ -119,4 +143,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not (args.apply or args.verify):
         parser.error("choose --apply and/or --verify")
-    print(json.dumps(run(apply=args.apply, verify=args.verify), ensure_ascii=False, sort_keys=True))
+    try:
+        result = run(apply=args.apply, verify=args.verify)
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        # Never expose connection strings, SQL parameters or business payloads
+        # in a public GitHub Actions log.
+        raise SystemExit(
+            f"SYSTEM RESOURCE CONCURRENCY FAILED: {type(exc).__name__}; no migration committed"
+        ) from None

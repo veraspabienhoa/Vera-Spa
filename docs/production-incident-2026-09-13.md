@@ -15,6 +15,16 @@ Phần này chưa được push/deploy và chưa phải bằng chứng productio
 mutation Live Tour commit song song. Chỉ chuyển `hybrid` sang `resource` sau khi
 mọi writer cũ đã được nâng cấp; không bỏ khóa chung trước cutover.
 
+### Deploy #395: ứng dụng đã lên, migration chưa chạy
+
+Run 34922095434 đã deploy đúng commit `923788d7` và xác minh local Auth, nhưng
+dừng tại bước concurrency schema trước khi ghi DDL. Script migration gọi trực
+tiếp `vera_postgres.get_engine()` trong tiến trình SSH không kế thừa môi trường
+systemd, nên nhận `VERA_DB_ENABLED=0`. Bản sửa nạp cùng managed runtime file/fallback
+process environment đã dùng bởi payroll schema và data check, dùng `NullPool`,
+và chỉ log loại lỗi đã khử connection string/SQL payload. Cần chạy lại deploy
+sau khi bản sửa qua CI; run #395 không phải bằng chứng backfill/parity đã đạt.
+
 ## Giảm tranh chấp Live Tour — bản ZIP ngày 15/09/2026
 
 Rà soát tiếp xác nhận đọc snapshot khi khóa bận đã có, nhưng tác vụ projection
