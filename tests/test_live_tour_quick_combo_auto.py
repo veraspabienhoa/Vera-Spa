@@ -88,6 +88,42 @@ def test_not_checked_in_cannot_book_on_server(mode, change):
     assert state == before
 
 
+def test_admin_manual_work_status_and_shift_allow_booking_without_face_id_checkin():
+    state, payload = scenario()
+    worker = state['employees'][0]
+    worker.update(
+        username='an', work_status='Nghỉ phép', shift='', assigned_shift='',
+        shift_checkin_date=(NOW - timedelta(days=1)).date().isoformat(),
+    )
+
+    live._apply_action(state, 'set_work_status', {
+        'employee_id': 'e1', 'status': 'Đi làm',
+    }, 'admin', NOW)
+    live._apply_action(state, 'set_shift', {
+        'employee_id': 'e1', 'shift': 'Ca 2',
+    }, 'admin', NOW)
+
+    day = NOW.astimezone(live.VN_TZ).date().isoformat()
+    directory = [{
+        'username': 'an', 'full_name': 'An', 'role': 'nhanvien', 'payload': {},
+        'work_shift': 'Ca 2', 'daily_shift': '', 'shift_checkin_date': day,
+    }]
+    # The next booking request refreshes the TimeSoft projection before applying
+    # the action. No Face ID punch means daily_shift is blank.
+    live._reconcile_roster(state, directory, live._new_directory_employee, today=day)
+    live._sync_daily(state, directory, [], automatic=True, today=day)
+
+    result = live._apply_action(state, 'booking', payload['quick_booking'], 'admin', NOW)
+
+    assert result['employee']['status'] == 'Đang chờ'
+    assert worker['work_status'] == 'Đi làm'
+    assert worker['shift'] == 'Ca 2'
+    assert worker['manual_shift_date'] == day
+    # Manual override authorizes Live Tour only; it must not fabricate Face ID data.
+    assert 'shift_checkin_date' not in worker
+    assert worker['assigned_shift'] == ''
+
+
 def test_daily_leave_changes_project_without_button_and_remove_old_reason():
     worker = employee('e1', 'An')
     worker['appointment'] = 'Khách 15h'
