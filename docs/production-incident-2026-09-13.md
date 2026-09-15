@@ -1,5 +1,32 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## Live Tour chậm trên mobile/desktop — bản sửa ngày 15/09/2026, chưa deploy
+
+Rà soát mã xác nhận mỗi trang Live Tour mở đang poll ba giây một lần và mỗi
+response không đổi vẫn dựng/truyền lại toàn bộ aggregate đã phân quyền, gồm các
+collection khách hàng, hóa đơn, báo cáo và lịch sử. Khi lấy được khóa, GET còn
+có thể chạy lại attendance/directory/leave projection. Thanh toán hóa đơn chờ,
+thanh toán nhanh và mua combo cũng dùng đường projection đầy đủ dù các bất biến
+tài chính của chúng chỉ đọc/ghi aggregate đã khóa.
+
+Bản sửa cho poll gửi revision hiện có. Nếu revision PostgreSQL không đổi, API
+chỉ trả marker `unchanged`; trình duyệt không thay state, không ghi lại cache và
+không render lại bảng. Nếu revision đã đổi, poll đọc snapshot đã commit mà không
+lặp projection của scheduler. Lần mở đầu và thao tác làm mới rõ ràng vẫn giữ
+projection hiện hành. Các mutation hóa đơn/combo được chuyển sang đọc aggregate
+`FOR UPDATE` không projection; vẫn giữ khóa chung, expected revision,
+idempotency, quyền, chống trừ combo/thanh toán trùng và ghi shadow relational.
+Booking/start/finish vẫn dùng projection đầy đủ vì phụ thuộc trạng thái ca, nghỉ
+và chấm công.
+
+Kiểm chứng cục bộ: 183 kiểm thử backend trọng tâm, 37 kiểm thử frontend trọng
+tâm và production build đạt; lint không có lỗi (còn một cảnh báo cũ ở payroll).
+Toàn bộ 134 kiểm thử frontend có một lỗi cũ ở
+`paymentPresentation.test.mjs` về mặc định mở hóa đơn; lỗi tái hiện riêng và
+không thuộc các file thay đổi. Chưa đo latency, log khóa hoặc tải response trên
+VPS production, nên nguyên nhân production được xem là phù hợp với triệu chứng
+và đã xác nhận trong mã, chưa phải kết quả đo runtime sau deploy.
+
 ## Nền tảng khóa tài nguyên toàn hệ thống — đang phát triển, chưa deploy
 
 Theo yêu cầu mở rộng ngày 15/09/2026, thiết kế concurrency không chỉ áp dụng

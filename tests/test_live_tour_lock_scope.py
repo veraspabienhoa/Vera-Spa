@@ -32,9 +32,11 @@ def test_safe_metadata_mutations_skip_attendance_projection():
     assert "read_state_without_projection(conn, now, for_update=True)" in action
 
 
-def test_booking_and_financial_mutations_keep_full_projection():
+def test_booking_mutations_keep_full_projection_but_financial_mutations_skip_it():
     body = source()
     action = body[body.index('    @app.post("/v2/live-tour/action")'):body.index('    @app.get("/v2/live-tour/export.xlsx")')]
     projection_set = action[action.index("projection_free_actions = {"):action.index("state, revision = (")]
-    for name in ("booking", "multi_booking", "checkout", "quick_checkout", "combo_purchase"):
+    for name in ("booking", "multi_booking"):
         assert f'"{name}"' not in projection_set
+    for name in ("checkout", "quick_checkout", "combo_purchase", "pending_update", "paid_invoice_update"):
+        assert f'"{name}"' in projection_set

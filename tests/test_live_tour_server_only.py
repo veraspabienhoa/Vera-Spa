@@ -52,6 +52,8 @@ class SettingsDatabase:
             rows = deepcopy(getattr(self, "leaves", []))
         elif "FROM vera_dataset_cache" in sql:
             rows = deepcopy(self.datasets)
+        elif "SELECT revision FROM vera_app_setting" in sql:
+            rows = [{"revision": self.revision}] if self.stored else []
         elif "SELECT value_json" in sql:
             rows = [{"value_json": deepcopy(self.stored), "revision": self.revision}] if self.stored else []
         elif "INSERT INTO vera_app_setting" in sql:
@@ -72,6 +74,8 @@ class SettingsDatabase:
             def mappings(self): return self
             def all(self): return rows
             def first(self): return rows[0] if rows else None
+            def scalar_one_or_none(self):
+                return next(iter(rows[0].values())) if rows else None
         return Result()
 
 

@@ -4131,14 +4131,31 @@ def install_live_tour_routes(
 
     @app.get("/v2/live-tour")
     def live_tour(
+        refresh: bool = Query(default=False),
+        known_revision: int | None = Query(default=None, ge=0),
         include_hidden: bool = Query(default=False),
         ident: identity_type = Depends(current_identity),
     ):
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_view")
-            # Concurrent readers can use committed state while a writer is busy.
-            state, revision = read_board(conn, now)
+            # The board polls every few seconds on every open device.  Avoid
+            # deserializing, projecting and serializing the complete aggregate
+            # when the browser already has the current committed revision.
+            if known_revision is not None and not refresh:
+                current_revision = conn.execute(text("""
+                    SELECT revision FROM vera_app_setting
+                    WHERE category=:category AND setting_key=:key
+                """), {"category": STATE_CATEGORY, "key": STATE_KEY}).scalar_one_or_none()
+                if current_revision is not None and int(current_revision) == known_revision:
+                    return {"unchanged": True, "revision": int(current_revision), "countdown_at": _iso(now)}
+            # First loads and deliberate refreshes preserve the existing fresh
+            # projection behavior. A conditional poll whose revision changed
+            # reads the newly committed snapshot; the scheduler already owns
+            # routine projection and other devices need not repeat it.
+            state, revision = read_board(
+                conn, now, project=refresh or known_revision is None,
+            )
             grants = permissions(conn, ident)
         return _state_response(
             state, revision, now, include_hidden=include_hidden,
@@ -4301,6 +4318,13 @@ def install_live_tour_routes(
                 "room_upsert", "room_delete", "service_upsert", "service_delete",
                 "combo_upsert", "combo_delete", "set_vip", "update_appointment",
                 "update_started_at", "add_minutes",
+                # These financial mutations validate and update the locked
+                # aggregate itself. Attendance, directory and leave projection
+                # does not participate in invoice/combo invariants and made
+                # checkout wait behind unrelated attendance work.
+                "checkout", "quick_checkout", "combo_purchase", "combo_sale_decide",
+                "pending_update", "pending_delete", "paid_invoice_update", "paid_invoice_delete",
+                "report_invoice_update", "report_invoice_delete",
             }
             state, revision = (
                 read_state_without_projection(conn, now, for_update=True)

@@ -590,6 +590,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [customColumns, setCustomColumns] = useState(null)
   const [customScope, setCustomScope] = useState('displayed')
   const requestEntriesRef = useRef(new Map())
+  const latestRevisionRef = useRef(data.revision)
   const pendingCountRef = useRef(0)
   const previousPendingCountRef = useRef(0)
   const pendingAnnouncementSequenceRef = useRef(0)
@@ -623,7 +624,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
   const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, pending: canPending, invoiceView: canInvoiceView, paidInvoiceView: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory })
   const loadPending = useRef(false)
-  const load = useCallback(async (refresh = false, quiet = false) => {
+  const load = useCallback(async (refresh = false, quiet = false, conditional = false) => {
     // Polls must not consume another backend connection while a read is pending.
     if (quiet && loadPending.current) return
     // Explicit reloads wait for the previous read, then fetch fresh state.
@@ -631,7 +632,13 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     loadPending.current = true
     if (!quiet) { setBusy(true); setError('') }
     try {
-      const next = { ...EMPTY_LIVE_TOUR, ...await veraApi.liveTour(refresh) }
+      const response = await veraApi.liveTour(refresh, false, conditional ? latestRevisionRef.current : null)
+      if (response?.unchanged) {
+        setError('')
+        return
+      }
+      const next = { ...EMPTY_LIVE_TOUR, ...response }
+      latestRevisionRef.current = next.revision
       setData(next)
       setError('')
       saveCachedLiveTour(cacheKey, next)
@@ -651,7 +658,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
   useEffect(() => {
     if (!modal && !bookingContext && !pendingContext && !customerContext) void load(false, initiallyCached.current)
-    const interval = window.setInterval(() => { if (!actionBusy) void load(false, true) }, 3000)
+    const interval = window.setInterval(() => { if (!actionBusy) void load(false, true, true) }, 3000)
     const stopWatching = watchLeaveChanges(() => { if (!actionBusy) void load(false, true) })
     return () => { window.clearInterval(interval); stopWatching() }
   }, [actionBusy, load, modal, bookingContext, pendingContext, customerContext])
@@ -704,6 +711,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       releaseIdempotencyEntry(requestEntriesRef.current, requestEntry)
       if (Array.isArray(result?.records) && Array.isArray(result?.columns)) {
         const next = { ...EMPTY_LIVE_TOUR, ...result }
+        latestRevisionRef.current = next.revision
         setData(next)
         saveCachedLiveTour(cacheKey, next)
       } else {
