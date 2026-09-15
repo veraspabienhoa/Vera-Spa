@@ -8,7 +8,9 @@ export default function LiveTourTransactionDialog({ title, children, onClose, bu
   const dialogRef = useDialogFocus(() => { if (!busy) onClose() })
   const frameRef = useRef(null)
   const [view, setView] = useState(() => transactionViewport())
-  const width = Math.min(1040, Math.max(1, view.width - 16))
+  const paymentDialog = className.split(/\s+/).includes('tour-payment-dialog')
+  const mobileFullscreen = paymentDialog && (view.width <= 700 || (view.width <= 900 && view.height <= 500))
+  const width = mobileFullscreen ? Math.max(1, view.width) : Math.min(1040, Math.max(1, view.width - 16))
 
   useLayoutEffect(() => {
     const update = () => setView(transactionViewport())
@@ -33,6 +35,13 @@ export default function LiveTourTransactionDialog({ title, children, onClose, bu
     const dialog = dialogRef.current, frame = frameRef.current
     const fit = () => {
       if (!dialog || !frame) return
+      if (mobileFullscreen) {
+        dialog.style.transform = 'none'
+        frame.style.width = `${view.width}px`
+        frame.style.height = `${view.height}px`
+        frame.dataset.scale = '1'
+        return
+      }
       // Measure the complete unscaled form. Never conceal fields with a fixed
       // max-height; rotation, keyboard and validation messages refit the frame.
       const size = fitTransaction(view, Math.max(width, dialog.scrollWidth), dialog.offsetHeight)
@@ -45,9 +54,9 @@ export default function LiveTourTransactionDialog({ title, children, onClose, bu
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit)
     observer?.observe(dialog)
     return () => observer?.disconnect()
-  }, [view, width, children, dialogRef])
+  }, [view, width, children, dialogRef, mobileFullscreen])
 
-  return <div className="live-tour-modal-backdrop tour-transaction-backdrop"
+  return <div className={`live-tour-modal-backdrop tour-transaction-backdrop${mobileFullscreen ? ' tour-payment-backdrop-fullscreen' : ''}`}
     style={{ left: view.left, top: view.top, width: view.width, height: view.height }}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <div ref={frameRef} className="tour-transaction-frame">

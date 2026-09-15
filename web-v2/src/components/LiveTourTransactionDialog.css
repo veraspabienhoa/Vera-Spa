@@ -66,3 +66,8 @@
   .tour-transaction-dialog .tour-tip-input{grid-template-columns:1fr}
   .tour-transaction-dialog .tour-tip-amount,.tour-transaction-dialog .tour-tip-input>.tour-tip-cards,.tour-transaction-dialog .tour-tip-total{grid-column:1;grid-row:auto}
 }
+@media(max-width:700px),(max-width:900px) and (max-height:500px){
+  .live-tour-modal-backdrop.tour-transaction-backdrop.tour-payment-backdrop-fullscreen{padding:0;place-items:stretch}
+  .tour-payment-backdrop-fullscreen .tour-transaction-frame{width:100%!important;height:100%!important;max-width:none}
+  .tour-payment-backdrop-fullscreen .live-tour-modal.tour-payment-dialog{position:relative;inset:auto;width:100%!important;height:100%!important;max-height:none;overflow-y:auto;overscroll-behavior:contain;transform:none!important;transform-origin:initial;border-radius:0;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+}

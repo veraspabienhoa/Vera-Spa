@@ -243,7 +243,7 @@ test('the complete form fits desktop, tablet, portrait, landscape and keyboard v
   }
 })
 
-test('the mounted payment form refits when the visible viewport changes', async () => {
+test('the mounted payment form uses the full mobile viewport without scaling', async () => {
   const originalView = Object.getOwnPropertyDescriptor(dom.window, 'visualViewport')
   const originalHeight = Object.getOwnPropertyDescriptor(dom.window.HTMLElement.prototype, 'offsetHeight')
   const view = Object.assign(new dom.window.EventTarget(), { width: 390, height: 844, offsetTop: 0, offsetLeft: 0 })
@@ -256,17 +256,21 @@ test('the mounted payment form refits when the visible viewport changes', async 
     await openEmployeePayment()
     const frame = document.querySelector('.tour-transaction-frame')
     assert.equal(Number(frame.dataset.scale), 1)
+    assert.equal(frame.style.width, '390px')
+    assert.equal(frame.style.height, '844px')
+    assert.ok(document.querySelector('.tour-payment-backdrop-fullscreen'))
     view.height = 320
     await act(() => view.dispatchEvent(new dom.window.Event('resize')))
-    assert.ok(Number(frame.dataset.scale) < 1)
-    assert.ok(parseFloat(frame.style.height) <= 304)
+    assert.equal(Number(frame.dataset.scale), 1)
+    assert.equal(frame.style.height, '320px')
     assert.ok(document.querySelector('.tour-transaction-dialog button[type=submit]'))
     assert.ok(document.querySelector('.tour-transaction-dialog textarea'))
     assert.equal(document.documentElement.style.overflow, 'hidden')
     view.width = 844; view.height = 390
     await act(() => view.dispatchEvent(new dom.window.Event('resize')))
-    assert.ok(parseFloat(frame.style.height) <= 374)
-    assert.ok(parseFloat(frame.style.width) <= 828)
+    assert.equal(Number(frame.dataset.scale), 1)
+    assert.equal(frame.style.height, '390px')
+    assert.equal(frame.style.width, '844px')
   } finally {
     await f.dispose()
     if (originalView) Object.defineProperty(dom.window, 'visualViewport', originalView)

@@ -21,3 +21,12 @@ test('Live Tour table name and inline appointment have no border while quick inp
   assert.match(controls, /\.live-tour-appointment-editor\.quick input\{border-color:/)
   assert.match(shared, /body :is\(th, td,[\s\S]*?border:\s*2px solid var\(--table-border\)\s*!important/)
 })
+
+test('Live Tour reallocates compact column space equally to appointment and status', () => {
+  assert.match(controls, /\.tour-col-request\{width:27px;min-width:27px;max-width:27px\}/)
+  assert.match(controls, /\.tour-col-remaining\{width:29px;min-width:29px;max-width:29px\}/)
+  assert.match(controls, /\.tour-col-room\{width:43px;min-width:43px;max-width:43px\}/)
+  assert.match(controls, /\.tour-col-status\s*\{[\s\S]*?width:\s*153\.5px;[\s\S]*?min-width:\s*153\.5px;[\s\S]*?max-width:\s*153\.5px;/)
+  assert.match(controls, /\.tour-col-appointment\{width:153\.5px;min-width:153\.5px;max-width:153\.5px;/)
+  assert.match(controls, /\.tour-col-status,\s*\n\s*\.live-tour-page \.tour-table \.tour-col-appointment\{width:25\.75%\}/)
+})
