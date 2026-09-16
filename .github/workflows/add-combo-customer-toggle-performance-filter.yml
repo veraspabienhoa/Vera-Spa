@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply combo customer search toggle and performance filter
+      - name: Apply requested UI changes
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -29,14 +29,14 @@ jobs:
           state_line = "  const [customerSearchOpen, setCustomerSearchOpen] = useState(true)\n"
           if state_line not in combo:
               if marker not in combo:
-                  raise SystemExit('Combo component marker not found')
+                  raise SystemExit('combo marker missing')
               combo = combo.replace(marker, marker + state_line, 1)
-          old_customer = "    <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} customerRequired/>"
-          new_customer = "    <div className=\"live-tour-field wide live-tour-combo-customer-search-toggle\"><button type=\"button\" className=\"secondary-button\" aria-pressed={customerSearchOpen} onClick={() => setCustomerSearchOpen(current => !current)}>{customerSearchOpen ? 'Tắt tìm kiếm khách hàng' : 'Mở tìm kiếm khách hàng'}</button></div>\n    <LiveTourCheckoutCustomer customers={customerSearchOpen ? customers : []} form={form} setForm={setForm} customerRequired/>"
-          if old_customer in combo:
-              combo = combo.replace(old_customer, new_customer, 1)
-          elif new_customer not in combo:
-              raise SystemExit('Combo customer field marker not found')
+          old = "    <LiveTourCheckoutCustomer customers={customers} form={form} setForm={setForm} customerRequired/>"
+          new = "    <div className=\"live-tour-field wide live-tour-combo-customer-search-toggle\"><button type=\"button\" className=\"secondary-button\" aria-pressed={customerSearchOpen} onClick={() => setCustomerSearchOpen(current => !current)}>{customerSearchOpen ? 'Tắt tìm kiếm khách hàng' : 'Mở tìm kiếm khách hàng'}</button></div>\n    <LiveTourCheckoutCustomer customers={customerSearchOpen ? customers : []} form={form} setForm={setForm} customerRequired/>"
+          if old in combo:
+              combo = combo.replace(old, new, 1)
+          elif new not in combo:
+              raise SystemExit('combo customer field missing')
           combo_path.write_text(combo, encoding='utf-8')
 
           report_path = Path('web-v2/src/pages/LiveTourReportsPage.jsx')
@@ -45,32 +45,29 @@ jobs:
           timing_state = "  const [performanceTiming, setPerformanceTiming] = useState('all')\n"
           if timing_state not in report:
               if state_marker not in report:
-                  raise SystemExit('Report tab state marker not found')
+                  raise SystemExit('report state marker missing')
               report = report.replace(state_marker, state_marker + timing_state, 1)
-
           old_perf = "  const performance = filterTourRows(data.performance || [], filters)\n  const rows = tab === 'performance' ? performance : tab === 'tip'"
           new_perf = "  const performance = filterTourRows(data.performance || [], filters)\n  const performanceRows = performance.filter(row => {\n    if (performanceTiming === 'all') return true\n    const delta = Number(row.completion_delta_minutes)\n    if (performanceTiming === 'early') return delta < 0\n    if (performanceTiming === 'late') return delta > 0\n    return delta === 0\n  })\n  const rows = tab === 'performance' ? performanceRows : tab === 'tip'"
           if old_perf in report:
               report = report.replace(old_perf, new_perf, 1)
           elif new_perf not in report:
-              raise SystemExit('Performance row calculation marker not found')
-
+              raise SystemExit('performance rows marker missing')
           filters_line = "      <LiveTourFilters value={filters} onChange={setFilters} rows={tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/>\n"
           filter_ui = "      {tab === 'performance' && <div className=\"performance-status-filter\" role=\"group\" aria-label=\"Lọc kết quả thời gian dịch vụ\">{[['all', 'Tất cả'], ['ontime', 'Đúng giờ'], ['late', 'Trễ'], ['early', 'Sớm']].map(([key, label]) => <button type=\"button\" key={key} className=\"secondary-button\" aria-pressed={performanceTiming === key} onClick={() => setPerformanceTiming(key)}>{label}</button>)}</div>}\n"
           if filter_ui not in report:
               if filters_line not in report:
-                  raise SystemExit('LiveTourFilters marker not found')
+                  raise SystemExit('filters marker missing')
               report = report.replace(filters_line, filters_line + filter_ui, 1)
-
-          report = report.replace("<span>Muộn</span><strong>{rows.filter(row => Number(row.completion_delta_minutes) > 0).length}</strong>", "<span>Trễ</span><strong>{performance.filter(row => Number(row.completion_delta_minutes) > 0).length}</strong>")
           report = report.replace("<span>Sớm</span><strong>{rows.filter(row => Number(row.completion_delta_minutes) < 0).length}</strong>", "<span>Sớm</span><strong>{performance.filter(row => Number(row.completion_delta_minutes) < 0).length}</strong>")
           report = report.replace("<span>Đúng giờ</span><strong>{rows.filter(row => Number(row.completion_delta_minutes) === 0).length}</strong>", "<span>Đúng giờ</span><strong>{performance.filter(row => Number(row.completion_delta_minutes) === 0).length}</strong>")
+          report = report.replace("<span>Muộn</span><strong>{rows.filter(row => Number(row.completion_delta_minutes) > 0).length}</strong>", "<span>Trễ</span><strong>{performance.filter(row => Number(row.completion_delta_minutes) > 0).length}</strong>")
           old_result = "<strong className={Number(row.completion_delta_minutes) < 0 ? 'report-early' : Number(row.completion_delta_minutes) > 0 ? 'report-late' : 'report-ontime'}>{row.completion_result}</strong>"
           new_result = "<span className={Number(row.completion_delta_minutes) < 0 ? 'report-early' : Number(row.completion_delta_minutes) > 0 ? 'report-late' : 'report-ontime'}>{row.completion_result}</span>"
           if old_result in report:
               report = report.replace(old_result, new_result, 1)
           elif new_result not in report:
-              raise SystemExit('Performance result marker not found')
+              raise SystemExit('result marker missing')
           report_path.write_text(report, encoding='utf-8')
 
           css_path = Path('web-v2/src/pages/LiveTourReportsPage.css')
@@ -80,28 +77,25 @@ jobs:
           if old_colors in css:
               css = css.replace(old_colors, new_colors, 1)
           elif new_colors not in css:
-              raise SystemExit('Performance color rules not found')
+              raise SystemExit('color rules missing')
           marker_css = '/* PERFORMANCE_STATUS_FILTER_V1 */'
-          block = """
-
-/* PERFORMANCE_STATUS_FILTER_V1 */
-.performance-status-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 6px}
-.performance-status-filter .secondary-button{min-width:92px}
-.performance-status-filter .secondary-button[aria-pressed=\"true\"]{background:#1f5d49;color:#fff;border-color:#1f5d49}
-@media(max-width:760px){.performance-status-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.performance-status-filter .secondary-button{min-width:0;padding:6px 2px;font-size:10px}}
-"""
           if marker_css not in css:
-              css += block
+              css += '\n\n' + '\n'.join([
+                  marker_css,
+                  '.performance-status-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 6px}',
+                  '.performance-status-filter .secondary-button{min-width:92px}',
+                  '.performance-status-filter .secondary-button[aria-pressed="true"]{background:#1f5d49;color:#fff;border-color:#1f5d49}',
+                  '@media(max-width:760px){.performance-status-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.performance-status-filter .secondary-button{min-width:0;padding:6px 2px;font-size:10px}}',
+              ]) + '\n'
           css_path.write_text(css, encoding='utf-8')
 
           assert "customerSearchOpen ? 'Tắt tìm kiếm khách hàng' : 'Mở tìm kiếm khách hàng'" in combo
           assert 'customers={customerSearchOpen ? customers : []}' in combo
-          assert "const [performanceTiming, setPerformanceTiming] = useState('all')" in report
           assert "['late', 'Trễ']" in report and "['early', 'Sớm']" in report
           assert '<span>Trễ</span>' in report and '<span>Muộn</span>' not in report
           assert '.report-early{color:#b42318;font-weight:800}' in css
           assert '.report-ontime,.report-late{color:inherit;font-weight:400}' in css
-          print('COMBO_TOGGLE_PERFORMANCE_FILTER=OK')
+          print('REQUESTED_UI_CHANGES=OK')
           PY
 
       - uses: actions/setup-node@v5
