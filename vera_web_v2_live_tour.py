@@ -3360,7 +3360,9 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
         _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
         _auto_start_waiting(state, now)
         if state != before:
-            revision = _write_state(conn, state, revision, "live_tour_daily_projection")
+            revision = _write_state(
+                conn, state, revision, "live_tour_daily_projection", previous_state=before,
+            )
         return state, revision
     state = _bootstrap_state(conn, now)
     conn.execute(text("""
@@ -4035,7 +4037,9 @@ def install_live_tour_routes(
             before = deepcopy(state)
             sync_breaks(state, records, now.astimezone(timezone))
             if state != before:
-                revision = _write_state(conn, state, revision, "attendance_break_projection")
+                revision = _write_state(
+                    conn, state, revision, "attendance_break_projection", previous_state=before,
+                )
         return state, revision
 
     def read_state_without_projection(conn, now, *, for_update=False):
@@ -4370,7 +4374,12 @@ def install_live_tour_routes(
                     working, idempotency_key, action=action, actor=actor,
                     payload_hash=payload_hash, result=result, now=now,
                 )
-            next_revision = _write_state(conn, working, revision, actor)
+            # ``state`` is the locked pre-mutation snapshot.  Passing it to the
+            # shadow synchronizer avoids a second full JSON aggregate SELECT and
+            # normalization while the global board lock is held.
+            next_revision = _write_state(
+                conn, working, revision, actor, previous_state=state,
+            )
         return action_response(
             state=working, revision=next_revision, now=now, action=action,
             result=result, grants=grants,
@@ -4459,7 +4468,9 @@ def install_live_tour_routes(
             working["updated_at"] = _iso(now)
             working["business_date"] = _business_date(now).isoformat()
             _audit(working, "board_excel_import", {"imported": imported}, actor, now)
-            next_revision = _write_state(conn, working, revision, actor)
+            next_revision = _write_state(
+                conn, working, revision, actor, previous_state=state,
+            )
             grants = permissions(conn, ident)
         response = _state_response(working, next_revision, now, **grants)
         return {**response, "ok": True, "imported": imported, "message": f"Đã Import và lưu {imported} nhân viên vào Bảng tua."}

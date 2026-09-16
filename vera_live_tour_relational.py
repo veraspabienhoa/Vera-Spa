@@ -132,14 +132,16 @@ def ensure_schema(conn) -> None:
 
 
 def _split(state: dict[str, Any]) -> tuple[dict[str, Any], dict[tuple[str, str], tuple[int, dict[str, Any]]]]:
-    meta = {key: deepcopy(value) for key, value in state.items() if key not in RESOURCE_COLLECTIONS}
+    # ``sync_changes`` only serializes and compares these values.  It never
+    # mutates them, so copying the full aggregate here is pure lock-held work.
+    # Callers keep the pre- and post-mutation snapshots distinct.
+    meta = {key: value for key, value in state.items() if key not in RESOURCE_COLLECTIONS}
     resources: dict[tuple[str, str], tuple[int, dict[str, Any]]] = {}
     for collection in RESOURCE_COLLECTIONS:
         for ordinal, raw in enumerate(state.get(collection) or []):
             if not isinstance(raw, dict):
                 continue
-            item = deepcopy(raw)
-            resources[(collection, _resource_id(collection, item, ordinal))] = (ordinal, item)
+            resources[(collection, _resource_id(collection, raw, ordinal))] = (ordinal, raw)
     return meta, resources
 
 
