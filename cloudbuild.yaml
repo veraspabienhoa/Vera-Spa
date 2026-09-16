@@ -111,7 +111,7 @@ steps:
         python3 - "$${API_URL}/v2/tour-leave-sync/health" <<'PY'
         import json, sys, time, urllib.request
         url=sys.argv[1]
-        expected='tour-leave-sync-2026-09-01.1'
+        expected='tour-leave-sync-2026-09-02.2-cp-only'
         last=None
         for attempt in range(1,13):
             try:
