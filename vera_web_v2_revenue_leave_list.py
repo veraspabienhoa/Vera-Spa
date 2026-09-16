@@ -48,6 +48,8 @@ DATE_IN_TEXT_RE = re.compile(
 
 class RevenueTipUpdate(BaseModel):
     amount: float = Field(ge=0, le=10_000_000_000_000)
+    start_date: date | None = None
+    end_date: date | None = None
 
 
 def _find_route(app, path: str, method: str):
@@ -194,7 +196,7 @@ def _revenue_summary(
     }
 
 
-def _period_tip(conn, start_date_text: str) -> float:
+def _period_tip(conn, default_start_date_text: str = "", default_end_date_text: str = "") -> dict[str, Any]:
     payload = conn.execute(text("""
         SELECT value_json
         FROM vera_app_setting
@@ -202,15 +204,18 @@ def _period_tip(conn, start_date_text: str) -> float:
         LIMIT 1
     """), {"key": REVENUE_TIP_SETTING}).scalar_one_or_none()
     if not isinstance(payload, dict):
-        return 0.0
-    if str(payload.get("period_start") or "") != str(start_date_text or ""):
-        return 0.0
-    return max(0.0, _money(payload.get("amount", 0)))
+        payload = {}
+    return {
+        "amount": max(0.0, _money(payload.get("amount", 0))),
+        "period_start": str(payload.get("period_start") or default_start_date_text or ""),
+        "period_end": str(payload.get("period_end") or default_end_date_text or ""),
+    }
 
 
-def _save_period_tip(conn, start_date_text: str, amount: float, actor: str) -> None:
+def _save_period_tip(conn, start_date_text: str, end_date_text: str, amount: float, actor: str) -> None:
     payload = {
         "period_start": str(start_date_text or ""),
+        "period_end": str(end_date_text or ""),
         "amount": round(max(0.0, float(amount)), 2),
     }
     conn.execute(text("""
@@ -401,9 +406,12 @@ def install_revenue_leave_list_routes(
         summary.update(_report_totals(_read_revenue_report_values(google_client)))
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            tip = _period_tip(conn, summary.get("start_date", ""))
+            tip_setting = _period_tip(conn, summary.get("start_date", ""), summary.get("current_date", ""))
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
+        tip = float(tip_setting["amount"])
         summary["period_tip"] = round(tip, 2)
+        summary["period_tip_start"] = tip_setting["period_start"]
+        summary["period_tip_end"] = tip_setting["period_end"]
         summary["balance"] = round(summary["total_income"] - summary["total_expense"] - tip, 2)
         return {
             "ok": True,
@@ -425,12 +433,17 @@ def install_revenue_leave_list_routes(
         period_start = _revenue_period_start(norm, values)
         summary = _revenue_summary(values, norm, period_start=period_start)
         summary.update(_report_totals(_read_revenue_report_values(google_client)))
-        period_start = str(summary.get("start_date") or "")
-        if not period_start:
-            raise HTTPException(409, "Chưa xác định được ngày bắt đầu kỳ Doanh thu để lưu Tiền TIP.")
+        default_start = str(summary.get("start_date") or "")
+        default_end = str(summary.get("current_date") or "")
+        tip_start = body.start_date.isoformat() if body.start_date else default_start
+        tip_end = body.end_date.isoformat() if body.end_date else default_end
+        if not tip_start or not tip_end:
+            raise HTTPException(409, "Chọn đủ Ngày bắt đầu và Đến ngày cho Tiền TIP trong kỳ.")
+        if tip_start > tip_end:
+            raise HTTPException(400, "Ngày bắt đầu Tiền TIP không được sau Đến ngày.")
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_TIP_FEATURE)
-            _save_period_tip(conn, period_start, body.amount, getattr(ident, "employee_username", ""))
+            _save_period_tip(conn, tip_start, tip_end, body.amount, getattr(ident, "employee_username", ""))
         tip = round(float(body.amount), 2)
         balance = round(summary["total_income"] - summary["total_expense"] - tip, 2)
         return {
@@ -438,8 +451,11 @@ def install_revenue_leave_list_routes(
             "release": RELEASE,
             "period_tip": tip,
             "balance": balance,
-            "period_start": period_start,
-            "message": f"Đã lưu Tiền TIP trong kỳ: {round(tip):,}đ.".replace(",", "."),
+            "period_tip_start": tip_start,
+            "period_tip_end": tip_end,
+            "period_start": tip_start,
+            "period_end": tip_end,
+            "message": f"Đã lưu Tiền TIP trong kỳ {tip_start} đến {tip_end}: {round(tip):,}đ.".replace(",", "."),
         }
 
     @app.get("/v2/leave/records")

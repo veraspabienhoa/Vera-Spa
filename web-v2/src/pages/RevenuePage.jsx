@@ -63,12 +63,12 @@ async function loadPurchaseReconcile({ preset, start, end, signal }) {
   return payload
 }
 
-async function savePeriodTip(amount) {
+async function savePeriodTip(amount, startDate, endDate) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const response = await fetch(`${apiBase}/v2/revenue/tip`, {
     method: 'PUT',
     headers: await authorizedHeaders(true),
-    body: JSON.stringify({ amount: Number(amount || 0) }),
+    body: JSON.stringify({ amount: Number(amount || 0), start_date: startDate || null, end_date: endDate || null }),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
@@ -90,6 +90,8 @@ function statusTextClass(status) {
 export default function RevenuePage() {
   const [data, setData] = useState(null)
   const [tip, setTip] = useState(0)
+  const [tipStart, setTipStart] = useState('')
+  const [tipEnd, setTipEnd] = useState('')
   const [busy, setBusy] = useState(false)
   const [savingTip, setSavingTip] = useState(false)
   const [error, setError] = useState('')
@@ -120,6 +122,8 @@ export default function RevenuePage() {
         if (!controller.signal.aborted) {
           setData(result)
           setTip(Number(result.period_tip || 0))
+          setTipStart(result.period_tip_start || result.start_date || '')
+          setTipEnd(result.period_tip_end || result.current_date || '')
         }
       } catch (err) {
         if (!controller.signal.aborted && err?.name !== 'AbortError') setError(err.message || 'Không tải được Doanh thu.')
@@ -165,9 +169,13 @@ export default function RevenuePage() {
     setNotice('')
     try {
       if (!Number.isFinite(Number(tip)) || Number(tip) < 0) throw new Error('Tiền TIP trong kỳ phải là số không âm.')
-      const result = await savePeriodTip(tip)
-      setData((current) => current ? ({ ...current, period_tip: result.period_tip, balance: result.balance }) : current)
+      if (!tipStart || !tipEnd) throw new Error('Chọn đủ Ngày bắt đầu và Đến ngày cho Tiền TIP trong kỳ.')
+      if (tipStart > tipEnd) throw new Error('Ngày bắt đầu Tiền TIP không được sau Đến ngày.')
+      const result = await savePeriodTip(tip, tipStart, tipEnd)
+      setData((current) => current ? ({ ...current, period_tip: result.period_tip, balance: result.balance, period_tip_start: result.period_tip_start, period_tip_end: result.period_tip_end }) : current)
       setTip(Number(result.period_tip || 0))
+      setTipStart(result.period_tip_start || tipStart)
+      setTipEnd(result.period_tip_end || tipEnd)
       setNotice(result.message || 'Đã lưu Tiền TIP trong kỳ.')
     } catch (err) {
       setError(err.message || 'Không lưu được Tiền TIP trong kỳ.')
@@ -210,7 +218,7 @@ export default function RevenuePage() {
       .revenue-period-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dfe7e2;border-radius:15px;background:#fff}
       .revenue-period-card svg{color:#8b6b22;flex:0 0 auto}.revenue-period-card span{display:block;font-size:11px;font-weight:900;letter-spacing:.05em;color:#68736f;text-transform:uppercase}.revenue-period-card strong{display:block;margin-top:3px;font-size:18px;color:#173329}
       .revenue-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.revenue-action-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;min-height:43px}.revenue-action-link.disabled{opacity:.45;pointer-events:none}
-      .revenue-tip-editor{display:grid;grid-template-columns:minmax(220px,380px) auto 1fr;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900}.revenue-tip-editor input{font-size:18px;font-weight:800;text-align:right}.revenue-tip-editor small{color:#75694d;line-height:1.45}
+      .revenue-tip-editor{display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(150px,.8fr) minmax(150px,.8fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900}.revenue-tip-editor input{font-size:16px;font-weight:800}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;gap:6px;font-size:11px;color:#75694d;margin-top:4px}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px}
       .revenue-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.revenue-card{padding:22px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{margin-top:14px;font-size:30px;line-height:1.05;font-weight:900;color:#173329;overflow-wrap:anywhere}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
       .revenue-formula{margin-top:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:13px;background:#f3f8f5;color:#244a3a;font-size:13px;font-weight:800;text-align:center}.revenue-meta{margin-top:10px;padding:12px 14px;border:1px solid #e4eae6;border-radius:13px;background:#fafcfb;color:#68736f;font-size:12px}
       .reconcile-panel{margin-top:20px;padding:16px;border:1px solid #dfe7e2;border-radius:18px;background:#fff}.reconcile-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}.reconcile-head h2{margin:3px 0 0;font-size:20px;color:#173329}.reconcile-head p{margin:4px 0 0;color:#68736f;font-size:12px;max-width:850px}.reconcile-filter{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.reconcile-filter label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.reconcile-filter select,.reconcile-filter input{min-height:40px;min-width:145px}
@@ -242,9 +250,11 @@ export default function RevenuePage() {
     </div>
 
     {canEditTip && <section className="revenue-tip-editor">
-      <label>TIỀN TIP TRONG KỲ<input type="number" min="0" step="1000" inputMode="numeric" value={numberInputDisplayValue(tip)} disabled={savingTip} onChange={(event) => setTip(event.target.value)} /></label>
+      <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="number" min="0" step="1000" inputMode="numeric" value={numberInputDisplayValue(tip)} disabled={savingTip} onChange={(event) => setTip(event.target.value)} /></label>
+      <label>Ngày bắt đầu<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} disabled={savingTip} onChange={(event) => setTipStart(event.target.value)} /></label>
+      <label>Đến ngày<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} disabled={savingTip} onChange={(event) => setTipEnd(event.target.value)} /><span className="revenue-tip-current">Ngày hiện tại: {data?.current_date_label || '—'} <button type="button" className="secondary-button" disabled={savingTip || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày hiện tại</button></span></label>
       <button type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>
-      <small>Số tiền này được lưu theo kỳ Doanh thu hiện tại. Công thức Còn lại sẽ trừ Tiền TIP trong kỳ ngay sau khi lưu.</small>
+      <small>Tiền TIP được lưu cho khoảng từ Ngày bắt đầu đến Đến ngày. Đến ngày mặc định theo Ngày hiện tại của dữ liệu (ví dụ 13/09/2026) và vẫn có thể nhập tay. Công thức Còn lại trừ Tiền TIP ngay sau khi lưu.</small>
     </section>}
 
     <section className="revenue-grid" aria-live="polite">
