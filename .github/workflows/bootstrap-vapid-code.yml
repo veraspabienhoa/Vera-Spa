@@ -1,0 +1,77 @@
+name: Bootstrap VAPID code migration
+
+on:
+  push:
+    paths:
+      - '.github/workflows/bootstrap-vapid-code.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Patch backend and frontend VAPID handling
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          api = Path('vera_web_v2_api.py')
+          s = api.read_text()
+          old = '''    env_name = {\n        "vera_v2_push_webhook_secret": "VERA_V2_PUSH_WEBHOOK_SECRET",\n    }.get(name)\n'''
+          new = '''    env_name = {\n        "vera_v2_push_webhook_secret": "VERA_V2_PUSH_WEBHOOK_SECRET",\n        "vera_v2_vapid_private_key": "VERA_V2_VAPID_PRIVATE_KEY",\n        "vera_v2_vapid_public_key": "VERA_V2_VAPID_PUBLIC_KEY",\n        "vera_v2_vapid_subject": "VERA_V2_VAPID_SUBJECT",\n    }.get(name)\n'''
+          if s.count(old) != 1:
+              raise SystemExit('API env mapping block mismatch')
+          api.write_text(s.replace(old, new))
+
+          alerts = Path('vera_live_tour_queue_alerts.py')
+          s = alerts.read_text()
+          if 'import os\n' not in s:
+              s = s.replace('import logging\n', 'import logging\nimport os\n', 1)
+          old = '''def _vault_secret(conn, name: str) -> str:\n    value = conn.execute(text("""\n        SELECT decrypted_secret FROM vault.decrypted_secrets\n        WHERE name=:name LIMIT 1\n    """), {"name": name}).scalar_one_or_none()\n    return str(value or "").strip()\n'''
+          new = '''def _vault_secret(conn, name: str) -> str:\n    env_name = {\n        "vera_v2_vapid_private_key": "VERA_V2_VAPID_PRIVATE_KEY",\n        "vera_v2_vapid_subject": "VERA_V2_VAPID_SUBJECT",\n    }.get(name)\n    if env_name:\n        value = str(os.getenv(env_name) or "").strip()\n        if value:\n            return value\n    if conn.execute(text("SELECT to_regclass('vault.decrypted_secrets')")).scalar_one_or_none() is None:\n        return ""\n    value = conn.execute(text("""\n        SELECT decrypted_secret FROM vault.decrypted_secrets\n        WHERE name=:name LIMIT 1\n    """), {"name": name}).scalar_one_or_none()\n    return str(value or "").strip()\n'''
+          if s.count(old) != 1:
+              raise SystemExit('queue alert secret helper mismatch')
+          alerts.write_text(s.replace(old, new))
+
+          push = Path('web-v2/src/lib/pushNotifications.js')
+          s = push.read_text()
+          needle = '''const decodeVapidKey = (value) => {\n  const padding = '='.repeat((4 - (value.length % 4)) % 4)\n  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/')\n  const raw = window.atob(base64)\n  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)))\n}\n'''
+          replacement = needle + '''\nconst vapidKeyMatches = (subscription, publicKey) => {\n  const current = subscription?.options?.applicationServerKey\n  if (!current) return false\n  const actual = new Uint8Array(current)\n  const expected = decodeVapidKey(publicKey)\n  if (actual.length !== expected.length) return false\n  return actual.every((value, index) => value === expected[index])\n}\n'''
+          if s.count(needle) != 1:
+              raise SystemExit('frontend decodeVapidKey block mismatch')
+          s = s.replace(needle, replacement)
+          old = '''  let subscription = await registration.pushManager.getSubscription()\n  if (!subscription) {\n    subscription = await registration.pushManager.subscribe({\n      userVisibleOnly: true,\n      applicationServerKey: decodeVapidKey(config.public_key),\n    })\n  }\n'''
+          new = '''  let subscription = await registration.pushManager.getSubscription()\n  if (subscription && !vapidKeyMatches(subscription, config.public_key)) {\n    try {\n      await veraApi.unregisterPushSubscription(subscription.endpoint)\n    } catch {\n      // The browser subscription still must rotate even if server cleanup fails.\n    }\n    await subscription.unsubscribe()\n    subscription = null\n  }\n  if (!subscription) {\n    subscription = await registration.pushManager.subscribe({\n      userVisibleOnly: true,\n      applicationServerKey: decodeVapidKey(config.public_key),\n    })\n  }\n'''
+          if s.count(old) != 1:
+              raise SystemExit('frontend subscription block mismatch')
+          push.write_text(s.replace(old, new))
+
+          wf = Path('.github/workflows/deploy-live-tour-watchdog-pgcron.yml')
+          s = wf.read_text()
+          marker = "      - 'vera_web_v2_attendance_break_dispatch.py'\n"
+          addition = marker + "      - 'vera_live_tour_queue_alerts.py'\n      - 'web-v2/src/lib/pushNotifications.js'\n"
+          if "      - 'vera_live_tour_queue_alerts.py'\n" not in s:
+              if s.count(marker) != 1:
+                  raise SystemExit('deploy workflow path marker mismatch')
+              s = s.replace(marker, addition)
+          wf.write_text(s)
+          PY
+
+          python3 -m py_compile vera_web_v2_api.py vera_live_tour_queue_alerts.py
+          node --check web-v2/src/lib/pushNotifications.js
+          git diff --check
+          git diff -- vera_web_v2_api.py vera_live_tour_queue_alerts.py web-v2/src/lib/pushNotifications.js .github/workflows/deploy-live-tour-watchdog-pgcron.yml
+
+      - name: Commit migration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add vera_web_v2_api.py vera_live_tour_queue_alerts.py web-v2/src/lib/pushNotifications.js .github/workflows/deploy-live-tour-watchdog-pgcron.yml
+          git commit -m 'Bootstrap environment-backed VAPID rotation'
+          git push origin HEAD:main
