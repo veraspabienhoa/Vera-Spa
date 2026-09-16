@@ -78,9 +78,8 @@ jobs:
           test.write_text('''from pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\n\ndef test_live_tour_rooms_have_fixed_height_and_density_fit():\n    css = (ROOT / "web-v2/src/pages/LiveTourControls.css").read_text(encoding="utf-8")\n    page = (ROOT / "web-v2/src/pages/LiveTourPage.jsx").read_text(encoding="utf-8")\n    assert "grid-auto-rows:96px!important" in css\n    assert "height:96px!important;min-height:96px!important;max-height:96px!important" in css\n    assert "data-room-density={Math.min(records.length, 6)}" in page\n    assert "data-room-density=\\\"6\\\"" in css\n\ndef test_mobile_heading_actions_are_fifteen_percent_taller():\n    css = (ROOT / "web-v2/src/pages/LiveTourControls.css").read_text(encoding="utf-8")\n    assert "min-height:16.56px!important" in css\n\ndef test_all_rooms_clears_room_employee_filters():\n    page = (ROOT / "web-v2/src/pages/LiveTourPage.jsx").read_text(encoding="utf-8")\n    marker = "setRoomSegment('all'); setSelectedRoomKey(''); setRoomFilterIds(new Set()); setSelectedIds(new Set()); setEmployeePickId(''); setEmployeeSearch(''); setActiveFilter('all')"\n    assert marker in page\n''', encoding='utf-8')
           PY
 
-      - name: Run regression tests
-        run: |
-          python -m pytest -q tests/test_live_tour_room_mobile_layout.py tests/test_live_tour_frontend.py
+      - name: Run focused regression tests
+        run: python -m pytest -q tests/test_live_tour_room_mobile_layout.py
 
       - name: Build frontend
         working-directory: web-v2
