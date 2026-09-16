@@ -1,0 +1,82 @@
+name: Deploy Live Tour mobile roster and countdown
+
+on:
+  push:
+    paths:
+      - '.github/workflows/deploy-live-tour-mobile-roster-countdown.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-live-tour-mobile-roster-countdown
+  cancel-in-progress: false
+
+jobs:
+  test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Verify mobile roster and countdown rules
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          css = Path('web-v2/src/live-tour-mobile-overrides.css').read_text(encoding='utf-8')
+          required = [
+              'font-size: 22.425px !important',
+              '.tour-col-stt', '.tour-col-employee', '.live-tour-actions-col',
+              '.tour-col-appointment', '.tour-col-status', '.tour-col-room',
+              '.tour-col-remaining', '.tour-col-request', '.tour-col-service',
+              '.tour-col-mobile-hidden',
+          ]
+          missing = [item for item in required if item not in css]
+          if missing:
+              raise SystemExit('Missing requested Live Tour rules: ' + repr(missing))
+          print('LIVE_TOUR_MOBILE_ROSTER_COUNTDOWN=OK')
+          PY
+
+      - name: Run frontend regression tests and build
+        working-directory: web-v2
+        run: |
+          npm ci
+          node --test tests/liveTourAppointments.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs
+          npm run build
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy tested main to production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -e
+          DEPLOY_SHA="$(git rev-parse HEAD)"
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+          echo "DEPLOY_SHA=${DEPLOY_SHA}" >> "$GITHUB_ENV"
+
+      - name: Verify production commit and API health
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -e
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '${DEPLOY_SHA}'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
