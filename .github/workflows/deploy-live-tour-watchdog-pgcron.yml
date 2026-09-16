@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/deploy-live-tour-watchdog-pgcron.yml'
+      - 'vera_web_v2_api.py'
       - 'vera_web_v2_attendance_break_dispatch.py'
       - 'ops/systemd/vera-live-tour-queue-watchdog.sh'
       - 'ops/systemd/vera-live-tour-queue-watchdog.service'
@@ -47,21 +48,13 @@ jobs:
             "${VPS_USER}@${VPS_HOST}" \
             "timeout 180 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
 
-      - name: Install and start systemd watchdog
+      - name: Verify systemd bootstrap and watchdog
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
-            'set -euo pipefail; cp /opt/vera-spa/current/ops/systemd/vera-live-tour-queue-watchdog.service /etc/systemd/system/; cp /opt/vera-spa/current/ops/systemd/vera-live-tour-queue-watchdog.timer /etc/systemd/system/; systemctl daemon-reload; systemctl enable --now vera-live-tour-queue-watchdog.timer; systemctl start vera-live-tour-queue-watchdog.service'
-
-      - name: Verify timer and first execution
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
-            'set -euo pipefail; systemctl is-active vera-live-tour-queue-watchdog.timer; systemctl list-timers vera-live-tour-queue-watchdog.timer --no-pager; systemctl show vera-live-tour-queue-watchdog.service -p Result -p ExecMainStatus; journalctl -u vera-live-tour-queue-watchdog.service -n 20 --no-pager'
+            'set -euo pipefail; systemctl is-enabled vera-live-tour-queue-watchdog.timer; systemctl is-active vera-live-tour-queue-watchdog.timer; systemctl list-timers vera-live-tour-queue-watchdog.timer --no-pager; systemctl show vera-live-tour-queue-watchdog.service -p Result -p ExecMainStatus; journalctl -u vera-live-tour-queue-watchdog.service -n 20 --no-pager'
 
       - name: Verify production watchdog endpoint registration
         env:
