@@ -599,10 +599,10 @@ test('admin bottom and direct STT actions target selected employee; manual order
     assert.equal(f.writes[1].payload.position, 1)
     assert.equal(document.querySelector('.tour-records-panel tbody input[type=checkbox]').checked, false)
     const actions = [...document.querySelectorAll('.live-tour-controls-actions > button')].map(button => button.textContent.trim())
-    assert.deepEqual(actions.slice(0, 10), [
+    assert.deepEqual(actions.slice(0, 11), [
       'Cập nhật lịch nghỉ', 'Đi làm', 'Nghỉ phép', 'Hủy Booking',
-      'Đổi nhân viên', 'Nghỉ giữa ca', 'Kết thúc nghỉ', 'Xuống cuối',
-      'Lên đầu', 'Đổi STT',
+      'Hủy Thực hiện', 'Đổi nhân viên', 'Nghỉ giữa ca', 'Kết thúc nghỉ',
+      'Xuống cuối', 'Lên đầu', 'Đổi STT',
     ])
     for (const label of ['Xuống cuối', 'Lên đầu', 'Lên 1', 'Xuống 1']) {
       assert.ok([...document.querySelectorAll('.live-tour-controls-actions > button')].find(button => button.textContent === label).classList.contains('live-tour-mobile-reorder-hidden'))

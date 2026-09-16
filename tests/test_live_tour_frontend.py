@@ -131,14 +131,16 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
     assert not missing, f"Live Tour is missing controls/workspaces: {', '.join(missing)}"
     assert "Làm mới Live Tour" not in source
 
-    controls = source.split('className="panel live-tour-operator live-tour-controls"', 1)[1].split('</section>', 1)[0]
+    controls_anchor = 'live-tour-operator live-tour-controls'
+    assert controls_anchor in source
+    controls = source.split(controls_anchor, 1)[1].split('</section>', 1)[0]
     assert '<section hidden className="panel live-tour-operator live-tour-controls"' not in source
     assert 'aria-label="Điều khiển"' in controls
     assert 'live-tour-operator-head' not in controls
     assert 'live-tour-controls-label' not in controls
     for label in ('Thực hiện đã chọn', 'Hoàn thành', 'Chờ thanh toán', 'Thanh toán'):
         assert f'> {label}</button>' not in controls and f'>{label}</button>' not in controls
-    for label in ('Cập nhật lịch nghỉ', 'Đi làm', 'Nghỉ phép', 'Nghỉ giữa ca', 'Kết thúc nghỉ', 'Hủy Booking', 'Đổi nhân viên', 'Xuống cuối', 'Lên đầu', 'STT', 'Đổi STT'):
+    for label in ('Cập nhật lịch nghỉ', 'Đi làm', 'Nghỉ phép', 'Nghỉ giữa ca', 'Kết thúc nghỉ', 'Hủy Booking', 'Hủy Thực hiện', 'Đổi nhân viên', 'Xuống cuối', 'Lên đầu', 'STT', 'Đổi STT'):
         assert label in controls
     assert 'Thanh toán nhanh' not in controls
     toolbar = source.split('className="tour-heading-actions"', 1)[1].split('</div>', 1)[0]
