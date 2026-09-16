@@ -1,4 +1,4 @@
-name: Deploy Live Tour Watchdog pg_cron
+name: Deploy Live Tour Watchdog systemd
 
 on:
   workflow_dispatch:
@@ -7,7 +7,9 @@ on:
     paths:
       - '.github/workflows/deploy-live-tour-watchdog-pgcron.yml'
       - 'vera_web_v2_attendance_break_dispatch.py'
-      - 'vera_postgres_phase22_live_tour_queue_watchdog.sql'
+      - 'ops/systemd/vera-live-tour-queue-watchdog.sh'
+      - 'ops/systemd/vera-live-tour-queue-watchdog.service'
+      - 'ops/systemd/vera-live-tour-queue-watchdog.timer'
 
 permissions:
   contents: read
@@ -45,36 +47,23 @@ jobs:
             "${VPS_USER}@${VPS_HOST}" \
             "timeout 180 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
 
-      - name: Apply pg_cron watchdog migration
+      - name: Install and start systemd watchdog
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
-          DEPLOY_SHA: ${{ github.sha }}
         run: |
-          set -euo pipefail
-          test -n "$VERA_DB_PASS"
-          if [[ "$VERA_DB_PASS" == *$'\n'* || "$VERA_DB_PASS" == *$'\r'* ]]; then
-            echo 'VERA_DB_PASS must be single-line' >&2
-            exit 1
-          fi
-          printf '%s\n' "$VERA_DB_PASS" | ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 \
-            "${VPS_USER}@${VPS_HOST}" \
-            "set -euo pipefail; IFS= read -r db_pass; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; PGPASSWORD=\"\$db_pass\" psql -v ON_ERROR_STOP=1 -h 160.236.192.51 -p 5432 -U vera_dev -d veraspa -f \"\${release_dir}/vera_postgres_phase22_live_tour_queue_watchdog.sql\""
+          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -euo pipefail; cp /opt/vera-spa/current/ops/systemd/vera-live-tour-queue-watchdog.service /etc/systemd/system/; cp /opt/vera-spa/current/ops/systemd/vera-live-tour-queue-watchdog.timer /etc/systemd/system/; systemctl daemon-reload; systemctl enable --now vera-live-tour-queue-watchdog.timer; systemctl start vera-live-tour-queue-watchdog.service'
 
-      - name: Verify cron registration and recent execution
+      - name: Verify timer and first execution
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
         run: |
-          set -euo pipefail
-          sleep 10
-          printf '%s\n' "$VERA_DB_PASS" | ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 \
-            "${VPS_USER}@${VPS_HOST}" \
-            'set -euo pipefail; IFS= read -r db_pass; export PGPASSWORD="$db_pass"; psql -v ON_ERROR_STOP=1 -h 160.236.192.51 -p 5432 -U vera_dev -d veraspa -c "SELECT jobid,jobname,schedule,active FROM cron.job WHERE jobname=''vera-live-tour-queue-watchdog'';" -c "SELECT d.jobid,d.status,d.return_message,d.start_time,d.end_time FROM cron.job_run_details d JOIN cron.job j ON j.jobid=d.jobid WHERE j.jobname=''vera-live-tour-queue-watchdog'' ORDER BY d.start_time DESC LIMIT 10;"'
+          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -euo pipefail; systemctl is-active vera-live-tour-queue-watchdog.timer; systemctl list-timers vera-live-tour-queue-watchdog.timer --no-pager; systemctl show vera-live-tour-queue-watchdog.service -p Result -p ExecMainStatus; journalctl -u vera-live-tour-queue-watchdog.service -n 20 --no-pager'
 
-      - name: Verify production watchdog endpoint
+      - name: Verify production watchdog endpoint registration
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
