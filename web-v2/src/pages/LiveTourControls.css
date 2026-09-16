@@ -273,3 +273,5 @@
   .live-tour-page .tour-table .tour-col-request{width:65.6px!important;min-width:65.6px!important;max-width:65.6px!important}
   .live-tour-page .tour-table .tour-col-service{display:table-cell!important;min-width:120px!important;width:120px!important;white-space:normal!important;overflow-wrap:anywhere!important}
 }
+
+.live-tour-page .tour-room-countdown .tour-room-countdown-expired{font-size:80%!important}

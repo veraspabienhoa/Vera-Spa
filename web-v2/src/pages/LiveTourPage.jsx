@@ -1506,7 +1506,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
                   title="Bấm một lần để lọc nhân viên trong phòng; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div className="tour-room-card-head"><strong>{areaLabel(room)}</strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-customer-count">{records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</div>
-                <div className="tour-room-countdown"><Clock3 size={16}/><span className={/^(Còn|Đang chờ|Đang trống)/.test(countdown) ? 'tour-room-countdown-label' : undefined}>{countdown}</span></div>
+                <div className="tour-room-countdown"><Clock3 size={16}/><span className={countdown === 'Đã hết giờ' ? 'tour-room-countdown-expired' : /^(Còn|Đang chờ|Đang trống)/.test(countdown) ? 'tour-room-countdown-label' : undefined}>{countdown}</span></div>
                 {records.length ? <div className="tour-room-staff">{records.map((item, index) => <div key={recordId(item, index)}>{cellValue(item, employeeColumn)}</div>)}</div> : <div className="tour-room-meta">{available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên'}</div>}
                 {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
                 </button>
