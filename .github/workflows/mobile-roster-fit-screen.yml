@@ -1,0 +1,216 @@
+name: Mobile roster fit screen
+
+on:
+  push:
+    paths:
+      - '.github/workflows/mobile-roster-fit-screen.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-roster-fit-screen
+  cancel-in-progress: false
+
+jobs:
+  patch-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fit requested Live Tour columns into one mobile screen
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('web-v2/src/live-tour-mobile-overrides.css')
+          css = path.read_text(encoding='utf-8')
+          marker = '/* MOBILE_ROSTER_FIT_SCREEN_V2 */'
+          block = r'''
+
+/* MOBILE_ROSTER_FIT_SCREEN_V2 */
+@media (max-width: 820px) {
+  html body .live-tour-page .responsive-data-table.tour-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  html body .live-tour-page .responsive-data-table.tour-table table {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    table-layout: fixed !important;
+  }
+
+  html body .live-tour-page .tour-table .live-tour-select-col,
+  html body .live-tour-page .tour-table .tour-col-mobile-hidden {
+    display: none !important;
+  }
+
+  html body .live-tour-page .tour-table .tour-col-stt,
+  html body .live-tour-page .tour-table .tour-col-employee,
+  html body .live-tour-page .tour-table .live-tour-actions-col,
+  html body .live-tour-page .tour-table .tour-col-appointment,
+  html body .live-tour-page .tour-table .tour-col-status,
+  html body .live-tour-page .tour-table .tour-col-room,
+  html body .live-tour-page .tour-table .tour-col-remaining,
+  html body .live-tour-page .tour-table .tour-col-request,
+  html body .live-tour-page .tour-table .tour-col-service {
+    display: table-cell !important;
+    visibility: visible !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+  }
+
+  html body .live-tour-page .tour-table .tour-col-stt { width: 5% !important; }
+  html body .live-tour-page .tour-table .tour-col-employee { width: 17% !important; }
+  html body .live-tour-page .tour-table .live-tour-actions-col { width: 13% !important; }
+  html body .live-tour-page .tour-table .tour-col-appointment { width: 12% !important; }
+  html body .live-tour-page .tour-table .tour-col-status { width: 11% !important; }
+  html body .live-tour-page .tour-table .tour-col-room { width: 8% !important; }
+  html body .live-tour-page .tour-table .tour-col-remaining { width: 12% !important; }
+  html body .live-tour-page .tour-table .tour-col-request { width: 9% !important; }
+  html body .live-tour-page .tour-table .tour-col-service { width: 13% !important; }
+
+  html body .live-tour-page .responsive-data-table.tour-table th,
+  html body .live-tour-page .responsive-data-table.tour-table td {
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 2px 1px !important;
+    font-size: clamp(5px, 1.55vw, 7px) !important;
+    line-height: 1.05 !important;
+    white-space: normal !important;
+    overflow: hidden !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    text-overflow: clip !important;
+  }
+
+  html body .live-tour-page .responsive-data-table.tour-table th {
+    font-size: clamp(4.8px, 1.45vw, 6.5px) !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  html body .live-tour-page .tour-table .tour-col-employee > .text-button,
+  html body .live-tour-page .tour-table .live-tour-service-actions button,
+  html body .live-tour-page .tour-table .live-tour-appointment-editor input,
+  html body .live-tour-page .tour-table .live-tour-appointment-editor button {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    font-size: clamp(5px, 1.45vw, 6.5px) !important;
+    line-height: 1 !important;
+    box-sizing: border-box !important;
+  }
+
+  html body .live-tour-page .tour-table .live-tour-service-actions {
+    gap: 1px !important;
+  }
+
+  html body .live-tour-page .tour-table .live-tour-service-actions button {
+    width: 100% !important;
+    min-height: 14px !important;
+    padding: 1px 0 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  html body .live-tour-page .tour-table .live-tour-service-actions button svg {
+    display: none !important;
+  }
+
+  html body .live-tour-page .tour-table .live-tour-appointment-editor {
+    width: 100% !important;
+    max-width: 100% !important;
+    gap: 1px !important;
+    overflow: hidden !important;
+  }
+
+  html body .live-tour-page .tour-table .live-tour-appointment-editor input {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 18px !important;
+    min-height: 18px !important;
+    padding: 1px !important;
+    transform: none !important;
+  }
+
+  html body .live-tour-page .tour-table .live-tour-appointment-editor button {
+    display: none !important;
+  }
+}
+'''
+          if marker not in css:
+              css += block
+          path.write_text(css, encoding='utf-8')
+
+          checks = [
+              marker,
+              'table-layout: fixed !important',
+              '.tour-col-stt { width: 5% !important; }',
+              '.tour-col-employee { width: 17% !important; }',
+              '.live-tour-actions-col { width: 13% !important; }',
+              '.tour-col-appointment { width: 12% !important; }',
+              '.tour-col-status { width: 11% !important; }',
+              '.tour-col-room { width: 8% !important; }',
+              '.tour-col-remaining { width: 12% !important; }',
+              '.tour-col-request { width: 9% !important; }',
+              '.tour-col-service { width: 13% !important; }',
+              'overflow-x: hidden !important',
+          ]
+          for token in checks:
+              assert token in css, token
+          print('MOBILE_ROSTER_FIT_SCREEN=OK')
+          PY
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Test and build frontend
+        working-directory: web-v2
+        run: |
+          npm ci
+          node --test tests/liveTourAppointments.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs
+          npm run build
+
+      - name: Commit functional change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web-v2/src/live-tour-mobile-overrides.css
+          git commit -m 'Fit Live Tour roster columns into one mobile screen'
+          git push origin HEAD:main
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+
+      - name: Verify production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '${DEPLOY_SHA}'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
