@@ -5,6 +5,7 @@ const controls = fs.readFileSync(new URL('../src/pages/LiveTourControls.css', im
 const shared = fs.readFileSync(new URL('../src/clear-borders.css', import.meta.url), 'utf8')
 const serviceActions = fs.readFileSync(new URL('../src/components/LiveTourServiceActions.css', import.meta.url), 'utf8')
 const transactionDialog = fs.readFileSync(new URL('../src/components/LiveTourTransactionDialog.css', import.meta.url), 'utf8')
+const page = fs.readFileSync(new URL('../src/pages/LiveTourPage.jsx', import.meta.url), 'utf8')
 
 test('Live Tour removes body grid only and preserves outer frame and header borders', () => {
   const exception = shared.slice(shared.indexOf('/* Live Tour exception:'))
@@ -34,8 +35,18 @@ test('Live Tour reallocates compact column space equally to appointment and stat
 })
 
 test('Live Tour keeps the desktop action column compact without changing the mobile fit-content layout', () => {
-  assert.match(serviceActions, /\.live-tour-actions-col\{width:90px;min-width:90px\}/)
+  assert.match(serviceActions, /\.live-tour-actions-col\{width:90px;min-width:90px;max-width:90px\}/)
   assert.match(controls, /\.tour-table \.live-tour-actions-col\{width:1%!important;min-width:max-content!important;/)
+})
+
+test('Live Tour keeps ten metrics on one bounded row and enlarges combo approval buttons', () => {
+  const labels = [...page.matchAll(/key: '[^']+', label: '([^']+)'/g)].map(([, label]) => label)
+  assert.deepEqual(labels.slice(0, 10), ['Tất cả', 'Có thể lên tua', 'Đang rảnh', 'Sắp xong', 'Đang chờ', 'Thực hiện', 'Số nhân viên', 'Nghỉ phép', 'Đi làm', 'Nghỉ giữa Ca'])
+  assert.match(page, /tour-metrics\{grid-template-columns:repeat\(10,minmax\(0,1fr\)\)/)
+  assert.match(controls, /tour-metrics\{grid-template-columns:repeat\(10,minmax\(0,1fr\)\)!important/)
+  assert.match(page, /className="secondary-button live-tour-combo-approval-button"/)
+  assert.match(page, /live-tour-combo-approval-button\{min-height:28\.8px\}/)
+  assert.match(page, /live-tour-combo-approvals \.live-tour-card-actions button\{min-height:32\.4px\}/)
 })
 
 test('mobile payment dialogs scroll the form with touch momentum inside the visual viewport', () => {

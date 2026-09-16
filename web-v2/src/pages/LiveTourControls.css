@@ -195,9 +195,10 @@
   .live-tour-page .tour-topbar .tour-heading-actions button{min-width:0;max-width:100%;min-height:40px;padding:7px 6px;font-size:11px;white-space:normal;overflow-wrap:anywhere;justify-content:center;border-radius:10px}
   .live-tour-page .tour-topbar .tour-heading-actions .live-tour-combo-approval-button{min-height:48px}
   .live-tour-page .tour-topbar .tour-heading-actions button svg{flex-shrink:0}
-  .live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(4,minmax(0,1fr))!important;width:100%;min-width:0;gap:3px!important;overflow:hidden!important}
+  .live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(10,minmax(0,1fr))!important;width:100%;min-width:0;gap:2px!important;overflow:hidden!important}
   .live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-width:0;padding:2px!important}
   .live-tour-page .metric-grid.small .metric-card.tour-metric-card span{min-width:0;white-space:normal!important;overflow-wrap:anywhere;text-align:left}
+  .live-tour-page .tour-heading-actions .live-tour-combo-approval-button{min-height:48px}
   .live-tour-page .tour-room-panel-head{display:flex!important;flex-wrap:wrap!important;width:100%;min-width:0;max-width:100%;overflow:hidden!important}
   .live-tour-page .tour-room-panel-head .tour-room-panel-title{flex:1 1 100%;min-width:0;font-size:14px}
   .live-tour-page .tour-room-panel-head .tour-room-segment-buttons,
