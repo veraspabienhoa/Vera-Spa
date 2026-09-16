@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Vera Spa Live Tour queue watchdog every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=10s
+Persistent=true
+Unit=vera-live-tour-queue-watchdog.service
+
+[Install]
+WantedBy=timers.target
