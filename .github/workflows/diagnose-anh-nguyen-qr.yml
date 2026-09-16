@@ -1,0 +1,32 @@
+name: Diagnose Anh Nguyen QR readiness
+
+on:
+  push:
+    paths:
+      - '.github/workflows/diagnose-anh-nguyen-qr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Safe QR readiness check
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'sudo -n -u postgres psql -d veraspa -At -c "WITH m AS (SELECT full_name, role, bank_name, bank_account FROM employees WHERE lower(full_name) LIKE lower('"'"'%Anh Nguyễn%'"'"')) SELECT json_build_object('"'"'matches'"'"',count(*),'"'"'role_is_letan'"'"',COALESCE(bool_or(lower(COALESCE(role,'"'"''"'"'))='"'"'letan'"'"'),false),'"'"'full_name_present'"'"',COALESCE(bool_or(btrim(COALESCE(full_name,'"'"''"'"'))<>'"'"''"'"'),false),'"'"'bank_code_format_ok'"'"',COALESCE(bool_or(COALESCE(bank_name,'"'"''"'"') ~ '"'"'^[A-Za-z0-9]{2,20}$'"'"'),false),'"'"'bank_account_format_ok'"'"',COALESCE(bool_or(COALESCE(bank_account,'"'"''"'"') ~ '"'"'^[0-9]{6,19}$'"'"'),false),'"'"'qr_profile_ready'"'"',COALESCE(bool_or(COALESCE(bank_name,'"'"''"'"') ~ '"'"'^[A-Za-z0-9]{2,20}$'"'"' AND COALESCE(bank_account,'"'"''"'"') ~ '"'"'^[0-9]{6,19}$'"'"' AND btrim(COALESCE(full_name,'"'"''"'"'))<>'"'"''"'"'),false)) FROM m;"'
