@@ -10,6 +10,7 @@ on:
       - 'vera_web_v2_attendance_break_dispatch.py'
       - 'vera_live_tour_queue_alerts.py'
       - 'web-v2/src/lib/pushNotifications.js'
+      - 'ops/bootstrap_vapid_identity.py'
       - 'ops/systemd/vera-live-tour-queue-watchdog.sh'
       - 'ops/systemd/vera-live-tour-queue-watchdog.service'
       - 'ops/systemd/vera-live-tour-queue-watchdog.timer'
