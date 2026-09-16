@@ -3,7 +3,7 @@ name: Move mobile PR and resize empty status
 on:
   push:
     paths:
-      - '.github/workflows/move-mobile-pr-reduce-empty-text.yml'
+      - .github/workflows/move-mobile-pr-reduce-empty-text.yml
 
 permissions:
   contents: write
@@ -16,26 +16,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply mobile room visual changes
+      - name: Apply CSS patch
+        shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('web-v2/src/live-tour-mobile-overrides.css')
-          css = path.read_text(encoding='utf-8')
-          marker = '/* MOBILE_PR_BOTTOM_EMPTY_TEXT_MINUS_15_V1 */'
-          block = r'''
+          set -euo pipefail
+          FILE=web-v2/src/live-tour-mobile-overrides.css
+          if ! grep -q 'MOBILE_PR_BOTTOM_EMPTY_TEXT_MINUS_15_V1' "$FILE"; then
+            cat >> "$FILE" <<'CSS'
 
 /* MOBILE_PR_BOTTOM_EMPTY_TEXT_MINUS_15_V1 */
 @media (max-width: 820px) {
-  /* Move the PR marker vertically down to the lower-right area of the fixed room card. */
   html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
     top: auto !important;
     bottom: 7px !important;
     scale: 0.8 !important;
     transform-origin: center !important;
   }
-
-  /* “Đang trống”: 15% smaller than the previous mobile auto-fit size (16px / 9.2cqw). */
   html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown .tour-room-countdown-empty {
     font-size: min(13.6px, 7.82cqw) !important;
     line-height: 1 !important;
@@ -44,14 +40,10 @@ jobs:
     word-break: keep-all !important;
   }
 }
-'''
-          if marker not in css:
-              css += block
-          path.write_text(css, encoding='utf-8')
-          assert 'bottom: 7px !important' in css
-          assert 'font-size: min(13.6px, 7.82cqw) !important' in css
-          print('MOBILE_PR_BOTTOM_EMPTY_TEXT_MINUS_15=OK')
-          PY
+CSS
+          fi
+          grep -q 'bottom: 7px !important' "$FILE"
+          grep -q 'font-size: min(13.6px, 7.82cqw) !important' "$FILE"
 
       - uses: actions/setup-node@v5
         with:
@@ -68,8 +60,8 @@ jobs:
 
       - name: Commit functional change
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add web-v2/src/live-tour-mobile-overrides.css
           git commit -m 'Move mobile PR badge and reduce empty room text'
           git push origin HEAD:main
