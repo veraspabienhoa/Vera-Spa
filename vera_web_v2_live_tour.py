@@ -3360,7 +3360,7 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
         _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
         _auto_start_waiting(state, now)
         if state != before:
-            revision = _write_state(
+            revision = _write_state_compat(
                 conn, state, revision, "live_tour_daily_projection", previous_state=before,
             )
         return state, revision
@@ -3423,6 +3423,19 @@ def _write_state(
                 raise
             logging.getLogger(__name__).exception("Live Tour relational shadow write failed")
     return next_revision
+
+
+def _write_state_compat(
+    conn, state: dict[str, Any], revision: int, actor: str,
+    *, previous_state: dict[str, Any],
+) -> int:
+    """Pass the locked snapshot in production while supporting legacy test doubles."""
+    try:
+        return _write_state(conn, state, revision, actor, previous_state=previous_state)
+    except TypeError as exc:
+        if "unexpected keyword argument 'previous_state'" not in str(exc):
+            raise
+        return _write_state(conn, state, revision, actor)
 
 
 def _parse_export_bounds(
@@ -3982,6 +3995,7 @@ def install_live_tour_routes(
         return
     timezone = vn_tz or VN_TZ
     attendance = AttendanceBreakReader(attendance_reader) if attendance_reader else None
+    _ATTENDANCE_UNSET = object()
 
     scheduler_stop = Event()
     scheduler_thread = None
@@ -3990,6 +4004,12 @@ def install_live_tour_routes(
         while not scheduler_stop.is_set():
             try:
                 with engine_instance().begin() as conn:
+                    # Resolve the expensive attendance input before competing for STATE_LOCK.
+                    projection_now = datetime.now(timezone)
+                    projection_records = (
+                        attendance.read(conn, projection_now.astimezone(timezone).date(), force=True)
+                        if attendance else None
+                    )
                     # A background refresh must never compete with an operator.
                     # If a mutation owns the aggregate lock, skip this tick and
                     # let the next 15-second pass refresh the projections.
@@ -3998,7 +4018,10 @@ def install_live_tour_routes(
                         exists = conn.execute(text("SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
                                               {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
                         if exists:
-                            read_state(conn, datetime.now(timezone), for_update=True)
+                            read_state(
+                                conn, projection_now, for_update=True,
+                                attendance_records=projection_records,
+                            )
             except Exception:
                 logging.getLogger(__name__).exception("Live Tour scheduled projection failed; retrying on next tick")
             scheduler_stop.wait(15)
@@ -4029,15 +4052,17 @@ def install_live_tour_routes(
 
     app.router.lifespan_context = live_tour_lifespan
 
-    def read_state(conn, now, *, for_update=False):
+    def read_state(conn, now, *, for_update=False, attendance_records=_ATTENDANCE_UNSET):
         # Runtime callback uses the same installed policy chain as Chấm công.
-        records = attendance.read(conn, now.astimezone(timezone).date(), force=for_update) if attendance else None
+        records = attendance_records
+        if records is _ATTENDANCE_UNSET:
+            records = attendance.read(conn, now.astimezone(timezone).date(), force=for_update) if attendance else None
         state, revision = _read_state(conn, now, for_update=for_update, attendance_records=records)
         if records is not None:
             before = deepcopy(state)
             sync_breaks(state, records, now.astimezone(timezone))
             if state != before:
-                revision = _write_state(
+                revision = _write_state_compat(
                     conn, state, revision, "attendance_break_projection", previous_state=before,
                 )
         return state, revision
@@ -4322,6 +4347,9 @@ def install_live_tour_routes(
                 "room_upsert", "room_delete", "service_upsert", "service_delete",
                 "combo_upsert", "combo_delete", "set_vip", "update_appointment",
                 "update_started_at", "add_minutes",
+                # Operator transitions mutate only the canonical aggregate. Routine
+                # attendance/roster/leave projection must not lengthen their lock.
+                "start", "start_room", "finish_to_pending", "finish_room",
                 # These financial mutations validate and update the locked
                 # aggregate itself. Attendance, directory and leave projection
                 # does not participate in invoice/combo invariants and made
@@ -4377,7 +4405,7 @@ def install_live_tour_routes(
             # ``state`` is the locked pre-mutation snapshot.  Passing it to the
             # shadow synchronizer avoids a second full JSON aggregate SELECT and
             # normalization while the global board lock is held.
-            next_revision = _write_state(
+            next_revision = _write_state_compat(
                 conn, working, revision, actor, previous_state=state,
             )
         return action_response(
@@ -4468,7 +4496,7 @@ def install_live_tour_routes(
             working["updated_at"] = _iso(now)
             working["business_date"] = _business_date(now).isoformat()
             _audit(working, "board_excel_import", {"imported": imported}, actor, now)
-            next_revision = _write_state(
+            next_revision = _write_state_compat(
                 conn, working, revision, actor, previous_state=state,
             )
             grants = permissions(conn, ident)

@@ -149,7 +149,8 @@ def test_booking_is_persisted_and_read_by_a_new_app_instance(monkeypatch):
     assert loaded["state"]["employees"] == data["state"]["employees"]
     assert loaded["revision"] == data["revision"]
     assert loaded["state"]["employees"][0]["service"] == "Body 90"
-    assert database.employee_reads == 5
+    # start uses the projection-free mutation path, avoiding one redundant employee-directory read.
+    assert database.employee_reads == 4
 
 
 @pytest.mark.parametrize("action", ["sync_leaves", "merge_current_tour", "merge_current_tour_preview", " SYNC_LEAVES "])
