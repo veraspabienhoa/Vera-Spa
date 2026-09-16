@@ -812,6 +812,15 @@ def _refresh_leave_watches(conn, ident: Identity) -> list[dict[str, Any]]:
 
 
 def _vault_secret(conn, name: str) -> str:
+    env_name = {
+        "vera_v2_push_webhook_secret": "VERA_V2_PUSH_WEBHOOK_SECRET",
+    }.get(name)
+    if env_name:
+        value = str(os.getenv(env_name) or "").strip()
+        if value:
+            return value
+    if conn.execute(text("SELECT to_regclass('vault.decrypted_secrets')")).scalar_one_or_none() is None:
+        return ""
     value = conn.execute(text("""
         SELECT decrypted_secret
         FROM vault.decrypted_secrets
