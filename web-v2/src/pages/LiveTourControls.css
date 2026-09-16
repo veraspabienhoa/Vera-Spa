@@ -275,3 +275,20 @@
 }
 
 .live-tour-page .tour-room-countdown .tour-room-countdown-expired{font-size:80%!important}
+
+
+@media(max-width:820px){
+  .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown .tour-room-countdown-empty,
+  .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown .tour-room-countdown-expired{
+    display:block!important;
+    flex:0 1 auto!important;
+    min-width:0!important;
+    max-width:calc(100% - 14px)!important;
+    font-size:min(16px,9.2cqw)!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+    overflow-wrap:normal!important;
+    word-break:keep-all!important;
+    text-overflow:clip!important;
+  }
+}
