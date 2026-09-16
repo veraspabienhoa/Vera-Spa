@@ -1,0 +1,68 @@
+name: Fix VAPID subject and push test
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-vapid-subject-and-push-test.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Patch VAPID readiness and controlled test import path
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          alerts = Path('vera_live_tour_queue_alerts.py')
+          s = alerts.read_text()
+          old = '''        return {
+            "type": "web_push",
+            "audience": "admin+quanly",
+            "subscriptions": len(subscriptions),
+            "vapid_configured": bool(private_key),
+            "ready": bool(subscriptions and private_key),
+        }
+'''
+          new = '''        subject = _vault_secret(conn, "vera_v2_vapid_subject")
+        subject_valid = bool(subject and subject.startswith("mailto:"))
+        return {
+            "type": "web_push",
+            "audience": "admin+quanly",
+            "subscriptions": len(subscriptions),
+            "vapid_configured": bool(private_key),
+            "vapid_subject_configured": subject_valid,
+            "ready": bool(subscriptions and private_key and subject_valid),
+        }
+'''
+          if s.count(old) != 1:
+              raise SystemExit('channel status block mismatch')
+          alerts.write_text(s.replace(old, new))
+
+          helper = Path('ops/controlled_push_test.py')
+          s = helper.read_text()
+          old = '''import json\n\nfrom vera_web_v2_api import _engine_instance\n'''
+          new = '''import json\nimport sys\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nif str(ROOT) not in sys.path:\n    sys.path.insert(0, str(ROOT))\n\nfrom vera_web_v2_api import _engine_instance\n'''
+          if s.count(old) != 1:
+              raise SystemExit('controlled test import block mismatch')
+          helper.write_text(s.replace(old, new))
+          PY
+
+          python3 -m py_compile vera_live_tour_queue_alerts.py ops/controlled_push_test.py
+          git diff --check
+          git diff -- vera_live_tour_queue_alerts.py ops/controlled_push_test.py
+
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add vera_live_tour_queue_alerts.py ops/controlled_push_test.py
+          git commit -m 'Fix VAPID subject readiness and push test import'
+          git push origin HEAD:main
