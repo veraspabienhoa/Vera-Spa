@@ -182,29 +182,21 @@ def test_checkout_bank_snapshot_is_persisted_and_retry_is_stable(selection, acco
     assert len(db.stored['invoices']) == 1
 
 
-def test_daily_route_uses_server_leaves_and_rejects_stale_revision():
+def test_daily_route_queues_server_projection_and_rejects_stale_revision(monkeypatch):
     from test_live_tour_server_only import SettingsDatabase
-    queried_days = []
-    class DailyDatabase(SettingsDatabase):
-        def execute(self, statement, params=None):
-            if 'FROM leave_records' in str(statement):
-                queried_days.append(params['day'])
-                class Result:
-                    def mappings(self): return self
-                    def all(self): return [{'employee_name':'An', 'leave_reason':'Leader nghỉ phép theo chính sách'}]
-                return Result()
-            return super().execute(statement, params)
-    db = DailyDatabase(state_with(employee('e1','An')))
+    queued = []
+    monkeypatch.setattr(live.job_queue, 'enqueue_conn', lambda conn, queue, key, payload: queued.append((queue, key, payload)) or True)
+    db = SettingsDatabase(state_with(employee('e1','An')))
     client = route_client(db, 'quanly')
     current = client.get('/v2/live-tour').json()
-    assert queried_days[-1] == (live.datetime.now(live.VN_TZ) - live.timedelta(hours=5)).date()
     body = {'action':'sync_daily_status', 'expected_revision':current['revision'],'idempotency_key':'daily-status-server',
         'payload':{'leaves':[], 'directory':[]}}
     response = client.post('/v2/live-tour/action',json=body)
     assert response.status_code == 200, response.text
-    assert queried_days[-1] == live.datetime.now(live.VN_TZ).date()
-    assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'
-    assert db.stored['employees'][0]['appointment'] == 'Leader nghỉ phép theo chính sách'
+    assert response.json()['result']['queued'] is True
+    assert queued and queued[-1][0] == live.PROJECTION_QUEUE
+    assert db.revision == current['revision']  # enqueue does not mutate the board transaction
+    body['expected_revision'] = current['revision'] - 1
     body['idempotency_key'] = 'daily-status-stale'
     assert client.post('/v2/live-tour/action',json=body).status_code == 409
 
@@ -216,7 +208,7 @@ def test_directory_shift_refreshes_board_without_resetting_service():
     db = SettingsDatabase(state_with(worker), directory=[{'username':'An','role':'nhanvien','full_name':'An','payload':{},'work_shift':'Ca 2 (14:00-22:00)'}])
     _, client = app_client(db)
     current = client.get('/v2/live-tour').json()
-    assert current['records'][0]['Vào ca'] == ''
+    assert current['records'][0]['Vào ca'] == 'Ca 1'
     assert current['records'][0]['Dịch vụ'] == 'Body'
     db.directory[0]['work_shift'] = 'Ca 1 (10:00-18:00)'
-    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == ''
+    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == 'Ca 1'

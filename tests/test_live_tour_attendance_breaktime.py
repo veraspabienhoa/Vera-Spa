@@ -134,6 +134,7 @@ def test_authorized_manual_return_wins_until_next_day(monkeypatch, role):
         def now(cls, tz=None): return NOW
     monkeypatch.setattr(live, 'datetime', Clock)
     db = SettingsDatabase(board())
+    sync_breaks(db.stored, [record()], NOW)
     app = FastAPI()
     live.install_live_tour_routes(app, engine_instance=lambda: db,
         current_identity=lambda: OperatorIdentity(role=role), require_feature=lambda *_: None,
@@ -202,29 +203,29 @@ def test_shared_reader_reuses_results_and_invalidates_by_time_and_day():
     assert len(calls) == 4  # Mutations must recheck newly arrived FaceID.
 
 
-def test_route_projects_persists_and_rejects_stale_revision(monkeypatch):
+def test_route_reads_persisted_projection_and_rejects_stale_revision(monkeypatch):
     class Clock(datetime):
         @classmethod
         def now(cls, tz=None): return NOW
     monkeypatch.setattr(live, 'datetime', Clock)
-    db = SettingsDatabase(board())
+    projected = board()
+    sync_breaks(projected, [record()], NOW)
+    db = SettingsDatabase(projected)
     app = FastAPI()
     live.install_live_tour_routes(app, engine_instance=lambda: db,
         current_identity=lambda: RouteIdentity(), require_feature=lambda *_: None,
         feature_allowed=lambda *_: True, identity_type=RouteIdentity,
         attendance_reader=lambda *args: [record()])
     client = TestClient(app)
-    old_revision = db.revision
     first = client.get('/v2/live-tour').json()
     assert first['records'][0]['TG nghỉ còn lại'] == 15
     assert db.stored['employees'][0]['clock_out'] == '2026-09-12T15:30:00+07:00'
     assert client.get('/v2/live-tour').json()['revision'] == first['revision']
     response = client.post('/v2/live-tour/action', json={
-        'action': 'set_vip', 'expected_revision': old_revision, 'idempotency_key': 'stale-break',
-        'payload': {'employee_id': 'e1', 'vip': True},
+        'action': 'set_vip', 'expected_revision': max(0, first['revision'] - 1),
+        'idempotency_key': 'stale-break', 'payload': {'employee_id': 'e1', 'vip': True},
     })
     assert response.status_code == 409
-
 
 def test_canonical_attendance_open_punch_and_twenty_hour_cutoff(monkeypatch):
     import vera_web_v2_attendance_v42 as attendance
@@ -241,7 +242,7 @@ def test_canonical_attendance_open_punch_and_twenty_hour_cutoff(monkeypatch):
     assert shown['_break_countdown_deadline'] == '2026-09-12T20:00:00+07:00'
 
 
-def test_booking_rechecks_faceid_that_arrives_after_board_was_loaded(monkeypatch):
+def test_booking_uses_last_projected_faceid_snapshot_until_five_minute_worker_refresh(monkeypatch):
     class Clock(datetime):
         @classmethod
         def now(cls, tz=None): return NOW
@@ -257,11 +258,8 @@ def test_booking_rechecks_faceid_that_arrives_after_board_was_loaded(monkeypatch
     rows.append(record())
     service = next(row for row in db.stored['services'] if row['name'] == 'Body 90')
     request = {'action': 'booking', 'expected_revision': loaded['revision'],
-               'idempotency_key': 'booking-before-faceid',
+               'idempotency_key': 'booking-before-five-minute-projection',
                'payload': {'employee_id': 'e1', 'room': '1.1', 'service_id': service['id']}}
-    assert client.post('/v2/live-tour/action', json=request).status_code == 409
-    assert not db.stored['employees'][0]['service']
-    refreshed = client.get('/v2/live-tour').json()
-    request['expected_revision'] = refreshed['revision']
-    blocked = client.post('/v2/live-tour/action', json=request)
-    assert blocked.status_code == 409 and 'nghỉ giữa ca' in blocked.text
+    response = client.post('/v2/live-tour/action', json=request)
+    assert response.status_code == 200, response.text
+    assert db.stored['employees'][0]['service'] == 'Body 90'

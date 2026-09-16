@@ -10,6 +10,7 @@ from sqlalchemy.pool import NullPool
 
 import vera_live_tour_relational as live_tour
 import vera_resource_concurrency as concurrency
+import vera_postgres_job_queue as background_queue
 from vera_vps_data_check import (
     RUNTIME_ENV_KEYS,
     _database_url,
@@ -28,12 +29,14 @@ REQUIRED_TABLES = (
     *live_tour.RESOURCE_TABLES.values(),
     live_tour.MUTATION_TABLE,
     live_tour.CLAIM_TABLE,
+    background_queue.TABLE,
 )
 
 
 def _backfill(conn) -> dict:
     concurrency.ensure_schema(conn)
     live_tour.ensure_schema(conn)
+    background_queue.ensure_schema_conn(conn)
     conn.execute(text(f"""
         INSERT INTO {concurrency.REVISION_TABLE}(domain,resource_id,revision,updated_at)
         SELECT 'employee', lower(btrim(username)), 1, NOW() FROM employees

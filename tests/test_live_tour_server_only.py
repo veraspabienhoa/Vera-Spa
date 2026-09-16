@@ -110,7 +110,7 @@ def test_first_boot_uses_database_and_starts_employees_off_duty():
     assert "sync" not in response["capabilities"]
     assert not hasattr(app.state, "live_tour_leave_sync_service")
     client.get("/v2/live-tour?refresh=true")
-    assert database.employee_reads == 2  # Directory is refreshed on each read.
+    assert database.employee_reads == 1  # Only first bootstrap reads the directory; GETs use the snapshot.
 
 
 def test_first_boot_database_error_does_not_save_an_empty_board():
@@ -150,7 +150,7 @@ def test_booking_is_persisted_and_read_by_a_new_app_instance(monkeypatch):
     assert loaded["revision"] == data["revision"]
     assert loaded["state"]["employees"][0]["service"] == "Body 90"
     # start uses the projection-free mutation path, avoiding one redundant employee-directory read.
-    assert database.employee_reads == 4
+    assert database.employee_reads == 1
 
 
 @pytest.mark.parametrize("action", ["sync_leaves", "merge_current_tour", "merge_current_tour_preview", " SYNC_LEAVES "])
@@ -182,8 +182,8 @@ def test_existing_financial_and_operating_state_survives_without_external_recove
         if key != "employees":
             assert database.stored[key] == value
     for key, value in state["employees"][0].items():
-        assert database.stored["employees"][0][key] == ('' if key == 'shift' else value)
-    assert database.employee_reads == 1
+        assert database.stored["employees"][0][key] == value
+    assert database.employee_reads == 0
     assert data["state"]["invoices"] == state["invoices"]
     assert all(data["state"]["customers"][0][key] == value for key, value in state["customers"][0].items())
     assert "sync_status" not in data["state"]

@@ -80,12 +80,18 @@ def test_board_refresh_picks_up_checkin_then_clears_next_day(monkeypatch):
     monkeypatch.setattr(live, 'datetime', FixedDateTime)
     db = SettingsDatabase(state_with(employee('e1', 'An')), directory=directory())
     _, client = app_client(db)
+    with db.begin() as conn:
+        live._read_state(conn, clock[0], for_update=True)
     first = client.get('/v2/live-tour').json()
     assert first['records'][0]['Vào ca'] == ''
     db.datasets = data(MachineTimeCheckInStr='14:01', WorkTimeName='Ca 2')
+    with db.begin() as conn:
+        live._read_state(conn, clock[0], for_update=True)
     checked = client.get('/v2/live-tour').json()
     assert checked['records'][0]['Vào ca'] == 'Ca 2'
     assert checked['revision'] > first['revision']
     assert client.get('/v2/live-tour').json()['revision'] == checked['revision']
     clock[0] += timedelta(days=1)
+    with db.begin() as conn:
+        live._read_state(conn, clock[0], for_update=True)
     assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == ''

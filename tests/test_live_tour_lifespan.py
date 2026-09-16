@@ -45,7 +45,7 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
     async def run():
         async with app.router.lifespan_context(app) as state:
             assert state == {'shared': 'preserved'}
-            assert events == ['app-start', 'scheduler-start']
+            assert events == ['app-start', 'scheduler-start', 'scheduler-start']
             if fail:
                 raise RuntimeError('test shutdown')
 
@@ -54,4 +54,4 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
             asyncio.run(run())
     else:
         asyncio.run(run())
-    assert events == ['app-start', 'scheduler-start', 'scheduler-stop', 'app-stop']
+    assert events == ['app-start', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'app-stop']

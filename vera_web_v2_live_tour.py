@@ -9,6 +9,7 @@ from __future__ import annotations
 from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
 from vera_web_v2_live_tour_lock import acquire_state_lock, try_state_lock
 import vera_live_tour_relational as relational_store
+import vera_postgres_job_queue as job_queue
 
 import hashlib
 import json
@@ -52,6 +53,9 @@ STATE_CATEGORY = "live_tour"
 STATE_KEY = "state"
 STATE_LOCK = "vera:v2:live_tour:state"
 STATE_VERSION = 1
+PROJECTION_REFRESH_SECONDS = 300
+PROJECTION_QUEUE = "live_tour_projection"
+PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.1"
 BUSINESS_DAY_CUTOFF = time(11, 10)
 MAX_AUDIT = 3000
 MAX_BACKUPS = 20
@@ -3336,7 +3340,7 @@ def _auto_start_waiting(state, now):
     state["auto_start_waiting_date"] = day
 
 
-def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_records=None) -> tuple[dict[str, Any], int]:
+def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_records=None, directory_records=None, leave_records=None) -> tuple[dict[str, Any], int]:
     suffix = " FOR UPDATE" if for_update else ""
     row = conn.execute(text(f"""
         SELECT value_json, revision FROM vera_app_setting
@@ -3346,15 +3350,17 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
         state = _normalize_state(row.get("value_json"), now)
         revision = int(row.get("revision") or 0)
         before = deepcopy(state)
-        directory = _employee_directory(conn, now)
+        directory = _employee_directory(conn, now) if directory_records is None else directory_records
         _reconcile_roster(
             state, directory, _new_directory_employee,
             today=now.astimezone(VN_TZ).date().isoformat(),
         )
         leave_day = (now.astimezone(VN_TZ) - timedelta(hours=5)).date()
-        leaves = [dict(item) for item in conn.execute(text(
-            "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
-        ), {"day": leave_day}).mappings().all()]
+        leaves = leave_records
+        if leaves is None:
+            leaves = [dict(item) for item in conn.execute(text(
+                "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
+            ), {"day": leave_day}).mappings().all()]
         if attendance_records is not None:
             sync_breaks(state, attendance_records, now.astimezone(VN_TZ))
         _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
@@ -3994,48 +4000,99 @@ def install_live_tour_routes(
     if getattr(app.state, "live_tour_installed", False):
         return
     timezone = vn_tz or VN_TZ
-    attendance = AttendanceBreakReader(attendance_reader) if attendance_reader else None
+    attendance = AttendanceBreakReader(attendance_reader, ttl=PROJECTION_REFRESH_SECONDS) if attendance_reader else None
     _ATTENDANCE_UNSET = object()
 
     scheduler_stop = Event()
     scheduler_thread = None
+    worker_thread = None
+
+    def projection_job_key(now):
+        bucket = int(now.timestamp()) // PROJECTION_REFRESH_SECONDS
+        return f"{now.astimezone(timezone).date().isoformat()}:{bucket}"
+
+    def enqueue_projection(*, reason="scheduled", job_key=None):
+        now = datetime.now(timezone)
+        return job_queue.enqueue(
+            engine_instance, PROJECTION_QUEUE, job_key or projection_job_key(now),
+            {"reason": reason, "requested_at": now.isoformat()},
+        )
+
+    def projection_inputs(now):
+        # No Live Tour board lock is held while reading attendance/directory/leave inputs.
+        with engine_instance().begin() as conn:
+            records = (
+                attendance.read(conn, now.astimezone(timezone).date(), force=True)
+                if attendance else None
+            )
+            directory = _employee_directory(conn, now)
+            leave_day = (now.astimezone(timezone) - timedelta(hours=5)).date()
+            leaves = [dict(item) for item in conn.execute(text(
+                "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
+            ), {"day": leave_day}).mappings().all()]
+        return records, directory, leaves
+
+    def apply_projection(now, records, directory, leaves):
+        # The critical section contains only canonical state read/merge/write.
+        with engine_instance().begin() as conn:
+            if not try_state_lock(conn, STATE_LOCK):
+                return False
+            exists = conn.execute(text(
+                "SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"
+            ), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+            if not exists:
+                return True  # Never bootstrap an unused board from a background job.
+            read_state(
+                conn, now, for_update=True, attendance_records=records,
+                directory_records=directory, leave_records=leaves,
+            )
+        return True
 
     def scheduled_projection():
         while not scheduler_stop.is_set():
             try:
-                with engine_instance().begin() as conn:
-                    # Resolve the expensive attendance input before competing for STATE_LOCK.
-                    projection_now = datetime.now(timezone)
-                    projection_records = (
-                        attendance.read(conn, projection_now.astimezone(timezone).date(), force=True)
-                        if attendance else None
-                    )
-                    # A background refresh must never compete with an operator.
-                    # If a mutation owns the aggregate lock, skip this tick and
-                    # let the next 15-second pass refresh the projections.
-                    if try_state_lock(conn, STATE_LOCK):
-                        # Do not bootstrap an unused board from a background task.
-                        exists = conn.execute(text("SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
-                                              {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
-                        if exists:
-                            read_state(
-                                conn, projection_now, for_update=True,
-                                attendance_records=projection_records,
-                            )
+                enqueue_projection(reason="scheduled")
             except Exception:
-                logging.getLogger(__name__).exception("Live Tour scheduled projection failed; retrying on next tick")
-            scheduler_stop.wait(15)
+                logging.getLogger(__name__).exception("Live Tour projection enqueue failed")
+            scheduler_stop.wait(PROJECTION_REFRESH_SECONDS)
+
+    def projection_worker():
+        while not scheduler_stop.is_set():
+            item = None
+            try:
+                item = job_queue.claim_one(engine_instance, PROJECTION_QUEUE)
+                if not item:
+                    scheduler_stop.wait(2)
+                    continue
+                now = datetime.now(timezone)
+                records, directory, leaves = projection_inputs(now)
+                if not apply_projection(now, records, directory, leaves):
+                    job_queue.reschedule(engine_instance, int(item["id"]), delay_seconds=5)
+                    continue
+                job_queue.mark_done(engine_instance, int(item["id"]))
+            except Exception as exc:
+                if item is not None:
+                    try:
+                        job_queue.mark_retry(engine_instance, item, exc)
+                    except Exception:
+                        logging.getLogger(__name__).exception("Live Tour projection retry bookkeeping failed")
+                else:
+                    logging.getLogger(__name__).exception("Live Tour projection worker failed before claim")
+                scheduler_stop.wait(2)
 
     def start_scheduler():
-        nonlocal scheduler_thread
+        nonlocal scheduler_thread, worker_thread
         scheduler_stop.clear()
-        scheduler_thread = Thread(target=scheduled_projection, name="live-tour-scheduler", daemon=True)
+        scheduler_thread = Thread(target=scheduled_projection, name="live-tour-projection-scheduler", daemon=True)
+        worker_thread = Thread(target=projection_worker, name="live-tour-projection-worker", daemon=True)
         scheduler_thread.start()
+        worker_thread.start()
 
     def stop_scheduler():
         scheduler_stop.set()
-        if scheduler_thread:
-            scheduler_thread.join(timeout=2)
+        for thread in (scheduler_thread, worker_thread):
+            if thread:
+                thread.join(timeout=2)
 
     previous_lifespan = app.router.lifespan_context
 
@@ -4052,12 +4109,12 @@ def install_live_tour_routes(
 
     app.router.lifespan_context = live_tour_lifespan
 
-    def read_state(conn, now, *, for_update=False, attendance_records=_ATTENDANCE_UNSET):
+    def read_state(conn, now, *, for_update=False, attendance_records=_ATTENDANCE_UNSET, directory_records=None, leave_records=None):
         # Runtime callback uses the same installed policy chain as Chấm công.
         records = attendance_records
         if records is _ATTENDANCE_UNSET:
             records = attendance.read(conn, now.astimezone(timezone).date(), force=for_update) if attendance else None
-        state, revision = _read_state(conn, now, for_update=for_update, attendance_records=records)
+        state, revision = _read_state(conn, now, for_update=for_update, attendance_records=records, directory_records=directory_records, leave_records=leave_records)
         if records is not None:
             before = deepcopy(state)
             sync_breaks(state, records, now.astimezone(timezone))
@@ -4086,24 +4143,17 @@ def install_live_tour_routes(
         return read_state(conn, now, for_update=for_update)
 
     def read_board(conn, now, *, project=True):
-        # Only one reader refreshes projections. Other users read the last
-        # committed MVCC snapshot; never run projection writes without the lock.
-        if project and try_state_lock(conn, STATE_LOCK):
-            return read_state(conn, now)
+        # Request threads only read the last committed board snapshot. Projection is
+        # owned by the PostgreSQL queue worker, so GET traffic cannot extend STATE_LOCK.
         row = conn.execute(text("""
             SELECT value_json, revision FROM vera_app_setting
             WHERE category=:category AND setting_key=:key
         """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
-        if not row:
-            if not project:
-                # Only the first bootstrap needs writes. Existing customer and
-                # report reads must never run attendance/daily projections.
-                acquire_state_lock(conn, STATE_LOCK)
-                return read_state(conn, now)
-            # First bootstrap has not committed yet. Do not fabricate a board.
-            raise HTTPException(503, "Bảng tua đang khởi tạo. Vui lòng thử lại.",
-                                headers={"Retry-After": "3"})
-        return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 0)
+        if row:
+            return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 0)
+        # First bootstrap is the only request-path projection and happens once.
+        acquire_state_lock(conn, STATE_LOCK)
+        return read_state(conn, now)
 
     def permissions(conn, ident) -> dict[str, bool]:
         viewer_bank = None
@@ -4340,29 +4390,22 @@ def install_live_tour_routes(
             # Build response capabilities before entering the global state
             # critical section. Some grants read employee/payment metadata.
             grants = permissions(conn, ident)
+            if action == "sync_daily_status":
+                state, revision = read_board(conn, now, project=False)
+                if body.expected_revision is None:
+                    raise HTTPException(428, "Thiếu phiên bản Live Tour. Hãy tải lại bảng trước khi thao tác.")
+                if body.expected_revision != revision:
+                    raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.")
+                job_queue.enqueue_conn(
+                    conn, PROJECTION_QUEUE, f"manual:{idempotency_key}",
+                    {"reason": "manual", "actor": actor, "requested_at": now.isoformat()},
+                )
+                return action_response(
+                    state=state, revision=revision, now=now, action=action,
+                    result={"queued": True, "refresh_seconds": PROJECTION_REFRESH_SECONDS}, grants=grants,
+                )
             acquire_state_lock(conn, STATE_LOCK)
-            projection_free_actions = {
-                "admin_reorder", "reorder", "settings_reorder",
-                "payment_settings_update", "service_area_upsert", "service_area_delete",
-                "room_upsert", "room_delete", "service_upsert", "service_delete",
-                "combo_upsert", "combo_delete", "set_vip", "update_appointment",
-                "update_started_at", "add_minutes",
-                # Operator transitions mutate only the canonical aggregate. Routine
-                # attendance/roster/leave projection must not lengthen their lock.
-                "start", "start_room", "finish_to_pending", "finish_room",
-                # These financial mutations validate and update the locked
-                # aggregate itself. Attendance, directory and leave projection
-                # does not participate in invoice/combo invariants and made
-                # checkout wait behind unrelated attendance work.
-                "checkout", "quick_checkout", "combo_purchase", "combo_sale_decide",
-                "pending_update", "pending_delete", "paid_invoice_update", "paid_invoice_delete",
-                "report_invoice_update", "report_invoice_delete",
-            }
-            state, revision = (
-                read_state_without_projection(conn, now, for_update=True)
-                if action in projection_free_actions
-                else read_state(conn, now, for_update=True)
-            )
+            state, revision = read_state_without_projection(conn, now, for_update=True)
             previous = _idempotency_replay(
                 state, idempotency_key, action=action, actor=actor, payload_hash=payload_hash,
             )
@@ -4380,8 +4423,6 @@ def install_live_tour_routes(
             # A defensive copy guarantees multi-step actions never leak a partial
             # mutation into the value written after an exception.
             working = deepcopy(state)
-            if action == "sync_daily_status":
-                payload = {**payload, "today": now.astimezone(VN_TZ).date().isoformat(), "directory": _employee_directory(conn), "leaves": [dict(row) for row in conn.execute(text("SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"), {"day": now.astimezone(VN_TZ).date()}).mappings().all()]}
             payload.pop("_manual_break_allowed", None)
             payload.pop("_admin_start", None)
             if action in {"start", "start_room"} and str(getattr(ident, "role", "") or "").strip().lower() == "admin":
@@ -4412,6 +4453,16 @@ def install_live_tour_routes(
             state=working, revision=next_revision, now=now, action=action,
             result=result, grants=grants,
         )
+
+    @app.get("/v2/live-tour/projection-queue/health")
+    def live_tour_projection_queue_health():
+        return {
+            "ok": True, "release": PROJECTION_RELEASE,
+            "queue_release": job_queue.RELEASE,
+            "refresh_seconds": PROJECTION_REFRESH_SECONDS,
+            "claim_strategy": "for_update_skip_locked",
+            "counts": job_queue.counts(engine_instance, PROJECTION_QUEUE),
+        }
 
     @app.get("/v2/live-tour/export.xlsx")
     def live_tour_export_excel(

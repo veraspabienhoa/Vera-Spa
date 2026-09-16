@@ -102,4 +102,4 @@ def test_timesoft_sync_runs_break_return_penalty_directly():
     }
     exec(compile(ast.Module(body=[main], type_ignores=[]), str(root / "timesoft_snapshot_job.py"), "exec"), namespace)
     assert namespace["main"]() == 0
-    assert calls == ["sync", "tail"]
+    assert calls == ["sync"]

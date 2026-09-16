@@ -174,6 +174,8 @@ def test_api_refresh_repairs_persisted_shift_after_staff_edit(monkeypatch, day):
 
     # Simulate the persisted staff edit; TimeSoft intentionally still says Ca 2.
     db.directory = [staff()]
+    with db.begin() as conn:
+        live._read_state(conn, now_on(day), for_update=True)
     changed_response = client.get('/v2/live-tour?refresh=true')
     assert changed_response.status_code == 200, changed_response.text
     changed = changed_response.json()

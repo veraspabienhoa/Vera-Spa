@@ -122,12 +122,13 @@ def test_clock_and_event_key_are_stable():
     assert alerts._event_key(work_day, "Locker A", "Ca 1") == alerts._event_key(work_day, " locker a ", "ca 1")
 
 
-def test_alert_is_wired_outside_auto_check_and_into_fast_tail():
+def test_alert_is_wired_into_the_single_five_minute_timesoft_sync():
     sync_source = (ROOT / "timesoft_sync_job.py").read_text(encoding="utf-8")
     snapshot_source = (ROOT / "timesoft_snapshot_job.py").read_text(encoding="utf-8")
     call = "missing_checkin_notifications.notify_missing_scheduled_checkins"
     assert sync_source.index(call) < sync_source.index("# Auto Check PostgreSQL-only")
-    assert call in snapshot_source
+    assert "return int(ts.run_sync())" in snapshot_source
+    assert "_fast_checkin_tail" not in snapshot_source
     alert_source = (ROOT / "vera_missing_checkin_notifications.py").read_text(encoding="utf-8")
     assert "THRESHOLD_MINUTES = 15" in alert_source
     assert "import vera_auto_check" not in alert_source

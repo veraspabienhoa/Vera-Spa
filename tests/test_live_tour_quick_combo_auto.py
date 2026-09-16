@@ -131,16 +131,20 @@ def test_daily_leave_changes_project_without_button_and_remove_old_reason():
     _, client = app_client(db)
     initial = client.get('/v2/live-tour').json()
     db.leaves = [{'employee_name': 'An', 'leave_reason': 'Nghỉ CÓ phép'}]
+    with db.begin() as conn:
+        live._read_state(conn, NOW, for_update=True, attendance_records=[])
     absent = client.get('/v2/live-tour').json()
     assert absent['revision'] > initial['revision']
     assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'
     assert db.stored['employees'][0]['appointment'] == 'Khách 15h · Nghỉ CÓ phép'
     assert client.get('/v2/live-tour').json()['revision'] == absent['revision']
     db.leaves[0]['leave_reason'] = 'Đi trễ CÓ phép'
-    client.get('/v2/live-tour')
+    with db.begin() as conn:
+        live._read_state(conn, NOW, for_update=True, attendance_records=[])
     assert db.stored['employees'][0]['work_status'] == 'Đi làm'
     assert db.stored['employees'][0]['appointment'] == 'Khách 15h · Đi trễ CÓ phép'
     db.leaves = []
-    client.get('/v2/live-tour')
+    with db.begin() as conn:
+        live._read_state(conn, NOW, for_update=True, attendance_records=[])
     assert db.stored['employees'][0]['appointment'] == 'Khách 15h'
     assert db.stored['employees'][0]['shift'] == ''  # A leave edit cannot fabricate check-in.

@@ -16,6 +16,13 @@ def person(username, role='nhanvien', full_name=None, **payload):
     return {'username': username, 'role': role, 'full_name': full_name or f'Họ tên đầy đủ {username}', 'payload': payload}
 
 
+
+
+def project_db(db, now=NOW):
+    with db.begin() as conn:
+        return live._read_state(conn, now, for_update=True, attendance_records=[])
+
+
 def act(state, action, payload, now=NOW):
     return live._apply_action(state, action, payload, 'admin', now)
 
@@ -55,6 +62,7 @@ def test_retired_manual_exclusions_do_not_hide_eligible_directory_employees():
     state['roster_excluded_usernames'] = ['Bình']
     db = SettingsDatabase(state, directory=[person('An'), person('Bình'), person('Lễ Tân', 'letan')])
     _, client = app_client(db)
+    project_db(db)
     data = client.get('/v2/live-tour').json()
     assert {row['Tên nhân viên'] for row in data['records']} == {'An', 'Bình'}
     assert next(row for row in data['records'] if row['Tên nhân viên'] == 'An')['_id'] == 'e1'
@@ -70,6 +78,7 @@ def test_existing_names_migrate_without_losing_assignments_or_history():
     before = deepcopy(state)
     db = SettingsDatabase(state, directory=[person('An', full_name='Nguyễn Văn An'), person('Lễ Tân', 'letan', full_name='Trần Thị Tân')])
     _, client = app_client(db)
+    project_db(db)
     data = client.get('/v2/live-tour?include_hidden=true').json()
     assert [row['Tên nhân viên'] for row in data['records']] == ['An']
     actual = db.stored['employees'][0]
@@ -84,6 +93,7 @@ def test_legacy_unambiguous_full_name_matches_but_duplicate_full_names_do_not():
     state = state_with(employee('e1', 'Nguyễn Văn An'), employee('e2', 'Trần Văn Nam'))
     db = SettingsDatabase(state, directory=[person('An', full_name='Nguyễn Văn An'), person('Nam 1', full_name='Trần Văn Nam'), person('Nam 2', full_name='Trần Văn Nam')])
     _, client = app_client(db)
+    project_db(db)
     client.get('/v2/live-tour')
     assert db.stored['employees'][0]['id'] == 'e1' and db.stored['employees'][0]['username'] == 'An'
     assert db.stored['employees'][1]['roster_eligible'] is False
@@ -95,14 +105,18 @@ def test_role_change_refreshes_existing_state_and_directory_failure_is_atomic():
     _, client = app_client(db)
     first = client.get('/v2/live-tour').json()
     db.directory[0]['role'] = 'locker'
+    project_db(db)
     second = client.get('/v2/live-tour').json()
     assert second['records'] == [] and second['revision'] > first['revision']
     before = deepcopy(db.stored), db.revision
     db.fail_employee_read = True
-    assert client.get('/v2/live-tour').status_code == 500
+    with pytest.raises(RuntimeError, match='database unavailable'):
+        project_db(db)
     assert (db.stored, db.revision) == before
+    assert client.get('/v2/live-tour').status_code == 200  # Last committed snapshot remains readable.
     db.fail_employee_read = False
     db.directory[0]['role'] = 'leader'
+    project_db(db)
     assert client.get('/v2/live-tour').json()['records'][0]['Tên nhân viên'] == 'An'
 
 

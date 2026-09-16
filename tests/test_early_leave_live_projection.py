@@ -89,9 +89,12 @@ def test_route_uses_fresh_break_before_daily_projection_and_persists_once(monkey
         feature_allowed=lambda *_: True, identity_type=RouteIdentity,
         attendance_reader=lambda conn, *_: [record()])
     client = TestClient(app)
+    with db.begin() as conn:
+        live._read_state(conn, NOW, for_update=True, attendance_records=[record()])
     first = client.get('/v2/live-tour')
     assert first.status_code == 200
     assert first.json()['records'][0]['Đi làm'] == 'Nghỉ phép'
     assert first.json()['records'][0]['Vào ca'] == ''
     assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'
-    assert client.get('/v2/live-tour').json()['revision'] == first.json()['revision']
+    revision = first.json()['revision']
+    assert client.get('/v2/live-tour').json()['revision'] == revision
