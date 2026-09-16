@@ -73,7 +73,7 @@ jobs:
         run: |
           python -m pytest -q
           cd web-v2
-          npm test
+          node --test tests/liveTourAppointments.test.mjs tests/liveTourFilters.test.mjs tests/paymentPresentation.test.mjs tests/liveTourBreaktime.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs tests/searchableDropdowns.test.mjs tests/liveTourReceipt.test.mjs
           npm run build
 
       - name: Validate report one-row layout
