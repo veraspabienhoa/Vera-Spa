@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SECRET="$(runuser -u postgres -- psql -d veraspa -Atqc "SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name='vera_v2_push_webhook_secret' LIMIT 1;")"
+ENV_FILE="/etc/vera-spa/backend.env"
+if [[ ! -r "$ENV_FILE" ]]; then
+  echo "watchdog environment file is not readable" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1091
+source "$ENV_FILE"
+set +a
+
+SECRET="${VERA_V2_PUSH_WEBHOOK_SECRET:-}"
 if [[ -z "$SECRET" ]]; then
   echo "watchdog secret is missing" >&2
   exit 1
