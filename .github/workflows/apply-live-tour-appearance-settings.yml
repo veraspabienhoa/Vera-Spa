@@ -17,7 +17,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply appearance settings patch
-        run: python .github/scripts/add_live_tour_appearance.py
+        run: |
+          python .github/scripts/add_live_tour_appearance.py
+          python .github/scripts/fix_live_tour_appearance_order.py
 
       - name: Backend syntax and focused invariants
         run: |
@@ -26,10 +28,12 @@ jobs:
           from pathlib import Path
           source = Path('vera_web_v2_live_tour.py').read_text(encoding='utf-8')
           tests = Path('tests/test_live_tour_appearance_settings.py').read_text(encoding='utf-8')
+          page = Path('web-v2/src/pages/LiveTourPage.jsx').read_text(encoding='utf-8')
           assert 'appearance_settings_update' in source
           assert '"appearance_settings": deepcopy(state.get("appearance_settings") or {})' in source
           assert 'state["appearance_settings"] = _appearance_settings_update(payload)' in source
           assert 'test_appearance_settings_are_persistent_and_projected' in tests
+          assert page.index("const canOperate = capability('operate'") < page.index('const appearanceTableColumns = useMemo')
           print('BACKEND_APPEARANCE_INVARIANTS=OK')
           PY
 
