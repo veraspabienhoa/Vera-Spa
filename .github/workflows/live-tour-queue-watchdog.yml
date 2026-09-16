@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - ops/live-tour-queue-watchdog-20260916
     paths:
       - '.github/workflows/live-tour-queue-watchdog.yml'
       - 'vera_live_tour_queue_watchdog.py'
