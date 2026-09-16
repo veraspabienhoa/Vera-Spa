@@ -1,0 +1,214 @@
+name: One-shot PostgreSQL Live Tour queue v5
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: live-tour-postgres-queue-v5
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit-deploy:
+    if: contains(github.event.head_commit.message, '[live-tour-postgres-queue-v5]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Build v4 queue patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          wf = Path('.github/workflows/live-tour-postgres-queue-v4.yml').read_text(encoding='utf-8')
+          sm = "      - name: Build queue patch and regression fixtures\n        shell: bash\n        run: |\n"
+          em = "\n      - name: Install dependencies"
+          start = wf.index(sm) + len(sm)
+          end = wf.index(em, start)
+          script = wf[start:end]
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in script.splitlines())
+          Path('/tmp/build_v4.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n' + script + '\n', encoding='utf-8')
+          PY
+          bash /tmp/build_v4.sh
+
+      - name: Align legacy projection tests with background worker semantics
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return source.replace(old, new, 1)
+
+          # 1) Early-leave route: project once in the background, then assert GET is read-only.
+          path = Path('tests/test_early_leave_live_projection.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''    client = TestClient(app)\n    first = client.get('/v2/live-tour')\n    assert first.status_code == 200\n    assert first.json()['records'][0]['Đi làm'] == 'Nghỉ phép'\n    assert first.json()['records'][0]['Vào ca'] == ''\n    assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'\n    assert client.get('/v2/live-tour').json()['revision'] == first.json()['revision']\n'''
+          new = '''    client = TestClient(app)\n    with db.begin() as conn:\n        live._read_state(conn, NOW, for_update=True, attendance_records=[record()])\n    first = client.get('/v2/live-tour')\n    assert first.status_code == 200\n    assert first.json()['records'][0]['Đi làm'] == 'Nghỉ phép'\n    assert first.json()['records'][0]['Vào ca'] == ''\n    assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'\n    revision = first.json()['revision']\n    assert client.get('/v2/live-tour').json()['revision'] == revision\n'''
+          path.write_text(replace_once(source, old, new, 'early leave queued projection'), encoding='utf-8')
+
+          # 2) Check-in projection: source changes become visible only after worker projection.
+          path = Path('tests/test_live_tour_checkin_projection.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''    _, client = app_client(db)\n    first = client.get('/v2/live-tour').json()\n    assert first['records'][0]['Vào ca'] == ''\n    db.datasets = data(MachineTimeCheckInStr='14:01', WorkTimeName='Ca 2')\n    checked = client.get('/v2/live-tour').json()\n    assert checked['records'][0]['Vào ca'] == 'Ca 2'\n    assert checked['revision'] > first['revision']\n    assert client.get('/v2/live-tour').json()['revision'] == checked['revision']\n    clock[0] += timedelta(days=1)\n    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == ''\n'''
+          new = '''    _, client = app_client(db)\n    with db.begin() as conn:\n        live._read_state(conn, clock[0], for_update=True)\n    first = client.get('/v2/live-tour').json()\n    assert first['records'][0]['Vào ca'] == ''\n    db.datasets = data(MachineTimeCheckInStr='14:01', WorkTimeName='Ca 2')\n    with db.begin() as conn:\n        live._read_state(conn, clock[0], for_update=True)\n    checked = client.get('/v2/live-tour').json()\n    assert checked['records'][0]['Vào ca'] == 'Ca 2'\n    assert checked['revision'] > first['revision']\n    assert client.get('/v2/live-tour').json()['revision'] == checked['revision']\n    clock[0] += timedelta(days=1)\n    with db.begin() as conn:\n        live._read_state(conn, clock[0], for_update=True)\n    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == ''\n'''
+          path.write_text(replace_once(source, old, new, 'checkin queued projection'), encoding='utf-8')
+
+          # 3) Lifespan now owns a scheduler thread plus a queue worker thread.
+          path = Path('tests/test_live_tour_lifespan.py')
+          source = path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              "            assert events == ['app-start', 'scheduler-start']\n",
+              "            assert events == ['app-start', 'scheduler-start', 'scheduler-start']\n",
+              'two startup threads',
+          )
+          source = replace_once(
+              source,
+              "    assert events == ['app-start', 'scheduler-start', 'scheduler-stop', 'app-stop']\n",
+              "    assert events == ['app-start', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'app-stop']\n",
+              'two shutdown threads',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # 4) Leave changes are applied by the worker, not by GET traffic.
+          path = Path('tests/test_live_tour_quick_combo_auto.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''    initial = client.get('/v2/live-tour').json()\n    db.leaves = [{'employee_name': 'An', 'leave_reason': 'Nghỉ CÓ phép'}]\n    absent = client.get('/v2/live-tour').json()\n    assert absent['revision'] > initial['revision']\n    assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'\n    assert db.stored['employees'][0]['appointment'] == 'Khách 15h · Nghỉ CÓ phép'\n    assert client.get('/v2/live-tour').json()['revision'] == absent['revision']\n    db.leaves[0]['leave_reason'] = 'Đi trễ CÓ phép'\n    client.get('/v2/live-tour')\n    assert db.stored['employees'][0]['work_status'] == 'Đi làm'\n    assert db.stored['employees'][0]['appointment'] == 'Khách 15h · Đi trễ CÓ phép'\n    db.leaves = []\n    client.get('/v2/live-tour')\n    assert db.stored['employees'][0]['appointment'] == 'Khách 15h'\n    assert db.stored['employees'][0]['shift'] == ''  # A leave edit cannot fabricate check-in.\n'''
+          new = '''    initial = client.get('/v2/live-tour').json()\n    db.leaves = [{'employee_name': 'An', 'leave_reason': 'Nghỉ CÓ phép'}]\n    with db.begin() as conn:\n        live._read_state(conn, NOW, for_update=True, attendance_records=[])\n    absent = client.get('/v2/live-tour').json()\n    assert absent['revision'] > initial['revision']\n    assert db.stored['employees'][0]['work_status'] == 'Nghỉ phép'\n    assert db.stored['employees'][0]['appointment'] == 'Khách 15h · Nghỉ CÓ phép'\n    assert client.get('/v2/live-tour').json()['revision'] == absent['revision']\n    db.leaves[0]['leave_reason'] = 'Đi trễ CÓ phép'\n    with db.begin() as conn:\n        live._read_state(conn, NOW, for_update=True, attendance_records=[])\n    assert db.stored['employees'][0]['work_status'] == 'Đi làm'\n    assert db.stored['employees'][0]['appointment'] == 'Khách 15h · Đi trễ CÓ phép'\n    db.leaves = []\n    with db.begin() as conn:\n        live._read_state(conn, NOW, for_update=True, attendance_records=[])\n    assert db.stored['employees'][0]['appointment'] == 'Khách 15h'\n    assert db.stored['employees'][0]['shift'] == ''  # A leave edit cannot fabricate check-in.\n'''
+          path.write_text(replace_once(source, old, new, 'leave worker projection'), encoding='utf-8')
+
+          # 5) Roster tests explicitly invoke the background projection when directory changes.
+          path = Path('tests/test_live_tour_roster_booking.py')
+          source = path.read_text(encoding='utf-8')
+          insertion = '''\n\ndef project_db(db, now=NOW):\n    with db.begin() as conn:\n        return live._read_state(conn, now, for_update=True, attendance_records=[])\n'''
+          source = replace_once(source, "def act(state, action, payload, now=NOW):\n", insertion + "\n\ndef act(state, action, payload, now=NOW):\n", 'roster projection helper')
+          source = replace_once(source,
+              "    _, client = app_client(db)\n    data = client.get('/v2/live-tour').json()\n    assert {row['Tên nhân viên'] for row in data['records']} == {'An', 'Bình'}\n",
+              "    _, client = app_client(db)\n    project_db(db)\n    data = client.get('/v2/live-tour').json()\n    assert {row['Tên nhân viên'] for row in data['records']} == {'An', 'Bình'}\n",
+              'retired exclusion projection')
+          source = replace_once(source,
+              "    _, client = app_client(db)\n    data = client.get('/v2/live-tour?include_hidden=true').json()\n    assert [row['Tên nhân viên'] for row in data['records']] == ['An']\n",
+              "    _, client = app_client(db)\n    project_db(db)\n    data = client.get('/v2/live-tour?include_hidden=true').json()\n    assert [row['Tên nhân viên'] for row in data['records']] == ['An']\n",
+              'name migration projection')
+          source = replace_once(source,
+              "    _, client = app_client(db)\n    client.get('/v2/live-tour')\n    assert db.stored['employees'][0]['id'] == 'e1' and db.stored['employees'][0]['username'] == 'An'\n",
+              "    _, client = app_client(db)\n    project_db(db)\n    client.get('/v2/live-tour')\n    assert db.stored['employees'][0]['id'] == 'e1' and db.stored['employees'][0]['username'] == 'An'\n",
+              'legacy names projection')
+          old = '''    first = client.get('/v2/live-tour').json()\n    db.directory[0]['role'] = 'locker'\n    second = client.get('/v2/live-tour').json()\n    assert second['records'] == [] and second['revision'] > first['revision']\n    before = deepcopy(db.stored), db.revision\n    db.fail_employee_read = True\n    assert client.get('/v2/live-tour').status_code == 500\n    assert (db.stored, db.revision) == before\n    db.fail_employee_read = False\n    db.directory[0]['role'] = 'leader'\n    assert client.get('/v2/live-tour').json()['records'][0]['Tên nhân viên'] == 'An'\n'''
+          new = '''    first = client.get('/v2/live-tour').json()\n    db.directory[0]['role'] = 'locker'\n    project_db(db)\n    second = client.get('/v2/live-tour').json()\n    assert second['records'] == [] and second['revision'] > first['revision']\n    before = deepcopy(db.stored), db.revision\n    db.fail_employee_read = True\n    with pytest.raises(RuntimeError, match='database unavailable'):\n        project_db(db)\n    assert (db.stored, db.revision) == before\n    assert client.get('/v2/live-tour').status_code == 200  # Last committed snapshot remains readable.\n    db.fail_employee_read = False\n    db.directory[0]['role'] = 'leader'\n    project_db(db)\n    assert client.get('/v2/live-tour').json()['records'][0]['Tên nhân viên'] == 'An'\n'''
+          source = replace_once(source, old, new, 'role change worker projection')
+          path.write_text(source, encoding='utf-8')
+
+          # 6) A staff-edit refresh is now a worker projection followed by a read-only GET.
+          path = Path('tests/test_live_tour_shift_effective_date.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''    # Simulate the persisted staff edit; TimeSoft intentionally still says Ca 2.\n    db.directory = [staff()]\n    changed_response = client.get('/v2/live-tour?refresh=true')\n    assert changed_response.status_code == 200, changed_response.text\n'''
+          new = '''    # Simulate the persisted staff edit; TimeSoft intentionally still says Ca 2.\n    db.directory = [staff()]\n    with db.begin() as conn:\n        live._read_state(conn, now_on(day), for_update=True)\n    changed_response = client.get('/v2/live-tour?refresh=true')\n    assert changed_response.status_code == 200, changed_response.text\n'''
+          path.write_text(replace_once(source, old, new, 'shift worker projection'), encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "pytest==8.4.2" \
+            "httpx2>=2,<3" \
+            -r requirements.txt
+
+      - name: Run projection, queue, and concurrency tests
+        run: |
+          python -m py_compile vera_postgres_job_queue.py vera_web_v2_live_tour.py timesoft_snapshot_job.py vera_vps_concurrency_schema.py
+          python -m pytest -q \
+            tests/test_postgres_job_queue_source.py \
+            tests/test_live_tour_action_lock_performance.py \
+            tests/test_live_tour_lock_scope.py \
+            tests/test_live_tour_lock_backpressure.py \
+            tests/test_live_tour_concurrent_readers.py \
+            tests/test_live_tour_attendance_breaktime.py \
+            tests/test_live_tour_daily_settings.py \
+            tests/test_live_tour_server_only.py \
+            tests/test_early_leave_live_projection.py \
+            tests/test_live_tour_checkin_projection.py \
+            tests/test_live_tour_lifespan.py \
+            tests/test_live_tour_quick_combo_auto.py \
+            tests/test_live_tour_roster_booking.py \
+            tests/test_live_tour_shift_effective_date.py \
+            tests/test_direct_break_return_penalty.py \
+            tests/test_missing_checkin_notifications.py
+
+      - name: Run full Python test suite
+        run: python -m pytest -q
+
+      - name: Commit tested queue implementation
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm \
+            .github/workflows/live-tour-postgres-queue-v5.yml \
+            .github/workflows/live-tour-postgres-queue-v4.yml \
+            .github/workflows/live-tour-postgres-queue-v3.yml \
+            .github/workflows/live-tour-postgres-queue-v2.yml \
+            .github/workflows/live-tour-postgres-queue.yml \
+            .github/workflows/live-tour-5m-refresh.yml
+          git add \
+            vera_postgres_job_queue.py \
+            vera_web_v2_live_tour.py \
+            timesoft_snapshot_job.py \
+            cloudbuild.yaml \
+            vera_vps_concurrency_schema.py \
+            .github/workflows/deploy-vps.yml \
+            tests/test_postgres_job_queue_source.py \
+            tests/test_live_tour_action_lock_performance.py \
+            tests/test_live_tour_lock_scope.py \
+            tests/test_live_tour_lock_backpressure.py \
+            tests/test_live_tour_attendance_breaktime.py \
+            tests/test_live_tour_daily_settings.py \
+            tests/test_live_tour_server_only.py \
+            tests/test_early_leave_live_projection.py \
+            tests/test_live_tour_checkin_projection.py \
+            tests/test_live_tour_lifespan.py \
+            tests/test_live_tour_quick_combo_auto.py \
+            tests/test_live_tour_roster_booking.py \
+            tests/test_live_tour_shift_effective_date.py \
+            tests/test_direct_break_return_penalty.py \
+            tests/test_missing_checkin_notifications.py
+          git commit -m "Move Live Tour projections to PostgreSQL queue"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git push origin HEAD:main
+
+      - name: Deploy tested commit to VPS production
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PATCH_SHA: ${{ steps.commit.outputs.sha }}
+        shell: bash
+        run: |
+          gh workflow run deploy-vps.yml --ref main
+          run_id=""
+          for attempt in $(seq 1 40); do
+            run_id=$(gh run list --workflow deploy-vps.yml --branch main --event workflow_dispatch --limit 10 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"${PATCH_SHA}\") | .databaseId" | head -n 1)
+            if [ -n "$run_id" ]; then break; fi
+            sleep 2
+          done
+          test -n "$run_id" || { echo "Deploy run not found for ${PATCH_SHA}" >&2; exit 1; }
+          gh run watch "$run_id" --exit-status
