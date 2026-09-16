@@ -86,7 +86,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_sale_decide", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete", "settings_reorder",
-    "update_booking", "cancel_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room", "clear_orphan_pending",
+    "update_booking", "cancel_booking", "restart_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room", "clear_orphan_pending",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Lịch hẹn", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -1826,6 +1826,8 @@ def _change_pending(state, action, payload, actor, now):
 
 
 def _required_action_feature(action: str) -> str:
+    if action == "restart_booking":
+        return "live_tour_admin"
     if action in {"reorder", "admin_reorder"}:
         return "live_tour_reorder"
     if action == "update_appointment":
@@ -2009,6 +2011,25 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         source["note"] = ""
         payload = {**payload, "booking_id": assignment.get("booking_id", "")}
         result = {"employee": target, "previous_employee_id": source["id"]}
+    elif action == "restart_booking":
+        employee = _employee(state, payload.get("employee_id"))
+        if _norm(employee.get("status")) not in {"dang thuc hien", "dang su dung"} or not employee.get("started_at") or employee.get("completed_at"):
+            raise HTTPException(409, "Chỉ hủy lệnh Thực hiện cho booking đang chạy và chưa hoàn thành.")
+        position = employee.get("pre_start_tour_position") or {}
+        counter_key = "request_count" if _norm(employee.get("request")) == "yc" else "tour_count"
+        if position.get("counter_day") in {None, _counter_business_date(now).isoformat()}:
+            employee[counter_key] = max(0, int(employee.get(counter_key) or 0) - 1)
+        employee["status"] = "Đang chờ"
+        employee["started_at"] = ""
+        employee["completed_at"] = ""
+        employee["payment_status"] = ""
+        employee["completion_note"] = ""
+        employee["completion_delta_minutes"] = None
+        employee["wait_minutes"] = None
+        employee.pop("employee_change_minutes", None)
+        employee.pop("pre_start_tour_position", None)
+        payload = {**payload, "booking_id": employee.get("booking_id", ""), "room": employee.get("room", ""), "service": employee.get("service", "")}
+        result = {"employee": employee, "restarted": True}
     elif action == "cancel_booking":
         employee = _employee(state, payload.get("employee_id"))
         if _norm(employee.get("status")) != "dang cho" or employee.get("started_at") or employee.get("completed_at"):
@@ -2055,7 +2076,11 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         room_item = _catalog_item(state, "rooms", {"room": payload.get("room") or employee.get("room")})
         if room_item is None or room_item.get("active") is False:
             raise HTTPException(400, "Hãy chọn phòng/giường đang sử dụng.")
-        _check_room_collision(state, employee, room_item["name"], name)
+        _check_room_collision(state, employee, room_item["name"], name, share_private_room=payload.get("share_private_room") is True)
+        if payload.get("share_private_room") is True and _is_private_service(name):
+            employee["private_room_share_group"] = _catalog_room_group(state, room_item["name"])
+        elif not _is_private_service(name):
+            employee.pop("private_room_share_group", None)
         identity = _common_customer_identity([employee])
         customer_payload = _protect_customer_identity(payload, identity)
         customer = _customer(state, customer_payload) if _contains_customer_pii(customer_payload) else None

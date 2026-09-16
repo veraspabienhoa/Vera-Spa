@@ -37,3 +37,9 @@
 @media(max-width:640px){.live-tour-page .tour-room-grid .tour-room-booking-button{gap:4px;padding:4px;min-height:68px}}
 .live-tour-page .tour-room-grid .tour-room-card-head{flex-wrap:wrap}
 .live-tour-page .tour-room-grid .tour-room-type{position:static;flex:0 0 auto;margin-left:auto;max-width:100%}
+
+
+/* 2026-09-16 Live Tour compact room/role/status round */
+.live-tour-page .tour-room-grid .tour-room-booking-button{min-height:0!important;height:auto!important}
+.live-tour-page .tour-room-grid .tour-room-card{min-height:0!important;height:auto!important}
+.live-tour-page .tour-room-grid .room-actions button{align-items:center!important;justify-content:center!important;text-align:center!important}

@@ -129,7 +129,7 @@ export default function LiveTourBookingDialog({ data, context, canAdmin, canOper
   }
   const bookingPayload = () => ({
     employee_id: employeeId, service_items: items, room, request: autoRequest ? 'YC' : request, note,
-    ...(!editing ? { share_private_room: sharePrivateRoom } : {}),
+    share_private_room: sharePrivateRoom,
     ...(canCustomers ? { customer_id: customerId || null, customer_name: selectedCustomer?.name || '', customer_phone: selectedCustomer?.phone || '', combo_purchase_id: comboId || '' } : {}),
   })
   const selectEmployee = (id) => {
@@ -202,7 +202,7 @@ export default function LiveTourBookingDialog({ data, context, canAdmin, canOper
         </div>
       </>
       : <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
-        {canSharePrivateRoom && !editing && <label className="wide"><input type="checkbox" checked={sharePrivateRoom} onChange={event => { setSharePrivateRoom(event.target.checked); setMessage('') }}/> Cho khách dùng chung phòng PR</label>}
+        {canSharePrivateRoom && <label className="wide"><input type="checkbox" checked={sharePrivateRoom} onChange={event => { setSharePrivateRoom(event.target.checked); setMessage('') }}/> Cho khách dùng chung phòng PR</label>}
         {context.employeeId ? <p className="wide"><strong>Nhân viên: {employee?.name}</strong>{editing && ` · ${employee.status}`}</p> : <div className="wide"><LiveTourSearchSelect advanceOnSelect label="Nhân viên *" options={employeeOptions} value={employeeId} onChange={selectEmployee} required/></div>}
         {canCustomers && <div className="tour-booking-customer"><LiveTourSearchSelect advanceOnSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={customerOptionMatches} options={(data.customers || []).map((row) => ({ value: row.id, label: row.name, detail: row.phone, displayLabel: [row.name, row.phone].filter(Boolean).join(' - '), badge: customerTicketLabel(row) }))} value={customerId} onChange={selectCustomer} disabled={Boolean(editing && employee?.customer_id)}/><small>{customerId ? selectedCustomer?.phone : 'Để trống là Khách lẻ'}</small>{selectedCustomer && <strong className="tour-customer-ticket-count" aria-live="polite">{customerTicketLabel(selectedCustomer)}</strong>}</div>}
         {canCustomers && purchases.length > 0 && <div className="tour-booking-combo">
