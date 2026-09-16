@@ -46,7 +46,7 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
     async def run():
         async with app.router.lifespan_context(app) as state:
             assert state == {'shared': 'preserved'}
-            assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start']
+            assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start', 'scheduler-start']
             if fail:
                 raise RuntimeError('test shutdown')
 
@@ -55,11 +55,12 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
             asyncio.run(run())
     else:
         asyncio.run(run())
-    assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'app-stop']
+    assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'scheduler-stop', 'app-stop']
 
 
 def test_projection_queue_health_exposes_operational_metrics(monkeypatch):
     monkeypatch.setattr(live.job_queue, 'counts', lambda engine_instance, queue_name: {'done': 23})
+    monkeypatch.setattr(live.queue_alerts, 'health_status', lambda engine_instance, queue_name, metrics: {'active': False, 'conditions': []})
     monkeypatch.setattr(
         live.job_queue, 'health_metrics',
         lambda engine_instance, queue_name: {
@@ -84,3 +85,5 @@ def test_projection_queue_health_exposes_operational_metrics(monkeypatch):
     assert payload['retry'] == 0
     assert payload['failed'] == 0
     assert payload['stale_processing'] == 0
+    assert payload['ok'] is True
+    assert payload['alerting']['active'] is False
