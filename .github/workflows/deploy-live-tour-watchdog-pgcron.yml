@@ -8,6 +8,8 @@ on:
       - '.github/workflows/deploy-live-tour-watchdog-pgcron.yml'
       - 'vera_web_v2_api.py'
       - 'vera_web_v2_attendance_break_dispatch.py'
+      - 'vera_live_tour_queue_alerts.py'
+      - 'web-v2/src/lib/pushNotifications.js'
       - 'ops/systemd/vera-live-tour-queue-watchdog.sh'
       - 'ops/systemd/vera-live-tour-queue-watchdog.service'
       - 'ops/systemd/vera-live-tour-queue-watchdog.timer'
