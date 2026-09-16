@@ -1,0 +1,125 @@
+name: Harden Live Tour PostgreSQL Queue
+
+on:
+  push:
+    branches:
+      - ops/queue-runtime-check-20260916
+    paths:
+      - '.github/workflows/harden-live-tour-queue.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "pytest==8.4.2" \
+            "httpx2>=2,<3" \
+            -r requirements.txt
+
+      - name: Harden queue startup and health
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          queue_path = Path('vera_postgres_job_queue.py')
+          queue = queue_path.read_text(encoding='utf-8')
+          old_release = 'RELEASE = "postgres-job-queue-2026-09-16.1"'
+          new_release = 'RELEASE = "postgres-job-queue-2026-09-16.2-health"'
+          if queue.count(old_release) != 1:
+              raise SystemExit(f'Unexpected queue release marker count: {queue.count(old_release)}')
+          queue = queue.replace(old_release, new_release, 1)
+
+          schema_anchor = '''    conn.execute(text(\n        f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_ready "\n        f"ON {TABLE}(queue_name,status,available_at,id)"\n    ))\n\n\ndef enqueue_conn'''
+          schema_replacement = '''    conn.execute(text(\n        f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_ready "\n        f"ON {TABLE}(queue_name,status,available_at,id)"\n    ))\n\n\ndef ensure_schema(engine_instance) -> None:\n    """Create/verify the queue schema before any scheduler or worker starts."""\n    with engine_instance().begin() as conn:\n        ensure_schema_conn(conn)\n\n\ndef enqueue_conn'''
+          if queue.count(schema_anchor) != 1:
+              raise SystemExit(f'Queue schema insertion anchor count={queue.count(schema_anchor)}')
+          queue = queue.replace(schema_anchor, schema_replacement, 1)
+
+          if 'def health_metrics(engine_instance, queue_name: str)' in queue:
+              raise SystemExit('health_metrics already exists unexpectedly')
+          queue += '''\n\ndef health_metrics(engine_instance, queue_name: str) -> dict[str, int | float | None]:\n    """Return operational queue signals without mutating or claiming jobs."""\n    with engine_instance().connect() as conn:\n        row = conn.execute(text(f"""\n            SELECT\n                COUNT(*) FILTER (WHERE status='retry') AS retry,\n                COUNT(*) FILTER (WHERE status='failed') AS failed,\n                COUNT(*) FILTER (\n                    WHERE status='processing'\n                      AND locked_at < NOW() - INTERVAL '10 minutes'\n                ) AS stale_processing,\n                EXTRACT(EPOCH FROM (\n                    NOW() - MAX(completed_at) FILTER (\n                        WHERE status='done' AND completed_at IS NOT NULL\n                    )\n                )) AS last_success_age,\n                EXTRACT(EPOCH FROM (\n                    NOW() - MIN(created_at) FILTER (WHERE status='pending')\n                )) AS oldest_pending\n            FROM {TABLE}\n            WHERE queue_name=:queue_name\n        """), {"queue_name": queue_name}).mappings().first() or {}\n\n    def age(name: str) -> float | None:\n        value = row.get(name)\n        return None if value is None else round(max(0.0, float(value)), 1)\n\n    return {\n        "last_success_age": age("last_success_age"),\n        "oldest_pending": age("oldest_pending"),\n        "retry": int(row.get("retry") or 0),\n        "failed": int(row.get("failed") or 0),\n        "stale_processing": int(row.get("stale_processing") or 0),\n    }\n'''
+          queue_path.write_text(queue, encoding='utf-8')
+
+          live_path = Path('vera_web_v2_live_tour.py')
+          live = live_path.read_text(encoding='utf-8')
+          old_projection_release = 'PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.1"'
+          new_projection_release = 'PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.2-hardening"'
+          if live.count(old_projection_release) != 1:
+              raise SystemExit(f'Projection release marker count={live.count(old_projection_release)}')
+          live = live.replace(old_projection_release, new_projection_release, 1)
+
+          startup_old = '''    def start_scheduler():\n        nonlocal scheduler_thread, worker_thread\n        scheduler_stop.clear()\n'''
+          startup_new = '''    def start_scheduler():\n        nonlocal scheduler_thread, worker_thread\n        # Fail startup before any background thread can touch a missing queue table.\n        job_queue.ensure_schema(engine_instance)\n        scheduler_stop.clear()\n'''
+          if live.count(startup_old) != 1:
+              raise SystemExit(f'Startup anchor count={live.count(startup_old)}')
+          live = live.replace(startup_old, startup_new, 1)
+
+          health_old = '''    @app.get("/v2/live-tour/projection-queue/health")\n    def live_tour_projection_queue_health():\n        return {\n            "ok": True, "release": PROJECTION_RELEASE,\n            "queue_release": job_queue.RELEASE,\n            "refresh_seconds": PROJECTION_REFRESH_SECONDS,\n            "claim_strategy": "for_update_skip_locked",\n            "counts": job_queue.counts(engine_instance, PROJECTION_QUEUE),\n        }\n'''
+          health_new = '''    @app.get("/v2/live-tour/projection-queue/health")\n    def live_tour_projection_queue_health():\n        metrics = job_queue.health_metrics(engine_instance, PROJECTION_QUEUE)\n        return {\n            "ok": True, "release": PROJECTION_RELEASE,\n            "queue_release": job_queue.RELEASE,\n            "refresh_seconds": PROJECTION_REFRESH_SECONDS,\n            "claim_strategy": "for_update_skip_locked",\n            "counts": job_queue.counts(engine_instance, PROJECTION_QUEUE),\n            **metrics,\n        }\n'''
+          if live.count(health_old) != 1:
+              raise SystemExit(f'Health endpoint anchor count={live.count(health_old)}')
+          live = live.replace(health_old, health_new, 1)
+          live_path.write_text(live, encoding='utf-8')
+
+          lifespan_path = Path('tests/test_live_tour_lifespan.py')
+          test = lifespan_path.read_text(encoding='utf-8')
+          monkey_old = "    monkeypatch.setattr(live, 'Thread', FakeThread)\n"
+          monkey_new = "    monkeypatch.setattr(live, 'Thread', FakeThread)\n    monkeypatch.setattr(live.job_queue, 'ensure_schema', lambda engine_instance: events.append('queue-schema-ready'))\n"
+          if test.count(monkey_old) != 1:
+              raise SystemExit(f'Lifespan monkeypatch anchor count={test.count(monkey_old)}')
+          test = test.replace(monkey_old, monkey_new, 1)
+          test = test.replace(
+              "            assert events == ['app-start', 'scheduler-start', 'scheduler-start']",
+              "            assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start']",
+              1,
+          )
+          test = test.replace(
+              "    assert events == ['app-start', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'app-stop']",
+              "    assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'app-stop']",
+              1,
+          )
+          health_test = '''\n\ndef test_projection_queue_health_exposes_operational_metrics(monkeypatch):\n    monkeypatch.setattr(live.job_queue, 'counts', lambda engine_instance, queue_name: {'done': 23})\n    monkeypatch.setattr(\n        live.job_queue, 'health_metrics',\n        lambda engine_instance, queue_name: {\n            'last_success_age': 115.5,\n            'oldest_pending': None,\n            'retry': 0,\n            'failed': 0,\n            'stale_processing': 0,\n        },\n    )\n    app = FastAPI()\n    live.install_live_tour_routes(\n        app, engine_instance=lambda: None, current_identity=lambda: RouteIdentity(),\n        require_feature=lambda *args: None, feature_allowed=lambda *args: True,\n        identity_type=RouteIdentity,\n    )\n    route = next(route for route in app.routes if route.path == '/v2/live-tour/projection-queue/health')\n    payload = route.endpoint()\n    assert payload['counts'] == {'done': 23}\n    assert payload['last_success_age'] == 115.5\n    assert payload['oldest_pending'] is None\n    assert payload['retry'] == 0\n    assert payload['failed'] == 0\n    assert payload['stale_processing'] == 0\n'''
+          if 'test_projection_queue_health_exposes_operational_metrics' not in test:
+              test += health_test
+          lifespan_path.write_text(test, encoding='utf-8')
+
+          Path('tests/test_postgres_job_queue_health.py').write_text('''from contextlib import contextmanager\nfrom decimal import Decimal\n\nimport vera_postgres_job_queue as queue\n\n\nclass FakeResult:\n    def __init__(self, row):\n        self.row = row\n\n    def mappings(self):\n        return self\n\n    def first(self):\n        return self.row\n\n\nclass FakeConnection:\n    def __init__(self, row=None):\n        self.row = row or {}\n        self.calls = []\n\n    def execute(self, statement, params=None):\n        self.calls.append((str(statement), params))\n        return FakeResult(self.row)\n\n\nclass FakeEngine:\n    def __init__(self, row=None):\n        self.connection = FakeConnection(row)\n\n    @contextmanager\n    def connect(self):\n        yield self.connection\n\n    @contextmanager\n    def begin(self):\n        yield self.connection\n\n\ndef test_ensure_schema_runs_inside_transaction(monkeypatch):\n    engine = FakeEngine()\n    seen = []\n    monkeypatch.setattr(queue, 'ensure_schema_conn', lambda conn: seen.append(conn))\n    queue.ensure_schema(lambda: engine)\n    assert seen == [engine.connection]\n\n\ndef test_health_metrics_normalizes_operational_signals():\n    engine = FakeEngine({\n        'retry': 2,\n        'failed': 1,\n        'stale_processing': 1,\n        'last_success_age': Decimal('12.34'),\n        'oldest_pending': Decimal('45.67'),\n    })\n    assert queue.health_metrics(lambda: engine, 'live_tour_projection') == {\n        'last_success_age': 12.3,\n        'oldest_pending': 45.7,\n        'retry': 2,\n        'failed': 1,\n        'stale_processing': 1,\n    }\n    statement, params = engine.connection.calls[-1]\n    assert "status='processing'" in statement\n    assert "INTERVAL '10 minutes'" in statement\n    assert params == {'queue_name': 'live_tour_projection'}\n''', encoding='utf-8')
+          PY
+
+          git diff --check
+          git diff -- vera_postgres_job_queue.py vera_web_v2_live_tour.py tests/test_live_tour_lifespan.py tests/test_postgres_job_queue_health.py
+
+      - name: Run targeted hardening tests
+        run: |
+          python -m pytest -q \
+            tests/test_live_tour_lifespan.py \
+            tests/test_postgres_job_queue_health.py
+
+      - name: Run full regression suite
+        run: python -m pytest -q
+
+      - name: Commit hardened queue to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add vera_postgres_job_queue.py vera_web_v2_live_tour.py tests/test_live_tour_lifespan.py tests/test_postgres_job_queue_health.py
+          git commit -m 'Harden Live Tour PostgreSQL queue health'
+          git push origin HEAD:main
