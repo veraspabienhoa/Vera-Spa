@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from vera_partial_leave_hours import DEFAULT_HOURS
+from vera_vietqr_bank import resolve_vietqr_bank_id
 
 
 def default_settings():
@@ -110,7 +111,7 @@ def payment_values(state, payload, subtotal, money, max_money):
 
 def profile_bank(row):
     """Profile stores VietQR shortName; never invent an account or bank code."""
-    bank = {'enabled': True, 'bank_id': str(row.get('bank_name') or '').strip(),
+    bank = {'enabled': True, 'bank_id': resolve_vietqr_bank_id(row.get('bank_name')),
             'account_no': str(row.get('bank_account') or '').strip(),
             'account_name': str(row.get('full_name') or '').strip()}
     if (not re.fullmatch(r'[A-Za-z0-9]{2,20}', bank['bank_id'])

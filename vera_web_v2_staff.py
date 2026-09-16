@@ -29,6 +29,7 @@ import vera_resource_concurrency as resource_concurrency
 
 from vera_web_v2_security import password_policy_error
 from vera_web_v2_staff_security import validate_saved_identity_matches
+from vera_vietqr_bank import normalize_bank_for_storage, resolve_vietqr_bank_id, vietqr_bank_options
 
 
 STAFF_EXPORT_COLUMNS = [
@@ -528,6 +529,8 @@ def install_staff_routes(
             for row in rows
             if str(row.get("role") or "").lower() != "admin"
         ]
+        for public_row in public_rows:
+            public_row["bank_code"] = resolve_vietqr_bank_id(public_row.get("bank_name"))
         all_public = list(public_rows)
         if str(ident.role).lower() != "admin":
             public_rows = [
@@ -555,6 +558,7 @@ def install_staff_routes(
             "status_options": STATUS_OPTIONS,
             "cycle_options": CYCLE_OPTIONS,
             "shifts_by_department": _shift_catalog(conn, rows),
+            "bank_options": vietqr_bank_options(),
         }
 
     def find_row(rows: list[dict[str, Any]], username: str) -> dict[str, Any]:
@@ -601,6 +605,10 @@ def install_staff_routes(
         ):
             if key in values:
                 merged[key] = str(values[key] or "").strip()
+        if "bank_name" in values:
+            merged["bank_name"] = normalize_bank_for_storage(values["bank_name"])
+            if merged.get("bank_account") and merged["bank_name"] and not resolve_vietqr_bank_id(merged["bank_name"]):
+                raise HTTPException(400, "Ngân hàng chưa khớp danh mục VietQR. Hãy chọn ngân hàng từ danh sách.")
         if {"province", "district", "ward", "address_detail"}.intersection(values):
             merged["address"] = _composed_address(merged)
         if "cccd_number" in values:
@@ -769,7 +777,7 @@ def install_staff_routes(
                 "phone": body.phone.strip(), "email": body.email.strip(),
                 **address_parts,
                 "address": _composed_address(address_parts), "bank_account": body.bank_account.strip(),
-                "bank_name": body.bank_name.strip(), "monthly_generated": 0,
+                "bank_name": normalize_bank_for_storage(body.bank_name), "monthly_generated": 0,
                 "monthly_leave": 0, "annual_leave": 0, "work_shift": "",
                 "shift_start_date": "", "rotation_cycle": "", "login_locked": False,
                 "remember_token_hash": "", "remember_token_expiry": "",

@@ -38,7 +38,7 @@ const PROFILE_SECTIONS = [
     ['ward', 'Phường/Xã'], ['address_detail', 'Địa chỉ cụ thể (Số nhà, tên đường...)'],
   ] },
   { title: 'Thông tin thanh toán/Ngân hàng', fields: [
-    ['bank_name', 'Tên ngân hàng'], ['bank_account', 'Số tài khoản ngân hàng'],
+    ['bank_name', 'Tên ngân hàng'], ['bank_code', 'Mã ngân hàng tự động'], ['bank_account', 'Số tài khoản ngân hàng'],
   ] },
   { title: 'Thông tin việc làm', fields: [
     ['employment_start_date', 'Ngày bắt đầu làm'], ['employment_end_date', 'Ngày nghỉ việc'],
@@ -332,7 +332,7 @@ export default function EmployeePage({ user }) {
   }
 
   const saveProfile = () => run('profile', async () => {
-    const payload = { ...profileDraft }
+    const payload = { ...profileDraft }; delete payload.bank_code
     payload.birth_date = datePayload(payload.birth_date)
     payload.employment_start_date = datePayload(payload.employment_start_date)
     payload.employment_end_date = datePayload(payload.employment_end_date)
@@ -471,7 +471,7 @@ export default function EmployeePage({ user }) {
       </section>}
 
       {profileUser && <section ref={profileSectionRef} className="panel staff-form-panel" style={{ scrollMarginTop: 128 }}>
-        <div className="panel-title-row"><div><h2>SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div></div>
+        <div className="panel-title-row"><div><h2>SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div><div className="staff-profile-react-actions"><button type="button" className="secondary-button" onClick={() => setProfileUser('')}>✕ Đóng</button><button type="button" className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={16}/> Lưu hồ sơ</button></div></div>
         <div className="staff-form-grid">
           {PROFILE_SECTIONS.map((section) => <div className="profile-section-fields span-2" key={section.title}>
             <div className="profile-field-section">{section.title}</div>
@@ -479,6 +479,8 @@ export default function EmployeePage({ user }) {
               {section.fields.map(([field, label]) => {
                 const isDate = field.includes('date')
                 if (field === 'gender') return <label key={field}>{label}<select value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
+                if (field === 'bank_name') return <label key={field}>{label}<select value={profileDraft.bank_code || profileDraft.bank_name || ''} onChange={(event) => setProfileDraft({ ...profileDraft, bank_name: event.target.value, bank_code: event.target.value })}><option value="">-- Chọn ngân hàng --</option>{(data?.bank_options || []).map((bank) => <option key={bank.code} value={bank.code}>{bank.short_name || bank.code}{bank.name && bank.name !== bank.short_name ? ` · ${bank.name}` : ''}</option>)}</select></label>
+                if (field === 'bank_code') return <label key={field}>{label}<input value={profileDraft.bank_code || ''} readOnly aria-label="Mã ngân hàng tự động" placeholder="Tự động: VCB / ACB / TCB…" /></label>
                 if (isDate) return <label key={field}>{label}<VeraDateInput aria-label={label} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })} /></label>
                 return <label key={field}>{label}<input type="text" inputMode={field === 'cccd_number' ? 'numeric' : undefined} maxLength={field === 'cccd_number' ? 12 : undefined} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: field === 'cccd_number' ? event.target.value.replace(/\D/g, '').slice(0, 12) : event.target.value })} /></label>
               })}

@@ -99,58 +99,11 @@ async function refreshOpenProfile(button, panel) {
 }
 
 function ensureProfileHeaderActions() {
-  const panel = profilePanel()
-  if (!panel) return
-  const header = panel.querySelector('.panel-title-row')
-  const footer = panel.querySelector('.staff-form-actions')
-  if (!header || !footer) return
-
-  let actions = header.querySelector('.vera-profile-header-actions')
-  if (!actions) {
-    actions = document.createElement('div')
-    actions.className = 'vera-profile-header-actions'
-    header.appendChild(actions)
-  }
-
-  let close = header.querySelector('.vera-profile-top-close')
-  if (!close) {
-    close = document.createElement('button')
-    close.type = 'button'
-    close.className = 'secondary-button vera-profile-top-close'
-    close.textContent = '✕ Đóng'
-    close.addEventListener('click', () => {
-      const cancel = actionButtonByText(footer, /^Hủy$|^Đóng$/i)
-      cancel?.click()
-    })
-  }
-  if (close.parentElement !== actions) actions.appendChild(close)
-  close.textContent = '✕ Đóng'
-
-  if (!actions.querySelector('.vera-profile-refresh-top')) {
-    const refresh = document.createElement('button')
-    refresh.type = 'button'
-    refresh.className = 'secondary-button vera-profile-refresh-top'
-    refresh.textContent = '↻ Làm mới'
-    refresh.addEventListener('click', () => void refreshOpenProfile(refresh, profilePanel()))
-    actions.insertBefore(refresh, close)
-  }
-
-  if (!actions.querySelector('.vera-profile-save-top')) {
-    const save = document.createElement('button')
-    save.type = 'button'
-    save.className = 'primary-button vera-profile-save-top'
-    save.textContent = '✓ Lưu hồ sơ'
-    save.addEventListener('click', () => {
-      const currentPanel = profilePanel()
-      const originalSave = actionButtonByText(currentPanel?.querySelector('.staff-form-actions'), /Lưu hồ sơ/i)
-      if (originalSave && !originalSave.disabled) originalSave.click()
-    })
-    actions.insertBefore(save, close)
-  }
-
-  const originalSave = actionButtonByText(footer, /Lưu hồ sơ/i)
-  const topSave = actions.querySelector('.vera-profile-save-top')
-  if (topSave) topSave.disabled = Boolean(originalSave?.disabled)
+  // Legacy versions imperatively appended buttons inside React-owned profile headers.
+  // Closing/filtering the profile could then make React reconcile nodes that had been
+  // moved or removed outside React, producing a fatal blank-screen DOM exception.
+  // EmployeePage now renders these controls itself; only remove stale legacy nodes.
+  document.querySelectorAll('.vera-profile-header-actions').forEach((node) => node.remove())
 }
 
 function reconcile() {

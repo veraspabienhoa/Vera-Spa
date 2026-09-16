@@ -17,7 +17,7 @@ const toVnDate = (value) => {
 
 export default function ProfilePage({ user, onPasswordChanged, forcePasswordChange = false }) {
   const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', gender: '', ethnicity: '', phone: '', email: '', address: '', province: '', ward: '', address_detail: '', bank_account: '', bank_name: '', cccd_number: '', cccd_issue_date: '', cccd_issue_place: '' })
-  const [references, setReferences] = useState({ provinces: [], wards: [], banks: [] })
+  const [references, setReferences] = useState({ provinces: [], wards: [], banks: [], bank_options: [] })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -36,7 +36,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       let wards = []
       const province = (catalogs.provinces || []).find((item) => item.name === result.profile.province)
       if (province) wards = (await veraApi.profileReferenceData(province.code)).wards || []
-      setReferences({ provinces: catalogs.provinces || [], banks: catalogs.banks || [], wards })
+      setReferences({ provinces: catalogs.provinces || [], banks: catalogs.banks || [], bank_options: catalogs.bank_options || [], wards })
     } catch (error) { setNotice({ status: 'error', message: error.message }) }
     finally { setLoading(false) }
   }
@@ -52,7 +52,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       if ((forcePasswordChange || form.new_password) && !form.current_password) {
         throw new Error('Chỉ khi đổi mật khẩu mới cần nhập Mật khẩu hiện tại.')
       }
-      const payload = { ...form, birth_date: toVnDate(form.birth_date), cccd_issue_date: toVnDate(form.cccd_issue_date) }
+      const payload = { ...form, birth_date: toVnDate(form.birth_date), cccd_issue_date: toVnDate(form.cccd_issue_date) }; delete payload.bank_code
       delete payload.district
       if (!forcePasswordChange && !form.new_password) {
         delete payload.current_password
@@ -124,6 +124,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       setReferences((current) => ({
         provinces: result.provinces || current.provinces,
         banks: result.banks || current.banks,
+        bank_options: result.bank_options || current.bank_options,
         wards: kind === 'wards' ? (result.wards || []) : current.wards,
       }))
       const label = kind === 'provinces' ? 'Tỉnh/Thành phố' : kind === 'wards' ? 'Phường/Xã' : 'Ngân hàng'
@@ -158,8 +159,9 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <label>Phường/Xã<select value={form.ward} onChange={(e) => setForm({ ...form, ward: e.target.value })} disabled={!form.province}><option value="">-- Chọn Phường/Xã --</option>{form.ward && !references.wards.includes(form.ward) && <option>{form.ward}</option>}{references.wards.map((ward) => <option key={ward}>{ward}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('wards')} disabled={Boolean(referenceBusy) || !form.province}><RefreshCw size={14} className={referenceBusy === 'wards' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
         <label className="wide-field">Địa chỉ cụ thể (Số nhà, tên đường...)<input value={form.address_detail} onChange={(e) => setForm({ ...form, address_detail: e.target.value })} placeholder="Số nhà, tên đường, ấp/khu phố" /></label>
         <div className="profile-field-section wide-field">Thông tin thanh toán/Ngân hàng</div>
-        <label>Tên ngân hàng<select value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{form.bank_name && !references.banks.includes(form.bank_name) && <option>{form.bank_name}</option>}{references.banks.map((bank) => <option key={bank}>{bank}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('banks')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'banks' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
-        <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value })} /></label>
+        <label>Tên ngân hàng<select value={form.bank_code || form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value, bank_code: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{(references.bank_options || []).map((bank) => <option key={bank.code} value={bank.code}>{bank.short_name || bank.code}{bank.name && bank.name !== bank.short_name ? ` · ${bank.name}` : ''}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('banks')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'banks' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
+        <label>Mã ngân hàng tự động<input value={form.bank_code || ''} readOnly aria-label="Mã ngân hàng tự động" placeholder="Tự động: VCB / ACB / TCB…" /></label>
+        <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value.replace(/\D/g, '').slice(0, 19) })} inputMode="numeric" /></label>
         <div className="profile-password-box wide-field">
           <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3><p>{forcePasswordChange ? 'Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.' : 'Để trống cả hai ô nếu chỉ cập nhật hồ sơ. Hệ thống không yêu cầu đổi mật khẩu khi lưu thông tin cá nhân.'}</p>
           <div className="profile-password-grid">

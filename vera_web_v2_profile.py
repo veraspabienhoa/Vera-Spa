@@ -16,6 +16,7 @@ from sqlalchemy import text
 from vera_web_v2_local_auth import revoke_local_sessions
 from vera_web_v2_security import password_policy_error
 from vera_web_v2_staff_security import validate_saved_identity_matches
+from vera_vietqr_bank import normalize_bank_for_storage, resolve_vietqr_bank_id, vietqr_bank_options
 
 
 class ProfileUpdate(BaseModel):
@@ -167,6 +168,7 @@ def install_profile_routes(
             raise HTTPException(404, "Không tìm thấy hồ sơ nhân viên.")
         profile = dict(row)
         payload = profile.pop("payload", {}) if isinstance(profile.get("payload"), dict) else {}
+        profile["bank_code"] = resolve_vietqr_bank_id(profile.get("bank_name"))
         profile.update({
             "gender": str(payload.get("Giới tính") or ""),
             "ethnicity": str(payload.get("Dân tộc") or ""),
@@ -192,6 +194,7 @@ def install_profile_routes(
         return {
             "provinces": provinces,
             "banks": banks,
+            "bank_options": vietqr_bank_options(force=refresh),
             "wards": _wards(province_code, force=refresh) if province_code is not None else [],
             "province_code": province_code,
             "refreshed": bool(refresh),
@@ -249,10 +252,12 @@ def install_profile_routes(
                 "full_name": body.full_name.strip(), "birth_date": birth_date,
                 "gender": gender, "ethnicity": body.ethnicity.strip(), "phone": body.phone.strip(),
                 "email": body.email.strip(), "address": composed_address,
-                "bank_account": body.bank_account.strip(), "bank_name": body.bank_name.strip(),
+                "bank_account": body.bank_account.strip(), "bank_name": normalize_bank_for_storage(body.bank_name),
                 "cccd_number": cccd_number, "cccd_issue_date": cccd_issue_date,
                 "cccd_issue_place": body.cccd_issue_place.strip(),
             })
+            if updated["bank_account"] and updated["bank_name"] and not resolve_vietqr_bank_id(updated["bank_name"]):
+                raise HTTPException(400, "Ngân hàng chưa khớp danh mục VietQR. Hãy chọn ngân hàng từ danh sách.")
             validate_saved_identity_matches(
                 conn,
                 str(current.get("username") or ident.employee_username),

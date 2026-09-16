@@ -81,7 +81,7 @@ def _aliases(force: bool = False) -> dict[str, str]:
         response.raise_for_status()
         for item in response.json().get("data") or []:
             short = str(item.get("shortName") or "").strip()
-            code = short or str(item.get("code") or "").strip()
+            code = str(item.get("code") or "").strip() or short
             if not code:
                 continue
             for value in (code, item.get("shortName"), item.get("name"), item.get("code"), item.get("bin")):
@@ -105,3 +105,26 @@ def normalize_bank_for_storage(value: object) -> str:
     """Canonicalize known banks while preserving an unknown label for correction."""
     raw = str(value or "").strip()
     return resolve_vietqr_bank_id(raw) or raw
+
+
+def vietqr_bank_options(force: bool = False) -> list[dict[str, object]]:
+    """Return safe UI options with human labels and an automatic VietQR code."""
+    options: dict[str, dict[str, object]] = {}
+    for code, aliases in _FALLBACK.items():
+        human = next((value for value in aliases if _key(value) != _key(code)), code)
+        legal = aliases[-1] if aliases else human
+        options[code] = {"code": code, "short_name": human, "name": legal, "aliases": list(dict.fromkeys([code, *aliases]))}
+    try:
+        response = requests.get("https://api.vietqr.io/v2/banks", timeout=5)
+        response.raise_for_status()
+        for item in response.json().get("data") or []:
+            short = str(item.get("shortName") or "").strip()
+            code = str(item.get("code") or "").strip() or short
+            if not code:
+                continue
+            name = str(item.get("name") or short or code).strip()
+            aliases = [value for value in (code, short, name, item.get("bin")) if str(value or "").strip()]
+            options[code] = {"code": code, "short_name": short or code, "name": name, "aliases": list(dict.fromkeys(map(str, aliases)))}
+    except Exception:
+        pass
+    return sorted(options.values(), key=lambda item: str(item.get("short_name") or item.get("code") or '').casefold())
