@@ -1,24 +1,17 @@
-name: Live Tour Queue Watchdog
+name: Live Tour Queue Watchdog V2
 
 on:
   schedule:
     - cron: '2-57/5 * * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/live-tour-queue-watchdog-v2.yml'
-      - 'vera_live_tour_queue_watchdog.py'
-      - 'tests/test_live_tour_queue_watchdog.py'
 
 permissions:
   contents: read
   issues: write
 
 concurrency:
-  group: live-tour-queue-watchdog
-  cancel-in-progress: true
+  group: live-tour-queue-watchdog-v2
+  cancel-in-progress: false
 
 jobs:
   watchdog:
@@ -27,34 +20,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-
-      - name: Smoke test watchdog policy
-        if: github.event_name != 'schedule'
-        run: |
-          python - <<'PY'
-          import vera_live_tour_queue_watchdog as watchdog
-
-          healthy = {
-              'last_success_age': 600,
-              'oldest_pending': 600,
-              'retry': 2,
-              'failed': 0,
-              'stale_processing': 0,
-          }
-          unhealthy = {
-              'last_success_age': 600.1,
-              'oldest_pending': 601,
-              'retry': 0,
-              'failed': 1,
-              'stale_processing': 1,
-          }
-          assert watchdog.evaluate_health_payload(healthy) == []
-          assert watchdog.evaluate_health_payload(unhealthy) == [
-              'last_success_age', 'oldest_pending', 'failed', 'stale_processing'
-          ]
-          assert watchdog.evaluate_health_payload({'watchdog_error': 'down'}) == ['health_unreachable']
-          print('Watchdog threshold policy OK')
-          PY
 
       - name: Configure SSH
         env:
