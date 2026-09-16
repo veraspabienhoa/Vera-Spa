@@ -1,0 +1,119 @@
+name: Apply Live Tour fixed room height and mobile controls
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-live-tour-room-mobile-fix.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: live-tour-room-mobile-fix
+  cancel-in-progress: false
+
+jobs:
+  patch-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Apply requested Live Tour changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          page = 'web-v2/src/pages/LiveTourPage.jsx'
+          css = 'web-v2/src/pages/LiveTourControls.css'
+
+          replace_once(
+              page,
+              "onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}",
+              "onClick={() => { setRoomSegment('all'); setSelectedRoomKey(''); setRoomFilterIds(new Set()); setSelectedIds(new Set()); setEmployeePickId(''); setEmployeeSearch(''); setActiveFilter('all') }} aria-pressed={roomSegment === 'all'}",
+              'all-room reset',
+          )
+
+          replace_once(
+              page,
+              "return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : records.length ? 'has-standard-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>",
+              "return <div data-room-density={Math.min(records.length, 6)} className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : records.length ? 'has-standard-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>",
+              'room density marker',
+          )
+
+          old = """.live-tour-page .tour-room-panel .tour-room-grid{grid-auto-rows:auto!important;align-items:start!important;overflow:visible!important}\n.live-tour-page .tour-room-panel .tour-room-grid .tour-room-card{height:auto!important;min-height:0!important;align-self:start!important;overflow:visible!important}\n.live-tour-page .tour-room-panel .tour-room-grid .tour-room-booking-button{height:auto!important;min-height:0!important}\n"""
+          new = """.live-tour-page .tour-room-panel .tour-room-grid{grid-auto-rows:96px!important;align-items:stretch!important;overflow:hidden!important}\n.live-tour-page .tour-room-panel .tour-room-grid .tour-room-card{height:96px!important;min-height:96px!important;max-height:96px!important;align-self:stretch!important;overflow:hidden!important}\n.live-tour-page .tour-room-panel .tour-room-grid .tour-room-booking-button{height:auto!important;min-height:0!important;flex:1 1 auto!important;overflow:hidden!important;padding:2px 3px!important;gap:1px!important}\n.live-tour-page .tour-room-panel .tour-room-grid .tour-room-staff{min-height:0;overflow:hidden;line-height:1.2!important}\n.live-tour-page .tour-room-card[data-room-density=\"3\"] .tour-room-staff{font-size:5.25px!important;line-height:1.16!important}\n.live-tour-page .tour-room-card[data-room-density=\"4\"] .tour-room-staff{font-size:4.75px!important;line-height:1.12!important}\n.live-tour-page .tour-room-card[data-room-density=\"5\"] .tour-room-staff{font-size:4.25px!important;line-height:1.08!important}\n.live-tour-page .tour-room-card[data-room-density=\"6\"] .tour-room-staff{font-size:3.75px!important;line-height:1.04!important}\n.live-tour-page .tour-room-card[data-room-density=\"4\"] .tour-room-customer-count,.live-tour-page .tour-room-card[data-room-density=\"5\"] .tour-room-customer-count,.live-tour-page .tour-room-card[data-room-density=\"6\"] .tour-room-customer-count{font-size:8px!important;margin:0!important}\n.live-tour-page .tour-room-card[data-room-density=\"5\"] .tour-room-countdown,.live-tour-page .tour-room-card[data-room-density=\"6\"] .tour-room-countdown{font-size:9px!important;line-height:1!important}\n.live-tour-page .tour-room-card[data-room-density=\"5\"] .tour-room-countdown svg,.live-tour-page .tour-room-card[data-room-density=\"6\"] .tour-room-countdown svg{width:10px!important;height:10px!important}\n"""
+          replace_once(css, old, new, 'fixed room height')
+
+          replace_once(
+              css,
+              ".live-tour-page .tour-heading-actions button{min-height:14.4px!important;height:auto!important;padding-top:1px!important;padding-bottom:1px!important}",
+              ".live-tour-page .tour-heading-actions button{min-height:16.56px!important;height:auto!important;padding-top:1.15px!important;padding-bottom:1.15px!important}",
+              'mobile heading button +15 percent',
+          )
+
+          test = Path('tests/test_live_tour_room_mobile_layout.py')
+          test.write_text('''from pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\n\ndef test_live_tour_rooms_have_fixed_height_and_density_fit():\n    css = (ROOT / "web-v2/src/pages/LiveTourControls.css").read_text(encoding="utf-8")\n    page = (ROOT / "web-v2/src/pages/LiveTourPage.jsx").read_text(encoding="utf-8")\n    assert "grid-auto-rows:96px!important" in css\n    assert "height:96px!important;min-height:96px!important;max-height:96px!important" in css\n    assert "data-room-density={Math.min(records.length, 6)}" in page\n    assert "data-room-density=\\\"6\\\"" in css\n\ndef test_mobile_heading_actions_are_fifteen_percent_taller():\n    css = (ROOT / "web-v2/src/pages/LiveTourControls.css").read_text(encoding="utf-8")\n    assert "min-height:16.56px!important" in css\n\ndef test_all_rooms_clears_room_employee_filters():\n    page = (ROOT / "web-v2/src/pages/LiveTourPage.jsx").read_text(encoding="utf-8")\n    marker = "setRoomSegment('all'); setSelectedRoomKey(''); setRoomFilterIds(new Set()); setSelectedIds(new Set()); setEmployeePickId(''); setEmployeeSearch(''); setActiveFilter('all')"\n    assert marker in page\n''', encoding='utf-8')
+          PY
+
+      - name: Run regression tests
+        run: |
+          python -m pytest -q tests/test_live_tour_room_mobile_layout.py tests/test_live_tour_frontend.py
+
+      - name: Build frontend
+        working-directory: web-v2
+        run: |
+          npm ci
+          npm run build
+
+      - name: Validate and commit
+        run: |
+          git diff --check
+          git config user.name 'vera-spa-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add web-v2/src/pages/LiveTourPage.jsx web-v2/src/pages/LiveTourControls.css tests/test_live_tour_room_mobile_layout.py
+          git commit -m 'Fix Live Tour room sizing and mobile controls'
+          git push origin HEAD:main
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy patched commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -e
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+
+      - name: Verify production commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; echo PRODUCTION_COMMIT=${DEPLOY_SHA}"
