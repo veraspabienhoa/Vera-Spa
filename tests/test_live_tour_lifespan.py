@@ -31,6 +31,7 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
             events.append('scheduler-stop')
 
     monkeypatch.setattr(live, 'Thread', FakeThread)
+    monkeypatch.setattr(live.job_queue, 'ensure_schema', lambda engine_instance: events.append('queue-schema-ready'))
     app = FastAPI(lifespan=original)
     # Reject use of the removed API even when testing an older FastAPI.
     def removed(*args, **kwargs):
@@ -45,7 +46,7 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
     async def run():
         async with app.router.lifespan_context(app) as state:
             assert state == {'shared': 'preserved'}
-            assert events == ['app-start', 'scheduler-start', 'scheduler-start']
+            assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start']
             if fail:
                 raise RuntimeError('test shutdown')
 
@@ -54,4 +55,32 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
             asyncio.run(run())
     else:
         asyncio.run(run())
-    assert events == ['app-start', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'app-stop']
+    assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'app-stop']
+
+
+def test_projection_queue_health_exposes_operational_metrics(monkeypatch):
+    monkeypatch.setattr(live.job_queue, 'counts', lambda engine_instance, queue_name: {'done': 23})
+    monkeypatch.setattr(
+        live.job_queue, 'health_metrics',
+        lambda engine_instance, queue_name: {
+            'last_success_age': 115.5,
+            'oldest_pending': None,
+            'retry': 0,
+            'failed': 0,
+            'stale_processing': 0,
+        },
+    )
+    app = FastAPI()
+    live.install_live_tour_routes(
+        app, engine_instance=lambda: None, current_identity=lambda: RouteIdentity(),
+        require_feature=lambda *args: None, feature_allowed=lambda *args: True,
+        identity_type=RouteIdentity,
+    )
+    route = next(route for route in app.routes if route.path == '/v2/live-tour/projection-queue/health')
+    payload = route.endpoint()
+    assert payload['counts'] == {'done': 23}
+    assert payload['last_success_age'] == 115.5
+    assert payload['oldest_pending'] is None
+    assert payload['retry'] == 0
+    assert payload['failed'] == 0
+    assert payload['stale_processing'] == 0

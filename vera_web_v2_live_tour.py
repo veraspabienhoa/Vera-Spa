@@ -55,7 +55,7 @@ STATE_LOCK = "vera:v2:live_tour:state"
 STATE_VERSION = 1
 PROJECTION_REFRESH_SECONDS = 300
 PROJECTION_QUEUE = "live_tour_projection"
-PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.1"
+PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.2-hardening"
 BUSINESS_DAY_CUTOFF = time(11, 10)
 MAX_AUDIT = 3000
 MAX_BACKUPS = 20
@@ -4082,6 +4082,8 @@ def install_live_tour_routes(
 
     def start_scheduler():
         nonlocal scheduler_thread, worker_thread
+        # Fail startup before any background thread can touch a missing queue table.
+        job_queue.ensure_schema(engine_instance)
         scheduler_stop.clear()
         scheduler_thread = Thread(target=scheduled_projection, name="live-tour-projection-scheduler", daemon=True)
         worker_thread = Thread(target=projection_worker, name="live-tour-projection-worker", daemon=True)
@@ -4456,12 +4458,14 @@ def install_live_tour_routes(
 
     @app.get("/v2/live-tour/projection-queue/health")
     def live_tour_projection_queue_health():
+        metrics = job_queue.health_metrics(engine_instance, PROJECTION_QUEUE)
         return {
             "ok": True, "release": PROJECTION_RELEASE,
             "queue_release": job_queue.RELEASE,
             "refresh_seconds": PROJECTION_REFRESH_SECONDS,
             "claim_strategy": "for_update_skip_locked",
             "counts": job_queue.counts(engine_instance, PROJECTION_QUEUE),
+            **metrics,
         }
 
     @app.get("/v2/live-tour/export.xlsx")

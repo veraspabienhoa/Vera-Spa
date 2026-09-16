@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 
 TABLE = "vera_background_job"
-RELEASE = "postgres-job-queue-2026-09-16.1"
+RELEASE = "postgres-job-queue-2026-09-16.2-health"
 MAX_ATTEMPTS = 12
 
 
@@ -38,6 +38,12 @@ def ensure_schema_conn(conn) -> None:
         f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_ready "
         f"ON {TABLE}(queue_name,status,available_at,id)"
     ))
+
+
+def ensure_schema(engine_instance) -> None:
+    """Create/verify the queue schema before any scheduler or worker starts."""
+    with engine_instance().begin() as conn:
+        ensure_schema_conn(conn)
 
 
 def enqueue_conn(conn, queue_name: str, job_key: str,
@@ -161,3 +167,39 @@ def counts(engine_instance, queue_name: str) -> dict[str, int]:
             GROUP BY status
         """), {"queue_name": queue_name}).mappings().all()
     return {str(row["status"]): int(row["n"]) for row in rows}
+
+
+def health_metrics(engine_instance, queue_name: str) -> dict[str, int | float | None]:
+    """Return operational queue signals without mutating or claiming jobs."""
+    with engine_instance().connect() as conn:
+        row = conn.execute(text(f"""
+            SELECT
+                COUNT(*) FILTER (WHERE status='retry') AS retry,
+                COUNT(*) FILTER (WHERE status='failed') AS failed,
+                COUNT(*) FILTER (
+                    WHERE status='processing'
+                      AND locked_at < NOW() - INTERVAL '10 minutes'
+                ) AS stale_processing,
+                EXTRACT(EPOCH FROM (
+                    NOW() - MAX(completed_at) FILTER (
+                        WHERE status='done' AND completed_at IS NOT NULL
+                    )
+                )) AS last_success_age,
+                EXTRACT(EPOCH FROM (
+                    NOW() - MIN(created_at) FILTER (WHERE status='pending')
+                )) AS oldest_pending
+            FROM {TABLE}
+            WHERE queue_name=:queue_name
+        """), {"queue_name": queue_name}).mappings().first() or {}
+
+    def age(name: str) -> float | None:
+        value = row.get(name)
+        return None if value is None else round(max(0.0, float(value)), 1)
+
+    return {
+        "last_success_age": age("last_success_age"),
+        "oldest_pending": age("oldest_pending"),
+        "retry": int(row.get("retry") or 0),
+        "failed": int(row.get("failed") or 0),
+        "stale_processing": int(row.get("stale_processing") or 0),
+    }
