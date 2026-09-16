@@ -167,7 +167,7 @@ steps:
         python3 - "$${API_URL}/v2/policy-v39/health" <<'PY'
         import json, sys, time, urllib.request
         url=sys.argv[1]
-        expected='3.9-policy-payroll-period'
+        expected='3.9-policy-payroll-named-report-sheet'
         last=None
         for attempt in range(1,13):
             try:
@@ -176,7 +176,7 @@ steps:
                     payload=json.loads(body)
                     if (200 <= r.status < 300 and payload.get('ok') is True
                             and payload.get('release') == expected
-                            and payload.get('payroll_sheet') == 'Sheet2'
+                            and payload.get('payroll_sheet') == 'Báo cáo doanh thu hóa đơn'
                             and int(payload.get('auto_penalty_minutes') or 0) == 5):
                         print(body)
                         raise SystemExit(0)
