@@ -1,0 +1,81 @@
+name: Deploy Live Tour Queue Alerts
+
+on:
+  push:
+    branches:
+      - ops/live-tour-queue-alerts-20260916
+    paths:
+      - '.github/workflows/deploy-live-tour-queue-alerts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vera-spa-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEPLOY_SHA: 9a0ed107c37ee411c6fa846e4bba12c95ea6cd57
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 9a0ed107c37ee411c6fa846e4bba12c95ea6cd57
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy exact alert SHA
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "/opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+
+      - name: Verify queue alert runtime
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "DEPLOY_SHA='${DEPLOY_SHA}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            pid="$(pgrep -n -f '[v]era_web_v2_api_v38:app' || true)"
+            if [ -n "$pid" ]; then
+              release_dir="$(readlink -f "/proc/${pid}/cwd")"
+              running_sha="$(git -C "$release_dir" rev-parse HEAD 2>/dev/null || true)"
+              if [ "$running_sha" = "$DEPLOY_SHA" ]; then
+                health="$(curl -fsS http://127.0.0.1:8000/v2/live-tour/projection-queue/health || true)"
+                if [[ "$health" == *'"release":"live-tour-projection-queue-2026-09-16.3-alerts"'* ]]; then
+                  echo "RUNTIME_SHA=$running_sha"
+                  echo "QUEUE_HEALTH=$health"
+                  [[ "$health" == *'"monitor_seconds":60'* ]]
+                  [[ "$health" == *'"cooldown_seconds":1800'* ]]
+                  [[ "$health" == *'"failed_delivery_retry_seconds":300'* ]]
+                  [[ "$health" == *'"last_success_age":600'* ]]
+                  [[ "$health" == *'"oldest_pending":600'* ]]
+                  [[ "$health" == *'"audience":"admin+quanly"'* ]]
+                  break
+                fi
+              fi
+            fi
+            if [ "$attempt" -eq 20 ]; then
+              echo 'Queue alert runtime did not become ready' >&2
+              exit 1
+            fi
+            sleep 3
+          done
+          REMOTE
