@@ -1,0 +1,83 @@
+name: Deploy Live Tour Watchdog pg_cron
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-live-tour-watchdog-pgcron.yml'
+      - 'vera_web_v2_attendance_break_dispatch.py'
+      - 'vera_postgres_phase22_live_tour_queue_watchdog.sql'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vera-spa-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy current main commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            "timeout 180 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+
+      - name: Apply pg_cron watchdog migration
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$VERA_DB_PASS"
+          if [[ "$VERA_DB_PASS" == *$'\n'* || "$VERA_DB_PASS" == *$'\r'* ]]; then
+            echo 'VERA_DB_PASS must be single-line' >&2
+            exit 1
+          fi
+          printf '%s\n' "$VERA_DB_PASS" | ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            "set -euo pipefail; IFS= read -r db_pass; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; PGPASSWORD=\"\$db_pass\" psql -v ON_ERROR_STOP=1 -h 160.236.192.51 -p 5432 -U vera_dev -d veraspa -f \"\${release_dir}/vera_postgres_phase22_live_tour_queue_watchdog.sql\""
+
+      - name: Verify cron registration and recent execution
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
+        run: |
+          set -euo pipefail
+          sleep 10
+          printf '%s\n' "$VERA_DB_PASS" | ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            'set -euo pipefail; IFS= read -r db_pass; export PGPASSWORD="$db_pass"; psql -v ON_ERROR_STOP=1 -h 160.236.192.51 -p 5432 -U vera_dev -d veraspa -c "SELECT jobid,jobname,schedule,active FROM cron.job WHERE jobname=''vera-live-tour-queue-watchdog'';" -c "SELECT d.jobid,d.status,d.return_message,d.start_time,d.end_time FROM cron.job_run_details d JOIN cron.job j ON j.jobid=d.jobid WHERE j.jobname=''vera-live-tour-queue-watchdog'' ORDER BY d.start_time DESC LIMIT 10;"'
+
+      - name: Verify production watchdog endpoint
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'curl -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:8000/v2/attendance/break-alerts/dispatch/health'
