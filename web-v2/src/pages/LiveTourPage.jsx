@@ -1106,6 +1106,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const pendingPayments = filterTourRows(allPendingPayments, listFilters)
   const reports = filterTourRows(allReports, listFilters)
   const visibleInvoices = filterTourRows(asArray(data.state?.invoices), listFilters)
+  const reportInvoiceCount = new Set(reports.map((item) => String(item?.invoice_id || item?.bill_no || '')).filter(Boolean)).size
 
   const historyMatches = (item) => filterTourRows([{
     ...item, effective_at: item.effective_at || item.at || item.created_at || item.timestamp,
