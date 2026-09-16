@@ -1,0 +1,84 @@
+name: Apply Live Tour UI round V4
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-live-tour-ui-round-v4.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vera-spa-production
+  cancel-in-progress: false
+
+jobs:
+  patch-test-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install Python test dependencies
+        run: python -m pip install --disable-pip-version-check "pytest==8.4.2" "httpx2>=2,<3" -r requirements.txt
+      - name: Fix helper and apply patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('ops/apply_live_tour_ui_round.py')
+          s=p.read_text()
+          old='s = once(s, "              {canReports && <button type=\\"button\\" className=\\"secondary-button\\" onClick={() => openWorkspacePanel(\'reports\')}>Báo cáo</button>}\\n", "              {privilegedLiveTourRole && canReports && <button type=\\"button\\" className=\\"secondary-button\\" onClick={() => openWorkspacePanel(\'reports\')}>Báo cáo ({reportInvoiceCount})</button>}\\n", \'report menu count\')'
+          new='s = once(s, "          {canReports && <button type=\\"button\\" className=\\"secondary-button\\" onClick={() => openWorkspacePanel(\'reports\')}>Báo cáo</button>}\\n", "          {privilegedLiveTourRole && canReports && <button type=\\"button\\" className=\\"secondary-button\\" onClick={() => openWorkspacePanel(\'reports\')}>Báo cáo ({reportInvoiceCount})</button>}\\n", \'report menu count\')'
+          if old in s:
+              s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+          python ops/apply_live_tour_ui_round.py
+      - name: Test backend
+        run: |
+          python -m py_compile vera_web_v2_live_tour.py
+          python -m pytest -q tests/test_live_tour_restart_booking.py tests/test_live_tour_cancel_booking.py tests/test_live_tour_room_actions.py
+      - name: Build frontend
+        working-directory: web-v2
+        run: |
+          npm ci
+          npm run build
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ops/apply_live_tour_ui_round.py web-v2/src/pages/LiveTourPage.jsx web-v2/src/pages/LiveTourControls.css web-v2/src/components/LiveTourBookingDialog.jsx web-v2/src/components/LiveTourServiceActions.css web-v2/src/components/LiveTourRevenueSummary.jsx vera_web_v2_live_tour.py tests/test_live_tour_restart_booking.py
+          git commit -m 'Upgrade Live Tour room controls and management UI'
+          git push origin HEAD:main
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy patched commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          DEPLOY_SHA="$(git rev-parse HEAD)"
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 240 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
+      - name: Verify production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; curl -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:8000/v2/attendance/break-alerts/dispatch/health; echo; systemctl is-active vera-api.service'
