@@ -1,0 +1,74 @@
+name: Fix Cloud Build env delimiter
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-cloudbuild-env-delimiter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fix custom delimiter without touching email address
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('cloudbuild.yaml')
+          text = path.read_text(encoding='utf-8')
+          lines = text.splitlines()
+          changed = 0
+          transitions = [
+              ('@DB_PORT=', '~DB_PORT='),
+              ('@DB_NAME=', '~DB_NAME='),
+              ('@DB_USER=', '~DB_USER='),
+              ('@DB_POOL_SIZE=', '~DB_POOL_SIZE='),
+              ('@DB_MAX_OVERFLOW=', '~DB_MAX_OVERFLOW='),
+              ('@DB_POOL_RECYCLE=', '~DB_POOL_RECYCLE='),
+              ('@SUPABASE_URL=', '~SUPABASE_URL='),
+              ('@SUPABASE_ANON_KEY=', '~SUPABASE_ANON_KEY='),
+              ('@VERA_LEAVE_SHEET_ID=', '~VERA_LEAVE_SHEET_ID='),
+              ('@VERA_V2_CORS_ORIGINS=', '~VERA_V2_CORS_ORIGINS='),
+              ('@SMTP_SENDER_EMAIL=', '~SMTP_SENDER_EMAIL='),
+          ]
+          out = []
+          for line in lines:
+              if '--set-env-vars=^@^DB_HOST=' in line:
+                  line = line.replace('--set-env-vars=^@^DB_HOST=', '--set-env-vars=^~^DB_HOST=', 1)
+                  for old, new in transitions:
+                      line = line.replace(old, new, 1)
+                  changed += 1
+              out.append(line)
+
+          if changed != 1:
+              raise SystemExit(f'Expected exactly one target line, changed={changed}')
+          updated = '\n'.join(out) + ('\n' if text.endswith('\n') else '')
+          if '^@^DB_HOST=' in updated:
+              raise SystemExit('Old delimiter is still present')
+          if '^~^DB_HOST=' not in updated:
+              raise SystemExit('New delimiter was not written')
+          if 'SMTP_SENDER_EMAIL=veraspabienhoa@gmail.com' not in updated:
+              raise SystemExit('SMTP sender email was altered')
+          path.write_text(updated, encoding='utf-8')
+          PY
+
+          git diff --check
+          git diff -- cloudbuild.yaml
+
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add cloudbuild.yaml
+          git commit -m 'Fix Cloud Build env var delimiter'
+          git push origin HEAD:main
