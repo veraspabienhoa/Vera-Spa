@@ -1480,7 +1480,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         <div className={`tour-room-panel ${roomSegment}`}>
           <div className="tour-room-panel-head"><div className="tour-room-panel-title" aria-label={`${availableRoomCount} phòng đang trống`}>{roomSegment === 'vip' ? <Crown size={16}/> : roomSegment === 'standard' ? <DoorOpen size={16}/> : <LayoutGrid size={16}/>} {availableRoomCount} P.Trống</div>
             <div className="tour-room-segment-buttons" role="group" aria-label="Chọn phân khúc phòng">
-              <button type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ</span></button>
+              <button type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey(''); setRoomFilterIds(new Set()); setSelectedIds(new Set()); setEmployeePickId(''); setEmployeeSearch(''); setActiveFilter('all') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ</span></button>
               <button type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>TIÊU CHUẨN</span></button>
               <button type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP</span></button>
             </div>
@@ -1499,7 +1499,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               const occupied = occupiedRoomKeys.has(key)
               const countdown = roomCountdown(record, remainingColumn, clockMs, available, occupied)
               const hasPrivateService = records.some((item) => item._private_service || isPrivateService(cellValue(item, serviceColumn)))
-              return <div className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : records.length ? 'has-standard-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
+              return <div data-room-density={Math.min(records.length, 6)} className={`tour-room-card ${isVipArea(room) ? 'vip' : 'standard'} state-${roomState(record, available, clockMs)} ${hasPrivateService ? 'has-private-service' : records.length ? 'has-standard-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key}>
                 <button type="button" className="tour-room-booking-button"
                   onClick={() => { const active = records.filter((item) => hasGroup(item, 'waiting') || hasGroup(item, 'doing')); const ids = new Set(active.map((item) => stableEmployeeId(item)).filter(Boolean)); setSelectedRoomKey(key); setRoomFilterIds(ids); setSelectedIds(ids); setEmployeePickId(''); setEmployeeSearch(''); setActiveFilter('all') }}
                   onDoubleClick={() => { if (canBook && !actionBusy) { setError(''); setBookingContext({ roomLabel: areaLabel(room), roomGroup: key }) } }}
