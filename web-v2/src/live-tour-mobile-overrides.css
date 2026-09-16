@@ -1,5 +1,11 @@
 /* Final mobile Live Tour overrides.
    Keep these rules global and high-specificity so they win over legacy page/mobile CSS. */
+
+/* Remaining-time label (for example “Còn 0:04”): increase the existing 23px size by 30% on both desktop and mobile. */
+html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown {
+  font-size: 29.9px !important;
+}
+
 @media (max-width: 820px) {
   /* Room cards: every room keeps exactly the same fixed height. */
   html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-card {
@@ -45,6 +51,12 @@
     flex: 0 0 auto !important;
     white-space: nowrap !important;
     word-break: keep-all !important;
+  }
+
+  /* PR marker is 20% smaller on mobile while keeping its center/position intact. */
+  html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
+    scale: 0.8 !important;
+    transform-origin: center !important;
   }
 
   /* Fit dense room content inside the fixed card instead of increasing its height. */
