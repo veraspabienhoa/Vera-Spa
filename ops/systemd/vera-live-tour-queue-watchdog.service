@@ -1,0 +1,8 @@
+[Unit]
+Description=Vera Spa Live Tour projection queue watchdog
+After=network-online.target postgresql@17-main.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/vera-spa/current/ops/systemd/vera-live-tour-queue-watchdog.sh
+TimeoutStartSec=45
