@@ -1106,7 +1106,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const pendingPayments = filterTourRows(allPendingPayments, listFilters)
   const reports = filterTourRows(allReports, listFilters)
   const visibleInvoices = filterTourRows(asArray(data.state?.invoices), listFilters)
-  const reportInvoiceCount = new Set(reports.map((item) => String(item?.invoice_id || '')).filter(Boolean)).size
 
   const historyMatches = (item) => filterTourRows([{
     ...item, effective_at: item.effective_at || item.at || item.created_at || item.timestamp,
@@ -1460,7 +1459,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           {privilegedLiveTourRole && canPayment && <button type="button" className="secondary-button" onClick={() => openModal('quick_checkout', { rowIds: [], defaults: { checkout_source: 'manual' } })} disabled={Boolean(actionBusy)}>Thanh toán nhanh</button>}
           {privilegedLiveTourRole && canPending && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('pending')}>Hóa đơn chờ thanh toán{allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>}
           {privilegedLiveTourRole && canPaidInvoiceView && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('invoices')}>Hóa đơn đã thanh toán</button>}
-          {privilegedLiveTourRole && canReports && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('reports')}>Báo cáo ({reportInvoiceCount})</button>}
+          {privilegedLiveTourRole && canReports && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('reports')}>Báo cáo</button>}
           {privilegedLiveTourRole && canCustomers && <button type="button" className="secondary-button" onClick={() => openWorkspacePanel('customers')}>Khách hàng</button>}
           {privilegedLiveTourRole && canViewComboPackages && <button type="button" className="secondary-button" onClick={() => { setComboLookupSearch(''); setComboLookupOpen(true) }}><Search size={16}/> Gói Combo</button>}
           <button type="button" className="secondary-button live-tour-desktop-only" onClick={openLiveTourInNewTab}><ExternalLink size={16}/> Mở tab mới</button>
