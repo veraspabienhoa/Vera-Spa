@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import logging
+import os
 from typing import Any
 
 from sqlalchemy import text
@@ -162,6 +163,16 @@ def _admin_subscriptions(conn) -> list[dict[str, Any]]:
 
 
 def _vault_secret(conn, name: str) -> str:
+    env_name = {
+        "vera_v2_vapid_private_key": "VERA_V2_VAPID_PRIVATE_KEY",
+        "vera_v2_vapid_subject": "VERA_V2_VAPID_SUBJECT",
+    }.get(name)
+    if env_name:
+        value = str(os.getenv(env_name) or "").strip()
+        if value:
+            return value
+    if conn.execute(text("SELECT to_regclass('vault.decrypted_secrets')")).scalar_one_or_none() is None:
+        return ""
     value = conn.execute(text("""
         SELECT decrypted_secret FROM vault.decrypted_secrets
         WHERE name=:name LIMIT 1

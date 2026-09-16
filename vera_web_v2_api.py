@@ -814,6 +814,9 @@ def _refresh_leave_watches(conn, ident: Identity) -> list[dict[str, Any]]:
 def _vault_secret(conn, name: str) -> str:
     env_name = {
         "vera_v2_push_webhook_secret": "VERA_V2_PUSH_WEBHOOK_SECRET",
+        "vera_v2_vapid_private_key": "VERA_V2_VAPID_PRIVATE_KEY",
+        "vera_v2_vapid_public_key": "VERA_V2_VAPID_PUBLIC_KEY",
+        "vera_v2_vapid_subject": "VERA_V2_VAPID_SUBJECT",
     }.get(name)
     if env_name:
         value = str(os.getenv(env_name) or "").strip()

@@ -10,6 +10,15 @@ const decodeVapidKey = (value) => {
   return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)))
 }
 
+const vapidKeyMatches = (subscription, publicKey) => {
+  const current = subscription?.options?.applicationServerKey
+  if (!current) return false
+  const actual = new Uint8Array(current)
+  const expected = decodeVapidKey(publicKey)
+  if (actual.length !== expected.length) return false
+  return actual.every((value, index) => value === expected[index])
+}
+
 export const getPushSupport = () => {
   if ('serviceWorker' in navigator && isIos() && !isStandalone()) {
     return {
@@ -69,6 +78,15 @@ export const ensureGrantedPushSubscription = async () => {
   if (!registration) return { ...support, permission: Notification.permission, subscribed: false }
 
   let subscription = await registration.pushManager.getSubscription()
+  if (subscription && !vapidKeyMatches(subscription, config.public_key)) {
+    try {
+      await veraApi.unregisterPushSubscription(subscription.endpoint)
+    } catch {
+      // The browser subscription still must rotate even if server cleanup fails.
+    }
+    await subscription.unsubscribe()
+    subscription = null
+  }
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
