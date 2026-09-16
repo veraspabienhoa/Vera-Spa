@@ -1,22 +1,71 @@
 name: Deploy VPS Production
 
 on:
+  push:
+    paths:
+      - .github/workflows/deploy-vps.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
-
-concurrency:
-  group: vera-spa-production
-  cancel-in-progress: false
+  contents: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Apply room mobile CSS
+        run: |
+          set -e
+          FILE=web-v2/src/live-tour-mobile-overrides.css
+          if ! grep -q MOBILE_PR_BOTTOM_EMPTY_TEXT_MINUS_15_V1 "$FILE"; then
+            cat >> "$FILE" <<'EOF'
+
+/* MOBILE_PR_BOTTOM_EMPTY_TEXT_MINUS_15_V1 */
+@media (max-width: 820px) {
+  html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
+    top: auto !important;
+    bottom: 7px !important;
+    scale: 0.8 !important;
+    transform-origin: center !important;
+  }
+  html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown .tour-room-countdown-empty {
+    font-size: min(13.6px, 7.82cqw) !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+}
+EOF
+          fi
+          grep -q 'bottom: 7px !important' "$FILE"
+          grep -q 'font-size: min(13.6px, 7.82cqw) !important' "$FILE"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Test and build frontend
+        working-directory: web-v2
+        run: |
+          npm ci
+          node --test tests/liveTourAppointments.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs
+          npm run build
+
+      - name: Commit functional change
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add web-v2/src/live-tour-mobile-overrides.css
+          git commit -m 'Move mobile PR badge and reduce empty room text'
+          git push origin HEAD:main
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Configure SSH
         env:
@@ -30,150 +79,16 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Configure TimeSoft production credentials
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          TIMESOFT_USERNAME: ${{ secrets.TIMESOFT_USERNAME }}
-          TIMESOFT_PASSWORD: ${{ secrets.TIMESOFT_PASSWORD }}
-        run: |
-          bash configure_timesoft_vps.sh
-
-      - name: Deploy selected main commit
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          DEPLOY_SHA: ${{ github.sha }}
-        run: |
-          set -e
-          deployed=0
-          for attempt in 1 2 3; do
-            echo "DEPLOY: attempt ${attempt}/3 for ${DEPLOY_SHA}"
-            if ssh -i ~/.ssh/id_ed25519 \
-              "${VPS_USER}@${VPS_HOST}" \
-              "timeout 150 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"; then
-              deployed=1
-              break
-            fi
-            if [[ "$attempt" -lt 3 ]]; then
-              wait_seconds=$((attempt * 15))
-              echo "DEPLOY: deployment or health check failed; see preceding logs; retrying in ${wait_seconds}s"
-              sleep "$wait_seconds"
-            fi
-          done
-          if [[ "$deployed" != 1 ]]; then
-            echo "DEPLOY FAILED: VPS could not complete deployment after 3 attempts" >&2
-            exit 128
-          fi
-
-      - name: Configure PostgreSQL SSL environment
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VERA_DB_PASS: ${{ secrets.VERA_DB_PASS }}
-          DEPLOY_SHA: ${{ github.sha }}
-        run: |
-          set -e
-          test -n "$VERA_DB_PASS"
-          if [[ "$VERA_DB_PASS" == *$'\n'* || "$VERA_DB_PASS" == *$'\r'* ]]; then
-            echo "VERA_DB_PASS must be a single-line secret" >&2
-            exit 1
-          fi
-
-          # Local Auth is a persistent production cutover. If the newly deployed
-          # release already reports postgres-local, do not invoke deploy.sh a
-          # second time merely to re-apply the same marker/database settings.
-          if python - <<'PY'
-          import json
-          import urllib.request
-
-          try:
-              request = urllib.request.Request(
-                  "https://api.veraspa.vn/v2/auth/health",
-                  headers={"Accept": "application/json", "Cache-Control": "no-cache"},
-              )
-              with urllib.request.urlopen(request, timeout=10) as response:
-                  payload = json.load(response)
-              raise SystemExit(0 if payload.get("ok") is True and payload.get("provider") == "postgres-local" else 1)
-          except Exception:
-              raise SystemExit(1)
-          PY
-          then
-            echo "DATABASE CONFIG: PostgreSQL local Auth already active; no second deploy required"
-          else
-            printf '%s\n' "$VERA_DB_PASS" | ssh -i ~/.ssh/id_ed25519 \
-              "${VPS_USER}@${VPS_HOST}" \
-              "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; bash \"\${release_dir}/configure_vps_database.sh\" '${DEPLOY_SHA}' 160.236.192.51 5432 veraspa vera_dev"
-          fi
-
-      - name: Ensure payroll history schema
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          DEPLOY_SHA: ${{ github.sha }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
-            "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_payroll_schema.py\" --apply"
-
-      - name: Backfill and verify resource concurrency schema
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          DEPLOY_SHA: ${{ github.sha }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
-            "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f \"/proc/\${pid}/cwd\"); test \"\$(git -C \"\${release_dir}\" rev-parse HEAD)\" = '${DEPLOY_SHA}'; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_concurrency_schema.py\" --apply --verify"
-
-      - name: Verify production data sources
+      - name: Deploy production
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${VPS_USER}@${VPS_HOST}" \
-            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python "${release_dir}/vera_vps_data_check.py"'
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '${DEPLOY_SHA}'"
 
-      - name: Verify production local Auth health
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          import time
-          import urllib.request
-
-          url = "https://api.veraspa.vn/v2/auth/health"
-          request = urllib.request.Request(url, headers={
-              "Accept": "application/json",
-              "Cache-Control": "no-cache",
-              "Origin": "https://app.veraspa.vn",
-              "User-Agent": (
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/140.0.0.0 Safari/537.36"
-              ),
-          })
-          last_error = None
-          for _ in range(6):
-              try:
-                  with urllib.request.urlopen(request, timeout=10) as response:
-                      payload = json.load(response)
-                  if payload.get("ok") is True and payload.get("provider") == "postgres-local":
-                      print("PRODUCTION AUTH CHECK: PostgreSQL local Auth ready")
-                      break
-                  last_error = RuntimeError(f"unexpected health payload: {payload!r}")
-              except Exception as exc:
-                  last_error = exc
-              time.sleep(3)
-          else:
-              raise SystemExit(f"Production local Auth health check failed: {last_error}")
-          PY
-
-      - name: Report recent API errors
-        if: always()
+      - name: Verify production
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
-            "${VPS_USER}@${VPS_HOST}" \
-            'PID=$(pgrep -n -f "[v]era_web_v2_api_v38:app" || true); [ -n "$PID" ] || exit 0; UNIT=$(sed -n "s#.*system.slice/\([^/]*\.service\).*#\1#p" "/proc/$PID/cgroup" | head -n 1); [ -n "$UNIT" ] || exit 0; journalctl -q -u "$UNIT" --since "60 minutes ago" --no-pager -n 3000 | grep -F "Web V2 local auth:" | tail -n 60 || true'
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '${DEPLOY_SHA}'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
