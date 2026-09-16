@@ -1,0 +1,65 @@
+name: Live Tour Queue Watchdog V3
+
+on:
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: live-tour-queue-watchdog-v3
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Read production queue health
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set +e
+          health="$(ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            'curl -fsS --connect-timeout 3 --max-time 10 http://127.0.0.1:8000/v2/live-tour/projection-queue/health' \
+            2>/tmp/queue-watchdog-ssh.err)"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ -z "$health" ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          Path('queue-health.json').write_text(
+              json.dumps({'watchdog_error': 'VPS local queue health endpoint is unreachable'}),
+              encoding='utf-8',
+          )
+          PY
+          else
+            printf '%s' "$health" > queue-health.json
+          fi
+
+      - name: Sync alert issue and fail while incident is active
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WATCHDOG_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python vera_live_tour_queue_watchdog.py queue-health.json
