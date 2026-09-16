@@ -102,4 +102,40 @@
   html body .live-tour-page .tour-table {
     min-width: 920px !important;
   }
+
+  /* Mobile operator controls: exact 2-column layout requested by operations.
+     The first button (daily sync) and the fine-grained reorder controls stay hidden. */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: repeat(5, auto) !important;
+    grid-auto-flow: row !important;
+    gap: 2px !important;
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > .live-tour-mobile-sync-hidden,
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > .live-tour-mobile-reorder-hidden {
+    display: none !important;
+  }
+
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button,
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > input {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    white-space: nowrap !important;
+  }
+
+  /* Button DOM order includes the hidden daily-sync button as :nth-of-type(1). */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(2) { grid-column: 1 !important; grid-row: 1 !important; } /* Đi làm */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(3) { grid-column: 2 !important; grid-row: 1 !important; } /* Nghỉ phép */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(4) { grid-column: 1 !important; grid-row: 2 !important; } /* Hủy booking */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(5) { grid-column: 2 !important; grid-row: 2 !important; } /* Hủy thực hiện */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(7) { grid-column: 1 !important; grid-row: 3 !important; } /* Nghỉ giữa ca */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(8) { grid-column: 2 !important; grid-row: 3 !important; } /* Kết thúc nghỉ */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > input[aria-label="STT mới"] { grid-column: 1 !important; grid-row: 4 !important; } /* STT */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(11) { grid-column: 2 !important; grid-row: 4 !important; } /* Đổi STT */
+  html body .live-tour-page .live-tour-operator .live-tour-controls-actions > button:nth-of-type(6) { grid-column: 1 !important; grid-row: 5 !important; } /* Đổi nhân viên */
 }
