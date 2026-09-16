@@ -10,6 +10,7 @@ from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
 from vera_web_v2_live_tour_lock import acquire_state_lock, try_state_lock
 import vera_live_tour_relational as relational_store
 import vera_postgres_job_queue as job_queue
+import vera_live_tour_queue_alerts as queue_alerts
 
 import hashlib
 import json
@@ -55,7 +56,7 @@ STATE_LOCK = "vera:v2:live_tour:state"
 STATE_VERSION = 1
 PROJECTION_REFRESH_SECONDS = 300
 PROJECTION_QUEUE = "live_tour_projection"
-PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.2-hardening"
+PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.3-alerts"
 BUSINESS_DAY_CUTOFF = time(11, 10)
 MAX_AUDIT = 3000
 MAX_BACKUPS = 20
@@ -4006,6 +4007,7 @@ def install_live_tour_routes(
     scheduler_stop = Event()
     scheduler_thread = None
     worker_thread = None
+    alert_thread = None
 
     def projection_job_key(now):
         bucket = int(now.timestamp()) // PROJECTION_REFRESH_SECONDS
@@ -4080,19 +4082,30 @@ def install_live_tour_routes(
                     logging.getLogger(__name__).exception("Live Tour projection worker failed before claim")
                 scheduler_stop.wait(2)
 
+    def queue_alert_monitor():
+        while not scheduler_stop.is_set():
+            try:
+                metrics = job_queue.health_metrics(engine_instance, PROJECTION_QUEUE)
+                queue_alerts.monitor_once(engine_instance, PROJECTION_QUEUE, metrics)
+            except Exception:
+                logging.getLogger(__name__).exception("Live Tour queue alert monitor failed")
+            scheduler_stop.wait(queue_alerts.MONITOR_SECONDS)
+
     def start_scheduler():
-        nonlocal scheduler_thread, worker_thread
+        nonlocal scheduler_thread, worker_thread, alert_thread
         # Fail startup before any background thread can touch a missing queue table.
         job_queue.ensure_schema(engine_instance)
         scheduler_stop.clear()
         scheduler_thread = Thread(target=scheduled_projection, name="live-tour-projection-scheduler", daemon=True)
         worker_thread = Thread(target=projection_worker, name="live-tour-projection-worker", daemon=True)
+        alert_thread = Thread(target=queue_alert_monitor, name="live-tour-queue-alert-monitor", daemon=True)
         scheduler_thread.start()
         worker_thread.start()
+        alert_thread.start()
 
     def stop_scheduler():
         scheduler_stop.set()
-        for thread in (scheduler_thread, worker_thread):
+        for thread in (scheduler_thread, worker_thread, alert_thread):
             if thread:
                 thread.join(timeout=2)
 
@@ -4459,13 +4472,15 @@ def install_live_tour_routes(
     @app.get("/v2/live-tour/projection-queue/health")
     def live_tour_projection_queue_health():
         metrics = job_queue.health_metrics(engine_instance, PROJECTION_QUEUE)
+        alerting = queue_alerts.health_status(engine_instance, PROJECTION_QUEUE, metrics)
         return {
-            "ok": True, "release": PROJECTION_RELEASE,
+            "ok": not alerting["active"], "release": PROJECTION_RELEASE,
             "queue_release": job_queue.RELEASE,
             "refresh_seconds": PROJECTION_REFRESH_SECONDS,
             "claim_strategy": "for_update_skip_locked",
             "counts": job_queue.counts(engine_instance, PROJECTION_QUEUE),
             **metrics,
+            "alerting": alerting,
         }
 
     @app.get("/v2/live-tour/export.xlsx")
