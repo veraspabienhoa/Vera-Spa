@@ -99,3 +99,5 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '${DEPLOY_SHA}'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
+
+# retrigger: 2026-09-17 appearance menu deployment
