@@ -51,27 +51,17 @@ jobs:
           if s.count(old) != 1:
               raise SystemExit('frontend subscription block mismatch')
           push.write_text(s.replace(old, new))
-
-          wf = Path('.github/workflows/deploy-live-tour-watchdog-pgcron.yml')
-          s = wf.read_text()
-          marker = "      - 'vera_web_v2_attendance_break_dispatch.py'\n"
-          addition = marker + "      - 'vera_live_tour_queue_alerts.py'\n      - 'web-v2/src/lib/pushNotifications.js'\n"
-          if "      - 'vera_live_tour_queue_alerts.py'\n" not in s:
-              if s.count(marker) != 1:
-                  raise SystemExit('deploy workflow path marker mismatch')
-              s = s.replace(marker, addition)
-          wf.write_text(s)
           PY
 
           python3 -m py_compile vera_web_v2_api.py vera_live_tour_queue_alerts.py
           node --check web-v2/src/lib/pushNotifications.js
           git diff --check
-          git diff -- vera_web_v2_api.py vera_live_tour_queue_alerts.py web-v2/src/lib/pushNotifications.js .github/workflows/deploy-live-tour-watchdog-pgcron.yml
+          git diff -- vera_web_v2_api.py vera_live_tour_queue_alerts.py web-v2/src/lib/pushNotifications.js
 
       - name: Commit migration
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add vera_web_v2_api.py vera_live_tour_queue_alerts.py web-v2/src/lib/pushNotifications.js .github/workflows/deploy-live-tour-watchdog-pgcron.yml
+          git add vera_web_v2_api.py vera_live_tour_queue_alerts.py web-v2/src/lib/pushNotifications.js
           git commit -m 'Bootstrap environment-backed VAPID rotation'
           git push origin HEAD:main
