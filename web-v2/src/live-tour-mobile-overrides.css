@@ -1,9 +1,9 @@
 /* Final mobile Live Tour overrides.
    Keep these rules global and high-specificity so they win over legacy page/mobile CSS. */
 
-/* Remaining-time label (for example “Còn 0:04”): increase the existing 23px size by 30% on both desktop and mobile. */
+/* Remaining-time label (for example “Còn 0:04”): 25% smaller than the current 29.9px size on desktop and mobile. */
 html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown {
-  font-size: 29.9px !important;
+  font-size: 22.425px !important;
 }
 
 @media (max-width: 820px) {
@@ -77,31 +77,66 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
     line-height: 1 !important;
   }
 
-  /* Force the requested mobile table widths. These are fixed pixels so the browser
-     cannot shrink them back to the legacy percentage widths. */
-  html body .live-tour-page .tour-table .tour-col-room {
+  /* Mobile roster: only the requested operator columns remain visible. */
+  html body .live-tour-page .tour-table .live-tour-select-col,
+  html body .live-tour-page .tour-table .tour-col-mobile-hidden {
+    display: none !important;
+  }
+
+  html body .live-tour-page .tour-table .tour-col-stt,
+  html body .live-tour-page .tour-table .tour-col-employee,
+  html body .live-tour-page .tour-table .live-tour-actions-col,
+  html body .live-tour-page .tour-table .tour-col-appointment,
+  html body .live-tour-page .tour-table .tour-col-status,
+  html body .live-tour-page .tour-table .tour-col-room,
+  html body .live-tour-page .tour-table .tour-col-remaining,
+  html body .live-tour-page .tour-table .tour-col-request,
+  html body .live-tour-page .tour-table .tour-col-service {
     display: table-cell !important;
+    visibility: visible !important;
+  }
+
+  html body .live-tour-page .tour-table .tour-col-stt {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+  }
+  html body .live-tour-page .tour-table .tour-col-employee {
+    width: 130px !important;
+    min-width: 130px !important;
+    max-width: 130px !important;
+  }
+  html body .live-tour-page .tour-table .live-tour-actions-col {
+    width: 110px !important;
+    min-width: 110px !important;
+    max-width: 110px !important;
+  }
+  html body .live-tour-page .tour-table .tour-col-appointment {
+    width: 130px !important;
+    min-width: 130px !important;
+    max-width: 130px !important;
+  }
+  html body .live-tour-page .tour-table .tour-col-status {
+    width: 105px !important;
+    min-width: 105px !important;
+    max-width: 105px !important;
+  }
+  html body .live-tour-page .tour-table .tour-col-room {
     width: 80px !important;
     min-width: 80px !important;
     max-width: 80px !important;
   }
   html body .live-tour-page .tour-table .tour-col-remaining {
-    display: table-cell !important;
     width: 70.4px !important;
     min-width: 70.4px !important;
     max-width: 70.4px !important;
   }
   html body .live-tour-page .tour-table .tour-col-request {
-    display: table-cell !important;
     width: 65.6px !important;
     min-width: 65.6px !important;
     max-width: 65.6px !important;
   }
-
-  /* Service must always be visible on mobile. */
   html body .live-tour-page .tour-table .tour-col-service {
-    display: table-cell !important;
-    visibility: visible !important;
     width: 120px !important;
     min-width: 120px !important;
     max-width: 120px !important;
@@ -109,8 +144,7 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
     overflow-wrap: anywhere !important;
   }
 
-  /* Give the fixed columns real horizontal space instead of letting table-layout
-     compress them back down on a phone. The existing table wrapper provides scroll. */
+  /* Give the requested visible columns real horizontal space. */
   html body .live-tour-page .tour-table {
     min-width: 920px !important;
   }
