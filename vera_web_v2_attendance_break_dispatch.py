@@ -1,9 +1,7 @@
-"""Server-side Web Push dispatcher for mid-shift break deadlines.
+"""Server-side Web Push dispatcher for mid-shift break deadlines and queue watchdog.
 
-Unlike the in-app polling, this endpoint is designed for pg_cron. It lets an
-installed iPhone PWA receive lock-screen push even while VERA SPA is closed.
-Existing alert state rows provide idempotency when browser polling and server
-cron happen at the same time. Production cadence is every 5 minutes.
+Unlike the in-app polling, these endpoints are designed for pg_cron. They let
+production monitoring continue independently of browsers and GitHub Actions.
 """
 from __future__ import annotations
 
@@ -15,9 +13,12 @@ from fastapi import Header, HTTPException
 
 import vera_web_v2_attendance_break_alerts as alerts
 import vera_web_v2_snapshot as snapshot
+import vera_postgres_job_queue as job_queue
+import vera_live_tour_queue_alerts as queue_alerts
 
 
-RELEASE = "attendance-break-server-push-2026-08-31-v2"
+RELEASE = "attendance-break-server-push-2026-09-16-v3-queue-watchdog"
+QUEUE_NAME = "live_tour_projection"
 _ORIGINAL_PAYLOAD = alerts._payload
 
 
@@ -46,8 +47,14 @@ def install_attendance_break_dispatch(
     if getattr(app.state, "attendance_break_dispatch_installed", False):
         return
 
-    # Also clean the payload emitted by the authenticated browser polling route.
     alerts._payload = _payload_without_source
+
+    def require_cron_secret(supplied: str | None) -> None:
+        with engine_instance().connect() as conn:
+            expected = api_module._vault_secret(conn, "vera_v2_push_webhook_secret")
+        value = str(supplied or "")
+        if not expected or not value or not hmac.compare_digest(expected, value):
+            raise HTTPException(403, "Webhook Web Push không hợp lệ.")
 
     def dispatch_once() -> dict[str, Any]:
         now_aware = datetime.now(vn_tz)
@@ -69,11 +76,7 @@ def install_attendance_break_dispatch(
                 state = alerts._ensure_state(conn, fact["key"])
                 remaining = fact["remaining_seconds"]
 
-                if (
-                    fact["break_in"] is None
-                    and 0 < remaining <= alerts.REMINDER_SECONDS
-                    and not state.get("reminder_sent_at")
-                ):
+                if fact["break_in"] is None and 0 < remaining <= alerts.REMINDER_SECONDS and not state.get("reminder_sent_at"):
                     subscriptions = alerts._employee_subscriptions(conn, fact["employee"])
                     if subscriptions:
                         payload = alerts._payload(fact, "reminder")
@@ -100,49 +103,46 @@ def install_attendance_break_dispatch(
                     cleared_events += 1
 
                 state.update({
-                    "employee": fact["employee"],
-                    "work_date": fact["date"].isoformat(),
-                    "break_out": fact["break_out"].isoformat(),
-                    "deadline": fact["deadline"].isoformat(),
+                    "employee": fact["employee"], "work_date": fact["date"].isoformat(),
+                    "break_out": fact["break_out"].isoformat(), "deadline": fact["deadline"].isoformat(),
                     "break_in": fact["break_in"].isoformat() if fact["break_in"] else "",
-                    "source": fact["source"],
-                    "last_checked_at": now_aware.isoformat(),
+                    "source": fact["source"], "last_checked_at": now_aware.isoformat(),
                     "dispatch_mode": "server_cron_5m",
                 })
                 alerts._save_state(conn, fact["key"], state)
 
         push_result = alerts._send_payloads(api_module, engine_instance, deliveries)
         return {
-            "ok": True,
-            "release": RELEASE,
-            "checked_at": now_aware.isoformat(),
-            "fact_count": fact_count,
-            "reminder_events": reminder_events,
-            "overdue_events": overdue_events,
-            "cleared_events": cleared_events,
-            "deliveries": len(deliveries),
-            "push": push_result,
+            "ok": True, "release": RELEASE, "checked_at": now_aware.isoformat(),
+            "fact_count": fact_count, "reminder_events": reminder_events,
+            "overdue_events": overdue_events, "cleared_events": cleared_events,
+            "deliveries": len(deliveries), "push": push_result,
         }
 
     @app.post("/v2/attendance/break-alerts/dispatch")
-    def dispatch_break_push(
-        x_vera_push_webhook: str | None = Header(default=None),
-    ):
-        with engine_instance().connect() as conn:
-            expected = api_module._vault_secret(conn, "vera_v2_push_webhook_secret")
-        supplied = str(x_vera_push_webhook or "")
-        if not expected or not supplied or not hmac.compare_digest(expected, supplied):
-            raise HTTPException(403, "Webhook Web Push không hợp lệ.")
+    def dispatch_break_push(x_vera_push_webhook: str | None = Header(default=None)):
+        require_cron_secret(x_vera_push_webhook)
         return dispatch_once()
+
+    @app.post("/v2/live-tour/projection-queue/watchdog")
+    def dispatch_live_tour_queue_watchdog(x_vera_push_webhook: str | None = Header(default=None)):
+        """pg_cron entry point: evaluate queue health and deliver alert/recovery Web Push."""
+        require_cron_secret(x_vera_push_webhook)
+        metrics = job_queue.health_metrics(engine_instance, QUEUE_NAME)
+        result = queue_alerts.monitor_once(engine_instance, QUEUE_NAME, metrics)
+        status = queue_alerts.health_status(engine_instance, QUEUE_NAME, metrics)
+        return {
+            "ok": not status["active"], "release": RELEASE,
+            "checked_at": datetime.now(vn_tz).isoformat(),
+            "watchdog": result, "alerting": status,
+        }
 
     @app.get("/v2/attendance/break-alerts/dispatch/health")
     def dispatch_break_push_health():
         return {
-            "ok": True,
-            "release": RELEASE,
-            "schedule_recommended": "every 5 minutes",
-            "works_when_pwa_closed": True,
-            "reminder_before_minutes": 15,
+            "ok": True, "release": RELEASE, "schedule_recommended": "every 5 minutes",
+            "works_when_pwa_closed": True, "reminder_before_minutes": 15,
+            "queue_watchdog_endpoint": "/v2/live-tour/projection-queue/watchdog",
         }
 
     app.state.attendance_break_dispatch_installed = True
