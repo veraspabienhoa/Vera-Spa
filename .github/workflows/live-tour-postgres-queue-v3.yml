@@ -1,0 +1,169 @@
+name: One-shot PostgreSQL Live Tour queue v3
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: live-tour-postgres-queue-v3
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit-deploy:
+    if: contains(github.event.head_commit.message, '[live-tour-postgres-queue-v3]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Reapply queue implementation and preserve snapshot semantics
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          wf = Path('.github/workflows/live-tour-postgres-queue-v2.yml').read_text(encoding='utf-8')
+          start_marker = "      - name: Reapply v1 patch\n        shell: bash\n        run: |\n"
+          end_marker = "\n      - name: Install dependencies"
+          start = wf.index(start_marker) + len(start_marker)
+          end = wf.index(end_marker, start)
+          script = wf[start:end]
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in script.splitlines())
+          Path('/tmp/reapply_queue.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n' + script + '\n', encoding='utf-8')
+          PY
+          bash /tmp/reapply_queue.sh
+
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return source.replace(old, new, 1)
+
+          # With five-minute projection semantics, tests that exercise break controls
+          # must start from an already-projected canonical snapshot. The request path
+          # itself must not pull a fresh TimeSoft/leave projection.
+          path = Path('tests/test_live_tour_attendance_breaktime.py')
+          source = path.read_text(encoding='utf-8')
+          needle = "    db = SettingsDatabase(board())\n    app = FastAPI()\n"
+          replacement = "    db = SettingsDatabase(board())\n    sync_breaks(db.stored, [record()], NOW)\n    app = FastAPI()\n"
+          # There are several DB setups; only the three-role manual-return test needs
+          # an active break before the end_break action.
+          target = "def test_authorized_manual_return_wins_until_next_day(monkeypatch, role):"
+          head, tail = source.split(target, 1)
+          tail = replace_once(tail, needle, replacement, 'manual return projected setup')
+          source = head + target + tail
+
+          old = '''    db = SettingsDatabase(board())\n    app = FastAPI()\n    live.install_live_tour_routes(app, engine_instance=lambda: db,\n        current_identity=lambda: RouteIdentity(), require_feature=lambda *_: None,\n        feature_allowed=lambda *_: True, identity_type=RouteIdentity,\n        attendance_reader=lambda *args: [record()])\n    client = TestClient(app)\n    old_revision = db.revision\n    first = client.get('/v2/live-tour').json()\n    assert first['records'][0]['TG nghỉ còn lại'] == 15\n    assert db.stored['employees'][0]['clock_out'] == '2026-09-12T15:30:00+07:00'\n    assert client.get('/v2/live-tour').json()['revision'] == first['revision']\n    response = client.post('/v2/live-tour/action', json={\n        'action': 'set_vip', 'expected_revision': old_revision, 'idempotency_key': 'stale-break',\n        'payload': {'employee_id': 'e1', 'vip': True},\n    })\n    assert response.status_code == 409\n'''
+          new = '''    projected = board()\n    sync_breaks(projected, [record()], NOW)\n    db = SettingsDatabase(projected)\n    app = FastAPI()\n    live.install_live_tour_routes(app, engine_instance=lambda: db,\n        current_identity=lambda: RouteIdentity(), require_feature=lambda *_: None,\n        feature_allowed=lambda *_: True, identity_type=RouteIdentity,\n        attendance_reader=lambda *args: [record()])\n    client = TestClient(app)\n    first = client.get('/v2/live-tour').json()\n    assert first['records'][0]['TG nghỉ còn lại'] == 15\n    assert db.stored['employees'][0]['clock_out'] == '2026-09-12T15:30:00+07:00'\n    assert client.get('/v2/live-tour').json()['revision'] == first['revision']\n    response = client.post('/v2/live-tour/action', json={\n        'action': 'set_vip', 'expected_revision': max(0, first['revision'] - 1),\n        'idempotency_key': 'stale-break', 'payload': {'employee_id': 'e1', 'vip': True},\n    })\n    assert response.status_code == 409\n'''
+          source = replace_once(source, old, new, 'route snapshot/stale test')
+          path.write_text(source, encoding='utf-8')
+
+          daily = Path('tests/test_live_tour_daily_settings.py')
+          source = daily.read_text(encoding='utf-8')
+          source = source.replace("    assert current['records'][0]['Vào ca'] == ''\n", "    assert current['records'][0]['Vào ca'] == 'Ca 1'\n", 1)
+          source = source.replace("    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == ''\n", "    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == 'Ca 1'\n", 1)
+          daily.write_text(source, encoding='utf-8')
+
+          server = Path('tests/test_live_tour_server_only.py')
+          source = server.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              "        assert database.stored[\"employees\"][0][key] == ('' if key == 'shift' else value)\n",
+              "        assert database.stored[\"employees\"][0][key] == value\n",
+              'preserve existing shift snapshot',
+          )
+          server.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "pytest==8.4.2" \
+            "httpx2>=2,<3" \
+            -r requirements.txt
+
+      - name: Run focused queue and concurrency tests
+        run: |
+          python -m py_compile \
+            vera_postgres_job_queue.py \
+            vera_web_v2_live_tour.py \
+            timesoft_snapshot_job.py \
+            vera_vps_concurrency_schema.py
+          python -m pytest -q \
+            tests/test_postgres_job_queue_source.py \
+            tests/test_live_tour_action_lock_performance.py \
+            tests/test_live_tour_lock_scope.py \
+            tests/test_live_tour_lock_backpressure.py \
+            tests/test_live_tour_concurrent_readers.py \
+            tests/test_live_tour_attendance_breaktime.py \
+            tests/test_live_tour_daily_settings.py \
+            tests/test_live_tour_server_only.py \
+            tests/test_direct_break_return_penalty.py \
+            tests/test_missing_checkin_notifications.py
+
+      - name: Run full Python test suite
+        run: python -m pytest -q
+
+      - name: Commit tested queue implementation
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm \
+            .github/workflows/live-tour-postgres-queue-v3.yml \
+            .github/workflows/live-tour-postgres-queue-v2.yml \
+            .github/workflows/live-tour-postgres-queue.yml \
+            .github/workflows/live-tour-5m-refresh.yml
+          git add \
+            vera_postgres_job_queue.py \
+            vera_web_v2_live_tour.py \
+            timesoft_snapshot_job.py \
+            cloudbuild.yaml \
+            vera_vps_concurrency_schema.py \
+            .github/workflows/deploy-vps.yml \
+            tests/test_postgres_job_queue_source.py \
+            tests/test_live_tour_action_lock_performance.py \
+            tests/test_live_tour_lock_scope.py \
+            tests/test_live_tour_lock_backpressure.py \
+            tests/test_live_tour_attendance_breaktime.py \
+            tests/test_live_tour_daily_settings.py \
+            tests/test_live_tour_server_only.py \
+            tests/test_direct_break_return_penalty.py \
+            tests/test_missing_checkin_notifications.py
+          git commit -m "Move Live Tour projections to PostgreSQL queue"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git push origin HEAD:main
+
+      - name: Deploy tested commit to VPS production
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PATCH_SHA: ${{ steps.commit.outputs.sha }}
+        shell: bash
+        run: |
+          gh workflow run deploy-vps.yml --ref main
+          run_id=""
+          for attempt in $(seq 1 40); do
+            run_id=$(gh run list --workflow deploy-vps.yml --branch main --event workflow_dispatch --limit 10 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"${PATCH_SHA}\") | .databaseId" | head -n 1)
+            if [ -n "$run_id" ]; then break; fi
+            sleep 2
+          done
+          test -n "$run_id" || { echo "Deploy run not found for ${PATCH_SHA}" >&2; exit 1; }
+          gh run watch "$run_id" --exit-status
