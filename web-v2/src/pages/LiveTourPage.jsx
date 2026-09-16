@@ -182,6 +182,7 @@ function columnClass(column) {
   if (key === 'STT' || key === 'SO THU TU') return 'tour-col-stt center'
   if (['TEN NHAN VIEN', 'NHAN VIEN', 'HO VA TEN', 'HO TEN'].includes(key)) return 'tour-col-employee'
   if (key === 'TRANG THAI') return 'tour-col-status center'
+  if (key === 'DICH VU' || key.startsWith('DICH VU (')) return 'tour-col-service'
   if (key === 'TG CON LAI' || key === 'THOI GIAN CON LAI') return 'tour-col-remaining center'
   if (key === 'PHONG' || key.startsWith('PHONG (')) return 'tour-col-room center'
   if (key === 'YEU CAU' || key.startsWith('YEU CAU (')) return 'tour-col-request center'
