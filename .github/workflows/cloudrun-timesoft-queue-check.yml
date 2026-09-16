@@ -62,14 +62,10 @@ jobs:
           echo "VPS_RELEASE_SHA=$(git -C "$release_dir" rev-parse HEAD)"
           queue_health=$(curl -fsS http://127.0.0.1:8000/v2/live-tour/projection-queue/health)
           echo "QUEUE_HEALTH_LOCAL=$queue_health"
-          python - "$queue_health" <<'PY'
-          import json, sys
-          payload = json.loads(sys.argv[1])
-          assert payload.get('ok') is True, payload
-          assert payload.get('claim_strategy') == 'for_update_skip_locked', payload
-          assert int(payload.get('refresh_seconds') or 0) == 300, payload
-          print('QUEUE_LOCAL_ASSERTIONS=pass')
-          PY
+          [[ "$queue_health" == *'"ok":true'* ]]
+          [[ "$queue_health" == *'"refresh_seconds":300'* ]]
+          [[ "$queue_health" == *'"claim_strategy":"for_update_skip_locked"'* ]]
+          echo "QUEUE_LOCAL_ASSERTIONS=pass"
           if command -v gcloud >/dev/null 2>&1; then
             echo "GCLOUD_INSTALLED=yes"
             account=$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | head -n1 || true)
