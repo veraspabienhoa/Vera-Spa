@@ -1,6 +1,7 @@
-.tour-revenue-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
-.tour-revenue-summary>div{min-width:0;padding:14px;border:1px solid #dce6e1;border-radius:12px;background:#f7faf8}
-.tour-revenue-summary dt{color:#526a60;font-size:13px;font-weight:650}
-.tour-revenue-summary dd{margin:6px 0 0;color:#173c30;font-size:clamp(17px,2vw,24px);font-weight:800;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.tour-revenue-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;margin:14px 0}
+.tour-revenue-summary>div{min-width:0;min-height:92px;box-sizing:border-box;padding:16px 18px;border:1px solid #dce6e1;border-radius:14px;background:#f7faf8;display:flex;flex-direction:column;justify-content:center}
+.tour-revenue-summary dt{color:#526a60;font-size:13px;font-weight:650;line-height:1.25}
+.tour-revenue-summary dd{margin:8px 0 0;color:#173c30;font-size:clamp(21px,2.2vw,28px);font-weight:850;line-height:1.1;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .tour-revenue-summary>.tour-revenue-summary-total{background:#e8f2ec;border-color:#adcaba}
-@media(max-width:650px){.tour-revenue-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tour-revenue-summary>.tour-revenue-summary-total{grid-column:1/-1}.tour-revenue-summary>div{padding:12px}}
+.tour-revenue-summary>.tour-revenue-summary-invoices{background:#f7faf8}
+@media(max-width:650px){.tour-revenue-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tour-revenue-summary>div{min-height:82px;padding:12px}.tour-revenue-summary dt{font-size:11px}.tour-revenue-summary dd{margin-top:6px;font-size:clamp(16px,5vw,22px)}}
