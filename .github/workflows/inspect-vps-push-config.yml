@@ -1,0 +1,95 @@
+name: Inspect VPS Push Config
+
+on:
+  push:
+    branches:
+      - ops/live-tour-queue-alerts-20260916
+    paths:
+      - '.github/workflows/inspect-vps-push-config.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 9a0ed107c37ee411c6fa846e4bba12c95ea6cd57
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Inspect push configuration names only
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          pid="$(pgrep -n -f '[v]era_web_v2_api_v38:app')"
+          release_dir="$(readlink -f "/proc/${pid}/cwd")"
+          echo "RUNTIME_SHA=$(git -C "$release_dir" rev-parse HEAD)"
+          echo 'ENV_KEYS_BEGIN'
+          tr '\0' '\n' < "/proc/${pid}/environ" \
+            | sed -n 's/=.*//p' \
+            | grep -Ei 'VAPID|PUSH|SUPABASE|DATABASE|POSTGRES|SECRET|VAULT' \
+            | sort -u || true
+          echo 'ENV_KEYS_END'
+
+          cd "$release_dir"
+          /opt/vera-spa/.venv/bin/python - <<'PY'
+          from sqlalchemy import text
+          from vera_web_v2_api_v38 import _engine_instance
+
+          with _engine_instance().connect() as conn:
+              print('DB_SCHEMAS_BEGIN')
+              schemas = conn.execute(text("""
+                  SELECT schema_name FROM information_schema.schemata
+                  WHERE lower(schema_name) LIKE '%vault%' OR lower(schema_name) LIKE '%secret%'
+                  ORDER BY schema_name
+              """)).scalars().all()
+              for value in schemas:
+                  print(value)
+              print('DB_SCHEMAS_END')
+
+              print('SETTING_KEYS_BEGIN')
+              rows = conn.execute(text("""
+                  SELECT category,setting_key FROM vera_app_setting
+                  WHERE lower(category) LIKE '%push%'
+                     OR lower(category) LIKE '%vapid%'
+                     OR lower(category) LIKE '%secret%'
+                     OR lower(setting_key) LIKE '%push%'
+                     OR lower(setting_key) LIKE '%vapid%'
+                     OR lower(setting_key) LIKE '%secret%'
+                  ORDER BY category,setting_key
+              """)).all()
+              for category, key in rows:
+                  print(f'{category}|{key}')
+              print('SETTING_KEYS_END')
+
+              print('PUSH_COUNTS_BEGIN')
+              rows = conn.execute(text("""
+                  SELECT lower(COALESCE(p.role,'')) AS role, count(*)
+                  FROM vera_v2_push_subscription s
+                  JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id
+                  WHERE s.is_active=true AND p.is_active=true
+                  GROUP BY lower(COALESCE(p.role,''))
+                  ORDER BY 1
+              """)).all()
+              for role, count in rows:
+                  print(f'{role}|{count}')
+              print('PUSH_COUNTS_END')
+          PY
+          REMOTE
