@@ -20,6 +20,7 @@ jobs:
         run: |
           python .github/scripts/add_live_tour_appearance.py
           python .github/scripts/fix_live_tour_appearance_order.py
+          python .github/scripts/fix_live_tour_appearance_runtime.py
 
       - name: Backend syntax and focused invariants
         run: |
@@ -29,11 +30,14 @@ jobs:
           source = Path('vera_web_v2_live_tour.py').read_text(encoding='utf-8')
           tests = Path('tests/test_live_tour_appearance_settings.py').read_text(encoding='utf-8')
           page = Path('web-v2/src/pages/LiveTourPage.jsx').read_text(encoding='utf-8')
+          lib = Path('web-v2/src/lib/liveTourAppearance.js').read_text(encoding='utf-8')
           assert 'appearance_settings_update' in source
           assert '"appearance_settings": deepcopy(state.get("appearance_settings") or {})' in source
           assert 'state["appearance_settings"] = _appearance_settings_update(payload)' in source
           assert 'test_appearance_settings_are_persistent_and_projected' in tests
           assert page.index("const canOperate = capability('operate'") < page.index('const appearanceTableColumns = useMemo')
+          assert "typeof window.matchMedia === 'function'" in page
+          assert "key, order, visible: true" in lib
           print('BACKEND_APPEARANCE_INVARIANTS=OK')
           PY
 
@@ -99,5 +103,3 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '${DEPLOY_SHA}'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
-
-# retrigger: 2026-09-17 appearance menu deployment
