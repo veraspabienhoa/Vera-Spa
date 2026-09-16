@@ -1,7 +1,7 @@
 .live-tour-report-table {
   overflow-x: hidden;
 }
-.performance-report-table th,.performance-report-table td{text-align:center}.performance-report-table th:first-child,.performance-report-table td:first-child{text-align:left}.report-early{color:#147a43}.report-ontime{color:#72551c}.report-late{color:#b42318}
+.performance-report-table th,.performance-report-table td{text-align:center}.performance-report-table th:first-child,.performance-report-table td:first-child{text-align:left}.report-early{color:#b42318;font-weight:800}.report-ontime,.report-late{color:inherit;font-weight:400}
 
 .live-tour-report-table table {
   width: 100%;
@@ -93,3 +93,10 @@
   .live-tour-report-table .report-actions-cell::before { content: none; }
   .live-tour-report-table .report-invoice-actions .secondary-button { min-height: 34px; padding: 6px 2px; font-size: 10px; }
 }
+
+
+/* PERFORMANCE_STATUS_FILTER_V1 */
+.performance-status-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 6px}
+.performance-status-filter .secondary-button{min-width:92px}
+.performance-status-filter .secondary-button[aria-pressed="true"]{background:#1f5d49;color:#fff;border-color:#1f5d49}
+@media(max-width:760px){.performance-status-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.performance-status-filter .secondary-button{min-width:0;padding:6px 2px;font-size:10px}}
