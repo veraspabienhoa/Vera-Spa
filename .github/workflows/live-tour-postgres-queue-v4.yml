@@ -1,0 +1,170 @@
+name: One-shot PostgreSQL Live Tour queue v4
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: live-tour-postgres-queue-v4
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit-deploy:
+    if: contains(github.event.head_commit.message, '[live-tour-postgres-queue-v4]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Build queue patch and regression fixtures
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          wf = Path('.github/workflows/live-tour-postgres-queue-v2.yml').read_text(encoding='utf-8')
+          sm = "      - name: Reapply v1 patch\n        shell: bash\n        run: |\n"
+          em = "\n      - name: Install dependencies"
+          start = wf.index(sm) + len(sm)
+          end = wf.index(em, start)
+          script = wf[start:end]
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in script.splitlines())
+          Path('/tmp/reapply_queue.sh').write_text('#!/usr/bin/env bash\nset -euo pipefail\n' + script + '\n', encoding='utf-8')
+          PY
+          bash /tmp/reapply_queue.sh
+
+          python - <<'PY'
+          from pathlib import Path
+
+          def function_block(source, name, next_name):
+              start = source.index(f'def {name}')
+              end = source.index(f'\ndef {next_name}', start)
+              return start, end, source[start:end]
+
+          path = Path('tests/test_live_tour_attendance_breaktime.py')
+          source = path.read_text(encoding='utf-8')
+
+          start, end, block = function_block(
+              source,
+              'test_authorized_manual_return_wins_until_next_day(monkeypatch, role):',
+              'test_overdue_break_blocks_single_multi_and_quick_booking_until_return():'
+          )
+          old = "    db = SettingsDatabase(board())\n    app = FastAPI()\n"
+          if old not in block:
+              raise SystemExit('manual-return setup not found')
+          block = block.replace(old, "    db = SettingsDatabase(board())\n    sync_breaks(db.stored, [record()], NOW)\n    app = FastAPI()\n", 1)
+          source = source[:start] + block + source[end:]
+
+          start, end, block = function_block(
+              source,
+              'test_route_projects_persists_and_rejects_stale_revision(monkeypatch):',
+              'test_canonical_attendance_open_punch_and_twenty_hour_cutoff(monkeypatch):'
+          )
+          new_block = '''def test_route_reads_persisted_projection_and_rejects_stale_revision(monkeypatch):\n    class Clock(datetime):\n        @classmethod\n        def now(cls, tz=None): return NOW\n    monkeypatch.setattr(live, 'datetime', Clock)\n    projected = board()\n    sync_breaks(projected, [record()], NOW)\n    db = SettingsDatabase(projected)\n    app = FastAPI()\n    live.install_live_tour_routes(app, engine_instance=lambda: db,\n        current_identity=lambda: RouteIdentity(), require_feature=lambda *_: None,\n        feature_allowed=lambda *_: True, identity_type=RouteIdentity,\n        attendance_reader=lambda *args: [record()])\n    client = TestClient(app)\n    first = client.get('/v2/live-tour').json()\n    assert first['records'][0]['TG nghỉ còn lại'] == 15\n    assert db.stored['employees'][0]['clock_out'] == '2026-09-12T15:30:00+07:00'\n    assert client.get('/v2/live-tour').json()['revision'] == first['revision']\n    response = client.post('/v2/live-tour/action', json={\n        'action': 'set_vip', 'expected_revision': max(0, first['revision'] - 1),\n        'idempotency_key': 'stale-break', 'payload': {'employee_id': 'e1', 'vip': True},\n    })\n    assert response.status_code == 409\n\n'''
+          source = source[:start] + new_block + source[end+1:]
+          path.write_text(source, encoding='utf-8')
+
+          daily = Path('tests/test_live_tour_daily_settings.py')
+          source = daily.read_text(encoding='utf-8')
+          source = source.replace("    assert current['records'][0]['Vào ca'] == ''\n", "    assert current['records'][0]['Vào ca'] == 'Ca 1'\n", 1)
+          source = source.replace("    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == ''\n", "    assert client.get('/v2/live-tour').json()['records'][0]['Vào ca'] == 'Ca 1'\n", 1)
+          daily.write_text(source, encoding='utf-8')
+
+          server = Path('tests/test_live_tour_server_only.py')
+          source = server.read_text(encoding='utf-8')
+          old = "        assert database.stored[\"employees\"][0][key] == ('' if key == 'shift' else value)\n"
+          if source.count(old) != 1:
+              raise SystemExit(f'existing snapshot assertion count={source.count(old)}')
+          server.write_text(source.replace(old, "        assert database.stored[\"employees\"][0][key] == value\n", 1), encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "pytest==8.4.2" \
+            "httpx2>=2,<3" \
+            -r requirements.txt
+
+      - name: Run focused queue and concurrency tests
+        run: |
+          python -m py_compile \
+            vera_postgres_job_queue.py \
+            vera_web_v2_live_tour.py \
+            timesoft_snapshot_job.py \
+            vera_vps_concurrency_schema.py
+          python -m pytest -q \
+            tests/test_postgres_job_queue_source.py \
+            tests/test_live_tour_action_lock_performance.py \
+            tests/test_live_tour_lock_scope.py \
+            tests/test_live_tour_lock_backpressure.py \
+            tests/test_live_tour_concurrent_readers.py \
+            tests/test_live_tour_attendance_breaktime.py \
+            tests/test_live_tour_daily_settings.py \
+            tests/test_live_tour_server_only.py \
+            tests/test_direct_break_return_penalty.py \
+            tests/test_missing_checkin_notifications.py
+
+      - name: Run full Python test suite
+        run: python -m pytest -q
+
+      - name: Commit tested queue implementation
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm \
+            .github/workflows/live-tour-postgres-queue-v4.yml \
+            .github/workflows/live-tour-postgres-queue-v3.yml \
+            .github/workflows/live-tour-postgres-queue-v2.yml \
+            .github/workflows/live-tour-postgres-queue.yml \
+            .github/workflows/live-tour-5m-refresh.yml
+          git add \
+            vera_postgres_job_queue.py \
+            vera_web_v2_live_tour.py \
+            timesoft_snapshot_job.py \
+            cloudbuild.yaml \
+            vera_vps_concurrency_schema.py \
+            .github/workflows/deploy-vps.yml \
+            tests/test_postgres_job_queue_source.py \
+            tests/test_live_tour_action_lock_performance.py \
+            tests/test_live_tour_lock_scope.py \
+            tests/test_live_tour_lock_backpressure.py \
+            tests/test_live_tour_attendance_breaktime.py \
+            tests/test_live_tour_daily_settings.py \
+            tests/test_live_tour_server_only.py \
+            tests/test_direct_break_return_penalty.py \
+            tests/test_missing_checkin_notifications.py
+          git commit -m "Move Live Tour projections to PostgreSQL queue"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git push origin HEAD:main
+
+      - name: Deploy tested commit to VPS production
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PATCH_SHA: ${{ steps.commit.outputs.sha }}
+        shell: bash
+        run: |
+          gh workflow run deploy-vps.yml --ref main
+          run_id=""
+          for attempt in $(seq 1 40); do
+            run_id=$(gh run list --workflow deploy-vps.yml --branch main --event workflow_dispatch --limit 10 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"${PATCH_SHA}\") | .databaseId" | head -n 1)
+            if [ -n "$run_id" ]; then break; fi
+            sleep 2
+          done
+          test -n "$run_id" || { echo "Deploy run not found for ${PATCH_SHA}" >&2; exit 1; }
+          gh run watch "$run_id" --exit-status
