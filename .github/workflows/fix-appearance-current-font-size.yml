@@ -1,0 +1,103 @@
+name: Fix appearance current font size loading
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-appearance-current-font-size.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fill current effective table font sizes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('web-v2/src/pages/AppearanceSettingsPage.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          anchor = """function NumberField({ value, onChange, min = 0, max, step = 1, label }) {\n  return <label className=\"appearance-field\"><span>{label}</span><input type=\"number\" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value || 0))}/></label>\n}\n"""
+          helper = """function NumberField({ value, onChange, min = 0, max, step = 1, label }) {\n  return <label className=\"appearance-field\"><span>{label}</span><input type=\"number\" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value || 0))}/></label>\n}\n\nfunction currentDesktopTableFontSize() {\n  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return 10\n  const probe = document.createElement('div')\n  probe.className = 'live-tour-page'\n  probe.style.cssText = 'position:fixed;left:-10000px;top:-10000px;visibility:hidden;pointer-events:none'\n  probe.innerHTML = '<div class=\"responsive-data-table tour-table\"><table><tbody><tr><td data-appearance-key=\"probe\">A</td></tr></tbody></table></div>'\n  document.body.appendChild(probe)\n  const cell = probe.querySelector('td')\n  const value = Number.parseFloat(cell ? getComputedStyle(cell).fontSize : '')\n  probe.remove()\n  return Number.isFinite(value) && value > 0 ? Math.round(value * 2) / 2 : 10\n}\n\nfunction withCurrentEffectiveColumnFontSizes(settings) {\n  const merged = mergeLiveTourAppearance(settings || {})\n  const desktopSize = currentDesktopTableFontSize()\n  // Current mobile roster CSS is clamp(5px, 1.55vw, 7px). Use a 390px\n  // reference viewport when the settings page is opened on desktop so Mobile\n  // still receives the effective value instead of the sentinel 0.\n  const mobileWidth = typeof window !== 'undefined' && window.innerWidth <= 820 ? window.innerWidth : 390\n  const mobileSize = Math.round(Math.min(7, Math.max(5, mobileWidth * 0.0155)) * 2) / 2\n  return {\n    ...merged,\n    desktop: { ...merged.desktop, columns: merged.desktop.columns.map((column) => ({ ...column, font_size: Number(column.font_size) > 0 ? column.font_size : desktopSize })) },\n    mobile: { ...merged.mobile, columns: merged.mobile.columns.map((column) => ({ ...column, font_size: Number(column.font_size) > 0 ? column.font_size : mobileSize })) },\n  }\n}\n"""
+          if anchor not in text:
+              raise SystemExit('NumberField anchor not found')
+          text = text.replace(anchor, helper, 1)
+
+          old = """      const loaded = mergeLiveTourAppearance(result?.appearance_settings || {})\n      setDraft(loaded)\n      setDefaultDraft(loaded)\n"""
+          new = """      const loaded = withCurrentEffectiveColumnFontSizes(result?.appearance_settings || {})\n      setDraft(loaded)\n      setDefaultDraft(loaded)\n"""
+          if old not in text:
+              raise SystemExit('load anchor not found')
+          text = text.replace(old, new, 1)
+
+          text = text.replace(
+              "Đã lấy thông số hiện tại của giao diện ${device === 'mobile' ? 'Mobile' : 'Desktop'} từ hệ thống.",
+              "Đã lấy thông số hiện tại, bao gồm Size chữ thực tế của các cột, cho giao diện ${device === 'mobile' ? 'Mobile' : 'Desktop'}.",
+              1,
+          )
+
+          path.write_text(text, encoding='utf-8')
+          print('CURRENT_COLUMN_FONT_SIZE_LOAD=OK')
+          PY
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Verify and build
+        working-directory: web-v2
+        run: |
+          set -euo pipefail
+          npm ci
+          grep -q 'withCurrentEffectiveColumnFontSizes' src/pages/AppearanceSettingsPage.jsx
+          grep -q 'currentDesktopTableFontSize' src/pages/AppearanceSettingsPage.jsx
+          grep -q 'mobileWidth \* 0.0155' src/pages/AppearanceSettingsPage.jsx
+          npm run build
+
+      - name: Commit functional change
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web-v2/src/pages/AppearanceSettingsPage.jsx
+          git commit -m 'Load effective Live Tour column font sizes'
+          git push origin HEAD:main
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy exact functional commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
+
+      - name: Verify production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '$DEPLOY_SHA'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
