@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect } from 'react'
 import ShiftBreakSettingsPanel from './ShiftBreakSettingsPanel'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
 
@@ -191,11 +190,8 @@ function openPortraitViewer(image, side, username) {
 
 export default function EmployeeManagementEnhancements({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
-  const [breakTarget, setBreakTarget] = useState(null)
-
   useEffect(() => {
     let cancelled = false
-    let ownedBreakHost = null
     let timer = null
 
     const synchronize = () => {
@@ -245,23 +241,9 @@ export default function EmployeeManagementEnhancements({ user }) {
         }
       })
 
-      // Admin-only break configuration belongs at the very bottom of NHÂN VIÊN.
-      const staffPage = document.querySelector('.staff-page')
-      const listPanel = staffPage?.querySelector('.staff-list-panel')
-      if (isAdmin && staffPage && listPanel) {
-        let host = staffPage.querySelector('[data-shift-break-settings-host="true"]')
-        if (!host) {
-          host = document.createElement('div')
-          host.dataset.shiftBreakSettingsHost = 'true'
-          ownedBreakHost = host
-        }
-        if (staffPage.lastElementChild !== host) staffPage.appendChild(host)
-        setBreakTarget((current) => current === host ? current : host)
-      } else {
-        if (ownedBreakHost?.isConnected) ownedBreakHost.remove()
-        ownedBreakHost = null
-        setBreakTarget(null)
-      }
+      // Keep React-owned employee DOM untouched. App.jsx mounts this enhancement
+      // directly after EmployeePage, so the break settings can render as a normal
+      // React sibling instead of injecting a portal host inside .staff-page.
     }
 
     const schedule = () => {
@@ -279,11 +261,10 @@ export default function EmployeeManagementEnhancements({ user }) {
       observer.disconnect()
       document.removeEventListener('change', schedule, true)
       document.removeEventListener('click', schedule, true)
-      if (ownedBreakHost?.isConnected) ownedBreakHost.remove()
       document.querySelector('[data-portrait-viewer="true"]')?.remove()
     }
   }, [isAdmin])
 
   if (!isAdmin) return null
-  return <>{breakTarget && createPortal(<ShiftBreakSettingsPanel />, breakTarget)}</>
+  return <ShiftBreakSettingsPanel />
 }
