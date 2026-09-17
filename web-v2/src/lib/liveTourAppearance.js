@@ -17,7 +17,6 @@ export const LIVE_TOUR_COLUMN_DEFINITIONS = [
   'SL yêu cầu', 'Tổng SL', 'VIP', 'Giờ Booking', 'TG khách chờ', 'TG Xông Hơi',
 ]
 
-const MOBILE_VISIBLE = new Set(['STT', 'Tên nhân viên', 'Thao tác', 'Lịch hẹn', 'Trạng thái', 'Phòng', 'TG CÒN LẠI', 'Yêu cầu', 'Dịch vụ'])
 const FONT_FAMILIES = new Set(['', 'system-ui', 'Arial', 'Georgia', 'Tahoma', 'Verdana', 'Times New Roman', 'Courier New'])
 const FONT_WEIGHTS = new Set(['', '400', '500', '600', '700', '800', '900'])
 const FONT_STYLES = new Set(['', 'normal', 'italic'])
@@ -31,7 +30,7 @@ const defaultColumns = (device) => LIVE_TOUR_COLUMN_DEFINITIONS.map((key, order)
 }))
 
 const defaultDevice = (device) => ({
-  room: { height: 0, width: 0 },
+  room: { height: 0, width: 0, columns_per_row: 0, rows: 0 },
   room_text: defaultRoomText(),
   columns: defaultColumns(device),
 })
@@ -58,6 +57,8 @@ const mergeDevice = (raw, device) => {
     room: {
       height: bounded(room.height, 0, 260),
       width: bounded(room.width, 0, 520),
+      columns_per_row: bounded(room.columns_per_row, 0, 20),
+      rows: bounded(room.rows, 0, 20),
     },
     room_text: Object.fromEntries(LIVE_TOUR_ROOM_TEXT_FIELDS.map(([key]) => {
       const source = roomText[key] && typeof roomText[key] === 'object' ? roomText[key] : {}
@@ -128,12 +129,20 @@ export function buildLiveTourAppearanceCss(deviceSettings) {
   const lines = []
   const roomHeight = Number(settings.room?.height || 0)
   const roomWidth = Number(settings.room?.width || 0)
+  const columnsPerRow = Number(settings.room?.columns_per_row || 0)
+  const roomRows = Number(settings.room?.rows || 0)
   if (roomHeight > 0) {
     lines.push(`html body .live-tour-page .tour-room-grid{grid-auto-rows:${roomHeight}px!important}`)
     lines.push(`html body .live-tour-page .tour-room-card{height:${roomHeight}px!important;min-height:${roomHeight}px!important;max-height:${roomHeight}px!important}`)
   }
-  if (roomWidth > 0) {
+  if (columnsPerRow > 0) {
+    lines.push(`html body .live-tour-page .tour-room-grid{grid-template-columns:repeat(${columnsPerRow},minmax(0,1fr))!important}`)
+  } else if (roomWidth > 0) {
     lines.push(`html body .live-tour-page .tour-room-grid{grid-template-columns:repeat(auto-fill,minmax(${roomWidth}px,1fr))!important}`)
+  }
+  if (roomRows > 0) {
+    const effectiveHeight = roomHeight > 0 ? roomHeight : 96
+    lines.push(`html body .live-tour-page .tour-room-grid{max-height:${roomRows * effectiveHeight + Math.max(0, roomRows - 1) * 4}px!important;overflow-y:auto!important;overflow-x:hidden!important}`)
   }
   const selectors = {
     title: '.tour-room-card-head>strong', type: '.tour-room-type', customer_count: '.tour-room-customer-count',
