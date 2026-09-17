@@ -1,6 +1,6 @@
-const APP_URL = '/Vera-Spa/'
-const ICON_URL = '/Vera-Spa/icons/vera-icon-192.png'
-const BADGE_URL = '/Vera-Spa/icons/vera-icon-192.png'
+const APP_URL = '/'
+const ICON_URL = '/icons/vera-icon-192.png'
+const BADGE_URL = '/icons/vera-icon-192.png'
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))

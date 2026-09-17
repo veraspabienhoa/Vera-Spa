@@ -77,7 +77,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nunxfjhrszmlyyrvphuq.supabase.
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 _REQUIRED_WEB_ORIGINS = {
     "https://app.veraspa.vn",
-    "https://veraspabienhoa.github.io",
 }
 CORS_ORIGINS = sorted(
     _REQUIRED_WEB_ORIGINS

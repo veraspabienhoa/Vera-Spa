@@ -1,4 +1,3 @@
-const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim()
 let scheduled = false
 
 function ensureStyles() {
@@ -23,79 +22,6 @@ function ensureListSearch() {
   // removes rows, that unmanaged sibling can break DOM reconciliation and
   // leave the application on a blank screen.
   panel?.querySelector('.vera-list-name-search')?.remove()
-}
-
-function profilePanel() {
-  return Array.from(document.querySelectorAll('.staff-form-panel')).find((panel) =>
-    clean(panel.querySelector('h2')?.textContent).startsWith('SỬA HỒ SƠ ·')) || null
-}
-
-function employeeUsernameFromPanel(panel) {
-  const title = clean(panel?.querySelector('h2')?.textContent)
-  const marker = 'SỬA HỒ SƠ ·'
-  return title.startsWith(marker) ? clean(title.slice(marker.length)) : ''
-}
-
-function actionButtonByText(root, pattern) {
-  return Array.from(root?.querySelectorAll('button') || []).find((button) => pattern.test(clean(button.textContent))) || null
-}
-
-function waitFor(condition, timeoutMs = 9000) {
-  return new Promise((resolve) => {
-    const started = Date.now()
-    const timer = window.setInterval(() => {
-      let result = null
-      try { result = condition() } catch { result = null }
-      if (result || Date.now() - started >= timeoutMs) {
-        window.clearInterval(timer)
-        resolve(result || null)
-      }
-    }, 120)
-  })
-}
-
-function editButtonForEmployee(username) {
-  const wanted = clean(username)
-  for (const row of document.querySelectorAll('.staff-table tbody tr')) {
-    const name = clean(row.querySelector('td:nth-child(2) strong')?.textContent)
-    if (name === wanted) return row.querySelector('.staff-edit-button')
-  }
-  for (const card of document.querySelectorAll('.staff-mobile-card')) {
-    const name = clean(card.querySelector('.staff-mobile-head strong')?.textContent)
-    if (name !== wanted) continue
-    return Array.from(card.querySelectorAll('button')).find((button) => /Hồ sơ|Sửa/i.test(clean(button.textContent))) || null
-  }
-  return null
-}
-
-async function refreshOpenProfile(button, panel) {
-  const username = employeeUsernameFromPanel(panel)
-  if (!username || button.disabled) return
-  const oldText = button.textContent
-  button.disabled = true
-  button.textContent = '↻ Đang làm mới…'
-  try {
-    const listPanel = document.querySelector('.staff-list-panel')
-    const refresh = actionButtonByText(listPanel?.querySelector('.panel-title-row'), /^Làm mới$/i)
-    if (!refresh) throw new Error('Không tìm thấy nút Làm mới danh sách.')
-    refresh.click()
-    await waitFor(() => refresh.disabled ? true : null, 1800)
-    const finished = await waitFor(() => !refresh.disabled ? true : null, 9000)
-    if (!finished) throw new Error('Quá thời gian tải lại danh sách nhân viên.')
-    const edit = await waitFor(() => {
-      const candidate = editButtonForEmployee(username)
-      return candidate && !candidate.disabled ? candidate : null
-    }, 2500)
-    if (!edit) throw new Error(`Không tải lại được hồ sơ ${username}.`)
-    edit.click()
-    await waitFor(() => employeeUsernameFromPanel(profilePanel()) === username && profilePanel())
-    profilePanel()?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  } catch (error) {
-    window.alert(error?.message || 'Không làm mới được hồ sơ.')
-  } finally {
-    button.disabled = false
-    button.textContent = oldText
-  }
 }
 
 function ensureProfileHeaderActions() {

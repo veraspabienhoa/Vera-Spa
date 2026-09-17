@@ -25,19 +25,19 @@ const defaultRoomText = () => Object.fromEntries(LIVE_TOUR_ROOM_TEXT_FIELDS.map(
   font_size: 0, font_family: '', font_weight: '', font_style: '', color: '',
 }]))
 
-const defaultColumns = (device) => LIVE_TOUR_COLUMN_DEFINITIONS.map((key, order) => ({
+const defaultColumns = () => LIVE_TOUR_COLUMN_DEFINITIONS.map((key, order) => ({
   key, order, visible: true, width: 0, font_size: 0,
 }))
 
-const defaultDevice = (device) => ({
+const defaultDevice = () => ({
   room: { height: 0, width: 0, columns_per_row: 0, rows: 0 },
   room_text: defaultRoomText(),
-  columns: defaultColumns(device),
+  columns: defaultColumns(),
 })
 
 export const DEFAULT_LIVE_TOUR_APPEARANCE = {
-  desktop: defaultDevice('desktop'),
-  mobile: defaultDevice('mobile'),
+  desktop: defaultDevice(),
+  mobile: defaultDevice(),
 }
 
 const bounded = (value, min, max, fallback = 0) => {
@@ -47,8 +47,8 @@ const bounded = (value, min, max, fallback = 0) => {
 
 const cleanColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : ''
 
-const mergeDevice = (raw, device) => {
-  const base = defaultDevice(device)
+const mergeDevice = (raw, _device) => {
+  const base = defaultDevice()
   const room = raw?.room && typeof raw.room === 'object' ? raw.room : {}
   const roomText = raw?.room_text && typeof raw.room_text === 'object' ? raw.room_text : {}
   const sourceColumns = Array.isArray(raw?.columns) ? raw.columns : []
@@ -90,8 +90,8 @@ export function mergeLiveTourAppearance(raw) {
   }
 }
 
-export function resetLiveTourAppearanceDevice(device) {
-  return defaultDevice(device === 'mobile' ? 'mobile' : 'desktop')
+export function resetLiveTourAppearanceDevice(_device) {
+  return defaultDevice()
 }
 
 export function liveTourColumnKey(label) {
@@ -129,7 +129,7 @@ const cssEscape = (value) => String(value || '').replace(/\\/g, '\\\\').replace(
 const familyCss = (value) => value === 'Times New Roman' || value === 'Courier New' ? `"${value}"` : value
 
 export function buildLiveTourAppearanceCss(deviceSettings) {
-  const settings = deviceSettings || defaultDevice('desktop')
+  const settings = deviceSettings || defaultDevice()
   const lines = []
   const roomHeight = Number(settings.room?.height || 0)
   const roomWidth = Number(settings.room?.width || 0)

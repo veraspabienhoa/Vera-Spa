@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   plugins: [react()],
-  // GitHub Pages serves this repo at /Vera-Spa/. Local/dev stays at root.
-  base: mode === 'production' ? '/Vera-Spa/' : '/',
+  // The only supported public UI is the custom root domain app.veraspa.vn.
+  base: '/',
   build: {
     sourcemap: true,
     target: 'es2020',
