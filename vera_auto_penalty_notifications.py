@@ -11,7 +11,7 @@ import vera_web_v2_department_attendance as department_attendance
 
 
 RELEASE = "auto-penalty-employee-push-2026-09-02-v1"
-APP_URL = "https://veraspabienhoa.github.io/Vera-Spa/"
+APP_URL = "https://app.veraspa.vn/"
 
 
 def _money(value: Any) -> str:

@@ -1,5 +1,45 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## Chuẩn hóa địa chỉ Web production — 17/09/2026, chưa deploy
+
+Người dùng xác nhận địa chỉ duy nhất còn sử dụng là
+`https://app.veraspa.vn/`, không còn sử dụng đường dẫn Pages theo repository.
+Rà soát mã xác nhận production build, manifest, icon và service worker vẫn gắn
+với prefix lịch sử `/Vera-Spa/`; backend và Cloud Build vẫn cho phép origin
+GitHub Pages cũ.
+
+Bản sửa đặt production base, PWA scope/start URL, icon và URL thông báo ở root;
+thêm `CNAME` cho `app.veraspa.vn`; đồng thời bỏ origin GitHub Pages cũ khỏi cấu
+hình CORS production và cập nhật tài liệu triển khai. API vẫn chỉ định rõ origin
+`app.veraspa.vn`, không nới CORS và không thay đổi xác thực, phiên đăng nhập hoặc
+dữ liệu nghiệp vụ. Chưa deploy hoặc thay đổi DNS; cần workflow có thẩm quyền
+triển khai frontend và backend tương ứng rồi xác minh URL production thực tế.
+
+## Live Tour dựng lại toàn trang quá thường xuyên — 17/09/2026, chưa deploy
+
+Rà soát mã phía trình duyệt xác nhận đồng hồ Live Tour cập nhật React state mỗi
+giây. Vì đồng hồ nằm trong component trang lớn, mỗi tick dựng lại cả lưới phòng,
+bảng nhân viên và các panel tài chính dù phần đếm thời gian chỉ hiển thị theo
+phút. Ngoài ra lifecycle tải dữ liệu phụ thuộc vào trạng thái modal và thao tác;
+đóng/mở modal hoặc đổi trạng thái đang lưu đã hủy/tạo lại poller và có thể kích
+hoạt thêm một lượt tải đầy đủ có projection ngay sau thao tác.
+
+Bản sửa cập nhật đồng hồ mỗi 20 giây, giảm đúng 20 lần số lượt render định kỳ do
+đồng hồ mà không thay đổi độ chi tiết phút đang hiển thị. Poll ba giây và cơ chế
+revision `unchanged` vẫn được giữ để thiết bị đang mở nhận thay đổi nhanh; tab ẩn
+không poll và tải bù ngay khi hiện lại. Poller dùng ref cho trạng thái thao tác và
+không còn bị tạo lại bởi modal/action, nên thao tác không tự phát sinh lượt tải
+projection ngoài response của chính nó. Không thay đổi khóa, transaction,
+idempotency, quyền, dữ liệu tài chính hoặc projection chấm công.
+
+Kiểm chứng cục bộ: kiểm thử mới xác nhận tỷ lệ tick 20:1 và tab ẩn/hiện; 152 kiểm
+thử backend trọng tâm, 34 kiểm thử frontend trọng tâm, lint các file thay đổi và
+production build đều đạt. Lint toàn frontend còn hai lỗi tồn tại ngoài phạm vi ở
+`employeeDirectoryUx.js` và `liveTourAppearance.js`. Chưa đo CPU/latency trên VPS,
+chưa deploy và chưa xác minh hai health endpoint hoặc thao tác nghiệp vụ thật;
+vì vậy mục tiêu 20 lần ở đây chỉ được xác nhận cho nguồn render định kỳ phía
+trình duyệt, không phải tuyên bố toàn bộ request backend nhanh hơn 20 lần.
+
 ## Live Tour: ca hồ sơ bị nhãn ca TimeSoft ghi đè — 15/09/2026, chưa deploy
 
 Người dùng báo Thanh Nhã đã được xếp Ca 1 từ 14/09/2026, chu kỳ luân phiên

@@ -77,7 +77,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "https://nunxfjhrszmlyyrvphuq.supabase.
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 _REQUIRED_WEB_ORIGINS = {
     "https://app.veraspa.vn",
-    "https://veraspabienhoa.github.io",
 }
 CORS_ORIGINS = sorted(
     _REQUIRED_WEB_ORIGINS
@@ -855,7 +854,7 @@ def _send_web_push(delivery: dict[str, Any], private_key: str, subject: str) -> 
             f"Ngày {delivery['watched_date'].strftime('%d/%m/%Y')}: số lịch nghỉ CÓ phép "
             f"thay đổi từ {delivery['previous_count']} thành {delivery['current_count']}."
         ),
-        "url": "https://veraspabienhoa.github.io/Vera-Spa/",
+        "url": "https://app.veraspa.vn/",
         "tag": f"vera-leave-{delivery['watched_date'].isoformat()}",
         "watched_date": delivery["watched_date"].isoformat(),
     }
@@ -883,7 +882,7 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
     deliveries: list[dict[str, Any]] = []
     with _engine_instance().begin() as conn:
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
-        subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://veraspabienhoa.github.io/Vera-Spa/"
+        subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
         if not private_key:
             raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
         counts = _paid_interest_counts(conn, dates)
@@ -966,7 +965,7 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
 def _dispatch_admin_daily_pushes() -> dict[str, int]:
     with _engine_instance().connect() as conn:
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
-        subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://veraspabienhoa.github.io/Vera-Spa/"
+        subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
         if not private_key:
             raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
         changes = int(conn.execute(text("""
@@ -991,7 +990,7 @@ def _dispatch_admin_daily_pushes() -> dict[str, int]:
     payload = {
         "title": "VERA SPA · Báo cáo thay đổi hằng ngày",
         "body": f"24 giờ qua có {changes} thay đổi. {summary}.",
-        "url": "https://veraspabienhoa.github.io/Vera-Spa/",
+        "url": "https://app.veraspa.vn/",
         "tag": f"vera-admin-daily-{datetime.now(VN_TZ).date().isoformat()}",
     }
     successes = failures = deactivated = 0

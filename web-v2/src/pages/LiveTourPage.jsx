@@ -43,6 +43,7 @@ import { availableBookingPurchase, comboBookingItems, preferredBookingCombo } fr
 import { customerMatches } from '../lib/customerSearch'
 import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, comboExtraSubtotal, vietnamDate } from '../lib/serviceCatalog'
 import { buildLiveTourAppearanceCss, buildLiveTourTableLayout, mergeLiveTourAppearance } from '../lib/liveTourAppearance'
+import { startLiveTourClock, startLiveTourPolling } from '../lib/liveTourPerformance'
 
 const EMPTY_LIVE_TOUR = {
   columns: [], records: [], rooms: {}, available_rooms: [], services: [], combo_catalog: [],
@@ -629,6 +630,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
   const canExportKind = (kind) => hasLiveTourExportAccess(kind, { export: canExport, pending: canPending, invoiceView: canInvoiceView, paidInvoiceView: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory })
   const loadPending = useRef(false)
+  const actionBusyRef = useRef(actionBusy)
+  useEffect(() => { actionBusyRef.current = actionBusy }, [actionBusy])
   const load = useCallback(async (refresh = false, quiet = false, conditional = false) => {
     // Polls must not consume another backend connection while a read is pending.
     if (quiet && loadPending.current) return
@@ -662,14 +665,24 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   }, [cacheKey])
 
   useEffect(() => {
-    if (!modal && !bookingContext && !pendingContext && !customerContext) void load(false, initiallyCached.current)
-    const interval = window.setInterval(() => { if (!actionBusy) void load(false, true, true) }, 3000)
-    const stopWatching = watchLeaveChanges(() => { if (!actionBusy) void load(false, true) })
-    return () => { window.clearInterval(interval); stopWatching() }
-  }, [actionBusy, load, modal, bookingContext, pendingContext, customerContext])
+    // This lifecycle deliberately depends only on `load`. Previously every
+    // dialog open/close and action-busy transition recreated it and triggered
+    // another full, projecting load immediately after an operator action.
+    void load(false, initiallyCached.current)
+    const poll = () => { if (!actionBusyRef.current) void load(false, true, true) }
+    const interval = startLiveTourPolling(poll)
+    const onVisibilityChange = () => { if (document.visibilityState === 'visible') poll() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    const stopWatching = watchLeaveChanges(() => { if (!actionBusyRef.current) void load(false, true) })
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      stopWatching()
+    }
+  }, [load])
 
   useEffect(() => {
-    const interval = window.setInterval(() => setClockMs(Date.now()), 1000)
+    const interval = startLiveTourClock(setClockMs)
     return () => window.clearInterval(interval)
   }, [])
 

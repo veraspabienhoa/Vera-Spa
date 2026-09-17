@@ -129,7 +129,7 @@ const cssEscape = (value) => String(value || '').replace(/\\/g, '\\\\').replace(
 const familyCss = (value) => value === 'Times New Roman' || value === 'Courier New' ? `"${value}"` : value
 
 export function buildLiveTourAppearanceCss(deviceSettings) {
-  const settings = deviceSettings || defaultDevice('desktop')
+  const settings = deviceSettings || defaultDevice()
   const lines = []
   const roomHeight = Number(settings.room?.height || 0)
   const roomWidth = Number(settings.room?.width || 0)

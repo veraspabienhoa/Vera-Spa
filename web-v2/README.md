@@ -41,13 +41,16 @@ Mục **Nhân viên** cũng chỉ ghi qua Python API. Màn hình này tập trun
 
 Mục **Nội quy** giữ toàn bộ cột/dòng động của bảng `LoaiNghi`. PostgreSQL `official_policy/leave_rules` là dữ liệu chính thức; một lần ghi chỉ thành công khi kiểm tra hợp lệ, đúng phiên bản và đồng bộ được worksheet `LoaiNghi`. Chỉ Admin/Quản lý mặc định được sửa hoặc Import; các vai trò còn lại chỉ xem và Export, trừ khi được cấu hình khác tại Phân quyền.
 
-## GitHub Pages
+## Web production
 
 Workflow `.github/workflows/vera-web-v2-pages.yml` build `web-v2` và deploy artifact lên Pages. Lần đầu cần vào repository **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
-Sau khi Pages được bật, site dự kiến ở:
+Địa chỉ duy nhất dành cho người dùng là custom domain:
 
-`https://veraspabienhoa.github.io/Vera-Spa/`
+`https://app.veraspa.vn/`
+
+File `public/CNAME` giữ custom domain này trong artifact Pages. Không công bố
+đường dẫn Pages theo tên repository làm địa chỉ truy cập cho người dùng.
 
 Các config public của frontend có thể đặt bằng GitHub repository Variables:
 
