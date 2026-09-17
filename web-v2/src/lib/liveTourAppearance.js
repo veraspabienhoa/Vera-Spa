@@ -11,7 +11,7 @@ export const LIVE_TOUR_ROOM_TEXT_FIELDS = [
 ]
 
 export const LIVE_TOUR_COLUMN_DEFINITIONS = [
-  'STT', 'Tên nhân viên', 'Thao tác', 'Lịch hẹn', 'Trạng thái', 'Phòng', 'TG CÒN LẠI', 'Yêu cầu', 'Dịch vụ',
+  'Ô chọn', 'STT', 'Tên nhân viên', 'Thao tác', 'Lịch hẹn', 'Trạng thái', 'Phòng', 'TG CÒN LẠI', 'Yêu cầu', 'Dịch vụ',
   'Đi làm', 'Vào ca', 'Breaktime', 'TG nghỉ còn lại', 'Giờ ra', 'Giờ vào', 'Ghi chú', 'Thời lượng',
   'TG bắt đầu thực hiện', 'TG bắt đầu thực hiện YC', 'TT thanh toán', 'Kết quả hoàn thành', 'SL tua',
   'SL yêu cầu', 'Tổng SL', 'VIP', 'Giờ Booking', 'TG khách chờ', 'TG Xông Hơi',
@@ -109,11 +109,15 @@ export function liveTourColumnKey(label) {
 
 export function buildLiveTourTableLayout(columns, deviceSettings, canOperate) {
   const configured = new Map((deviceSettings?.columns || []).map((item, index) => [item.key, { ...item, _index: index }]))
-  const entries = (columns || []).map((column, index) => {
-    const key = liveTourColumnKey(column)
-    const cfg = configured.get(key)
-    return { kind: 'column', column, key, order: cfg?.order ?? 100 + index, visible: cfg?.visible !== false }
-  })
+  const selectCfg = configured.get('Ô chọn')
+  const entries = [
+    { kind: 'select', column: '', key: 'Ô chọn', order: selectCfg?.order ?? 0, visible: selectCfg?.visible !== false },
+    ...(columns || []).map((column, index) => {
+      const key = liveTourColumnKey(column)
+      const cfg = configured.get(key)
+      return { kind: 'column', column, key, order: cfg?.order ?? 100 + index, visible: cfg?.visible !== false }
+    }),
+  ]
   if (canOperate) {
     const cfg = configured.get('Thao tác')
     entries.push({ kind: 'actions', column: '', key: 'Thao tác', order: cfg?.order ?? 2, visible: cfg?.visible !== false })

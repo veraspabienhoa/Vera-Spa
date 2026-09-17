@@ -1576,11 +1576,14 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     </div>
 
     <section className="panel tour-table-panel tour-records-panel">
-      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{appearanceTableColumns.map((entry) => entry.kind === 'actions'
-        ? <th className="live-tour-actions-col" data-appearance-key="Thao tác" key="__actions">Thao tác</th>
-        : <th className={columnClass(entry.column)} data-appearance-key={entry.key} key={entry.column}>{entry.column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
+      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr>{appearanceTableColumns.map((entry) => entry.kind === 'select'
+        ? <th className="live-tour-select-col" data-appearance-key="Ô chọn" key="__select"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>
+        : entry.kind === 'actions'
+          ? <th className="live-tour-actions-col" data-appearance-key="Thao tác" key="__actions">Thao tác</th>
+          : <th className={columnClass(entry.column)} data-appearance-key={entry.key} key={entry.column}>{entry.column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
-        return <tr className={rowClass(item, selectedIds.has(id), data.payment_settings?.shift_ready_times, clockMs)} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{appearanceTableColumns.map((entry) => {
+        return <tr className={rowClass(item, selectedIds.has(id), data.payment_settings?.shift_ready_times, clockMs)} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}>{appearanceTableColumns.map((entry) => {
+          if (entry.kind === 'select') return <td className="live-tour-select-col" data-appearance-key="Ô chọn" key="__select"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>
           if (entry.kind === 'actions') return <td className="live-tour-actions-col" data-appearance-key="Thao tác" key="__actions">{employeeServiceActions(item)}</td>
           const column = entry.column
           return <td className={columnClass(column)} data-appearance-key={entry.key} key={column}>{column === employeeColumn ? <button type="button" className="text-button" title={String(item[column] ?? '')} disabled={!canOperate && !canPayment && !canBook} onClick={() => openEmployeeBooking(item)}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? String(item[column] ?? '') : (column === statusColumn && hasGroup(item, 'doing') ? 'Thực hiện' : String(breakCellValue(item, column, clockMs)))}</td>

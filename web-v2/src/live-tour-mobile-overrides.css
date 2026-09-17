@@ -78,11 +78,11 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
   }
 
   /* Mobile roster: only the requested operator columns remain visible. */
-  html body .live-tour-page .tour-table .live-tour-select-col,
   html body .live-tour-page .tour-table .tour-col-mobile-hidden {
     display: none !important;
   }
 
+  html body .live-tour-page .tour-table .live-tour-select-col,
   html body .live-tour-page .tour-table .tour-col-stt,
   html body .live-tour-page .tour-table .tour-col-employee,
   html body .live-tour-page .tour-table .live-tour-actions-col,
@@ -96,6 +96,12 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
     visibility: visible !important;
   }
 
+  html body .live-tour-page .tour-table .live-tour-select-col {
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    text-align: center !important;
+  }
   html body .live-tour-page .tour-table .tour-col-stt {
     width: 44px !important;
     min-width: 44px !important;
@@ -200,10 +206,10 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
     max-width: 100% !important;
     table-layout: fixed !important;
   }
-  html body .live-tour-page .tour-table .live-tour-select-col,
   html body .live-tour-page .tour-table .tour-col-mobile-hidden {
     display: none !important;
   }
+  html body .live-tour-page .tour-table .live-tour-select-col,
   html body .live-tour-page .tour-table .tour-col-stt,
   html body .live-tour-page .tour-table .tour-col-employee,
   html body .live-tour-page .tour-table .live-tour-actions-col,
@@ -219,15 +225,17 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
     max-width: none !important;
     box-sizing: border-box !important;
   }
+  html body .live-tour-page .tour-table .live-tour-select-col { width: 4% !important; text-align: center !important; }
   html body .live-tour-page .tour-table .tour-col-stt { width: 5% !important; }
-  html body .live-tour-page .tour-table .tour-col-employee { width: 17% !important; }
-  html body .live-tour-page .tour-table .live-tour-actions-col { width: 13% !important; }
-  html body .live-tour-page .tour-table .tour-col-appointment { width: 12% !important; }
+  html body .live-tour-page .tour-table .tour-col-employee { width: 15% !important; }
+  html body .live-tour-page .tour-table .live-tour-actions-col { width: 12% !important; }
+  html body .live-tour-page .tour-table .tour-col-appointment { width: 11% !important; }
   html body .live-tour-page .tour-table .tour-col-status { width: 11% !important; }
   html body .live-tour-page .tour-table .tour-col-room { width: 8% !important; }
   html body .live-tour-page .tour-table .tour-col-remaining { width: 12% !important; }
   html body .live-tour-page .tour-table .tour-col-request { width: 9% !important; }
   html body .live-tour-page .tour-table .tour-col-service { width: 13% !important; }
+  html body .live-tour-page .tour-table .live-tour-select-col input[type=checkbox] { width: 14px !important; height: 14px !important; margin: 0 auto !important; }
   html body .live-tour-page .responsive-data-table.tour-table th,
   html body .live-tour-page .responsive-data-table.tour-table td {
     min-width: 0 !important;
