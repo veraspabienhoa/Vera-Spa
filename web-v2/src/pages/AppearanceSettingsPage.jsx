@@ -14,6 +14,34 @@ function NumberField({ value, onChange, min = 0, max, step = 1, label }) {
   return <label className="appearance-field"><span>{label}</span><input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value || 0))}/></label>
 }
 
+function currentDesktopTableFontSize() {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return 10
+  const probe = document.createElement('div')
+  probe.className = 'live-tour-page'
+  probe.style.cssText = 'position:fixed;left:-10000px;top:-10000px;visibility:hidden;pointer-events:none'
+  probe.innerHTML = '<div class="responsive-data-table tour-table"><table><tbody><tr><td data-appearance-key="probe">A</td></tr></tbody></table></div>'
+  document.body.appendChild(probe)
+  const cell = probe.querySelector('td')
+  const value = Number.parseFloat(cell ? getComputedStyle(cell).fontSize : '')
+  probe.remove()
+  return Number.isFinite(value) && value > 0 ? Math.round(value * 2) / 2 : 10
+}
+
+function withCurrentEffectiveColumnFontSizes(settings) {
+  const merged = mergeLiveTourAppearance(settings || {})
+  const desktopSize = currentDesktopTableFontSize()
+  // Current mobile roster CSS is clamp(5px, 1.55vw, 7px). Use a 390px
+  // reference viewport when the settings page is opened on desktop so Mobile
+  // still receives the effective value instead of the sentinel 0.
+  const mobileWidth = typeof window !== 'undefined' && window.innerWidth <= 820 ? window.innerWidth : 390
+  const mobileSize = Math.round(Math.min(7, Math.max(5, mobileWidth * 0.0155)) * 2) / 2
+  return {
+    ...merged,
+    desktop: { ...merged.desktop, columns: merged.desktop.columns.map((column) => ({ ...column, font_size: Number(column.font_size) > 0 ? column.font_size : desktopSize })) },
+    mobile: { ...merged.mobile, columns: merged.mobile.columns.map((column) => ({ ...column, font_size: Number(column.font_size) > 0 ? column.font_size : mobileSize })) },
+  }
+}
+
 export default function AppearanceSettingsPage({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const [device, setDevice] = useState('desktop')
@@ -31,11 +59,11 @@ export default function AppearanceSettingsPage({ user }) {
     if (announce) setMessage('')
     try {
       const result = await veraApi.liveTour(true)
-      const loaded = mergeLiveTourAppearance(result?.appearance_settings || {})
+      const loaded = withCurrentEffectiveColumnFontSizes(result?.appearance_settings || {})
       setDraft(loaded)
       setDefaultDraft(loaded)
       setRevision(result?.revision ?? null)
-      if (announce) setMessage(`Đã lấy thông số hiện tại của giao diện ${device === 'mobile' ? 'Mobile' : 'Desktop'} từ hệ thống.`)
+      if (announce) setMessage(`Đã lấy thông số hiện tại, bao gồm Size chữ thực tế của các cột, cho giao diện ${device === 'mobile' ? 'Mobile' : 'Desktop'}.`)
     } catch (err) { setError(err?.message || 'Không tải được cài đặt giao diện.') }
     finally { setBusy(false) }
   }
