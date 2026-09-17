@@ -1,3 +1,4 @@
+# Scheduler registration refreshed 2026-09-17; keep this workflow on the default branch.
 name: Live Tour Queue Watchdog V3
 
 on:
