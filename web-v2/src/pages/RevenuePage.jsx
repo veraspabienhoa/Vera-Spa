@@ -1,7 +1,7 @@
 import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, ExternalLink, FileSpreadsheet, RefreshCw, Save, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
+import { defaultRevenueTipStart, revenueTipTotal } from '../lib/revenueTipPeriod'
 import './RevenuePage.css'
 import VeraDateInput from '../components/VeraDateInput'
 
@@ -42,6 +42,14 @@ async function authorizedHeaders(withJson = false) {
 async function loadRevenue(signal) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const response = await fetch(`${apiBase}/v2/revenue/summary`, { signal, headers: await authorizedHeaders() })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
+}
+
+async function loadLiveTourReports(signal) {
+  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
+  const response = await fetch(`${apiBase}/v2/live-tour/reports`, { signal, headers: await authorizedHeaders() })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -92,6 +100,7 @@ export default function RevenuePage() {
   const [tip, setTip] = useState(0)
   const [tipStart, setTipStart] = useState('')
   const [tipEnd, setTipEnd] = useState('')
+  const [tipRows, setTipRows] = useState(null)
   const [busy, setBusy] = useState(false)
   const [savingTip, setSavingTip] = useState(false)
   const [error, setError] = useState('')
@@ -117,13 +126,25 @@ export default function RevenuePage() {
     const run = async () => {
       setBusy(true)
       setError('')
+      setTipRows(null)
       try {
         const result = await loadRevenue(controller.signal)
+        let liveTourRows = null
+        try {
+          const liveTour = await loadLiveTourReports(controller.signal)
+          liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
+        } catch (tipError) {
+          if (tipError?.name === 'AbortError') throw tipError
+        }
         if (!controller.signal.aborted) {
+          const defaultTipStartDate = defaultRevenueTipStart(result.current_date)
+            || result.period_tip_start || result.start_date || ''
+          const defaultTipEndDate = result.current_date || result.period_tip_end || ''
           setData(result)
+          setTipRows(liveTourRows)
           setTip(Number(result.period_tip || 0))
-          setTipStart(result.period_tip_start || result.start_date || '')
-          setTipEnd(result.period_tip_end || result.current_date || '')
+          setTipStart(defaultTipStartDate)
+          setTipEnd(defaultTipEndDate)
         }
       } catch (err) {
         if (!controller.signal.aborted && err?.name !== 'AbortError') setError(err.message || 'Không tải được Doanh thu.')
@@ -134,6 +155,23 @@ export default function RevenuePage() {
     void run()
     return () => controller.abort()
   }, [revision])
+
+  useEffect(() => {
+    if (!Array.isArray(tipRows) || !tipStart || !tipEnd || tipStart > tipEnd) return
+    const autoTip = revenueTipTotal(tipRows, tipStart, tipEnd)
+    setTip(autoTip)
+    setData((current) => {
+      if (!current) return current
+      const balance = Math.round((Number(current.total_income || 0) - Number(current.total_expense || 0) - autoTip) * 100) / 100
+      return {
+        ...current,
+        period_tip: autoTip,
+        balance,
+        period_tip_start: tipStart,
+        period_tip_end: tipEnd,
+      }
+    })
+  }, [tipEnd, tipRows, tipStart])
 
   useEffect(() => {
     if (filterPreset === 'custom' && (!customStart || !customEnd)) {
@@ -250,11 +288,11 @@ export default function RevenuePage() {
     </div>
 
     {canEditTip && <section className="revenue-tip-editor">
-      <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="number" min="0" step="1000" inputMode="numeric" value={numberInputDisplayValue(tip)} disabled={savingTip} onChange={(event) => setTip(event.target.value)} /></label>
+      <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="number" min="0" step="1000" inputMode="numeric" value={Number.isFinite(Number(tip)) ? tip : 0} readOnly disabled={savingTip || busy} /></label>
       <label>Ngày bắt đầu<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} disabled={savingTip} onChange={(event) => setTipStart(event.target.value)} /></label>
       <label>Đến ngày<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} disabled={savingTip} onChange={(event) => setTipEnd(event.target.value)} /><span className="revenue-tip-current">Ngày hiện tại: {data?.current_date_label || '—'} <button type="button" className="secondary-button" disabled={savingTip || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày hiện tại</button></span></label>
       <button type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>
-      <small>Tiền TIP được lưu cho khoảng từ Ngày bắt đầu đến Đến ngày. Đến ngày mặc định theo Ngày hiện tại của dữ liệu (ví dụ 13/09/2026) và vẫn có thể nhập tay. Công thức Còn lại trừ Tiền TIP ngay sau khi lưu.</small>
+      <small>Tiền TIP tự động lấy từ báo cáo hóa đơn Live Tour theo khoảng đã chọn. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định đúng bằng Ngày hiện tại hiển thị phía trên. Admin vẫn có thể đổi Ngày bắt đầu hoặc Đến ngày và số TIP sẽ tự tính lại trước khi lưu.</small>
     </section>}
 
     <section className="revenue-grid" aria-live="polite">
@@ -278,7 +316,7 @@ export default function RevenuePage() {
 
       {reconcile && <>
         <div className={`reconcile-status ${overallClass}`}>
-          {overallStatus === 'KHỚP' ? <CheckCircle2 size={19}/> : <AlertTriangle size={19}/>}
+          {overallStatus === 'KHỚP' ? <CheckCircle2 size={19}/> : <AlertTriangle size={19}/>} 
           <div>{overallStatus === 'KHỚP'
             ? `KHỚP: Tất cả ngày đều không có chênh lệch trong ${reconcile.start_date_label} – ${reconcile.end_date_label}.`
             : overallStatus === 'GẦN KHỚP'
