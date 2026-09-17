@@ -86,7 +86,7 @@ IDEMPOTENCY_REQUIRED_ACTIONS = {
     "set_vip", "replace_service", "add_service", "room_upsert", "room_delete", "service_upsert",
     "service_delete", "combo_upsert", "combo_delete", "combo_purchase", "combo_sale_decide", "combo_import", "backup",
     "restore", "clear_expired", "customer_upsert", "service_area_upsert", "service_area_delete", "settings_reorder",
-    "update_booking", "cancel_booking", "restart_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "start_room", "finish_room", "clear_orphan_pending",
+    "update_booking", "cancel_booking", "restart_booking", "change_employee", "update_appointment", "update_started_at", "finish_to_pending", "payment_settings_update", "appearance_settings_update", "start_room", "finish_room", "clear_orphan_pending",
 }
 BOARD_COLUMNS = [
     "STT", "Tên nhân viên", "Lịch hẹn", "Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu",
@@ -739,7 +739,7 @@ def _empty_state(now: datetime) -> dict[str, Any]:
         "created_at": _iso(now), "updated_at": _iso(now),
         "employees": [], "rooms": rooms, "services": services, "combos": combos,
         "customers": [], "pending": [], "invoices": [], "reports": [], "combo_usage": [], "combo_sale_requests": [],
-        "break_events": [], "payment_settings": _default_payment_settings(),
+        "break_events": [], "payment_settings": _default_payment_settings(), "appearance_settings": {},
         "audit": [], "backups": [], "pending_changes": [], "invoice_changes": [], "customer_changes": [], "bill_counters": {}, "idempotency": {},
     }
 
@@ -757,6 +757,8 @@ def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
     # An explicitly empty catalog is a saved choice, not an uninitialized state.
     state["version"] = STATE_VERSION
     state.setdefault("payment_settings", _default_payment_settings())
+    if not isinstance(state.get("appearance_settings"), dict):
+        state["appearance_settings"] = {}
     state.setdefault("business_date", _business_date(now).isoformat())
     state.setdefault("created_at", _iso(now))
     state.setdefault("updated_at", _iso(now))
@@ -1826,6 +1828,8 @@ def _change_pending(state, action, payload, actor, now):
 
 
 def _required_action_feature(action: str) -> str:
+    if action == "appearance_settings_update":
+        return "live_tour_admin"
     if action == "restart_booking":
         return "live_tour_admin"
     if action in {"reorder", "admin_reorder"}:
@@ -1862,6 +1866,27 @@ def _reject_external_action(action: str) -> None:
             "message": "Live Tour chỉ sử dụng dữ liệu trên máy chủ. Kết nối file và đồng bộ nguồn ngoài đã được gỡ bỏ.",
         })
 
+
+
+
+def _appearance_settings_update(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Cấu hình giao diện không hợp lệ.")
+    unknown = set(payload) - {"desktop", "mobile"}
+    if unknown:
+        raise HTTPException(400, "Cấu hình giao diện chỉ nhận Desktop và Mobile.")
+    for device in ("desktop", "mobile"):
+        value = payload.get(device, {})
+        if not isinstance(value, dict):
+            raise HTTPException(400, f"Cấu hình {device} không hợp lệ.")
+        if set(value) - {"room", "room_text", "columns"}:
+            raise HTTPException(400, f"Cấu hình {device} có trường không hỗ trợ.")
+        if "columns" in value and (not isinstance(value["columns"], list) or len(value["columns"]) > 80):
+            raise HTTPException(400, "Danh sách cột giao diện không hợp lệ.")
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    if len(encoded.encode("utf-8")) > 100_000:
+        raise HTTPException(400, "Cấu hình giao diện vượt giới hạn 100 KB.")
+    return deepcopy(payload)
 
 def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime) -> dict[str, Any]:
     action = str(action or "").strip().lower()
@@ -2101,6 +2126,9 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         state.clear()
         state.update(working)
         result = {"pending": pending_result["pending"], "employee": _employee(state, payload.get("employee_id"))}
+    elif action == "appearance_settings_update":
+        state["appearance_settings"] = _appearance_settings_update(payload)
+        result["appearance_settings"] = deepcopy(state["appearance_settings"])
     elif action == "payment_settings_update":
         state["payment_settings"] = _payment_settings_update(payload, _bounded_money)
         # Apply the remaining-time threshold immediately to services already in
@@ -3273,6 +3301,7 @@ def _state_response(
         # Root aliases keep the API convenient for both the copied Tour UI and
         # the richer Live Tour operator drawers.
         "services": state["services"], "combo_catalog": state["combos"],
+        "appearance_settings": deepcopy(state.get("appearance_settings") or {}),
         "payment_settings": {**deepcopy(state.get("payment_settings") or _default_payment_settings()), **({"user_bank": deepcopy(viewer_bank)} if viewer_bank else {})} if can_payment or can_admin or can_paid_invoice_view else {},
         # Booking visibility is public to Live Tour viewers, independent of payment permissions.
         "booking_settings": {"employee_available_minutes": (state.get("payment_settings") or {}).get("booking_available_minutes", 30)},

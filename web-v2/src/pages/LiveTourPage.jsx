@@ -42,10 +42,11 @@ import './LiveTourControls.css'
 import { availableBookingPurchase, comboBookingItems, preferredBookingCombo } from '../lib/liveTourComboBooking'
 import { customerMatches } from '../lib/customerSearch'
 import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, comboExtraSubtotal, vietnamDate } from '../lib/serviceCatalog'
+import { buildLiveTourAppearanceCss, buildLiveTourTableLayout, mergeLiveTourAppearance } from '../lib/liveTourAppearance'
 
 const EMPTY_LIVE_TOUR = {
   columns: [], records: [], rooms: {}, available_rooms: [], services: [], combo_catalog: [],
-  customers: [], pending_payments: [], reports: {}, audit: [], backups: [], capabilities: {}, revision: null,
+  customers: [], pending_payments: [], reports: {}, audit: [], backups: [], capabilities: {}, appearance_settings: {}, revision: null,
 }
 const LIVE_TOUR_CACHE_MAX_AGE = 10 * 60 * 1000
 const PENDING_REMINDER_INTERVAL_MS = 15 * 60 * 1000
@@ -591,6 +592,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [customerHistoryFilters, setCustomerHistoryFilters] = useState(() => ({ preset: 'month', ...tourDateRange('month') }))
   const [customColumns, setCustomColumns] = useState(null)
   const [customScope, setCustomScope] = useState('displayed')
+  const [appearanceMobile, setAppearanceMobile] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 820px)').matches)
   const requestEntriesRef = useRef(new Map())
   const latestRevisionRef = useRef(data.revision)
   const pendingCountRef = useRef(0)
@@ -669,6 +671,15 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   useEffect(() => {
     const interval = window.setInterval(() => setClockMs(Date.now()), 1000)
     return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+    const media = window.matchMedia('(max-width: 820px)')
+    const sync = () => setAppearanceMobile(media.matches)
+    sync()
+    media.addEventListener?.('change', sync)
+    return () => media.removeEventListener?.('change', sync)
   }, [])
 
   useEffect(() => {
@@ -946,6 +957,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     ordered.splice(ordered.indexOf(employeeNameColumn(source)) + 1, 0, appointment)
     return ordered
   }, [data.columns])
+  const appearanceSettings = useMemo(() => mergeLiveTourAppearance(data.appearance_settings || {}), [data.appearance_settings])
+  const activeAppearance = appearanceSettings[appearanceMobile ? 'mobile' : 'desktop']
+  const appearanceTableColumns = useMemo(() => buildLiveTourTableLayout(columns, activeAppearance, canOperate), [activeAppearance, canOperate, columns])
+  const appearanceCss = useMemo(() => buildLiveTourAppearanceCss(activeAppearance), [activeAppearance])
   const validRecords = useMemo(() => asArray(data.records).filter((record) => validLiveTourRecord(record, columns)), [columns, data.records])
   const shiftRecords = useMemo(() => validRecords.filter((record) => shiftFilter === 'all' || shiftBucket(record, columns) === shiftFilter), [columns, shiftFilter, validRecords])
   const searchedRecords = useMemo(() => {
@@ -1398,6 +1413,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   }
 
   return <div className="feature-page tour-page live-tour-page">
+    <style>{appearanceCss}</style>
     <style>{`
       .live-tour-page{--live-tour-section-gap:10px;gap:var(--live-tour-section-gap)}.page-wrap.live-tour-page-wrap{padding-top:0;padding-bottom:0}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
       .live-tour-board{min-width:0}.live-tour-board>.tour-records-panel{margin-top:var(--live-tour-section-gap)}
@@ -1560,9 +1576,15 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     </div>
 
     <section className="panel tour-table-panel tour-records-panel">
-      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{columns.map((column) => <Fragment key={column}><th className={columnClass(column)}>{column}</th>{column === employeeColumn && canOperate && <th className="live-tour-actions-col">Thao tác</th>}</Fragment>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
+      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Live Tour"><table><thead><tr><th className="live-tour-select-col"><input type="checkbox" checked={allDisplayedSelected} onChange={toggleDisplayed} aria-label="Chọn tất cả nhân viên đang hiển thị"/></th>{appearanceTableColumns.map((entry) => entry.kind === 'actions'
+        ? <th className="live-tour-actions-col" data-appearance-key="Thao tác" key="__actions">Thao tác</th>
+        : <th className={columnClass(entry.column)} data-appearance-key={entry.key} key={entry.column}>{entry.column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => {
         const id = recordId(item, index)
-        return <tr className={rowClass(item, selectedIds.has(id), data.payment_settings?.shift_ready_times, clockMs)} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{columns.map((column) => <Fragment key={column}><td className={columnClass(column)}>{column === employeeColumn ? <button type="button" className="text-button" title={String(item[column] ?? '')} disabled={!canOperate && !canPayment && !canBook} onClick={() => openEmployeeBooking(item)}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? String(item[column] ?? '') : (column === statusColumn && hasGroup(item, 'doing') ? 'Thực hiện' : String(breakCellValue(item, column, clockMs)))}</td>{column === employeeColumn && canOperate && <td className="live-tour-actions-col">{employeeServiceActions(item)}</td>}</Fragment>)}</tr>
+        return <tr className={rowClass(item, selectedIds.has(id), data.payment_settings?.shift_ready_times, clockMs)} key={id} onClick={(event) => { if (!event.target.closest('button,input,a,select')) toggleRow(id) }}><td className="live-tour-select-col"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>{appearanceTableColumns.map((entry) => {
+          if (entry.kind === 'actions') return <td className="live-tour-actions-col" data-appearance-key="Thao tác" key="__actions">{employeeServiceActions(item)}</td>
+          const column = entry.column
+          return <td className={columnClass(column)} data-appearance-key={entry.key} key={column}>{column === employeeColumn ? <button type="button" className="text-button" title={String(item[column] ?? '')} disabled={!canOperate && !canPayment && !canBook} onClick={() => openEmployeeBooking(item)}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? String(item[column] ?? '') : (column === statusColumn && hasGroup(item, 'doing') ? 'Thực hiện' : String(breakCellValue(item, column, clockMs)))}</td>
+        })}</tr>
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>

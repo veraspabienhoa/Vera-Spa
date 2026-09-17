@@ -1,6 +1,6 @@
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
-import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, Palette, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
@@ -13,6 +13,7 @@ const items = [
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
   { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, permission: 'live_tour_admin' },
+  { id: 'appearance', label: 'Giao diện', icon: Palette, ready: true, adminOnly: true },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Lương KTV', icon: WalletCards, ready: true, permission: 'payroll_history' },
