@@ -1,0 +1,96 @@
+name: Move Live Tour PR badge bottom right
+
+on:
+  push:
+    paths:
+      - '.github/workflows/move-live-tour-pr-bottom-right.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Move PR badge to lower right
+        run: |
+          cat >> web-v2/src/live-tour-mobile-overrides.css <<'CSS'
+
+          /* LIVE_TOUR_PR_BOTTOM_RIGHT_V2
+             Keep PR in the lower-right free area of each room card, as requested. */
+          html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
+            top: auto !important;
+            right: 8px !important;
+            bottom: 8px !important;
+            left: auto !important;
+          }
+
+          @media (max-width: 820px) {
+            html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
+              top: auto !important;
+              right: 6px !important;
+              bottom: 6px !important;
+              left: auto !important;
+              scale: 0.8 !important;
+              transform-origin: center !important;
+            }
+          }
+          CSS
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Verify and build
+        working-directory: web-v2
+        run: |
+          set -euo pipefail
+          npm ci
+          grep -q 'LIVE_TOUR_PR_BOTTOM_RIGHT_V2' src/live-tour-mobile-overrides.css
+          npm run build
+
+      - name: Commit functional change
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web-v2/src/live-tour-mobile-overrides.css
+          git commit -m 'Move Live Tour PR badge to bottom right'
+          git push origin HEAD:main
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy exact functional commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
+
+      - name: Verify production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '$DEPLOY_SHA'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
