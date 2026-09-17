@@ -47,7 +47,7 @@ const bounded = (value, min, max, fallback = 0) => {
 
 const cleanColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : ''
 
-const mergeDevice = (raw, _device) => {
+const mergeDevice = (raw) => {
   const base = defaultDevice()
   const room = raw?.room && typeof raw.room === 'object' ? raw.room : {}
   const roomText = raw?.room_text && typeof raw.room_text === 'object' ? raw.room_text : {}
@@ -85,8 +85,8 @@ const mergeDevice = (raw, _device) => {
 
 export function mergeLiveTourAppearance(raw) {
   return {
-    desktop: mergeDevice(raw?.desktop, 'desktop'),
-    mobile: mergeDevice(raw?.mobile, 'mobile'),
+    desktop: mergeDevice(raw?.desktop),
+    mobile: mergeDevice(raw?.mobile),
   }
 }
 
