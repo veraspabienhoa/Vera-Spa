@@ -17,7 +17,7 @@ import vera_web_v2_admin_audit_archive as audit
 
 
 RELEASE = "4.2-admin-instant-change-push"
-APP_URL = "https://veraspabienhoa.github.io/Vera-Spa/"
+APP_URL = "https://app.veraspa.vn/"
 
 
 def _remove_route(app, path: str, method: str):

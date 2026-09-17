@@ -8,8 +8,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 });
 
 const ALLOWED_ORIGINS = new Set([
-  "https://app.veraspa.vn",
-  "https://veraspabienhoa.github.io",
+  "https://app.veraspa.vn",  
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ]);

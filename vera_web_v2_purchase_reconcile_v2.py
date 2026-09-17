@@ -25,7 +25,7 @@ import vera_web_v2_purchase_reconcile as base
 RELEASE = "purchase-reconcile-2026-08-31-v2"
 NEAR_MATCH_LIMIT = 5_000.0
 ALERT_TABLE = "vera_v2_purchase_reconcile_alert"
-APP_URL = "https://veraspabienhoa.github.io/Vera-Spa/"
+APP_URL = "https://app.veraspa.vn/"
 TARGET_ROLES = ("admin", "quanly", "letan")
 
 

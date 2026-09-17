@@ -29,7 +29,7 @@ DEFAULT_BREAK_MINUTES = 90
 TIMESOFT_MAX_STALE_SECONDS = 90
 MANAGEMENT_ROLES = {"admin", "quanly", "letan"}
 EMPLOYEE_ROLES = {"nhanvien", "leader"}
-APP_URL = "https://veraspabienhoa.github.io/Vera-Spa/"
+APP_URL = "https://app.veraspa.vn/"
 
 
 def _norm(value: Any) -> str:
