@@ -25,14 +25,14 @@ const defaultRoomText = () => Object.fromEntries(LIVE_TOUR_ROOM_TEXT_FIELDS.map(
   font_size: 0, font_family: '', font_weight: '', font_style: '', color: '',
 }]))
 
-const defaultColumns = (device) => LIVE_TOUR_COLUMN_DEFINITIONS.map((key, order) => ({
+const defaultColumns = () => LIVE_TOUR_COLUMN_DEFINITIONS.map((key, order) => ({
   key, order, visible: true, width: 0, font_size: 0,
 }))
 
 const defaultDevice = (device) => ({
   room: { height: 0, width: 0, columns_per_row: 0, rows: 0 },
   room_text: defaultRoomText(),
-  columns: defaultColumns(device),
+  columns: defaultColumns(),
 })
 
 export const DEFAULT_LIVE_TOUR_APPEARANCE = {
