@@ -31,11 +31,13 @@ jobs:
           tests = Path('tests/test_live_tour_appearance_settings.py').read_text(encoding='utf-8')
           page = Path('web-v2/src/pages/LiveTourPage.jsx').read_text(encoding='utf-8')
           lib = Path('web-v2/src/lib/liveTourAppearance.js').read_text(encoding='utf-8')
+          table_pos = page.index('const appearanceTableColumns = useMemo')
           assert 'appearance_settings_update' in source
           assert '"appearance_settings": deepcopy(state.get("appearance_settings") or {})' in source
           assert 'state["appearance_settings"] = _appearance_settings_update(payload)' in source
           assert 'test_appearance_settings_are_persistent_and_projected' in tests
-          assert page.index("const canOperate = capability('operate'") < page.index('const appearanceTableColumns = useMemo')
+          assert page.index("const canOperate = capability('operate'") < table_pos
+          assert page.index('const activeAppearance = appearanceSettings') < table_pos
           assert "typeof window.matchMedia === 'function'" in page
           assert "key, order, visible: true" in lib
           print('BACKEND_APPEARANCE_INVARIANTS=OK')
