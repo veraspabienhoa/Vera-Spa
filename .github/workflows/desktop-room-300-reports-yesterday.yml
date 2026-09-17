@@ -1,0 +1,96 @@
+name: Desktop room 300 and reports yesterday
+
+on:
+  push:
+    paths:
+      - '.github/workflows/desktop-room-300-reports-yesterday.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Apply requested Live Tour defaults
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('web-v2/src/lib/liveTourAppearance.js')
+          s = p.read_text(encoding='utf-8')
+          old = "desktop: { room: { height: 0, min_width: 0, columns_per_row: 0, rows: 0 },"
+          new = "desktop: { room: { height: 300, min_width: 0, columns_per_row: 0, rows: 0 },"
+          if old not in s:
+              raise SystemExit('desktop appearance default anchor not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('web-v2/src/pages/LiveTourPage.jsx')
+          s = p.read_text(encoding='utf-8')
+          old = "if (panel === 'pending') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'all' })\n    setActivePanel(panel)"
+          new = "if (panel === 'pending') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'all' })\n    if (panel === 'reports') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'yesterday', ...tourDateRange('yesterday') })\n    setActivePanel(panel)"
+          if old not in s:
+              raise SystemExit('openWorkspacePanel anchor not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          print('DESKTOP_ROOM_300_REPORTS_YESTERDAY=OK')
+          PY
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-v2/package-lock.json
+
+      - name: Test and build
+        working-directory: web-v2
+        run: |
+          set -euo pipefail
+          npm ci
+          grep -q "desktop: { room: { height: 300" src/lib/liveTourAppearance.js
+          grep -q "panel === 'reports'.*preset: 'yesterday'.*tourDateRange('yesterday')" src/pages/LiveTourPage.jsx
+          npm test -- --runInBand || npm test
+          npm run build
+
+      - name: Commit functional change
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web-v2/src/lib/liveTourAppearance.js web-v2/src/pages/LiveTourPage.jsx
+          git commit -m 'Set desktop room height 300 and reports default yesterday'
+          git push origin HEAD:main
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy exact functional commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
+
+      - name: Verify production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\${pid}/cwd); live_sha=\$(git -C \"\${release_dir}\" rev-parse HEAD); test \"\${live_sha}\" = '$DEPLOY_SHA'; grep -q \"desktop: { room: { height: 300\" \"\${release_dir}/web-v2/src/lib/liveTourAppearance.js\"; grep -q \"panel === 'reports'.*preset: 'yesterday'\" \"\${release_dir}/web-v2/src/pages/LiveTourPage.jsx\"; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; echo PRODUCTION_COMMIT=\${live_sha}; echo PRODUCTION_HEALTH=OK"
