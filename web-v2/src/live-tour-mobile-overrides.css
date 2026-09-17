@@ -307,3 +307,23 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
     word-break: keep-all !important;
   }
 }
+
+/* LIVE_TOUR_PR_BOTTOM_RIGHT_V2
+   Keep PR in the lower-right free area of each room card, as requested. */
+html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
+  top: auto !important;
+  right: 8px !important;
+  bottom: 8px !important;
+  left: auto !important;
+}
+
+@media (max-width: 820px) {
+  html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
+    top: auto !important;
+    right: 6px !important;
+    bottom: 6px !important;
+    left: auto !important;
+    scale: 0.8 !important;
+    transform-origin: center !important;
+  }
+}
