@@ -66,6 +66,53 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             "timeout 180 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
 
+      - name: Verify active release and production schemas
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "set -euo pipefail; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f \"/proc/\$pid/cwd\"); test \"\$(git -C \"\$release_dir\" rev-parse HEAD)\" = '$DEPLOY_SHA'; test -f \"\${release_dir}/configure_vps_database.sh\"; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_concurrency_schema.py\" --apply --verify; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_data_check.py\""
+
+      - name: Verify production Auth through browser edge policy
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          request = urllib.request.Request(
+              "https://api.veraspa.vn/v2/auth/health",
+              headers={
+                  "Accept": "application/json",
+                  "Cache-Control": "no-cache",
+                  "Origin": "https://app.veraspa.vn",
+                  "User-Agent": (
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/140.0.0.0 Safari/537.36"
+                  ),
+              },
+          )
+          last_error = None
+          for _ in range(6):
+              try:
+                  with urllib.request.urlopen(request, timeout=10) as response:
+                      payload = json.load(response)
+                  if payload.get("ok") is True and payload.get("provider") == "postgres-local":
+                      print("PRODUCTION AUTH CHECK: PostgreSQL local Auth ready")
+                      break
+                  last_error = RuntimeError(f"unexpected health payload: {payload!r}")
+              except Exception as exc:
+                  last_error = exc
+              time.sleep(3)
+          else:
+              raise SystemExit(f"Production local Auth health check failed: {last_error}")
+          PY
+
       - name: Verify exact production commit and health
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
