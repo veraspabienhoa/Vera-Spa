@@ -81,7 +81,7 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, canS
       <button type="button" className="secondary-button tour-multi-add" disabled={rows.length >= groupRooms.length} onClick={addRow}><Plus size={15}/> Thêm dòng ({rows.length}/{groupRooms.length})</button>
       <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea value={note} onChange={(event) => setNote(event.target.value)}/></label>
       <div className="wide tour-booking-total"><span>Tiền dịch vụ</span><strong>{money(rows.reduce((total, row) => total + Number(catalog.find((item) => item.id === row.service_id)?.price || 0), 0))}</strong></div>
-      <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canBook && <button type="submit" className="primary-button" value="book">Đặt lịch</button>}</div>
+      <div className="live-tour-modal-actions wide tour-booking-submit-actions"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button>{canBook && <button type="submit" className="primary-button" value="book">Đặt lịch</button>}</div>
     </fieldset></form>
   </LiveTourTransactionDialog>
 }
