@@ -71,16 +71,17 @@ async function loadPurchaseReconcile({ preset, start, end, signal }) {
   return payload
 }
 
-async function saveRevenueEntry({ transactionDate, transactionType, amount, note }) {
+async function saveRevenueEntry({ transactionDate, incomeAmount, incomeNote, expenseAmount, expenseNote }) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const response = await fetch(`${apiBase}/v2/revenue/entry`, {
     method: 'POST',
     headers: await authorizedHeaders(true),
     body: JSON.stringify({
       transaction_date: transactionDate,
-      transaction_type: transactionType,
-      amount: Number(amount || 0),
-      note: String(note || '').trim(),
+      income_amount: Number(incomeAmount || 0),
+      income_note: String(incomeNote || '').trim(),
+      expense_amount: Number(expenseAmount || 0),
+      expense_note: String(expenseNote || '').trim(),
     }),
   })
   const payload = await response.json().catch(() => ({}))
@@ -125,9 +126,10 @@ export default function RevenuePage() {
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
   const [entryDate, setEntryDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }))
-  const [entryType, setEntryType] = useState('Chi')
-  const [entryAmount, setEntryAmount] = useState('')
-  const [entryNote, setEntryNote] = useState('')
+  const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
+  const [entryIncomeNote, setEntryIncomeNote] = useState('')
+  const [entryExpenseAmount, setEntryExpenseAmount] = useState('')
+  const [entryExpenseNote, setEntryExpenseNote] = useState('')
   const [savingEntry, setSavingEntry] = useState(false)
   const [filterPreset, setFilterPreset] = useState('this_month')
   const [customStart, setCustomStart] = useState('')
@@ -266,16 +268,22 @@ export default function RevenuePage() {
     setNotice('')
     try {
       if (!entryDate) throw new Error('Hãy chọn ngày giao dịch.')
-      if (!['Thu', 'Chi'].includes(entryType)) throw new Error('Loại giao dịch phải là Thu hoặc Chi.')
-      if (!Number.isFinite(Number(entryAmount)) || Number(entryAmount) <= 0) throw new Error('Số tiền phải lớn hơn 0.')
+      const incomeAmount = Number(entryIncomeAmount || 0)
+      const expenseAmount = Number(entryExpenseAmount || 0)
+      if (!Number.isFinite(incomeAmount) || incomeAmount < 0) throw new Error('Số tiền Thu không hợp lệ.')
+      if (!Number.isFinite(expenseAmount) || expenseAmount < 0) throw new Error('Số tiền Chi không hợp lệ.')
+      if (incomeAmount <= 0 && expenseAmount <= 0) throw new Error('Hãy nhập ít nhất một số tiền Thu hoặc Chi lớn hơn 0.')
       const result = await saveRevenueEntry({
         transactionDate: entryDate,
-        transactionType: entryType,
-        amount: entryAmount,
-        note: entryNote,
+        incomeAmount,
+        incomeNote: entryIncomeNote,
+        expenseAmount,
+        expenseNote: entryExpenseNote,
       })
-      setEntryAmount('')
-      setEntryNote('')
+      setEntryIncomeAmount('')
+      setEntryIncomeNote('')
+      setEntryExpenseAmount('')
+      setEntryExpenseNote('')
       setNotice(result.message || 'Đã ghi Thu Chi vào Quản lý Thu Chi · Input.')
       setRevision((value) => value + 1)
     } catch (err) {
@@ -321,7 +329,7 @@ export default function RevenuePage() {
       .revenue-period-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dfe7e2;border-radius:15px;background:#fff}
       .revenue-period-card svg{color:#8b6b22;flex:0 0 auto}.revenue-period-card span{display:block;font-size:11px;font-weight:900;letter-spacing:.05em;color:#68736f;text-transform:uppercase}.revenue-period-card strong{display:block;margin-top:3px;font-size:18px;color:#173329}
       .revenue-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.revenue-action-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;min-height:43px}.revenue-action-link.disabled{opacity:.45;pointer-events:none}
-      .revenue-entry-form{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(120px,.55fr) minmax(180px,1fr) minmax(240px,1.5fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-column:1/-1;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input,.revenue-entry-form select{min-height:42px}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form button{min-height:42px}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
+      .revenue-entry-form{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(150px,.8fr) minmax(220px,1.3fr) minmax(150px,.8fr) minmax(220px,1.3fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-column:1/-1;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form button{min-height:42px}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
       .revenue-tip-editor{display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(150px,.8fr) minmax(150px,.8fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900}.revenue-tip-editor input{font-size:16px;font-weight:800}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;gap:6px;font-size:11px;color:#75694d;margin-top:4px}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px}
       .revenue-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.revenue-card{padding:18px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{margin-top:14px;font-size:clamp(20px,2vw,30px);line-height:1.05;font-weight:900;color:#173329;overflow-wrap:anywhere}.revenue-card.net{background:#f7faf8;border-color:#d2e0d8}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
       .revenue-formula{margin-top:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:13px;background:#f3f8f5;color:#244a3a;font-size:13px;font-weight:800;text-align:center}.revenue-meta{margin-top:10px;padding:12px 14px;border:1px solid #e4eae6;border-radius:13px;background:#fafcfb;color:#68736f;font-size:12px}
@@ -330,10 +338,10 @@ export default function RevenuePage() {
       .reconcile-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}.reconcile-kpi{padding:13px;border:1px solid #e1e7e3;border-radius:14px;background:#fafcfb}.reconcile-kpi span{display:block;font-size:10px;font-weight:900;color:#69766f;letter-spacing:.04em}.reconcile-kpi strong{display:block;margin-top:5px;font-size:19px;color:#173329}.reconcile-kpi.near strong{color:#806800}.reconcile-kpi.bad strong{color:#a13c2f}
       .comparison-filter-bar{display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #e7ece9;background:#fbfcfb}.comparison-filter-bar label{display:grid;gap:4px;font-size:10px;font-weight:900;color:#5d6b64}.comparison-filter-bar select{min-height:36px;min-width:150px}.comparison-filter-bar small{margin-left:auto;color:#6c7772}
       .reconcile-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.report-box{min-width:0;border:1px solid #e2e8e4;border-radius:14px;overflow:hidden}.report-box h3{display:flex;gap:8px;align-items:center;margin:0;padding:11px 13px;background:#f5f8f6;color:#24473a;font-size:13px}.report-scroll{overflow:auto;max-height:430px}.report-table{width:100%;border-collapse:collapse;min-width:650px;font-size:12px}.comparison-table{min-width:1050px}.report-table th,.report-table td{padding:8px 9px;border-bottom:1px solid #edf1ee;white-space:nowrap;text-align:left;vertical-align:top}.report-table th{position:sticky;top:0;background:#f9fbfa;z-index:1;font-size:10px;color:#5e6d66;text-transform:uppercase}.report-table .money{text-align:right;font-variant-numeric:tabular-nums}.report-table .detail-cell{white-space:normal;min-width:330px;line-height:1.45}.report-table .detail-cell div+div{margin-top:4px}.report-table tr.mismatch td{background:#fff2ef}.report-table tr.near td{background:#fffceb}.report-table tr.match td{background:#f5fbf7}.report-table tr.purchase-row td{font-weight:700}.status-match{color:#24703e;font-weight:900}.status-near{color:#806800;font-weight:900}.status-mismatch{color:#a13c2f;font-weight:900}
-      @media(max-width:1250px){.revenue-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.revenue-entry-form{grid-template-columns:repeat(2,minmax(0,1fr))}.revenue-entry-form button{width:100%}.reconcile-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media(max-width:1250px){.revenue-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.revenue-entry-form{grid-template-columns:repeat(2,minmax(0,1fr))}.revenue-entry-form button{width:100%}.revenue-entry-form .entry-date,.revenue-entry-form button{grid-column:1/-1}.reconcile-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
       @media(max-width:1050px){.revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.reconcile-grid{grid-template-columns:1fr}}
-      @media(max-width:760px){.revenue-period{grid-template-columns:1fr}.revenue-actions{display:grid;grid-template-columns:1fr 1fr}.revenue-tip-editor{grid-template-columns:1fr}.revenue-tip-editor button{width:100%}.revenue-entry-form{grid-template-columns:1fr 1fr}.revenue-entry-form .entry-note,.revenue-entry-form button{grid-column:1/-1}.revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.revenue-card{padding:13px;border-radius:14px}.revenue-card.balance{grid-column:1/-1}.revenue-card-value{margin-top:8px;font-size:clamp(16px,4.6vw,22px);white-space:nowrap}.revenue-page .page-heading{align-items:flex-start}.reconcile-head{display:grid}.reconcile-filter,.comparison-filter-bar{display:grid;grid-template-columns:1fr 1fr}.reconcile-filter label:first-child{grid-column:1/-1}.reconcile-filter select,.reconcile-filter input,.comparison-filter-bar select{width:100%;min-width:0}.comparison-filter-bar small{margin:0;grid-column:1/-1}.reconcile-kpis{grid-template-columns:1fr 1fr}}
-      @media(max-width:460px){.revenue-actions{grid-template-columns:1fr}.revenue-entry-form{grid-template-columns:1fr}.revenue-entry-form .entry-note,.revenue-entry-form button{grid-column:auto}.reconcile-filter,.comparison-filter-bar,.reconcile-kpis{grid-template-columns:1fr}.reconcile-filter label:first-child,.comparison-filter-bar small{grid-column:auto}}
+      @media(max-width:760px){.revenue-period{grid-template-columns:1fr}.revenue-actions{display:grid;grid-template-columns:1fr 1fr}.revenue-tip-editor{grid-template-columns:1fr}.revenue-tip-editor button{width:100%}.revenue-entry-form{grid-template-columns:1fr 1fr}.revenue-entry-form .entry-date,.revenue-entry-form .entry-note,.revenue-entry-form button{grid-column:1/-1}.revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.revenue-card{padding:13px;border-radius:14px}.revenue-card.balance{grid-column:1/-1}.revenue-card-value{margin-top:8px;font-size:clamp(16px,4.6vw,22px);white-space:nowrap}.revenue-page .page-heading{align-items:flex-start}.reconcile-head{display:grid}.reconcile-filter,.comparison-filter-bar{display:grid;grid-template-columns:1fr 1fr}.reconcile-filter label:first-child{grid-column:1/-1}.reconcile-filter select,.reconcile-filter input,.comparison-filter-bar select{width:100%;min-width:0}.comparison-filter-bar small{margin:0;grid-column:1/-1}.reconcile-kpis{grid-template-columns:1fr 1fr}}
+      @media(max-width:460px){.revenue-actions{grid-template-columns:1fr}.revenue-entry-form{grid-template-columns:1fr}.revenue-entry-form .entry-date,.revenue-entry-form .entry-note,.revenue-entry-form button{grid-column:auto}.reconcile-filter,.comparison-filter-bar,.reconcile-kpis{grid-template-columns:1fr}.reconcile-filter label:first-child,.comparison-filter-bar small{grid-column:auto}}
     `}</style>
 
     <div className="page-heading">
@@ -356,12 +364,13 @@ export default function RevenuePage() {
 
     {canCreateEntry && <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
       <h2>NHẬP BÁO CÁO THU CHI</h2>
-      <label>Ngày giao dịch<VeraDateInput value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
-      <label>Loại giao dịch<select value={entryType} onChange={(event) => setEntryType(event.target.value)} disabled={savingEntry}><option value="Thu">Thu</option><option value="Chi">Chi</option></select></label>
-      <label className="entry-amount">Số tiền<input type="number" inputMode="numeric" min="1" step="1" value={entryAmount} onChange={(event) => setEntryAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note">Ghi chú<input type="text" maxLength={1000} value={entryNote} onChange={(event) => setEntryNote(event.target.value)} placeholder="Nội dung Thu / Chi" disabled={savingEntry}/></label>
-      <button type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu Chi'}</button>
-      <p className="revenue-entry-help">Dữ liệu được ghi trực tiếp ngược lại Google Sheet <strong>Quản lý Thu Chi · Input</strong>. Chỉ tài khoản được cấp quyền <strong>Nhập Thu Chi</strong> mới thấy form này.</p>
+      <label className="entry-date">Ngày giao dịch<VeraDateInput value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
+      <label className="entry-amount">Số tiền Thu<input type="number" inputMode="numeric" min="0" step="1" value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
+      <label className="entry-note">Ghi chú Thu<input type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => setEntryIncomeNote(event.target.value)} placeholder="Nội dung Thu" disabled={savingEntry}/></label>
+      <label className="entry-amount">Số tiền Chi<input type="number" inputMode="numeric" min="0" step="1" value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
+      <label className="entry-note">Ghi chú Chi<input type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => setEntryExpenseNote(event.target.value)} placeholder="Nội dung Chi" disabled={savingEntry}/></label>
+      <button type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
+      <p className="revenue-entry-help">Chỉ cần bấm <strong>Lưu Thu + Chi</strong> một lần. Nếu cả Thu và Chi đều có số tiền, hệ thống ghi 2 dòng vào Google Sheet <strong>Quản lý Thu Chi · Input</strong> với cùng ngày và cùng dấu thời gian. Có thể để 0 một bên nếu ngày đó chỉ phát sinh Thu hoặc chỉ phát sinh Chi.</p>
     </form>}
 
     {canEditTip && <section className="revenue-tip-editor">

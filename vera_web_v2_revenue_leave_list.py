@@ -55,9 +55,10 @@ class RevenueTipUpdate(BaseModel):
 
 class RevenueEntryCreate(BaseModel):
     transaction_date: date
-    transaction_type: str = Field(min_length=1, max_length=20)
-    amount: float = Field(gt=0, le=10_000_000_000_000)
-    note: str = Field(default="", max_length=1000)
+    income_amount: float = Field(default=0, ge=0, le=10_000_000_000_000)
+    income_note: str = Field(default="", max_length=1000)
+    expense_amount: float = Field(default=0, ge=0, le=10_000_000_000_000)
+    expense_note: str = Field(default="", max_length=1000)
 
 
 def _find_route(app, path: str, method: str):
@@ -444,9 +445,10 @@ def install_revenue_leave_list_routes(
 
     @app.post("/v2/revenue/entry")
     def create_revenue_entry(body: RevenueEntryCreate, ident=Depends(current_identity)):
-        tx_type = str(body.transaction_type or "").strip().casefold()
-        if tx_type not in {"thu", "chi"}:
-            raise HTTPException(400, "Loại giao dịch phải là Thu hoặc Chi.")
+        income_amount = round(float(body.income_amount or 0), 2)
+        expense_amount = round(float(body.expense_amount or 0), 2)
+        if income_amount <= 0 and expense_amount <= 0:
+            raise HTTPException(400, "Hãy nhập ít nhất một số tiền Thu hoặc Chi lớn hơn 0.")
 
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_FEATURE)
@@ -463,21 +465,33 @@ def install_revenue_leave_list_routes(
                 raise RuntimeError("Sheet Input chưa có hàng tiêu đề.")
             normalized = [norm(value) for value in headers]
             now = datetime.now(VN_TZ)
-            values = [""] * len(headers)
+            timestamp = now.strftime("%d/%m/%Y %H:%M:%S")
+            transaction_date = body.transaction_date.strftime("%d/%m/%Y")
+            actor = getattr(ident, "employee_username", "")
 
-            def put(label: str, value: Any) -> None:
-                key = norm(label)
-                if key in normalized:
-                    values[normalized.index(key)] = value
+            def build_row(tx_type: str, amount: float, note: str) -> list[Any]:
+                values: list[Any] = [""] * len(headers)
 
-            put("Dấu thời gian", now.strftime("%d/%m/%Y %H:%M:%S"))
-            put("Loại giao dịch", "Thu" if tx_type == "thu" else "Chi")
-            put("Số tiền", round(float(body.amount), 2))
-            put("Ngày giao dịch", body.transaction_date.strftime("%d/%m/%Y"))
-            put("Ghi chú", str(body.note or "").strip())
-            put("Địa chỉ email", email)
-            put("Người nhập", getattr(ident, "employee_username", ""))
-            worksheet.append_row(values, value_input_option="USER_ENTERED")
+                def put(label: str, value: Any) -> None:
+                    key = norm(label)
+                    if key in normalized:
+                        values[normalized.index(key)] = value
+
+                put("Dấu thời gian", timestamp)
+                put("Loại giao dịch", tx_type)
+                put("Số tiền", amount)
+                put("Ngày giao dịch", transaction_date)
+                put("Ghi chú", str(note or "").strip())
+                put("Địa chỉ email", email)
+                put("Người nhập", actor)
+                return values
+
+            rows: list[list[Any]] = []
+            if income_amount > 0:
+                rows.append(build_row("Thu", income_amount, body.income_note))
+            if expense_amount > 0:
+                rows.append(build_row("Chi", expense_amount, body.expense_note))
+            worksheet.append_rows(rows, value_input_option="USER_ENTERED")
         except HTTPException:
             raise
         except Exception as exc:
@@ -486,9 +500,15 @@ def install_revenue_leave_list_routes(
                 f"Không ghi được Quản lý Thu Chi · Input: {type(exc).__name__}: {exc}",
             ) from exc
 
+        parts = []
+        if income_amount > 0:
+            parts.append(f"Thu {round(income_amount):,}đ".replace(",", "."))
+        if expense_amount > 0:
+            parts.append(f"Chi {round(expense_amount):,}đ".replace(",", "."))
         return {
             "ok": True,
-            "message": f"Đã ghi {('Thu' if tx_type == 'thu' else 'Chi')} {round(float(body.amount)):,}đ vào Quản lý Thu Chi · Input.".replace(",", "."),
+            "saved_rows": len(rows),
+            "message": "Đã ghi cùng thời điểm " + " và ".join(parts) + " vào Quản lý Thu Chi · Input.",
         }
 
     @app.put("/v2/revenue/tip")
