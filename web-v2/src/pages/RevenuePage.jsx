@@ -101,6 +101,7 @@ export default function RevenuePage() {
   const [tipStart, setTipStart] = useState('')
   const [tipEnd, setTipEnd] = useState('')
   const [tipRows, setTipRows] = useState(null)
+  const [tipLoadError, setTipLoadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [savingTip, setSavingTip] = useState(false)
   const [error, setError] = useState('')
@@ -126,6 +127,7 @@ export default function RevenuePage() {
     const run = async () => {
       setBusy(true)
       setError('')
+      setTipLoadError('')
       setTipRows(null)
       try {
         const result = await loadRevenue(controller.signal)
@@ -135,14 +137,27 @@ export default function RevenuePage() {
           liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
         } catch (tipError) {
           if (tipError?.name === 'AbortError') throw tipError
+          if (!controller.signal.aborted) {
+            setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
+          }
         }
         if (!controller.signal.aborted) {
           const defaultTipStartDate = defaultRevenueTipStart(result.current_date)
             || result.period_tip_start || result.start_date || ''
           const defaultTipEndDate = result.current_date || result.period_tip_end || ''
-          setData(result)
+          const autoTip = Array.isArray(liveTourRows)
+            ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)
+            : Number(result.period_tip || 0)
+          const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
+          setData({
+            ...result,
+            period_tip: autoTip,
+            balance,
+            period_tip_start: defaultTipStartDate,
+            period_tip_end: defaultTipEndDate,
+          })
           setTipRows(liveTourRows)
-          setTip(Number(result.period_tip || 0))
+          setTip(autoTip)
           setTipStart(defaultTipStartDate)
           setTipEnd(defaultTipEndDate)
         }
@@ -276,6 +291,7 @@ export default function RevenuePage() {
     </div>
     {error && <div className="error-box">{error}</div>}
     {notice && <div className="success-box">{notice}</div>}
+    {tipLoadError && <div className="error-box">{tipLoadError}</div>}
 
     <section className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày bắt đầu</span><strong>{busy && !data ? '…' : (data?.start_date_label || '—')}</strong></div></article>
@@ -288,11 +304,11 @@ export default function RevenuePage() {
     </div>
 
     {canEditTip && <section className="revenue-tip-editor">
-      <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="number" min="0" step="1000" inputMode="numeric" value={Number.isFinite(Number(tip)) ? tip : 0} readOnly disabled={savingTip || busy} /></label>
-      <label>Ngày bắt đầu<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} disabled={savingTip} onChange={(event) => setTipStart(event.target.value)} /></label>
-      <label>Đến ngày<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} disabled={savingTip} onChange={(event) => setTipEnd(event.target.value)} /><span className="revenue-tip-current">Ngày hiện tại: {data?.current_date_label || '—'} <button type="button" className="secondary-button" disabled={savingTip || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày hiện tại</button></span></label>
+      <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
+      <label>Ngày bắt đầu<input type="date" aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} max={tipEnd || data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipStart(event.target.value)} /></label>
+      <label>Đến ngày<input type="date" aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /><span className="revenue-tip-current">Ngày hiện tại: {data?.current_date_label || '—'} <button type="button" className="secondary-button" disabled={savingTip || busy || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày hiện tại</button></span></label>
       <button type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>
-      <small>Tiền TIP tự động lấy từ báo cáo hóa đơn Live Tour theo khoảng đã chọn. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định đúng bằng Ngày hiện tại hiển thị phía trên. Admin vẫn có thể đổi Ngày bắt đầu hoặc Đến ngày và số TIP sẽ tự tính lại trước khi lưu.</small>
+      <small>Tiền TIP tự động cộng từ TIP của nhân viên trong báo cáo hóa đơn Live Tour theo đúng khoảng Ngày bắt đầu → Đến ngày. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định bằng Ngày hiện tại. Đổi một trong hai ngày sẽ tự lọc và tính lại số TIP ngay.</small>
     </section>}
 
     <section className="revenue-grid" aria-live="polite">
