@@ -16,8 +16,8 @@ def test_live_tour_room_height_is_fifteen_percent_taller_and_pr_uses_marked_lowe
 
     assert ".tour-room-card.has-private-service .tour-room-booking-button" in overrides
     assert "position: static !important" in overrides
-    assert "right: 17% !important" in overrides
-    assert "bottom: 8px !important" in overrides
-    assert "bottom: 7px !important" in overrides
+    assert "right: 9% !important" in overrides
+    assert "bottom: 6px !important" in overrides
+    assert "bottom: 5px !important" in overrides
 
     assert "roomHeight > 0 ? roomHeight : 110.4" in appearance
