@@ -589,6 +589,9 @@ test('admin bottom and direct STT actions target selected employee; manual order
     const tableRows = [...document.querySelectorAll('.tour-records-panel tbody tr')]
     assert.ok(tableRows[0].textContent.includes('An Bình'))
     await act(() => tableRows[0].querySelector('input[type=checkbox]').click())
+    assert.equal(document.querySelector('.live-tour-controls-actions'), null)
+    await act(() => [...document.querySelectorAll('button')].find(b => b.textContent === 'Hiện điều khiển').click())
+    assert.ok(document.querySelector('.live-tour-controls-actions'))
     await act(async () => [...document.querySelectorAll('button')].find(b => b.textContent === 'Xuống cuối').click())
     assert.equal(f.writes[0].action, 'admin_reorder')
     assert.equal(f.writes[0].payload.direction, 'bottom')

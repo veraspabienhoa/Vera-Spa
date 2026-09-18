@@ -578,6 +578,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [activePanel, setActivePanel] = useState('pending')
   const [reorderSteps, setReorderSteps] = useState('1')
   const [targetPosition, setTargetPosition] = useState('')
+  const [adminControlsVisible, setAdminControlsVisible] = useState(false)
   const [modal, setModal] = useState(null)
   const [bookingContext, setBookingContext] = useState(null)
   const [pendingContext, setPendingContext] = useState(null)
@@ -1555,7 +1556,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             })}</div> : <div className="tour-room-detail-empty">Phòng đang trống, chưa có nhân viên và dịch vụ.</div>}
           </div>}
         </div>
-        <section className={`panel live-tour-operator live-tour-controls ${privilegedLiveTourRole ? '' : 'live-tour-management-hidden'}`} aria-label="Điều khiển">
+        {isAdmin && <div className="live-tour-admin-controls-toggle">
+          <button type="button" className="secondary-button" aria-expanded={adminControlsVisible} aria-controls="live-tour-admin-controls" onClick={() => setAdminControlsVisible((visible) => !visible)}>
+            {adminControlsVisible ? 'Ẩn điều khiển' : 'Hiện điều khiển'}
+          </button>
+        </div>}
+        {(!isAdmin || adminControlsVisible) && <section id="live-tour-admin-controls" className={`panel live-tour-operator live-tour-controls ${privilegedLiveTourRole ? '' : 'live-tour-management-hidden'}`} aria-label="Điều khiển">
           <div className="live-tour-controls-grid">
             <div className="live-tour-controls-actions" role="group" aria-label="Bảng điều khiển Live Tour">
               <button type="button" className="secondary-button live-tour-mobile-sync-hidden" disabled={!canOperate || Boolean(actionBusy)} onClick={() => executeAction('sync_daily_status', {}, [])}>Cập nhật lịch nghỉ</button>
@@ -1575,7 +1581,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button type="button" className="secondary-button live-tour-mobile-reorder-hidden" disabled={!canReorder || selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('admin_reorder', { direction: 'down', steps: Number(reorderSteps) })}>Xuống {reorderSteps}</button>
             </div>
           </div>
-        </section>
+        </section>}
         <div className="tour-quick-tools">
           <LiveTourSearchSelect className="tour-employee-search" hideLabel label="Tìm nhanh tên nhân viên" placeholder="Tìm và chọn nhân viên…" emptyLabel="Tất cả nhân viên"
             value={employeePickId} searchValue={employeeSearch}
