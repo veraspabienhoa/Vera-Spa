@@ -406,16 +406,6 @@ export default function RevenuePage({ user }) {
     {notice && <div className="success-box">{notice}</div>}
     {tipLoadError && <div className="error-box">{tipLoadError}</div>}
 
-    {canViewAdminRevenueSummary && <section className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
-      <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày bắt đầu</span><strong>{busy && !data ? '…' : (data?.start_date_label || '—')}</strong></div></article>
-      <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày hiện tại</span><strong>{busy && !data ? '…' : (data?.current_date_label || '—')}</strong></div></article>
-    </section>}
-
-    <div className="revenue-actions">
-      <a className="secondary-button revenue-action-link" href={entryUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Mở Google Form</a>
-      <a className={`secondary-button revenue-action-link ${reportUrl ? '' : 'disabled'}`.trim()} href={reportUrl || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!reportUrl}><ExternalLink size={16} /> Xem báo cáo</a>
-    </div>
-
     {canCreateEntry && <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
       <h2>NHẬP DOANH THU - CHI PHÍ</h2>
       <label className="entry-date">Ngày giao dịch<VeraDateInput value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
@@ -426,6 +416,16 @@ export default function RevenuePage({ user }) {
       <button type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
       <p className="revenue-entry-help">Chỉ cần bấm <strong>Lưu Thu + Chi</strong> một lần. Nếu cả Thu và Chi đều có số tiền, hệ thống ghi 2 dòng vào Google Sheet <strong>Chi tiết Doanh thu - Chi phí</strong> với cùng ngày và cùng dấu thời gian. Có thể để 0 một bên nếu ngày đó chỉ phát sinh Thu hoặc chỉ phát sinh Chi.</p>
     </form>}
+
+    {canViewAdminRevenueSummary && <section className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
+      <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày bắt đầu</span><strong>{busy && !data ? '…' : (data?.start_date_label || '—')}</strong></div></article>
+      <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày hiện tại</span><strong>{busy && !data ? '…' : (data?.current_date_label || '—')}</strong></div></article>
+    </section>}
+
+    <div className="revenue-actions">
+      <a className="secondary-button revenue-action-link" href={entryUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Mở Google Form</a>
+      <a className={`secondary-button revenue-action-link ${reportUrl ? '' : 'disabled'}`.trim()} href={reportUrl || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!reportUrl}><ExternalLink size={16} /> Xem báo cáo</a>
+    </div>
 
     {canViewAdminRevenueSummary && canEditTip && <section className="revenue-tip-editor">
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
