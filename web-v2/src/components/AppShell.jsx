@@ -97,6 +97,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   const [deletingBreakAlertTag, setDeletingBreakAlertTag] = useState('')
   const breakAlertStackRef = useRef(null)
   const dragRef = useRef(null)
+  const menuSwipeRef = useRef(null)
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
 
@@ -279,6 +280,41 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
     setStandaloneMenuOpen(false)
   }
 
+  const beginMenuSwipe = (event) => {
+    if (event.pointerType !== 'touch') return
+    const target = event.target
+    if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) return
+    menuSwipeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      sidebarWasOpen: sidebarOpen,
+    }
+  }
+
+  const endMenuSwipe = (event) => {
+    const gesture = menuSwipeRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+    menuSwipeRef.current = null
+    const dx = event.clientX - gesture.startX
+    const dy = event.clientY - gesture.startY
+    const horizontal = Math.abs(dx) >= 70 && Math.abs(dx) > Math.abs(dy) * 1.25
+    if (!horizontal) return
+    if (!gesture.sidebarWasOpen && dx > 0 && gesture.startX <= 48) {
+      if (standalone) setStandaloneMenuOpen(true)
+      else setMobileOpen(true)
+      return
+    }
+    if (gesture.sidebarWasOpen && dx < 0) {
+      setMobileOpen(false)
+      setStandaloneMenuOpen(false)
+    }
+  }
+
+  const cancelMenuSwipe = (event) => {
+    if (menuSwipeRef.current?.pointerId === event.pointerId) menuSwipeRef.current = null
+  }
+
   const openCurrentPageInNewTab = () => {
     const url = new URL(window.location.href)
     url.searchParams.set('page', currentPage)
@@ -292,7 +328,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
     : <button type="button" className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu" aria-expanded={mobileOpen}><Menu size={22} /></button>
 
   return (
-    <div className={`app-shell ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`}>
+    <div className={`app-shell ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`} onPointerDown={beginMenuSwipe} onPointerUp={endMenuSwipe} onPointerCancel={cancelMenuSwipe}>
       {/* Canonical phrase retained for CI/history: Suối nguồn thư giãn, trọn vẹn an yên. */}
       {/* Legacy full reload used window.location.reload(); current refresh remounts only the visible page. */}
       <style>{`
