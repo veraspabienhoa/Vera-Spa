@@ -310,7 +310,7 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown 
 
 /* LIVE_TOUR_ROOM_HEIGHT_PR_POSITION_V3
    Default room height was 96px. Increase it by 15% to 110.4px on desktop
-   and mobile, and anchor PR to the room card's lower free area. */
+   and mobile, and anchor PR to the marked lower-right free area of the room card. */
 html body .live-tour-page .tour-room-panel .tour-room-grid {
   grid-auto-rows: 110.4px !important;
 }
@@ -324,16 +324,16 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-card.has-p
 }
 html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
   top: auto !important;
-  right: 17% !important;
-  bottom: 8px !important;
+  right: 9% !important;
+  bottom: 6px !important;
   left: auto !important;
 }
 
 @media (max-width: 820px) {
   html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-badge {
     top: auto !important;
-    right: 17% !important;
-    bottom: 7px !important;
+    right: 9% !important;
+    bottom: 5px !important;
     left: auto !important;
     scale: 0.8 !important;
     transform-origin: center !important;
