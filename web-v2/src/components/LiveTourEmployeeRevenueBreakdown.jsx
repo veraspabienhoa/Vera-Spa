@@ -45,6 +45,7 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
   const tipTotal = items.reduce((sum, item) => sum + Number(item.tip || 0), 0)
 
   return <section ref={sectionRef} className="employee-revenue-section" aria-label="Thống kê doanh thu theo nhân viên">
+    <RevenueBars items={items} valueKey="service" label="Biểu đồ tiền dịch vụ theo nhân viên"/>
     <div className="employee-revenue-head">
       <div><h3>THỐNG KÊ THEO NHÂN VIÊN</h3><p>Tiền dịch vụ và tiền TIP theo đúng bộ lọc Báo cáo hiện tại.</p></div>
       <button data-snapshot-ignore type="button" className="secondary-button" disabled={copying} onClick={copySection}><ClipboardCopy size={16}/>{copying ? 'Đang chụp…' : 'Chụp toàn bộ section & copy'}</button>
@@ -64,9 +65,6 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
         </tbody>
       </table>
     </div>
-    <div className="employee-revenue-charts">
-      <RevenueBars items={items} valueKey="service" label="Biểu đồ tiền dịch vụ theo nhân viên"/>
-      <RevenueBars items={items} valueKey="tip" label="Biểu đồ tiền TIP theo nhân viên"/>
-    </div>
+    <RevenueBars items={items} valueKey="tip" label="Biểu đồ tiền TIP theo nhân viên"/>
   </section>
 }
