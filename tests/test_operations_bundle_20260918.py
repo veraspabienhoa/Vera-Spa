@@ -47,7 +47,8 @@ def test_requested_frontend_wiring_is_present():
     assert "preset: 'yesterday'" in live_tour and "panel === 'reports'" in live_tour
 
     assert "LiveTourEmployeeRevenueBreakdown" in reports
-    assert "Chụp toàn bộ section & copy" in breakdown
-    assert "Biểu đồ tiền dịch vụ theo nhân viên" in breakdown
+    assert "Chụp biểu đồ" in breakdown
+    assert "Chụp toàn bộ section & copy" not in breakdown
+    assert "Biểu đồ dịch vụ theo nhân viên" in breakdown
     assert "Biểu đồ tiền TIP theo nhân viên" in breakdown
     assert "elementToPngBlob" in clipboard
