@@ -22,7 +22,8 @@ def test_revenue_net_summary_and_web_entry_permission_contract():
     assert 'label: \'TỔNG THU - TỔNG CHI\'' in page
     assert 'canCreateEntry = Boolean(data?.can_create_entry)' in page
     assert '<form className="revenue-entry-form"' in page
-    assert 'NHẬP BÁO CÁO THU CHI' in page
+    assert 'NHẬP DOANH THU - CHI PHÍ' in page
+    assert "const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'" in page
     assert 'saveRevenueEntry' in page
     assert 'Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ' in page
     assert '.revenue-grid{display:grid;grid-template-columns:repeat(5' in page
