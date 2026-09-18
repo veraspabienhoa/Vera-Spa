@@ -22,6 +22,7 @@ import vera_web_v2_permissions as permissions
 RELEASE = "revenue-leave-list-2026-09-04.3-report-summary-cells"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
+REVENUE_ENTRY_FEATURE = "revenue_entry_create"
 REVENUE_TIP_SETTING = "current_period_tip"
 REVENUE_SPREADSHEET_ID = os.getenv(
     "VERA_REVENUE_SHEET_ID",
@@ -50,6 +51,13 @@ class RevenueTipUpdate(BaseModel):
     amount: float = Field(ge=0, le=10_000_000_000_000)
     start_date: date | None = None
     end_date: date | None = None
+
+
+class RevenueEntryCreate(BaseModel):
+    transaction_date: date
+    transaction_type: str = Field(min_length=1, max_length=20)
+    amount: float = Field(gt=0, le=10_000_000_000_000)
+    note: str = Field(default="", max_length=1000)
 
 
 def _find_route(app, path: str, method: str):
@@ -363,9 +371,11 @@ def install_revenue_leave_list_routes(
     revenue_group = permissions.FEATURE_GROUPS.setdefault("Doanh thu", {})
     revenue_group[REVENUE_FEATURE] = "Xem Doanh thu"
     revenue_group[REVENUE_TIP_FEATURE] = "Nhập Tiền TIP trong kỳ"
+    revenue_group[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"
     permissions.FEATURES[REVENUE_FEATURE] = "Xem Doanh thu"
     permissions.FEATURES[REVENUE_TIP_FEATURE] = "Nhập Tiền TIP trong kỳ"
-    permissions.DEFAULT_ROLE_FEATURES.setdefault("admin", set()).update({REVENUE_FEATURE, REVENUE_TIP_FEATURE})
+    permissions.FEATURES[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"
+    permissions.DEFAULT_ROLE_FEATURES.setdefault("admin", set()).update({REVENUE_FEATURE, REVENUE_TIP_FEATURE, REVENUE_ENTRY_FEATURE})
 
     original_records = _find_route(app, "/v2/leave/records", "GET")
     original_daily_stats = _find_route(app, "/v2/leave/daily-stats", "GET")
@@ -383,8 +393,10 @@ def install_revenue_leave_list_routes(
             "summary_scope": "Report!B2 total income and Report!B3 total expense",
             "current_date_source": "Input!E:E latest parsed date in period",
             "period_tip": True,
-            "balance_formula": "total_income-total_expense-period_tip",
+            "net_formula": "total_income-total_expense",
+            "balance_formula": "(total_income-total_expense)-period_tip",
             "entry_form": True,
+            "web_entry": True,
             "report_link": True,
         }
 
@@ -408,11 +420,13 @@ def install_revenue_leave_list_routes(
             require_feature(conn, ident, REVENUE_FEATURE)
             tip_setting = _period_tip(conn, summary.get("start_date", ""), summary.get("current_date", ""))
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
+            can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
         tip = float(tip_setting["amount"])
         summary["period_tip"] = round(tip, 2)
         summary["period_tip_start"] = tip_setting["period_start"]
         summary["period_tip_end"] = tip_setting["period_end"]
-        summary["balance"] = round(summary["total_income"] - summary["total_expense"] - tip, 2)
+        summary["net_income"] = round(summary["total_income"] - summary["total_expense"], 2)
+        summary["balance"] = round(summary["net_income"] - tip, 2)
         return {
             "ok": True,
             "release": RELEASE,
@@ -424,7 +438,57 @@ def install_revenue_leave_list_routes(
             "entry_form_url": REVENUE_ENTRY_FORM_URL,
             "report_url": REVENUE_REPORT_URL,
             "can_edit_tip": can_edit_tip,
+            "can_create_entry": can_create_entry,
             **summary,
+        }
+
+    @app.post("/v2/revenue/entry")
+    def create_revenue_entry(body: RevenueEntryCreate, ident=Depends(current_identity)):
+        tx_type = str(body.transaction_type or "").strip().casefold()
+        if tx_type not in {"thu", "chi"}:
+            raise HTTPException(400, "Loại giao dịch phải là Thu hoặc Chi.")
+
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_ENTRY_FEATURE)
+            email = conn.execute(text("""
+                SELECT COALESCE(email,'') FROM employees
+                WHERE lower(username)=lower(:username)
+                LIMIT 1
+            """), {"username": getattr(ident, "employee_username", "")}).scalar_one_or_none() or ""
+
+        try:
+            worksheet = google_client().open_by_key(REVENUE_SPREADSHEET_ID).worksheet(REVENUE_WORKSHEET)
+            headers = worksheet.row_values(1)
+            if not headers:
+                raise RuntimeError("Sheet Input chưa có hàng tiêu đề.")
+            normalized = [norm(value) for value in headers]
+            now = datetime.now(VN_TZ)
+            values = [""] * len(headers)
+
+            def put(label: str, value: Any) -> None:
+                key = norm(label)
+                if key in normalized:
+                    values[normalized.index(key)] = value
+
+            put("Dấu thời gian", now.strftime("%d/%m/%Y %H:%M:%S"))
+            put("Loại giao dịch", "Thu" if tx_type == "thu" else "Chi")
+            put("Số tiền", round(float(body.amount), 2))
+            put("Ngày giao dịch", body.transaction_date.strftime("%d/%m/%Y"))
+            put("Ghi chú", str(body.note or "").strip())
+            put("Địa chỉ email", email)
+            put("Người nhập", getattr(ident, "employee_username", ""))
+            worksheet.append_row(values, value_input_option="USER_ENTERED")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                503,
+                f"Không ghi được Quản lý Thu Chi · Input: {type(exc).__name__}: {exc}",
+            ) from exc
+
+        return {
+            "ok": True,
+            "message": f"Đã ghi {('Thu' if tx_type == 'thu' else 'Chi')} {round(float(body.amount)):,}đ vào Quản lý Thu Chi · Input.".replace(",", "."),
         }
 
     @app.put("/v2/revenue/tip")
