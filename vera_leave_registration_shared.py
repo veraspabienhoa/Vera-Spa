@@ -179,6 +179,10 @@ def is_video(reason: str) -> bool:
     return norm(reason) == "nghi phep quay video"
 
 
+def is_bereavement(reason: str) -> bool:
+    return norm(reason) == "nghi dam hieu"
+
+
 def is_long_sick(reason: str) -> bool:
     return norm(reason) == "nghi benh co giay kham hoac duoc quan ly duyet"
 
@@ -190,11 +194,19 @@ def is_annual(reason: str) -> bool:
 def quota_group(reason: str, leave_type: str = "") -> str:
     """Canonical daily-quota group shared by registration and statistics.
 
-    Leader and Được duyệt rows remain visible in leave reports but are exempt
-    from daily headcount quotas. Phép năm still consumes the paid-leave quota.
+    Leader, Được duyệt, Nghỉ đám hiếu and Nghỉ phép quay video remain visible
+    in leave reports but are exempt from daily headcount quotas. Phép năm still
+    consumes the paid-leave quota.
     """
     type_key = norm(leave_type)
-    if type_key in {"leader", "duoc duyet"}:
+    reason_key = norm(reason)
+    if (
+        type_key in {"leader", "duoc duyet", "dam hieu", "phep video", "quay video"}
+        or "dam hieu" in type_key
+        or "quay video" in type_key
+        or is_bereavement(reason_key)
+        or is_video(reason_key)
+    ):
         return ""
     if type_key == "phep nam":
         return "co_phep"
@@ -256,9 +268,16 @@ def summarize_leave_day(rows, active_employee_count: int) -> dict[str, int]:
 
 
 def _row_leave_group(row) -> str:
-    """Resolve the canonical leave group for API/statistics rows."""
+    """Resolve the reporting group; quota exemptions are handled separately."""
     type_key = norm(row.get("leave_type", ""))
-    if type_key in {"leader", "duoc duyet", "phep nam"}:
+    reason = str(row.get("leave_reason", "") or "")
+    if (
+        type_key in {"leader", "duoc duyet", "phep nam", "dam hieu", "phep video", "quay video"}
+        or "dam hieu" in type_key
+        or "quay video" in type_key
+        or is_bereavement(reason)
+        or is_video(reason)
+    ):
         return "co_phep"
     if type_key == "khong phep":
         return "khong_phep"
@@ -266,7 +285,7 @@ def _row_leave_group(row) -> str:
         return "phat_sinh"
     if "co phep" in type_key:
         return "co_phep"
-    return ""
+    return group(reason)
 
 
 def count_unique_leave_people(rows) -> dict[str, int]:
