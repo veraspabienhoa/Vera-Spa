@@ -45,7 +45,7 @@ from vera_google_credentials import google_credentials
 from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
 from vera_employee_self_service_policy import notice_days as employee_self_service_notice_days
 from vera_letan_leave_policy import load_policy as load_letan_leave_policy
-from vera_leave_registration_shared import summarize_leave_day
+from vera_leave_registration_shared import count_unique_leave_people, quota_group, summarize_leave_day
 from vera_json import json_safe, json_text
 from vera_progressive_penalty import (
     applies as progressive_penalty_applies,
@@ -1265,13 +1265,20 @@ def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dic
                 if limit > 0 and used + days > limit:
                     raise HTTPException(400, f"Vượt số ngày Có phép trong tháng; tối đa {limit:g} ngày/tháng.")
 
-        # Current legacy group quota: 4 Có phép and 1 Phát sinh/day. KHÔNG phép is not capped.
-        group = _group(item["name"])
+        # Daily quota uses the same canonical classifier as the statistics API.
+        # Leader and Được duyệt are intentionally exempt and do not consume quota.
+        group = quota_group(item["name"], item.get("leave_type", ""))
         if group in {"co_phep", "phat_sinh"} and not (_is_video(item["name"]) or _is_long_sick(item["name"])):
-            day_reasons = conn.execute(text("SELECT leave_reason FROM leave_records WHERE leave_date=:d"), {"d": body.leave_date}).scalars().all()
-            count = sum(1 for r in day_reasons if _group(r) == group)
-            limit = 4 if group == "co_phep" else 1
-            if count >= limit:
+            day_rows = conn.execute(text("""
+                SELECT employee_name, leave_reason, leave_type, calculated_days
+                FROM leave_records
+                WHERE leave_date=:d
+            """), {"d": body.leave_date}).mappings().all()
+            people = count_unique_leave_people(day_rows)
+            day_quota = _daily_quota_config(conn)["days"][body.leave_date.weekday()]
+            limit = int(day_quota["paid_limit"] if group == "co_phep" else day_quota["generated_limit"])
+            current = int(people["paid"] if group == "co_phep" else people["generated"])
+            if limit > 0 and current >= limit:
                 label = "CÓ phép" if group == "co_phep" else "PHÁT SINH"
                 raise HTTPException(400, f"Ngày {body.leave_date.strftime('%d/%m/%Y')} đã đủ {limit} người {label}.")
 

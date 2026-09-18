@@ -187,6 +187,26 @@ def is_annual(reason: str) -> bool:
     return "phep nam" in norm(reason)
 
 
+def quota_group(reason: str, leave_type: str = "") -> str:
+    """Canonical daily-quota group shared by registration and statistics.
+
+    Leader and Được duyệt rows remain visible in leave reports but are exempt
+    from daily headcount quotas. Phép năm still consumes the paid-leave quota.
+    """
+    type_key = norm(leave_type)
+    if type_key in {"leader", "duoc duyet"}:
+        return ""
+    if type_key == "phep nam":
+        return "co_phep"
+    if type_key == "khong phep":
+        return "khong_phep"
+    if "phat sinh" in type_key:
+        return "phat_sinh"
+    if "co phep" in type_key:
+        return "co_phep"
+    return group(reason)
+
+
 def summarize_leave_day(rows, active_employee_count: int) -> dict[str, int]:
     """Return staff coverage metrics without double-counting leave records.
 
@@ -256,14 +276,23 @@ def count_unique_leave_people(rows) -> dict[str, int]:
         "phat_sinh": set(),
         "khong_phep": set(),
     }
+    all_leave_employees: set[str] = set()
     for row in rows or []:
         try:
             employee_key = norm(row.get("employee_name", ""))
             calculated_days = number(row.get("calculated_days", 0), default=0)
-            policy_group = _row_leave_group(row)
+            policy_group = quota_group(
+                row.get("leave_reason", ""),
+                row.get("leave_type", ""),
+            )
         except (AttributeError, TypeError):
             continue
-        if not employee_key or policy_group not in grouped_employees:
+        if not employee_key:
+            continue
+        reporting_group = _row_leave_group(row)
+        if reporting_group in grouped_employees:
+            all_leave_employees.add(employee_key)
+        if policy_group not in grouped_employees:
             continue
         # Zero-day CÓ phép entries (for example a non-leave operational row)
         # do not consume the daily paid-leave quota.
@@ -271,9 +300,8 @@ def count_unique_leave_people(rows) -> dict[str, int]:
             continue
         grouped_employees[policy_group].add(employee_key)
 
-    all_employees = set().union(*grouped_employees.values())
     return {
-        "total_leave": len(all_employees),
+        "total_leave": len(all_leave_employees),
         "paid": len(grouped_employees["co_phep"]),
         "generated": len(grouped_employees["phat_sinh"]),
         "unpaid": len(grouped_employees["khong_phep"]),
