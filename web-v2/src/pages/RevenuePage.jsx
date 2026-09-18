@@ -362,14 +362,14 @@ export default function RevenuePage() {
         </div>
 
         <div className="reconcile-grid">
-          <div className="report-box"><h3><FileSpreadsheet size={16}/> BaoCaoMuaHang.xlsb · Input</h3><div className="input-report-filters"><label>Ngày nhập<VeraDateInput value={purchaseDate} onChange={event => setPurchaseDate(event.target.value)}/></label><button type="button" className="secondary-button" onClick={() => setPurchaseDate('')}>Tất cả ngày</button></div><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày nhập</th><th>Chi tiết hàng hóa</th><th className="money">Số lượng</th><th className="money">Đơn giá</th><th className="money">Thành Tiền</th><th>Người đặt</th><th>User</th></tr></thead><tbody>
-            {purchaseRows.map((row, index) => <tr key={`${row.date}-${index}`}><td>{row.date_label}</td><td>{row.item || '—'}</td><td className="money">{numberText(row.quantity)}</td><td className="money">{money(row.unit_price)}</td><td className="money">{money(row.amount)}</td><td>{row.buyer || '—'}</td><td>{row.user || '—'}</td></tr>)}
-            {!purchaseRows.length && <tr><td colSpan="7">Không có dữ liệu.</td></tr>}
-          </tbody></table></div></div>
-
           <div className="report-box"><h3><FileSpreadsheet size={16}/> Quản lý Thu Chi · Input</h3><div className="input-report-filters"><label>Ngày<VeraDateInput value={ledgerDate} onChange={event => setLedgerDate(event.target.value)}/></label><label>B · Loại giao dịch<select value={ledgerType} onChange={event => setLedgerType(event.target.value)}><option value="">Tất cả</option>{ledgerTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label><button type="button" className="secondary-button" onClick={() => { setLedgerDate(''); setLedgerType('') }}>Xóa lọc</button></div><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>B · Loại giao dịch</th><th className="money">C · Số tiền</th><th>Ghi chú</th></tr></thead><tbody>
             {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td>{row.date_label}</td><td>{row.type}</td><td className="money">{money(row.amount)}</td><td>{row.note || '—'}</td></tr>)}
             {!ledgerRows.length && <tr><td colSpan="4">Không có dữ liệu.</td></tr>}
+          </tbody></table></div></div>
+
+          <div className="report-box"><h3><FileSpreadsheet size={16}/> BaoCaoMuaHang.xlsb · Input</h3><div className="input-report-filters"><label>Ngày nhập<VeraDateInput value={purchaseDate} onChange={event => setPurchaseDate(event.target.value)}/></label><button type="button" className="secondary-button" onClick={() => setPurchaseDate('')}>Tất cả ngày</button></div><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày nhập</th><th>Chi tiết hàng hóa</th><th className="money">Số lượng</th><th className="money">Đơn giá</th><th className="money">Thành Tiền</th><th>Người đặt</th><th>User</th></tr></thead><tbody>
+            {purchaseRows.map((row, index) => <tr key={`${row.date}-${index}`}><td>{row.date_label}</td><td>{row.item || '—'}</td><td className="money">{numberText(row.quantity)}</td><td className="money">{money(row.unit_price)}</td><td className="money">{money(row.amount)}</td><td>{row.buyer || '—'}</td><td>{row.user || '—'}</td></tr>)}
+            {!purchaseRows.length && <tr><td colSpan="7">Không có dữ liệu.</td></tr>}
           </tbody></table></div></div>
         </div>
 
