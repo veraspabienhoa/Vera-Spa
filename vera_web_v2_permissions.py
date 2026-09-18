@@ -126,6 +126,163 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
 }
 FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in group.items()}
 
+# Permissions that cannot function safely/usefully without their prerequisite
+# view/container permissions. Saving permissions always expands the full
+# transitive closure so Admin cannot accidentally grant an action while hiding
+# the screen/API surface required to use that action.
+FEATURE_DEPENDENCIES: dict[str, set[str]] = {
+    # Bảng tua
+    "tour_refresh": {"tour"},
+    "tour_leave_sync": {"tour"},
+
+    # Live Tour
+    "live_tour_operate": {"live_tour_view"},
+    "live_tour_reorder": {"live_tour_view", "live_tour_operate"},
+    "live_tour_booking": {"live_tour_view"},
+    "live_tour_payment": {"live_tour_view"},
+    "live_tour_invoice_view": {"live_tour_view"},
+    "live_tour_paid_invoice_view": {"live_tour_view"},
+    "live_tour_paid_invoice_edit": {"live_tour_paid_invoice_view"},
+    "live_tour_paid_invoice_delete": {"live_tour_paid_invoice_view"},
+    "live_tour_pending_view": {"live_tour_view"},
+    "live_tour_invoice_edit": {"live_tour_invoice_view", "live_tour_pending_view"},
+    "live_tour_invoice_delete": {"live_tour_invoice_view", "live_tour_pending_view"},
+    "live_tour_customers_view": {"live_tour_view"},
+    "live_tour_customers_edit": {"live_tour_customers_view"},
+    "live_tour_customers_delete": {"live_tour_customers_view"},
+    "live_tour_customer_combo_edit": {"live_tour_customers_view"},
+    "live_tour_customer_combo_delete": {"live_tour_customers_view"},
+    "live_tour_reports_view": {"live_tour_view"},
+    "live_tour_reports_edit": {"live_tour_reports_view", "live_tour_paid_invoice_view"},
+    "live_tour_reports_delete": {"live_tour_reports_view", "live_tour_paid_invoice_view"},
+    "live_tour_history_view": {"live_tour_view"},
+    "live_tour_backup": {"live_tour_view"},
+    "live_tour_admin": {"live_tour_view"},
+    "live_tour_export": {"live_tour_view"},
+    "live_tour_invoice_date_edit": {"live_tour_paid_invoice_edit"},
+
+    # Lịch nghỉ
+    "leave_manage": {"leave"},
+    "leave_create": {"leave"},
+    "leave_export": {"leave"},
+    "leave_email": {"leave_manage"},
+    "leave_detail_edit": {"leave_manage"},
+    "leave_detail_delete": {"leave_manage"},
+    "leave_manage_edit": {"leave_manage"},
+    "leave_manage_delete": {"leave_manage"},
+    "leave_today_khong_phep_edit_delete": {"leave_manage"},
+    "employee_penalty_view": {"leave_manage"},
+
+    # Phép năm / Làm đẹp / Nghỉ việc
+    "long_leave_form": {"long_leave"},
+    "resignation_form": {"long_leave"},
+    "long_leave_stats": {"long_leave"},
+    "long_leave_document": {"long_leave"},
+    "long_leave_pause": {"long_leave"},
+    "long_leave_manual_add": {"long_leave"},
+    "long_leave_approve": {"long_leave", "long_leave_stats"},
+    "long_leave_reject": {"long_leave", "long_leave_stats"},
+    "long_leave_end": {"long_leave", "long_leave_stats"},
+    "long_leave_delete": {"long_leave", "long_leave_stats"},
+    "long_leave_export": {"long_leave", "long_leave_stats"},
+
+    # Nhân viên
+    "staff_export": {"staff_list"},
+    "staff_import": {"staff_list"},
+    "employee_add": {"staff_list"},
+    "employee_add_save": {"staff_list", "employee_add"},
+    "employee_edit": {"staff_list"},
+    "employee_edit_save": {"staff_list", "employee_edit"},
+    "employment_status": {"staff_list"},
+    "employment_status_edit": {"staff_list", "employment_status"},
+    "employee_delete": {"staff_list"},
+    "employee_delete_confirm": {"staff_list", "employee_delete"},
+    "account_lock": {"staff_list"},
+    "account_lock_edit": {"staff_list", "account_lock"},
+    "employees_visibility_manage": {"staff_list"},
+    "registration_lock": {"staff_list"},
+    "registration_lock_edit": {"staff_list", "registration_lock"},
+    "shift": {"staff_list"},
+    "shift_definition_edit": {"staff_list", "shift"},
+    "shift_break_config_edit": {"staff_list", "shift"},
+    "shift_assignment_edit": {"staff_list", "shift"},
+    "shift_plan_edit": {"staff_list", "shift"},
+    "shift_assignment_clear": {"staff_list", "shift"},
+    "shift_import": {"staff_list", "shift"},
+    "shift_export_pdf": {"staff_list", "shift"},
+
+    # Cài đặt ca Leader / Nhân viên
+    "ktv_shift_create": {"ktv_shift_view"},
+    "ktv_shift_edit": {"ktv_shift_view"},
+    "ktv_shift_delete": {"ktv_shift_view"},
+
+    # Hợp đồng
+    "contract_1_export_self": {"contract_1_view"},
+    "contract_1_export_bulk": {"contract_1_view"},
+    "contract_1_template_edit": {"contract_1_view"},
+    "contract_1_settings_edit": {"contract_1_view"},
+
+    # Nội quy
+    "official_rules_edit": {"official_rules_view"},
+    "official_rules_export": {"official_rules_view"},
+    "official_rules_import": {"official_rules_view"},
+
+    # Bảng lương
+    "payroll_history": {"payroll"},
+    "payroll_calculate": {"payroll"},
+    "payroll_config_edit": {"payroll"},
+    "payroll_penalty_obligation": {"payroll"},
+    "payroll_save": {"payroll"},
+    "payroll_export": {"payroll"},
+    "payroll_email": {"payroll"},
+    "payroll_history_edit": {"payroll", "payroll_history"},
+    "payroll_history_delete": {"payroll", "payroll_history"},
+
+    # Chấm công / hệ thống
+    "snapshot_export": {"snapshot_today"},
+    "auto_penalty_control": {"auto_penalty"},
+    "auto_penalty_run": {"auto_penalty"},
+    "sync_timesoft_fetch": {"sync"},
+    "sync_timesoft_api": {"sync"},
+    "sync_leave_export": {"sync"},
+    "sync_postgres": {"sync"},
+    "column_config_edit": {"column_config"},
+    "profile_edit": {"profile"},
+    "birthday_check": {"birthday"},
+    "storage_export": {"storage_admin_view"},
+    "storage_delete": {"storage_admin_view"},
+
+    # Doanh thu is registered dynamically by the revenue module.
+    "revenue_tip_edit": {"revenue_view"},
+    "revenue_entry_create": {"revenue_view"},
+}
+
+
+def permission_closure(features: set[str] | list[str] | tuple[str, ...]) -> set[str]:
+    """Return features plus every transitive prerequisite currently registered."""
+    allowed = {str(feature).strip() for feature in features if str(feature).strip()}
+    changed = True
+    while changed:
+        changed = False
+        for feature in tuple(allowed):
+            for dependency in FEATURE_DEPENDENCIES.get(feature, set()):
+                if dependency in FEATURES and dependency not in allowed:
+                    allowed.add(dependency)
+                    changed = True
+    return allowed
+
+
+def dependent_features(feature: str) -> set[str]:
+    """Return all registered permissions that transitively require *feature*."""
+    wanted = str(feature or "").strip()
+    output: set[str] = set()
+    for candidate in FEATURES:
+        if candidate == wanted:
+            continue
+        if wanted in permission_closure({candidate}):
+            output.add(candidate)
+    return output
+
 FRONTDESK = {
     "tour", "tour_refresh", "tour_leave_sync", "leave", "leave_manage", "leave_create", "leave_export", "leave_email", "leave_detail_edit", "leave_detail_delete",
     "live_tour_view", "live_tour_operate", "live_tour_reorder", "live_tour_payment", "live_tour_export",
@@ -201,6 +358,7 @@ def install_permission_routes(
             "account_overrides": {item["username"]: _scope_rows(payload, "account", item["username"]) for item in accounts},
             "defaults": {role: sorted(DEFAULT_ROLE_FEATURES.get(role, set())) for role in ROLES},
             "legacy_inheritance": LEGACY_FEATURE_INHERITANCE,
+            "dependencies": {key: sorted(value) for key, value in FEATURE_DEPENDENCIES.items() if key in FEATURES},
             "revision": int(row.get("revision") or 0) if row else 0,
         }
 
@@ -239,7 +397,7 @@ def install_permission_routes(
             ]
             now = datetime.now(vn_tz)
             if not (scope == "account" and body.inherit):
-                allowed = set(body.allowed_features)
+                allowed = permission_closure(set(body.allowed_features))
                 keep.extend({"target": target, "feature": feature, "allowed": feature in allowed} for feature in FEATURES)
             payload[key] = keep
             payload.setdefault("roles" if key == "accounts" else "accounts", [])
@@ -283,7 +441,8 @@ def install_permission_routes(
                 )
             return {
                 "ok": True,
-                "message": "Đã lưu phân quyền THÀNH CÔNG",
+                "message": "Đã lưu phân quyền THÀNH CÔNG. Các quyền nền bắt buộc đã được tự động bổ sung.",
+                "allowed_features": sorted(allowed) if not (scope == "account" and body.inherit) else [],
                 "revision": revision + 1,
                 "mirror_pending": bool(mirror_warning),
                 "warnings": [mirror_warning] if mirror_warning else [],
