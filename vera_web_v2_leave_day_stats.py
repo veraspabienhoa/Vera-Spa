@@ -10,7 +10,7 @@ from sqlalchemy import text
 from vera_leave_registration_shared import count_unique_leave_people, summarize_leave_days
 
 
-LEAVE_DAY_STATS_RELEASE = "leave-day-stats-2026-09-01.1-all-visible"
+LEAVE_DAY_STATS_RELEASE = "leave-day-stats-2026-09-18.2-shared-quota-classifier"
 
 
 def _remove_route(app, path: str, method: str) -> None:
@@ -100,10 +100,7 @@ def install_leave_day_stats_routes(
                 "paid_limit": paid_limit,
                 "generated_limit": generated_limit,
                 "paid_full": people["paid"] >= paid_limit,
-                "generated_full": (
-                    people["generated"] > 0 if generated_limit == 0
-                    else people["generated"] >= generated_limit
-                ),
+                "generated_full": generated_limit > 0 and people["generated"] >= generated_limit,
             }
             if can_view_penalty:
                 item["total_penalty"] = bucket["total_penalty"]
