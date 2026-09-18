@@ -148,6 +148,14 @@ def _cccd_number(value: str) -> str:
     return raw
 
 
+def _secure_text_equal(left: Any, right: Any) -> bool:
+    """Constant-time comparison that also supports Vietnamese/non-ASCII text."""
+    return hmac.compare_digest(
+        str(left or "").encode("utf-8"),
+        str(right or "").encode("utf-8"),
+    )
+
+
 def install_profile_routes(
     app, *, engine_instance: Callable[[], Any], current_identity,
     require_feature: Callable[[Any, Any, str], None], identity_type,
@@ -222,8 +230,8 @@ def install_profile_routes(
             if not current:
                 raise HTTPException(404, "Không tìm thấy hồ sơ nhân viên.")
             must_change_password = bool((current.get("payload") or {}).get("must_change_password"))
-            if (new_password or must_change_password) and not hmac.compare_digest(
-                str(current.get("password_value") or ""), str(body.current_password)
+            if (new_password or must_change_password) and not _secure_text_equal(
+                current.get("password_value"), body.current_password
             ):
                 raise HTTPException(400, "Mật khẩu hiện tại không đúng.")
             if must_change_password and not new_password:
@@ -236,7 +244,7 @@ def install_profile_routes(
                 )
                 if policy_error:
                     raise HTTPException(400, policy_error)
-                if hmac.compare_digest(str(current.get("password_value") or ""), new_password):
+                if _secure_text_equal(current.get("password_value"), new_password):
                     raise HTTPException(400, "Mật khẩu mới phải khác mật khẩu hiện tại.")
 
             updated = dict(current)

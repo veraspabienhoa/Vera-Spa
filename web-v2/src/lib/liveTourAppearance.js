@@ -47,7 +47,7 @@ const bounded = (value, min, max, fallback = 0) => {
 
 const cleanColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : ''
 
-const mergeDevice = (raw) => {
+const mergeDevice = (raw, roomHeightMax = 260) => {
   const base = defaultDevice()
   const room = raw?.room && typeof raw.room === 'object' ? raw.room : {}
   const roomText = raw?.room_text && typeof raw.room_text === 'object' ? raw.room_text : {}
@@ -55,7 +55,7 @@ const mergeDevice = (raw) => {
   const columnMap = new Map(sourceColumns.map((item) => [String(item?.key || ''), item]))
   return {
     room: {
-      height: bounded(room.height, 0, 260),
+      height: bounded(room.height, 0, roomHeightMax),
       width: bounded(room.width, 0, 520),
       columns_per_row: bounded(room.columns_per_row, 0, 20),
       rows: bounded(room.rows, 0, 20),
@@ -85,8 +85,8 @@ const mergeDevice = (raw) => {
 
 export function mergeLiveTourAppearance(raw) {
   return {
-    desktop: mergeDevice(raw?.desktop),
-    mobile: mergeDevice(raw?.mobile),
+    desktop: mergeDevice(raw?.desktop, 1000),
+    mobile: mergeDevice(raw?.mobile, 260),
   }
 }
 

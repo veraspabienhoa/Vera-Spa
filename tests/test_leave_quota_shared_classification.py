@@ -51,5 +51,5 @@ def test_registration_and_stats_share_the_same_quota_classifier_and_config():
     assert "count_unique_leave_people(bucket[\"rows\"])" in stats
     assert "generated_limit > 0 and people[\"generated\"] >= generated_limit" in stats
 
-    assert 'if type_key in {"leader", "duoc duyet"}:' in shared
+    assert '"leader", "duoc duyet", "dam hieu", "phep video", "quay video"' in shared
     assert "policy_group = quota_group(" in shared
