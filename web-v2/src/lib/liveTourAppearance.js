@@ -145,7 +145,7 @@ export function buildLiveTourAppearanceCss(deviceSettings) {
     lines.push(`html body .live-tour-page .tour-room-grid{grid-template-columns:repeat(auto-fill,minmax(${roomWidth}px,1fr))!important}`)
   }
   if (roomRows > 0) {
-    const effectiveHeight = roomHeight > 0 ? roomHeight : 96
+    const effectiveHeight = roomHeight > 0 ? roomHeight : 110.4
     lines.push(`html body .live-tour-page .tour-room-grid{max-height:${roomRows * effectiveHeight + Math.max(0, roomRows - 1) * 4}px!important;overflow-y:auto!important;overflow-x:hidden!important}`)
   }
   const selectors = {
