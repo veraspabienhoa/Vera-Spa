@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
-import { defaultTourMonthFilters, EMPTY_TOUR_FILTERS, filterTourRows, tourFilterOptions } from '../src/lib/liveTourFilters.js'
+import { defaultTourMonthFilters, defaultTourYesterdayFilters, EMPTY_TOUR_FILTERS, filterTourRows, tourFilterOptions } from '../src/lib/liveTourFilters.js'
+import { summarizeEmployeeRevenue } from '../src/lib/liveTourEmployeeRevenue.js'
 const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
 Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
@@ -24,6 +25,22 @@ test('reports can start with the current Vietnam month selected', () => {
   assert.deepEqual(defaultTourMonthFilters(new Date('2026-09-13T05:00:00Z')), {
     ...EMPTY_TOUR_FILTERS, preset: 'month', date_from: '2026-09-01', date_to: '2026-09-30',
   })
+})
+test('reports default to yesterday in Vietnam time', () => {
+  assert.deepEqual(defaultTourYesterdayFilters(new Date('2026-09-13T05:00:00Z')), {
+    ...EMPTY_TOUR_FILTERS, preset: 'yesterday', date_from: '2026-09-12', date_to: '2026-09-12',
+  })
+})
+
+test('employee report totals aggregate service money and TIP by filtered report rows', () => {
+  assert.deepEqual(summarizeEmployeeRevenue([
+    { employee_name: 'An An', total: 550000, tip: 50000 },
+    { employee_name: 'An An', total: 220000, tip: 20000 },
+    { employee_name: 'Mỹ Duyên', total: 300000, tip: 0 },
+  ]), [
+    { employee: 'An An', service: 700000, tip: 70000, total: 770000, rows: 2 },
+    { employee: 'Mỹ Duyên', service: 300000, tip: 0, total: 300000, rows: 1 },
+  ])
 })
 test('suggestions include all invoice entries and report rows without duplicates', () => {
   const options = tourFilterOptions([...rows, { employee_name: 'Thúy Vy', customer_name: 'Khách Đào', service: 'Facial' }])
