@@ -12,12 +12,34 @@ export function defaultRevenueTipStart(currentDate) {
 }
 
 export function revenueTipRowDate(row) {
-  const value = row?.effective_at || row?.booked_at || row?.created_at || row?.business_date
+  const value = row?.business_date || row?.effective_at || row?.booked_at || row?.created_at
   if (!value) return ''
   const raw = String(value).trim()
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const vn = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw)
+  if (vn) return `${vn[3]}-${vn[2].padStart(2, '0')}-${vn[1].padStart(2, '0')}`
   const parsed = new Date(raw)
   return Number.isFinite(parsed.getTime()) ? vnDateFormatter.format(parsed) : ''
+}
+
+export function revenueTipValue(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const raw = String(value ?? '').trim()
+  if (!raw) return 0
+  const cleaned = raw.replace(/[^0-9,.-]/g, '')
+  if (!cleaned) return 0
+  let normalized = cleaned
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    const decimal = cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.') ? ',' : '.'
+    const thousands = decimal === ',' ? '.' : ','
+    normalized = cleaned.replaceAll(thousands, '').replace(decimal, '.')
+  } else if (/^-?\d{1,3}([.,]\d{3})+$/.test(cleaned)) {
+    normalized = cleaned.replace(/[.,]/g, '')
+  } else if (cleaned.includes(',')) {
+    normalized = cleaned.replace(',', '.')
+  }
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 export function revenueTipTotal(rows, startDate, endDate) {
@@ -25,7 +47,6 @@ export function revenueTipTotal(rows, startDate, endDate) {
   return Math.round((rows || []).reduce((sum, row) => {
     const rowDate = revenueTipRowDate(row)
     if (!rowDate || rowDate < startDate || rowDate > endDate) return sum
-    const tip = Number(row?.tip || 0)
-    return sum + (Number.isFinite(tip) ? tip : 0)
+    return sum + revenueTipValue(row?.tip)
   }, 0) * 100) / 100
 }
