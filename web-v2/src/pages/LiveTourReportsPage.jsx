@@ -5,7 +5,7 @@ import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourReceipt from '../components/LiveTourReceipt'
-import { defaultTourMonthFilters, filterTourRows } from '../lib/liveTourFilters'
+import { defaultTourYesterdayFilters, filterTourRows } from '../lib/liveTourFilters'
 import { invoiceMoneyValues } from '../lib/liveTourInvoiceMoney'
 import './SpaManagementPage.css'
 import './LiveTourReportsPage.css'
@@ -15,7 +15,7 @@ export default function LiveTourReportsPage({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const allowed = user?.role === 'admin' || user?.permissions?.live_tour_reports_view === true
   const [data, setData] = useState({ invoices: [], reports: [], performance: [], capabilities: {} })
-  const [filters, setFilters] = useState(defaultTourMonthFilters)
+  const [filters, setFilters] = useState(defaultTourYesterdayFilters)
   const [tab, setTab] = useState('revenue')
   const [performanceTiming, setPerformanceTiming] = useState('all')
   const [context, setContext] = useState(null)
