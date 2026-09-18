@@ -159,7 +159,7 @@ export default function PermissionsPage() {
         </div>
       </>}
       <label className="permission-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm quyền…" /></label>
-      <p className="permission-dependency-note">Mỗi khối bên dưới tương ứng một trang/menu. Có thể chọn riêng từng tác vụ. Nếu một tác vụ cần quyền mở trang, hệ thống tự bật quyền nền đó; khi tắt quyền mở trang, các tác vụ phụ thuộc cũng tự tắt.</p>
+      <p className="permission-dependency-note"><strong>Quyền phụ thuộc được tự động đồng bộ.</strong> Mỗi khối bên dưới tương ứng một trang/menu. Có thể chọn riêng từng tác vụ. Nếu một tác vụ cần quyền mở trang, hệ thống tự bật quyền nền đó; khi tắt quyền mở trang, các tác vụ phụ thuộc cũng tự tắt.</p>
     </section>
     <div className="permission-pages">
       {pages.map((page) => <section className="permission-page-card" key={page.id}>
