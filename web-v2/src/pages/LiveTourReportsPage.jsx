@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
+import LiveTourEmployeeRevenueBreakdown from '../components/LiveTourEmployeeRevenueBreakdown'
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourReceipt from '../components/LiveTourReceipt'
 import { defaultTourYesterdayFilters, filterTourRows } from '../lib/liveTourFilters'
@@ -65,6 +66,7 @@ export default function LiveTourReportsPage({ user }) {
       <LiveTourFilters value={filters} onChange={setFilters} rows={tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/>
       {tab === 'performance' && <div className="performance-status-filter" role="group" aria-label="Lọc kết quả thời gian dịch vụ">{[['all', 'Tất cả'], ['ontime', 'Đúng giờ'], ['late', 'Trễ'], ['early', 'Sớm']].map(([key, label]) => <button type="button" key={key} className="secondary-button" aria-pressed={performanceTiming === key} onClick={() => setPerformanceTiming(key)}>{label}</button>)}</div>}
       {tab === 'tip' ? <div className="live-tour-report-metrics"><div className="live-tour-report-metric"><span>Nhân viên có Tip</span><strong>{new Set(rows.map(row => row.employee_id || row.employee_name)).size}</strong></div><div className="live-tour-report-metric"><span>Tổng tiền Tip</span><strong>{money(rows.reduce((sum, row) => sum + Number(row.tip || 0), 0))}</strong></div></div> : tab === 'performance' ? <div className="live-tour-report-metrics"><div className="live-tour-report-metric"><span>Sớm</span><strong>{performance.filter(row => Number(row.completion_delta_minutes) < 0).length}</strong></div><div className="live-tour-report-metric"><span>Đúng giờ</span><strong>{performance.filter(row => Number(row.completion_delta_minutes) === 0).length}</strong></div><div className="live-tour-report-metric"><span>Trễ</span><strong>{performance.filter(row => Number(row.completion_delta_minutes) > 0).length}</strong></div></div> : <LiveTourRevenueSummary rows={rows} invoiceCount={reportInvoiceCount}/>}
+      {tab === 'revenue' && <LiveTourEmployeeRevenueBreakdown rows={reports}/>}
       <p>{rows.length} dòng</p>
       {grants.export && tab !== 'performance' && <button className="secondary-button" onClick={() => veraApi.exportLiveTourExcel(tab === 'tip' ? 'tip' : 'reports', { ...filters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}) }).catch(e => setError(e.message))}>Xuất Excel theo bộ lọc</button>}
       {tab === 'invoices' && !grants.paid_invoice_view && <p>Cần quyền Xem hóa đơn đã thanh toán để mở báo cáo hóa đơn.</p>}
