@@ -216,6 +216,8 @@ def quota_group(reason: str, leave_type: str = "") -> str:
         return "phat_sinh"
     if "co phep" in type_key:
         return "co_phep"
+    if type_key:
+        return ""
     return group(reason)
 
 
@@ -285,7 +287,7 @@ def _row_leave_group(row) -> str:
         return "phat_sinh"
     if "co phep" in type_key:
         return "co_phep"
-    return group(reason)
+    return ""
 
 
 def count_unique_leave_people(rows) -> dict[str, int]:
