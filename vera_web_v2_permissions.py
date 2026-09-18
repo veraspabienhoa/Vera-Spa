@@ -126,6 +126,136 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
 }
 FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in group.items()}
 
+# Permission UI is organized by actual Web V2 pages/menu surfaces. A page can
+# expose several independent actions while keeping one explicit view/open
+# permission. Dynamic features become visible automatically once registered.
+PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
+    {"id": "live-tour", "label": "Live Tour", "view_feature": "live_tour_view", "features": [
+        "live_tour_view", "live_tour_operate", "live_tour_reorder", "live_tour_booking",
+        "live_tour_payment", "live_tour_invoice_view", "live_tour_pending_view",
+        "live_tour_invoice_edit", "live_tour_invoice_delete", "live_tour_paid_invoice_view",
+        "live_tour_paid_invoice_edit", "live_tour_paid_invoice_delete",
+        "live_tour_invoice_date_edit", "live_tour_export",
+    ]},
+    {"id": "reports", "label": "Báo cáo Live Tour", "view_feature": "live_tour_reports_view", "features": [
+        "live_tour_reports_view", "live_tour_reports_edit", "live_tour_reports_delete",
+    ]},
+    {"id": "customers", "label": "Khách hàng", "view_feature": "live_tour_customers_view", "features": [
+        "live_tour_customers_view", "live_tour_customers_edit", "live_tour_customers_delete",
+        "live_tour_customer_combo_edit", "live_tour_customer_combo_delete",
+    ]},
+    {"id": "live-tour-settings", "label": "Cài đặt Live Tour", "view_feature": "live_tour_view", "features": [
+        "live_tour_admin", "live_tour_history_view", "live_tour_backup",
+    ]},
+    {"id": "tour", "label": "Bảng tua", "view_feature": "tour", "features": [
+        "tour", "tour_refresh", "tour_leave_sync",
+    ]},
+    {"id": "leave", "label": "Đăng ký nghỉ / Quản lý lịch nghỉ", "view_feature": "leave", "features": [
+        "leave", "leave_manage", "leave_create", "leave_export", "leave_email",
+        "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete",
+        "leave_today_khong_phep_edit_delete", "employee_penalty_view",
+    ]},
+    {"id": "schedule", "label": "Lịch làm việc", "view_feature": "", "features": [
+        "work_schedule_quanly", "work_schedule_letan", "work_schedule_locker", "work_schedule_tapvu",
+    ]},
+    {"id": "long-leave", "label": "Phép năm / Làm đẹp / Nghỉ việc", "view_feature": "long_leave", "features": [
+        "long_leave", "long_leave_form", "resignation_form", "long_leave_stats",
+        "long_leave_document", "long_leave_pause", "long_leave_manual_add",
+        "long_leave_approve", "long_leave_reject", "long_leave_end",
+        "long_leave_delete", "long_leave_export",
+    ]},
+    {"id": "employees", "label": "Nhân viên", "view_feature": "staff_list", "features": [
+        "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save",
+        "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
+        "employee_delete", "employee_delete_confirm", "account_lock", "account_lock_edit",
+        "employees_visibility_manage", "registration_lock", "registration_lock_edit",
+        "shift", "shift_definition_edit", "shift_break_config_edit", "shift_assignment_edit",
+        "shift_plan_edit", "shift_assignment_clear", "shift_import", "shift_export_pdf",
+    ]},
+    {"id": "ktv-shift", "label": "Cài đặt ca Leader / Nhân viên", "view_feature": "ktv_shift_view", "features": [
+        "ktv_shift_view", "ktv_shift_create", "ktv_shift_edit", "ktv_shift_delete",
+    ]},
+    {"id": "contract-1", "label": "Hợp đồng", "view_feature": "contract_1_view", "features": [
+        "contract_1_view", "contract_1_export_self", "contract_1_export_bulk",
+        "contract_1_template_edit", "contract_1_settings_edit",
+    ]},
+    {"id": "rules", "label": "Nội quy", "view_feature": "official_rules_view", "features": [
+        "official_rules_view", "official_rules_edit", "official_rules_export", "official_rules_import",
+    ]},
+    {"id": "payroll", "label": "Bảng lương / Tiền tích lũy", "view_feature": "payroll", "features": [
+        "payroll", "payroll_history", "payroll_calculate", "payroll_config_edit",
+        "payroll_penalty_obligation", "payroll_save", "payroll_export", "payroll_email",
+        "payroll_history_edit", "payroll_history_delete", "accumulation_view",
+    ]},
+    {"id": "revenue", "label": "Doanh thu", "view_feature": "revenue_view", "features": [
+        "revenue_view", "revenue_tip_edit", "revenue_entry_create",
+    ]},
+    {"id": "snapshot", "label": "Chấm công", "view_feature": "snapshot_today", "features": [
+        "snapshot_today", "snapshot_export",
+    ]},
+    {"id": "auto-check", "label": "Auto Check", "view_feature": "auto_penalty", "features": [
+        "auto_penalty", "auto_penalty_control", "auto_penalty_run",
+    ]},
+    {"id": "sync", "label": "Đồng bộ dữ liệu", "view_feature": "sync", "features": [
+        "sync", "sync_timesoft_fetch", "sync_timesoft_api", "sync_leave_export", "sync_postgres",
+    ]},
+    {"id": "appearance", "label": "Giao diện", "view_feature": "column_config", "features": [
+        "column_config", "column_config_edit",
+    ]},
+    {"id": "profile", "label": "Hồ sơ & mật khẩu", "view_feature": "profile", "features": [
+        "profile", "profile_edit",
+    ]},
+    {"id": "birthday", "label": "Sinh nhật", "view_feature": "birthday", "features": [
+        "birthday", "birthday_check",
+    ]},
+    {"id": "permissions", "label": "Phân quyền", "view_feature": "permission_admin", "features": [
+        "permission_admin",
+    ]},
+    {"id": "changes", "label": "Thay đổi hệ thống", "view_feature": "audit_admin_view", "features": [
+        "audit_admin_view",
+    ]},
+    {"id": "storage", "label": "Bộ nhớ hệ thống", "view_feature": "storage_admin_view", "features": [
+        "storage_admin_view", "storage_export", "storage_delete",
+    ]},
+    {"id": "guides", "label": "Tài liệu hướng dẫn", "view_feature": "guide_manage", "features": [
+        "guide_manage",
+    ]},
+]
+
+
+def permission_pages() -> list[dict[str, Any]]:
+    """Build page-oriented permission catalog without losing future features."""
+    pages: list[dict[str, Any]] = []
+    assigned: set[str] = set()
+    for page in PERMISSION_PAGE_LAYOUT:
+        features = {
+            key: FEATURES[key]
+            for key in page.get("features", [])
+            if key in FEATURES
+        }
+        if not features:
+            continue
+        assigned.update(features)
+        view_feature = str(page.get("view_feature") or "")
+        pages.append({
+            "id": page["id"],
+            "label": page["label"],
+            "view_feature": view_feature if view_feature in features else "",
+            "features": features,
+        })
+
+    for group_label, group in FEATURE_GROUPS.items():
+        leftovers = {key: label for key, label in group.items() if key not in assigned}
+        if leftovers:
+            pages.append({
+                "id": f"other:{group_label}",
+                "label": group_label,
+                "view_feature": "",
+                "features": leftovers,
+            })
+            assigned.update(leftovers)
+    return pages
+
 # Permissions that cannot function safely/usefully without their prerequisite
 # view/container permissions. Saving permissions always expands the full
 # transitive closure so Admin cannot accidentally grant an action while hiding
@@ -353,7 +483,7 @@ def install_permission_routes(
                 ORDER BY lower(username)
             """)).mappings().all()
         return {
-            "groups": FEATURE_GROUPS, "roles": ROLES, "accounts": [dict(item) for item in accounts],
+            "groups": FEATURE_GROUPS, "pages": permission_pages(), "roles": ROLES, "accounts": [dict(item) for item in accounts],
             "role_overrides": {role: _scope_rows(payload, "role", role) for role in ROLES},
             "account_overrides": {item["username"]: _scope_rows(payload, "account", item["username"]) for item in accounts},
             "defaults": {role: sorted(DEFAULT_ROLE_FEATURES.get(role, set())) for role in ROLES},
