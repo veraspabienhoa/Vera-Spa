@@ -11,6 +11,8 @@ from sqlalchemy.pool import NullPool
 import vera_live_tour_relational as live_tour
 import vera_resource_concurrency as concurrency
 import vera_postgres_job_queue as background_queue
+import vera_revenue_store as revenue_store
+from vera_web_v2_revenue_leave_list import REVENUE_SPREADSHEET_ID, REVENUE_WORKSHEET
 from vera_vps_data_check import (
     RUNTIME_ENV_KEYS,
     _database_url,
@@ -30,6 +32,7 @@ REQUIRED_TABLES = (
     live_tour.MUTATION_TABLE,
     live_tour.CLAIM_TABLE,
     background_queue.TABLE,
+    revenue_store.TABLE,
 )
 
 
@@ -37,6 +40,13 @@ def _backfill(conn) -> dict:
     concurrency.ensure_schema(conn)
     live_tour.ensure_schema(conn)
     background_queue.ensure_schema_conn(conn)
+    revenue_bootstrap_raw = revenue_store.bootstrap_from_google_sheet(
+        conn, spreadsheet_id=REVENUE_SPREADSHEET_ID, worksheet_name=REVENUE_WORKSHEET,
+    )
+    revenue_bootstrap = {
+        "skipped": bool(revenue_bootstrap_raw.get("skipped")),
+        "row_count": int(revenue_bootstrap_raw.get("row_count") or 0),
+    }
     conn.execute(text(f"""
         INSERT INTO {concurrency.REVISION_TABLE}(domain,resource_id,revision,updated_at)
         SELECT 'employee', lower(btrim(username)), 1, NOW() FROM employees
@@ -79,7 +89,7 @@ def _backfill(conn) -> dict:
         ON CONFLICT(component) DO UPDATE SET
           version=GREATEST(vera_schema_version.version,EXCLUDED.version), updated_at=NOW()
     """))
-    return mirrored
+    return {"live_tour": mirrored, "revenue": revenue_bootstrap}
 
 
 def _verify(conn) -> dict:
@@ -133,7 +143,7 @@ def run(*, apply: bool = False, verify: bool = False, engine=None) -> dict:
         backfill = _backfill(conn) if apply else None
         result = _verify(conn) if verify else {"ok": True}
         if backfill is not None:
-            result["live_tour_backfill"] = backfill
+            result["backfill"] = backfill
         if verify and not result.get("ok"):
             raise SystemExit("SYSTEM RESOURCE CONCURRENCY VERIFY: FAILED")
         return result
