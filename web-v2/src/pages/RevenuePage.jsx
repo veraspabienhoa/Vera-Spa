@@ -156,6 +156,9 @@ export default function RevenuePage({ user }) {
   const [purchaseUserFilter, setPurchaseUserFilter] = useState('')
   const role = String(user?.role || '').trim().toLowerCase()
   const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'
+  useEffect(() => {
+    if (!canViewAdminRevenueSummary && activeTab === 'overview') setActiveTab('ledger')
+  }, [activeTab, canViewAdminRevenueSummary])
   const purchaseRows = (detailData?.purchase_rows || []).filter(row => {
     const item = String(row.item || '').toLocaleLowerCase('vi')
     const buyer = String(row.buyer || '').toLocaleLowerCase('vi')
@@ -422,10 +425,10 @@ export default function RevenuePage({ user }) {
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày hiện tại</span><strong>{busy && !data ? '…' : (data?.current_date_label || '—')}</strong></div></article>
     </section>}
 
-    <div className="revenue-actions">
+    {canViewAdminRevenueSummary && <div className="revenue-actions">
       <a className="secondary-button revenue-action-link" href={entryUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Mở Google Form</a>
       <a className={`secondary-button revenue-action-link ${reportUrl ? '' : 'disabled'}`.trim()} href={reportUrl || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!reportUrl}><ExternalLink size={16} /> Xem báo cáo</a>
-    </div>
+    </div>}
 
     {canViewAdminRevenueSummary && canEditTip && <section className="revenue-tip-editor">
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
@@ -444,7 +447,7 @@ export default function RevenuePage({ user }) {
     </div>}
 
     <div className="revenue-tabs" role="tablist" aria-label="Doanh thu và chi phí">
-      <button type="button" className={`revenue-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Tổng quan</button>
+      {canViewAdminRevenueSummary && <button type="button" className={`revenue-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Tổng quan</button>}
       <button type="button" className={`revenue-tab ${activeTab === 'ledger' ? 'active' : ''}`} onClick={() => setActiveTab('ledger')}>Chi tiết Doanh thu - Chi phí</button>
       <button type="button" className={`revenue-tab ${activeTab === 'purchase' ? 'active' : ''}`} onClick={() => setActiveTab('purchase')}>Báo cáo mua hàng</button>
     </div>
@@ -483,7 +486,7 @@ export default function RevenuePage({ user }) {
       </tbody></table></div></div>}
     </section>}
 
-    {activeTab === 'overview' && <section className="reconcile-panel">
+    {canViewAdminRevenueSummary && activeTab === 'overview' && <section className="reconcile-panel">
       <div className="reconcile-head">
         <div><span className="eyebrow"><FileSpreadsheet size={14}/> Đối chiếu chi mua hàng</span><h2>BÁO CÁO MUA HÀNG ↔ QUẢN LÝ THU CHI</h2><p>So sánh từng ngày: tổng cột Thành Tiền của BaoCaoMuaHang với các dòng Input có B = Chi và nội dung mua hàng, số tiền lấy từ cột C. Chênh lệch từ 1đ đến 5.000đ được xếp GẦN KHỚP; trên 5.000đ là KHÔNG KHỚP.</p></div>
         <div className="reconcile-filter">
