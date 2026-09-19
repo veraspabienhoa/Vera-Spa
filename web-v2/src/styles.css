@@ -213,6 +213,22 @@ button:not(:disabled):not(.disabled):not(.search-clear-button):not(.vera-dropdow
   appearance: auto !important;
 }
 .vera-date-input.invalid > input[type="text"] { border-color: var(--danger); background: var(--danger-bg); box-shadow: 0 0 0 2px rgba(180,48,48,.1); }
+/* iOS Safari can reject showPicker()/synthetic click on a hidden date input.
+   On touch-only devices, let the real native date control cover the whole visible
+   field transparently so the user's physical tap opens the system calendar. */
+@media (hover: none) and (pointer: coarse) {
+  .vera-date-input:not(:has(.vera-date-picker-button:disabled)) > .vera-native-date-picker {
+    left: 0;
+    right: 0;
+    top: 0;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 4;
+  }
+  .vera-date-input > .vera-date-picker-button {
+    pointer-events: none;
+  }
+}
 .required-label { display: inline-flex; align-items: baseline; gap: 3px; }
 .required-star { color: #d31f1f; font-size: 14px; font-weight: 950; }
 .password-input-wrap { position: relative; display: block; width: 100%; }
