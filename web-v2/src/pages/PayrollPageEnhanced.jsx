@@ -107,6 +107,8 @@ export default function PayrollPageEnhanced({ user }) {
   const [file, setFile] = useState(null)
   const [draft, setDraft] = useState(null)
   const [draftSearch, setDraftSearch] = useState('')
+  const [draftNonPositiveOnly, setDraftNonPositiveOnly] = useState(false)
+  const [draftFormerOnly, setDraftFormerOnly] = useState(false)
   const [selected, setSelected] = useState([])
   const [config, setConfig] = useState(CONFIG_DEFAULT)
   const [accumulationRefunds, setAccumulationRefunds] = useState([])
@@ -219,10 +221,23 @@ export default function PayrollPageEnhanced({ user }) {
   const draftSalaryTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Tiền Lương'] || 0), 0), [draft])
   const draftRows = draft?.rows || []
   const draftNeedle = normalizeSearch(draftSearch)
-  const visibleDraftRows = useMemo(() => {
-    if (!draftNeedle) return draftRows
-    return draftRows.filter((row) => searchTextMatches([row['Tên Hệ thống'], row['Họ và tên']], draftNeedle))
-  }, [draftRows, draftNeedle])
+  const visibleDraftRows = useMemo(() => draftRows.filter((row) => {
+    if (draftNeedle && !searchTextMatches([row['Tên Hệ thống'], row['Họ và tên']], draftNeedle)) return false
+    if (draftNonPositiveOnly && Number(row['Số tiền thực nhận'] || 0) > 0) return false
+    if (draftFormerOnly && String(row.__employment_status || '').trim() !== 'Đã nghỉ việc') return false
+    return true
+  }), [draftRows, draftNeedle, draftNonPositiveOnly, draftFormerOnly])
+  const visibleDraftSummary = useMemo(() => {
+    const fields = [
+      'Tiền Lương', 'Tiền Hỗ Trợ Hoàn Lại', 'Hoàn trả tiền tích lũy', 'Tích lũy',
+      'Chi Phí Sinh Hoạt', 'Tiền phạt trong tháng', 'Vi phạm kỳ trước', 'Tiền ứng lương',
+      'Tiền hỗ trợ Locker', 'Số tiền thực nhận',
+    ]
+    return Object.fromEntries(fields.map((field) => [
+      field,
+      visibleDraftRows.reduce((sum, row) => sum + Number(row[field] || 0), 0),
+    ]))
+  }, [visibleDraftRows])
   const isBusy = Boolean(busy)
   const allVisibleSelected = visibleDraftRows.length > 0 && visibleDraftRows.every((row) => selected.includes(row['Tên Hệ thống']))
 
@@ -474,9 +489,26 @@ export default function PayrollPageEnhanced({ user }) {
       <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
       <div className="payroll-search-toolbar">
         <label className="payroll-search-box">Tìm tên nhân viên<Search size={16} /><ClearableSearchInput type="search" value={draftSearch} disabled={isBusy} placeholder={`Tìm trong ${draft.period_label}`} onChange={(event) => setDraftSearch(event.target.value)} /></label>
+        <div className="payroll-quick-filters">
+          <button type="button" className={`secondary-button ${draftNonPositiveOnly ? 'active-filter' : ''}`} onClick={() => setDraftNonPositiveOnly((value) => !value)} disabled={isBusy}>Thực nhận ≤ 0</button>
+          <button type="button" className={`secondary-button ${draftFormerOnly ? 'active-filter' : ''}`} onClick={() => setDraftFormerOnly((value) => !value)} disabled={isBusy}>Đã nghỉ việc</button>
+          {(draftNonPositiveOnly || draftFormerOnly || draftSearch) && <button type="button" className="secondary-button" onClick={() => { setDraftSearch(''); setDraftNonPositiveOnly(false); setDraftFormerOnly(false) }} disabled={isBusy}>Xóa lọc</button>}
+        </div>
         <div><strong>Hiển thị {visibleDraftRows.length}/{draftRows.length} nhân viên</strong></div>
       </div>
       {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllSelected} disabled={isBusy || !visibleDraftRows.length} /> Chọn tất cả nhân viên đang hiển thị để gửi email</label>}
+      <div className="payroll-column-summary" aria-label="Tổng các cột bảng lương đang hiển thị">
+        <div><span>Lương</span><strong>{money(visibleDraftSummary['Tiền Lương'])}</strong></div>
+        <div><span>Trách nhiệm / hỗ trợ</span><strong>{money(visibleDraftSummary['Tiền Hỗ Trợ Hoàn Lại'])}</strong></div>
+        <div><span>Hoàn trả tích lũy</span><strong>{money(visibleDraftSummary['Hoàn trả tiền tích lũy'])}</strong></div>
+        <div><span>Tích lũy</span><strong>{money(visibleDraftSummary['Tích lũy'])}</strong></div>
+        <div><span>Phí sinh hoạt</span><strong>{money(visibleDraftSummary['Chi Phí Sinh Hoạt'])}</strong></div>
+        <div><span>Vi phạm kỳ này</span><strong>{money(visibleDraftSummary['Tiền phạt trong tháng'])}</strong></div>
+        <div><span>Nợ vi phạm kỳ trước</span><strong>{money(visibleDraftSummary['Vi phạm kỳ trước'])}</strong></div>
+        <div><span>Tiền ứng</span><strong>{money(visibleDraftSummary['Tiền ứng lương'])}</strong></div>
+        <div><span>Hỗ trợ Locker</span><strong>{money(visibleDraftSummary['Tiền hỗ trợ Locker'])}</strong></div>
+        <div><span>Thực nhận</span><strong>{money(visibleDraftSummary['Số tiền thực nhận'])}</strong></div>
+      </div>
       <div className="responsive-data-table payroll-editor payroll-desktop-table payroll-fit-table"><table><thead><tr>{canEmail && <th>Gửi</th>}<th>Nhân viên</th><th>Lương</th>{Object.entries(EDIT_LABELS).map(([field, label]) => <th key={field}>{label}</th>)}<th>Thực nhận</th></tr></thead><tbody>{visibleDraftRows.map((row) => <tr className={isNonPositive(row) ? 'payroll-nonpositive' : ''} key={row['Tên Hệ thống']}>{canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${row['Tên Hệ thống']}`} checked={selected.includes(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} /></td>}<td><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></td><td className="money-cell">{money(row['Tiền Lương'])}</td>{Object.keys(EDIT_LABELS).map((field) => <td key={field}><div className="payroll-cell-actions"><input className="payroll-money-input" type="number" min="0" inputMode="numeric" disabled={isBusy} value={numberInputDisplayValue(row[field])} onChange={(event) => editMoney(row['Tên Hệ thống'], field, event.target.value)} />{field === 'Vi phạm kỳ trước' && <small>Đối trừ công nợ khi hoàn thành</small>}{field === 'Tiền phạt trong tháng' && canManageObligations && Number(row[field] || 0) > 0 && <button type="button" className="secondary-button compact payroll-defer-button" disabled={isBusy} onClick={() => deferPenalty(row)}><ArrowRightCircle size={13} /> Chuyển kỳ sau</button>}</div></td>)}<td className="money-cell"><strong>{money(row['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
       <div className="payroll-mobile-list">{visibleDraftRows.map((row) => <article className={`payroll-mobile-card${isNonPositive(row) ? ' payroll-nonpositive' : ''}`} key={row['Tên Hệ thống']}>
         <header className="payroll-mobile-head"><div className="payroll-mobile-person">{canEmail && <input type="checkbox" checked={selected.includes(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} />}<div><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']} · {row.Email || 'Chưa có email'}</small></div></div><span><small>Thực nhận</small><strong>{money(row['Số tiền thực nhận'])}</strong></span></header>

@@ -280,6 +280,19 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
     setStandaloneMenuOpen(false)
   }
 
+  const menuPageUrl = (id) => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('page', id)
+    url.searchParams.set('standalone', '1')
+    return url.toString()
+  }
+
+  const chooseFromLink = (event, id, ready) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    choose(id, ready)
+  }
+
   const beginMenuSwipe = (event) => {
     if (event.pointerType !== 'touch') return
     const target = event.target
@@ -357,9 +370,16 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             if (anyPermission && !anyPermission.some((key) => user?.permissions?.[key] === true)) return false
             return true
           }).map(({ id, label, icon: Icon, ready }) => (
-            <button key={id} className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`} onClick={() => choose(id, ready)} title={ready ? label : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}>
+            <a
+              key={id}
+              className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`}
+              href={ready ? menuPageUrl(id) : '#'}
+              onClick={(event) => chooseFromLink(event, id, ready)}
+              aria-disabled={!ready || undefined}
+              title={ready ? `${label} · Có thể nhấp chuột phải để mở tab mới` : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}
+            >
               <Icon size={19} /><span>{label}</span>{!ready && <span className="soon-pill">Sau</span>}
-            </button>
+            </a>
           ))}
         </nav>
 

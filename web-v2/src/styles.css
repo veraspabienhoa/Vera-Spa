@@ -249,7 +249,7 @@ button:not(:disabled):not(.disabled):not(.search-clear-button):not(.vera-dropdow
 .brand-subtitle { color: rgba(255,255,255,.58); font-size: 12px; margin-top: 3px; }
 .menu-caption { margin: 24px 10px 9px; color: rgba(255,255,255,.42); letter-spacing: .18em; font-size: 10px; font-weight: 800; }
 .nav-list { min-height: 0; display: grid; gap: 6px; overflow-y: auto; scrollbar-width: thin; }
-.nav-item { width: 100%; border: 0; background: transparent; color: rgba(255,255,255,.78); border-radius: 13px; padding: 11px 12px; display: grid; grid-template-columns: 23px 1fr auto; align-items: center; gap: 9px; text-align: left; transition: .18s ease; }
+.nav-item { width: 100%; border: 0; background: transparent; color: rgba(255,255,255,.78); border-radius: 13px; padding: 11px 12px; display: grid; grid-template-columns: 23px 1fr auto; align-items: center; gap: 9px; text-align: left; transition: .18s ease; text-decoration: none; cursor: pointer; }
 .nav-item:hover:not(.disabled) { background: rgba(255,255,255,.07); color: white; }
 .nav-item.active { background: linear-gradient(90deg, rgba(207,179,120,.22), rgba(255,255,255,.07)); color: #f8e9c9; box-shadow: inset 2px 0 0 #cfb378; }
 .nav-item.disabled { opacity: .48; cursor: default; }
@@ -630,16 +630,18 @@ tr:last-child td { border-bottom: 0; }
 .staff-list-selection-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: #f7faf8; }
 .staff-desktop-table { width: 100%; max-width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; }
 .staff-table { width: 100%; min-width: 0; table-layout: fixed; font-size: 10px; }
-.staff-table .staff-col-select { width: 4%; }
-.staff-table .staff-col-employee { width: 11%; }
+.staff-table .staff-col-select { width: 3%; }
+.staff-table .staff-col-employee { width: 9%; }
 .staff-table .staff-col-role { width: 8%; }
-.staff-table .staff-col-status { width: 11%; }
-.staff-table .staff-col-shift { width: 18%; }
-.staff-table .staff-col-date { width: 11%; }
-.staff-table .staff-col-cycle { width: 14%; }
-.staff-table .staff-col-lock { width: 5%; }
-.staff-table .staff-col-profile { width: 7%; }
-.staff-table .staff-col-admin { width: 11%; }
+.staff-table .staff-col-status { width: 9%; }
+.staff-table .staff-col-shift { width: 15%; }
+.staff-table .staff-col-date { width: 10%; }
+.staff-table .staff-col-cycle { width: 11%; }
+.staff-table .staff-col-lock { width: 4%; }
+.staff-table .staff-col-profile { width: 6%; }
+.staff-table .staff-col-exempt { width: 8%; }
+.staff-table .staff-col-payroll { width: 8%; }
+.staff-table .staff-col-admin { width: 10%; }
 .staff-table th { min-width: 0; padding: 7px 4px; background: #f1f5f2; font-size: 9px; line-height: 1.15; white-space: normal; overflow-wrap: anywhere; }
 .staff-table td { min-width: 0; padding: 7px 4px; vertical-align: middle; overflow: hidden; }
 .staff-table td > strong, .staff-table td > small { display: block; }

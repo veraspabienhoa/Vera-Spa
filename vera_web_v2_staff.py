@@ -105,6 +105,8 @@ class StaffUpdate(BaseModel):
     cccd_issue_date: str | None = Field(default=None, max_length=30)
     cccd_issue_place: str | None = Field(default=None, max_length=500)
     profile_hidden: bool | None = None
+    profile_requirement_exempt: bool | None = None
+    payroll_excluded: bool | None = None
 
 
 class StaffDelete(BaseModel):
@@ -270,6 +272,16 @@ def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
         "Ngày nghỉ việc": str(row.get("employment_end_date") or ""),
         "Trạng thái làm việc": status,
         "Ẩn nhân viên": _bool_value(row.get("profile_hidden")),
+        "Miễn yêu cầu đủ hồ sơ": _bool_value(
+            row.get("profile_requirement_exempt")
+            if row.get("profile_requirement_exempt") is not None
+            else (row.get("payload") or {}).get("Miễn yêu cầu đủ hồ sơ")
+        ),
+        "Không tính lương": _bool_value(
+            row.get("payroll_excluded")
+            if row.get("payroll_excluded") is not None
+            else (row.get("payload") or {}).get("Không tính lương")
+        ),
     })
     return payload
 
@@ -307,6 +319,8 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
         "employment_start_date": str(row.get("employment_start_date") or ""),
         "employment_end_date": str(row.get("employment_end_date") or payload.get("Ngày nghỉ việc") or ""),
         "profile_hidden": _bool_value(row.get("profile_hidden") if row.get("profile_hidden") is not None else payload.get("Ẩn nhân viên")),
+        "profile_requirement_exempt": _bool_value(payload.get("Miễn yêu cầu đủ hồ sơ")),
+        "payroll_excluded": _bool_value(payload.get("Không tính lương")),
     }
 
 
@@ -591,6 +605,8 @@ def install_staff_routes(
             require_feature(conn, ident, "account_lock_edit")
         if "profile_hidden" in values:
             require_feature(conn, ident, "employees_visibility_manage")
+        if {"profile_requirement_exempt", "payroll_excluded"}.intersection(values):
+            require_feature(conn, ident, "employee_edit_save")
 
         merged = dict(row)
         if "role" in values:
@@ -646,6 +662,10 @@ def install_staff_routes(
                 merged["remember_token_expiry"] = ""
         if "profile_hidden" in values:
             merged["profile_hidden"] = bool(values["profile_hidden"])
+        if "profile_requirement_exempt" in values:
+            merged["profile_requirement_exempt"] = bool(values["profile_requirement_exempt"])
+        if "payroll_excluded" in values:
+            merged["payroll_excluded"] = bool(values["payroll_excluded"])
         old_status = _effective_status(row, norm)
         status = _status_value(values.get("employment_status", old_status), norm)
         if str(merged.get("role") or "").lower() == "admin" and status != STATUS_OPTIONS[0]:

@@ -422,7 +422,8 @@ def _employee_catalog(conn, norm) -> dict[str, dict[str, Any]]:
         for item in conn.execute(text("""
             SELECT username,COALESCE(full_name,'') full_name,COALESCE(email,'') email,
                    COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
-                   COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status
+                   COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status,
+                   lower(COALESCE(payload->>'Không tính lương','false')) IN ('1','true','yes','y','có','x') payroll_excluded
             FROM employees
             WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
               AND COALESCE(payload->>'__deleted', 'false') <> 'true'
@@ -446,8 +447,10 @@ def _clean_draft_rows(
             continue
         if not key or key in seen or key not in employees:
             raise HTTPException(400, "Bảng lương có nhân viên trống, trùng tên hoặc không tồn tại.")
-        seen.add(key)
         employee = employees[key]
+        if bool(employee.get("payroll_excluded")):
+            continue
+        seen.add(key)
         row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
         row.update({
             "TT": len(clean_rows) + 1,
@@ -456,6 +459,7 @@ def _clean_draft_rows(
             "Email": employee["email"],
             "Số tài khoản ngân hàng": employee["bank_account"],
             "Tên ngân hàng": employee["bank_name"],
+            "__employment_status": employee.get("employment_status") or "Đang làm việc",
         })
         clean_rows.append(row)
     if not clean_rows:
@@ -1180,10 +1184,12 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             employees = [dict(row) for row in conn.execute(text("""
                 SELECT username,COALESCE(full_name,'') full_name,lower(COALESCE(role,'')) role,
                        COALESCE(email,'') email,COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
-                       COALESCE(employment_start_date,'') employment_start_date
+                       COALESCE(employment_start_date,'') employment_start_date,
+                       COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status
                 FROM employees
                 WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
                   AND COALESCE(payload->>'__deleted', 'false') <> 'true'
+                  AND lower(COALESCE(payload->>'Không tính lương','false')) NOT IN ('1','true','yes','y','có','x')
                 ORDER BY COALESCE(stt,2147483647),username
             """)).mappings().all()]
             penalties = conn.execute(text("""
@@ -1233,6 +1239,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 "Tiền hỗ trợ Locker": cfg["default_locker_support"], "Số tiền thực nhận": 0,
                 "Email": employee["email"], "Số tài khoản ngân hàng": employee["bank_account"],
                 "Tên ngân hàng": employee["bank_name"], "Số dòng Tip": int(counts.get(key, 0)),
+                "__employment_status": employee.get("employment_status") or "Đang làm việc",
             }
             rows.append(_net(row))
         return {

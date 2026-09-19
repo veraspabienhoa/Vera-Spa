@@ -109,6 +109,8 @@ function rowDraft(employee) {
     shift_start_date: toInputDate(employee.shift_start_date),
     rotation_cycle: employee.rotation_cycle || '',
     login_locked: Boolean(employee.login_locked),
+    profile_requirement_exempt: Boolean(employee.profile_requirement_exempt),
+    payroll_excluded: Boolean(employee.payroll_excluded),
   }
 }
 
@@ -120,6 +122,8 @@ function changedPayload(employee, draft) {
   if (datePayload(draft.shift_start_date) !== (employee.shift_start_date || '')) payload.shift_start_date = datePayload(draft.shift_start_date)
   if (draft.rotation_cycle !== (employee.rotation_cycle || '')) payload.rotation_cycle = draft.rotation_cycle
   if (Boolean(draft.login_locked) !== Boolean(employee.login_locked)) payload.login_locked = Boolean(draft.login_locked)
+  if (Boolean(draft.profile_requirement_exempt) !== Boolean(employee.profile_requirement_exempt)) payload.profile_requirement_exempt = Boolean(draft.profile_requirement_exempt)
+  if (Boolean(draft.payroll_excluded) !== Boolean(employee.payroll_excluded)) payload.payroll_excluded = Boolean(draft.payroll_excluded)
   return payload
 }
 
@@ -507,12 +511,12 @@ export default function EmployeePage({ user }) {
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">
             <table className="staff-table">
-              <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-profile"/><col className="staff-col-lock"/><col className="staff-col-admin"/></colgroup>
-              <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Hồ sơ</th><th>Khóa</th><th>Admin</th></tr></thead>
+              <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-profile"/><col className="staff-col-lock"/><col className="staff-col-exempt"/><col className="staff-col-payroll"/><col className="staff-col-admin"/></colgroup>
+              <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Hồ sơ</th><th>Khóa</th><th>Miễn đủ hồ sơ</th><th>Không tính lương</th><th>Admin</th></tr></thead>
               <tbody>{visible.map((employee) => {
                 const draft = drafts[employee.username] || rowDraft(employee)
                 const editable = canManage(employee)
-                const missingFields = missingEmployeeProfileFields(employee)
+                const missingFields = employee.profile_requirement_exempt ? [] : missingEmployeeProfileFields(employee)
                 const rowClassName = [employee.employment_status === 'Đã nghỉ việc' ? 'staff-left-row' : '', missingFields.length ? 'staff-incomplete-row' : '', employee.profile_hidden ? 'staff-hidden-row' : ''].filter(Boolean).join(' ')
                 return <tr key={employee.username} className={rowClassName} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
                   <td className="center"><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !canSelectRows} onChange={() => toggleSelected(employee.username)} aria-label={`Chọn ${employee.username}`} /></td>
@@ -524,6 +528,8 @@ export default function EmployeePage({ user }) {
                   <td><select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></td>
                   <td><button className="text-button staff-edit-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Sửa</button></td>
                   <td className="center"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} aria-label={`Khóa ${employee.username}`} /></td>
+                  <td className="center"><input type="checkbox" checked={draft.profile_requirement_exempt} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'profile_requirement_exempt', event.target.checked)} aria-label={`Miễn yêu cầu đủ hồ sơ ${employee.username}`} /></td>
+                  <td className="center"><input type="checkbox" checked={draft.payroll_excluded} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'payroll_excluded', event.target.checked)} aria-label={`Không tính lương ${employee.username}`} /></td>
                   <td><div className="list-actions">{isAdmin && permissions.employees_visibility_manage && <button className="secondary-button compact" disabled={Boolean(busy)} onClick={() => setEmployeeHidden(employee, !employee.profile_hidden)}>{employee.profile_hidden ? <Eye size={14}/> : <EyeOff size={14}/>} {employee.profile_hidden ? 'Hiện' : 'Ẩn'}</button>}{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></td>
                 </tr>
               })}</tbody>
@@ -533,7 +539,7 @@ export default function EmployeePage({ user }) {
           <div className="staff-mobile-list">{visible.map((employee) => {
             const draft = drafts[employee.username] || rowDraft(employee)
             const editable = canManage(employee)
-            const missingFields = missingEmployeeProfileFields(employee)
+            const missingFields = employee.profile_requirement_exempt ? [] : missingEmployeeProfileFields(employee)
             return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''} ${missingFields.length ? 'incomplete' : ''} ${employee.profile_hidden ? 'hidden' : ''}`} key={employee.username} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
               <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !canSelectRows} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{employee.profile_hidden && <span className="staff-hidden-badge">Đang ẩn</span>}{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><div className="list-actions">{isAdmin && <button className="text-button" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={15} /> Đổi tên</button>}<button className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /> Hồ sơ</button>{isAdmin && permissions.employees_visibility_manage && <button className="secondary-button compact" disabled={Boolean(busy)} onClick={() => setEmployeeHidden(employee, !employee.profile_hidden)}>{employee.profile_hidden ? <Eye size={14}/> : <EyeOff size={14}/>} {employee.profile_hidden ? 'Hiện' : 'Ẩn'}</button>}{isAdmin && permissions.employee_delete && <button className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /> Xóa</button>}</div></div>
               <div className="staff-mobile-fields">
@@ -543,6 +549,8 @@ export default function EmployeePage({ user }) {
                 <label>Ngày bắt đầu ca<VeraDateInput aria-label={`Ngày bắt đầu ca ${employee.full_name || employee.username}`} value={draft.shift_start_date} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'shift_start_date', event.target.value)} /></label>
                 <label>Chu kỳ<select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></label>
                 <label className="staff-lock-field"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} /> Khóa đăng nhập</label>
+                <label><input type="checkbox" checked={draft.profile_requirement_exempt} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'profile_requirement_exempt', event.target.checked)} /> Miễn yêu cầu đủ hồ sơ</label>
+                <label><input type="checkbox" checked={draft.payroll_excluded} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'payroll_excluded', event.target.checked)} /> Không lấy khi tính lương</label>
               </div>
             </article>
           })}</div>

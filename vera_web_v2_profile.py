@@ -187,6 +187,7 @@ def install_profile_routes(
             "cccd_number": str(payload.get("Số CCCD") or ""),
             "cccd_issue_date": str(payload.get("Ngày cấp CCCD") or ""),
             "cccd_issue_place": str(payload.get("Nơi cấp CCCD") or ""),
+            "profile_requirement_exempt": str(payload.get("Miễn yêu cầu đủ hồ sơ") or "").strip().casefold() in {"1", "true", "yes", "y", "có", "x"},
         })
         return {"profile": profile}
 
