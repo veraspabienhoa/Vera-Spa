@@ -1,10 +1,11 @@
-import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, FileSpreadsheet, RefreshCw, Save, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, RefreshCw, Save, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { defaultRevenueTipStart, revenueTipTotal } from '../lib/revenueTipPeriod'
 import './RevenuePage.css'
 import VeraDateInput from '../components/VeraDateInput'
 import VeraMoneyInput from '../components/VeraMoneyInput'
+import { formatVeraDate } from '../lib/veraDate'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
@@ -102,6 +103,29 @@ async function savePeriodTip(amount, startDate, endDate) {
   return payload
 }
 
+const defaultRevenueNote = (kind, transactionDate) => `${kind} ${formatVeraDate(transactionDate) || ''}`.trim()
+
+function AutoFitMoney({ children }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return undefined
+    const fit = () => {
+      let size = 30
+      element.style.fontSize = `${size}px`
+      while (size > 14 && element.scrollWidth > element.clientWidth) {
+        size -= 1
+        element.style.fontSize = `${size}px`
+      }
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [children])
+  return <div ref={ref} className="revenue-card-value">{children}</div>
+}
+
 function statusClass(status) {
   if (status === 'KHỚP') return 'match'
   if (status === 'GẦN KHỚP') return 'near'
@@ -129,8 +153,10 @@ export default function RevenuePage({ user }) {
   const [entryDate, setEntryDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }))
   const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
   const [entryIncomeNote, setEntryIncomeNote] = useState('')
+  const [incomeNoteEdited, setIncomeNoteEdited] = useState(false)
   const [entryExpenseAmount, setEntryExpenseAmount] = useState('')
   const [entryExpenseNote, setEntryExpenseNote] = useState('')
+  const [expenseNoteEdited, setExpenseNoteEdited] = useState(false)
   const [savingEntry, setSavingEntry] = useState(false)
   const [filterPreset, setFilterPreset] = useState('this_month')
   const [customStart, setCustomStart] = useState('')
@@ -150,6 +176,7 @@ export default function RevenuePage({ user }) {
   const [detailData, setDetailData] = useState(null)
   const [detailBusy, setDetailBusy] = useState(false)
   const [detailError, setDetailError] = useState('')
+  const [exportingLedger, setExportingLedger] = useState(false)
   const [ledgerNoteFilter, setLedgerNoteFilter] = useState('')
   const [ledgerAmountFilter, setLedgerAmountFilter] = useState('')
   const [purchaseItemFilter, setPurchaseItemFilter] = useState('')
@@ -179,6 +206,11 @@ export default function RevenuePage({ user }) {
       && (!wantedAmount || amountText.includes(wantedAmount))
   })
   const ledgerTypes = [...new Set((detailData?.ledger_rows || []).map(row => row.type).filter(Boolean))]
+
+  useEffect(() => {
+    if (!incomeNoteEdited) setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
+    if (!expenseNoteEdited) setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
+  }, [entryDate, expenseNoteEdited, incomeNoteEdited])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -338,15 +370,51 @@ export default function RevenuePage({ user }) {
         expenseNote: entryExpenseNote,
       })
       setEntryIncomeAmount('')
-      setEntryIncomeNote('')
       setEntryExpenseAmount('')
-      setEntryExpenseNote('')
+      setIncomeNoteEdited(false)
+      setExpenseNoteEdited(false)
+      setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
+      setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
       setNotice(result.message || 'Đã ghi Thu Chi vào Chi tiết Doanh thu - Chi phí.')
       setRevision((value) => value + 1)
     } catch (err) {
       setError(err.message || 'Không ghi được Thu Chi.')
     } finally {
       setSavingEntry(false)
+    }
+  }
+
+  const exportLedger = async () => {
+    setExportingLedger(true)
+    setDetailError('')
+    try {
+      const params = new URLSearchParams({ preset: detailPreset })
+      if (detailPreset === 'custom') {
+        if (detailStart) params.set('start', detailStart)
+        if (detailEnd) params.set('end', detailEnd)
+      }
+      if (ledgerDate) params.set('transaction_date', ledgerDate)
+      if (ledgerType) params.set('transaction_type', ledgerType)
+      if (ledgerAmountFilter) params.set('amount', ledgerAmountFilter)
+      if (ledgerNoteFilter) params.set('note', ledgerNoteFilter)
+      const response = await fetch(`${apiBase}/v2/revenue/ledger/export.xlsx?${params}`, { headers: await authorizedHeaders() })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `VERA_DoanhThu_ChiPhi_${detailData?.start_date_label || ''}_${detailData?.end_date_label || ''}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setDetailError(err.message || 'Không xuất được file Excel Doanh thu-Chi phí.')
+    } finally {
+      setExportingLedger(false)
     }
   }
 
@@ -386,7 +454,7 @@ export default function RevenuePage({ user }) {
       .revenue-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.revenue-action-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;min-height:43px}.revenue-action-link.disabled{opacity:.45;pointer-events:none}
       .revenue-entry-form{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(150px,.8fr) minmax(220px,1.3fr) minmax(150px,.8fr) minmax(220px,1.3fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-column:1/-1;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form button{min-height:42px}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
       .revenue-tip-editor{display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(150px,.8fr) minmax(150px,.8fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900}.revenue-tip-editor input{font-size:16px;font-weight:800}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;gap:6px;font-size:11px;color:#75694d;margin-top:4px}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px}
-      .revenue-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.revenue-card{padding:18px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{margin-top:14px;font-size:clamp(20px,2vw,30px);line-height:1.05;font-weight:900;color:#173329;overflow-wrap:anywhere}.revenue-card.net{background:#f7faf8;border-color:#d2e0d8}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
+      .revenue-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.revenue-card{padding:18px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{width:100%;min-width:0;margin-top:14px;font-size:30px;line-height:1.05;font-weight:900;color:#173329;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}.revenue-card.net{background:#f7faf8;border-color:#d2e0d8}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
       .revenue-formula{margin-top:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:13px;background:#f3f8f5;color:#244a3a;font-size:13px;font-weight:800;text-align:center}.revenue-meta{margin-top:10px;padding:12px 14px;border:1px solid #e4eae6;border-radius:13px;background:#fafcfb;color:#68736f;font-size:12px}
       .reconcile-panel{margin-top:20px;padding:16px;border:1px solid #dfe7e2;border-radius:18px;background:#fff}.reconcile-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}.reconcile-head h2{margin:3px 0 0;font-size:20px;color:#173329}.reconcile-head p{margin:4px 0 0;color:#68736f;font-size:12px;max-width:850px}.reconcile-filter{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.reconcile-filter label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.reconcile-filter select,.reconcile-filter input{min-height:40px;min-width:145px}
       .reconcile-status{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:13px;margin-bottom:12px;font-weight:800;font-size:13px}.reconcile-status.ok{background:#eef8f1;border:1px solid #bdd9c6;color:#245b38}.reconcile-status.near{background:#fffbea;border:1px solid #e9d982;color:#7a6500}.reconcile-status.bad{background:#fff0ed;border:1px solid #efb0a5;color:#8d291d}.reconcile-status svg{flex:0 0 auto;margin-top:1px}
@@ -412,11 +480,10 @@ export default function RevenuePage({ user }) {
       <h2>NHẬP DOANH THU - CHI PHÍ</h2>
       <label className="entry-date">Ngày giao dịch<VeraDateInput value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note">Ghi chú Thu<input type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => setEntryIncomeNote(event.target.value)} placeholder="Nội dung Thu" disabled={savingEntry}/></label>
+      <label className="entry-note">Ghi chú Thu<input type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/></label>
       <label className="entry-amount entry-expense">Số tiền Chi<VeraMoneyInput value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note entry-expense-note">Ghi chú Chi<input type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => setEntryExpenseNote(event.target.value)} placeholder="Nội dung Chi" disabled={savingEntry}/></label>
+      <label className="entry-note entry-expense-note">Ghi chú Chi<input type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setExpenseNoteEdited(true); setEntryExpenseNote(event.target.value) }} placeholder="Chi phí + ngày giao dịch" disabled={savingEntry}/></label>
       <button type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
-      <p className="revenue-entry-help">Chỉ cần bấm <strong>Lưu Thu + Chi</strong> một lần. Nếu cả Thu và Chi đều có số tiền, hệ thống lưu 2 dòng trên server với cùng ngày, giờ và người nhập. Có thể để 0 một bên nếu ngày đó chỉ phát sinh Thu hoặc chỉ phát sinh Chi.</p>
     </form>}
 
     {canViewAdminRevenueSummary && <section className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
@@ -434,10 +501,9 @@ export default function RevenuePage({ user }) {
 
     {canViewAdminRevenueSummary && <div className="admin-revenue-summary">
       <section className="revenue-grid" aria-live="polite">
-        {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}`} key={key}><div className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><div className="revenue-card-value">{busy && !data ? '…' : money(value)}</div></article>)}
+        {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}`} key={key}><div className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><AutoFitMoney>{busy && !data ? '…' : money(value)}</AutoFitMoney></article>)}
       </section>
       {data && <div className="revenue-formula">Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></div>}
-      {data && <div className="revenue-meta">Nguồn: <strong>{data.source || 'Server VERA SPA'}</strong>{' · '}Số giao dịch Thu/Chi đã tính: <strong>{Number(data.transaction_count || 0).toLocaleString('vi-VN')}</strong>.</div>}
     </div>}
 
     <div className="revenue-tabs" role="tablist" aria-label="Doanh thu và chi phí">
@@ -469,7 +535,7 @@ export default function RevenuePage({ user }) {
       </div>
       {detailError && <div className="error-box">{detailError}</div>}
       {detailBusy && !detailData && <div className="revenue-meta">Đang tải dữ liệu…</div>}
-      {activeTab === 'ledger' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Doanh thu-Chi phí</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th></tr></thead><tbody>
+      {activeTab === 'ledger' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Doanh thu-Chi phí <button style={{ marginLeft: 'auto' }} type="button" className="secondary-button compact" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th></tr></thead><tbody>
         {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td>{row.date_label}</td><td>{row.type}</td><td className="money">{money(row.amount)}</td><td>{row.note || '—'}</td><td>{row.entered_date_label || '—'}</td><td>{row.entered_time || '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
         {!ledgerRows.length && <tr><td colSpan="7">Không có dữ liệu phù hợp bộ lọc.</td></tr>}
       </tbody></table></div></div>}

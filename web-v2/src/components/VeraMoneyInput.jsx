@@ -2,7 +2,7 @@ const digitsOnly = (value) => String(value ?? '').replace(/\D/g, '')
 
 function formatVeraMoney(value) {
   const digits = digitsOnly(value)
-  return digits ? Number(digits).toLocaleString('vi-VN') : ''
+  return digits ? digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : ''
 }
 
 export default function VeraMoneyInput({ value = '', onChange, name, className = '', max, ...props }) {
