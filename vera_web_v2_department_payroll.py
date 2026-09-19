@@ -970,8 +970,8 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
     @app.post("/v2/department-payroll/email")
     def email_payroll(body: DepartmentEmail, ident: identity_type = Depends(current_identity)):
         department = valid_department(body.department); start, end, label = _month_range(body.month)
-        sender = os.getenv("SMTP_SENDER_EMAIL", "veraspabienhoa@gmail.com").strip()
-        password = os.getenv("SMTP_APP_PASSWORD", "")
+        sender = str(os.getenv("SMTP_SENDER_EMAIL", "veraspabienhoa@gmail.com") or "").strip()
+        password = str(os.getenv("SMTP_APP_PASSWORD", "") or "").strip()
         if not password:
             raise HTTPException(503, "Máy chủ chưa cấu hình mật khẩu gửi email bảng lương.")
         with engine_instance().connect() as conn:
@@ -991,9 +991,12 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         rows = [row for row in rows if not selected or norm(row.get("employee_username")) in selected]
         sent, failed = [], []
         try:
-            smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20); smtp.login(sender, password)
+            smtp = payroll._open_payroll_smtp(sender, password)
         except Exception as exc:
-            raise HTTPException(502, f"Không kết nối được máy chủ gửi email: {str(exc)[:200]}") from exc
+            raise HTTPException(
+                502,
+                f"Không kết nối/xác thực được Gmail để gửi bảng lương: {str(exc)[:240]}",
+            ) from exc
         try:
             for row in rows:
                 recipient = str(row.get("email") or "").strip()
