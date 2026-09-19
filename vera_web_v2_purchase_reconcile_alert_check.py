@@ -51,12 +51,7 @@ def install_purchase_reconcile_alert_check(
         try:
             purchase_content = base._drive_download_purchase_report()
             purchase_all = base._parse_purchase_report(purchase_content, norm)
-            revenue_values = (
-                google_client()
-                .open_by_key(base.REVENUE_SPREADSHEET_ID)
-                .worksheet(base.REVENUE_WORKSHEET)
-                .get_all_values()
-            )
+            revenue_values = base._read_revenue_values(google_client, engine_instance)
             ledger_all = base._parse_revenue_input(revenue_values, norm)
             purchase_rows = base._filtered(purchase_all, start, end)
             ledger_rows = base._filtered(ledger_all, start, end)
