@@ -6,9 +6,9 @@ def test_payroll_email_smtp_trims_secret_and_falls_back_between_gmail_ports():
 
     assert "def _open_payroll_smtp(sender: str, password: str):" in payroll
     assert 'secret = str(password or "").strip()' in payroll
-    assert 'smtplib.SMTP("smtp.gmail.com", 587, timeout=30)' in payroll
+    assert 'smtplib.SMTP("smtp.gmail.com", 587, timeout=8)' in payroll
     assert "smtp.starttls()" in payroll
-    assert 'smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30)' in payroll
+    assert 'smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=8)' in payroll
     assert "smtp.login(username, secret)" in payroll
     assert "Gmail từ chối đăng nhập SMTP" in payroll
 
