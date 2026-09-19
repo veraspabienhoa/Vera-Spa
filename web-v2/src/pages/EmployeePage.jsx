@@ -511,7 +511,7 @@ export default function EmployeePage({ user }) {
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">
             <table className="staff-table">
-              <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-profile"/><col className="staff-col-lock"/><col/><col/><col className="staff-col-admin"/></colgroup>
+              <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-profile"/><col className="staff-col-lock"/><col className="staff-col-exempt"/><col className="staff-col-payroll"/><col className="staff-col-admin"/></colgroup>
               <thead><tr><th>Chọn</th><th>Nhân viên</th><th>Phân quyền</th><th>Trạng thái</th><th>Ca làm việc</th><th>Ngày bắt đầu ca</th><th>Chu kỳ</th><th>Hồ sơ</th><th>Khóa</th><th>Miễn đủ hồ sơ</th><th>Không tính lương</th><th>Admin</th></tr></thead>
               <tbody>{visible.map((employee) => {
                 const draft = drafts[employee.username] || rowDraft(employee)
