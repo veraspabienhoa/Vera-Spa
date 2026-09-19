@@ -71,6 +71,7 @@ export default function PayrollPage({ user }) {
   const [obligationForm, setObligationForm] = useState({ employee_name: '', amount: '', content: 'Chưa hoàn thành nghĩa vụ Vi phạm', due_from: '' })
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
+  const [emailProgress, setEmailProgress] = useState(null)
   const historyRequest = useRef(0)
   const draftImportRef = useRef(null)
 
@@ -205,8 +206,33 @@ export default function PayrollPage({ user }) {
     const rows = (draft?.rows || []).filter((row) => selected.includes(row['Tên Hệ thống']))
     if (!rows.length) throw new Error('Chưa chọn nhân viên cần gửi email.')
     if (!window.confirm(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`)) return
-    const result = await veraApi.emailPayroll({ start: draft.start, end: draft.end, rows })
-    setNotice({ type: result.failed?.length ? 'warning' : 'success', message: result.message })
+
+    const batchSize = 3
+    const sent = []
+    const failed = []
+    setEmailProgress({ processed: 0, total: rows.length })
+    try {
+      for (let offset = 0; offset < rows.length; offset += batchSize) {
+        const chunk = rows.slice(offset, offset + batchSize)
+        let result
+        try {
+          result = await veraApi.emailPayroll({ start: draft.start, end: draft.end, rows: chunk })
+        } catch (error) {
+          throw new Error(
+            `Đã xử lý xong ${offset}/${rows.length} nhân viên. Nhóm hiện tại đã dừng và không tự thử lại để tránh gửi email trùng. ${error.message}`,
+          )
+        }
+        sent.push(...(result.sent || []))
+        failed.push(...(result.failed || []))
+        setEmailProgress({ processed: Math.min(offset + chunk.length, rows.length), total: rows.length })
+      }
+      setNotice({
+        type: failed.length ? 'warning' : 'success',
+        message: `Đã gửi ${sent.length}/${rows.length} email; lỗi ${failed.length}.`,
+      })
+    } finally {
+      setEmailProgress(null)
+    }
   })
 
   const exportDraft = () => run('export-draft', async () => {
@@ -284,7 +310,7 @@ export default function PayrollPage({ user }) {
     </section>}
 
     {draft?.rows?.length > 0 && <section className="panel payroll-draft-panel">
-      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={savePayrollPeriod} disabled={isBusy || draftSalaryTotal <= 0}><Save size={16} /> Lưu bảng lương chính thức</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
+      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={savePayrollPeriod} disabled={isBusy || draftSalaryTotal <= 0}><Save size={16} /> Lưu bảng lương chính thức</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> {busy === 'email' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${selected.length})`}</button>}</div></div>
       {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allSelected} onChange={toggleAllSelected} disabled={isBusy} /> Chọn tất cả {draftRows.length} nhân viên để gửi email</label>}
       <div className="responsive-data-table payroll-editor payroll-desktop-table"><table><thead><tr>{canEmail && <th>Gửi</th>}<th>Nhân viên</th><th>Lương</th>{Object.entries(EDIT_LABELS).map(([field, label]) => <th key={field}>{label}</th>)}<th>Thực nhận</th></tr></thead><tbody>{draftRows.map((row) => <tr key={row['Tên Hệ thống']}>{canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${row['Tên Hệ thống']}`} checked={selected.includes(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} /></td>}<td><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></td><td className="money-cell">{money(row['Tiền Lương'])}</td>{Object.keys(EDIT_LABELS).map((field) => <td key={field}><input className="payroll-money-input" type="number" min="0" inputMode="numeric" disabled={isBusy} value={numberInputDisplayValue(row[field])} onChange={(event) => editMoney(row['Tên Hệ thống'], field, event.target.value)} /></td>)}<td className="money-cell"><strong>{money(row['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
       <div className="payroll-mobile-list">{draftRows.map((row) => <article className="payroll-mobile-card" key={row['Tên Hệ thống']}>
