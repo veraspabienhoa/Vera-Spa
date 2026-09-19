@@ -1,6 +1,6 @@
-// UI dates are always dd/mm/yyyy; API values remain ISO. Business time is Vietnam time.
+// UI dates are always dd-mm-yyyy; API values remain ISO. Business time is Vietnam time.
 export const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
-const VN_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/
+const VN_DATE = /^(\d{2})-(\d{2})-(\d{4})$/
 
 export function parseVeraDate(value) {
   const match = String(value || '').trim().match(VN_DATE)
@@ -14,12 +14,12 @@ export function formatVeraDate(value, fallback = '') {
   const raw = String(value || '').trim()
   const match = raw.match(ISO_DATE)
   if (match) {
-    const display = `${match[3]}/${match[2]}/${match[1]}`
+    const display = `${match[3]}-${match[2]}-${match[1]}`
     return parseVeraDate(display) ? display : fallback
   }
-  const vn = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  const vn = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
   if (vn) {
-    const display = `${vn[1].padStart(2, '0')}/${vn[2].padStart(2, '0')}/${vn[3]}`
+    const display = `${vn[1].padStart(2, '0')}-${vn[2].padStart(2, '0')}-${vn[3]}`
     return parseVeraDate(display) ? display : fallback
   }
   return fallback
@@ -36,7 +36,7 @@ export function formatVeraDateTime(value, fallback = '—') {
   // Do not guess ambiguous slash dates; timestamps without an offset are Vietnam local time.
   let raw = value
   if (typeof raw === 'string') {
-    const vn = raw.trim().match(/^(\d{1,2}\/\d{1,2}\/\d{4})[ ,T]+(\d{2}:\d{2}(?::\d{2})?)$/)
+    const vn = raw.trim().match(/^(\d{1,2}[/-]\d{1,2}[/-]\d{4})[ ,T]+(\d{2}:\d{2}(?::\d{2})?)$/)
     if (vn) {
       const display = formatVeraDate(vn[1])
       if (!display) return fallback
@@ -50,5 +50,5 @@ export function formatVeraDateTime(value, fallback = '—') {
   const date = new Date(raw)
   if (!Number.isFinite(date.getTime())) return fallback
   const p = Object.fromEntries(vietnamDateTime.formatToParts(date).map(part => [part.type, part.value]))
-  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}:${p.second}`
+  return `${p.day}-${p.month}-${p.year} ${p.hour}:${p.minute}:${p.second}`
 }

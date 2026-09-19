@@ -89,7 +89,8 @@ def test_salary_advance_form_has_searchable_employee_date_and_valid_amount_input
     assert "data-advance-employee-option" in ledger
     assert "records.every((record) => existingPanel.contains(record.target))" in ledger
     assert "<datalist" not in ledger
-    assert 'placeholder="dd/mm/yyyy"' in ledger
+    assert 'placeholder="dd-mm-yyyy"' in ledger
     assert "parseDisplayDate" in ledger
-    assert 'type="number" min="1" step="1"' in ledger
+    assert 'data-advance-amount required' in ledger
+    assert "toLocaleString('vi-VN')" in ledger
     assert 'step="1000"' not in ledger

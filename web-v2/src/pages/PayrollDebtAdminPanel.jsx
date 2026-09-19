@@ -1,8 +1,9 @@
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
+import VeraDateInput from '../components/VeraDateInput'
+import VeraMoneyInput from '../components/VeraMoneyInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + 'đ'
@@ -20,8 +21,10 @@ async function debtAdminRequest(path, options = {}) {
 }
 
 function dateToIso(value, label) {
-  const match = String(value || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-  if (!match) throw new Error(`${label} phải theo định dạng dd/mm/yyyy.`)
+  const raw = String(value || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const match = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/)
+  if (!match) throw new Error(`${label} phải theo định dạng dd-mm-yyyy.`)
   const [, dd, mm, yyyy] = match
   const day = Number(dd); const month = Number(mm); const year = Number(yyyy)
   const parsed = new Date(Date.UTC(year, month - 1, day))
@@ -134,7 +137,7 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
     <div className="panel-title-row">
       <div>
         <h3>🛠️ ADMIN · THÊM / XÓA NỢ VI PHẠM</h3>
-        <p>Admin có thể thêm mới hoặc xóa khoản nợ từ hệ thống cũ/Web V2. Ngày nhập thống nhất dd/mm/yyyy. Khoản đã xóa được ghi nhớ để không xuất hiện lại sau lần đồng bộ kế tiếp.</p>
+        <p>Admin có thể thêm mới hoặc xóa khoản nợ từ hệ thống cũ/Web V2. Ngày nhập thống nhất dd-mm-yyyy. Khoản đã xóa được ghi nhớ để không xuất hiện lại sau lần đồng bộ kế tiếp.</p>
       </div>
       <button className="secondary-button compact" type="button" onClick={() => load()} disabled={Boolean(busy)}><RefreshCw size={14} className={busy === 'load' ? 'spin' : ''} /> Làm mới</button>
     </div>
@@ -144,10 +147,10 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
     <form className="payroll-obligation-form" onSubmit={addDebt}>
       <label>Loại nợ<select value={form.debt_type} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, debt_type: event.target.value })}><option>Âm thực nhận</option><option>Tạm hoãn vi phạm</option></select></label>
       <label>Nhân viên<input required list="payroll-admin-debt-employees" value={form.employee_name} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, employee_name: event.target.value })} /></label>
-      <label>Số tiền<input required type="number" min="1" inputMode="numeric" value={numberInputDisplayValue(form.amount)} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
-      <label>Kỳ phát sinh từ<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.period_start} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_start: event.target.value })} /></label>
-      <label>Kỳ phát sinh đến<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.period_end} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_end: event.target.value })} /></label>
-      <label>Bắt đầu trừ từ<input required type="text" inputMode="numeric" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" value={form.due_from} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, due_from: event.target.value })} /></label>
+      <label>Số tiền<VeraMoneyInput required value={form.amount} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, amount: event.target.value })} /></label>
+      <label>Kỳ phát sinh từ<VeraDateInput required value={form.period_start} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_start: event.target.value })} /></label>
+      <label>Kỳ phát sinh đến<VeraDateInput required value={form.period_end} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_end: event.target.value })} /></label>
+      <label>Bắt đầu trừ từ<VeraDateInput required value={form.due_from} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, due_from: event.target.value })} /></label>
       <label>Nội dung<input required value={form.content} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, content: event.target.value })} /></label>
       <button className="primary-button" type="submit" disabled={Boolean(busy)}><Plus size={16} /> {busy === 'add' ? 'Đang thêm…' : 'Thêm mới'}</button>
     </form>

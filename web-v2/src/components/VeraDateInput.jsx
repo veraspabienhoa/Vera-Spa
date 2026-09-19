@@ -1,11 +1,12 @@
 import { CalendarDays } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 
 import { ISO_DATE, formatVeraDate, parseVeraDate } from '../lib/veraDate'
 
 function typedDate(value) {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 8)
-  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('/')
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('-')
 }
 
 export default function VeraDateInput({
@@ -14,6 +15,7 @@ export default function VeraDateInput({
 }) {
   const [display, setDisplay] = useState(() => formatVeraDate(value))
   const [invalid, setInvalid] = useState(false)
+  const [pickerReady, setPickerReady] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(hover: none) and (pointer: coarse)').matches)
   const pickerRef = useRef(null)
   const textRef = useRef(null)
 
@@ -40,7 +42,7 @@ export default function VeraDateInput({
     const outOfRange = Boolean(iso && ((min && iso < min) || (max && iso > max)))
     const hasError = (complete && !iso) || outOfRange || (!allowPartial && !iso)
     setInvalid(hasError)
-    textRef.current?.setCustomValidity((!iso || outOfRange) ? 'Ngày phải đúng định dạng dd/mm/yyyy và nằm trong phạm vi cho phép.' : '')
+    textRef.current?.setCustomValidity((!iso || outOfRange) ? 'Ngày phải đúng định dạng dd-mm-yyyy và nằm trong phạm vi cho phép.' : '')
     if (iso && !outOfRange) emit(iso)
   }
 
@@ -60,6 +62,7 @@ export default function VeraDateInput({
 
   const openPicker = () => {
     if (disabled || readOnly) return
+    if (!pickerReady) flushSync(() => setPickerReady(true))
     const picker = pickerRef.current
     if (!picker) return
     try {
@@ -80,10 +83,10 @@ export default function VeraDateInput({
       name={name}
       type="text"
       inputMode="numeric"
-      pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}"
+      pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}"
       maxLength={10}
       autoComplete="off"
-      placeholder="dd/mm/yyyy"
+      placeholder="dd-mm-yyyy"
       value={display}
       disabled={disabled}
       readOnly={readOnly}
@@ -94,6 +97,6 @@ export default function VeraDateInput({
       onBlur={() => validateAndEmit(display, false)}
     />
     {!readOnly && <button type="button" className="vera-date-picker-button" disabled={disabled} onClick={openPicker} aria-label={`Chọn ${ariaLabel || 'ngày'}`}><CalendarDays size={16} /></button>}
-    <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled || readOnly} onChange={pickDate} aria-label={`Lịch ${ariaLabel || 'ngày'}`} />
+    {pickerReady && <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled || readOnly} onChange={pickDate} aria-label={`Lịch ${ariaLabel || 'ngày'}`} />}
   </span>
 }

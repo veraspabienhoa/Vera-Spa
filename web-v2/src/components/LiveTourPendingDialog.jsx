@@ -7,6 +7,7 @@ import { bookingServiceItems, bookingTotal } from '../lib/liveTourBooking'
 import { catalogIsAvailable } from '../lib/serviceCatalog'
 import useDialogFocus from '../lib/useDialogFocus'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
+import VeraMoneyInput from './VeraMoneyInput'
 import './LiveTourBookingDialog.css'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
@@ -54,7 +55,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
               <button className="icon-button" type="button" aria-label={`Bỏ dịch vụ ${partIndex + 1} của ${entry.employee_name}`} onClick={() => setItems(index, rows[index].items.filter((_, i) => i !== partIndex))}><Trash2 size={16}/></button>
             </div>)}
             {!rows[index].items.length && <small>Dịch vụ gốc: {entry.service}. Chọn dịch vụ nếu cần thay đổi.</small>}
-            <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><input type="number" min="0" max="10000000000" step="1" required value={rows[index].price} onChange={(event) => setRows((current) => current.map((row, i) => i === index ? { ...row, price: event.target.value } : row))}/></label>
+            <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><VeraMoneyInput max="10000000000" required value={rows[index].price} onChange={(event) => setRows((current) => current.map((row, i) => i === index ? { ...row, price: event.target.value } : row))}/></label>
           </> : <><span>{entry.service}</span><strong>{money(entry.price)}</strong></>}
           {entry.combo_purchase_id && <small>Giữ chỗ combo: {entry.combo_reserved_units || 0} vé · số vé được kiểm tra lại khi thay đổi dịch vụ.</small>}
         </div>)}
