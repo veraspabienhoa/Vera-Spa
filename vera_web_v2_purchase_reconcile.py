@@ -262,6 +262,9 @@ def _parse_revenue_input(values: list[list[Any]], norm) -> list[dict[str, Any]]:
 
     note_index = _header_index(headers, norm("Ghi chú"), 4)
     email_index = _header_index(headers, norm("Địa chỉ email"), 5)
+    entered_date_index = _header_index(headers, norm("Ngày nhập"), 7)
+    entered_time_index = _header_index(headers, norm("Giờ nhập"), 8)
+    entered_by_index = _header_index(headers, norm("Người nhập"), 9)
     rows: list[dict[str, Any]] = []
     for raw in values[1:]:
         tx_type = str(raw[type_index] if type_index < len(raw) else "").strip()
@@ -282,6 +285,9 @@ def _parse_revenue_input(values: list[list[Any]], norm) -> list[dict[str, Any]]:
             "amount": amount,
             "note": note,
             "email": str(raw[email_index] if email_index is not None and email_index < len(raw) else "").strip(),
+            "entered_date_label": str(raw[entered_date_index] if entered_date_index is not None and entered_date_index < len(raw) else "").strip(),
+            "entered_time": str(raw[entered_time_index] if entered_time_index is not None and entered_time_index < len(raw) else "").strip(),
+            "entered_by": str(raw[entered_by_index] if entered_by_index is not None and entered_by_index < len(raw) else "").strip(),
             "date_source": date_source,
             "is_purchase": is_purchase,
         })
@@ -342,7 +348,7 @@ def install_purchase_reconcile_routes(
             "ok": True,
             "release": RELEASE,
             "purchase_source": "BaoCaoMuaHang.xlsb",
-            "ledger_source": f"Quản lý Thu Chi · {REVENUE_WORKSHEET}",
+            "ledger_source": "Server VERA SPA · vera_revenue_entry",
             "comparison": "daily_purchase_total_vs_input_chi_purchase_rows",
             "presets": sorted(DATE_RANGE_PRESETS),
         }
@@ -360,7 +366,7 @@ def install_purchase_reconcile_routes(
         start, end = _resolve_range(preset, start_date, end_date)
         purchase_content = _drive_download_purchase_report()
         purchase_all = _parse_purchase_report(purchase_content, norm)
-        revenue_values = _read_revenue_values(google_client)
+        revenue_values = _read_revenue_values(google_client, engine_instance)
         ledger_all = _parse_revenue_input(revenue_values, norm)
 
         purchase_rows = _filtered(purchase_all, start, end)
@@ -388,8 +394,8 @@ def install_purchase_reconcile_routes(
             "end_date_label": _fmt_date(end),
             "purchase_source": "BaoCaoMuaHang.xlsb",
             "purchase_worksheet": PURCHASE_REPORT_WORKSHEET,
-            "ledger_source": "Quản lý Thu Chi",
-            "ledger_worksheet": REVENUE_WORKSHEET,
+            "ledger_source": "Server VERA SPA",
+            "ledger_worksheet": "vera_revenue_entry",
             "purchase_total": purchase_total,
             "ledger_purchase_total": ledger_purchase_total,
             "difference": round(purchase_total - ledger_purchase_total, 2),
