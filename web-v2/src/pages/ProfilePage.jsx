@@ -12,7 +12,7 @@ const toInputDate = (value) => {
 }
 const toVnDate = (value) => {
   const [year, month, day] = String(value || '').split('-')
-  return year && month && day ? `${day}/${month}/${year}` : ''
+  return year && month && day ? `${day}-${month}-${year}` : ''
 }
 
 export default function ProfilePage({ user, onPasswordChanged, forcePasswordChange = false }) {

@@ -12,7 +12,7 @@ def test_revenue_summary_is_admin_and_giamdoc_only_in_ui():
 def test_revenue_entry_heading_and_detail_tabs_are_renamed():
     page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
     assert "NHẬP DOANH THU - CHI PHÍ" in page
-    assert ">Chi tiết Doanh thu - Chi phí</button>" in page
+    assert ">Doanh thu-Chi phí</button>" in page
     assert ">Báo cáo mua hàng</button>" in page
     assert "Quản lý Thu Chi · Input</h3>" not in page
     assert "BaoCaoMuaHang.xlsb · Input</h3>" not in page
@@ -28,8 +28,14 @@ def test_revenue_detail_tabs_have_independent_filters_like_report_filter_panel()
     assert "const [purchaseItemFilter, setPurchaseItemFilter]" in page
     assert "const [purchaseBuyerFilter, setPurchaseBuyerFilter]" in page
     assert "const [purchaseUserFilter, setPurchaseUserFilter]" in page
-    assert ">Hôm qua</button>" in page
-    assert ">Hôm nay</button>" in page
+    assert "['yesterday', 'Hôm qua']" in page
+    assert "['today', 'Hôm nay']" in page
+    assert "['last_week', 'Tuần trước']" in page
+    assert "['this_week', 'Tuần này']" in page
+    assert "['last_month', 'Tháng trước']" in page
+    assert "['this_month', 'Tháng này']" in page
+    assert "['next_month', 'Tháng sau']" in page
+    assert "['custom', 'Tùy chỉnh']" in page
     assert "Xóa lọc chi tiết" in page
 
 

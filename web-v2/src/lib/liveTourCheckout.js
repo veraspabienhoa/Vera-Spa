@@ -22,5 +22,5 @@ export function bookingDateTime(value = Date.now()) {
 
 export function bookingTimeLabel(value) {
   const { date, time } = bookingDateTime(value || NaN)
-  return date ? `${time} ${date.split('-').reverse().join('/')}` : '—'
+  return date ? `${time} ${date.split('-').reverse().join('-')}` : '—'
 }

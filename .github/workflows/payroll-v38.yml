@@ -115,7 +115,7 @@ jobs:
               'saved payroll delete controls exist': 'Xóa lịch sử kỳ đang chọn' in enhanced_page and 'deleteHistoryBatch' in enhanced_page,
               'saved payroll edit and delete controls exist without duplicate draft save': all(token in saved_admin for token in ('Lấy lại & sửa', 'onClick={() => reopenForEdit(batch)}')) and all(token in enhanced_page for token in ('canDeleteHistory &&', 'onClick={() => deleteHistoryBatch(item.batch)}', 'Xóa lịch sử kỳ đang chọn')) and '> Lưu bảng lương</button>' not in saved_admin,
               'saved payroll edit calls backend': '/v2/payroll/saved-batches/${encodeURIComponent(batch)}/edit' in saved_admin,
-              'payroll debt dates are dd/mm/yyyy': debt_admin.count('placeholder="dd/mm/yyyy"') == 3 and 'dateToIso' in debt_admin,
+              'payroll debt dates use shared dd-mm-yyyy control': debt_admin.count('<VeraDateInput required') == 3 and 'dateToIso' in debt_admin,
               'nonpositive take-home rows are highlighted': 'payroll-nonpositive' in enhanced_page and 'payroll-nonpositive' in enhanced_css,
               'current penalty can be moved to next payroll': 'Chuyển kỳ sau' in enhanced_page and '/v2/payroll/penalties/defer' in enhanced_page,
               'table overflow is contained': 'overflow-x: auto' in enhanced_css and 'overflow-x: hidden' in enhanced_css,
