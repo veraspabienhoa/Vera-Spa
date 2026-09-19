@@ -792,39 +792,65 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
     ws.title = _new_payroll_sheet_title(start)
     ws.sheet_view.showGridLines = False
     last_column = get_column_letter(len(fields))
+    dark_fill = PatternFill("solid", fgColor="1F513F")
+    white_bold = Font(bold=True, color="FFFFFF")
 
     ws.merge_cells(f"A1:{last_column}1")
     ws["A1"] = "BẢNG LƯƠNG NHÂN VIÊN"
     ws["A1"].font = Font(bold=True, size=16, color="FFFFFF")
-    ws["A1"].fill = PatternFill("solid", fgColor="1F513F")
-    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws["A1"].fill = dark_fill
+    ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[1].height = 30
 
     ws["A2"] = "KỲ LƯƠNG"
-    ws["A2"].font = Font(bold=True, color="1F513F")
-    ws["A2"].fill = PatternFill("solid", fgColor="E5EFEA")
-    ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
     if len(fields) > 1:
         ws.merge_cells(f"B2:{last_column}2")
     ws["B2"] = f"Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
-    ws["B2"].font = Font(bold=True, color="1F513F")
-    ws["B2"].fill = PatternFill("solid", fgColor="E5EFEA")
-    ws["B2"].alignment = Alignment(horizontal="left", vertical="center")
     for cell in ws[2]:
-        cell.fill = PatternFill("solid", fgColor="E5EFEA")
+        cell.font = white_bold
+        cell.fill = dark_fill
+        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws["A2"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[2].height = 24
 
-    header_row = 4
+    header_row = 3
     for column_index, field in enumerate(fields, start=1):
         cell = ws.cell(header_row, column_index, field)
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="1F513F")
+        cell.font = white_bold
+        cell.fill = dark_fill
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[header_row].height = 30
 
     for item in records:
-        ws.append([_number(item.get(key)) if key in MONEY_FIELDS else item.get(key, "") for key in fields])
+        values = []
+        for field in fields:
+            if field in MONEY_FIELDS:
+                values.append(_number(item.get(field)))
+            elif field == "Số tài khoản ngân hàng":
+                values.append(str(item.get(field) or ""))
+            else:
+                values.append(item.get(field, ""))
+        ws.append(values)
 
+    template_widths = {
+        "Từ ngày": 22,
+        "Đến ngày": 35,
+        "TT": 10,
+        "Tên Hệ thống": 14,
+        "Họ và tên": 27,
+        "Tiền Lương": 12,
+        "Tiền Hỗ Trợ Hoàn Lại": 22,
+        "Hoàn trả tiền tích lũy": 24,
+        "Tích lũy": 10,
+        "Chi Phí Sinh Hoạt": 19,
+        "Tiền phạt trong tháng": 23,
+        "Vi phạm kỳ trước": 18,
+        "Tiền ứng lương": 16,
+        "Tiền hỗ trợ Locker": 20,
+        "Số tiền thực nhận": 19,
+        "Số tài khoản ngân hàng": 24,
+        "Tên ngân hàng": 46,
+    }
     for column_index, field in enumerate(fields, start=1):
         letter = get_column_letter(column_index)
         data_cells = [ws.cell(row_index, column_index) for row_index in range(header_row + 1, ws.max_row + 1)]
@@ -832,21 +858,19 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
             for cell in data_cells:
                 cell.number_format = "#,##0"
                 cell.alignment = Alignment(horizontal="right", vertical="center")
-            width = 18
         elif field == "TT":
             for cell in data_cells:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
-            width = 7
-        else:
-            max_length = max([len(str(field))] + [len(str(cell.value or "")) for cell in data_cells])
-            width = min(max(max_length + 2, 12), 34)
-        ws.column_dimensions[letter].width = width
+        elif field == "Số tài khoản ngân hàng":
+            for cell in data_cells:
+                cell.number_format = "@"
+        ws.column_dimensions[letter].width = template_widths.get(field, 18)
 
     if ws.max_row > header_row:
         ws.auto_filter.ref = f"A{header_row}:{last_column}{ws.max_row}"
         for row_index in range(header_row + 1, ws.max_row + 1):
             ws.row_dimensions[row_index].height = 21
-    ws.freeze_panes = f"A{header_row + 1}"
+    ws.freeze_panes = "A4"
     stream = BytesIO()
     wb.save(stream)
     wb.close()
