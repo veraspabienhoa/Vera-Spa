@@ -16,7 +16,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, range_boundaries
 from starlette.responses import Response
 
 
@@ -26,7 +26,13 @@ HEADER_FONT = "FFFFFF"
 
 
 def _header_row(ws) -> int:
-    """Find the first table-like row; fall back to row 1 for ordinary exports."""
+    """Honor an export's declared filter row before applying generic detection."""
+    if ws.auto_filter.ref:
+        try:
+            _min_col, min_row, _max_col, _max_row = range_boundaries(ws.auto_filter.ref)
+            return min_row
+        except (TypeError, ValueError):
+            pass
     for row_index in range(1, min(ws.max_row, 20) + 1):
         nonempty = sum(1 for cell in ws[row_index] if str(cell.value or "").strip())
         if nonempty >= 2:
@@ -66,11 +72,14 @@ def style_workbook_bytes(payload: bytes) -> bytes:
             ws.auto_filter.ref = f"A{header_row}:{get_column_letter(ws.max_column)}{ws.max_row}"
 
         for column_index in range(1, ws.max_column + 1):
+            letter = get_column_letter(column_index)
+            if ws.column_dimensions[letter].customWidth:
+                continue
             width = 0
             for row_index in range(1, ws.max_row + 1):
                 cell = ws.cell(row=row_index, column=column_index)
                 width = max(width, _display_length(cell.value))
-            ws.column_dimensions[get_column_letter(column_index)].width = min(max(width + 2, 10), 60)
+            ws.column_dimensions[letter].width = min(max(width + 2, 10), 60)
 
     output = BytesIO()
     workbook.save(output)
