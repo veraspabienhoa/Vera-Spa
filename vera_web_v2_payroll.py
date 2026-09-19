@@ -183,12 +183,12 @@ def _open_payroll_smtp(sender: str, password: str):
         smtp = None
         try:
             if mode == "starttls":
-                smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+                smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=8)
                 smtp.ehlo()
                 smtp.starttls()
                 smtp.ehlo()
             else:
-                smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30)
+                smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=8)
             smtp.login(username, secret)
             return smtp
         except Exception as exc:

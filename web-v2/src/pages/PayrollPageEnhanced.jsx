@@ -119,6 +119,7 @@ export default function PayrollPageEnhanced({ user }) {
   const [obligationForm, setObligationForm] = useState({ employee_name: '', amount: '', content: 'Chưa hoàn thành nghĩa vụ Vi phạm', due_from: '' })
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
+  const [emailProgress, setEmailProgress] = useState(null)
   const historyRequest = useRef(0)
   const draftImportRef = useRef(null)
   const [autoOpenLatestDraft, setAutoOpenLatestDraft] = useState(true)
@@ -377,8 +378,35 @@ export default function PayrollPageEnhanced({ user }) {
     const rows = (draft?.rows || []).filter((row) => selected.includes(row['Tên Hệ thống']))
     if (!rows.length) throw new Error('Chưa chọn nhân viên cần gửi email.')
     if (!window.confirm(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`)) return
-    const result = await veraApi.emailPayroll({ start: draft.start, end: draft.end, rows })
-    setNotice({ type: result.failed?.length ? 'warning' : 'success', message: result.message })
+
+    const batchSize = 3
+    const sent = []
+    const failed = []
+    setEmailProgress({ processed: 0, total: rows.length })
+    try {
+      for (let offset = 0; offset < rows.length; offset += batchSize) {
+        const chunk = rows.slice(offset, offset + batchSize)
+        let result
+        try {
+          result = await veraApi.emailPayroll({ start: draft.start, end: draft.end, rows: chunk })
+        } catch (error) {
+          throw new Error(
+            `Đã xử lý xong ${offset}/${rows.length} nhân viên. Nhóm hiện tại đã dừng và không tự thử lại để tránh gửi email trùng. ${error.message}`,
+          )
+        }
+        sent.push(...(result.sent || []))
+        failed.push(...(result.failed || []))
+        setEmailProgress({ processed: Math.min(offset + chunk.length, rows.length), total: rows.length })
+      }
+      const failedNames = failed.slice(0, 5).map((item) => item.employee).filter(Boolean).join(', ')
+      const detail = failedNames ? ` · Lỗi: ${failedNames}${failed.length > 5 ? '…' : ''}` : ''
+      setNotice({
+        type: failed.length ? 'warning' : 'success',
+        message: `Đã gửi ${sent.length}/${rows.length} email; lỗi ${failed.length}.${detail}`,
+      })
+    } finally {
+      setEmailProgress(null)
+    }
   })
 
   const exportDraft = () => run('export-draft', async () => {
@@ -486,7 +514,7 @@ export default function PayrollPageEnhanced({ user }) {
     </section>}
 
     {draft?.rows?.length > 0 && <section className="panel payroll-draft-panel">
-      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> Gửi email ({selected.length})</button>}</div></div>
+      <div className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><div className="list-actions">{canSave && <button className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> {busy === 'email' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${selected.length})`}</button>}</div></div>
       <div className="payroll-search-toolbar">
         <label className="payroll-search-box">Tìm tên nhân viên<Search size={16} /><ClearableSearchInput type="search" value={draftSearch} disabled={isBusy} placeholder={`Tìm trong ${draft.period_label}`} onChange={(event) => setDraftSearch(event.target.value)} /></label>
         <div className="payroll-quick-filters">
