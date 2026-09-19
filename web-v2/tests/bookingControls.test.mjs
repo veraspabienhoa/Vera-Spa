@@ -114,15 +114,15 @@ test('datalist Clear closes shared menu and updates React filter', async () => {
 })
 
 test('dates pad day/month, validate leap years, and timestamps use Vietnam midnight', () => {
-  assert.equal(formatVeraDate('2026-01-02'), '02/01/2026')
-  assert.equal(formatVeraDate('2/1/2026'), '02/01/2026')
-  assert.equal(parseVeraDate('29/02/2024'), '2024-02-29')
-  assert.equal(parseVeraDate('29/02/2026'), '')
+  assert.equal(formatVeraDate('2026-01-02'), '02-01-2026')
+  assert.equal(formatVeraDate('2/1/2026'), '02-01-2026')
+  assert.equal(parseVeraDate('29-02-2024'), '2024-02-29')
+  assert.equal(parseVeraDate('29-02-2026'), '')
   assert.equal(formatVeraDate('2026-02-31'), '')
-  assert.equal(parseVeraDate('01/02/26'), '')
-  assert.equal(formatVeraDateTime('2026-01-02T18:04:05Z'), '03/01/2026 01:04:05')
-  assert.equal(formatVeraDateTime('2026-01-02T18:04:05'), '02/01/2026 18:04:05')
-  assert.equal(formatVeraDateTime('2/1/2026 18:04:05'), '02/01/2026 18:04:05')
+  assert.equal(parseVeraDate('01-02-26'), '')
+  assert.equal(formatVeraDateTime('2026-01-02T18:04:05Z'), '03-01-2026 01:04:05')
+  assert.equal(formatVeraDateTime('2026-01-02T18:04:05'), '02-01-2026 18:04:05')
+  assert.equal(formatVeraDateTime('2/1/2026 18:04:05'), '02-01-2026 18:04:05')
   assert.equal(formatVeraDateTime('invalid'), '—')
 })
 
@@ -135,31 +135,34 @@ test('incomplete/invalid date edits block submit; valid input and picker retain 
   const dispose = await render(Form)
   try {
     const input = document.querySelector('input[type="text"]'), form = document.querySelector('form')
-    assert.equal(input.value, '02/01/2026')
+    assert.equal(input.value, '02-01-2026')
     for (const invalid of ['0301', '31022026', '03012027']) {
       await type(input, invalid)
       assert.equal(form.checkValidity(), false)
       assert.equal(stored, '2026-01-02')
     }
     await type(input, '03012026')
-    assert.equal(input.value, '03/01/2026')
+    assert.equal(input.value, '03-01-2026')
     assert.equal(stored, '2026-01-03')
     assert.equal(form.checkValidity(), true)
+    await act(() => document.querySelector('.vera-date-picker-button').click())
     await type(document.querySelector('input[type="date"]'), '2026-02-04')
-    assert.equal(input.value, '04/02/2026')
+    assert.equal(input.value, '04-02-2026')
     assert.equal(stored, '2026-02-04')
   } finally { await dispose() }
 })
 
 test('date picker falls back to a native click when mobile Safari rejects showPicker', async () => {
   const dispose = await render(() => React.createElement(DateInput, { value: '2026-09-14', onChange: () => {} }))
-  const native = document.querySelector('input[type="date"]')
   const original = dom.window.HTMLInputElement.prototype.showPicker
   let nativeClicks = 0
-  native.addEventListener('click', () => nativeClicks++)
-  dom.window.HTMLInputElement.prototype.showPicker = () => { throw new dom.window.DOMException('Not allowed', 'NotAllowedError') }
+  dom.window.HTMLInputElement.prototype.showPicker = function () {
+    this.addEventListener('click', () => nativeClicks++, { once: true })
+    throw new dom.window.DOMException('Not allowed', 'NotAllowedError')
+  }
   try {
     await act(() => document.querySelector('.vera-date-picker-button').click())
+    const native = document.querySelector('input[type="date"]')
     assert.equal(nativeClicks, 1)
     assert.equal(native.getAttribute('aria-hidden'), null)
   } finally {
@@ -178,11 +181,11 @@ test('invoice datetime retains ISO local payload and blocks partial dates', asyn
   const dispose = await render(Form)
   try {
     const date = document.querySelector('input[type="text"]'), time = document.querySelector('input[type="time"]')
-    assert.equal(date.value, '02/01/2026')
+    assert.equal(date.value, '02-01-2026')
     assert.equal(time.value, '15:45')
     await type(date, '03012026'); await type(time, '16:30')
     assert.equal(stored, '2026-01-03T16:30')
-    await type(date, '03/01/202')
+    await type(date, '03-01-202')
     assert.equal(document.querySelector('form').checkValidity(), false)
   } finally { await dispose() }
 })

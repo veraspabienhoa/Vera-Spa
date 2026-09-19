@@ -43,7 +43,7 @@ const rangeForFilter = (filter) => {
 
 const displayDate = (value) => {
   const [year, month, day] = String(value || '').split('-')
-  return year && month && day ? `${day}/${month}/${year}` : value || '—'
+  return year && month && day ? `${day}-${month}-${year}` : value || '—'
 }
 
 const dateTimeText = (value) => {

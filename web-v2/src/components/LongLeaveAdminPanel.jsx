@@ -19,7 +19,7 @@ async function request(path, options = {}) {
 
 const vnDate = (value) => {
   const [year, month, day] = String(value || '').split('-')
-  return year && month && day ? `${day}/${month}/${year}` : '—'
+  return year && month && day ? `${day}-${month}-${year}` : '—'
 }
 
 const moneyLike = (value) => Number(value || 0).toLocaleString('vi-VN')

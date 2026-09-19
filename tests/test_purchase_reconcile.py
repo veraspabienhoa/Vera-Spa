@@ -36,7 +36,7 @@ def test_daily_comparison_detects_two_thousand_difference():
     rows = _comparison(purchase_rows, ledger_rows)
     assert rows == [{
         "date": "2026-08-27",
-        "date_label": "27/08/2026",
+        "date_label": "27-08-2026",
         "purchase_total": 4_135_000.0,
         "ledger_purchase_total": 4_133_000.0,
         "difference": 2_000.0,

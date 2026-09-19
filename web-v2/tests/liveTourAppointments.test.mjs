@@ -15,7 +15,7 @@ Object.defineProperties(globalThis, {
 const { createRoot } = await import('react-dom/client')
 const require = createRequire(import.meta.url)
 const TODAY_VN = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
-const TODAY_VN_LABEL = TODAY_VN.split('-').reverse().join('/')
+const TODAY_VN_LABEL = TODAY_VN.split('-').reverse().join('-')
 const built = await build({
   entryPoints: [fileURLToPath(new URL('../src/pages/LiveTourPage.jsx', import.meta.url))],
   bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic',
@@ -421,7 +421,7 @@ test('pending cards display staff-service-room and both booking and execution ti
     const card = document.querySelector('#live-tour-pending-panel .live-tour-data-card')
     assert.match(card.textContent, /An An – Body 90 – 1\.1/)
     assert.match(card.textContent, /Khách lẻ/)
-    assert.match(card.textContent, new RegExp(`Booking: 13:00 ${TODAY_VN_LABEL.replaceAll('/', '\\/')} · Thực hiện: 13:05 ${TODAY_VN_LABEL.replaceAll('/', '\\/')}`))
+    assert.match(card.textContent, new RegExp(`Booking: 13:00 ${TODAY_VN_LABEL} · Thực hiện: 13:05 ${TODAY_VN_LABEL}`))
     assert.ok(!document.querySelector('input[placeholder="Nhập lịch hẹn…"]'))
   } finally { await f.dispose() }
 })

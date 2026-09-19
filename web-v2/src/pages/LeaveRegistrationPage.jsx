@@ -44,7 +44,7 @@ const addDays = (date, days) => {
 }
 const formatDateDisplay = (value) => {
   const [year, month, day] = String(value || '').split('-')
-  return year && month && day ? `${day}/${month}/${year}` : ''
+  return year && month && day ? `${day}-${month}-${year}` : ''
 }
 const weekdayForDate = (value) => {
   const index = new Date(`${value}T00:00:00`).getDay()

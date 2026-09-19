@@ -24,7 +24,7 @@ const addDays = (value, days) => {
 
 const formatDateDisplay = (value) => {
   const [year, month, day] = String(value || '').split('-')
-  return year && month && day ? `${day}/${month}/${year}` : '—'
+  return year && month && day ? `${day}-${month}-${year}` : '—'
 }
 
 const shortEmployeeName = (value) => String(value || '')
