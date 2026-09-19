@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, ExternalLink, FileSpreadsheet, RefreshCw, Save, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, FileSpreadsheet, RefreshCw, Save, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { defaultRevenueTipStart, revenueTipTotal } from '../lib/revenueTipPeriod'
@@ -8,7 +8,6 @@ import VeraDateInput from '../components/VeraDateInput'
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
 const numberText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
-const fallbackEntryUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSeJp1bLrl8zSyESu_K0eo6NxdKsm85p4fxGXPXigPlmgkAs7w/viewform'
 const reconcileFilters = [
   ['today', 'Hôm nay'],
   ['yesterday', 'Hôm qua'],
@@ -371,8 +370,6 @@ export default function RevenuePage({ user }) {
     { key: 'tip', label: 'TIỀN TIP TRONG KỲ', value: data?.period_tip, icon: CircleDollarSign },
     { key: 'balance', label: 'CÒN LẠI', value: data?.balance, icon: WalletCards },
   ]
-  const entryUrl = data?.entry_form_url || fallbackEntryUrl
-  const reportUrl = data?.report_url || ''
   const canEditTip = Boolean(data?.can_edit_tip)
   const canCreateEntry = Boolean(data?.can_create_entry)
   const overallStatus = reconcile?.overall_status || 'KHỚP'
@@ -402,7 +399,7 @@ export default function RevenuePage({ user }) {
     `}</style>
 
     <div className="page-heading">
-      <div><span className="eyebrow"><CircleDollarSign size={14} /> Tài chính</span><h1>DOANH THU</h1><p className="revenue-source">Dữ liệu trực tiếp từ Quản lý Thu Chi · sheet Input.</p></div>
+      <div><span className="eyebrow"><CircleDollarSign size={14} /> Tài chính</span><h1>DOANH THU</h1><p className="revenue-source">Dữ liệu Thu/Chi được lưu trực tiếp trên server VERA SPA.</p></div>
       <button className="secondary-button" type="button" onClick={() => { setNotice(''); setRevision((value) => value + 1) }} disabled={busy || reconcileBusy}><RefreshCw size={16} className={(busy || reconcileBusy) ? 'spin' : ''} /> Làm mới</button>
     </div>
     {error && <div className="error-box">{error}</div>}
@@ -417,18 +414,13 @@ export default function RevenuePage({ user }) {
       <label className="entry-amount">Số tiền Chi<input type="number" inputMode="numeric" min="0" step="1" value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
       <label className="entry-note">Ghi chú Chi<input type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => setEntryExpenseNote(event.target.value)} placeholder="Nội dung Chi" disabled={savingEntry}/></label>
       <button type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
-      <p className="revenue-entry-help">Chỉ cần bấm <strong>Lưu Thu + Chi</strong> một lần. Nếu cả Thu và Chi đều có số tiền, hệ thống ghi 2 dòng vào Google Sheet <strong>Chi tiết Doanh thu - Chi phí</strong> với cùng ngày và cùng dấu thời gian. Có thể để 0 một bên nếu ngày đó chỉ phát sinh Thu hoặc chỉ phát sinh Chi.</p>
+      <p className="revenue-entry-help">Chỉ cần bấm <strong>Lưu Thu + Chi</strong> một lần. Nếu cả Thu và Chi đều có số tiền, hệ thống lưu 2 dòng trên server với cùng ngày, giờ và người nhập. Có thể để 0 một bên nếu ngày đó chỉ phát sinh Thu hoặc chỉ phát sinh Chi.</p>
     </form>}
 
     {canViewAdminRevenueSummary && <section className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày bắt đầu</span><strong>{busy && !data ? '…' : (data?.start_date_label || '—')}</strong></div></article>
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày hiện tại</span><strong>{busy && !data ? '…' : (data?.current_date_label || '—')}</strong></div></article>
     </section>}
-
-    {canViewAdminRevenueSummary && <div className="revenue-actions">
-      <a className="secondary-button revenue-action-link" href={entryUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Mở Google Form</a>
-      <a className={`secondary-button revenue-action-link ${reportUrl ? '' : 'disabled'}`.trim()} href={reportUrl || '#'} target="_blank" rel="noopener noreferrer" aria-disabled={!reportUrl}><ExternalLink size={16} /> Xem báo cáo</a>
-    </div>}
 
     {canViewAdminRevenueSummary && canEditTip && <section className="revenue-tip-editor">
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
@@ -443,7 +435,7 @@ export default function RevenuePage({ user }) {
         {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}`} key={key}><div className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><div className="revenue-card-value">{busy && !data ? '…' : money(value)}</div></article>)}
       </section>
       {data && <div className="revenue-formula">Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></div>}
-      {data && <div className="revenue-meta">Nguồn: <strong>{data.source || 'Quản lý Thu Chi'}</strong> · Sheet: <strong>{data.worksheet || 'Input'}</strong>{' · '}Số giao dịch Thu/Chi đã tính: <strong>{Number(data.transaction_count || 0).toLocaleString('vi-VN')}</strong>.</div>}
+      {data && <div className="revenue-meta">Nguồn: <strong>{data.source || 'Server VERA SPA'}</strong>{' · '}Số giao dịch Thu/Chi đã tính: <strong>{Number(data.transaction_count || 0).toLocaleString('vi-VN')}</strong>.</div>}
     </div>}
 
     <div className="revenue-tabs" role="tablist" aria-label="Doanh thu và chi phí">
@@ -476,9 +468,9 @@ export default function RevenuePage({ user }) {
       </div>
       {detailError && <div className="error-box">{detailError}</div>}
       {detailBusy && !detailData && <div className="revenue-meta">Đang tải dữ liệu…</div>}
-      {activeTab === 'ledger' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Chi tiết Doanh thu - Chi phí</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th></tr></thead><tbody>
-        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td>{row.date_label}</td><td>{row.type}</td><td className="money">{money(row.amount)}</td><td>{row.note || '—'}</td></tr>)}
-        {!ledgerRows.length && <tr><td colSpan="4">Không có dữ liệu phù hợp bộ lọc.</td></tr>}
+      {activeTab === 'ledger' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Chi tiết Doanh thu - Chi phí</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày giao dịch</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th></tr></thead><tbody>
+        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td>{row.date_label}</td><td>{row.type}</td><td className="money">{money(row.amount)}</td><td>{row.note || '—'}</td><td>{row.entered_date_label || '—'}</td><td>{row.entered_time || '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
+        {!ledgerRows.length && <tr><td colSpan="7">Không có dữ liệu phù hợp bộ lọc.</td></tr>}
       </tbody></table></div></div>}
       {activeTab === 'purchase' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Báo cáo mua hàng</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày nhập</th><th>Chi tiết hàng hóa</th><th className="money">Số lượng</th><th className="money">Đơn giá</th><th className="money">Thành Tiền</th><th>Người đặt</th><th>User</th></tr></thead><tbody>
         {purchaseRows.map((row, index) => <tr key={`${row.date}-${index}`}><td>{row.date_label}</td><td>{row.item || '—'}</td><td className="money">{numberText(row.quantity)}</td><td className="money">{money(row.unit_price)}</td><td className="money">{money(row.amount)}</td><td>{row.buyer || '—'}</td><td>{row.user || '—'}</td></tr>)}
@@ -530,7 +522,7 @@ export default function RevenuePage({ user }) {
           </tbody></table></div>
         </div>
 
-        <div className="revenue-meta">Ngày trong Quản lý Thu Chi ưu tiên lấy từ ngày ghi trong cột Ghi chú, sau đó mới dùng cột Ngày giao dịch. Khi phát hiện một ngày có trạng thái <strong>KHÔNG KHỚP</strong> hoặc số liệu của ngày KHÔNG KHỚP thay đổi, hệ thống tự gửi Web Push chi tiết cho <strong>Admin, Quản lý và Lễ tân</strong>; cùng một trạng thái/số liệu sẽ không gửi lặp lại chỉ vì làm mới trang.</div>
+        <div className="revenue-meta">Ngày trong dữ liệu Thu/Chi ưu tiên lấy từ ngày ghi trong cột Ghi chú, sau đó mới dùng cột Ngày giao dịch. Khi phát hiện một ngày có trạng thái <strong>KHÔNG KHỚP</strong> hoặc số liệu của ngày KHÔNG KHỚP thay đổi, hệ thống tự gửi Web Push chi tiết cho <strong>Admin, Quản lý và Lễ tân</strong>; cùng một trạng thái/số liệu sẽ không gửi lặp lại chỉ vì làm mới trang.</div>
       </>}
     </section>}
   </div>
