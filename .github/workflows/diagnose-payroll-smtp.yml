@@ -29,6 +29,38 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Probe GitHub production SMTP secret without sending email
+        env:
+          SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os
+          import smtplib
+          secret = str(os.getenv("SMTP_APP_PASSWORD") or "").strip()
+          print(f"GITHUB_SMTP_SECRET defined={bool(secret)}")
+          if not secret:
+              raise SystemExit(0)
+          server = None
+          try:
+              server = smtplib.SMTP("smtp.gmail.com", 587, timeout=8)
+              server.ehlo()
+              server.starttls()
+              server.ehlo()
+              server.login("veraspabienhoa@gmail.com", secret)
+              server.noop()
+              print("GITHUB_SMTP_PROBE result=LOGIN_OK")
+          except smtplib.SMTPAuthenticationError as exc:
+              print(f"GITHUB_SMTP_PROBE result=AUTH_FAILED code={getattr(exc, 'smtp_code', 'unknown')}")
+          except Exception as exc:
+              print(f"GITHUB_SMTP_PROBE result=ERROR type={type(exc).__name__}")
+          finally:
+              if server is not None:
+                  try:
+                      server.quit()
+                  except Exception:
+                      pass
+          PY
+
       - name: Probe production payroll SMTP without sending email
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
