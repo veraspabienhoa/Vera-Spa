@@ -157,6 +157,50 @@ def _email_date(value: Any) -> str:
     return parsed.strftime("%d/%m/%Y") if parsed else str(value or "").strip()
 
 
+def _smtp_failure_label(exc: Exception) -> str:
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        code = getattr(exc, "smtp_code", "")
+        return f"Gmail từ chối đăng nhập SMTP{f' ({code})' if code else ''}"
+    if isinstance(exc, TimeoutError):
+        return "Hết thời gian kết nối SMTP"
+    return type(exc).__name__
+
+
+def _open_payroll_smtp(sender: str, password: str):
+    """Open Gmail SMTP robustly across VPS/network providers.
+
+    Prefer STARTTLS/587 because it is already used by other VERA mail flows,
+    then fall back to implicit TLS/465. Credentials are trimmed because
+    systemd/secret files can contain a trailing newline.
+    """
+    username = str(sender or "").strip()
+    secret = str(password or "").strip()
+    if not username or not secret:
+        raise RuntimeError("Thiếu SMTP_SENDER_EMAIL hoặc SMTP_APP_PASSWORD")
+
+    failures: list[str] = []
+    for mode in ("starttls", "ssl"):
+        smtp = None
+        try:
+            if mode == "starttls":
+                smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+                smtp.ehlo()
+                smtp.starttls()
+                smtp.ehlo()
+            else:
+                smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30)
+            smtp.login(username, secret)
+            return smtp
+        except Exception as exc:
+            failures.append(f"{mode}: {_smtp_failure_label(exc)}")
+            try:
+                if smtp is not None:
+                    smtp.quit()
+            except Exception:
+                pass
+    raise RuntimeError(" | ".join(failures))
+
+
 def _payroll_email_subject(employee_name: str, start: date, end: date) -> str:
     return (
         f"Bảng lương {str(employee_name or '').strip()} - "
@@ -1365,8 +1409,8 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
     @app.post("/v2/payroll/email")
     def email_payroll(body: PayrollEmail, ident: identity_type = Depends(current_identity)):
         label = _period_label(body.start, body.end)
-        sender = os.getenv("SMTP_SENDER_EMAIL", "veraspabienhoa@gmail.com").strip()
-        password = os.getenv("SMTP_APP_PASSWORD", "")
+        sender = str(os.getenv("SMTP_SENDER_EMAIL", "veraspabienhoa@gmail.com") or "").strip()
+        password = str(os.getenv("SMTP_APP_PASSWORD", "") or "").strip()
         if not password:
             raise HTTPException(503, "Máy chủ chưa cấu hình mật khẩu gửi email bảng lương.")
         with engine_instance().connect() as conn:
@@ -1389,10 +1433,12 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             violations_by_employee.setdefault(norm(item["employee_name"]), []).append(dict(item))
         sent, failed = [], []
         try:
-            smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20)
-            smtp.login(sender, password)
+            smtp = _open_payroll_smtp(sender, password)
         except Exception as exc:
-            raise HTTPException(502, f"Không kết nối được máy chủ gửi email: {str(exc)[:200]}") from exc
+            raise HTTPException(
+                502,
+                f"Không kết nối/xác thực được Gmail để gửi bảng lương: {str(exc)[:240]}",
+            ) from exc
         try:
             for supplied in body.rows:
                 row = _net(supplied)
