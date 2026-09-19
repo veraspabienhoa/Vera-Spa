@@ -38,7 +38,7 @@ PURCHASE_REPORT_FILE_ID = os.getenv(
 PURCHASE_REPORT_WORKSHEET = os.getenv("VERA_PURCHASE_REPORT_SHEET_NAME", "Input").strip() or "Input"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DATE_RANGE_PRESETS = {
-    "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "custom"
+    "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "next_month", "custom"
 }
 PUBLIC_DRIVE_DOWNLOAD_URL = "https://drive.usercontent.google.com/download"
 
@@ -84,7 +84,7 @@ def _excel_serial_date(value: Any) -> date | None:
 
 
 def _fmt_date(value: date) -> str:
-    return value.strftime("%d/%m/%Y")
+    return value.strftime("%d-%m-%Y")
 
 
 def _resolve_range(
@@ -118,6 +118,10 @@ def _resolve_range(
         this_start = now_date.replace(day=1)
         end = this_start - timedelta(days=1)
         return end.replace(day=1), end
+    if key == "next_month":
+        start = (now_date.replace(day=1) + timedelta(days=32)).replace(day=1)
+        following_month = (start + timedelta(days=32)).replace(day=1)
+        return start, following_month - timedelta(days=1)
 
     if not start_date or not end_date:
         raise HTTPException(400, "Tùy chỉnh cần đủ Từ ngày và Đến ngày.")
@@ -276,6 +280,7 @@ def _parse_revenue_input(values: list[list[Any]], norm) -> list[dict[str, Any]]:
         if not business_date:
             continue
         note = str(raw[note_index] if note_index is not None and note_index < len(raw) else "").strip()
+        entered_date = _parse_date(raw[entered_date_index]) if entered_date_index is not None and entered_date_index < len(raw) else None
         note_key = norm(note)
         is_purchase = type_key == "chi" and bool(re.match(r"^mua(?:\s|$)", note_key))
         rows.append({
@@ -285,7 +290,7 @@ def _parse_revenue_input(values: list[list[Any]], norm) -> list[dict[str, Any]]:
             "amount": amount,
             "note": note,
             "email": str(raw[email_index] if email_index is not None and email_index < len(raw) else "").strip(),
-            "entered_date_label": str(raw[entered_date_index] if entered_date_index is not None and entered_date_index < len(raw) else "").strip(),
+            "entered_date_label": _fmt_date(entered_date) if entered_date else "",
             "entered_time": str(raw[entered_time_index] if entered_time_index is not None and entered_time_index < len(raw) else "").strip(),
             "entered_by": str(raw[entered_by_index] if entered_by_index is not None and entered_by_index < len(raw) else "").strip(),
             "date_source": date_source,

@@ -5,6 +5,7 @@ import { invoiceLocalTime } from '../lib/liveTourFilters'
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import useDialogFocus from '../lib/useDialogFocus'
+import VeraMoneyInput from './VeraMoneyInput'
 import './LiveTourBookingDialog.css'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
@@ -45,11 +46,11 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {!deleting && canEditDate && true && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><VeraDateTimeInput required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
         {item.entries.map((entry, index) => <div className="wide live-tour-data-card" key={index}><strong>{entry.employee_name || 'Bán combo'} · {entry.service}</strong><small>{entry.room}</small>
-          {deleting ? <span>{money(covered ? 0 : entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><input type="number" min="0" max="10000000000" step="1" required disabled={covered} value={covered ? '0' : prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
+          {deleting ? <span>{money(covered ? 0 : entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><VeraMoneyInput max="10000000000" required disabled={covered} value={covered ? '0' : prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
         </div>)}
         {!deleting && <>
-          <label className="live-tour-field"><span>Giảm giá (đ)</span><input type="number" min="0" max={subtotal} step="1" required disabled={covered} value={discount} onChange={(event) => setDiscount(event.target.value)}/></label>
-          <label className="live-tour-field"><span>TIP (đ)</span><input type="number" min="0" max="10000000000" step="1" required value={tip} onChange={(event) => setTip(event.target.value)}/></label>
+          <label className="live-tour-field"><span>Giảm giá (đ)</span><VeraMoneyInput max={subtotal} required disabled={covered} value={discount} onChange={(event) => setDiscount(event.target.value)}/></label>
+          <label className="live-tour-field"><span>TIP (đ)</span><VeraMoneyInput max="10000000000" required value={tip} onChange={(event) => setTip(event.target.value)}/></label>
           <label className="live-tour-field wide"><span>Phương thức thu tiền</span><select value={method} disabled={item.payment_method === 'COMBO'} onChange={(event) => setMethod(event.target.value)}>{(item.payment_method === 'COMBO' ? ['COMBO'] : ['TIỀN MẶT', 'CHUYỂN KHOẢN', 'THẺ']).map((value) => <option key={value}>{value}</option>)}</select></label>
           <label className="live-tour-field wide"><span>Ghi chú</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label>
           <div className="wide tour-booking-total"><span>Tổng tiền sau sửa{covered ? ' (combo đã trả trước)' : ''}</span><strong>{money(total)}</strong></div>

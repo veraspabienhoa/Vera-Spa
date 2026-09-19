@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { sortedTipCards } from '../lib/paymentPresentation'
 import { defaultTipMode, money, tipCardLabel } from '../lib/liveTourCheckout'
+import VeraMoneyInput from './VeraMoneyInput'
 
 export default function LiveTourTipInput({ form, setForm, cards, preferenceKey, total }) {
   const [preferred, setPreferred] = useState(() => defaultTipMode(preferenceKey))
@@ -22,7 +23,7 @@ export default function LiveTourTipInput({ form, setForm, cards, preferenceKey, 
       <label><input type="checkbox" checked={form.tip_mode === mode} onChange={() => setForm((current) => ({ ...current, tip_mode: mode }))}/>{label}</label>
       <button type="button" className="secondary-button" aria-label={`Mặc định: ${label}`} aria-pressed={preferred === mode} onClick={() => remember(mode)}>{preferred === mode ? 'Mặc định' : 'Đặt mặc định'}</button>
     </div>)}
-    {form.tip_mode === 'manual' ? <label className="live-tour-field tour-tip-amount"><span>Tiền TIP</span><input type="number" min="0" max="10000000000" step="1" value={form.tip} onChange={(event) => setForm((current) => ({ ...current, tip: event.target.value }))}/></label>
+    {form.tip_mode === 'manual' ? <label className="live-tour-field tour-tip-amount"><span>Tiền TIP</span><VeraMoneyInput max="10000000000" value={form.tip} onChange={(event) => setForm((current) => ({ ...current, tip: event.target.value }))}/></label>
       : <div className="tour-tip-cards"><div className="tour-page-items-content">{sortedTipCards(cards).map((card) => {
         const count = selectedCount(card.id)
         const label = tipCardLabel(card)

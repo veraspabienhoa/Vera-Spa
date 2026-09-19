@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import VeraDateInput from './VeraDateInput'
 
-// A visible dd/mm/yyyy date plus 24-hour time; the parent still receives ISO local time.
+// A visible dd-mm-yyyy date plus 24-hour time; the parent still receives ISO local time.
 export default function VeraDateTimeInput({ value = '', onChange, required = false, disabled = false, readOnly = false, 'aria-label': label = 'Ngày giờ' }) {
   const [date, setDate] = useState(value.slice(0, 10))
   const [time, setTime] = useState(value.slice(11, 16))

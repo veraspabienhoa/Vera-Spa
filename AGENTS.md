@@ -40,7 +40,7 @@ from hypotheses and historical configuration from current configuration.
 
 ## Date display policy (user requirement)
 
-- All visible calendar dates must use **dd/mm/yyyy**, with two-digit day/month and four-digit year, including new forms, filters, tables, reports, history, receipts and exports.
+- All visible calendar dates must use **dd-mm-yyyy**, with two-digit day/month and four-digit year, including new forms, filters, tables, reports, history, receipts and exports.
 - Web V2 date fields use `VeraDateInput`; date/time fields use `VeraDateTimeInput`. Use `formatVeraDate` / `formatVeraDateTime` from `web-v2/src/lib/veraDate.js` for display. Do not introduce visible native `date` / `datetime-local` inputs whose format depends on the browser locale.
 - Keep API/database values in their existing ISO formats. Convert at the presentation boundary only; preserve the Vietnam business timezone (`Asia/Ho_Chi_Minh`) and existing date-range semantics. Month-only periods and clock-only fields retain their respective formats.
 - Validate real dates, leap years, incomplete input and min/max limits. A partly edited date must not submit the previous saved date silently.

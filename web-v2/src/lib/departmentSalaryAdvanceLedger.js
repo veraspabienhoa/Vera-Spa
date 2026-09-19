@@ -29,13 +29,13 @@ function defaultAdvanceDate(month) {
 }
 
 function formatDate(value) {
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(String(value || ''))) return String(value)
+  if (/^\d{2}-\d{2}-\d{4}$/.test(String(value || ''))) return String(value)
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : clean(value) || '—'
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : clean(value).replaceAll('/', '-') || '—'
 }
 
 function parseDisplayDate(value) {
-  const match = clean(value).match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  const match = clean(value).match(/^(\d{2})-(\d{2})-(\d{4})$/)
   if (!match) return ''
   const [, day, month, year] = match
   const iso = `${year}-${month}-${day}`
@@ -50,7 +50,12 @@ function parseDisplayDate(value) {
 
 function maskDisplayDate(value) {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 8)
-  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('/')
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('-')
+}
+
+function formatMoneyInput(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  return digits ? Number(digits).toLocaleString('vi-VN') : ''
 }
 
 async function apiRequest(path, options = {}) {
@@ -149,8 +154,8 @@ function panelHtml(month) {
     </div>
     <form class="advance-ledger-form" data-advance-form>
       <label class="advance-employee-field">Tên nhân viên<input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="vera-salary-advance-employees" aria-expanded="false" aria-label="Tìm kiếm tên nhân viên" placeholder="Tìm và chọn nhân viên trong danh sách…" data-advance-employee required><div class="advance-employee-options" id="vera-salary-advance-employees" data-advance-employee-options hidden></div></label>
-      <label>Ngày<input type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" placeholder="dd/mm/yyyy" value="${formatDate(defaultAdvanceDate(month))}" aria-label="Ngày ứng lương, định dạng dd/mm/yyyy" data-advance-date required></label>
-      <label>Số tiền<input type="number" min="1" step="1" inputmode="numeric" placeholder="0" data-advance-amount required></label>
+      <label>Ngày<input type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}" placeholder="dd-mm-yyyy" value="${formatDate(defaultAdvanceDate(month))}" aria-label="Ngày ứng lương, định dạng dd-mm-yyyy" data-advance-date required></label>
+      <label>Số tiền<input type="text" inputmode="numeric" placeholder="0" data-advance-amount required></label>
       <label>Ghi chú<input type="text" maxlength="1000" placeholder="Nội dung ứng lương…" data-advance-note></label>
       <button type="submit" class="primary-button" data-advance-add>+ Thêm khoản ứng</button>
     </form>
@@ -196,15 +201,18 @@ function ensurePanel() {
   panel.querySelector('[data-advance-date]')?.addEventListener('input', (event) => {
     event.target.value = maskDisplayDate(event.target.value)
   })
+  panel.querySelector('[data-advance-amount]')?.addEventListener('input', (event) => {
+    event.target.value = formatMoneyInput(event.target.value)
+  })
   panel.querySelector('[data-advance-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
     const employeeInput = panel.querySelector('[data-advance-employee]')
     const employee = resolveEmployee(employeeInput?.value, employeeInput?.dataset.selectedUsername)
     if (!employee) return showMessage('Vui lòng gõ và chọn đúng nhân viên trong danh sách.', 'error')
     const advanceDate = parseDisplayDate(panel.querySelector('[data-advance-date]')?.value)
-    const amount = Number(panel.querySelector('[data-advance-amount]')?.value || 0)
+    const amount = Number(String(panel.querySelector('[data-advance-amount]')?.value || '').replace(/\D/g, ''))
     const note = panel.querySelector('[data-advance-note]')?.value || ''
-    if (!advanceDate) return showMessage('Ngày ứng lương phải đúng định dạng dd/mm/yyyy.', 'error')
+    if (!advanceDate) return showMessage('Ngày ứng lương phải đúng định dạng dd-mm-yyyy.', 'error')
     if (!Number.isFinite(amount) || amount <= 0) return showMessage('Số tiền ứng phải lớn hơn 0.', 'error')
     const button = panel.querySelector('[data-advance-add]')
     button.disabled = true

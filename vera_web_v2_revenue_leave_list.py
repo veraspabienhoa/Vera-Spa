@@ -200,8 +200,8 @@ def _revenue_summary(
         "transaction_count": transaction_count,
         "start_date": start_date.isoformat() if start_date else "",
         "current_date": current_date.isoformat(),
-        "start_date_label": start_date.strftime("%d/%m/%Y") if start_date else "—",
-        "current_date_label": current_date.strftime("%d/%m/%Y"),
+        "start_date_label": start_date.strftime("%d-%m-%Y") if start_date else "—",
+        "current_date_label": current_date.strftime("%d-%m-%Y"),
         "current_date_source": current_date_source,
     }
 

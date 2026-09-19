@@ -44,7 +44,7 @@ def test_new_employee_requires_an_explicit_password_and_server_requirements_matc
 def test_shared_date_control_displays_vietnamese_date_format():
     source = (ROOT / "web-v2/src/components/VeraDateInput.jsx").read_text(encoding="utf-8")
 
-    assert 'placeholder="dd/mm/yyyy"' in source
+    assert 'placeholder="dd-mm-yyyy"' in source
     assert "parseVeraDate" in source
     assert "formatVeraDate" in source
     assert "showPicker" in source
