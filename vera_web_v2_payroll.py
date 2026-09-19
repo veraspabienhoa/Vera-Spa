@@ -795,22 +795,24 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
     dark_fill = PatternFill("solid", fgColor="1F513F")
     white_bold = Font(bold=True, color="FFFFFF")
 
-    ws.merge_cells(f"A1:{last_column}1")
+    for row_index in (1, 2):
+        for column_index in range(1, len(fields) + 1):
+            cell = ws.cell(row_index, column_index)
+            cell.font = white_bold
+            cell.fill = dark_fill
+            cell.alignment = Alignment(vertical="center")
     ws["A1"] = "BẢNG LƯƠNG NHÂN VIÊN"
-    ws["A1"].font = Font(bold=True, size=16, color="FFFFFF")
-    ws["A1"].fill = dark_fill
-    ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[1].height = 30
 
     ws["A2"] = "KỲ LƯƠNG"
-    if len(fields) > 1:
-        ws.merge_cells(f"B2:{last_column}2")
-    ws["B2"] = f"Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
-    for cell in ws[2]:
-        cell.font = white_bold
-        cell.fill = dark_fill
-        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     ws["A2"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    if len(fields) > 1:
+        ws["B2"] = f"Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
+        for column_index in range(2, len(fields)):
+            ws.cell(2, column_index).alignment = Alignment(
+                horizontal="centerContinuous", vertical="center", wrap_text=True,
+            )
+        ws.cell(2, len(fields)).alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[2].height = 24
 
     header_row = 3
@@ -833,10 +835,8 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
         ws.append(values)
 
     template_widths = {
-        "Từ ngày": 22,
-        "Đến ngày": 35,
-        "TT": 10,
-        "Tên Hệ thống": 14,
+        "TT": 13.44140625,
+        "Tên Hệ thống": 16.44140625,
         "Họ và tên": 27,
         "Tiền Lương": 12,
         "Tiền Hỗ Trợ Hoàn Lại": 22,
@@ -1109,7 +1109,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             records.append(row)
         if not records:
             raise HTTPException(400, "Không có dữ liệu bảng lương mới để xuất.")
-        fields = ["Từ ngày", "Đến ngày"] + [
+        fields = [
             field for field in DRAFT_FIELDS if field not in {"Email", "Số dòng Tip"}
         ]
         if str(ident.role or "").lower() != "admin":

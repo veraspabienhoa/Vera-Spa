@@ -46,6 +46,23 @@ async function enhancementRequest(path, options = {}) {
   return payload
 }
 
+async function fetchAutomaticPayrollSource(month, periodNo) {
+  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
+  const session = await getCurrentSession()
+  const headers = new Headers()
+  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
+  const params = new URLSearchParams({ month, period_no: String(periodNo) })
+  const response = await fetch(`${apiBase}/v2/payroll/timesoft-source.xlsx?${params}`, { headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  }
+  const blob = await response.blob()
+  return new File([blob], `TimeSoft_Auto_${month}_Ky${periodNo}.xlsx`, {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+}
+
 function normalizeSearch(value) {
   return String(value || '')
     .normalize('NFD')
@@ -110,6 +127,7 @@ export default function PayrollPageEnhanced({ user }) {
   const [draftNonPositiveOnly, setDraftNonPositiveOnly] = useState(false)
   const [draftFormerOnly, setDraftFormerOnly] = useState(false)
   const [selected, setSelected] = useState([])
+  const [searchSelectionMode, setSearchSelectionMode] = useState(false)
   const [config, setConfig] = useState(CONFIG_DEFAULT)
   const [accumulationRefunds, setAccumulationRefunds] = useState([])
   const [formerEmployees, setFormerEmployees] = useState([])
@@ -239,10 +257,23 @@ export default function PayrollPageEnhanced({ user }) {
       visibleDraftRows.reduce((sum, row) => sum + Number(row[field] || 0), 0),
     ]))
   }, [visibleDraftRows])
+  useEffect(() => {
+    if (!draftNeedle) {
+      setSearchSelectionMode(false)
+      return
+    }
+    const names = visibleDraftRows.map((row) => row['Tên Hệ thống'])
+    setSearchSelectionMode(true)
+    setSelected(names.length === 1 ? names : [])
+  }, [draftNeedle, visibleDraftRows])
+
   const isBusy = Boolean(busy)
-  const allVisibleSelected = visibleDraftRows.length > 0 && visibleDraftRows.every((row) => selected.includes(row['Tên Hệ thống']))
+  const allVisibleSelected = !searchSelectionMode
+    && visibleDraftRows.length > 0
+    && visibleDraftRows.every((row) => selected.includes(row['Tên Hệ thống']))
 
   const toggleAllSelected = () => {
+    setSearchSelectionMode(false)
     const names = visibleDraftRows.map((row) => row['Tên Hệ thống'])
     setSelected((current) => {
       if (allVisibleSelected) return current.filter((name) => !names.includes(name))
@@ -269,6 +300,29 @@ export default function PayrollPageEnhanced({ user }) {
       message: result.unmatched?.length
         ? `Đã tính ${result.period_label} · ${detail}. Chưa khớp tài khoản: ${result.unmatched.join(', ')}${syncWarning}`
         : `Đã tính ${result.period_label}${detail ? ` · ${detail}` : ''}${syncWarning}.`,
+    })
+  })
+
+  const recalculatePayroll = () => run('recalculate', async () => {
+    if (!draft?.rows?.length) throw new Error('Chưa có bảng lương nháp để tính lại.')
+    const sourceFile = await fetchAutomaticPayrollSource(month, periodNo)
+    const result = await veraApi.calculatePayroll(sourceFile, month, periodNo)
+    setFile(sourceFile)
+    setDraft(result)
+    setDraftSearch('')
+    setSearchSelectionMode(false)
+    setSelected((result.rows || []).map((row) => row['Tên Hệ thống']))
+    setConfig(result.config || config)
+    const summary = result.source_summary || {}
+    const detail = summary.matched_tip_rows
+      ? `${summary.matched_tip_rows} dòng Tip · Tổng Tiền Lương ${money(summary.matched_salary_total)}`
+      : ''
+    const syncWarning = result.legacy_obligation_warning ? ` · ${result.legacy_obligation_warning}` : ''
+    setNotice({
+      type: result.unmatched?.length || syncWarning ? 'warning' : 'success',
+      message: result.unmatched?.length
+        ? `Đã tính lại ${result.period_label} · ${detail}. Chưa khớp tài khoản: ${result.unmatched.join(', ')}${syncWarning}`
+        : `Đã tính lại ${result.period_label}${detail ? ` · ${detail}` : ''}${syncWarning}.`,
     })
   })
 
@@ -506,6 +560,7 @@ export default function PayrollPageEnhanced({ user }) {
         <div><strong>BẢNG LƯƠNG NHÁP</strong><small>{draft?.rows?.length ? `${draft.period_label} · ${draft.rows.length} nhân viên${draft.saved_at ? ` · Đã lưu bởi ${draft.saved_by}` : ' · Chưa lưu trên máy chủ'}` : 'Chưa có dữ liệu nháp cho kỳ đang chọn.'}</small></div>
         <div className="list-actions">
           <button className="secondary-button" type="button" onClick={() => draftImportRef.current?.click()} disabled={isBusy}><Upload size={16} /> {busy === 'import-draft' ? 'Đang Import…' : 'Import Excel'}</button>
+          <button className="secondary-button" type="button" onClick={recalculatePayroll} disabled={isBusy || !draftRows.length}><RefreshCw size={16} className={busy === 'recalculate' ? 'spin' : ''} /> {busy === 'recalculate' ? 'Đang tính lại…' : 'Tính lại lương'}</button>
           {canExport && <button className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang Export…' : 'Export to Excel'}</button>}
           {canSave && <button className="secondary-button" type="button" onClick={saveDraftSnapshot} disabled={isBusy || !draftRows.length}><Save size={16} /> {busy === 'save-draft' ? 'Đang lưu…' : 'Lưu bảng lương nháp'}</button>}
           {canSave && <button className="danger-button" type="button" onClick={deleteDraftSnapshot} disabled={isBusy || !draftRows.length}><Trash2 size={16} /> {busy === 'delete-draft' ? 'Đang xóa…' : 'Xóa bảng lương nháp'}</button>}
