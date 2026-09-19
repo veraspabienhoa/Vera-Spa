@@ -45,3 +45,19 @@ def test_purchase_reconciliation_stays_on_overview_after_detail_tabs():
     reconcile_at = page.index("activeTab === 'overview' && <section className=\"reconcile-panel\"")
     assert reconcile_at > tabs_at
     assert "Đối chiếu chi mua hàng" in page
+
+
+def test_revenue_entry_defaults_notes_fits_kpis_and_exports_excel():
+    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    money_input = Path("web-v2/src/components/VeraMoneyInput.jsx").read_text(encoding="utf-8")
+    assert "defaultRevenueNote('Doanh thu', entryDate)" in page
+    assert "defaultRevenueNote('Chi phí', entryDate)" in page
+    assert "setIncomeNoteEdited(true)" in page
+    assert "setExpenseNoteEdited(true)" in page
+    assert "function AutoFitMoney" in page
+    assert "white-space:nowrap" in page
+    assert "/v2/revenue/ledger/export.xlsx" in page
+    assert "Xuất Excel" in page
+    assert "Chỉ cần bấm <strong>Lưu Thu + Chi</strong>" not in page
+    assert "Nguồn: <strong>{data.source" not in page
+    assert "replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.')" in money_input

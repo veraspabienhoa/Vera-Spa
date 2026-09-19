@@ -1,7 +1,8 @@
 from datetime import date
 
+from openpyxl import load_workbook
 import vera_web_v2_purchase_reconcile as reconcile
-from vera_web_v2_purchase_reconcile import _comparison, _parse_revenue_input, _resolve_range
+from vera_web_v2_purchase_reconcile import _comparison, _ledger_export, _parse_revenue_input, _resolve_range
 
 
 def _norm(value):
@@ -42,6 +43,20 @@ def test_daily_comparison_detects_two_thousand_difference():
         "difference": 2_000.0,
         "matched": False,
     }]
+
+
+def test_revenue_ledger_excel_has_expected_headers_and_money():
+    stream = _ledger_export([{
+        "date_label": "19-09-2026", "type": "Thu", "amount": 45_930_000,
+        "note": "Doanh thu 19-09-2026", "entered_date_label": "19-09-2026",
+        "entered_time": "09:15:00", "entered_by": "admin",
+    }])
+    sheet = load_workbook(stream, data_only=True)["Doanh thu-Chi phí"]
+    assert [cell.value for cell in sheet[1]] == [
+        "Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Ngày nhập", "Giờ nhập", "Người nhập",
+    ]
+    assert sheet["C2"].value == 45_930_000
+    assert sheet["D2"].value == "Doanh thu 19-09-2026"
 
 
 def test_purchase_report_falls_back_to_public_drive_without_credentials(monkeypatch):
