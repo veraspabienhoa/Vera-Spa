@@ -17,9 +17,10 @@ from vera_progressive_penalty import applies as progressive_penalty_applies
 from vera_progressive_penalty import load_weekend_unpaid_enabled
 
 import vera_web_v2_permissions as permissions
+import vera_revenue_store as revenue_store
 
 
-RELEASE = "revenue-leave-list-2026-09-04.3-report-summary-cells"
+RELEASE = "revenue-server-ledger-2026-09-19-v1"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_ENTRY_FEATURE = "revenue_entry_create"
@@ -170,7 +171,7 @@ def _revenue_summary(
         if tx_type not in {"thu", "chi"}:
             continue
         parsed = _parse_date(row[date_index] if 0 <= date_index < len(row) else "")
-        if period_start is not None and (parsed is None or parsed < period_start):
+        if period_start is not None and parsed is not None and parsed < period_start:
             continue
         if REVENUE_CURRENT_DATE_COLUMN_INDEX < len(row):
             input_column_e_dates.extend(_dates_in_text(row[REVENUE_CURRENT_DATE_COLUMN_INDEX]))
@@ -290,7 +291,11 @@ def _revenue_period_start(
     return REVENUE_PERIOD_START
 
 
-def _read_revenue_values(google_client) -> list[list[Any]]:
+def _read_revenue_values(google_client, engine_instance=None) -> list[list[Any]]:
+    if engine_instance is not None:
+        with engine_instance().connect() as conn:
+            revenue_store.ensure_schema(conn)
+            return revenue_store.values_from_db(conn)
     credential_error: Exception | None = None
     try:
         worksheet = google_client().open_by_key(REVENUE_SPREADSHEET_ID).worksheet(REVENUE_WORKSHEET)
@@ -386,19 +391,18 @@ def install_revenue_leave_list_routes(
         return {
             "ok": True,
             "release": RELEASE,
-            "worksheet": REVENUE_REPORT_WORKSHEET,
-            "transaction_worksheet": REVENUE_WORKSHEET,
+            "storage": "postgresql",
+            "transaction_table": revenue_store.TABLE,
             "period_metadata": True,
-            "source_range": "Report!B2:B3",
             "period_start_source": "fixed 2025-09-05",
-            "summary_scope": "Report!B2 total income and Report!B3 total expense",
-            "current_date_source": "Input!E:E latest parsed date in period",
+            "summary_scope": "PostgreSQL revenue ledger",
+            "current_date_source": "ledger transaction date / note",
             "period_tip": True,
             "net_formula": "total_income-total_expense",
             "balance_formula": "(total_income-total_expense)-period_tip",
             "entry_form": True,
             "web_entry": True,
-            "report_link": True,
+            "report_link": False,
         }
 
     @app.get("/v2/leave/list-enhancements/health")
@@ -413,12 +417,12 @@ def install_revenue_leave_list_routes(
 
     @app.get("/v2/revenue/summary")
     def revenue_summary(ident=Depends(current_identity)):
-        values = _read_revenue_values(google_client)
-        period_start = _revenue_period_start(norm, values)
-        summary = _revenue_summary(values, norm, period_start=period_start)
-        summary.update(_report_totals(_read_revenue_report_values(google_client)))
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
+            revenue_store.ensure_schema(conn)
+            values = revenue_store.values_from_db(conn)
+            period_start = _revenue_period_start(norm, values)
+            summary = _revenue_summary(values, norm, period_start=period_start)
             tip_setting = _period_tip(conn, summary.get("start_date", ""), summary.get("current_date", ""))
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
             can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
@@ -431,13 +435,9 @@ def install_revenue_leave_list_routes(
         return {
             "ok": True,
             "release": RELEASE,
-            "source": "Quản lý Thu Chi",
-            "worksheet": REVENUE_REPORT_WORKSHEET,
-            "transaction_worksheet": REVENUE_WORKSHEET,
-            "total_income_cell": f"{REVENUE_REPORT_WORKSHEET}!B2",
-            "total_expense_cell": f"{REVENUE_REPORT_WORKSHEET}!B3",
-            "entry_form_url": REVENUE_ENTRY_FORM_URL,
-            "report_url": REVENUE_REPORT_URL,
+            "source": "Server VERA SPA",
+            "storage": "postgresql",
+            "transaction_table": revenue_store.TABLE,
             "can_edit_tip": can_edit_tip,
             "can_create_entry": can_create_entry,
             **summary,
@@ -450,55 +450,16 @@ def install_revenue_leave_list_routes(
         if income_amount <= 0 and expense_amount <= 0:
             raise HTTPException(400, "Hãy nhập ít nhất một số tiền Thu hoặc Chi lớn hơn 0.")
 
-        with engine_instance().connect() as conn:
+        entries: list[tuple[str, float, str]] = []
+        if income_amount > 0:
+            entries.append(("Thu", income_amount, body.income_note))
+        if expense_amount > 0:
+            entries.append(("Chi", expense_amount, body.expense_note))
+        with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_FEATURE)
-            email = conn.execute(text("""
-                SELECT COALESCE(email,'') FROM employees
-                WHERE lower(username)=lower(:username)
-                LIMIT 1
-            """), {"username": getattr(ident, "employee_username", "")}).scalar_one_or_none() or ""
-
-        try:
-            worksheet = google_client().open_by_key(REVENUE_SPREADSHEET_ID).worksheet(REVENUE_WORKSHEET)
-            headers = worksheet.row_values(1)
-            if not headers:
-                raise RuntimeError("Sheet Input chưa có hàng tiêu đề.")
-            normalized = [norm(value) for value in headers]
-            now = datetime.now(VN_TZ)
-            timestamp = now.strftime("%d/%m/%Y %H:%M:%S")
-            transaction_date = body.transaction_date.strftime("%d/%m/%Y")
-            actor = getattr(ident, "employee_username", "")
-
-            def build_row(tx_type: str, amount: float, note: str) -> list[Any]:
-                values: list[Any] = [""] * len(headers)
-
-                def put(label: str, value: Any) -> None:
-                    key = norm(label)
-                    if key in normalized:
-                        values[normalized.index(key)] = value
-
-                put("Dấu thời gian", timestamp)
-                put("Loại giao dịch", tx_type)
-                put("Số tiền", amount)
-                put("Ngày giao dịch", transaction_date)
-                put("Ghi chú", str(note or "").strip())
-                put("Địa chỉ email", email)
-                put("Người nhập", actor)
-                return values
-
-            rows: list[list[Any]] = []
-            if income_amount > 0:
-                rows.append(build_row("Thu", income_amount, body.income_note))
-            if expense_amount > 0:
-                rows.append(build_row("Chi", expense_amount, body.expense_note))
-            worksheet.append_rows(rows, value_input_option="USER_ENTERED")
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(
-                503,
-                f"Không ghi được Quản lý Thu Chi · Input: {type(exc).__name__}: {exc}",
-            ) from exc
+            saved_rows = revenue_store.insert_web_entries(
+                conn, transaction_date=body.transaction_date, entries=entries, ident=ident,
+            )
 
         parts = []
         if income_amount > 0:
@@ -507,16 +468,15 @@ def install_revenue_leave_list_routes(
             parts.append(f"Chi {round(expense_amount):,}đ".replace(",", "."))
         return {
             "ok": True,
-            "saved_rows": len(rows),
-            "message": "Đã ghi cùng thời điểm " + " và ".join(parts) + " vào Quản lý Thu Chi · Input.",
+            "saved_rows": saved_rows,
+            "message": "Đã lưu cùng thời điểm " + " và ".join(parts) + " trên server.",
         }
 
     @app.put("/v2/revenue/tip")
     def save_revenue_tip(body: RevenueTipUpdate, ident=Depends(current_identity)):
-        values = _read_revenue_values(google_client)
+        values = _read_revenue_values(google_client, engine_instance)
         period_start = _revenue_period_start(norm, values)
         summary = _revenue_summary(values, norm, period_start=period_start)
-        summary.update(_report_totals(_read_revenue_report_values(google_client)))
         default_start = str(summary.get("start_date") or "")
         default_end = str(summary.get("current_date") or "")
         tip_start = body.start_date.isoformat() if body.start_date else default_start
