@@ -632,7 +632,7 @@ tr:last-child td { border-bottom: 0; }
 .staff-table { width: 100%; min-width: 0; table-layout: fixed; font-size: 10px; }
 .staff-table .staff-col-select { width: 3%; }
 .staff-table .staff-col-employee { width: 9%; }
-.staff-table .staff-col-role { width: 7%; }
+.staff-table .staff-col-role { width: 8%; }
 .staff-table .staff-col-status { width: 9%; }
 .staff-table .staff-col-shift { width: 15%; }
 .staff-table .staff-col-date { width: 10%; }
