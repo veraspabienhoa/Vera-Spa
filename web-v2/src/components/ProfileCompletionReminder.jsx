@@ -73,7 +73,10 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
         veraApi.profile(),
         staffSecurityApi.identityMetadata(username).catch(() => ({ front: null, back: null })),
       ])
-      const nextMissing = missingProfileFields(profileResult?.profile || {}, identityResult || {})
+      const profile = profileResult?.profile || {}
+      const nextMissing = profile.profile_requirement_exempt
+        ? []
+        : missingProfileFields(profile, identityResult || {})
       setMissing(nextMissing)
       setDismissed(false)
       if (nextMissing.length) void showSystemNotification(username, nextMissing)
