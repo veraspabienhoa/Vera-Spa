@@ -48,6 +48,7 @@ from vera_web_v2_outside_leave_rule import install_outside_leave_rule
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
 from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
 from vera_web_v2_payroll_personal import install_payroll_personal_defaults, install_payroll_personal_routes
+from vera_web_v2_payroll_saved_edit import install_payroll_saved_edit_routes
 from vera_web_v2_payroll_timesoft_auto import install_payroll_timesoft_auto_routes
 from vera_web_v2_payroll_v38 import PAYROLL_V38_RELEASE, install_payroll_v38_routes
 from vera_web_v2_policy_v39 import install_policy_v39
@@ -170,6 +171,7 @@ install_auth_gateway(
 )
 
 install_payroll_v38_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity, google_client=_api._google_client)
+install_payroll_saved_edit_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, identity_type=_api.Identity)
 install_department_payroll_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm)
 install_salary_advance_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_payroll_timesoft_auto_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm)
