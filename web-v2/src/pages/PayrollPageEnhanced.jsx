@@ -103,7 +103,7 @@ function ObligationGroup({ group }) {
   </div>
 }
 
-export default function PayrollPageEnhanced({ user }) {
+export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onTabChange }) {
   const permissions = user?.permissions || {}
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const canCalculate = isAdmin || permissions.payroll_calculate
@@ -543,8 +543,12 @@ export default function PayrollPageEnhanced({ user }) {
     setNotice({ type: 'success', message: result.message })
   })
 
-  return <div className="feature-page payroll-page payroll-page-enhanced">
+  return <div className={`feature-page payroll-page payroll-page-enhanced payroll-tab-${activeTab}`}>
     <div className="page-heading"><div><span className="eyebrow"><WalletCards size={14} /> Kỳ 1 · Kỳ 2</span><h1>BẢNG LƯƠNG</h1><p>Tải file TimeSoft, tính lương, quản lý khấu trừ, hoàn thành và lưu lịch sử bảng lương.</p></div><button className="secondary-button" onClick={reload} disabled={isBusy}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /> Làm mới</button></div>
+    <div className="payroll-main-tabs" role="tablist" aria-label="Lương KTV">
+      <button type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}>Tính lương</button>
+      <button type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => onTabChange?.('history')}>Lịch sử bảng lương</button>
+    </div>
     {notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}
 
     {canCalculate && <section className="panel payroll-calculate-panel">
@@ -611,7 +615,7 @@ export default function PayrollPageEnhanced({ user }) {
       {!obligations.length && <div className="setup-note">Chưa có Nghĩa vụ vi phạm nhập/chuyển từ Web V2.</div>}
     </section>}
 
-    <section className="panel">
+    <section className="panel payroll-history-panel">
       <div className="panel-title-row"><div><h2>LỊCH SỬ BẢNG LƯƠNG</h2><p>Danh sách các bảng lương đã hoàn thành và bộ lọc chi tiết từng nhân viên.</p></div>{canSyncLegacy && <button className="secondary-button" onClick={syncLegacy} disabled={isBusy}><RefreshCw size={16} className={busy === 'sync-legacy' ? 'spin' : ''} /> {busy === 'sync-legacy' ? 'Đang tải…' : 'Tải dữ liệu hệ thống cũ'}</button>}</div>
 
       <div className="saved-payroll-list">{savedBatches.map((item) => <article className="saved-payroll-card" key={item.batch}><header><div><h3>{item.batch}</h3><small>{item.saved_date ? `Lưu ${item.saved_date}${item.saved_time ? ` · ${item.saved_time}` : ''}` : 'Bảng lương đã lưu'}</small></div>{canDeleteHistory && <button className="danger-button compact" type="button" disabled={isBusy} onClick={() => deleteHistoryBatch(item.batch)}><Trash2 size={14} /> Xóa</button>}</header><div className="saved-payroll-metrics"><span>Nhân viên<strong>{item.employee_count}</strong></span><span>Tổng thực nhận<strong>{money(item.total_net)}</strong></span></div><button className="secondary-button" type="button" disabled={isBusy} onClick={() => setBatch(item.batch)}>Xem chi tiết</button></article>)}</div>
