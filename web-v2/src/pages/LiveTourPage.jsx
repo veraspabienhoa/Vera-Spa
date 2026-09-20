@@ -1556,11 +1556,21 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             })}</div> : <div className="tour-room-detail-empty">Phòng đang trống, chưa có nhân viên và dịch vụ.</div>}
           </div>}
         </div>
-        {isAdmin && <div className="live-tour-admin-controls-toggle">
-          <button type="button" className="secondary-button" aria-expanded={adminControlsVisible} aria-controls="live-tour-admin-controls" onClick={() => setAdminControlsVisible((visible) => !visible)}>
-            {adminControlsVisible ? 'Ẩn điều khiển' : 'Hiện điều khiển'}
-          </button>
-        </div>}
+        <div className="tour-quick-tools">
+          <LiveTourSearchSelect className="tour-employee-search" hideLabel label="Tìm nhanh tên nhân viên" placeholder="Tìm và chọn nhân viên…" emptyLabel="Tất cả nhân viên"
+            value={employeePickId} searchValue={employeeSearch}
+            filterOption={(option, query) => searchTextMatches(option.label, query)}
+            options={shiftRecords.map((record) => ({ value: stableEmployeeId(record), label: cellValue(record, employeeColumn), detail: `${cellValue(record, findColumn(columns, ['VAO CA']))} · ${cellValue(record, statusColumn) || 'Sẵn sàng'}` }))}
+            onSearch={(query) => { setEmployeeSearch(query); if (employeePickId) setSelectedIds(new Set()); setEmployeePickId('') }}
+            onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])) }}/>
+          {canEditAppointment && appointmentEditor(appointmentTarget, true)}
+          {isAdmin && <div className="tour-shift-filter" role="group" aria-label="Xếp ca nhân viên đã chọn">{['Ca 1', 'Ca 2'].map((shift) => <button type="button" key={shift} className="secondary-button" title={`${shift}: ghi đè ca tự động đến hết hôm nay`} disabled={selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('set_shift', { shift })}>{shift}</button>)}</div>}
+          {isAdmin && <div className="live-tour-admin-controls-toggle">
+            <button type="button" className="secondary-button" aria-expanded={adminControlsVisible} aria-controls="live-tour-admin-controls" onClick={() => setAdminControlsVisible((visible) => !visible)}>
+              {adminControlsVisible ? 'Ẩn điều khiển' : 'Hiện điều khiển'}
+            </button>
+          </div>}
+        </div>
         {(!isAdmin || adminControlsVisible) && <section id="live-tour-admin-controls" className={`panel live-tour-operator live-tour-controls ${privilegedLiveTourRole ? '' : 'live-tour-management-hidden'}`} aria-label="Điều khiển">
           <div className="live-tour-controls-grid">
             <div className="live-tour-controls-actions" role="group" aria-label="Bảng điều khiển Live Tour">
@@ -1582,16 +1592,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             </div>
           </div>
         </section>}
-        <div className="tour-quick-tools">
-          <LiveTourSearchSelect className="tour-employee-search" hideLabel label="Tìm nhanh tên nhân viên" placeholder="Tìm và chọn nhân viên…" emptyLabel="Tất cả nhân viên"
-            value={employeePickId} searchValue={employeeSearch}
-            filterOption={(option, query) => searchTextMatches(option.label, query)}
-            options={shiftRecords.map((record) => ({ value: stableEmployeeId(record), label: cellValue(record, employeeColumn), detail: `${cellValue(record, findColumn(columns, ['VAO CA']))} · ${cellValue(record, statusColumn) || 'Sẵn sàng'}` }))}
-            onSearch={(query) => { setEmployeeSearch(query); if (employeePickId) setSelectedIds(new Set()); setEmployeePickId('') }}
-            onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])) }}/>
-          {canEditAppointment && appointmentEditor(appointmentTarget, true)}
-          {isAdmin && <div className="tour-shift-filter" role="group" aria-label="Xếp ca nhân viên đã chọn">{['Ca 1', 'Ca 2'].map((shift) => <button type="button" key={shift} className="secondary-button" title={`${shift}: ghi đè ca tự động đến hết hôm nay`} disabled={selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('set_shift', { shift })}>{shift}</button>)}</div>}
-        </div>
       </section>
     </div>
 
