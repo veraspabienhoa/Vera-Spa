@@ -112,6 +112,8 @@ jobs:
               'complete payroll button exists': 'Hoàn thành bảng lương' in enhanced_page,
               'saved payroll delete controls exist': 'Xóa lịch sử kỳ đang chọn' in enhanced_page and 'deleteHistoryBatch' in enhanced_page,
               'saved payroll history supports edit and email selection': all(token in enhanced_page for token in ('Sửa bảng lương', 'emailHistory', 'historySelected', 'Chọn tất cả nhân viên đang hiển thị để gửi email')),
+              'KTV payroll calculates directly from Live Tour TIP': all(token in enhanced_page for token in ('Tính lương từ TIP', 'calculatePayrollFromTips(month, periodNo)')) and 'File TimeSoft' not in enhanced_page and 'Upload & tính lương' not in enhanced_page,
+              'KTV payroll money fields format while typing': 'import VeraMoneyInput' in enhanced_page and 'numberInputDisplayValue' not in enhanced_page and 'type="number"' not in enhanced_page,
               'saved payroll delete controls remain available': all(token in enhanced_page for token in ('canDeleteHistory &&', 'onClick={() => deleteHistoryBatch(item.batch)}', 'Xóa lịch sử kỳ đang chọn')),
               'payroll debt dates use shared dd-mm-yyyy control': debt_admin.count('<VeraDateInput required') == 3 and 'dateToIso' in debt_admin,
               'nonpositive take-home rows are highlighted': 'payroll-nonpositive' in enhanced_page and 'payroll-nonpositive' in enhanced_css,
