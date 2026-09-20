@@ -8,6 +8,7 @@ import os
 from typing import Any
 
 from sqlalchemy import text
+import vera_web_v2_notification_settings as notification_settings
 
 import vera_postgres_job_queue as job_queue
 
@@ -315,6 +316,12 @@ def monitor_once(
     metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate and, if due, send one alert/recovery notification."""
+    try:
+        with engine_instance().begin() as conn:
+            if not notification_settings.is_enabled(conn, "live_tour_queue"):
+                return {"event": "none", "conditions": [], "sent": 0, "disabled": True}
+    except Exception:
+        pass
     metrics = dict(metrics or job_queue.health_metrics(engine_instance, queue_name))
     conditions = evaluate(metrics)
     event, _ = _claim_event(engine_instance, queue_name, conditions)

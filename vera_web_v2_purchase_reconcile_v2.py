@@ -20,6 +20,7 @@ from fastapi import BackgroundTasks, Depends, Query
 from sqlalchemy import text
 
 import vera_web_v2_purchase_reconcile as base
+import vera_web_v2_notification_settings as notification_settings
 
 
 RELEASE = "purchase-reconcile-2026-08-31-v2"
@@ -184,6 +185,8 @@ def _dispatch_mismatch_alerts(
         subject = APP_URL
 
         with engine_instance().begin() as conn:
+            if not notification_settings.is_enabled(conn, "purchase_reconcile"):
+                return
             _ensure_alert_table(conn)
             for row in comparison_rows:
                 business_date = str(row.get("date") or "").strip()

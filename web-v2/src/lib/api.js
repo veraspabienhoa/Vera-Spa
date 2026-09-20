@@ -323,6 +323,10 @@ export const veraApi = {
   ),
   importComboSalesExcel: (file, department) => upload('/v2/work-schedule/combo-sales/import.xlsx', file, { department }),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
+  notificationSettings: () => request('/v2/notification-settings'),
+  updateNotificationSetting: (key, enabled) => request(`/v2/notification-settings/${encodeURIComponent(key)}`, {
+    method: 'PUT', body: JSON.stringify({ enabled }),
+  }),
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),
   deleteStorageData: (body) => request('/v2/storage', { method: 'DELETE', body: JSON.stringify(body) }),

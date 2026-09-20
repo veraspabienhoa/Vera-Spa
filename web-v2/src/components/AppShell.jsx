@@ -14,6 +14,7 @@ const items = [
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
   { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, permission: 'live_tour_admin' },
   { id: 'appearance', label: 'Giao diện', icon: Palette, ready: true, adminOnly: true },
+  { id: 'notifications', label: 'Thông báo', icon: BellRing, ready: true, adminOnly: true },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Lương KTV', icon: WalletCards, ready: true, permission: 'payroll_history' },
@@ -89,6 +90,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   const [mobileOpen, setMobileOpen] = useState(false)
   const [standaloneMenuOpen, setStandaloneMenuOpen] = useState(false)
   const [birthdayNotice, setBirthdayNotice] = useState(null)
+  const [notificationSettings, setNotificationSettings] = useState(null)
   const [breakAlerts, setBreakAlerts] = useState([])
   const [breakAlertsHidden, setBreakAlertsHidden] = useState(false)
   const [breakAlertControl, setBreakAlertControl] = useState({ disabled: false, busy: false })
@@ -102,15 +104,23 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   const isAdmin = role === 'admin'
 
   useEffect(() => {
+    let active = true
+    veraApi.notificationSettings().then((result) => {
+      if (active) setNotificationSettings(Object.fromEntries((result.settings || []).map((item) => [item.key, item.enabled])))
+    }).catch(() => { if (active) setNotificationSettings({}) })
+    return () => { active = false }
+  }, [user?.employee_username])
+
+  useEffect(() => {
     const viewerRole = String(user?.role || '').toLowerCase()
     const currentDay = new Date().getDate()
-    if (user?.must_change_password || !user?.permissions?.birthday || !['admin', 'quanly', 'letan'].includes(viewerRole) || currentDay > 5) return
+    if (!notificationSettings || notificationSettings.birthday === false || user?.must_change_password || !user?.permissions?.birthday || !['admin', 'quanly', 'letan'].includes(viewerRole) || currentDay > 5) return
     const today = new Date().toISOString().slice(0, 10)
     if (window.localStorage.getItem('vera-birthday-dismissed') === today) return
     veraApi.birthdays().then((result) => {
       if ((result.birthdays || []).length) setBirthdayNotice(result)
     }).catch(() => {})
-  }, [user?.must_change_password, user?.permissions?.birthday, user?.role])
+  }, [notificationSettings, user?.must_change_password, user?.permissions?.birthday, user?.role])
 
   useEffect(() => {
     if (user?.must_change_password) {

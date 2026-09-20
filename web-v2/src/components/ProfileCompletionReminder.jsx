@@ -69,10 +69,16 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
       return
     }
     try {
-      const [profileResult, identityResult] = await Promise.all([
+      const [profileResult, identityResult, notificationResult] = await Promise.all([
         veraApi.profile(),
         staffSecurityApi.identityMetadata(username).catch(() => ({ front: null, back: null })),
+        veraApi.notificationSettings().catch(() => ({ settings: [] })),
       ])
+      const profileReminder = (notificationResult.settings || []).find((item) => item.key === 'profile_completion')
+      if (profileReminder?.enabled === false) {
+        setMissing([])
+        return
+      }
       const profile = profileResult?.profile || {}
       const nextMissing = profile.profile_requirement_exempt
         ? []

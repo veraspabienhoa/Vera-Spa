@@ -44,6 +44,7 @@ from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
 from vera_web_v2_live_tour import install_live_tour_routes
 from vera_web_v2_operations_v41 import install_operations_v41
+from vera_web_v2_notification_settings import install_notification_settings_routes
 from vera_web_v2_outside_leave_rule import install_outside_leave_rule
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
 from vera_web_v2_payroll_enhancements import install_payroll_enhancement_routes
@@ -208,6 +209,7 @@ install_revenue_report_target(_shared.app, current_identity=_api.current_identit
 install_purchase_reconcile_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, google_client=_api._google_client)
 install_purchase_reconcile_v2(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_purchase_reconcile_alert_check(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client)
+install_notification_settings_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 
 install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
 install_department_attendance_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
