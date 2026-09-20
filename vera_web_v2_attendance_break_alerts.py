@@ -20,6 +20,7 @@ from sqlalchemy import text
 import vera_web_v2_people as people
 import vera_web_v2_snapshot as snapshot
 import vera_web_v2_timesoft_live_refresh as timesoft_live
+import vera_web_v2_notification_settings as notification_settings
 from vera_attendance_rules import break_return_deadline
 
 
@@ -377,6 +378,8 @@ def install_attendance_break_alerts(app, *, engine_instance: Callable[[], Any], 
         live_refresh = timesoft_live.refresh_today(force=False)
         deliveries: list[dict[str, Any]] = []
         with engine_instance().begin() as conn:
+            if not notification_settings.is_enabled(conn, "attendance_break"):
+                return {"alerts": [], "disabled": True, "notification_setting": "attendance_break"}
             freshness = _timesoft_freshness(conn)
             records = snapshot._records(conn, today, today)
             facts = [fact for item in records if (fact := _fact(item, now)) is not None]

@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 import vera_auto_check as auto_check
 import vera_web_v2_department_attendance as department_attendance
+import vera_web_v2_notification_settings as notification_settings
 
 
 RELEASE = "auto-penalty-employee-push-2026-09-02-v1"
@@ -112,6 +113,13 @@ def _send(subscription: dict[str, Any], payload: dict[str, Any], private_key: st
 def notify_pending(engine, limit: int = 100) -> dict[str, int]:
     """Send each recorded auto penalty once; failed/no-subscription items retry."""
     result = {"claimed": 0, "notified": 0, "suppressed": 0, "pending": 0, "sent": 0, "failed": 0}
+    try:
+        with engine.begin() as conn:
+            if not notification_settings.is_enabled(conn, "auto_penalty"):
+                result["suppressed"] = 1
+                return result
+    except Exception:
+        pass
     try:
         events = _claim(engine, limit)
     except Exception:

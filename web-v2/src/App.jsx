@@ -14,7 +14,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -64,6 +64,7 @@ const MilkTeaPage = lazyPage(() => import('./pages/MilkTeaPage'))
 const SpaManagementPage = lazyPage(() => import('./pages/SpaManagementPage'))
 const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
 const AppearanceSettingsPage = lazyPage(() => import('./pages/AppearanceSettingsPage'))
+const NotificationSettingsPage = lazyPage(() => import('./pages/NotificationSettingsPage'))
 const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
 const WorkSchedulePage = lazyPage(() => import('./pages/WorkSchedulePage'))
 const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentPayrollSettingsPage'))
@@ -228,6 +229,7 @@ export default function App() {
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
         {page === 'settings' && <SpaManagementPage user={shellUser} mode="settings" />}
         {page === 'appearance' && <AppearanceSettingsPage user={shellUser} />}
+        {page === 'notifications' && <NotificationSettingsPage user={shellUser} />}
         {page === 'auto-check' && <AutoCheckPage user={shellUser} />}
         {page === 'changes' && <AdminChangesPage user={shellUser} />}
         {page === 'storage' && <StorageAdminPage />}

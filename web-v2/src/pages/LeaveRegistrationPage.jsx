@@ -190,8 +190,14 @@ export default function LeaveRegistrationPage({ user }) {
   const refreshWatchDates = useCallback(async () => {
     if (!isApiConfigured) return
     try {
-      const result = await veraApi.watchDates()
-      setWatchDates(result.watch_dates || [])
+      const [result, notificationResult] = await Promise.all([
+        veraApi.watchDates(),
+        veraApi.notificationSettings().catch(() => ({ settings: [] })),
+      ])
+      const setting = (notificationResult.settings || []).find((item) => item.key === 'leave_watch')
+      setWatchDates(setting?.enabled === false
+        ? (result.watch_dates || []).map((item) => ({ ...item, has_unread: false }))
+        : (result.watch_dates || []))
       setWatchError('')
     } catch (err) {
       setWatchError(err.message || 'Không tải được các ngày đang quan tâm.')

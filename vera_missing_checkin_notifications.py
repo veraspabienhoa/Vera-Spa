@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 from sqlalchemy import text
+import vera_web_v2_notification_settings as notification_settings
 
 
 RELEASE = "missing-scheduled-checkin-push-2026-09-08-v2"
@@ -282,6 +283,13 @@ def notify_missing_scheduled_checkins(
     as unavailable data, never mass absence.
     """
     result = {"scheduled": 0, "eligible": 0, "notified": 0, "sent": 0, "failed": 0, "skipped": 0}
+    try:
+        with engine.begin() as conn:
+            if not notification_settings.is_enabled(conn, "missing_checkin"):
+                result["skipped"] = 1
+                return result
+    except Exception:
+        pass
     if not isinstance(checkin_df, pd.DataFrame) or checkin_df.empty:
         return result
     current = now or datetime.now(timezone(timedelta(hours=7)))

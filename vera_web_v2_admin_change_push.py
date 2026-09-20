@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks, Depends
 from sqlalchemy import bindparam, text
 
 import vera_web_v2_admin_audit_archive as audit
+import vera_web_v2_notification_settings as notification_settings
 
 
 RELEASE = "4.2-admin-instant-change-push"
@@ -70,6 +71,8 @@ def _dispatch_admin_change_pushes(
         if not uids:
             return
         with engine_instance().connect() as conn:
+            if not notification_settings.is_enabled(conn, "admin_leave_changes"):
+                return
             private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
             subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or APP_URL
             if not private_key:
