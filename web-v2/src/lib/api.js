@@ -298,6 +298,7 @@ export const veraApi = {
   createPayrollAccumulationRefund: (body) => request('/v2/payroll/accumulation-refunds', { method: 'POST', body: JSON.stringify(body) }),
   deletePayrollAccumulationRefund: (id) => request(`/v2/payroll/accumulation-refunds/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   calculatePayroll: (file, month, periodNo) => upload('/v2/payroll/calculate', file, { month, period_no: periodNo }),
+  calculatePayrollFromTips: (month, periodNo) => request(`/v2/payroll/calculate-from-tips?${new URLSearchParams({ month, period_no: periodNo })}`, { method: 'POST' }),
   savePayroll: (body) => request('/v2/payroll/save', { method: 'POST', body: JSON.stringify(body) }),
   emailPayroll: (body) => request('/v2/payroll/email', { method: 'POST', body: JSON.stringify(body) }),
   payrollObligations: () => request('/v2/payroll/obligations'),
