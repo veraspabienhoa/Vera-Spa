@@ -175,6 +175,56 @@ def test_component_combo_adjustment_preserves_used_and_reconciles_totals():
     assert state==before
 
 
+def test_admin_can_change_unused_customer_combo_type_and_remaining_balance():
+    state = customer_state()
+    purchase = state['customers'][0]['combo_purchases'][0]
+    purchase.update(combo_id='old', used=0, remaining=10, total=10)
+    state['combos'] = [{
+        'id': 'vip-new', 'name': 'Combo VIP mới', 'tickets': 6,
+        'components': [{'service_id': 's1', 'service_name': 'Body 90', 'quantity': 6}],
+        'unlimited': True,
+    }]
+    live._apply_action(state, 'customer_combo_update', {
+        'customer_id': 'c1', 'purchase_id': 'p1', 'combo_id': 'vip-new',
+        'reason': 'Sửa đúng loại combo khách đã mua',
+        'components': [{'service_id': 's1', 'remaining': 4}],
+    }, 'admin', NOW)
+    changed = state['customers'][0]['combo_purchases'][0]
+    assert (changed['combo_id'], changed['combo_name']) == ('vip-new', 'Combo VIP mới')
+    assert (changed['total'], changed['used'], changed['remaining']) == (4, 0, 4)
+    assert changed['component_balances'] == [{
+        'service_id': 's1', 'service_name': 'Body 90', 'used': 0, 'remaining': 4, 'total': 4,
+    }]
+    assert state['customer_changes'][-1]['before']['combo_id'] == 'old'
+
+
+def test_used_customer_combo_type_cannot_change_but_remaining_can():
+    state = customer_state()
+    state['customers'][0]['combo_purchases'][0]['combo_id'] = 'old'
+    state['combos'] = [{'id': 'new', 'name': 'Combo mới', 'tickets': 6}]
+    before = deepcopy(state)
+    with pytest.raises(HTTPException, match='đã phát sinh lượt sử dụng'):
+        live._apply_action(state, 'customer_combo_update', {
+            'customer_id': 'c1', 'purchase_id': 'p1', 'combo_id': 'new',
+            'remaining': 5, 'reason': 'Đổi loại',
+        }, 'admin', NOW)
+    assert state == before
+    live._apply_action(state, 'customer_combo_update', {
+        'customer_id': 'c1', 'purchase_id': 'p1', 'combo_id': 'old',
+        'remaining': 5, 'reason': 'Đối soát vé còn lại',
+    }, 'admin', NOW)
+    assert state['customers'][0]['combo_purchases'][0]['remaining'] == 5
+
+
+def test_customer_combo_editor_and_schedule_today_column_are_wired():
+    root = Path(__file__).resolve().parents[1] / 'web-v2/src'
+    dialog = (root / 'components/LiveTourCustomerDialog.jsx').read_text()
+    schedule = (root / 'pages/WorkSchedulePage.jsx').read_text()
+    assert 'Loại combo' in dialog and 'comboCatalog' in dialog and "combo_id: comboId" in dialog
+    assert '.schedule-grid .today{background:#fff0bd!important' in schedule
+    assert "className={day === todayIso ? 'today' : ''}" in schedule
+
+
 def test_new_controls_and_dialogs_are_mounted_in_both_workspaces():
     root=Path(__file__).resolve().parents[1]/'web-v2/src'
     board=(root/'pages/LiveTourPage.jsx').read_text()

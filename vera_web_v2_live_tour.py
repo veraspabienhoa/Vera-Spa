@@ -4342,7 +4342,8 @@ def install_live_tour_routes(
             require_feature(conn, ident, "live_tour_customers_view")
             state, revision = read_board(conn, now, project=False)
             can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
-        return {"revision": revision, "customers": [dict(deepcopy(c), combo_purchases=[deepcopy(p) for p in c.get("combo_purchases", []) if not p.get("deleted_at")]) for c in state["customers"] if not c.get("deleted_at")], "can_export": can_export}
+        is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
+        return {"revision": revision, "customers": [dict(deepcopy(c), combo_purchases=[deepcopy(p) for p in c.get("combo_purchases", []) if not p.get("deleted_at")]) for c in state["customers"] if not c.get("deleted_at")], "combo_catalog": deepcopy(state["combos"]) if is_admin else [], "can_export": can_export}
 
     @app.get("/v2/live-tour/settings")
     def spa_settings(ident: identity_type = Depends(current_identity)):
@@ -4394,6 +4395,8 @@ def install_live_tour_routes(
             raise HTTPException(403, "Chỉ Admin được nhập combo.")
         if action == "combo_sale_decide" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được duyệt hoặc từ chối yêu cầu bán combo.")
+        if action == "customer_combo_update" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được sửa loại combo và số vé còn lại.")
         payload = deepcopy(body.payload)
         sharing = [payload, *[row for row in (payload.get("bookings") or []) if isinstance(row, dict)]]
         if any(row.get("share_private_room") for row in sharing):
