@@ -23,6 +23,7 @@ export default function NotificationSettingsPage({ user }) {
     try {
       const result = await veraApi.updateNotificationSetting(item.key, !item.enabled)
       setItems((current) => current.map((entry) => entry.key === item.key ? result.setting : entry))
+      window.dispatchEvent(new CustomEvent('vera-notification-settings-changed', { detail: result.setting }))
       setSavedKey(item.key)
       window.setTimeout(() => setSavedKey(''), 1800)
     } catch (err) {
