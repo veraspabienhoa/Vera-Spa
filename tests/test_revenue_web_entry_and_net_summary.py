@@ -36,6 +36,9 @@ def test_revenue_entry_can_save_thu_and_chi_together():
     assert 'entries.append(("Thu", income_amount, body.income_note))' in backend
     assert 'entries.append(("Chi", expense_amount, body.expense_note))' in backend
     assert '"saved_rows": saved_rows' in backend
+    assert "confirm_duplicate: bool = False" in backend
+    assert "find_duplicate_web_entries" in backend
+    assert '"code": "duplicate_revenue_entry"' in backend
 
     assert "entryIncomeAmount" in page
     assert "entryExpenseAmount" in page
@@ -44,3 +47,6 @@ def test_revenue_entry_can_save_thu_and_chi_together():
     assert "Lưu Thu + Chi" in page
     assert "income_amount: Number(incomeAmount || 0)" in page
     assert "expense_amount: Number(expenseAmount || 0)" in page
+    assert "Có thể xóa để nhập nội dung Thu mới." in page
+    assert "Có thể xóa để nhập nội dung Chi mới." in page
+    assert "window.confirm(saveError.message)" in page
