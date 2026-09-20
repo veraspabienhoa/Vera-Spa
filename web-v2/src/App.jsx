@@ -14,7 +14,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -70,6 +70,7 @@ const WorkSchedulePage = lazyPage(() => import('./pages/WorkSchedulePage'))
 const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentPayrollSettingsPage'))
 const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollPanel'))
 const ContractPage = lazyPage(() => import('./pages/ContractPage'))
+const TrainingPage = lazyPage(() => import('./pages/TrainingPage'))
 export default function App() {
   const verifiedUser = useRef(null)
   const [standaloneRequest] = useState(readStandalonePageRequest)
@@ -220,6 +221,7 @@ export default function App() {
         {page === 'department-payroll' && <DepartmentPayrollPanel user={shellUser} />}
         {page === 'payroll-config' && <DepartmentPayrollSettingsPage user={shellUser} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
+        {page === 'training' && <TrainingPage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
