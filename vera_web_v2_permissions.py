@@ -109,6 +109,13 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "payroll_export": "Export Excel", "payroll_email": "Gửi email",
         "payroll_history_edit": "Cập nhật / ghi đè lịch sử", "payroll_history_delete": "Xóa bản lưu",
     },
+    "Đào tạo & đánh giá": {
+        "training_view": "Xem Đào tạo & đánh giá",
+        "training_session_create": "Nhập nhật ký đào tạo",
+        "training_session_update": "Cập nhật nhật ký đào tạo của mình",
+        "training_evaluate": "Thực hiện đánh giá được phân công",
+        "training_admin": "Quản trị phạm vi và đợt đánh giá",
+    },
     "Chấm công / hệ thống": {
         "snapshot_today": "Xem Chấm công", "snapshot_export": "Export Chấm công",
         "auto_penalty": "Xem Auto Check", "auto_penalty_control": "Tạm dừng / mở Auto Check",
@@ -190,6 +197,9 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
     {"id": "revenue", "label": "Doanh thu", "view_feature": "revenue_view", "features": [
         "revenue_view", "revenue_tip_edit", "revenue_entry_create",
     ]},
+    {"id": "training", "label": "Đào tạo & đánh giá", "view_feature": "training_view", "features": [
+        "training_view", "training_session_create", "training_session_update", "training_evaluate", "training_admin",
+    ]},
     {"id": "snapshot", "label": "Chấm công", "view_feature": "snapshot_today", "features": [
         "snapshot_today", "snapshot_export",
     ]},
@@ -264,6 +274,12 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     # Bảng tua
     "tour_refresh": {"tour"},
     "tour_leave_sync": {"tour"},
+
+    # Đào tạo & đánh giá
+    "training_session_create": {"training_view"},
+    "training_session_update": {"training_view"},
+    "training_evaluate": {"training_view"},
+    "training_admin": {"training_view"},
 
     # Live Tour
     "live_tour_operate": {"live_tour_view"},

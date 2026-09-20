@@ -2873,3 +2873,13 @@ install_storage_routes(
     delete_leave_uids=_delete_leave_uids,
     identity_type=Identity,
 )
+
+from vera_web_v2_training import install_training_routes
+
+install_training_routes(
+    app,
+    engine_instance=_engine_instance,
+    current_identity=current_identity,
+    require_feature=_require_feature,
+    identity_type=Identity,
+)

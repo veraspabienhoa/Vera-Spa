@@ -22,6 +22,7 @@ const items = [
   { id: 'payroll-config', label: 'Cấu hình lương', icon: Settings2, ready: true, permission: 'payroll_config_edit', adminOnly: true },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
+  { id: 'training', label: 'Đào tạo & đánh giá', icon: ClipboardList, ready: true, permission: 'training_view' },
   { id: 'contract-1', label: 'Hợp đồng', icon: FileSignature, ready: true, permission: 'contract_1_view' },
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
   { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
