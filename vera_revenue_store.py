@@ -254,3 +254,37 @@ def insert_web_entries(conn, *, transaction_date: date, entries: list[tuple[str,
         )
     """), params)
     return len(params)
+
+
+def find_duplicate_web_entries(conn, *, entries: list[tuple[str, float, str]]) -> list[dict[str, Any]]:
+    """Return prior rows with the same type, amount and normalized note."""
+    ensure_schema(conn)
+    duplicates: list[dict[str, Any]] = []
+    for transaction_type, amount, note in entries:
+        normalized_note = str(note or "").strip()
+        row = conn.execute(text(f"""
+            SELECT transaction_type, amount, transaction_date, note, entered_at
+            FROM {TABLE}
+            WHERE transaction_type = :transaction_type
+              AND amount = :amount
+              AND lower(btrim(note)) = lower(:note)
+            ORDER BY entered_at DESC, id DESC
+            LIMIT 1
+        """), {
+            "transaction_type": transaction_type,
+            "amount": round(float(amount), 2),
+            "note": normalized_note,
+        }).mappings().first()
+        if not row:
+            continue
+        entered_at = row["entered_at"]
+        if entered_at and entered_at.tzinfo is None:
+            entered_at = entered_at.replace(tzinfo=timezone.utc)
+        duplicates.append({
+            "transaction_type": str(row["transaction_type"]),
+            "amount": float(row["amount"]),
+            "note": str(row["note"] or ""),
+            "transaction_date": row["transaction_date"].isoformat() if row["transaction_date"] else None,
+            "entered_at": entered_at.astimezone(VN_TZ).isoformat() if entered_at else None,
+        })
+    return duplicates
