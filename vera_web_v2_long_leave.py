@@ -24,6 +24,7 @@ import gspread
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+import vera_web_v2_notification_settings as notification_settings
 
 
 LONG_LEAVE_DATASET = "long_leave"
@@ -34,6 +35,7 @@ LONG_LEAVE_HEADERS = [
     "Ngày gửi", "Giờ gửi", "Người duyệt", "Ngày duyệt", "Giờ duyệt",
     "Nguồn", "Người cập nhật", "Cập nhật lúc", "Tài liệu JSON",
     "Nhắc tải tài liệu", "Ngày nhắc", "Người nhắc", "Email CC", "Loại đơn",
+    "Ngày quay lại làm việc", "Ghi chú quay lại", "Trạng thái kỳ nghỉ",
 ]
 REQUEST_TYPE_LONG = "Nghỉ dài hạn"
 REQUEST_TYPE_LONG_DISPLAY = "Nghỉ làm đẹp"
@@ -287,6 +289,36 @@ def _approved_rows(conn) -> list[dict[str, Any]]:
             "status": STATUS_APPROVED,
             "approved_by": str(payload.get("Người duyệt") or "").strip(),
             "approved_date": str(payload.get("Ngày duyệt") or "").strip(),
+            "return_date": (_parse_vn_date(payload.get("Ngày quay lại làm việc")).isoformat()
+                            if _parse_vn_date(payload.get("Ngày quay lại làm việc")) else ""),
+            "return_note": str(payload.get("Ghi chú quay lại") or "").strip(),
+            "leave_completed": str(payload.get("Trạng thái kỳ nghỉ") or "").strip() == "Đã kết thúc",
+        })
+    return output
+
+
+def _approved_resignation_rows(conn) -> list[dict[str, Any]]:
+    rows = conn.execute(text("""
+        SELECT logical_id, date_from, payload
+        FROM vera_phase14_record
+        WHERE dataset=:dataset AND record_status=:approved AND record_type=:resignation
+        ORDER BY to_date(NULLIF(date_from,''), 'DD/MM/YYYY') DESC NULLS LAST, updated_at DESC
+        LIMIT 300
+    """), {"dataset": LONG_LEAVE_DATASET, "approved": STATUS_APPROVED,
+             "resignation": REQUEST_TYPE_RESIGNATION}).mappings().all()
+    output = []
+    for row in rows:
+        payload = _payload_value(row.get("payload"))
+        start_date = _parse_vn_date(row.get("date_from") or payload.get("Từ ngày"))
+        output.append({
+            "id": str(payload.get("ID") or str(row.get("logical_id") or "").split(":", 1)[-1]),
+            "employee_name": str(payload.get("Tên nhân viên") or "").strip(),
+            "request_type": REQUEST_TYPE_RESIGNATION,
+            "start_date": start_date.isoformat() if start_date else "",
+            "reason": str(payload.get("Lý do nghỉ dài hạn") or "").strip(),
+            "detail": str(payload.get("Chi tiết") or "").strip(),
+            "approved_by": str(payload.get("Người duyệt") or "").strip(),
+            "approved_date": str(payload.get("Ngày duyệt") or "").strip(),
         })
     return output
 
@@ -317,7 +349,7 @@ def _worksheet(google_client: Callable[[], Any], leave_sheet_id: str):
     header = ws.row_values(1)
     if header[:len(LONG_LEAVE_HEADERS)] != LONG_LEAVE_HEADERS:
         ws.update(
-            range_name=f"A1:W1",
+            range_name=f"A1:Z1",
             values=[LONG_LEAVE_HEADERS],
             value_input_option="USER_ENTERED",
         )
@@ -377,6 +409,38 @@ def _send_email(payload: dict[str, Any], cc_emails: list[str]) -> tuple[bool, st
         return False, f"Đơn đã lưu nhưng email chưa gửi được: {type(exc).__name__}."
 
 
+def _send_admin_push(engine_instance, api_module, payload: dict[str, Any]) -> dict[str, int]:
+    result = {"sent": 0, "failed": 0}
+    try:
+        with engine_instance().connect() as conn:
+            if not notification_settings.is_enabled(conn, "long_leave_requests"):
+                return result
+            private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
+            subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
+            if not private_key:
+                return result
+            subscriptions = conn.execute(text("""
+                SELECT s.subscription_id::text subscription_id,s.endpoint,s.p256dh,s.auth_secret
+                FROM vera_v2_push_subscription s
+                JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id
+                WHERE s.is_active=true AND p.is_active=true
+                  AND lower(COALESCE(p.role,''))='admin'
+            """)).mappings().all()
+        request_type = _display_request_type(payload.get("Loại đơn"))
+        push_payload = {
+            "title": f"VERA SPA · Có {request_type} mới",
+            "body": f"{payload.get('Tên nhân viên','')} · {payload.get('Từ ngày','')} đến {payload.get('Đến ngày','')}. Mở mục Phép năm để duyệt.",
+            "url": "https://app.veraspa.vn/?page=long-leave",
+            "tag": f"vera-long-leave-{payload.get('ID','')}",
+        }
+        for row in subscriptions:
+            ok, _status, _error = api_module._send_web_push({**dict(row), "payload": push_payload}, private_key, subject)
+            result["sent" if ok else "failed"] += 1
+    except Exception:
+        result["failed"] += 1
+    return result
+
+
 def install_long_leave_routes(
     app,
     *,
@@ -388,6 +452,7 @@ def install_long_leave_routes(
     leave_sheet_id: str,
     identity_type,
     vn_tz,
+    api_module=None,
 ):
     """Install leave-request routes into the authenticated Web V2 API."""
 
@@ -411,6 +476,7 @@ def install_long_leave_routes(
                 "employment_start_date": None,
             }
             approved = _approved_rows(conn) if can_stats else []
+            resignations = _approved_resignation_rows(conn) if can_stats else []
             resignation_eligibility = _resignation_eligibility(conn, ident.employee_username, today) if can_resignation else {
                 "allowed": False, "message": "Tài khoản chưa được cấp quyền gửi Đơn xin nghỉ việc."
             }
@@ -425,6 +491,7 @@ def install_long_leave_routes(
             "paused": bool(pause.get("enabled")),
             "pause_message": str(pause.get("message") or DEFAULT_PAUSE_MESSAGE),
             "approved_requests": approved,
+            "resignation_requests": resignations,
         }
 
     @app.post("/v2/long-leave/requests")
@@ -582,10 +649,12 @@ def install_long_leave_routes(
             conn.close()
 
         email_ok, email_message = _send_email(payload, cc_emails)
+        push_result = _send_admin_push(engine_instance, api_module, payload) if api_module is not None else {"sent": 0, "failed": 0}
         return {
             "ok": True,
             "message": f"Đã gửi đơn {_display_request_type(request_type)} THÀNH CÔNG.",
             "request_id": str(payload.get("ID") or ""),
             "email_sent": email_ok,
             "warnings": [] if email_ok else [email_message],
+            "admin_push_sent": push_result["sent"],
         }

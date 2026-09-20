@@ -83,6 +83,9 @@ export default function LongLeaveSection({ user }) {
   const resignationMinDate = overview?.resignation_eligibility?.earliest_resignation_date || addDays(today(), 30)
   const annualMaxEnd = useMemo(() => addDays(form.start_date, 6), [form.start_date])
   const approvedRequests = overview?.approved_requests || []
+  const resignationRequests = overview?.resignation_requests || []
+  const [returnDrafts, setReturnDrafts] = useState({})
+  const [returnBusyId, setReturnBusyId] = useState('')
   const canSubmit = !saving && (isResignation
     ? canUseResignation && overview?.can_submit_resignation === true
     : canUseForm && overview?.can_submit === true)
@@ -137,6 +140,24 @@ export default function LongLeaveSection({ user }) {
     }
   }
 
+  const markReturned = async (item) => {
+    const draft = returnDrafts[item.id] || {}
+    if (!draft.return_date || !String(draft.note || '').trim()) {
+      setNotice({ status: 'error', message: 'Vui lòng nhập ngày quay lại và ghi chú.' })
+      return
+    }
+    if (!window.confirm(`Xác nhận ${shortEmployeeName(item.employee_name)} đã quay lại làm việc và kết thúc kỳ nghỉ?`)) return
+    setReturnBusyId(item.id); setNotice(null)
+    try {
+      const result = await veraApi.markLongLeaveReturned(item.id, draft)
+      setNotice({ status: 'success', message: result.message })
+      setReturnDrafts((current) => ({ ...current, [item.id]: {} }))
+      await load()
+    } catch (error) {
+      setNotice({ status: 'error', message: error.message || 'Không cập nhật được ngày quay lại.' })
+    } finally { setReturnBusyId('') }
+  }
+
   return (
     <section className="long-leave-section" aria-labelledby="long-leave-heading">
       <div className="long-leave-heading-row">
@@ -158,7 +179,7 @@ export default function LongLeaveSection({ user }) {
         </div>
       )}
 
-      {(canUseForm || canUseResignation) && (
+      {role !== 'admin' && (canUseForm || canUseResignation) && (
         <section className="panel long-leave-form-panel">
           <div className="panel-title-row">
             <div>
@@ -263,7 +284,7 @@ export default function LongLeaveSection({ user }) {
             <>
               <div className="approved-leave-desktop table-wrap">
                 <table>
-                  <thead><tr><th>Nhân viên</th><th>Loại đơn</th><th>Từ ngày</th><th>Đến ngày</th><th className="center">Số ngày</th><th>Nội dung</th><th>Chi tiết</th></tr></thead>
+                  <thead><tr><th>Nhân viên</th><th>Loại đơn</th><th>Từ ngày</th><th>Đến ngày</th><th className="center">Số ngày</th><th>Nội dung</th><th>Chi tiết</th>{role === 'admin' && <th>Quay lại làm việc</th>}</tr></thead>
                   <tbody>
                     {approvedRequests.map((item) => (
                       <tr key={item.id}>
@@ -274,6 +295,10 @@ export default function LongLeaveSection({ user }) {
                         <td className="center"><strong>{item.days}</strong></td>
                         <td>{item.reason || '—'}</td>
                         <td className="detail-cell">{item.detail || '—'}</td>
+                        {role === 'admin' && <td className="long-leave-return-cell">{item.leave_completed
+                          ? <><strong>{formatDateDisplay(item.return_date)}</strong><small>{item.return_note}</small><em>Đã kết thúc kỳ nghỉ</em></>
+                          : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}>Kết thúc kỳ nghỉ</button></>}
+                        </td>}
                       </tr>
                     ))}
                   </tbody>
@@ -294,11 +319,22 @@ export default function LongLeaveSection({ user }) {
                     </div>
                     <p><strong>Nội dung:</strong> {item.reason || '—'}</p>
                     <p><strong>Chi tiết:</strong> {item.detail || '—'}</p>
+                    {role === 'admin' && <div className="long-leave-return-mobile">{item.leave_completed
+                      ? <p><strong>Đã quay lại:</strong> {formatDateDisplay(item.return_date)} · {item.return_note}</p>
+                      : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}>Kết thúc kỳ nghỉ</button></>}
+                    </div>}
                   </article>
                 ))}
               </div>
             </>
           )}
+        </section>
+      )}
+
+      {canViewApproved && (
+        <section className="panel approved-leave-panel resignation-list-panel">
+          <div className="panel-title-row"><div><h2>NHÂN VIÊN NGHỈ VIỆC</h2><p>{resignationRequests.length} đơn nghỉ việc đã được duyệt.</p></div><div className="approved-count-chip"><UserRoundCheck size={15}/> {resignationRequests.length}</div></div>
+          {!resignationRequests.length ? <div className="setup-note">Chưa có đơn nghỉ việc đã duyệt.</div> : <div className="table-wrap"><table><thead><tr><th>Nhân viên</th><th>Ngày nghỉ việc</th><th>Lý do</th><th>Chi tiết / bàn giao</th><th>Người duyệt</th></tr></thead><tbody>{resignationRequests.map((item) => <tr key={item.id}><td><strong>{shortEmployeeName(item.employee_name)}</strong><small>{item.id}</small></td><td>{formatDateDisplay(item.start_date)}</td><td>{item.reason || '—'}</td><td>{item.detail || '—'}</td><td>{item.approved_by || '—'}<small>{item.approved_date || ''}</small></td></tr>)}</tbody></table></div>}
         </section>
       )}
     </section>
