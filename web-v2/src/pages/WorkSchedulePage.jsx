@@ -1082,6 +1082,7 @@ export default function WorkSchedulePage({ user }) {
       .combo-sale-fields input,.combo-sale-fields select,.combo-sale-fields textarea{border:1px solid #d5e0dc;border-radius:8px;padding:8px;background:#fff;font:inherit}
       .combo-form-actions{align-self:end}
       .combo-sale-table{width:100%;border-collapse:collapse;min-width:700px}.combo-sale-table th,.combo-sale-table td{border:1px solid #dfe8e5;padding:8px;text-align:left}.combo-sale-table th{background:#e7f1ed}.combo-edit,.combo-delete{border:0;border-radius:7px;padding:6px}.combo-edit{color:#1f6047;background:#eaf5f0}.combo-delete{color:#a33;background:#fff0f0}
+      .schedule-grid .today{background:#fff0bd!important;box-shadow:inset 0 0 0 3px #c17a00}.schedule-grid thead th.today{color:#6f3f00}.schedule-grid tfoot td.today{background:#ffe4a0!important}
       @media(max-width:700px){.combo-sale-fields{grid-template-columns:1fr}.combo-excel-actions{width:100%}.combo-excel-actions button{flex:1;justify-content:center}}
     `}</style>
 
@@ -1162,7 +1163,7 @@ export default function WorkSchedulePage({ user }) {
           const day = isoDate(date)
           const counts = shiftSummary?.[day]?.[shift] || { regular: 0, overtime: 0, total: 0 }
           const active = highlightedTotal?.day === day && highlightedTotal?.shift === shift
-          return <td key={`${shift}-${day}`}><button type="button" className={`shift-total-cell ${active ? 'active' : ''}`} title={`Highlight nhân viên ${shift} ngày ${displayFullDate(date)}`} onClick={() => { setHighlightedEmployee(''); setHighlightedTotal((current) => current?.day === day && current?.shift === shift ? null : { day, shift }) }}><b>{counts.total}</b><small>{counts.regular} chính + {counts.overtime} TC</small></button></td>
+          return <td key={`${shift}-${day}`} className={day === todayIso ? 'today' : ''}><button type="button" className={`shift-total-cell ${active ? 'active' : ''}`} title={`Highlight nhân viên ${shift} ngày ${displayFullDate(date)}`} onClick={() => { setHighlightedEmployee(''); setHighlightedTotal((current) => current?.day === day && current?.shift === shift ? null : { day, shift }) }}><b>{counts.total}</b><small>{counts.regular} chính + {counts.overtime} TC</small></button></td>
         })}</tr>)}</tfoot>}
       </table>
       {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {DEPARTMENT_INFO[department].label}.</div>}

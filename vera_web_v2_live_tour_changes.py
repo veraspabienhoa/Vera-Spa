@@ -12,7 +12,7 @@ def change_customer(state, action, payload, actor, now, *, iso, bounded_number):
     if action.startswith('customer_combo_'):
         allowed |= {'purchase_id'}
         if action.endswith('update'):
-            allowed |= {'remaining', 'components', 'note'}
+            allowed |= {'combo_id', 'remaining', 'components', 'note'}
     if set(payload) - allowed:
         raise HTTPException(400, 'Nội dung điều chỉnh không hợp lệ.')
     working = deepcopy(state)
@@ -36,6 +36,31 @@ def change_customer(state, action, payload, actor, now, *, iso, bounded_number):
         target['deleted_at'] = iso(now)
     else:
         number = lambda v: int(bounded_number(v, label='Số vé còn lại', minimum=0, maximum=100000, integer=True))
+        combo_id = str(payload.get('combo_id') or target.get('combo_id') or '').strip()
+        combo_changed = bool(payload.get('combo_id')) and combo_id != str(target.get('combo_id') or '')
+        if combo_changed:
+            if int(target.get('used') or 0) > 0 or any(r.get('combo_purchase_id') == target['id'] for r in working.get('combo_usage', [])):
+                raise HTTPException(409, 'Combo đã phát sinh lượt sử dụng; không thể đổi loại combo. Admin vẫn có thể sửa số vé còn lại.')
+            combo = next((r for r in working.get('combos', []) if str(r.get('id') or '') == combo_id), None)
+            if not combo:
+                raise HTTPException(404, 'Không tìm thấy loại combo trong danh mục.')
+            target['combo_id'] = combo_id
+            target['combo_name'] = str(combo.get('name') or '').strip()
+            for key in ('starts_on', 'expires_on', 'unlimited'):
+                if key in combo:
+                    target[key] = deepcopy(combo[key])
+                else:
+                    target.pop(key, None)
+            if combo.get('components'):
+                target['component_balances'] = [{
+                    'service_id': str(part.get('service_id') or ''),
+                    'service_name': str(part.get('service_name') or ''),
+                    'used': 0,
+                    'remaining': number(part.get('quantity')),
+                    'total': number(part.get('quantity')),
+                } for part in combo['components']]
+            else:
+                target.pop('component_balances', None)
         if 'component_balances' in target:
             if sum(p.get('used', 0) for p in target['component_balances']) != target.get('used', 0):
                 raise HTTPException(409, 'Số lượt đã dùng chưa khớp chi tiết dịch vụ; cần đối soát trước khi sửa.')
@@ -48,7 +73,7 @@ def change_customer(state, action, payload, actor, now, *, iso, bounded_number):
                     raise HTTPException(400, 'Dịch vụ combo bị trùng hoặc không hợp lệ.')
                 by_id[part['service_id']] = number(part['remaining'])
             if set(by_id) != {p['service_id'] for p in target['component_balances']}:
-                raise HTTPException(400, 'Không đổi loại dịch vụ của combo đã mua.')
+                raise HTTPException(400, 'Chi tiết dịch vụ không khớp loại combo đã chọn.')
             for part in target['component_balances']:
                 part['remaining'] = by_id[part['service_id']]
                 part['total'] = part['used'] + part['remaining']
