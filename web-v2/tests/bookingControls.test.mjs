@@ -228,3 +228,43 @@ test('single and room booking keep full-board STT when opening and searching idl
     } finally { await dispose() }
   }
 })
+
+test('new room-booking rows copy the first service once and remain independently editable', async () => {
+  const BookingDialog = await component('LiveTourBookingDialog')
+  const data = {
+    state: {
+      employees: [
+        { id: 'e1', name: 'Mỹ Duyên', service: '', status: '', work_status: 'Đi làm', shift: 'Ca 1' },
+        { id: 'e2', name: 'Bảo Trâm', service: '', status: '', work_status: 'Đi làm', shift: 'Ca 1' },
+      ],
+      rooms: [{ name: '2.1', active: true }, { name: '2.2', active: true }],
+    },
+    services: [{ id: 'body-90', name: '90 Tiêu chuẩn', duration: 90, price: 250000 }],
+    records: [],
+  }
+  const dispose = await render(() => React.createElement(BookingDialog, {
+    data, context: { roomGroup: '2', roomLabel: 'Phòng 2' }, canBook: true, onClose() {},
+  }))
+  try {
+    const serviceInput = () => {
+      const label = [...document.querySelectorAll('label')].find(item => item.textContent === 'Dịch vụ *')
+      return document.getElementById(label.htmlFor)
+    }
+    await act(() => serviceInput().focus())
+    await act(() => document.querySelector('[role="option"]').click())
+    assert.equal(serviceInput().value, '90 Tiêu chuẩn')
+    await act(() => document.querySelector('.tour-multi-add').click())
+    let serviceInputs = [...document.querySelectorAll('.tour-multi-booking-row')].map(row => {
+      const label = [...row.querySelectorAll('label')].find(item => item.textContent === 'Dịch vụ *')
+      return document.getElementById(label.htmlFor)
+    })
+    assert.deepEqual(serviceInputs.map(input => input.value), ['90 Tiêu chuẩn', '90 Tiêu chuẩn'])
+    const secondService = serviceInputs[1].closest('.live-tour-search-select')
+    await act(() => secondService.querySelector('.search-clear-button').click())
+    serviceInputs = [...document.querySelectorAll('.tour-multi-booking-row')].map(row => {
+      const label = [...row.querySelectorAll('label')].find(item => item.textContent === 'Dịch vụ *')
+      return document.getElementById(label.htmlFor)
+    })
+    assert.deepEqual(serviceInputs.map(input => input.value), ['90 Tiêu chuẩn', ''])
+  } finally { await dispose() }
+})
