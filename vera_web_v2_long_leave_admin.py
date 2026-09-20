@@ -39,6 +39,11 @@ class LongLeaveDecision(BaseModel):
     rejection_reason: str = Field(default="", max_length=2000)
 
 
+class ReturnToWorkUpdate(BaseModel):
+    return_date: date
+    note: str = Field(min_length=1, max_length=2000)
+
+
 def _require_admin(ident) -> None:
     if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
         raise HTTPException(403, "Chỉ Admin được duyệt Phép năm / Nghỉ làm đẹp / Nghỉ việc.")
@@ -220,7 +225,7 @@ def install_long_leave_admin_routes(
             old_row = request_values[request_sheet_row - 1] if request_sheet_row <= len(request_values) else []
             request_backup = list(old_row[:len(LONG_LEAVE_HEADERS)]) + [""] * max(0, len(LONG_LEAVE_HEADERS) - len(old_row))
             request_ws.update(
-                range_name=f"A{request_sheet_row}:W{request_sheet_row}",
+                range_name=f"A{request_sheet_row}:Z{request_sheet_row}",
                 values=[[payload.get(header, "") for header in LONG_LEAVE_HEADERS]],
                 value_input_option="USER_ENTERED",
             )
@@ -292,7 +297,7 @@ def install_long_leave_admin_routes(
             if request_ws is not None and request_sheet_row >= 2 and request_backup is not None:
                 try:
                     request_ws.update(
-                        range_name=f"A{request_sheet_row}:W{request_sheet_row}",
+                        range_name=f"A{request_sheet_row}:Z{request_sheet_row}",
                         values=[request_backup],
                         value_input_option="USER_ENTERED",
                     )
@@ -311,7 +316,7 @@ def install_long_leave_admin_routes(
             if request_ws is not None and request_sheet_row >= 2 and request_backup is not None:
                 try:
                     request_ws.update(
-                        range_name=f"A{request_sheet_row}:W{request_sheet_row}",
+                        range_name=f"A{request_sheet_row}:Z{request_sheet_row}",
                         values=[request_backup],
                         value_input_option="USER_ENTERED",
                     )
@@ -320,6 +325,55 @@ def install_long_leave_admin_routes(
             raise HTTPException(500, f"Không duyệt được đơn an toàn: {type(exc).__name__}: {exc}") from exc
         finally:
             conn.close()
+
+    @app.post("/v2/long-leave/admin/requests/{request_id}/return-to-work")
+    def mark_return_to_work(
+        request_id: str,
+        body: ReturnToWorkUpdate,
+        ident: identity_type = Depends(current_identity),
+    ):
+        _require_admin(ident)
+        request_id = str(request_id or "").strip()
+        now = datetime.now(vn_tz)
+        with engine_instance().begin() as conn:
+            row = _request_row(conn, request_id, lock=True)
+            if not row:
+                raise HTTPException(404, "Không tìm thấy kỳ nghỉ.")
+            row = dict(row)
+            payload = _payload_value(row.get("payload"))
+            request_type = str(row.get("record_type") or payload.get("Loại đơn") or "")
+            if norm(request_type) == norm(REQUEST_TYPE_RESIGNATION):
+                raise HTTPException(400, "Đơn nghỉ việc không có thao tác quay lại làm việc.")
+            if str(row.get("record_status") or "") != STATUS_APPROVED:
+                raise HTTPException(409, "Chỉ cập nhật được kỳ nghỉ đã duyệt.")
+            payload["Ngày quay lại làm việc"] = body.return_date.strftime("%d/%m/%Y")
+            payload["Ghi chú quay lại"] = str(body.note or "").strip()
+            payload["Trạng thái kỳ nghỉ"] = "Đã kết thúc"
+            payload["Người cập nhật"] = ident.employee_username
+            payload["Cập nhật lúc"] = now.strftime("%d/%m/%Y %H:%M:%S")
+            conn.execute(text("""
+                UPDATE vera_phase14_record
+                SET payload=CAST(:payload AS jsonb), updated_by=:updated_by,
+                    revision=revision+1, updated_at=NOW()
+                WHERE dataset=:dataset AND logical_id=:logical_id
+            """), {
+                "payload": json.dumps(payload, ensure_ascii=False),
+                "updated_by": ident.employee_username,
+                "dataset": LONG_LEAVE_DATASET,
+                "logical_id": f"long:{request_id}",
+            })
+            source_row = row.get("source_row")
+        try:
+            request_ws = _worksheet(google_client, leave_sheet_id)
+            request_sheet_row, _values = _sheet_request_row(request_ws, request_id, source_row)
+            request_ws.update(
+                range_name=f"A{request_sheet_row}:Z{request_sheet_row}",
+                values=[[payload.get(header, "") for header in LONG_LEAVE_HEADERS]],
+                value_input_option="USER_ENTERED",
+            )
+        except Exception as exc:
+            raise HTTPException(500, f"Đã cập nhật máy chủ nhưng chưa đồng bộ được bảng dữ liệu cũ: {type(exc).__name__}.") from exc
+        return {"ok": True, "message": "Đã ghi nhận nhân viên quay lại làm việc và kết thúc kỳ nghỉ."}
 
     app.state.long_leave_admin_routes_installed = True
     app.state.long_leave_admin_release = LONG_LEAVE_ADMIN_RELEASE

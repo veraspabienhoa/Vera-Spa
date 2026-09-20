@@ -258,6 +258,9 @@ export const veraApi = {
     method: 'POST',
     body: JSON.stringify(body),
   }),
+  markLongLeaveReturned: (requestId, body) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(requestId)}/return-to-work`, {
+    method: 'POST', body: JSON.stringify(body),
+  }),
   profile: () => request('/v2/profile'),
   profileReferenceData: (provinceCode = '') => request(`/v2/profile/reference-data${provinceCode === '' ? '' : `?province_code=${encodeURIComponent(provinceCode)}`}`),
   updateProfile: (body) => request('/v2/profile', { method: 'PATCH', body: JSON.stringify(body) }),

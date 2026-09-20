@@ -132,6 +132,7 @@
 .long-leave-date-control input { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 0; opacity: 0; cursor: pointer; }
 .long-leave-form-note { grid-column: 1 / -1; padding: 9px 11px; border-radius: 10px; color: #725824; background: #fff8e8; font-size: 11px; line-height: 1.4; }
 .long-leave-submit { grid-column: 1 / -1; width: 100%; }
+.long-leave-return-cell{min-width:220px}.long-leave-return-cell input,.long-leave-return-mobile input{width:100%;margin:3px 0;padding:7px}.long-leave-return-cell small,.long-leave-return-cell em,.resignation-list-panel td small{display:block;margin-top:3px}.long-leave-return-cell em{color:var(--success);font-style:normal;font-weight:800}.long-leave-return-mobile{display:grid;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid #dce4df}.resignation-list-panel{border-color:#ead2d2}.resignation-list-panel h2{color:#7d2929}
 .approved-count-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 999px; color: #315d47; background: #edf5f0; font-size: 11px; font-weight: 900; }
 .approved-leave-desktop { width: 100%; max-width: 100%; }
 .approved-leave-desktop table { table-layout: auto; }

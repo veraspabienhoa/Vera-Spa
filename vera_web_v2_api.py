@@ -2805,6 +2805,7 @@ install_long_leave_routes(
     leave_sheet_id=LEAVE_SHEET_ID,
     identity_type=Identity,
     vn_tz=VN_TZ,
+    api_module=__import__(__name__),
 )
 
 from vera_web_v2_permissions import install_permission_routes
