@@ -14,6 +14,7 @@ CATALOG = (
     ("profile_completion", "Hoàn thiện hồ sơ", "Nhắc nhân viên bổ sung thông tin và ảnh CCCD còn thiếu.", "Nhân viên", "Trong ứng dụng, thiết bị"),
     ("leave_watch", "Theo dõi ngày nghỉ", "Thông báo khi danh sách đăng ký nghỉ ở ngày đang theo dõi thay đổi.", "Người theo dõi", "Trong ứng dụng"),
     ("admin_leave_changes", "Thay đổi đăng ký nghỉ", "Báo cho Admin khi có đăng ký, sửa hoặc xóa ngày nghỉ.", "Admin", "Thông báo đẩy"),
+    ("admin_daily_summary", "Báo cáo thay đổi hằng ngày", "Tổng hợp các thay đổi của hệ thống trong 24 giờ gửi cho Admin.", "Admin", "Thông báo đẩy"),
     ("auto_penalty", "Phạt tự động", "Thông báo khi hệ thống tự động ghi nhận một khoản phạt.", "Nhân viên, quản lý", "Thông báo đẩy"),
     ("missing_checkin", "Thiếu chấm công FaceID", "Cảnh báo nhân viên có lịch làm nhưng chưa chấm công đúng hạn.", "Nhân viên, lễ tân, quản lý", "Thông báo đẩy"),
     ("attendance_break", "Nghỉ giữa ca", "Cảnh báo đến giờ nghỉ, sắp hết giờ hoặc quá giờ nghỉ giữa ca.", "Nhân viên, lễ tân, quản lý", "Trong ứng dụng, thông báo đẩy"),

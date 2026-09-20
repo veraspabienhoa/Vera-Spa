@@ -47,6 +47,7 @@ from vera_employee_self_service_policy import notice_days as employee_self_servi
 from vera_letan_leave_policy import load_policy as load_letan_leave_policy
 from vera_leave_registration_shared import count_unique_leave_people, quota_group, summarize_leave_day
 from vera_json import json_safe, json_text
+import vera_web_v2_notification_settings as notification_settings
 from vera_progressive_penalty import (
     applies as progressive_penalty_applies,
     bonus as progressive_penalty_bonus,
@@ -881,6 +882,8 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
     dates = sorted(set(target_dates))
     deliveries: list[dict[str, Any]] = []
     with _engine_instance().begin() as conn:
+        if not notification_settings.is_enabled(conn, "leave_watch"):
+            return {"dates": len(dates), "deliveries": 0, "sent": 0, "failed": 0, "deactivated": 0}
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
         subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
         if not private_key:
@@ -964,6 +967,8 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
 
 def _dispatch_admin_daily_pushes() -> dict[str, int]:
     with _engine_instance().connect() as conn:
+        if not notification_settings.is_enabled(conn, "admin_daily_summary"):
+            return {"deliveries": 0, "sent": 0, "failed": 0, "deactivated": 0}
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
         subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
         if not private_key:
