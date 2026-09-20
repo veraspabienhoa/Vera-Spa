@@ -71,3 +71,13 @@ def test_revenue_tip_and_mobile_ledger_layout_are_bounded():
     assert ".detail-filter-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in page
     assert ".ledger-table th:nth-child(n+5),.ledger-table td:nth-child(n+5){display:none}" in page
     assert ".revenue-page{overflow-x:hidden}" in page
+
+
+def test_mobile_ledger_shows_every_column_as_card_fields():
+    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    for label in ("Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Ngày nhập", "Giờ nhập", "Người nhập"):
+        assert f'data-label="{label}"' in page
+    assert ".ledger-table thead{display:none}" in page
+    assert ".ledger-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in page
+    assert ".ledger-table td{display:grid!important" in page
+    assert ".detail-filter-actions{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}" in page
