@@ -32,17 +32,19 @@ function LiveTourMultiBookingDialog({ data, context, canBook, canCustomers, canS
   const bookingClock = useBookingClock()
   const eligibleEmployees = bookingEmployees(employees, bookingClock, data.booking_settings?.employee_available_minutes, data.records)
   const groupRooms = rooms.filter((item) => bookingRoomGroup(item.name, rooms) === context.roomGroup)
-  const blankRow = (usedRooms = []) => {
+  const blankRow = (usedRooms = [], serviceId = '') => {
     const available = bookingRoomState(rooms, data.room_assignments || employees, catalog, '', '', [], sharePrivateRoom).options
       .filter((option) => option.group === context.roomGroup && !option.className && !usedRooms.includes(option.value))
-    return { employee_id: '', customer_id: '', service_id: '', room: available[0]?.value || groupRooms[0]?.name || '', request: '' }
+    return { employee_id: '', customer_id: '', service_id: serviceId, room: available[0]?.value || groupRooms[0]?.name || '', request: '' }
   }
   const [rows, setRows] = useState(() => [blankRow()])
   const [note, setNote] = useState('')
   const [message, setMessage] = useState('')
   const updateRow = (index, patch) => setRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
   const removeRow = (index) => setRows((current) => current.length === 1 ? current : current.filter((_, rowIndex) => rowIndex !== index))
-  const addRow = () => setRows((current) => current.length >= groupRooms.length ? current : [...current, blankRow(current.map((row) => row.room))])
+  const addRow = () => setRows((current) => current.length >= groupRooms.length
+    ? current
+    : [...current, blankRow(current.map((row) => row.room), current[0]?.service_id || '')])
   const submit = async (event) => {
     event.preventDefault(); setMessage('')
     if (rows.some((row) => !row.employee_id || !row.service_id || !row.room)) return setMessage('Mỗi dòng phải chọn nhân viên, dịch vụ và phòng/giường.')
