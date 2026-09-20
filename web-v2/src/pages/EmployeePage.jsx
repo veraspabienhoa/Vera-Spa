@@ -11,6 +11,7 @@ import KtvShiftSettingsPanel from './KtvShiftSettingsPanel'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import VeraDateInput from '../components/VeraDateInput'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
+import { refreshProfileReferenceData } from '../lib/profileReferenceRefresh'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
@@ -156,6 +157,7 @@ export default function EmployeePage({ user }) {
   const [profileUser, setProfileUser] = useState('')
   const [profileDraft, setProfileDraft] = useState({})
   const [profileScrollRequest, setProfileScrollRequest] = useState(0)
+  const [bankCatalogBusy, setBankCatalogBusy] = useState(false)
   const profileSectionRef = useRef(null)
 
   const load = async (quiet = false) => {
@@ -174,6 +176,22 @@ export default function EmployeePage({ user }) {
   }
 
   useEffect(() => { load() }, [])
+
+  const refreshBankCatalog = async () => {
+    if (bankCatalogBusy) return
+    setBankCatalogBusy(true); setNotice(null)
+    try {
+      const result = await refreshProfileReferenceData()
+      setData((current) => ({
+        ...(current || {}),
+        banks: result.banks || current?.banks || [],
+        bank_options: result.bank_options || current?.bank_options || [],
+      }))
+      setNotice({ type: 'success', message: `Đã cập nhật danh mục ngân hàng Việt Nam. ${result.bank_standard || ''}`.trim() })
+    } catch (error) {
+      setNotice({ type: 'error', message: error.message || 'Không cập nhật được danh mục ngân hàng Việt Nam.' })
+    } finally { setBankCatalogBusy(false) }
+  }
 
   useEffect(() => {
     if (!profileScrollRequest) return undefined
@@ -483,7 +501,7 @@ export default function EmployeePage({ user }) {
               {section.fields.map(([field, label]) => {
                 const isDate = field.includes('date')
                 if (field === 'gender') return <label key={field}>{label}<select value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
-                if (field === 'bank_name') return <label key={field}>{label}<select value={profileDraft.bank_code || profileDraft.bank_name || ''} onChange={(event) => setProfileDraft({ ...profileDraft, bank_name: event.target.value, bank_code: event.target.value })}><option value="">-- Chọn ngân hàng --</option>{(data?.bank_options || []).map((bank) => <option key={bank.code} value={bank.code}>{bank.short_name || bank.code}{bank.name && bank.name !== bank.short_name ? ` · ${bank.name}` : ''}</option>)}</select></label>
+                if (field === 'bank_name') return <label key={field}>{label}<div className="staff-bank-reference-row"><select value={profileDraft.bank_code || profileDraft.bank_name || ''} onChange={(event) => setProfileDraft({ ...profileDraft, bank_name: event.target.value, bank_code: event.target.value })}><option value="">-- Chọn ngân hàng --</option>{profileDraft.bank_name && !profileDraft.bank_code && !(data?.bank_options || []).some((bank) => bank.code === profileDraft.bank_name) && <option value={profileDraft.bank_name}>{profileDraft.bank_name}</option>}{(data?.bank_options || []).map((bank) => <option key={bank.code} value={bank.code}>{bank.short_name || bank.code}{bank.name && bank.name !== bank.short_name ? ` · ${bank.name}` : ''}</option>)}</select><button type="button" className="secondary-button compact" onClick={refreshBankCatalog} disabled={bankCatalogBusy}><RefreshCw size={14} className={bankCatalogBusy ? 'spin' : ''}/> {bankCatalogBusy ? 'Đang cập nhật…' : 'Cập nhật ngân hàng Việt Nam'}</button></div></label>
                 if (field === 'bank_code') return <label key={field}>{label}<input value={profileDraft.bank_code || ''} readOnly aria-label="Mã ngân hàng tự động" placeholder="Tự động: VCB / ACB / TCB…" /></label>
                 if (isDate) return <label key={field}>{label}<VeraDateInput aria-label={label} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: event.target.value })} /></label>
                 return <label key={field}>{label}<input type="text" inputMode={field === 'cccd_number' ? 'numeric' : undefined} maxLength={field === 'cccd_number' ? 12 : undefined} value={profileDraft[field] ?? ''} onChange={(event) => setProfileDraft({ ...profileDraft, [field]: field === 'cccd_number' ? event.target.value.replace(/\D/g, '').slice(0, 12) : event.target.value })} /></label>
