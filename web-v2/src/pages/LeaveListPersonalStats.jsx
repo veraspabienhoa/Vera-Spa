@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
 import { emptyLeaveDaySummary, formatLeaveDays } from '../lib/leaveStats'
 
-const parseDisplayDate = (value) => { const match = String(value || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return match ? `${match[3]}-${match[2]}-${match[1]}` : '' }
+const parseDisplayDate = (value) => { const match = String(value || '').trim().match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/); return match ? `${match[3]}-${match[2]}-${match[1]}` : '' }
 const sameContext = (a, b) => a.start === b.start && a.end === b.end && a.employee === b.employee && a.displayStart === b.displayStart && a.displayEnd === b.displayEnd
 
 export default function LeaveListPersonalStats({ user }) {
@@ -26,7 +26,7 @@ export default function LeaveListPersonalStats({ user }) {
       if (!host) { host = document.createElement('div'); host.dataset.leaveListPersonalStats = 'true'; panel.insertBefore(host, tableWrap); ownedHost = host }
       setTarget((current) => current === host ? current : host)
       const description = String(panel.querySelector('.panel-title-row p')?.textContent || '')
-      const rangeMatch = description.match(/Bộ lọc\s+(\d{2}\/\d{2}\/\d{4})\s*[–-]\s*(\d{2}\/\d{2}\/\d{4})/)
+      const rangeMatch = description.match(/Bộ lọc\s+(\d{2}[/-]\d{2}[/-]\d{4})\s+[–-]\s+(\d{2}[/-]\d{2}[/-]\d{4})/)
       if (!rangeMatch) return
       const searchValue = String(panel.querySelector('.employee-search-field input[type="search"]')?.value || '').trim()
       const next = { start: parseDisplayDate(rangeMatch[1]), end: parseDisplayDate(rangeMatch[2]), employee: searchValue, displayStart: rangeMatch[1], displayEnd: rangeMatch[2] }
