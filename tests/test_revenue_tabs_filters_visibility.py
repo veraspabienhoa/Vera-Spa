@@ -61,3 +61,13 @@ def test_revenue_entry_defaults_notes_fits_kpis_and_exports_excel():
     assert "Chỉ cần bấm <strong>Lưu Thu + Chi</strong>" not in page
     assert "Nguồn: <strong>{data.source" not in page
     assert "replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.')" in money_input
+
+
+def test_revenue_tip_and_mobile_ledger_layout_are_bounded():
+    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    assert "grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr) auto" in page
+    assert page.count("Báo cáo tới ngày") >= 2
+    assert 'className="report-table ledger-table"' in page
+    assert ".detail-filter-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in page
+    assert ".ledger-table th:nth-child(n+5),.ledger-table td:nth-child(n+5){display:none}" in page
+    assert ".revenue-page{overflow-x:hidden}" in page
