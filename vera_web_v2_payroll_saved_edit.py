@@ -15,7 +15,7 @@ from sqlalchemy import text
 import vera_web_v2_payroll as _payroll
 
 
-PAYROLL_SAVED_EDIT_RELEASE = "3.8-saved-payroll-edit"
+PAYROLL_SAVED_EDIT_RELEASE = "3.8-saved-payroll-edit-path"
 
 
 def _period_dates(records: list[dict[str, Any]]) -> tuple[Any, Any]:
@@ -43,7 +43,9 @@ def install_payroll_saved_edit_routes(
     def saved_edit_health():
         return {"ok": True, "release": PAYROLL_SAVED_EDIT_RELEASE}
 
-    @app.post("/v2/payroll/saved-batches/{batch_id}/edit")
+    # Batch labels contain a slash (for example "Kỳ 1 - Tháng 9/2026").
+    # Starlette decodes %2F before matching, so the path converter is required.
+    @app.post("/v2/payroll/saved-batches/{batch_id:path}/edit")
     def reopen_saved_payroll(batch_id: str, ident: identity_type = Depends(current_identity)):
         wanted = str(batch_id or "").strip()
         if not wanted:
