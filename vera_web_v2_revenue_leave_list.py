@@ -60,6 +60,7 @@ class RevenueEntryCreate(BaseModel):
     income_note: str = Field(default="", max_length=1000)
     expense_amount: float = Field(default=0, ge=0, le=10_000_000_000_000)
     expense_note: str = Field(default="", max_length=1000)
+    confirm_duplicate: bool = False
 
 
 def _find_route(app, path: str, method: str):
@@ -457,6 +458,23 @@ def install_revenue_leave_list_routes(
             entries.append(("Chi", expense_amount, body.expense_note))
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_FEATURE)
+            duplicate_rows = revenue_store.find_duplicate_web_entries(conn, entries=entries)
+            if duplicate_rows and not body.confirm_duplicate:
+                labels = ", ".join(
+                    f"{row['transaction_type']} {round(float(row['amount'])):,}đ".replace(",", ".")
+                    for row in duplicate_rows
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "duplicate_revenue_entry",
+                        "message": (
+                            f"Phát hiện giao dịch có cùng số tiền và cùng nội dung: {labels}. "
+                            "Bạn có muốn vẫn lưu giao dịch này không?"
+                        ),
+                        "duplicates": duplicate_rows,
+                    },
+                )
             saved_rows = revenue_store.insert_web_entries(
                 conn, transaction_date=body.transaction_date, entries=entries, ident=ident,
             )
