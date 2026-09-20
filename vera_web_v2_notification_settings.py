@@ -21,6 +21,10 @@ CATALOG = (
     ("attendance_break", "Nghỉ giữa ca", "Cảnh báo đến giờ nghỉ, sắp hết giờ hoặc quá giờ nghỉ giữa ca.", "Nhân viên, lễ tân, quản lý", "Trong ứng dụng, thông báo đẩy"),
     ("live_tour_queue", "Hàng đợi Live Tour", "Cảnh báo hàng đợi đồng bộ Live Tour lỗi, quá tải hoặc đã phục hồi.", "Admin", "Thông báo đẩy"),
     ("purchase_reconcile", "Đối chiếu mua hàng", "Cảnh báo khi số liệu mua hàng và Doanh thu-Chi phí không khớp.", "Admin, quản lý", "Thông báo đẩy"),
+    ("ui_guidance", "Hướng dẫn chọn và bộ lọc", "Nhắc chọn nhân viên phù hợp, chọn dữ liệu, điều kiện tìm kiếm hoặc bộ lọc.", "Tất cả tài khoản", "Popup trong ứng dụng"),
+    ("ui_success", "Thao tác thành công", "Xác nhận lưu, cập nhật, xuất file hoặc thao tác đã hoàn tất.", "Tất cả tài khoản", "Popup trong ứng dụng"),
+    ("ui_warning", "Cảnh báo giao diện", "Các cảnh báo nghiệp vụ và trạng thái cần người dùng chú ý.", "Tất cả tài khoản", "Popup trong ứng dụng"),
+    ("ui_error", "Lỗi hệ thống và kết nối", "Lỗi tải dữ liệu, lỗi máy chủ và mã HTTP như 500/502/503.", "Tất cả tài khoản", "Popup trong ứng dụng"),
 )
 VALID_KEYS = frozenset(row[0] for row in CATALOG)
 
