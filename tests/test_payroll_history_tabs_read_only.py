@@ -15,9 +15,11 @@ def test_payroll_has_separate_calculate_and_history_tabs():
     assert 'payroll-tab-history>section.panel:not(.payroll-history-panel)' in wrapper
 
 
-def test_saved_payroll_cannot_be_reopened_for_editing():
-    wrapper = (ROOT / "web-v2/src/pages/PayrollPageV38.jsx").read_text(encoding="utf-8")
+def test_saved_payroll_can_be_reopened_and_history_can_be_emailed():
+    page = (ROOT / "web-v2/src/pages/PayrollPageEnhanced.jsx").read_text(encoding="utf-8")
     api = (ROOT / "vera_web_v2_api_v38.py").read_text(encoding="utf-8")
-    assert "PayrollSavedAdminPanel" not in wrapper
-    assert "install_payroll_saved_edit_routes" not in api
-
+    assert "install_payroll_saved_edit_routes" in api
+    assert "Sửa bảng lương" in page
+    assert "emailHistory" in page
+    assert "Chọn tất cả nhân viên đang hiển thị để gửi email" in page
+    assert "Gửi email (${historySelected.length})" in page
