@@ -73,7 +73,7 @@ async function loadPurchaseReconcile({ preset, start, end, signal }) {
   return payload
 }
 
-async function saveRevenueEntry({ transactionDate, incomeAmount, incomeNote, expenseAmount, expenseNote }) {
+async function saveRevenueEntry({ transactionDate, incomeAmount, incomeNote, expenseAmount, expenseNote, confirmDuplicate = false }) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const response = await fetch(`${apiBase}/v2/revenue/entry`, {
     method: 'POST',
@@ -84,10 +84,17 @@ async function saveRevenueEntry({ transactionDate, incomeAmount, incomeNote, exp
       income_note: String(incomeNote || '').trim(),
       expense_amount: Number(expenseAmount || 0),
       expense_note: String(expenseNote || '').trim(),
+      confirm_duplicate: Boolean(confirmDuplicate),
     }),
   })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  if (!response.ok) {
+    const detail = payload.detail
+    const error = new Error((typeof detail === 'object' ? detail?.message : detail) || payload.message || `HTTP ${response.status}`)
+    error.status = response.status
+    error.code = typeof detail === 'object' ? detail?.code : ''
+    throw error
+  }
   return payload
 }
 
@@ -362,13 +369,21 @@ export default function RevenuePage({ user }) {
       if (!Number.isFinite(incomeAmount) || incomeAmount < 0) throw new Error('Số tiền Thu không hợp lệ.')
       if (!Number.isFinite(expenseAmount) || expenseAmount < 0) throw new Error('Số tiền Chi không hợp lệ.')
       if (incomeAmount <= 0 && expenseAmount <= 0) throw new Error('Hãy nhập ít nhất một số tiền Thu hoặc Chi lớn hơn 0.')
-      const result = await saveRevenueEntry({
+      const entryPayload = {
         transactionDate: entryDate,
         incomeAmount,
         incomeNote: entryIncomeNote,
         expenseAmount,
         expenseNote: entryExpenseNote,
-      })
+      }
+      let result
+      try {
+        result = await saveRevenueEntry(entryPayload)
+      } catch (saveError) {
+        if (saveError?.status !== 409 || saveError?.code !== 'duplicate_revenue_entry') throw saveError
+        if (!window.confirm(saveError.message)) return
+        result = await saveRevenueEntry({ ...entryPayload, confirmDuplicate: true })
+      }
       setEntryIncomeAmount('')
       setEntryExpenseAmount('')
       setIncomeNoteEdited(false)
@@ -481,9 +496,9 @@ export default function RevenuePage({ user }) {
       <h2>NHẬP DOANH THU - CHI PHÍ</h2>
       <label className="entry-date">Ngày giao dịch<VeraDateInput value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note">Ghi chú Thu<input type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/></label>
+      <label className="entry-note">Ghi chú Thu<input type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/><small>Có thể xóa để nhập nội dung Thu mới.</small></label>
       <label className="entry-amount entry-expense">Số tiền Chi<VeraMoneyInput value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note entry-expense-note">Ghi chú Chi<input type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setExpenseNoteEdited(true); setEntryExpenseNote(event.target.value) }} placeholder="Chi phí + ngày giao dịch" disabled={savingEntry}/></label>
+      <label className="entry-note entry-expense-note">Ghi chú Chi<input type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setExpenseNoteEdited(true); setEntryExpenseNote(event.target.value) }} placeholder="Chi phí + ngày giao dịch" disabled={savingEntry}/><small>Có thể xóa để nhập nội dung Chi mới.</small></label>
       <button type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
     </form>}
 
