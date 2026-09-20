@@ -14,6 +14,9 @@ from typing import Any
 
 from google.auth.transport.requests import AuthorizedSession
 from fastapi import Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 from pyxlsb import open_workbook
 import requests
 
@@ -341,6 +344,34 @@ def _serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return output
 
 
+def _ledger_export(rows: list[dict[str, Any]]) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Doanh thu-Chi phí"
+    headers = ["Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Ngày nhập", "Giờ nhập", "Người nhập"]
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="173B2E")
+        cell.fill = PatternFill("solid", fgColor="DCEFE5")
+        cell.alignment = Alignment(horizontal="center")
+    for row in rows:
+        sheet.append([
+            row.get("date_label") or "", row.get("type") or "", float(row.get("amount") or 0),
+            row.get("note") or "", row.get("entered_date_label") or "",
+            row.get("entered_time") or "", row.get("entered_by") or "",
+        ])
+    for cell in sheet["C"][1:]:
+        cell.number_format = '#,##0"đ"'
+    widths = [14, 18, 18, 48, 14, 12, 24]
+    for index, width in enumerate(widths, 1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    sheet.freeze_panes = "A2"
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return stream
+
+
 def install_purchase_reconcile_routes(
     app, *, engine_instance, current_identity, require_feature, norm, google_client,
 ) -> None:
@@ -414,6 +445,37 @@ def install_purchase_reconcile_routes(
             "purchase_rows": _serialize_rows(sorted(purchase_rows, key=lambda row: row["date"], reverse=True)),
             "ledger_rows": _serialize_rows(sorted(ledger_rows, key=lambda row: row["date"], reverse=True)),
         }
+
+    @app.get("/v2/revenue/ledger/export.xlsx")
+    def export_revenue_ledger(
+        preset: str = Query(default="this_month", max_length=30),
+        start_date: date | None = Query(default=None, alias="start"),
+        end_date: date | None = Query(default=None, alias="end"),
+        transaction_date: date | None = Query(default=None),
+        transaction_type: str = Query(default="", max_length=30),
+        amount: str = Query(default="", max_length=40),
+        note: str = Query(default="", max_length=300),
+        ident=Depends(current_identity),
+    ):
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+        start, end = _resolve_range(preset, start_date, end_date)
+        values = _read_revenue_values(google_client, engine_instance)
+        rows = _filtered(_parse_revenue_input(values, norm), start, end)
+        type_key, note_key = norm(transaction_type), norm(note)
+        amount_digits = re.sub(r"\D", "", amount)
+        rows = [row for row in rows if (
+            (not transaction_date or row["date"] == transaction_date)
+            and (not type_key or norm(row.get("type")) == type_key)
+            and (not note_key or note_key in norm(row.get("note")))
+            and (not amount_digits or amount_digits in str(round(float(row.get("amount") or 0))))
+        )]
+        filename = f"VERA_DoanhThu_ChiPhi_{start:%d-%m-%Y}_{end:%d-%m-%Y}.xlsx"
+        return StreamingResponse(
+            _ledger_export(sorted(rows, key=lambda row: row["date"], reverse=True)),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     app.state.purchase_reconcile_installed = True
     app.state.purchase_reconcile_release = RELEASE
