@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
 import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
 import PayrollPersonalTracking from './PayrollPersonalTracking'
-import PayrollSavedAdminPanel from './PayrollSavedAdminPanel'
 import PayrollTimesoftAutoLoader from './PayrollTimesoftAutoLoader'
 import { numberInputDisplayValue } from '../lib/numberInput'
 import { getCurrentSession } from '../lib/supabase'
@@ -158,6 +157,7 @@ export default function PayrollPageV38({ user }) {
   const [notice, setNotice] = useState(null)
   const [payrollVersion, setPayrollVersion] = useState(0)
   const [overridesOpen, setOverridesOpen] = useState(false)
+  const [payrollTab, setPayrollTab] = useState('calculate')
 
   const loadOverrides = async (silent = false) => {
     if (!canEditConfig) return
@@ -239,6 +239,12 @@ export default function PayrollPageV38({ user }) {
     <style>{`
       .payroll-v38-stack.full{display:flex;flex-direction:column}
       .payroll-v38-stack.full>.payroll-page-enhanced{display:contents}
+      .payroll-main-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+      .payroll-main-tabs button{min-height:42px;padding:9px 18px;border:1px solid #b8d0c3;border-radius:12px;background:#fff;color:#24473a;font:inherit;font-weight:900;cursor:pointer}
+      .payroll-main-tabs button.active{background:#1f513f;color:#fff;border-color:#1f513f}
+      .payroll-page-enhanced.payroll-tab-calculate>.payroll-history-panel{display:none}
+      .payroll-page-enhanced.payroll-tab-history>section.panel:not(.payroll-history-panel){display:none}
+      @media(max-width:700px){.payroll-main-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-main-tabs button{width:100%;padding:8px 6px;white-space:nowrap}}
       .payroll-v38-stack.full>.payroll-personal-tracking{order:900}
       .payroll-v38-stack.full .payroll-default-config-section{order:910}
       .payroll-v38-stack.full>.payroll-v38-config{order:920}
@@ -248,11 +254,10 @@ export default function PayrollPageV38({ user }) {
     <PayrollPeriodAutoSelector key={`period-${payrollVersion}`} enabled={canCalculate && canFullPayroll} />
     <PayrollAdminSectionOrder enabled={canFullPayroll} version={payrollVersion} />
     <PayrollTimesoftAutoLoader enabled={canCalculate && canFullPayroll} />
-    {canFullPayroll && <PayrollPage key={payrollVersion} user={user} />}
-    {showPersonalTracking && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
-    {canFullPayroll && <PayrollSavedAdminPanel user={user} />}
-    {isAdmin && canFullPayroll && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
-    {canFullPayroll && canEditConfig && <div className="feature-page payroll-page payroll-v38-config">
+    {canFullPayroll && <PayrollPage key={payrollVersion} user={user} activeTab={payrollTab} onTabChange={setPayrollTab} />}
+    {showPersonalTracking && payrollTab === 'calculate' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
+    {isAdmin && canFullPayroll && payrollTab === 'calculate' && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
+    {canFullPayroll && canEditConfig && payrollTab === 'calculate' && <div className="feature-page payroll-page payroll-v38-config">
       <section className="panel">
         <div className="panel-title-row">
           <div>
