@@ -58,7 +58,7 @@ export default function LiveTourReportsPage({ user }) {
   const grants = data.capabilities
   const refresh = async () => { setBusy(true); setError(''); try { await load() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   if (!allowed) return <div className="panel">Tài khoản chưa có quyền Xem báo cáo.</div>
-  return <div className="feature-page spa-page">
+  return <div className="feature-page spa-page live-tour-reports-page">
     <div className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Báo cáo</h1><p>Hóa đơn, doanh thu, TIP và các giao dịch combo.</p></div><button className="secondary-button" disabled={busy} onClick={refresh}>Làm mới</button></div>
     {error && <p className="error-box" role="alert">{error}</p>}
     <section className="panel spa-content">
