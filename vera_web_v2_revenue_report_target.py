@@ -4,7 +4,9 @@ from __future__ import annotations
 import os
 from typing import Any, Callable
 
-from datetime import date\n\nfrom fastapi import Depends, Query
+from datetime import date
+
+from fastapi import Depends, Query
 
 
 RELEASE = "revenue-report-input-last-row-2026-08-31-v1"
