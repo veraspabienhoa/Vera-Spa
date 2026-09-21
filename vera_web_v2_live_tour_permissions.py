@@ -18,6 +18,7 @@ CAPABILITY_FEATURES = {
     "customers_delete": "live_tour_customers_delete",
     "customer_combo_edit": "live_tour_customer_combo_edit",
     "customer_combo_delete": "live_tour_customer_combo_delete",
+    "combo_import": "live_tour_combo_import",
     "reports_edit": "live_tour_reports_edit",
     "reports_delete": "live_tour_reports_delete",
 
