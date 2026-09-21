@@ -187,10 +187,21 @@ def install_training_routes(
                 WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'
             """ + employee_filter + " ORDER BY lower(COALESCE(NULLIF(e.full_name,''), e.username))"),
                 {"viewer": ident.employee_username}))
+            # A trainer may choose any active employee as the learner for a
+            # daily training log. Scope assignments still govern reports and
+            # periodic evaluations, where broader personnel data is exposed.
+            training_students = _rows(conn.execute(text("""
+                SELECT e.username, COALESCE(NULLIF(e.full_name,''), e.username) AS full_name,
+                       COALESCE(e.role,'') AS role
+                FROM employees e
+                WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'
+                ORDER BY lower(COALESCE(NULLIF(e.full_name,''), e.username))
+            """)))
             sessions_filter = "" if _is_admin(ident) else """
-                WHERE EXISTS (SELECT 1 FROM vera_training_scope s WHERE s.active=TRUE
-                    AND lower(s.trainer_username)=lower(:viewer)
-                    AND lower(s.employee_username)=lower(ts.employee_username))
+                WHERE lower(ts.trainer_username)=lower(:viewer)
+                   OR EXISTS (SELECT 1 FROM vera_training_scope s WHERE s.active=TRUE
+                        AND lower(s.trainer_username)=lower(:viewer)
+                        AND lower(s.employee_username)=lower(ts.employee_username))
             """
             sessions = _rows(conn.execute(text("""
                 SELECT ts.*, COALESCE(NULLIF(e.full_name,''), ts.employee_username) employee_name,
@@ -233,7 +244,8 @@ def install_training_routes(
                 FROM employees WHERE COALESCE(payload->>'__deleted','false') <> 'true'
                 ORDER BY lower(COALESCE(NULLIF(full_name,''),username))
             """))) if _is_admin(ident) else employees
-            return {"employees": employees, "people": people, "sessions": sessions,
+            return {"employees": employees, "training_students": training_students,
+                    "people": people, "sessions": sessions,
                     "assignments": assignments, "cycles": cycles, "scopes": scopes,
                     "is_admin": _is_admin(ident)}
 
@@ -243,8 +255,6 @@ def install_training_routes(
             raise HTTPException(400, "Giờ kết thúc phải sau giờ bắt đầu.")
         with engine_instance().begin() as conn:
             _schema(conn); require_feature(conn, ident, "training_session_create")
-            if not _scope_allowed(conn, ident, body.employee_username):
-                raise HTTPException(403, "Nhân viên không thuộc phạm vi được phân công.")
             session_id = str(uuid4())
             params = body.model_dump(); params.update({"id": session_id, "trainer": ident.employee_username})
             conn.execute(text("""
@@ -268,8 +278,6 @@ def install_training_routes(
                 raise HTTPException(404, "Không tìm thấy buổi đào tạo.")
             if not _is_admin(ident) and str(existing["trainer_username"]).lower() != ident.employee_username.lower():
                 raise HTTPException(403, "Bạn chỉ được cập nhật nhật ký do mình nhập.")
-            if not _scope_allowed(conn, ident, body.employee_username):
-                raise HTTPException(403, "Nhân viên không thuộc phạm vi được phân công.")
             params = body.model_dump(); params.update({"id": session_id, "actor": ident.employee_username})
             conn.execute(text("""
                 UPDATE vera_training_session SET employee_username=:employee_username,

@@ -53,6 +53,24 @@ def test_training_feature_is_wired_through_backend_permissions_and_frontend():
 
 def test_training_backend_enforces_scope_and_evaluator_ownership():
     source = (ROOT / "vera_web_v2_training.py").read_text(encoding="utf-8")
-    assert "if not _scope_allowed(conn, ident, body.employee_username)" in source
+    assert '"training_students": training_students' in source
+    assert 'lower(ts.trainer_username)=lower(:viewer)' in source
     assert 'assignment["evaluator_username"]' in source
+    assert "if not _scope_allowed(conn, ident, str(assignment" in source
     assert 'assignment["cycle_status"] != "active"' in source
+
+
+def test_training_ui_uses_unrestricted_student_directory_for_daily_log():
+    source = (ROOT / "web-v2/src/pages/TrainingPage.jsx").read_text(encoding="utf-8")
+    assert "data?.training_students?.map" in source
+    assert "Học viên được đào tạo" in source
+
+
+def test_date_picker_anchor_and_requested_layout_order_are_wired():
+    styles = (ROOT / "web-v2/src/styles.css").read_text(encoding="utf-8")
+    revenue = (ROOT / "web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    employee = (ROOT / "web-v2/src/pages/EmployeeManagementEnhancements.jsx").read_text(encoding="utf-8")
+    assert ".vera-date-input > .vera-native-date-picker {\n  position: absolute;" in styles
+    assert "left: -10000px" not in styles
+    assert "Doanh thu theo bộ lọc" in revenue and "Chi phí theo bộ lọc" in revenue
+    assert employee.index("<KtvShiftSettingsPanel") < employee.index("<ShiftBreakSettingsPanel")
