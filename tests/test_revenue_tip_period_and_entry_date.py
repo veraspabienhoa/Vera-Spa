@@ -12,5 +12,5 @@ def test_manual_and_hybrid_use_same_current_period_tip_and_shared_date_control()
     assert '<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP"' in page
     assert '<VeraDateInput aria-label="Đến ngày Tiền TIP"' in page
     assert "const defaultTipStartDate = defaultRevenueTipStart(result.current_date)" in page
-    assert "setEntryDate(result.current_date)" in page
+    assert "setEntryDate(result.current_date)" not in page
     assert 'grid-template-areas:"title title" "date ."' in page

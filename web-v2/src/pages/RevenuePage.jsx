@@ -10,14 +10,6 @@ import { formatVeraDate } from '../lib/veraDate'
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
 const numberText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
-const isoToDisplayDate = (value) => {
-  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  return match ? `${match[3]}-${match[2]}-${match[1]}` : String(value || '')
-}
-const displayToIsoDate = (value) => {
-  const match = String(value || '').trim().match(/^(\d{2})-(\d{2})-(\d{4})$/)
-  return match ? `${match[3]}-${match[2]}-${match[1]}` : ''
-}
 const todayIsoVietnam = () => {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
@@ -120,6 +112,20 @@ async function updateRevenueEntry(id, body) {
 
 async function deleteRevenueEntry(id) {
   const response = await fetch(`${apiBase}/v2/revenue/entries/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authorizedHeaders() })
+  const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
+}
+
+async function loadRevenueAudit({ timeRange, start, end, signal }) {
+  const params = new URLSearchParams({ time_range: timeRange })
+  if (timeRange === 'custom') { if (start) params.set('start', start); if (end) params.set('end', end) }
+  const response = await fetch(`${apiBase}/v2/revenue/audit?${params}`, { signal, headers: await authorizedHeaders() })
+  const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
+}
+
+async function loadRevenueDuplicates({ timeRange, start, end, signal }) {
+  const params = new URLSearchParams({ time_range: timeRange })
+  if (timeRange === 'custom') { if (start) params.set('start', start); if (end) params.set('end', end) }
+  const response = await fetch(`${apiBase}/v2/revenue/duplicates?${params}`, { signal, headers: await authorizedHeaders() })
   const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
 }
 
@@ -238,6 +244,10 @@ export default function RevenuePage({ user }) {
   const [purchaseItemFilter, setPurchaseItemFilter] = useState('')
   const [purchaseBuyerFilter, setPurchaseBuyerFilter] = useState('')
   const [purchaseUserFilter, setPurchaseUserFilter] = useState('')
+  const [selectedLedgerId, setSelectedLedgerId] = useState(null)
+  const [entryEditor, setEntryEditor] = useState(null)
+  const [auditData, setAuditData] = useState({ rows: [] })
+  const [duplicateData, setDuplicateData] = useState({ groups: [], group_count: 0, duplicate_row_count: 0, duplicate_amount: 0 })
   const role = String(user?.role || '').trim().toLowerCase()
   const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'
   const isAdmin = role === 'admin'
@@ -276,6 +286,7 @@ export default function RevenuePage({ user }) {
     return totals
   }, { income: 0, expense: 0 })
   const ledgerTypes = [...new Set((detailData?.ledger_rows || []).map(row => row.type).filter(Boolean))]
+  const selectedLedgerRow = ledgerRows.find(row => row.id === selectedLedgerId) || null
 
   useEffect(() => {
     if (!incomeNoteEdited) setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
@@ -312,7 +323,6 @@ export default function RevenuePage({ user }) {
               : Number(result.tip_revenue || result.period_tip || 0)
             const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
             setData({ ...result, period_tip: autoTip, balance, period_tip_start: defaultTipStartDate, period_tip_end: defaultTipEndDate })
-            if (result.current_date) setEntryDate(result.current_date)
             setTipRows(liveTourRows); setTip(autoTip); setTipStart(defaultTipStartDate); setTipEnd(defaultTipEndDate)
           }
         }
@@ -393,6 +403,17 @@ export default function RevenuePage({ user }) {
     void run()
     return () => controller.abort()
   }, [detailPreset, detailStart, detailEnd, reconcileRevision])
+
+  useEffect(() => {
+    if (!isAdmin || activeTab !== 'audit' || (detailPreset === 'custom' && (!detailStart || !detailEnd))) return undefined
+    const controller = new AbortController()
+    Promise.all([
+      loadRevenueAudit({ timeRange: detailPreset, start: detailStart, end: detailEnd, signal: controller.signal }),
+      loadRevenueDuplicates({ timeRange: detailPreset, start: detailStart, end: detailEnd, signal: controller.signal }),
+    ]).then(([audit, duplicates]) => { if (!controller.signal.aborted) { setAuditData(audit); setDuplicateData(duplicates) } })
+      .catch(err => { if (!controller.signal.aborted && err?.name !== 'AbortError') setDetailError(err.message || 'Không tải được lịch sử Thu Chi.') })
+    return () => controller.abort()
+  }, [activeTab, detailEnd, detailPreset, detailStart, isAdmin, reconcileRevision])
 
   const submitTip = async () => {
     setSavingTip(true)
@@ -520,40 +541,29 @@ export default function RevenuePage({ user }) {
     return () => window.clearInterval(timer)
   }, [systemTipMode])
 
-  const editManualRevenue = async (row) => {
-    const transactionType = window.prompt('Loại giao dịch (Thu hoặc Chi)', row.type || 'Thu')
-    if (transactionType === null) return
-    const normalizedType = String(transactionType).trim().toLocaleLowerCase('vi')
-    const type = normalizedType === 'thu' ? 'Thu' : normalizedType === 'chi' ? 'Chi' : ''
-    if (!type) { setError('Loại giao dịch chỉ được là Thu hoặc Chi.'); return }
-    const transactionDateText = window.prompt('Ngày giao dịch (DD-MM-YYYY)', row.date_label || isoToDisplayDate(row.date))
-    if (transactionDateText === null) return
-    const transactionDate = displayToIsoDate(transactionDateText)
-    if (!transactionDate) { setError('Ngày giao dịch phải đúng định dạng DD-MM-YYYY.'); return }
-    const amount = window.prompt('Số tiền', String(Math.round(Number(row.amount || 0))))
-    if (amount === null) return
-    const note = window.prompt('Ghi chú', row.note || '')
-    if (note === null) return
-    const enteredDateText = window.prompt('Ngày nhập (DD-MM-YYYY)', row.entered_date_label || '')
-    if (enteredDateText === null) return
-    const enteredDate = displayToIsoDate(enteredDateText)
-    if (!enteredDate) { setError('Ngày nhập phải đúng định dạng DD-MM-YYYY.'); return }
-    const enteredTime = window.prompt('Giờ nhập (HH:MM:SS)', row.entered_time || '00:00:00')
-    if (enteredTime === null) return
-    if (!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(String(enteredTime).trim())) { setError('Giờ nhập phải đúng HH:MM hoặc HH:MM:SS.'); return }
-    const enteredBy = window.prompt('Người nhập', row.entered_by || '')
-    if (enteredBy === null) return
-    try {
-      const result = await updateRevenueEntry(row.id, { transaction_type: type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate, note, entered_date: enteredDate, entered_time: String(enteredTime).trim(), entered_by_name: enteredBy })
-      setNotice(result.message || 'Đã sửa toàn bộ dữ liệu bản ghi.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
-    } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
+  const openRevenueEditor = (mode) => {
+    const row = selectedLedgerRow
+    if (!row) { setError('Hãy check chọn một dòng Thu Chi trước.'); return }
+    if (!canManageCurrentEntry(row)) { setError('Chỉ được sửa hoặc xóa bản ghi đã nhập trong ngày hiện tại.'); return }
+    setError('')
+    setEntryEditor({ mode, row, type: row.type || 'Thu', date: row.date || '', amount: String(Math.round(Number(row.amount || 0))), note: row.note || '', enteredDate: row.entered_date || '', enteredTime: row.entered_time || '00:00:00', enteredBy: row.entered_by || '' })
   }
 
-  const removeManualRevenue = async (row) => {
-    if (!window.confirm(`Xóa bản ghi ${row.type} ${money(row.amount)} ngày ${row.date_label}? Timestamp lịch sử gốc vẫn được giữ trong audit.`)) return
+  const saveManualRevenue = async () => {
+    if (!entryEditor) return
+    const { row } = entryEditor
     try {
-      const result = await deleteRevenueEntry(row.id); setNotice(result.message || 'Đã xóa bản ghi.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
-    } catch (err) { setError(err.message || 'Không xóa được bản ghi doanh thu.') }
+      if (entryEditor.mode === 'delete') {
+        const result = await deleteRevenueEntry(row.id)
+        setNotice(result.message || 'Đã xóa bản ghi.')
+      } else {
+        if (!entryEditor.date || !entryEditor.enteredDate) throw new Error('Hãy nhập đủ Ngày giao dịch và Ngày nhập.')
+        if (!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(entryEditor.enteredTime)) throw new Error('Giờ nhập phải đúng HH:MM hoặc HH:MM:SS.')
+        const result = await updateRevenueEntry(row.id, { transaction_type: entryEditor.type, amount: Number(String(entryEditor.amount).replace(/\D/g, '')), transaction_date: entryEditor.date, note: entryEditor.note, entered_date: entryEditor.enteredDate, entered_time: entryEditor.enteredTime, entered_by_name: entryEditor.enteredBy })
+        setNotice(result.message || 'Đã sửa toàn bộ dữ liệu bản ghi.')
+      }
+      setEntryEditor(null); setSelectedLedgerId(null); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
+    } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
   }
 
   const comparisonRows = useMemo(() => {
@@ -605,12 +615,12 @@ export default function RevenuePage({ user }) {
       .reconcile-status{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:13px;margin-bottom:12px;font-weight:800;font-size:13px}.reconcile-status.ok{background:#eef8f1;border:1px solid #bdd9c6;color:#245b38}.reconcile-status.near{background:#fffbea;border:1px solid #e9d982;color:#7a6500}.reconcile-status.bad{background:#fff0ed;border:1px solid #efb0a5;color:#8d291d}.reconcile-status svg{flex:0 0 auto;margin-top:1px}
       .reconcile-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}.reconcile-kpi{padding:13px;border:1px solid #e1e7e3;border-radius:14px;background:#fafcfb}.reconcile-kpi span{display:block;font-size:10px;font-weight:900;color:#69766f;letter-spacing:.04em}.reconcile-kpi strong{display:block;margin-top:5px;font-size:19px;color:#173329}.reconcile-kpi.near strong{color:#806800}.reconcile-kpi.bad strong{color:#a13c2f}
       .comparison-filter-bar{display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #e7ece9;background:#fbfcfb}.comparison-filter-bar label{display:grid;gap:4px;font-size:10px;font-weight:900;color:#5d6b64}.comparison-filter-bar select{min-height:36px;min-width:150px}.comparison-filter-bar small{margin-left:auto;color:#6c7772}
-      .revenue-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.revenue-tab{border:1px solid #b8d0c3;background:#fff;color:#24473a;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer}.revenue-tab.active{background:#1f513f;color:#fff;border-color:#1f513f}.detail-tab-panel{margin-bottom:18px}.detail-filter-panel{display:grid;grid-template-columns:1.05fr 1fr 1fr;gap:10px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f7faf8;margin-bottom:12px}.detail-filter-panel label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.detail-filter-panel input,.detail-filter-panel select{min-height:42px}.detail-filter-secondary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;grid-column:1/-1}.detail-filter-actions{display:flex;gap:8px;align-items:end;justify-content:flex-end;flex-wrap:wrap;grid-column:1/-1}.detail-filter-actions button{min-height:40px}.detail-filter-actions .active{background:#1f513f;color:#fff;border-color:#1f513f}.admin-revenue-summary{display:grid;gap:14px}
-      .ledger-summary-head{display:flex;align-items:stretch;gap:10px;padding:10px 12px;background:#f5f8f6}.ledger-filter-total{display:flex;align-items:center;gap:9px;min-width:180px;padding:10px 13px;border:1px solid #cbded3;border-radius:12px;background:#fff}.ledger-filter-total.expense{border-color:#e1c49f;background:#fffaf2}.ledger-filter-total svg{color:#8b6b22;flex:0 0 auto}.ledger-filter-total span{display:block;font-size:10px;font-weight:900;color:#68736f;text-transform:uppercase}.ledger-filter-total strong{display:block;margin-top:2px;font-size:18px;color:#173329}.ledger-summary-head .ledger-import,.ledger-summary-head .ledger-export{align-self:center}.ledger-summary-head .ledger-import:first-of-type{margin-left:auto}
+      .revenue-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.revenue-tab{border:1px solid #b8d0c3;background:#fff;color:#24473a;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer}.revenue-tab.active{background:#1f513f;color:#fff;border-color:#1f513f}.detail-tab-panel{margin-bottom:18px}.detail-filter-panel{display:grid;grid-template-columns:1.05fr 1fr 1fr;gap:10px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f7faf8;margin-bottom:12px}.detail-filter-panel label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.detail-filter-panel input,.detail-filter-panel select{min-height:42px}.detail-filter-secondary{display:grid;grid-template-columns:.9fr .9fr .9fr 1.3fr 1fr .9fr;gap:10px;grid-column:1/-1}.detail-filter-actions{display:flex;gap:8px;align-items:end;justify-content:flex-end;flex-wrap:wrap;grid-column:1/-1}.detail-filter-actions button{min-height:40px}.detail-filter-actions .active{background:#1f513f;color:#fff;border-color:#1f513f}.admin-revenue-summary{display:grid;gap:14px}
+      .ledger-summary-head{display:flex;align-items:stretch;gap:10px;padding:10px 12px;background:#f5f8f6;flex-wrap:wrap}.ledger-filter-total{display:flex;align-items:center;gap:9px;min-width:180px;padding:10px 13px;border:1px solid #cbded3;border-radius:12px;background:#fff}.ledger-filter-total.expense{border-color:#e1c49f;background:#fffaf2}.ledger-filter-total svg{color:#8b6b22;flex:0 0 auto}.ledger-filter-total span{display:block;font-size:10px;font-weight:900;color:#68736f;text-transform:uppercase}.ledger-filter-total strong{display:block;margin-top:2px;font-size:18px;color:#173329}.ledger-summary-head .ledger-import,.ledger-summary-head .ledger-export{align-self:center}.ledger-summary-head .ledger-import:first-of-type{margin-left:auto}.ledger-selected-actions{display:flex;gap:6px;align-items:center;margin-left:auto}.ledger-check-column{width:42px!important;text-align:center!important}.ledger-check-column input{width:18px;height:18px;accent-color:#1f513f}.selected-ledger-row td{background:#eaf5ef!important}.revenue-audit-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.audit-payload{min-width:250px;white-space:normal!important}.duplicate-summary{display:flex;justify-content:space-between;gap:10px;padding:12px;background:#fff8e9}.duplicate-summary strong{color:#8a5419}.revenue-editor-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:rgba(9,31,23,.55)}.revenue-editor-dialog{width:min(760px,100%);max-height:92vh;overflow:auto;border:2px solid #1f513f;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(0,0,0,.3)}.revenue-editor-dialog header,.revenue-editor-dialog footer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;background:#f3f8f5}.revenue-editor-dialog header span{font-size:10px;font-weight:900;color:#8b6b22}.revenue-editor-dialog h2{margin:3px 0 0;color:#173329}.revenue-editor-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:16px}.revenue-editor-form label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#425c51}.revenue-editor-form input,.revenue-editor-form select{min-height:42px}.revenue-editor-form .editor-note{grid-column:1/-1}.revenue-editor-form .editor-entered-by{grid-column:span 2}.delete-warning{margin:0 16px 16px;padding:12px;border:1px solid #e2b0a8;border-radius:10px;background:#fff1ef;color:#8f3026}.revenue-editor-dialog footer{justify-content:flex-end}.revenue-editor-dialog footer button{min-width:140px}
 .report-box{min-width:0;max-width:100%;border:1px solid #e2e8e4;border-radius:14px;overflow:hidden}.report-box h3{display:flex;gap:8px;align-items:center;margin:0;padding:11px 13px;background:#f5f8f6;color:#24473a;font-size:13px}.report-scroll{width:100%;max-width:100%;overflow:auto;max-height:430px}.report-table{width:100%;border-collapse:collapse;min-width:650px;font-size:12px}.comparison-table{min-width:1050px}.report-table th,.report-table td{padding:8px 9px;border-bottom:1px solid #edf1ee;white-space:nowrap;text-align:left;vertical-align:top}.report-table th{position:sticky;top:0;background:#dcefe5;z-index:1;font-size:10px;color:#173b2e;text-transform:uppercase;border-bottom:2px solid #79a48e}.report-table .money{text-align:right;font-variant-numeric:tabular-nums}.report-table .detail-cell{white-space:normal;min-width:330px;line-height:1.45}.report-table .detail-cell div+div{margin-top:4px}.report-table tr.mismatch td{background:#fff2ef}.report-table tr.near td{background:#fffceb}.report-table tr.match td{background:#f5fbf7}.report-table tr.purchase-row td{font-weight:700}.status-match{color:#24703e;font-weight:900}.status-near{color:#806800;font-weight:900}.status-mismatch{color:#a13c2f;font-weight:900}
-      @media(max-width:1250px){.revenue-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.reconcile-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media(max-width:1250px){.revenue-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.reconcile-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.revenue-audit-grid{grid-template-columns:1fr}}
       @media(max-width:1050px){.revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-      @media(max-width:760px){.revenue-page{overflow-x:hidden}.detail-filter-panel{grid-template-columns:1fr 1fr;padding:10px}.detail-filter-panel>label:first-child{grid-column:1/-1}.detail-filter-secondary{grid-template-columns:1fr 1fr}.detail-filter-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;justify-content:stretch}.detail-filter-actions button{width:100%;min-width:0;white-space:nowrap;font-size:12px;padding:8px 5px}.revenue-period{grid-template-columns:1fr}.revenue-actions{display:grid;grid-template-columns:1fr 1fr}.revenue-tip-editor{grid-template-columns:1fr}.revenue-tip-editor button{width:100%}.revenue-tip-current button{width:auto}.revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.revenue-card{padding:13px;border-radius:14px}.revenue-card.balance{grid-column:1/-1}.revenue-card-value{margin-top:8px;font-size:clamp(16px,4.6vw,22px);white-space:nowrap}.revenue-page .page-heading{align-items:flex-start}.reconcile-head{display:grid}.reconcile-filter,.comparison-filter-bar{display:grid;grid-template-columns:1fr 1fr}.reconcile-filter label:first-child{grid-column:1/-1}.reconcile-filter select,.reconcile-filter input,.comparison-filter-bar select{width:100%;min-width:0}.comparison-filter-bar small{margin:0;grid-column:1/-1}.reconcile-kpis{grid-template-columns:1fr 1fr}.ledger-summary-head{display:grid;grid-template-columns:1fr 1fr}.ledger-filter-total{min-width:0}.ledger-summary-head .ledger-export{grid-column:1/-1;margin:0;width:100%}.ledger-table{min-width:0;table-layout:fixed;font-size:10px}.ledger-table th,.ledger-table td{padding:7px 5px;white-space:normal;overflow-wrap:break-word}.ledger-table th:nth-child(1){width:23%}.ledger-table th:nth-child(2){width:19%}.ledger-table th:nth-child(3){width:26%}.ledger-table th:nth-child(4){width:32%}.ledger-table th:nth-child(n+5),.ledger-table td:nth-child(n+5){display:none}.ledger-table .money{white-space:nowrap}.report-box h3{padding:10px;font-size:12px}.report-box h3 button{white-space:nowrap}}
+      @media(max-width:760px){.revenue-page{overflow-x:hidden}.detail-filter-panel{grid-template-columns:1fr 1fr;padding:10px}.detail-filter-panel>label:first-child{grid-column:1/-1}.detail-filter-secondary{grid-template-columns:1fr 1fr}.detail-filter-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;justify-content:stretch}.detail-filter-actions button{width:100%;min-width:0;white-space:nowrap;font-size:12px;padding:8px 5px}.revenue-period{grid-template-columns:1fr}.revenue-actions{display:grid;grid-template-columns:1fr 1fr}.revenue-tip-editor{grid-template-columns:1fr}.revenue-tip-editor button{width:100%}.revenue-tip-current button{width:auto}.revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.revenue-card{padding:13px;border-radius:14px}.revenue-card.balance{grid-column:1/-1}.revenue-card-value{margin-top:8px;font-size:clamp(16px,4.6vw,22px);white-space:nowrap}.revenue-page .page-heading{align-items:flex-start}.reconcile-head{display:grid}.reconcile-filter,.comparison-filter-bar{display:grid;grid-template-columns:1fr 1fr}.reconcile-filter label:first-child{grid-column:1/-1}.reconcile-filter select,.reconcile-filter input,.comparison-filter-bar select{width:100%;min-width:0}.comparison-filter-bar small{margin:0;grid-column:1/-1}.reconcile-kpis{grid-template-columns:1fr 1fr}.ledger-summary-head{display:grid;grid-template-columns:1fr 1fr}.ledger-filter-total{min-width:0}.ledger-selected-actions{grid-column:1/-1;margin:0;display:grid;grid-template-columns:1fr 1fr}.ledger-summary-head .ledger-export{grid-column:1/-1;margin:0;width:100%}.ledger-table{min-width:0;table-layout:fixed;font-size:10px}.ledger-table th,.ledger-table td{padding:7px 5px;white-space:normal;overflow-wrap:break-word}.ledger-table .money{white-space:nowrap}.report-box h3{padding:10px;font-size:12px}.report-box h3 button{white-space:nowrap}.revenue-editor-form{grid-template-columns:1fr 1fr}.revenue-editor-form .editor-note,.revenue-editor-form .editor-entered-by{grid-column:1/-1}}
       @media(max-width:760px){.detail-filter-actions{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}.detail-filter-actions button{display:flex;align-items:center;justify-content:center;width:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ledger-table{display:block;min-width:0;table-layout:auto}.ledger-table thead{display:none}.ledger-table tbody{display:grid;gap:10px;padding:10px}.ledger-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid #b8d0c3;border-radius:12px;overflow:hidden;background:#fff}.ledger-table td{display:grid!important;grid-template-columns:minmax(76px,.8fr) minmax(0,1.2fr);align-items:start;gap:6px;width:auto!important;padding:8px 9px;white-space:normal;overflow-wrap:anywhere;border:0;border-bottom:1px solid #e3ebe6;font-size:11px}.ledger-table td::before{content:attr(data-label);color:#476357;font-size:9px;font-weight:900;letter-spacing:.04em;text-transform:uppercase}.ledger-table td:nth-child(4){grid-column:1/-1}.ledger-table td:nth-last-child(-n+2){border-bottom:0}.ledger-table .money{text-align:left;white-space:normal}.ledger-table tr.purchase-row td{background:#f8fbf9}}
       @media(max-width:460px){.detail-filter-panel,.detail-filter-secondary{grid-template-columns:1fr}.detail-filter-panel>label:first-child{grid-column:auto}.revenue-actions{grid-template-columns:1fr}.revenue-entry-form{grid-template-columns:1fr;grid-template-areas:"title" "date" "income" "expense" "income-note" "expense-note" "save"}.reconcile-filter,.comparison-filter-bar,.reconcile-kpis{grid-template-columns:1fr}.reconcile-filter label:first-child,.comparison-filter-bar small{grid-column:auto}}
       @media(max-width:760px){.revenue-entry-form{grid-template-columns:1fr;grid-template-areas:"title" "date" "income" "income-note" "expense" "expense-note" "save"}.revenue-entry-form .entry-date,.revenue-entry-form .entry-note,.revenue-entry-form > button{grid-column:auto}.revenue-entry-form > button{width:100%}}
@@ -670,6 +680,7 @@ export default function RevenuePage({ user }) {
       <button type="button" className={`revenue-tab ${activeTab === 'ledger' ? 'active' : ''}`} onClick={() => setActiveTab('ledger')}>Doanh thu-Chi phí</button>
       <button type="button" className={`revenue-tab ${activeTab === 'purchase' ? 'active' : ''}`} onClick={() => setActiveTab('purchase')}>Báo cáo mua hàng</button>
       {canViewAdminRevenueSummary && <button type="button" className={`revenue-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Tổng quan</button>}
+      {isAdmin && <button type="button" className={`revenue-tab ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>Lịch sử sửa, xóa</button>}
     </div>
 
     {activeTab !== 'overview' && <section className="detail-tab-panel">
@@ -684,27 +695,28 @@ export default function RevenuePage({ user }) {
           <label>Ghi chú<input value={ledgerNoteFilter} onChange={(event) => setLedgerNoteFilter(event.target.value)} placeholder="Tìm nội dung ghi chú" /></label>
           <label>Ngày nhập<VeraDateInput value={ledgerEnteredDate} onChange={(event) => setLedgerEnteredDate(event.target.value)} /></label>
           <label>Người nhập<input value={ledgerEnteredByFilter} onChange={(event) => setLedgerEnteredByFilter(event.target.value)} placeholder="Tìm người nhập" /></label>
-        </div> : <div className="detail-filter-secondary">
+        </div> : activeTab === 'purchase' ? <div className="detail-filter-secondary">
           <label>Ngày nhập<VeraDateInput value={purchaseDate} onChange={(event) => setPurchaseDate(event.target.value)} /></label>
           <label>Chi tiết hàng hóa<input value={purchaseItemFilter} onChange={(event) => setPurchaseItemFilter(event.target.value)} placeholder="Tìm hàng hóa" /></label>
           <label>Người đặt<input value={purchaseBuyerFilter} onChange={(event) => setPurchaseBuyerFilter(event.target.value)} placeholder="Tìm người đặt" /></label>
           <label>User<input value={purchaseUserFilter} onChange={(event) => setPurchaseUserFilter(event.target.value)} placeholder="Tìm user" /></label>
-        </div>}
+        </div> : null}
         <div className="detail-filter-actions">
-          {reconcileFilters.map(([value, label]) => <button type="button" key={value} className={`secondary-button ${detailPreset === value ? 'active' : ''}`} onClick={() => { setDetailPreset(value); if (value !== 'custom') { setDetailStart(''); setDetailEnd('') } }}>{label}</button>)}
+          {reconcileFilters.filter(([value]) => value !== 'custom').map(([value, label]) => <button type="button" key={value} className={`secondary-button ${detailPreset === value ? 'active' : ''}`} onClick={() => { setDetailPreset(value); setDetailStart(''); setDetailEnd('') }}>{label}</button>)}
           <button type="button" className="secondary-button" onClick={() => { setLedgerDate(''); setLedgerType(''); setLedgerAmountFilter(''); setLedgerNoteFilter(''); setLedgerEnteredDate(''); setLedgerEnteredByFilter(''); setPurchaseDate(''); setPurchaseItemFilter(''); setPurchaseBuyerFilter(''); setPurchaseUserFilter('') }}>Xóa lọc chi tiết</button>
         </div>
       </div>
       {detailError && <div className="error-box">{detailError}</div>}
       {detailBusy && !detailData && <div className="revenue-meta">Đang tải dữ liệu…</div>}
-      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article>{isAdmin && <><input ref={revenueImportAppendRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'append')} /><input ref={revenueImportReplaceRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'replace')} /><button type="button" className="secondary-button compact ledger-import" disabled={Boolean(importingRevenue)} onClick={() => revenueImportAppendRef.current?.click()}><Upload size={14}/>{importingRevenue === 'append' ? 'Đang import…' : 'Import thêm mới'}</button><button type="button" className="secondary-button compact ledger-import danger-button" disabled={Boolean(importingRevenue)} onClick={() => revenueImportReplaceRef.current?.click()}><Upload size={14}/>{importingRevenue === 'replace' ? 'Đang thay thế…' : 'Import thay toàn bộ'}</button></>}<button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <th>Thao tác</th>}</tr></thead><tbody>
-        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <td data-label="Thao tác"><div className="revenue-crud-actions">{canEditEntry && <button type="button" className="secondary-button compact" disabled={!canManageCurrentEntry(row)} title={canManageCurrentEntry(row) ? '' : 'Chỉ sửa bản ghi nhập hôm nay'} onClick={() => editManualRevenue(row)}>Sửa</button>}{canDeleteEntry && <button type="button" className="secondary-button compact danger-button" disabled={!canManageCurrentEntry(row)} title={canManageCurrentEntry(row) ? '' : 'Chỉ xóa bản ghi nhập hôm nay'} onClick={() => removeManualRevenue(row)}>Xóa</button>}</div></td>}</tr>)}
+      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <div className="ledger-selected-actions">{canEditEntry && <button type="button" className="secondary-button compact" disabled={!selectedLedgerRow} onClick={() => openRevenueEditor('edit')}>Sửa dòng đã chọn</button>}{canDeleteEntry && <button type="button" className="secondary-button compact danger-button" disabled={!selectedLedgerRow} onClick={() => openRevenueEditor('delete')}>Xóa dòng đã chọn</button>}</div>}{isAdmin && <><input ref={revenueImportAppendRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'append')} /><input ref={revenueImportReplaceRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'replace')} /><button type="button" className="secondary-button compact ledger-import" disabled={Boolean(importingRevenue)} onClick={() => revenueImportAppendRef.current?.click()}><Upload size={14}/>{importingRevenue === 'append' ? 'Đang import…' : 'Import thêm mới'}</button><button type="button" className="secondary-button compact ledger-import danger-button" disabled={Boolean(importingRevenue)} onClick={() => revenueImportReplaceRef.current?.click()}><Upload size={14}/>{importingRevenue === 'replace' ? 'Đang thay thế…' : 'Import thay toàn bộ'}</button></>}<button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <th aria-label="Chọn dòng" className="ledger-check-column"/>}<th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th></tr></thead><tbody>
+        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={`${row.is_purchase ? 'purchase-row' : ''} ${selectedLedgerId === row.id ? 'selected-ledger-row' : ''}`}>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <td data-label="Chọn" className="ledger-check-column"><input type="checkbox" checked={selectedLedgerId === row.id} disabled={!canManageCurrentEntry(row)} onChange={() => setSelectedLedgerId(current => current === row.id ? null : row.id)} aria-label={`Chọn dòng ${row.type} ${row.date_label}`}/></td>}<td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td></tr>)}
         {!ledgerRows.length && <tr><td colSpan={(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' ? 8 : 7}>Không có dữ liệu phù hợp bộ lọc.</td></tr>}
       </tbody></table></div></div>}
       {activeTab === 'purchase' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Báo cáo mua hàng</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày nhập</th><th>Chi tiết hàng hóa</th><th className="money">Số lượng</th><th className="money">Đơn giá</th><th className="money">Thành Tiền</th><th>Người đặt</th><th>User</th></tr></thead><tbody>
         {purchaseRows.map((row, index) => <tr key={`${row.date}-${index}`}><td>{row.date_label}</td><td>{row.item || '—'}</td><td className="money">{numberText(row.quantity)}</td><td className="money">{money(row.unit_price)}</td><td className="money">{money(row.amount)}</td><td>{row.buyer || '—'}</td><td>{row.user || '—'}</td></tr>)}
         {!purchaseRows.length && <tr><td colSpan="7">Không có dữ liệu phù hợp bộ lọc.</td></tr>}
       </tbody></table></div></div>}
+      {activeTab === 'audit' && isAdmin && <div className="revenue-audit-grid"><section className="report-box"><h3>LỊCH SỬ SỬA, XÓA <button type="button" className="secondary-button compact" onClick={async () => { const params = new URLSearchParams({ time_range: detailPreset }); if (detailPreset === 'custom') { params.set('start', detailStart); params.set('end', detailEnd) } const response = await fetch(`${apiBase}/v2/revenue/audit/export.xlsx?${params}`, { headers: await authorizedHeaders() }); if (!response.ok) throw new Error('Không xuất được lịch sử.'); const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'VERA_LichSu_SuaXoa_ThuChi.xlsx'; link.click(); URL.revokeObjectURL(url) }}><Download size={14}/>Xuất Excel</button></h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Thời điểm</th><th>Hành động</th><th>Mã dòng</th><th>Người thao tác</th><th>Trước</th><th>Sau</th></tr></thead><tbody>{(auditData.rows || []).map(row => <tr key={row.id}><td>{row.audited_at_label}</td><td>{row.action_label}</td><td>{row.entry_id}</td><td>{row.actor || '—'}</td><td className="audit-payload">{row.before?.transaction_type} · {money(row.before?.amount)} · {row.before?.note || '—'}</td><td className="audit-payload">{row.after ? `${row.after.transaction_type} · ${money(row.after.amount)} · ${row.after.note || '—'}` : 'Đã xóa'}</td></tr>)}{!auditData.rows?.length && <tr><td colSpan="6">Chưa có lịch sử sửa hoặc xóa trong kỳ.</td></tr>}</tbody></table></div></section><section className="report-box"><h3>KIỂM TRA DỮ LIỆU TRÙNG</h3><div className="duplicate-summary"><strong>{duplicateData.group_count || 0} nhóm trùng</strong><span>{duplicateData.duplicate_row_count || 0} dòng dư · {money(duplicateData.duplicate_amount)}</span></div><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Loại</th><th>Số tiền</th><th>Ghi chú</th><th>Số dòng</th><th>Người nhập</th></tr></thead><tbody>{(duplicateData.groups || []).map(group => <tr key={group.entry_ids.join('-')}><td>{group.date_label}</td><td>{group.type}</td><td className="money">{money(group.amount)}</td><td>{group.note || '—'}</td><td>{group.count}</td><td>{group.entered_by.join(', ') || '—'}</td></tr>)}{!duplicateData.groups?.length && <tr><td colSpan="6">Không phát hiện dữ liệu trùng chính xác trong kỳ.</td></tr>}</tbody></table></div></section></div>}
     </section>}
 
     {canViewAdminRevenueSummary && activeTab === 'overview' && <section className="reconcile-panel">
@@ -754,5 +766,6 @@ export default function RevenuePage({ user }) {
         <div className="revenue-meta">Ngày trong dữ liệu Thu/Chi ưu tiên lấy từ ngày ghi trong cột Ghi chú, sau đó mới dùng cột Ngày giao dịch. Khi phát hiện một ngày có trạng thái <strong>KHÔNG KHỚP</strong> hoặc số liệu của ngày KHÔNG KHỚP thay đổi, hệ thống tự gửi Web Push chi tiết cho <strong>Admin, Quản lý và Lễ tân</strong>; cùng một trạng thái/số liệu sẽ không gửi lặp lại chỉ vì làm mới trang.</div>
       </>}
     </section>}
+    {entryEditor && <div className="revenue-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEntryEditor(null) }}><section className="revenue-editor-dialog" role="dialog" aria-modal="true" aria-label={entryEditor.mode === 'delete' ? 'Xóa giao dịch Thu Chi' : 'Sửa giao dịch Thu Chi'}><header><div><span>PHIẾU THU CHI</span><h2>{entryEditor.mode === 'delete' ? 'Xác nhận xóa giao dịch' : 'Sửa nội dung giao dịch'}</h2></div><button type="button" className="secondary-button compact" onClick={() => setEntryEditor(null)}>Đóng</button></header><div className="revenue-editor-form"><label>Loại giao dịch<select value={entryEditor.type} disabled={entryEditor.mode === 'delete'} onChange={event => setEntryEditor(current => ({ ...current, type: event.target.value }))}><option>Thu</option><option>Chi</option></select></label><label>Ngày giao dịch<VeraDateInput value={entryEditor.date} disabled={entryEditor.mode === 'delete'} onChange={event => setEntryEditor(current => ({ ...current, date: event.target.value }))}/></label><label>Số tiền<VeraMoneyInput value={entryEditor.amount} disabled={entryEditor.mode === 'delete'} onChange={event => setEntryEditor(current => ({ ...current, amount: event.target.value }))}/></label><label className="editor-note">Ghi chú<input value={entryEditor.note} disabled={entryEditor.mode === 'delete'} onChange={event => setEntryEditor(current => ({ ...current, note: event.target.value }))}/></label><label>Ngày nhập<VeraDateInput value={entryEditor.enteredDate} disabled={entryEditor.mode === 'delete'} onChange={event => setEntryEditor(current => ({ ...current, enteredDate: event.target.value }))}/></label><label>Giờ nhập<input value={entryEditor.enteredTime} disabled={entryEditor.mode === 'delete'} onChange={event => setEntryEditor(current => ({ ...current, enteredTime: event.target.value }))}/></label><label className="editor-entered-by">Người nhập<input value={entryEditor.enteredBy} disabled={entryEditor.mode === 'delete'} onChange={event => setEntryEditor(current => ({ ...current, enteredBy: event.target.value }))}/></label></div>{entryEditor.mode === 'delete' && <p className="delete-warning">Bản ghi sẽ không còn xuất hiện trong Doanh thu-Chi phí. Toàn bộ dữ liệu trước khi xóa vẫn được giữ tại tab Lịch sử sửa, xóa.</p>}<footer><button type="button" className="secondary-button" onClick={() => setEntryEditor(null)}>Hủy</button><button type="button" className={`primary-button ${entryEditor.mode === 'delete' ? 'danger-button' : ''}`} onClick={saveManualRevenue}>{entryEditor.mode === 'delete' ? 'Xác nhận xóa' : 'Lưu thay đổi'}</button></footer></section></div>}
   </div>
 }

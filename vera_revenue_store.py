@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 
 TABLE = "vera_revenue_entry"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 VN_TZ = timezone(timedelta(hours=7))
 WORKBOOK_EXPORT_URL = "https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
 HEADERS = [
@@ -54,6 +54,7 @@ def ensure_schema(conn) -> None:
             audited_at timestamptz NOT NULL DEFAULT NOW()
         )
     """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vera_revenue_entry_audit_time ON vera_revenue_entry_audit(audited_at DESC, id DESC)"))
     conn.execute(text("""
         INSERT INTO vera_schema_version(component,version,updated_at)
         VALUES('revenue_ledger',:version,NOW())
@@ -498,3 +499,82 @@ def soft_delete_entry(conn, *, entry_id: int, actor: str, required_entered_date:
         INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
         VALUES(:id,'delete',CAST(:before AS jsonb),NULL,:actor)
     """), {"id": entry_id, "before": json.dumps(_audit_payload(before), ensure_ascii=False, default=str), "actor": actor})
+
+
+def list_audit_entries(conn, *, start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
+    """Return the immutable edit/delete trail. This is exposed to Admin only."""
+    ensure_schema(conn)
+    rows = conn.execute(text("""
+        SELECT id, revenue_entry_id, action, before_payload, after_payload, actor, audited_at
+        FROM vera_revenue_entry_audit
+        WHERE (CAST(:start_date AS date) IS NULL OR (audited_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= CAST(:start_date AS date))
+          AND (CAST(:end_date AS date) IS NULL OR (audited_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= CAST(:end_date AS date))
+        ORDER BY audited_at DESC, id DESC
+    """), {"start_date": start_date, "end_date": end_date}).mappings().all()
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        audited_at = row["audited_at"]
+        if audited_at and audited_at.tzinfo is None:
+            audited_at = audited_at.replace(tzinfo=timezone.utc)
+        before = row["before_payload"] if isinstance(row["before_payload"], dict) else {}
+        after = row["after_payload"] if isinstance(row["after_payload"], dict) else None
+        output.append({
+            "id": int(row["id"]),
+            "entry_id": int(row["revenue_entry_id"]),
+            "action": str(row["action"]),
+            "action_label": "Sửa" if row["action"] == "update" else "Xóa",
+            "actor": str(row["actor"] or ""),
+            "audited_at": audited_at.astimezone(VN_TZ).isoformat() if audited_at else "",
+            "audited_at_label": audited_at.astimezone(VN_TZ).strftime("%d-%m-%Y %H:%M:%S") if audited_at else "",
+            "before": before,
+            "after": after,
+        })
+    return output
+
+
+def duplicate_analysis(conn, *, start_date: date | None = None, end_date: date | None = None) -> dict[str, Any]:
+    """Group active ledger rows that are exact business duplicates.
+
+    A duplicate must share transaction date, type, amount and normalized note.
+    This intentionally ignores the entry timestamp/user so repeated submissions
+    from different devices remain visible to the reviewer.
+    """
+    ensure_schema(conn)
+    rows = conn.execute(text(f"""
+        SELECT transaction_date, transaction_type, amount, lower(btrim(note)) AS note_key,
+               min(note) AS note, count(*) AS row_count,
+               array_agg(id ORDER BY entered_at, id) AS entry_ids,
+               min(entered_at) AS first_entered_at, max(entered_at) AS last_entered_at,
+               array_agg(DISTINCT COALESCE(NULLIF(entered_by_name,''), entered_by)) AS entered_by
+        FROM {TABLE}
+        WHERE is_deleted=false
+          AND (CAST(:start_date AS date) IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) >= CAST(:start_date AS date))
+          AND (CAST(:end_date AS date) IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) <= CAST(:end_date AS date))
+        GROUP BY transaction_date, transaction_type, amount, lower(btrim(note))
+        HAVING count(*) > 1
+        ORDER BY count(*) DESC, transaction_date DESC NULLS LAST, amount DESC
+    """), {"start_date": start_date, "end_date": end_date}).mappings().all()
+    groups: list[dict[str, Any]] = []
+    duplicate_rows = 0
+    duplicate_amount = 0.0
+    for row in rows:
+        tx_date = row["transaction_date"]
+        count = int(row["row_count"] or 0)
+        amount = float(row["amount"] or 0)
+        duplicate_rows += max(0, count - 1)
+        duplicate_amount += max(0, count - 1) * amount
+        groups.append({
+            "date": tx_date.isoformat() if tx_date else "",
+            "date_label": tx_date.strftime("%d-%m-%Y") if tx_date else "—",
+            "type": str(row["transaction_type"]), "amount": amount,
+            "note": str(row["note"] or ""), "count": count,
+            "extra_count": max(0, count - 1),
+            "entry_ids": [int(value) for value in (row["entry_ids"] or [])],
+            "entered_by": [str(value) for value in (row["entered_by"] or []) if str(value or "").strip()],
+            "first_entered_at": row["first_entered_at"].astimezone(VN_TZ).isoformat() if row["first_entered_at"] else "",
+            "last_entered_at": row["last_entered_at"].astimezone(VN_TZ).isoformat() if row["last_entered_at"] else "",
+        })
+    return {
+        "group_count": len(groups), "duplicate_row_count": duplicate_rows,
+        "duplicate_amount": round(duplicate_amount, 2), "groups": groups,
+    }

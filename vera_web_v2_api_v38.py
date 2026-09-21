@@ -206,7 +206,7 @@ install_hr_enhancement_routes(_shared.app, engine_instance=_api._engine_instance
 install_admin_audit_archive_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
 install_leave_sync_queue(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity, api_module=_api)
 install_letan_leave_guard(_shared.app, api_module=_api, vn_tz=_api.VN_TZ)
-install_revenue_leave_list_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, norm=_api._norm, progressive_key=_api._progressive_key, google_client=_api._google_client)
+install_revenue_leave_list_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, norm=_api._norm, progressive_key=_api._progressive_key, google_client=_api._google_client, api_module=_api)
 install_revenue_report_target(_shared.app, current_identity=_api.current_identity)
 install_purchase_reconcile_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, google_client=_api._google_client)
 install_purchase_reconcile_v2(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity)

@@ -8,7 +8,11 @@ import os
 import re
 from typing import Any, Callable, Literal
 
-from fastapi import Depends, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from io import BytesIO
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel, Field
 import requests
 from sqlalchemy import text
@@ -20,7 +24,7 @@ import vera_web_v2_permissions as permissions
 import vera_revenue_store as revenue_store
 
 
-RELEASE = "revenue-source-toggle-admin-crud-2026-09-21-v1"
+RELEASE = "revenue-audit-duplicate-admin-push-2026-09-22-v1"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_ENTRY_FEATURE = "revenue_entry_create"
@@ -99,6 +103,104 @@ def _range_bounds(time_range: str, start: date | None = None, end: date | None =
             raise HTTPException(400, "Khoảng ngày tùy chỉnh không hợp lệ.")
         return start, end
     raise HTTPException(400, "Bộ lọc thời gian không hợp lệ.")
+
+
+def _revenue_audit_workbook(rows: list[dict[str, Any]]) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Lịch sử sửa-xóa"
+    headers = [
+        "Thời điểm", "Hành động", "Mã dòng", "Người thao tác", "Phiên bản",
+        "Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Ngày nhập", "Giờ nhập", "Người nhập",
+    ]
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1F513F")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for audit in rows:
+        versions = [("Trước", audit.get("before") or {})]
+        if audit.get("after"):
+            versions.append(("Sau", audit["after"]))
+        for version_label, payload in versions:
+            transaction_date = _parse_date(payload.get("transaction_date"))
+            entered_at = payload.get("entered_at")
+            try:
+                entered = datetime.fromisoformat(str(entered_at).replace("Z", "+00:00")) if entered_at else None
+                if entered and entered.tzinfo is None:
+                    entered = entered.replace(tzinfo=VN_TZ)
+                entered = entered.astimezone(VN_TZ) if entered else None
+            except ValueError:
+                entered = None
+            sheet.append([
+                audit.get("audited_at_label") or "", audit.get("action_label") or "",
+                audit.get("entry_id"), audit.get("actor") or "", version_label,
+                transaction_date.strftime("%d-%m-%Y") if transaction_date else "",
+                payload.get("transaction_type") or "", float(payload.get("amount") or 0),
+                payload.get("note") or "", entered.strftime("%d-%m-%Y") if entered else "",
+                entered.strftime("%H:%M:%S") if entered else "",
+                payload.get("entered_by_name") or payload.get("entered_by") or "",
+            ])
+    for cell in sheet["H"][1:]:
+        cell.number_format = '#,##0"đ"'
+    widths = [21, 13, 11, 20, 11, 14, 18, 18, 48, 14, 12, 26]
+    for index, width in enumerate(widths, 1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return stream
+
+
+def _dispatch_revenue_admin_push(*, engine_instance, api_module, event: str, detail: dict[str, Any]) -> None:
+    """Deliver after commit; notification failure never rolls back revenue data."""
+    if api_module is None:
+        return
+    try:
+        import vera_web_v2_notification_settings as notification_settings
+        with engine_instance().connect() as conn:
+            if not notification_settings.is_enabled(conn, "revenue_manual_changes"):
+                return
+            private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
+            subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
+            subscriptions = conn.execute(text("""
+                SELECT s.subscription_id::text AS subscription_id,s.endpoint,s.p256dh,s.auth_secret
+                FROM vera_v2_push_subscription s
+                JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id
+                WHERE s.is_active=true AND p.is_active=true AND lower(COALESCE(p.role,''))='admin'
+                ORDER BY s.updated_at DESC
+            """)).mappings().all()
+        if not private_key or not subscriptions:
+            return
+        action_label = {"create": "Nhập mới", "update": "Sửa", "delete": "Xóa", "import": "Import"}.get(event, event)
+        amount = round(float(detail.get("amount") or 0))
+        body = f"{detail.get('actor') or 'Hệ thống'} · {detail.get('type') or ''} {amount:,}đ · {detail.get('note') or ''}".replace(",", ".")
+        results = []
+        for subscription in subscriptions:
+            delivery = {**dict(subscription), "payload": {
+                "title": f"VERA SPA · {action_label} Thu Chi thủ công",
+                "body": body[:900], "url": "https://app.veraspa.vn/", "kind": "revenue-manual-change",
+                "tag": f"vera-revenue-{event}-{detail.get('entry_id') or detail.get('nonce') or datetime.now().timestamp()}",
+                "dismissible": True,
+            }}
+            ok, status, error_text = api_module._send_web_push(delivery, private_key, subject)
+            results.append({"subscription_id": subscription["subscription_id"], "ok": bool(ok),
+                            "inactive": (not ok) and status in {404, 410}, "last_error": str(error_text or "")[:1000]})
+        if results:
+            with engine_instance().begin() as conn:
+                for result in results:
+                    conn.execute(text("""
+                        UPDATE vera_v2_push_subscription
+                        SET is_active=CASE WHEN :inactive THEN false ELSE is_active END,
+                            last_success_at=CASE WHEN :ok THEN NOW() ELSE last_success_at END,
+                            failure_count=CASE WHEN :ok THEN 0 ELSE failure_count+1 END,
+                            last_error=CASE WHEN :ok THEN NULL ELSE :last_error END,updated_at=NOW()
+                        WHERE subscription_id=CAST(:subscription_id AS uuid)
+                    """), result)
+    except Exception:
+        return
 
 
 def _auto_revenue(conn, start_date: date | None, end_date: date | None) -> dict[str, Any]:
@@ -441,7 +543,7 @@ def _progressive_detail_map(conn, start_date: date, end_date: date, progressive_
 
 def install_revenue_leave_list_routes(
     app, *, engine_instance, current_identity, require_feature, feature_allowed,
-    norm, progressive_key, google_client,
+    norm, progressive_key, google_client, api_module=None,
 ) -> None:
     if getattr(app.state, "revenue_leave_list_installed", False):
         return
@@ -503,7 +605,6 @@ def install_revenue_leave_list_routes(
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             revenue_store.ensure_schema(conn)
-            is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
             can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
             can_edit_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_EDIT_FEATURE))
@@ -523,6 +624,8 @@ def install_revenue_leave_list_routes(
                     "period_tip": auto["tip_revenue"], **auto,
                 }
             entries = revenue_store.list_entries(conn, start_date=start_date, end_date=end_date)
+            report_dates = [_parse_date(row.get("date")) for row in entries]
+            report_date = max((value for value in report_dates if value is not None), default=None)
             total_income = round(sum(row["amount"] for row in entries if row["type"] == "Thu"), 2)
             total_expense = round(sum(row["amount"] for row in entries if row["type"] == "Chi"), 2)
             tip_setting = _period_tip(conn, start_date.isoformat() if start_date else "", end_date.isoformat() if end_date else "")
@@ -535,8 +638,9 @@ def install_revenue_leave_list_routes(
             "start_date": (start_date or REVENUE_PERIOD_START).isoformat(),
             "start_date_label": (start_date or REVENUE_PERIOD_START).strftime("%d-%m-%Y"),
             "end_date": end_date.isoformat() if end_date else "",
-            "current_date": datetime.now(VN_TZ).date().isoformat(),
-            "current_date_label": datetime.now(VN_TZ).strftime("%d-%m-%Y"),
+            "current_date": (report_date or datetime.now(VN_TZ).date()).isoformat(),
+            "current_date_label": (report_date or datetime.now(VN_TZ).date()).strftime("%d-%m-%Y"),
+            "current_date_source": "last_ledger_transaction" if report_date else "server_date_fallback",
             "can_edit_tip": can_edit_tip, "can_create_entry": can_create_entry,
             "can_edit_entry": can_edit_entry, "can_delete_entry": can_delete_entry,
             "can_admin_crud": can_edit_entry or can_delete_entry, "entries": entries, "transaction_count": len(entries),
@@ -552,7 +656,7 @@ def install_revenue_leave_list_routes(
         }
 
     @app.post("/v2/revenue/entry")
-    def create_revenue_entry(body: RevenueEntryCreate, ident=Depends(current_identity)):
+    def create_revenue_entry(body: RevenueEntryCreate, background_tasks: BackgroundTasks, ident=Depends(current_identity)):
         income_amount = round(float(body.income_amount or 0), 2)
         expense_amount = round(float(body.expense_amount or 0), 2)
         if income_amount <= 0 and expense_amount <= 0:
@@ -584,6 +688,13 @@ def install_revenue_leave_list_routes(
                 )
             saved_rows = revenue_store.insert_web_entries(
                 conn, transaction_date=body.transaction_date, entries=entries, ident=ident,
+            )
+
+        actor = str(getattr(ident, "employee_username", "") or getattr(ident, "full_name", "") or "")
+        for transaction_type, amount, note in entries:
+            background_tasks.add_task(
+                _dispatch_revenue_admin_push, engine_instance=engine_instance, api_module=api_module,
+                event="create", detail={"type": transaction_type, "amount": amount, "note": note, "actor": actor},
             )
 
         parts = []
@@ -618,7 +729,7 @@ def install_revenue_leave_list_routes(
         return {"ok": True, **result, "message": f"Đã {action}: thêm {result['inserted']} dòng, bỏ qua {result['skipped']} dòng trùng."}
 
     @app.patch("/v2/revenue/entries/{entry_id}")
-    def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, ident=Depends(current_identity)):
+    def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, background_tasks: BackgroundTasks, ident=Depends(current_identity)):
         entered_at = None
         if body.entered_date is not None or body.entered_time is not None:
             if body.entered_date is None or not body.entered_time:
@@ -645,13 +756,22 @@ def install_revenue_leave_list_routes(
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
             except PermissionError:
                 raise HTTPException(403, "Chỉ được sửa bản ghi đã nhập trong ngày hiện tại.")
+        background_tasks.add_task(
+            _dispatch_revenue_admin_push, engine_instance=engine_instance, api_module=api_module,
+            event="update", detail={"entry_id": entry_id, "type": body.transaction_type, "amount": body.amount,
+                                    "note": body.note, "actor": str(getattr(ident, "employee_username", "") or "")},
+        )
         return {"ok": True, **result, "message": "Đã sửa bản ghi doanh thu trong ngày hiện tại."}
 
     @app.delete("/v2/revenue/entries/{entry_id}")
-    def delete_revenue_entry(entry_id: int, ident=Depends(current_identity)):
+    def delete_revenue_entry(entry_id: int, background_tasks: BackgroundTasks, ident=Depends(current_identity)):
+        notification_detail: dict[str, Any] = {"entry_id": entry_id, "actor": str(getattr(ident, "employee_username", "") or "")}
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_DELETE_FEATURE)
             try:
+                current = next((row for row in revenue_store.list_entries(conn) if row.get("id") == entry_id), None)
+                if current:
+                    notification_detail.update({"type": current.get("type"), "amount": current.get("amount"), "note": current.get("note")})
                 revenue_store.soft_delete_entry(
                     conn, entry_id=entry_id,
                     actor=str(getattr(ident, "employee_username", "") or ""),
@@ -661,7 +781,54 @@ def install_revenue_leave_list_routes(
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
             except PermissionError:
                 raise HTTPException(403, "Chỉ được xóa bản ghi đã nhập trong ngày hiện tại.")
+        background_tasks.add_task(
+            _dispatch_revenue_admin_push, engine_instance=engine_instance, api_module=api_module,
+            event="delete", detail=notification_detail,
+        )
         return {"ok": True, "message": "Đã xóa bản ghi khỏi báo cáo; timestamp lịch sử gốc không thay đổi."}
+
+    @app.get("/v2/revenue/audit")
+    def revenue_audit(
+        time_range: str = Query("this_month"), start: date | None = Query(None),
+        end: date | None = Query(None), ident=Depends(current_identity),
+    ):
+        _require_revenue_admin(ident)
+        start_date, end_date = _range_bounds(time_range, start, end)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            rows = revenue_store.list_audit_entries(conn, start_date=start_date, end_date=end_date)
+        return {"ok": True, "rows": rows, "count": len(rows),
+                "start_date": start_date.isoformat() if start_date else "",
+                "end_date": end_date.isoformat() if end_date else ""}
+
+    @app.get("/v2/revenue/audit/export.xlsx")
+    def revenue_audit_export(
+        time_range: str = Query("this_month"), start: date | None = Query(None),
+        end: date | None = Query(None), ident=Depends(current_identity),
+    ):
+        _require_revenue_admin(ident)
+        start_date, end_date = _range_bounds(time_range, start, end)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            rows = revenue_store.list_audit_entries(conn, start_date=start_date, end_date=end_date)
+        filename = f"VERA_LichSu_SuaXoa_ThuChi_{datetime.now(VN_TZ):%d-%m-%Y}.xlsx"
+        return StreamingResponse(
+            _revenue_audit_workbook(rows),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.get("/v2/revenue/duplicates")
+    def revenue_duplicates(
+        time_range: str = Query("all"), start: date | None = Query(None),
+        end: date | None = Query(None), ident=Depends(current_identity),
+    ):
+        _require_revenue_admin(ident)
+        start_date, end_date = _range_bounds(time_range, start, end)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            result = revenue_store.duplicate_analysis(conn, start_date=start_date, end_date=end_date)
+        return {"ok": True, **result}
 
     @app.put("/v2/revenue/tip")
     def save_revenue_tip(body: RevenueTipUpdate, ident=Depends(current_identity)):

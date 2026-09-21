@@ -383,21 +383,28 @@ def _ledger_export(rows: list[dict[str, Any]]) -> BytesIO:
     headers = ["Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Ngày nhập", "Giờ nhập", "Người nhập"]
     sheet.append(headers)
     for cell in sheet[1]:
-        cell.font = Font(bold=True, color="173B2E")
-        cell.fill = PatternFill("solid", fgColor="DCEFE5")
-        cell.alignment = Alignment(horizontal="center")
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1F513F")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for row in rows:
+        transaction_date = _parse_date(row.get("date"))
+        entered_date = _parse_date(row.get("entered_date")) or _parse_date(row.get("entered_date_label"))
         sheet.append([
-            row.get("date_label") or "", row.get("type") or "", float(row.get("amount") or 0),
-            row.get("note") or "", row.get("entered_date_label") or "",
+            transaction_date or row.get("date_label") or "", row.get("type") or "", float(row.get("amount") or 0),
+            row.get("note") or "", entered_date or row.get("entered_date_label") or "",
             row.get("entered_time") or "", row.get("entered_by") or "",
         ])
+    for column in ("A", "E"):
+        for cell in sheet[column][1:]:
+            if isinstance(cell.value, (date, datetime)):
+                cell.number_format = "dd-mm-yyyy"
     for cell in sheet["C"][1:]:
         cell.number_format = '#,##0"đ"'
-    widths = [14, 18, 18, 48, 14, 12, 24]
+    widths = [14, 18, 18, 48, 14, 12, 26.55]
     for index, width in enumerate(widths, 1):
         sheet.column_dimensions[chr(64 + index)].width = width
     sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
     stream = BytesIO()
     workbook.save(stream)
     stream.seek(0)
