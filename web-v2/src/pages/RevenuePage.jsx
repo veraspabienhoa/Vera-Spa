@@ -431,6 +431,7 @@ export default function RevenuePage({ user }) {
       setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
       setNotice(result.message || 'Đã ghi Thu Chi vào Chi tiết Doanh thu - Chi phí.')
       setRevision((value) => value + 1)
+      setReconcileRevision((value) => value + 1)
     } catch (err) {
       setError(err.message || 'Không ghi được Thu Chi.')
     } finally {
