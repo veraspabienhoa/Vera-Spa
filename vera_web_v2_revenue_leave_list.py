@@ -483,31 +483,53 @@ def install_revenue_leave_list_routes(
         }
 
     @app.get("/v2/revenue/summary")
-    def revenue_summary(ident=Depends(current_identity)):
+    def revenue_summary(
+        source: Literal["manual", "auto"] = Query("manual"),
+        time_range: str = Query("all"),
+        start: date | None = Query(None),
+        end: date | None = Query(None),
+        ident=Depends(current_identity),
+    ):
+        start_date, end_date = _range_bounds(time_range, start, end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             revenue_store.ensure_schema(conn)
-            values = revenue_store.values_from_db(conn)
-            period_start = _revenue_period_start(norm, values)
-            summary = _revenue_summary(values, norm, period_start=period_start)
-            tip_setting = _period_tip(conn, summary.get("start_date", ""), summary.get("current_date", ""))
+            is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
             can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
+            if source == "auto":
+                auto = _auto_revenue(conn, start_date, end_date)
+                today = datetime.now(VN_TZ).date()
+                return {
+                    "ok": True, "release": RELEASE, "source": "auto", "source_label": "Tự động từ hệ thống",
+                    "storage": "postgresql", "time_range": time_range,
+                    "start_date": start_date.isoformat() if start_date else "",
+                    "end_date": end_date.isoformat() if end_date else "",
+                    "current_date": today.isoformat(), "current_date_label": today.strftime("%d-%m-%Y"),
+                    "can_edit_tip": False, "can_create_entry": False, "can_admin_crud": False,
+                    "total_income": auto["total_revenue"], "total_expense": 0,
+                    "net_income": auto["total_revenue"], "balance": auto["total_revenue"],
+                    "period_tip": auto["tip_revenue"], **auto,
+                }
+            entries = revenue_store.list_entries(conn, start_date=start_date, end_date=end_date)
+            total_income = round(sum(row["amount"] for row in entries if row["type"] == "Thu"), 2)
+            total_expense = round(sum(row["amount"] for row in entries if row["type"] == "Chi"), 2)
+            tip_setting = _period_tip(conn, start_date.isoformat() if start_date else "", end_date.isoformat() if end_date else "")
         tip = float(tip_setting["amount"])
-        summary["period_tip"] = round(tip, 2)
-        summary["period_tip_start"] = tip_setting["period_start"]
-        summary["period_tip_end"] = tip_setting["period_end"]
-        summary["net_income"] = round(summary["total_income"] - summary["total_expense"], 2)
-        summary["balance"] = round(summary["net_income"] - tip, 2)
         return {
-            "ok": True,
-            "release": RELEASE,
-            "source": "Server VERA SPA",
-            "storage": "postgresql",
-            "transaction_table": revenue_store.TABLE,
-            "can_edit_tip": can_edit_tip,
-            "can_create_entry": can_create_entry,
-            **summary,
+            "ok": True, "release": RELEASE, "source": "manual", "source_label": "Thủ công",
+            "storage": "postgresql", "transaction_table": revenue_store.TABLE, "time_range": time_range,
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+            "current_date": datetime.now(VN_TZ).date().isoformat(),
+            "current_date_label": datetime.now(VN_TZ).strftime("%d-%m-%Y"),
+            "can_edit_tip": can_edit_tip, "can_create_entry": can_create_entry,
+            "can_admin_crud": is_admin, "entries": entries, "transaction_count": len(entries),
+            "total_income": total_income, "total_expense": total_expense,
+            "period_tip": round(tip, 2), "period_tip_start": tip_setting["period_start"],
+            "period_tip_end": tip_setting["period_end"],
+            "net_income": round(total_income - total_expense, 2),
+            "balance": round(total_income - total_expense - tip, 2),
         }
 
     @app.post("/v2/revenue/entry")
