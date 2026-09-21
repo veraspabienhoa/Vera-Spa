@@ -68,6 +68,7 @@ class RevenueEntryUpdate(BaseModel):
     amount: float = Field(ge=0, le=10_000_000_000_000)
     transaction_date: date | None = None
     note: str = Field(default="", max_length=1000)
+    entered_by_name: str | None = Field(default=None, max_length=200)
 
 
 def _range_bounds(time_range: str, start: date | None = None, end: date | None = None) -> tuple[date | None, date | None]:
@@ -591,6 +592,7 @@ def install_revenue_leave_list_routes(
                 result = revenue_store.update_entry(
                     conn, entry_id=entry_id, transaction_type=body.transaction_type,
                     amount=body.amount, transaction_date=body.transaction_date, note=body.note,
+                    entered_by_name=body.entered_by_name,
                     actor=str(getattr(ident, "employee_username", "") or ""),
                 )
             except KeyError:
