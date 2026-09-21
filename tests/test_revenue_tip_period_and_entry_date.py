@@ -17,6 +17,7 @@ def test_manual_and_hybrid_use_same_current_period_tip_and_date_control():
     assert "function RevenueDateInput" in page
     assert '.revenue-native-date>input[type="date"]{position:absolute;inset:0;width:100%!important;height:100%!important' in page
     assert ".revenue-entry-form .entry-date .revenue-native-date{width:100%;max-width:none}" in page
-    assert "const defaultTipStartDate = result.start_date || result.period_tip_start" in page
+    assert "const defaultTipStartDate = defaultRevenueTipStart(result.current_date)" in page
+    assert "const defaultTipStartDate = result.start_date" not in page
     assert "setEntryDate(result.current_date)" in page
     assert 'grid-template-areas:"title title" "date ."' in page
