@@ -20,5 +20,5 @@ def test_revenue_admin_full_edit_layout_and_filters_contract():
     assert "Có thể xóa để nhập nội dung Chi mới." not in page
     assert "auto-note-empty" in page
     assert "['next_month', 'Tháng sau']" not in page
-    assert 'grid-template-columns:repeat(3,minmax(0,1fr))' in page
-    assert 'grid-template-areas:"title title title" "date income income-note" "expense expense-note expense-note" "save save save"' in page
+    assert 'grid-template-columns:minmax(0,1fr) minmax(0,2fr)' in page
+    assert 'grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save"' in page
