@@ -24,6 +24,8 @@ RELEASE = "revenue-source-toggle-admin-crud-2026-09-21-v1"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_ENTRY_FEATURE = "revenue_entry_create"
+REVENUE_ENTRY_EDIT_FEATURE = "revenue_entry_edit"
+REVENUE_ENTRY_DELETE_FEATURE = "revenue_entry_delete"
 REVENUE_TIP_SETTING = "current_period_tip"
 REVENUE_SPREADSHEET_ID = os.getenv(
     "VERA_REVENUE_SHEET_ID",
@@ -448,10 +450,14 @@ def install_revenue_leave_list_routes(
     revenue_group[REVENUE_FEATURE] = "Xem Doanh thu"
     revenue_group[REVENUE_TIP_FEATURE] = "Nhập Tiền TIP trong kỳ"
     revenue_group[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"
+    revenue_group[REVENUE_ENTRY_EDIT_FEATURE] = "Sửa bản ghi nhập trong ngày hiện tại"
+    revenue_group[REVENUE_ENTRY_DELETE_FEATURE] = "Xóa bản ghi nhập trong ngày hiện tại"
     permissions.FEATURES[REVENUE_FEATURE] = "Xem Doanh thu"
     permissions.FEATURES[REVENUE_TIP_FEATURE] = "Nhập Tiền TIP trong kỳ"
     permissions.FEATURES[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"
-    permissions.DEFAULT_ROLE_FEATURES.setdefault("admin", set()).update({REVENUE_FEATURE, REVENUE_TIP_FEATURE, REVENUE_ENTRY_FEATURE})
+    permissions.FEATURES[REVENUE_ENTRY_EDIT_FEATURE] = "Sửa bản ghi nhập trong ngày hiện tại"
+    permissions.FEATURES[REVENUE_ENTRY_DELETE_FEATURE] = "Xóa bản ghi nhập trong ngày hiện tại"
+    permissions.DEFAULT_ROLE_FEATURES.setdefault("admin", set()).update({REVENUE_FEATURE, REVENUE_TIP_FEATURE, REVENUE_ENTRY_FEATURE, REVENUE_ENTRY_EDIT_FEATURE, REVENUE_ENTRY_DELETE_FEATURE})
 
     original_records = _find_route(app, "/v2/leave/records", "GET")
     original_daily_stats = _find_route(app, "/v2/leave/daily-stats", "GET")
@@ -500,6 +506,8 @@ def install_revenue_leave_list_routes(
             is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
             can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
+            can_edit_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_EDIT_FEATURE))
+            can_delete_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_DELETE_FEATURE))
             if source == "auto":
                 auto = _auto_revenue(conn, start_date, end_date)
                 today = datetime.now(VN_TZ).date()
@@ -509,7 +517,7 @@ def install_revenue_leave_list_routes(
                     "start_date": start_date.isoformat() if start_date else "",
                     "end_date": end_date.isoformat() if end_date else "",
                     "current_date": today.isoformat(), "current_date_label": today.strftime("%d-%m-%Y"),
-                    "can_edit_tip": False, "can_create_entry": False, "can_admin_crud": False,
+                    "can_edit_tip": False, "can_create_entry": False, "can_edit_entry": False, "can_delete_entry": False, "can_admin_crud": False,
                     "total_income": auto["total_revenue"], "total_expense": 0,
                     "net_income": auto["total_revenue"], "balance": auto["total_revenue"],
                     "period_tip": auto["tip_revenue"], **auto,
@@ -530,7 +538,8 @@ def install_revenue_leave_list_routes(
             "current_date": datetime.now(VN_TZ).date().isoformat(),
             "current_date_label": datetime.now(VN_TZ).strftime("%d-%m-%Y"),
             "can_edit_tip": can_edit_tip, "can_create_entry": can_create_entry,
-            "can_admin_crud": is_admin, "entries": entries, "transaction_count": len(entries),
+            "can_edit_entry": can_edit_entry, "can_delete_entry": can_delete_entry,
+            "can_admin_crud": can_edit_entry or can_delete_entry, "entries": entries, "transaction_count": len(entries),
             "total_income": total_income, "total_expense": total_expense,
             "period_tip": round(auto_tip if auto_tip is not None else tip, 2),
             "tip_revenue": round(auto_tip if auto_tip is not None else tip, 2),
@@ -610,7 +619,6 @@ def install_revenue_leave_list_routes(
 
     @app.patch("/v2/revenue/entries/{entry_id}")
     def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, ident=Depends(current_identity)):
-        _require_revenue_admin(ident)
         entered_at = None
         if body.entered_date is not None or body.entered_time is not None:
             if body.entered_date is None or not body.entered_time:
@@ -624,30 +632,35 @@ def install_revenue_leave_list_routes(
                     raise HTTPException(400, "Giờ nhập phải đúng HH:MM hoặc HH:MM:SS.")
             entered_at = datetime.combine(body.entered_date, entered_clock).replace(tzinfo=VN_TZ)
         with engine_instance().begin() as conn:
-            require_feature(conn, ident, REVENUE_FEATURE)
+            require_feature(conn, ident, REVENUE_ENTRY_EDIT_FEATURE)
             try:
                 result = revenue_store.update_entry(
                     conn, entry_id=entry_id, transaction_type=body.transaction_type,
                     amount=body.amount, transaction_date=body.transaction_date, note=body.note,
                     entered_by_name=body.entered_by_name, entered_at=entered_at,
                     actor=str(getattr(ident, "employee_username", "") or ""),
+                    required_entered_date=datetime.now(VN_TZ).date(),
                 )
             except KeyError:
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
-        return {"ok": True, **result, "message": "Đã sửa toàn bộ dữ liệu bản ghi theo quyền Admin."}
+            except PermissionError:
+                raise HTTPException(403, "Chỉ được sửa bản ghi đã nhập trong ngày hiện tại.")
+        return {"ok": True, **result, "message": "Đã sửa bản ghi doanh thu trong ngày hiện tại."}
 
     @app.delete("/v2/revenue/entries/{entry_id}")
     def delete_revenue_entry(entry_id: int, ident=Depends(current_identity)):
-        _require_revenue_admin(ident)
         with engine_instance().begin() as conn:
-            require_feature(conn, ident, REVENUE_FEATURE)
+            require_feature(conn, ident, REVENUE_ENTRY_DELETE_FEATURE)
             try:
                 revenue_store.soft_delete_entry(
                     conn, entry_id=entry_id,
                     actor=str(getattr(ident, "employee_username", "") or ""),
+                    required_entered_date=datetime.now(VN_TZ).date(),
                 )
             except KeyError:
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
+            except PermissionError:
+                raise HTTPException(403, "Chỉ được xóa bản ghi đã nhập trong ngày hiện tại.")
         return {"ok": True, "message": "Đã xóa bản ghi khỏi báo cáo; timestamp lịch sử gốc không thay đổi."}
 
     @app.put("/v2/revenue/tip")
