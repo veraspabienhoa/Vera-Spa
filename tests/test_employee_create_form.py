@@ -49,7 +49,8 @@ def test_shared_date_control_displays_vietnamese_date_format():
     assert "formatVeraDate" in source
     assert 'type="text"' in source
     assert 'type="date"' in source
-    assert "showPicker" not in source
+    assert "showPicker" in source
+    assert "picker.click()" in source
 
 
 def test_employee_summary_cards_filter_status_and_actions_are_ordered():
