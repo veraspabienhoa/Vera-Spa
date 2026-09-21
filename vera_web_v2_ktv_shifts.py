@@ -170,7 +170,7 @@ def install_ktv_shift_routes(app, *, engine_instance, current_identity, require_
                     items.append(current)
                 current.update({'name': name, 'days': body.days, 'label': label, 'active': True})
             _put_setting(conn, 'rotation_cycles', items, str(ident.employee_username))
-            return {'cycles': cycle_public(items), 'revision': revision + 1}
+            return {'cycles': cycle_public(items), 'revision': revision + 1, 'can_manage': True}
 
     @app.post('/v2/staff/ktv-cycles')
     def create_cycle(body: KtvCycleSave, ident=Depends(current_identity)):
