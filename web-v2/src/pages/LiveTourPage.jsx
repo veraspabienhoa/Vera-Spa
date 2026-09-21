@@ -764,7 +764,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     } finally {
       setActionBusy('')
     }
-  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, canReorder, isAdmin, canEndBreak, canEditAppointment, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, data.revision, load, selectedIds])
+  }, [capabilities.customers_edit, capabilities.customers_delete, capabilities.customer_combo_edit, capabilities.customer_combo_delete, actionBusy, cacheKey, canAdmin, canReorder, isAdmin, canEndBreak, canEditAppointment, canOperate, canPayment, canBook, canInvoiceEdit, canInvoiceDelete, canPaidInvoiceEdit, canPaidInvoiceDelete, canBackup, canCustomers, canImportCombo, data.revision, load, selectedIds])
 
   const previewExpired = async () => {
     if (!canAdmin || actionBusy || data.revision == null) return
