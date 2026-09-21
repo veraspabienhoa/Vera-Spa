@@ -25,6 +25,12 @@ class KtvShiftSave(BaseModel):
     fixed: bool = False
 
 
+class KtvCycleSave(BaseModel):
+    expected_revision: int = Field(ge=0)
+    name: str = Field(min_length=1, max_length=80)
+    days: int = Field(ge=1, le=365)
+
+
 def identifier(row):
     return str(row.get('ID') or 'legacy-' + sha256(display_shift_label(row).encode()).hexdigest()[:20])
 
@@ -119,3 +125,62 @@ def install_ktv_shift_routes(app, *, engine_instance, current_identity, require_
     @app.delete('/v2/staff/ktv-shifts/{shift_id}')
     def delete_shift(shift_id: str, expected_revision: int = Query(ge=0), ident=Depends(current_identity)):
         return mutate(ident, expected_revision, shift_id=shift_id, delete=True)
+
+    def cycle_catalog(conn):
+        row = conn.execute(text("SELECT value_json, revision FROM vera_app_setting WHERE category='shift' AND setting_key='rotation_cycles'")).mappings().first()
+        items = deepcopy(row['value_json']) if row and isinstance(row['value_json'], list) else []
+        return items, int(row.get('revision') or 0) if row else 0
+
+    def cycle_public(items):
+        base = [{'id': 'weekly', 'name': 'Theo chu kỳ Tuần', 'days': 7, 'label': 'Theo chu kỳ Tuần', 'system': True},
+                {'id': 'fixed', 'name': 'Cố định', 'days': 0, 'label': 'Cố định (Không đổi)', 'system': True}]
+        return base + [dict(item, system=False) for item in items if isinstance(item, dict) and item.get('active', True)]
+
+    def admin_only(ident):
+        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được thêm/sửa/xóa chu kỳ.')
+
+    @app.get('/v2/staff/ktv-cycles')
+    def get_cycles(ident=Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, 'ktv_shift_view')
+            items, revision = cycle_catalog(conn)
+            return {'cycles': cycle_public(items), 'revision': revision}
+
+    def save_cycle_value(ident, body, cycle_id=None, delete=False):
+        admin_only(ident)
+        with engine_instance().begin() as conn:
+            conn.execute(text('SELECT pg_advisory_xact_lock(hashtext(:key))'), {'key': 'vera:shift:rotation_cycles'})
+            items, revision = cycle_catalog(conn)
+            if body.expected_revision != revision:
+                raise HTTPException(409, 'Danh mục chu kỳ đã thay đổi. Hãy làm mới.')
+            current = next((item for item in items if str(item.get('id')) == str(cycle_id)), None) if cycle_id else None
+            if cycle_id and not current:
+                raise HTTPException(404, 'Không tìm thấy chu kỳ.')
+            if delete:
+                label = str(current.get('label') or '')
+                if conn.execute(text("SELECT username FROM employees WHERE lower(btrim(rotation_cycle))=lower(:label) LIMIT 1"), {'label': label}).first():
+                    raise HTTPException(409, 'Chu kỳ đang được nhân viên sử dụng. Hãy đổi chu kỳ trước khi xóa.')
+                current['active'] = False
+            else:
+                name = body.name.strip()
+                label = 'Theo chu kỳ Tuần' if body.days == 7 and key(name) in {'theo chu ky tuan', 'tuan'} else f'{name} ({body.days} ngày)'
+                if current is None:
+                    current = {'id': 'CYCLE-' + str(uuid4())}
+                    items.append(current)
+                current.update({'name': name, 'days': body.days, 'label': label, 'active': True})
+            _put_setting(conn, 'rotation_cycles', items, str(ident.employee_username))
+            return {'cycles': cycle_public(items), 'revision': revision + 1}
+
+    @app.post('/v2/staff/ktv-cycles')
+    def create_cycle(body: KtvCycleSave, ident=Depends(current_identity)):
+        return save_cycle_value(ident, body)
+
+    @app.put('/v2/staff/ktv-cycles/{cycle_id}')
+    def edit_cycle(cycle_id: str, body: KtvCycleSave, ident=Depends(current_identity)):
+        return save_cycle_value(ident, body, cycle_id)
+
+    @app.delete('/v2/staff/ktv-cycles/{cycle_id}')
+    def delete_cycle(cycle_id: str, expected_revision: int = Query(ge=0), ident=Depends(current_identity)):
+        return save_cycle_value(ident, KtvCycleSave(expected_revision=expected_revision, name='delete', days=1), cycle_id, True)
+
