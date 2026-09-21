@@ -1,21 +1,22 @@
 from pathlib import Path
 
 
-def test_touch_devices_keep_visible_date_text_and_native_calendar_hit_target():
+def test_all_devices_keep_manual_text_and_native_calendar_hit_target():
     css = Path("web-v2/src/styles.css").read_text(encoding="utf-8")
-
-    assert "@media (hover: none) and (pointer: coarse)" in css
-    assert ".vera-date-input:not(:has(.vera-date-picker-button:disabled)) > .vera-native-date-picker" in css
-    assert "width: 46px !important;" in css
-    assert "height: calc(100% - 6px) !important;" in css
-    assert "right: 3px;" in css
-    assert ".vera-date-input > .vera-date-picker-button" in css
-    assert "pointer-events: none;" in css
-
-
-def test_vera_date_input_keeps_native_date_control_for_ios_picker():
     component = Path("web-v2/src/components/VeraDateInput.jsx").read_text(encoding="utf-8")
 
+    assert '.vera-date-input > .vera-native-date-picker' in css
+    assert 'pointer-events: auto;' in css
+    assert '.vera-date-input > .vera-date-picker-button { pointer-events: none; }' in css
+    assert 'type="text"' in component
+    assert 'onChange={changeText}' in component
     assert 'className="vera-native-date-picker"' in component
     assert 'type="date"' in component
-    assert "onChange={pickDate}" in component
+    assert 'onChange={pickDate}' in component
+    assert 'showPicker' not in component
+
+
+def test_vera_date_input_native_picker_exists_from_first_render():
+    component = Path("web-v2/src/components/VeraDateInput.jsx").read_text(encoding="utf-8")
+    assert "pickerReady" not in component
+    assert "flushSync" not in component
