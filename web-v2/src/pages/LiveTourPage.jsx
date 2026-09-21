@@ -1122,7 +1122,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       current: record._scheduled_week_shift || cellValue(record, findColumn(columns, ['VAO CA'])) || 'Chưa xếp',
       next: record._scheduled_next_shift || record._scheduled_week_shift || 'Chưa xếp',
       cycle: record._rotation_cycle || '',
-      fixed: normalizeSearchText(record._rotation_cycle || '').includes('co dinh') || normalizeSearchText(record._rotation_cycle || '').includes('khong doi'),
+      fixed: normalizedColumn(record._rotation_cycle || '').includes('CO DINH') || normalizedColumn(record._rotation_cycle || '').includes('KHONG DOI'),
     })).filter(row => row.name)
     const start = new Date(clockMs); start.setHours(0,0,0,0); start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
     const finish = new Date(start); finish.setDate(start.getDate() + 6)
