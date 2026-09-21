@@ -1013,6 +1013,25 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const statusColumn = findColumn(columns, ['TRANG THAI'])
   const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
   const requestColumn = findColumn(columns, ['YEU CAU'])
+  const openEmployeeBooking = (record) => {
+    const name = cellValue(record, employeeColumn) || 'Nhân viên'
+    setError('')
+    if (!['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA']))))) {
+      setNotice(`${name} chưa vào ca, không thể đặt Booking.`)
+      return
+    }
+    if (hasGroup(record, 'leave')) {
+      setNotice(`${name} đang nghỉ phép, không thể đặt Booking.`)
+      return
+    }
+    if (isCurrentlyOnBreak(record)) {
+      setNotice(`${name} đang nghỉ giữa ca, chưa thể đặt Booking.`)
+      return
+    }
+    setNotice('')
+    setModal(null)
+    setBookingContext({ employeeId: stableEmployeeId(record) })
+  }
   const manualQuickBooking = modal?.kind === 'quick_checkout' && form.checkout_source === 'manual'
   const selectedQuickCheckoutRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickCheckoutEligible(record, columns)) || null
   const areaGroups = useMemo(() => new Map(Object.entries(data.room_groups || {}).map(([name, group]) => [normalizedColumn(name), group])), [data.room_groups])
@@ -1293,6 +1312,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     setSelectedRoomKey('')
     setSelectedIds(new Set(id ? [id] : []))
     setWeeklyShiftOpen(true)
+    openEmployeeBooking(record)
   }
   const toggleDisplayed = () => { setSelectedRoomKey(''); setSelectedIds((current) => {
     const next = new Set(current)
