@@ -21,6 +21,8 @@ from pyxlsb import open_workbook
 import requests
 
 from vera_google_credentials import google_credentials
+import vera_revenue_store as revenue_store
+
 from vera_web_v2_revenue_leave_list import (
     REVENUE_FEATURE,
     REVENUE_SPREADSHEET_ID,
@@ -404,11 +406,16 @@ def install_purchase_reconcile_routes(
         start, end = _resolve_range(preset, start_date, end_date)
         purchase_content = _drive_download_purchase_report()
         purchase_all = _parse_purchase_report(purchase_content, norm)
-        revenue_values = _read_revenue_values(google_client, engine_instance)
-        ledger_all = _parse_revenue_input(revenue_values, norm)
+        with engine_instance().connect() as conn:
+            ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
+        for row in ledger_all:
+            row["is_purchase"] = norm(row.get("type")) == "chi" and bool(re.match(r"^mua(?:\\s|$)", norm(row.get("note"))))
+            parsed_date = _parse_date(row.get("date"))
+            row["date"] = parsed_date
+            row["date_label"] = _fmt_date(parsed_date) if parsed_date else ""
 
         purchase_rows = _filtered(purchase_all, start, end)
-        ledger_rows = _filtered(ledger_all, start, end)
+        ledger_rows = [row for row in ledger_all if row.get("date")]
         compare_rows = _comparison(purchase_rows, ledger_rows)
         mismatches = [row for row in compare_rows if not row["matched"]]
         purchase_total = round(sum(float(row.get("amount") or 0) for row in purchase_rows), 2)
