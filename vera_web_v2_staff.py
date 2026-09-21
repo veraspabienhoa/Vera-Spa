@@ -325,7 +325,7 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
         "employment_status": status,
         "work_shift": str(row.get("work_shift") or ""),
         "shift_start_date": str(row.get("shift_start_date") or ""),
-        "rotation_cycle": str(row.get("rotation_cycle") or ""),
+        "rotation_cycle": ("Theo chu kỳ Tuần" if str(row.get("rotation_cycle") or "").strip() == "Luân phiên (14 ngày)" else str(row.get("rotation_cycle") or "")),
         "login_locked": bool(row.get("login_locked")),
         "employment_start_date": str(row.get("employment_start_date") or ""),
         "employment_end_date": str(row.get("employment_end_date") or payload.get("Ngày nghỉ việc") or ""),
