@@ -303,7 +303,7 @@ export default function RevenuePage({ user }) {
             if (!controller.signal.aborted) setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
           }
           if (!controller.signal.aborted) {
-            const defaultTipStartDate = result.start_date || result.period_tip_start || defaultRevenueTipStart(result.current_date) || ''
+            const defaultTipStartDate = defaultRevenueTipStart(result.current_date) || result.period_tip_start || ''
             const defaultTipEndDate = result.current_date || result.period_tip_end || ''
             const autoTip = Array.isArray(liveTourRows)
               ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)
