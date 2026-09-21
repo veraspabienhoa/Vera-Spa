@@ -34,9 +34,9 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "live_tour_invoice_view": "Xem hóa đơn chờ thanh toán",
         "live_tour_paid_invoice_view": "Xem / in hóa đơn đã thanh toán",
         "live_tour_paid_invoice_edit": "Sửa hóa đơn đã thanh toán (cần quyền Xem tương ứng)",
-        "live_tour_paid_invoice_delete": "Xóa / hủy hóa đơn đã thanh toán (cần quyền Xem tương ứng)",
-        "live_tour_invoice_edit": "Sửa hóa đơn chờ (cần Xem hóa đơn + Chờ thanh toán)",
-        "live_tour_invoice_delete": "Xóa hóa đơn chờ (cần Xem hóa đơn + Chờ thanh toán)",
+        "live_tour_paid_invoice_delete": "Xóa hóa đơn đã thanh toán trong ngày hiện tại",
+        "live_tour_invoice_edit": "Sửa hóa đơn chờ của hôm nay hoặc hôm qua",
+        "live_tour_invoice_delete": "Xóa hóa đơn chờ của hôm nay hoặc hôm qua",
         "live_tour_pending_view": "Chờ thanh toán (chi tiết cần Xem hóa đơn)",
         "live_tour_customers_view": "Xem Khách hàng & combo",
         "live_tour_reports_view": "Xem báo cáo",
@@ -51,7 +51,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "live_tour_customer_combo_delete": "Xóa combo đã mua của khách",
         "live_tour_combo_import": "Nhập combo khách hàng",
         "live_tour_reports_edit": "Sửa báo cáo hóa đơn (cần Xem báo cáo và hóa đơn)",
-        "live_tour_reports_delete": "Xóa báo cáo hóa đơn (cần Xem báo cáo và hóa đơn)",
+        "live_tour_reports_delete": "Xóa báo cáo hóa đơn đã thanh toán trong ngày hiện tại",
 
     },
     "Lịch nghỉ": {
@@ -196,7 +196,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         "payroll_history_edit", "payroll_history_delete", "accumulation_view",
     ]},
     {"id": "revenue", "label": "Doanh thu", "view_feature": "revenue_view", "features": [
-        "revenue_view", "revenue_tip_edit", "revenue_entry_create",
+        "revenue_view", "revenue_tip_edit", "revenue_entry_create", "revenue_entry_edit", "revenue_entry_delete",
     ]},
     {"id": "training", "label": "Đào tạo & đánh giá", "view_feature": "training_view", "features": [
         "training_view", "training_session_create", "training_session_update", "training_evaluate", "training_admin",
@@ -403,6 +403,8 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     # Doanh thu is registered dynamically by the revenue module.
     "revenue_tip_edit": {"revenue_view"},
     "revenue_entry_create": {"revenue_view"},
+    "revenue_entry_edit": {"revenue_view"},
+    "revenue_entry_delete": {"revenue_view"},
 }
 
 
