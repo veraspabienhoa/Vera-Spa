@@ -145,7 +145,7 @@ def install_ktv_shift_routes(app, *, engine_instance, current_identity, require_
         with engine_instance().begin() as conn:
             require_feature(conn, ident, 'ktv_shift_view')
             items, revision = cycle_catalog(conn)
-            return {'cycles': cycle_public(items), 'revision': revision}
+            return {'cycles': cycle_public(items), 'revision': revision, 'can_manage': str(getattr(ident, 'role', '') or '').strip().lower() == 'admin'}
 
     def save_cycle_value(ident, body, cycle_id=None, delete=False):
         admin_only(ident)
