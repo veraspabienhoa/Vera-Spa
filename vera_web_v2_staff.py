@@ -51,7 +51,18 @@ STATUS_ALIASES = {
     "da nghi viec han": "Đã nghỉ việc",
     "da nghi viec": "Đã nghỉ việc",
 }
-CYCLE_OPTIONS = ["Luân phiên (14 ngày)", "Theo chu kỳ Tháng", "Cố định (Không đổi)"]
+CYCLE_OPTIONS = ["Theo chu kỳ Tuần", "Cố định (Không đổi)"]
+
+def _cycle_options(conn):
+    row = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='rotation_cycles'")).scalar_one_or_none()
+    custom = row if isinstance(row, list) else []
+    labels = [str(item.get('label') or '').strip() for item in custom if isinstance(item, dict) and item.get('active', True)]
+    result = []
+    for label in [*CYCLE_OPTIONS, *labels]:
+        if label and label not in result:
+            result.append(label)
+    return result
+
 DEPARTMENT_ORDER = ["Nhân viên + Leader", "Lễ tân", "Quản lý", "Locker", "Tạp vụ"]
 class StaffCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
@@ -570,7 +581,7 @@ def install_staff_routes(
             "permissions": permissions(conn, ident),
             "role_options": allowed_roles(ident),
             "status_options": STATUS_OPTIONS,
-            "cycle_options": CYCLE_OPTIONS,
+            "cycle_options": _cycle_options(conn),
             "shifts_by_department": _shift_catalog(conn, rows),
             "bank_options": vietqr_bank_options(),
         }
