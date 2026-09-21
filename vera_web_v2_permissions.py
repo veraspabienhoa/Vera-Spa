@@ -49,6 +49,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "live_tour_customers_delete": "Xóa khách hàng",
         "live_tour_customer_combo_edit": "Sửa combo đã mua của khách",
         "live_tour_customer_combo_delete": "Xóa combo đã mua của khách",
+        "live_tour_combo_import": "Nhập combo khách hàng",
         "live_tour_reports_edit": "Sửa báo cáo hóa đơn (cần Xem báo cáo và hóa đơn)",
         "live_tour_reports_delete": "Xóa báo cáo hóa đơn (cần Xem báo cáo và hóa đơn)",
 
@@ -298,6 +299,7 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "live_tour_customers_delete": {"live_tour_customers_view"},
     "live_tour_customer_combo_edit": {"live_tour_customers_view"},
     "live_tour_customer_combo_delete": {"live_tour_customers_view"},
+    "live_tour_combo_import": {"live_tour_customers_view"},
     "live_tour_reports_view": {"live_tour_view"},
     "live_tour_reports_edit": {"live_tour_reports_view", "live_tour_paid_invoice_view"},
     "live_tour_reports_delete": {"live_tour_reports_view", "live_tour_paid_invoice_view"},

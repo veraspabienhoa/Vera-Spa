@@ -488,6 +488,7 @@ def install_purchase_reconcile_routes(
         start_date: date | None = Query(default=None, alias="start"),
         end_date: date | None = Query(default=None, alias="end"),
         transaction_date: date | None = Query(default=None),
+        entered_date: date | None = Query(default=None),
         transaction_type: str = Query(default="", max_length=30),
         amount: str = Query(default="", max_length=40),
         note: str = Query(default="", max_length=300),
@@ -503,6 +504,7 @@ def install_purchase_reconcile_routes(
         amount_digits = re.sub(r"\D", "", amount)
         rows = [row for row in rows if (
             (not transaction_date or _parse_date(row.get("date")) == transaction_date)
+            and (not entered_date or _parse_date(row.get("entered_date_label")) == entered_date)
             and (not type_key or norm(row.get("type")) == type_key)
             and (not note_key or note_key in norm(row.get("note")))
             and (not entered_by_key or entered_by_key in norm(row.get("entered_by")))

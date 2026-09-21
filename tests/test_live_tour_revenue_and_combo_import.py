@@ -1,11 +1,11 @@
-"""Revenue excludes TIP once; importing combo balances is an Admin-only action."""
+"""Revenue excludes TIP once; combo import follows the independent permission grant."""
 from copy import deepcopy
 import json
 from pathlib import Path
 import subprocess
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import vera_web_v2_live_tour as live
@@ -76,28 +76,37 @@ class ImportIdentity(RouteIdentity):
     role: str = ''
 
 
-def import_client(monkeypatch, role):
+def import_client(monkeypatch, role, grants=None):
     state = payable_state()
     state['combos'] = [{'id': 'import-combo', 'name': 'Combo 13', 'tickets': 13, 'price': 3000000, 'active': True}]
     _, shared = api_client(monkeypatch, state)
     app = FastAPI()
-    # Grant every feature to prove delegated Live Tour admin cannot bypass role checks.
+    allowed = {'live_tour_view', *(grants or ({'live_tour_combo_import', 'live_tour_customers_view'} if role == 'admin' else set()))}
     live.install_live_tour_routes(app, engine_instance=RouteEngine,
-        current_identity=lambda: ImportIdentity(role=role), require_feature=lambda *_args: None,
-        feature_allowed=lambda *_args: True, identity_type=ImportIdentity)
-    return TestClient(app), shared
+        current_identity=lambda: ImportIdentity(role=role),
+        require_feature=lambda _conn, _ident, feature: None if feature != 'live_tour_combo_import' or feature in allowed else (_ for _ in ()).throw(HTTPException(403, 'Chưa được cấp quyền nhập combo.')),
+        feature_allowed=lambda _conn, _identity, feature: feature in allowed if feature == 'live_tour_combo_import' else True,
+        identity_type=ImportIdentity)
+    return TestClient(app, raise_server_exceptions=False), shared
 
 
 @pytest.mark.parametrize('role', ['letan', 'quanly', 'leader', 'nhanvien', 'locker', 'tapvu', ''])
-@pytest.mark.parametrize('batch', [False, True])
-def test_non_admin_cannot_import_even_with_all_features(monkeypatch, role, batch):
-    client, shared = import_client(monkeypatch, role)
+def test_combo_import_denied_without_independent_grant(monkeypatch, role):
+    client, shared = import_client(monkeypatch, role, {'live_tour_customers_view'})
     before = deepcopy(shared)
     row = {'customer_name': 'Khách', 'combo_id': 'import-combo', 'remaining': 5, 'total': 5}
-    response = post(client, shared, 'combo_import', {'purchases': [row]} if batch else row)
-    assert response.status_code == 403
-    assert response.json()['detail'] == 'Chỉ Admin được nhập combo.'
+    response = post(client, shared, 'combo_import', row)
+    assert response.status_code != 200
     assert shared == before
+
+
+@pytest.mark.parametrize('role', ['letan', 'quanly', 'leader'])
+def test_combo_import_allowed_when_feature_is_granted(monkeypatch, role):
+    client, shared = import_client(monkeypatch, role, {'live_tour_combo_import', 'live_tour_customers_view'})
+    row = {'customer_name': 'Khách', 'combo_id': 'import-combo', 'remaining': 5, 'total': 5}
+    response = post(client, shared, 'combo_import', row)
+    assert response.status_code == 200, response.text
+    assert shared['state']['customers'][0]['combo_purchases'][0]['remaining'] == 5
 
 
 def test_admin_can_import_combo_for_selected_existing_customer(monkeypatch):
@@ -128,12 +137,17 @@ def test_admin_can_import_and_retry_without_recording_new_revenue(monkeypatch):
     assert not shared['state']['invoices'] and not shared['state']['reports']
 
 
-def test_frontend_import_requires_admin_role_as_well_as_grants():
+def test_frontend_import_uses_independent_combo_import_grant():
     source = (ROOT / 'web-v2/src/pages/LiveTourPage.jsx').read_text()
     helper = source[source.index('const PAYMENT_ACTIONS'):source.index('function LiveTourModal')]
     script = helper + """
-const grants = {admin: true, payment: true, customers: true};
-console.log(JSON.stringify([false, true].map(isAdmin => canRunAction('combo_import', {...grants, isAdmin}))));
+const cases = [
+  {comboImport: false, customers: true},
+  {comboImport: true, customers: false},
+  {comboImport: true, customers: true},
+];
+console.log(JSON.stringify(cases.map(grants => canRunAction('combo_import', grants))));
 """
     result = subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
-    assert json.loads(result.stdout) == [False, True]
+    assert json.loads(result.stdout) == [False, False, True]
+    assert "live_tour_combo_import" in source

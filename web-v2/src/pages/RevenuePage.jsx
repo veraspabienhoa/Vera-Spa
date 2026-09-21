@@ -232,6 +232,7 @@ export default function RevenuePage({ user }) {
   const [detailError, setDetailError] = useState('')
   const [exportingLedger, setExportingLedger] = useState(false)
   const [ledgerNoteFilter, setLedgerNoteFilter] = useState('')
+  const [ledgerEnteredDate, setLedgerEnteredDate] = useState('')
   const [ledgerEnteredByFilter, setLedgerEnteredByFilter] = useState('')
   const [ledgerAmountFilter, setLedgerAmountFilter] = useState('')
   const [purchaseItemFilter, setPurchaseItemFilter] = useState('')
@@ -263,6 +264,7 @@ export default function RevenuePage({ user }) {
     return (!ledgerDate || row.date === ledgerDate)
       && (!ledgerType || row.type === ledgerType)
       && (!ledgerNoteFilter || note.includes(ledgerNoteFilter.toLocaleLowerCase('vi')))
+      && (!ledgerEnteredDate || row.entered_date_label === formatVeraDate(ledgerEnteredDate))
       && (!ledgerEnteredByFilter || enteredBy.includes(ledgerEnteredByFilter.toLocaleLowerCase('vi')))
       && (!wantedAmount || amountText.includes(wantedAmount))
   })
@@ -489,6 +491,7 @@ export default function RevenuePage({ user }) {
       if (ledgerType) params.set('transaction_type', ledgerType)
       if (ledgerAmountFilter) params.set('amount', ledgerAmountFilter)
       if (ledgerNoteFilter) params.set('note', ledgerNoteFilter)
+      if (ledgerEnteredDate) params.set('entered_date', ledgerEnteredDate)
       if (ledgerEnteredByFilter) params.set('entered_by', ledgerEnteredByFilter)
       const response = await fetch(`${apiBase}/v2/revenue/ledger/export.xlsx?${params}`, { headers: await authorizedHeaders() })
       if (!response.ok) {
@@ -599,7 +602,7 @@ export default function RevenuePage({ user }) {
       .reconcile-status{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:13px;margin-bottom:12px;font-weight:800;font-size:13px}.reconcile-status.ok{background:#eef8f1;border:1px solid #bdd9c6;color:#245b38}.reconcile-status.near{background:#fffbea;border:1px solid #e9d982;color:#7a6500}.reconcile-status.bad{background:#fff0ed;border:1px solid #efb0a5;color:#8d291d}.reconcile-status svg{flex:0 0 auto;margin-top:1px}
       .reconcile-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}.reconcile-kpi{padding:13px;border:1px solid #e1e7e3;border-radius:14px;background:#fafcfb}.reconcile-kpi span{display:block;font-size:10px;font-weight:900;color:#69766f;letter-spacing:.04em}.reconcile-kpi strong{display:block;margin-top:5px;font-size:19px;color:#173329}.reconcile-kpi.near strong{color:#806800}.reconcile-kpi.bad strong{color:#a13c2f}
       .comparison-filter-bar{display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #e7ece9;background:#fbfcfb}.comparison-filter-bar label{display:grid;gap:4px;font-size:10px;font-weight:900;color:#5d6b64}.comparison-filter-bar select{min-height:36px;min-width:150px}.comparison-filter-bar small{margin-left:auto;color:#6c7772}
-      .revenue-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.revenue-tab{border:1px solid #b8d0c3;background:#fff;color:#24473a;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer}.revenue-tab.active{background:#1f513f;color:#fff;border-color:#1f513f}.detail-tab-panel{margin-bottom:18px}.detail-filter-panel{display:grid;grid-template-columns:1.05fr 1fr 1fr;gap:10px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f7faf8;margin-bottom:12px}.detail-filter-panel label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.detail-filter-panel input,.detail-filter-panel select{min-height:42px}.detail-filter-secondary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;grid-column:1/-1}.detail-filter-actions{display:flex;gap:8px;align-items:end;justify-content:flex-end;flex-wrap:wrap;grid-column:1/-1}.detail-filter-actions button{min-height:40px}.detail-filter-actions .active{background:#1f513f;color:#fff;border-color:#1f513f}.admin-revenue-summary{display:grid;gap:14px}
+      .revenue-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.revenue-tab{border:1px solid #b8d0c3;background:#fff;color:#24473a;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer}.revenue-tab.active{background:#1f513f;color:#fff;border-color:#1f513f}.detail-tab-panel{margin-bottom:18px}.detail-filter-panel{display:grid;grid-template-columns:1.05fr 1fr 1fr;gap:10px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f7faf8;margin-bottom:12px}.detail-filter-panel label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.detail-filter-panel input,.detail-filter-panel select{min-height:42px}.detail-filter-secondary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;grid-column:1/-1}.detail-filter-actions{display:flex;gap:8px;align-items:end;justify-content:flex-end;flex-wrap:wrap;grid-column:1/-1}.detail-filter-actions button{min-height:40px}.detail-filter-actions .active{background:#1f513f;color:#fff;border-color:#1f513f}.admin-revenue-summary{display:grid;gap:14px}
       .ledger-summary-head{display:flex;align-items:stretch;gap:10px;padding:10px 12px;background:#f5f8f6}.ledger-filter-total{display:flex;align-items:center;gap:9px;min-width:180px;padding:10px 13px;border:1px solid #cbded3;border-radius:12px;background:#fff}.ledger-filter-total.expense{border-color:#e1c49f;background:#fffaf2}.ledger-filter-total svg{color:#8b6b22;flex:0 0 auto}.ledger-filter-total span{display:block;font-size:10px;font-weight:900;color:#68736f;text-transform:uppercase}.ledger-filter-total strong{display:block;margin-top:2px;font-size:18px;color:#173329}.ledger-summary-head .ledger-import,.ledger-summary-head .ledger-export{align-self:center}.ledger-summary-head .ledger-import:first-of-type{margin-left:auto}
 .report-box{min-width:0;max-width:100%;border:1px solid #e2e8e4;border-radius:14px;overflow:hidden}.report-box h3{display:flex;gap:8px;align-items:center;margin:0;padding:11px 13px;background:#f5f8f6;color:#24473a;font-size:13px}.report-scroll{width:100%;max-width:100%;overflow:auto;max-height:430px}.report-table{width:100%;border-collapse:collapse;min-width:650px;font-size:12px}.comparison-table{min-width:1050px}.report-table th,.report-table td{padding:8px 9px;border-bottom:1px solid #edf1ee;white-space:nowrap;text-align:left;vertical-align:top}.report-table th{position:sticky;top:0;background:#dcefe5;z-index:1;font-size:10px;color:#173b2e;text-transform:uppercase;border-bottom:2px solid #79a48e}.report-table .money{text-align:right;font-variant-numeric:tabular-nums}.report-table .detail-cell{white-space:normal;min-width:330px;line-height:1.45}.report-table .detail-cell div+div{margin-top:4px}.report-table tr.mismatch td{background:#fff2ef}.report-table tr.near td{background:#fffceb}.report-table tr.match td{background:#f5fbf7}.report-table tr.purchase-row td{font-weight:700}.status-match{color:#24703e;font-weight:900}.status-near{color:#806800;font-weight:900}.status-mismatch{color:#a13c2f;font-weight:900}
       @media(max-width:1250px){.revenue-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.reconcile-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -676,6 +679,7 @@ export default function RevenuePage({ user }) {
           <label>Loại giao dịch<select value={ledgerType} onChange={(event) => setLedgerType(event.target.value)}><option value="">Tất cả</option>{ledgerTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
           <label>Số tiền<VeraMoneyInput value={ledgerAmountFilter} onChange={(event) => setLedgerAmountFilter(event.target.value)} placeholder="Tìm số tiền" /></label>
           <label>Ghi chú<input value={ledgerNoteFilter} onChange={(event) => setLedgerNoteFilter(event.target.value)} placeholder="Tìm nội dung ghi chú" /></label>
+          <label>Ngày nhập<VeraDateInput value={ledgerEnteredDate} onChange={(event) => setLedgerEnteredDate(event.target.value)} /></label>
           <label>Người nhập<input value={ledgerEnteredByFilter} onChange={(event) => setLedgerEnteredByFilter(event.target.value)} placeholder="Tìm người nhập" /></label>
         </div> : <div className="detail-filter-secondary">
           <label>Ngày nhập<VeraDateInput value={purchaseDate} onChange={(event) => setPurchaseDate(event.target.value)} /></label>
@@ -685,7 +689,7 @@ export default function RevenuePage({ user }) {
         </div>}
         <div className="detail-filter-actions">
           {reconcileFilters.map(([value, label]) => <button type="button" key={value} className={`secondary-button ${detailPreset === value ? 'active' : ''}`} onClick={() => { setDetailPreset(value); if (value !== 'custom') { setDetailStart(''); setDetailEnd('') } }}>{label}</button>)}
-          <button type="button" className="secondary-button" onClick={() => { setLedgerDate(''); setLedgerType(''); setLedgerAmountFilter(''); setLedgerNoteFilter(''); setLedgerEnteredByFilter(''); setPurchaseDate(''); setPurchaseItemFilter(''); setPurchaseBuyerFilter(''); setPurchaseUserFilter('') }}>Xóa lọc chi tiết</button>
+          <button type="button" className="secondary-button" onClick={() => { setLedgerDate(''); setLedgerType(''); setLedgerAmountFilter(''); setLedgerNoteFilter(''); setLedgerEnteredDate(''); setLedgerEnteredByFilter(''); setPurchaseDate(''); setPurchaseItemFilter(''); setPurchaseBuyerFilter(''); setPurchaseUserFilter('') }}>Xóa lọc chi tiết</button>
         </div>
       </div>
       {detailError && <div className="error-box">{detailError}</div>}
