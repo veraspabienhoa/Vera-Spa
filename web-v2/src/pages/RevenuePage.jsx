@@ -459,6 +459,32 @@ export default function RevenuePage({ user }) {
     }
   }
 
+  useEffect(() => {
+    if (!autoMode) return undefined
+    const timer = window.setInterval(() => setRevision(value => value + 1), 10000)
+    return () => window.clearInterval(timer)
+  }, [autoMode])
+
+  const editManualRevenue = async (row) => {
+    const amount = window.prompt('Số tiền', String(Math.round(Number(row.amount || 0))))
+    if (amount === null) return
+    const note = window.prompt('Ghi chú', row.note || '')
+    if (note === null) return
+    const transactionDate = window.prompt('Ngày giao dịch (YYYY-MM-DD)', row.date || '')
+    if (transactionDate === null) return
+    try {
+      const result = await updateRevenueEntry(row.id, { transaction_type: row.type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate || null, note })
+      setNotice(result.message || 'Đã sửa bản ghi doanh thu.'); setRevision(value => value + 1)
+    } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
+  }
+
+  const removeManualRevenue = async (row) => {
+    if (!window.confirm(`Xóa bản ghi ${row.type} ${money(row.amount)} ngày ${row.date_label}? Timestamp lịch sử gốc vẫn được giữ trong audit.`)) return
+    try {
+      const result = await deleteRevenueEntry(row.id); setNotice(result.message || 'Đã xóa bản ghi.'); setRevision(value => value + 1)
+    } catch (err) { setError(err.message || 'Không xóa được bản ghi doanh thu.') }
+  }
+
   const comparisonRows = useMemo(() => {
     let rows = [...(reconcile?.comparison_rows || [])]
     if (differenceFilter !== 'all') {
@@ -474,7 +500,11 @@ export default function RevenuePage({ user }) {
     return rows
   }, [differenceFilter, reconcile, statusFilter])
 
-  const cards = [
+  const cards = autoMode ? [
+    { key: 'income', label: 'TIỀN DỊCH VỤ', value: data?.service_revenue, icon: TrendingUp },
+    { key: 'tip', label: 'TIỀN TIP', value: data?.tip_revenue, icon: CircleDollarSign },
+    { key: 'balance', label: 'TỔNG DOANH THU', value: data?.total_revenue, icon: WalletCards },
+  ] : [
     { key: 'income', label: 'TỔNG THU', value: data?.total_income, icon: TrendingUp },
     { key: 'expense', label: 'TỔNG CHI', value: data?.total_expense, icon: TrendingDown },
     { key: 'net', label: 'TỔNG THU - TỔNG CHI', value: data?.net_income ?? (Number(data?.total_income || 0) - Number(data?.total_expense || 0)), icon: WalletCards },
