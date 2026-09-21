@@ -18,6 +18,11 @@ const displayToIsoDate = (value) => {
   const match = String(value || '').trim().match(/^(\d{2})-(\d{2})-(\d{4})$/)
   return match ? `${match[3]}-${match[2]}-${match[1]}` : ''
 }
+const todayIsoVietnam = () => {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
 const reconcileFilters = [
   ['all', 'Tất cả'],
   ['yesterday', 'Hôm qua'],
@@ -181,7 +186,7 @@ export default function RevenuePage({ user }) {
   const summaryRange = 'all'
   const summaryStart = ''
   const summaryEnd = ''
-  const [entryDate, setEntryDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }))
+  const [entryDate, setEntryDate] = useState(todayIsoVietnam)
   const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
   const [entryIncomeNote, setEntryIncomeNote] = useState('')
   const [incomeNoteEdited, setIncomeNoteEdited] = useState(false)
@@ -272,23 +277,22 @@ export default function RevenuePage({ user }) {
           }
         } else {
           let liveTourRows = null
-          if (result.source !== 'manual_tip_auto') {
-            try {
-              const liveTour = await loadLiveTourReports(controller.signal)
-              liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
-            } catch (tipError) {
-              if (tipError?.name === 'AbortError') throw tipError
-              if (!controller.signal.aborted) setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
-            }
+          try {
+            const liveTour = await loadLiveTourReports(controller.signal)
+            liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
+          } catch (tipError) {
+            if (tipError?.name === 'AbortError') throw tipError
+            if (!controller.signal.aborted) setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
           }
           if (!controller.signal.aborted) {
             const defaultTipStartDate = defaultRevenueTipStart(result.current_date) || result.period_tip_start || result.start_date || ''
             const defaultTipEndDate = result.current_date || result.period_tip_end || ''
-            const autoTip = result.source === 'manual_tip_auto'
-              ? Number(result.tip_revenue || result.period_tip || 0)
-              : (Array.isArray(liveTourRows) ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate) : Number(result.period_tip || 0))
+            const autoTip = Array.isArray(liveTourRows)
+              ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)
+              : Number(result.tip_revenue || result.period_tip || 0)
             const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
             setData({ ...result, period_tip: autoTip, balance, period_tip_start: defaultTipStartDate, period_tip_end: defaultTipEndDate })
+            if (result.current_date) setEntryDate(current => /^\d{4}-\d{2}-\d{2}$/.test(current) ? current : result.current_date)
             setTipRows(liveTourRows); setTip(autoTip); setTipStart(defaultTipStartDate); setTipEnd(defaultTipEndDate)
           }
         }
@@ -541,7 +545,7 @@ export default function RevenuePage({ user }) {
       .revenue-period-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dfe7e2;border-radius:15px;background:#fff}
       .revenue-period-card svg{color:#8b6b22;flex:0 0 auto}.revenue-period-card span{display:block;font-size:11px;font-weight:900;letter-spacing:.05em;color:#68736f;text-transform:uppercase}.revenue-period-card strong{display:block;margin-top:3px;font-size:18px;color:#173329}
       .revenue-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.revenue-action-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;min-height:43px}.revenue-action-link.disabled{opacity:.45;pointer-events:none}
-      .revenue-entry-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save";gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-area:title;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-date{grid-area:date}.revenue-entry-form .entry-amount:not(.entry-expense){grid-area:income}.revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}.revenue-entry-form .entry-expense{grid-area:expense}.revenue-entry-form .entry-expense-note{grid-area:expense-note}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form input.auto-note-empty{color:#9aa39f;font-weight:650}.revenue-entry-form button{grid-area:save;min-height:42px;white-space:nowrap;width:100%}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
+      .revenue-entry-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save";gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-area:title;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-date{grid-area:date}.revenue-entry-form .entry-date .vera-date-input{width:100%;max-width:none}.revenue-entry-form .entry-date .vera-date-display{font-weight:800}.revenue-entry-form .entry-amount:not(.entry-expense){grid-area:income}.revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}.revenue-entry-form .entry-expense{grid-area:expense}.revenue-entry-form .entry-expense-note{grid-area:expense-note}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form input.auto-note-empty{color:#9aa39f;font-weight:650}.revenue-entry-form button{grid-area:save;min-height:42px;white-space:nowrap;width:100%}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
       .revenue-tip-editor{display:grid;grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900;min-width:0}.revenue-tip-editor input{font-size:16px;font-weight:800;min-width:0}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:42px;padding:0 8px;border:1px solid #dfd5b9;border-radius:10px;background:#fff;color:#75694d;font-size:11px;font-weight:900;white-space:nowrap}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px;white-space:nowrap}
       .revenue-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.revenue-card{padding:18px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{width:100%;min-width:0;margin-top:14px;font-size:30px;line-height:1.05;font-weight:900;color:#173329;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}.revenue-card.net{background:#f7faf8;border-color:#d2e0d8}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
       .revenue-formula{margin-top:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:13px;background:#f3f8f5;color:#244a3a;font-size:13px;font-weight:800;text-align:center}.revenue-meta{margin-top:10px;padding:12px 14px;border:1px solid #e4eae6;border-radius:13px;background:#fafcfb;color:#68736f;font-size:12px}
