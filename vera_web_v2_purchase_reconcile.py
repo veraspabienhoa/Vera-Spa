@@ -464,19 +464,21 @@ def install_purchase_reconcile_routes(
         transaction_type: str = Query(default="", max_length=30),
         amount: str = Query(default="", max_length=40),
         note: str = Query(default="", max_length=300),
+        entered_by: str = Query(default="", max_length=200),
         ident=Depends(current_identity),
     ):
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
         start, end = _resolve_range(preset, start_date, end_date)
-        values = _read_revenue_values(google_client, engine_instance)
-        rows = _filtered(_parse_revenue_input(values, norm), start, end)
-        type_key, note_key = norm(transaction_type), norm(note)
+        with engine_instance().connect() as conn:
+            rows = revenue_store.list_entries(conn, start_date=start, end_date=end)
+        type_key, note_key, entered_by_key = norm(transaction_type), norm(note), norm(entered_by)
         amount_digits = re.sub(r"\D", "", amount)
         rows = [row for row in rows if (
-            (not transaction_date or row["date"] == transaction_date)
+            (not transaction_date or _parse_date(row.get("date")) == transaction_date)
             and (not type_key or norm(row.get("type")) == type_key)
             and (not note_key or note_key in norm(row.get("note")))
+            and (not entered_by_key or entered_by_key in norm(row.get("entered_by")))
             and (not amount_digits or amount_digits in str(round(float(row.get("amount") or 0))))
         )]
         filename = f"VERA_DoanhThu_ChiPhi_{start:%d-%m-%Y}_{end:%d-%m-%Y}.xlsx"
