@@ -218,6 +218,8 @@ export default function RevenuePage({ user }) {
   const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'
   const isAdmin = role === 'admin'
   const autoMode = isAdmin && revenueSource === 'auto'
+  const hybridMode = isAdmin && revenueSource === 'manual_tip_auto'
+  const systemTipMode = autoMode || hybridMode
   useEffect(() => {
     if (!canViewAdminRevenueSummary && activeTab === 'overview') setActiveTab('ledger')
   }, [activeTab, canViewAdminRevenueSummary])
@@ -270,17 +272,21 @@ export default function RevenuePage({ user }) {
           }
         } else {
           let liveTourRows = null
-          try {
-            const liveTour = await loadLiveTourReports(controller.signal)
-            liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
-          } catch (tipError) {
-            if (tipError?.name === 'AbortError') throw tipError
-            if (!controller.signal.aborted) setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
+          if (result.source !== 'manual_tip_auto') {
+            try {
+              const liveTour = await loadLiveTourReports(controller.signal)
+              liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
+            } catch (tipError) {
+              if (tipError?.name === 'AbortError') throw tipError
+              if (!controller.signal.aborted) setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
+            }
           }
           if (!controller.signal.aborted) {
             const defaultTipStartDate = defaultRevenueTipStart(result.current_date) || result.period_tip_start || result.start_date || ''
             const defaultTipEndDate = result.current_date || result.period_tip_end || ''
-            const autoTip = Array.isArray(liveTourRows) ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate) : Number(result.period_tip || 0)
+            const autoTip = result.source === 'manual_tip_auto'
+              ? Number(result.tip_revenue || result.period_tip || 0)
+              : (Array.isArray(liveTourRows) ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate) : Number(result.period_tip || 0))
             const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
             setData({ ...result, period_tip: autoTip, balance, period_tip_start: defaultTipStartDate, period_tip_end: defaultTipEndDate })
             setTipRows(liveTourRows); setTip(autoTip); setTipStart(defaultTipStartDate); setTipEnd(defaultTipEndDate)
@@ -463,10 +469,10 @@ export default function RevenuePage({ user }) {
   }
 
   useEffect(() => {
-    if (!autoMode) return undefined
+    if (!systemTipMode) return undefined
     const timer = window.setInterval(() => setRevision(value => value + 1), 10000)
     return () => window.clearInterval(timer)
-  }, [autoMode])
+  }, [systemTipMode])
 
   const editManualRevenue = async (row) => {
     const transactionType = window.prompt('Loại giao dịch (Thu hoặc Chi)', row.type || 'Thu')
@@ -512,8 +518,8 @@ export default function RevenuePage({ user }) {
     return rows
   }, [differenceFilter, reconcile, statusFilter])
 
-  const cards = autoMode ? [
-    { key: 'income', label: 'TIỀN DỊCH VỤ', value: data?.service_revenue, icon: TrendingUp },
+  const cards = (autoMode || hybridMode) ? [
+    { key: 'income', label: hybridMode ? 'TIỀN DỊCH VỤ · MANUAL' : 'TIỀN DỊCH VỤ', value: data?.service_revenue, icon: TrendingUp },
     { key: 'tip', label: 'TIỀN TIP', value: data?.tip_revenue, icon: CircleDollarSign },
     { key: 'balance', label: 'TỔNG DOANH THU', value: data?.total_revenue, icon: WalletCards },
   ] : [
@@ -535,7 +541,7 @@ export default function RevenuePage({ user }) {
       .revenue-period-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dfe7e2;border-radius:15px;background:#fff}
       .revenue-period-card svg{color:#8b6b22;flex:0 0 auto}.revenue-period-card span{display:block;font-size:11px;font-weight:900;letter-spacing:.05em;color:#68736f;text-transform:uppercase}.revenue-period-card strong{display:block;margin-top:3px;font-size:18px;color:#173329}
       .revenue-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.revenue-action-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;min-height:43px}.revenue-action-link.disabled{opacity:.45;pointer-events:none}
-      .revenue-entry-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-areas:"title title title" "date income income-note" "expense expense-note expense-note" "save save save";gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-area:title;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-date{grid-area:date}.revenue-entry-form .entry-amount:not(.entry-expense){grid-area:income}.revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}.revenue-entry-form .entry-expense{grid-area:expense}.revenue-entry-form .entry-expense-note{grid-area:expense-note}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form input.auto-note-empty{color:#9aa39f;font-weight:650}.revenue-entry-form button{grid-area:save;min-height:42px;white-space:nowrap;width:100%}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
+      .revenue-entry-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save";gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-area:title;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-date{grid-area:date}.revenue-entry-form .entry-amount:not(.entry-expense){grid-area:income}.revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}.revenue-entry-form .entry-expense{grid-area:expense}.revenue-entry-form .entry-expense-note{grid-area:expense-note}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form input.auto-note-empty{color:#9aa39f;font-weight:650}.revenue-entry-form button{grid-area:save;min-height:42px;white-space:nowrap;width:100%}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
       .revenue-tip-editor{display:grid;grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900;min-width:0}.revenue-tip-editor input{font-size:16px;font-weight:800;min-width:0}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:42px;padding:0 8px;border:1px solid #dfd5b9;border-radius:10px;background:#fff;color:#75694d;font-size:11px;font-weight:900;white-space:nowrap}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px;white-space:nowrap}
       .revenue-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.revenue-card{padding:18px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{width:100%;min-width:0;margin-top:14px;font-size:30px;line-height:1.05;font-weight:900;color:#173329;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}.revenue-card.net{background:#f7faf8;border-color:#d2e0d8}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
       .revenue-formula{margin-top:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:13px;background:#f3f8f5;color:#244a3a;font-size:13px;font-weight:800;text-align:center}.revenue-meta{margin-top:10px;padding:12px 14px;border:1px solid #e4eae6;border-radius:13px;background:#fafcfb;color:#68736f;font-size:12px}
@@ -567,8 +573,8 @@ export default function RevenuePage({ user }) {
       <div className="revenue-source-toggle" role="group" aria-label="Nguồn dữ liệu doanh thu">
         <button type="button" className={revenueSource === 'manual' ? 'active' : ''} onClick={() => setRevenueSource('manual')}>Manual · Thủ công</button>
         <button type="button" className={revenueSource === 'auto' ? 'active' : ''} onClick={() => setRevenueSource('auto')}>Auto · Tự động hệ thống</button>
+        <button type="button" className={revenueSource === 'manual_tip_auto' ? 'active' : ''} onClick={() => setRevenueSource('manual_tip_auto')}>Dịch Manual · Tip Auto</button>
       </div>
-      <small>{autoMode ? 'Tự động = Tiền dịch vụ + Tiền tip. Dữ liệu cập nhật lại mỗi 10 giây; nhập thủ công được khóa.' : 'Chế độ thủ công: giữ nguyên luồng nhập Thu/Chi hiện tại.'}</small>
     </section>}
 
     {canCreateEntry && !autoMode && <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
@@ -586,11 +592,11 @@ export default function RevenuePage({ user }) {
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Báo cáo tới ngày</span><strong>{busy && !data ? '…' : (data?.current_date_label || '—')}</strong></div></article>
     </section>}
 
-    {canViewAdminRevenueSummary && canEditTip && !autoMode && <section className="revenue-tip-editor">
+    {canViewAdminRevenueSummary && canEditTip && !systemTipMode && <section className="revenue-tip-editor">
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
       <label>Ngày bắt đầu<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} max={tipEnd || data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipStart(event.target.value)} /></label>
       <label>Đến ngày<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
-      <div className="revenue-tip-current">Báo cáo tới ngày: {data?.current_date_label || '—'} <button type="button" className="secondary-button" disabled={savingTip || busy || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày này</button></div>
+      <div className="revenue-tip-current"><button type="button" className="secondary-button" disabled={savingTip || busy || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày này · {data?.current_date_label || '—'}</button></div>
       <button type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>
       <small>Tiền TIP tự động cộng từ TIP của nhân viên trong báo cáo hóa đơn Live Tour theo đúng khoảng Ngày bắt đầu → Đến ngày. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định bằng Ngày hiện tại. Đổi một trong hai ngày sẽ tự lọc và tính lại số TIP ngay.</small>
     </section>}
@@ -599,7 +605,7 @@ export default function RevenuePage({ user }) {
       <section className="revenue-grid" aria-live="polite">
         {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}`} key={key}><div className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><AutoFitMoney>{busy && !data ? '…' : money(value)}</AutoFitMoney></article>)}
       </section>
-      {data && <div className="revenue-formula">{autoMode ? <>Tổng doanh thu = Tiền dịch vụ + Tiền tip = <strong>{money(data.total_revenue)}</strong></> : <>Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></>}</div>}
+      {data && <div className="revenue-formula">{(autoMode || hybridMode) ? <>Tổng doanh thu = Tiền dịch vụ {hybridMode ? '(Manual)' : ''} + Tiền tip (Auto) = <strong>{money(data.total_revenue)}</strong></> : <>Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></>}</div>}
     </div>}
 
     {isAdmin && autoMode && Array.isArray(data?.records) && <section className="report-box revenue-admin-records"><h3>DOANH THU TỰ ĐỘNG TỪ HỆ THỐNG</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Bill</th><th>Nhân viên</th><th>Dịch vụ</th><th className="money">Tiền dịch vụ</th><th className="money">Tip</th><th className="money">Tổng</th></tr></thead><tbody>{data.records.map(row => <tr key={row.id}><td>{row.date_label || '—'}</td><td>{row.bill_no || '—'}</td><td>{row.employee || '—'}</td><td>{row.service || '—'}</td><td className="money">{money(row.service_revenue)}</td><td className="money">{money(row.tip_revenue)}</td><td className="money">{money(row.total_revenue)}</td></tr>)}</tbody></table></div></section>}
@@ -634,9 +640,9 @@ export default function RevenuePage({ user }) {
       </div>
       {detailError && <div className="error-box">{detailError}</div>}
       {detailBusy && !detailData && <div className="revenue-meta">Đang tải dữ liệu…</div>}
-      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article><button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th>{isAdmin && revenueSource === 'manual' && <th>Thao tác</th>}</tr></thead><tbody>
-        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td>{isAdmin && revenueSource === 'manual' && <td data-label="Thao tác"><div className="revenue-crud-actions"><button type="button" className="secondary-button compact" disabled={!row.id} onClick={() => editManualRevenue(row)}>Sửa</button><button type="button" className="secondary-button compact danger-button" disabled={!row.id} onClick={() => removeManualRevenue(row)}>Xóa</button></div></td>}</tr>)}
-        {!ledgerRows.length && <tr><td colSpan={isAdmin && revenueSource === 'manual' ? 8 : 7}>Không có dữ liệu phù hợp bộ lọc.</td></tr>}
+      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article><button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th>{isAdmin && revenueSource !== 'auto' && <th>Thao tác</th>}</tr></thead><tbody>
+        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td>{isAdmin && revenueSource !== 'auto' && <td data-label="Thao tác"><div className="revenue-crud-actions"><button type="button" className="secondary-button compact" disabled={!row.id} onClick={() => editManualRevenue(row)}>Sửa</button><button type="button" className="secondary-button compact danger-button" disabled={!row.id} onClick={() => removeManualRevenue(row)}>Xóa</button></div></td>}</tr>)}
+        {!ledgerRows.length && <tr><td colSpan={isAdmin && revenueSource !== 'auto' ? 8 : 7}>Không có dữ liệu phù hợp bộ lọc.</td></tr>}
       </tbody></table></div></div>}
       {activeTab === 'purchase' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Báo cáo mua hàng</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày nhập</th><th>Chi tiết hàng hóa</th><th className="money">Số lượng</th><th className="money">Đơn giá</th><th className="money">Thành Tiền</th><th>Người đặt</th><th>User</th></tr></thead><tbody>
         {purchaseRows.map((row, index) => <tr key={`${row.date}-${index}`}><td>{row.date_label}</td><td>{row.item || '—'}</td><td className="money">{numberText(row.quantity)}</td><td className="money">{money(row.unit_price)}</td><td className="money">{money(row.amount)}</td><td>{row.buyer || '—'}</td><td>{row.user || '—'}</td></tr>)}

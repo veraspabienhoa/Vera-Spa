@@ -4,9 +4,9 @@ from pathlib import Path
 def test_revenue_notes_use_their_own_row():
     source = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
 
-    assert '"date income income-note"' in source
-    assert '"expense expense-note expense-note"' in source
-    assert '"save save save"' in source
+    assert '"date ."' in source
+    assert '"income income-note"' in source
+    assert '"expense expense-note"' in source
     assert ".revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}" in source
     assert ".revenue-entry-form .entry-expense-note{grid-area:expense-note}" in source
 
