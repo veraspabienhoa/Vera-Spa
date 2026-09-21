@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 import json
 import os
 import re
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -20,7 +20,7 @@ import vera_web_v2_permissions as permissions
 import vera_revenue_store as revenue_store
 
 
-RELEASE = "revenue-server-ledger-2026-09-19-v1"
+RELEASE = "revenue-source-toggle-admin-crud-2026-09-21-v1"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_ENTRY_FEATURE = "revenue_entry_create"
@@ -61,6 +61,72 @@ class RevenueEntryCreate(BaseModel):
     expense_amount: float = Field(default=0, ge=0, le=10_000_000_000_000)
     expense_note: str = Field(default="", max_length=1000)
     confirm_duplicate: bool = False
+
+
+class RevenueEntryUpdate(BaseModel):
+    transaction_type: Literal["Thu", "Chi"]
+    amount: float = Field(ge=0, le=10_000_000_000_000)
+    transaction_date: date | None = None
+    note: str = Field(default="", max_length=1000)
+
+
+def _range_bounds(time_range: str, start: date | None = None, end: date | None = None) -> tuple[date | None, date | None]:
+    today = datetime.now(VN_TZ).date()
+    token = str(time_range or "all").strip().lower()
+    if token == "all":
+        return None, None
+    if token == "yesterday":
+        day = today - timedelta(days=1); return day, day
+    if token == "today":
+        return today, today
+    if token == "this_week":
+        first = today - timedelta(days=today.weekday()); return first, first + timedelta(days=6)
+    if token == "last_week":
+        last = today - timedelta(days=today.weekday() + 1); return last - timedelta(days=6), last
+    if token == "this_month":
+        first = today.replace(day=1)
+        next_month = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return first, next_month - timedelta(days=1)
+    if token == "last_month":
+        end_day = today.replace(day=1) - timedelta(days=1); return end_day.replace(day=1), end_day
+    if token == "custom":
+        if not start or not end or start > end:
+            raise HTTPException(400, "Khoảng ngày tùy chỉnh không hợp lệ.")
+        return start, end
+    raise HTTPException(400, "Bộ lọc thời gian không hợp lệ.")
+
+
+def _auto_revenue(conn, start_date: date | None, end_date: date | None) -> dict[str, Any]:
+    rows = conn.execute(text("""
+        SELECT resource_id, payload
+        FROM vera_live_tour_report
+        WHERE deleted_at IS NULL
+        ORDER BY ordinal, resource_id
+    """)).mappings().all()
+    service = tip = 0.0
+    records = []
+    for row in rows:
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        raw_date = payload.get("business_date") or payload.get("effective_at") or payload.get("created_at") or payload.get("recorded_at")
+        parsed = _parse_date(raw_date)
+        if start_date and (not parsed or parsed < start_date):
+            continue
+        if end_date and (not parsed or parsed > end_date):
+            continue
+        service_amount = _money(payload.get("subtotal", payload.get("service_money", 0)))
+        tip_amount = _money(payload.get("tip", 0))
+        service += service_amount
+        tip += tip_amount
+        records.append({
+            "id": str(row["resource_id"]), "date": parsed.isoformat() if parsed else "",
+            "date_label": parsed.strftime("%d-%m-%Y") if parsed else "",
+            "service_revenue": round(service_amount, 2), "tip_revenue": round(tip_amount, 2),
+            "total_revenue": round(service_amount + tip_amount, 2),
+            "employee": str(payload.get("employee_name") or ""), "service": str(payload.get("service") or ""),
+            "bill_no": str(payload.get("bill_no") or ""),
+        })
+    return {"service_revenue": round(service, 2), "tip_revenue": round(tip, 2),
+            "total_revenue": round(service + tip, 2), "transaction_count": len(records), "records": records}
 
 
 def _find_route(app, path: str, method: str):
