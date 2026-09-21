@@ -145,7 +145,6 @@ export default function LeaveRegistrationPage({ user }) {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushMessage, setPushMessage] = useState('')
   const [exporting, setExporting] = useState(false)
-  const [syncingLeaveSource, setSyncingLeaveSource] = useState(false)
   const role = String(user?.role || '').toLowerCase()
   const employeeSelfService = EMPLOYEE_SELF_SERVICE_ROLES.has(role) && employeeSelfServicePolicy.enabled !== false
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
@@ -587,21 +586,6 @@ export default function LeaveRegistrationPage({ user }) {
       setError(err.message || 'Không xuất được danh sách Excel.')
     } finally {
       setExporting(false)
-    }
-  }
-
-  const syncLeaveSource = async () => {
-    if (!['admin', 'quanly', 'letan'].includes(role) || syncingLeaveSource) return
-    if (!window.confirm('Đồng bộ các lịch nghỉ còn thiếu từ Web V2 vào LichNghi_VeraSpa?\n\nDòng đã có và dòng Vi phạm sẽ được bỏ qua.')) return
-    setSyncingLeaveSource(true)
-    setError('')
-    try {
-      const result = await veraApi.syncLeaveSource()
-      setMessage(result.message || 'Đã đồng bộ LichNghi_VeraSpa.')
-    } catch (err) {
-      setError(err.message || 'Không đồng bộ được LichNghi_VeraSpa.')
-    } finally {
-      setSyncingLeaveSource(false)
     }
   }
 
