@@ -13,7 +13,8 @@ def test_all_devices_keep_manual_text_and_native_calendar_hit_target():
     assert 'className="vera-native-date-picker"' in component
     assert 'type="date"' in component
     assert 'onChange={pickDate}' in component
-    assert 'showPicker' not in component
+    assert "showPicker" in component
+    assert "picker.click()" in component
 
 
 def test_vera_date_input_native_picker_exists_from_first_render():
