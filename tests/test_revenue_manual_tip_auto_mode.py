@@ -11,8 +11,9 @@ def test_revenue_manual_tip_auto_mode_and_period_contract():
     assert 'REVENUE_PERIOD_START = date(2025, 9, 5)' in backend
     assert '"start_date_label": (start_date or REVENUE_PERIOD_START).strftime("%d-%m-%Y")' in backend
 
-    assert "Dịch Manual · Tip Auto" in page
+    assert "Dịch vụ Manual · Tip Auto" in page
     assert "Chế độ thủ công: giữ nguyên luồng nhập Thu/Chi hiện tại." not in page
     assert 'grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save"' in page
     assert "Dùng ngày này · {data?.current_date_label || '—'}" in page
-    assert "systemTipMode" in page
+    assert "canEditTip && !autoMode" in page
+    assert "{!hybridMode && <button" in page

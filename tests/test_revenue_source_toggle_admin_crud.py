@@ -17,10 +17,10 @@ def test_revenue_source_toggle_and_admin_crud_are_wired():
     assert '@app.patch("/v2/revenue/entries/{entry_id}")' in backend
     assert '@app.delete("/v2/revenue/entries/{entry_id}")' in backend
     assert 'Chỉ Admin được sửa hoặc xóa báo cáo doanh thu.' in backend
-    assert "entered_at" not in store.split("def update_entry", 1)[1].split("def soft_delete_entry", 1)[0].split("UPDATE {TABLE}", 1)[1].split("WHERE id", 1)[0]
+    assert "entered_at=COALESCE(:entered_at, entered_at)" in store
     assert "is_deleted=true" in store
     assert "vera_revenue_entry_audit" in store
     assert "Manual · Thủ công" in page and "Auto · Tự động hệ thống" in page
     assert "['all', 'Tất cả']" in page
-    assert "Dịch Manual · Tip Auto" in page
+    assert "Dịch vụ Manual · Tip Auto" in page
     assert "Chế độ thủ công: giữ nguyên luồng nhập Thu/Chi hiện tại." not in page

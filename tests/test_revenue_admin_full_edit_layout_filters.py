@@ -8,13 +8,15 @@ def test_revenue_admin_full_edit_layout_and_filters_contract():
 
     assert "Loại giao dịch (Thu hoặc Chi)" in page
     assert "Ngày giao dịch (DD-MM-YYYY)" in page
+    assert "Ngày nhập (DD-MM-YYYY)" in page
+    assert "Giờ nhập (HH:MM:SS)" in page
     assert "window.prompt('Người nhập'" in page
+    assert "entered_date: enteredDate" in page
+    assert "entered_time: String(enteredTime).trim()" in page
     assert "entered_by_name: enteredBy" in page
-    assert "entered_by_name: str | None" in backend
-    assert "entered_by_name=COALESCE(:entered_by_name, entered_by_name)" in store
-    update_sql = store.split("def update_entry", 1)[1].split("def soft_delete_entry", 1)[0]
-    assert "entered_at=" not in update_sql
-    assert "created_at=" not in update_sql
+    assert "entered_date: date | None" in backend
+    assert "entered_time: str | None" in backend
+    assert "entered_at=COALESCE(:entered_at, entered_at)" in store
 
     assert "Có thể xóa để nhập nội dung Thu mới." not in page
     assert "Có thể xóa để nhập nội dung Chi mới." not in page

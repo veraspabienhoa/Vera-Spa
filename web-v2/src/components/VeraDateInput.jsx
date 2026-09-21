@@ -1,6 +1,5 @@
 import { CalendarDays } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 
 import { ISO_DATE, formatVeraDate, parseVeraDate } from '../lib/veraDate'
 
@@ -15,7 +14,6 @@ export default function VeraDateInput({
 }) {
   const [display, setDisplay] = useState(() => formatVeraDate(value))
   const [invalid, setInvalid] = useState(false)
-  const [pickerReady, setPickerReady] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(hover: none) and (pointer: coarse)').matches)
   const pickerRef = useRef(null)
   const textRef = useRef(null)
 
@@ -61,20 +59,20 @@ export default function VeraDateInput({
   }
 
   const openPicker = () => {
-    if (disabled || readOnly) return
-    if (!pickerReady) flushSync(() => setPickerReady(true))
     const picker = pickerRef.current
-    if (!picker) return
+    if (!picker || disabled || readOnly) return
     try {
       if (typeof picker.showPicker === 'function') {
         picker.showPicker()
         return
       }
     } catch {
-      // Safari may expose showPicker but reject it for a programmatic trigger.
+      // Browser may reject showPicker outside a direct activation. The native
+      // input is always mounted and its direct hit-area remains available.
     }
     picker.click()
   }
+
 
   return <span className={`vera-date-input ${invalid ? 'invalid' : ''} ${className}`.trim()}>
     <input
@@ -96,7 +94,7 @@ export default function VeraDateInput({
       onChange={changeText}
       onBlur={() => validateAndEmit(display, false)}
     />
-    {!readOnly && <button type="button" className="vera-date-picker-button" disabled={disabled} onClick={openPicker} aria-label={`Chọn ${ariaLabel || 'ngày'}`}><CalendarDays size={16} /></button>}
-    {pickerReady && <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled || readOnly} onChange={pickDate} aria-label={`Lịch ${ariaLabel || 'ngày'}`} />}
+    {!readOnly && <button type="button" className="vera-date-picker-button" disabled={disabled} onClick={openPicker} tabIndex={-1} aria-hidden="true"><CalendarDays size={16} /></button>}
+    {!readOnly && <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled} onChange={pickDate} aria-label={`Lịch ${ariaLabel || 'ngày'}`} />}
   </span>
 }

@@ -70,7 +70,7 @@ def _as_date(value: Any) -> date | None:
     raw = str(value or "").strip()
     if not raw:
         return None
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y"):
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%m/%d/%Y"):
         try:
             return datetime.strptime(raw[:10], fmt).date()
         except ValueError:
@@ -86,7 +86,7 @@ def _as_entered_at(value: Any) -> datetime:
     else:
         raw = str(value or "").strip()
         parsed = None
-        for fmt in ("%d/%m/%Y %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        for fmt in ("%d/%m/%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
             try:
                 parsed = datetime.strptime(raw.split(".", 1)[0], fmt)
                 break
@@ -304,6 +304,122 @@ def find_duplicate_web_entries(conn, *, entries: list[tuple[str, float, str]]) -
     return duplicates
 
 
+def import_ledger_xlsx(conn, content: bytes, *, mode: str, actor: str) -> dict[str, int]:
+    """Import the same seven-column workbook produced by the Revenue export.
+
+    append: insert only rows whose business fields do not already exist.
+    replace: soft-delete all active rows, then insert every imported row.
+    """
+    ensure_schema(conn)
+    if mode not in {"append", "replace"}:
+        raise ValueError("Chế độ import không hợp lệ.")
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise ValueError("File Excel trống hoặc vượt quá 15 MB.")
+    try:
+        workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError("File Excel không hợp lệ hoặc không đọc được.") from exc
+    sheet = workbook["Doanh thu-Chi phí"] if "Doanh thu-Chi phí" in workbook.sheetnames else workbook.active
+    rows = list(sheet.iter_rows(values_only=True))
+    if not rows:
+        raise ValueError("File Excel không có dữ liệu.")
+    normalized_headers = [str(value or "").strip().lower() for value in rows[0]]
+    required = ["ngày", "loại giao dịch", "số tiền", "ghi chú", "ngày nhập", "giờ nhập", "người nhập"]
+    if normalized_headers[:7] != required:
+        raise ValueError("Excel phải có 7 cột: Ngày, Loại giao dịch, Số tiền, Ghi chú, Ngày nhập, Giờ nhập, Người nhập.")
+
+    parsed: list[dict[str, Any]] = []
+    for row_number, values in enumerate(rows[1:], 2):
+        values = list(values) + [None] * (7 - len(values))
+        if not any(value not in (None, "") for value in values[:7]):
+            continue
+        transaction_date = _as_date(values[0])
+        transaction_type = str(values[1] or "").strip().title()
+        if transaction_type not in {"Thu", "Chi"}:
+            raise ValueError(f"Dòng {row_number}: Loại giao dịch phải là Thu hoặc Chi.")
+        amount = _as_money(values[2])
+        if amount < 0:
+            raise ValueError(f"Dòng {row_number}: Số tiền không được âm.")
+        entered_date = _as_date(values[4]) or transaction_date
+        raw_time = values[5]
+        if isinstance(raw_time, datetime):
+            entered_time = raw_time.time()
+        elif isinstance(raw_time, time):
+            entered_time = raw_time
+        else:
+            text_time = str(raw_time or "00:00:00").strip()
+            entered_time = None
+            for fmt in ("%H:%M:%S", "%H:%M"):
+                try:
+                    entered_time = datetime.strptime(text_time, fmt).time()
+                    break
+                except ValueError:
+                    pass
+            if entered_time is None:
+                raise ValueError(f"Dòng {row_number}: Giờ nhập không hợp lệ.")
+        if not entered_date:
+            raise ValueError(f"Dòng {row_number}: Ngày giao dịch/Ngày nhập không hợp lệ.")
+        entered_at = datetime.combine(entered_date, entered_time).replace(tzinfo=VN_TZ)
+        parsed.append({
+            "transaction_type": transaction_type,
+            "amount": round(float(amount), 2),
+            "transaction_date": transaction_date,
+            "note": str(values[3] or "").strip(),
+            "entered_at": entered_at,
+            "entered_by_name": str(values[6] or "").strip(),
+        })
+    if not parsed:
+        raise ValueError("File Excel không có dòng dữ liệu hợp lệ.")
+
+    if mode == "replace":
+        conn.execute(text(f"""
+            INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
+            SELECT id, 'delete', to_jsonb(current_row), NULL, :actor
+            FROM {TABLE} AS current_row WHERE is_deleted=false
+        """), {"actor": actor})
+        conn.execute(text(f"UPDATE {TABLE} SET is_deleted=true, edit_revision=edit_revision+1 WHERE is_deleted=false"))
+        existing_keys: set[tuple[Any, ...]] = set()
+    else:
+        existing = conn.execute(text(f"""
+            SELECT transaction_type, amount, transaction_date, note, entered_at, entered_by_name, entered_by
+            FROM {TABLE} WHERE is_deleted=false
+        """)).mappings().all()
+        existing_keys = {
+            (
+                str(row["transaction_type"]), round(float(row["amount"]), 2), row["transaction_date"],
+                str(row["note"] or "").strip().casefold(),
+                row["entered_at"].astimezone(VN_TZ).replace(microsecond=0) if row["entered_at"] else None,
+                str(row["entered_by_name"] or row["entered_by"] or "").strip().casefold(),
+            )
+            for row in existing
+        }
+
+    to_insert = []
+    skipped = 0
+    for row in parsed:
+        key = (
+            row["transaction_type"], row["amount"], row["transaction_date"], row["note"].casefold(),
+            row["entered_at"].replace(microsecond=0), row["entered_by_name"].casefold(),
+        )
+        if mode == "append" and key in existing_keys:
+            skipped += 1
+            continue
+        existing_keys.add(key)
+        to_insert.append({**row, "actor": actor})
+    if to_insert:
+        conn.execute(text(f"""
+            INSERT INTO {TABLE}(
+                transaction_type, amount, transaction_date, note, entered_at,
+                entered_by, entered_by_name, source_name, created_at
+            ) VALUES (
+                :transaction_type, :amount, :transaction_date, :note, :entered_at,
+                :actor, :entered_by_name, 'excel_import', NOW()
+            )
+        """), to_insert)
+    return {"read": len(parsed), "inserted": len(to_insert), "skipped": skipped}
+
+
+
 def list_entries(conn, *, start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
     ensure_schema(conn)
     rows = conn.execute(text(f"""
@@ -337,7 +453,7 @@ def _audit_payload(row) -> dict[str, Any]:
     return {key: (value.isoformat() if hasattr(value, "isoformat") else value) for key, value in dict(row).items()}
 
 
-def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, transaction_date: date | None, note: str, entered_by_name: str | None, actor: str) -> dict[str, Any]:
+def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, transaction_date: date | None, note: str, entered_by_name: str | None, entered_at: datetime | None, actor: str) -> dict[str, Any]:
     import json
     ensure_schema(conn)
     before = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id AND is_deleted=false FOR UPDATE"), {"id": entry_id}).mappings().first()
@@ -346,11 +462,11 @@ def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, t
     conn.execute(text(f"""
         UPDATE {TABLE}
         SET transaction_type=:transaction_type, amount=:amount, transaction_date=:transaction_date,
-            note=:note, entered_by_name=COALESCE(:entered_by_name, entered_by_name), edit_revision=edit_revision+1
+            note=:note, entered_by_name=COALESCE(:entered_by_name, entered_by_name), entered_at=COALESCE(:entered_at, entered_at), edit_revision=edit_revision+1
         WHERE id=:id AND is_deleted=false
     """), {"id": entry_id, "transaction_type": transaction_type, "amount": round(float(amount), 2),
              "transaction_date": transaction_date, "note": str(note or "").strip(),
-             "entered_by_name": None if entered_by_name is None else str(entered_by_name).strip()})
+             "entered_by_name": None if entered_by_name is None else str(entered_by_name).strip(), "entered_at": entered_at})
     after = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id"), {"id": entry_id}).mappings().one()
     conn.execute(text("""
         INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
