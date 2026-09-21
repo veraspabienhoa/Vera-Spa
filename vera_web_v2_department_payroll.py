@@ -1,4 +1,4 @@
-"""Editable monthly payroll for Quản lý, Locker, Lễ tân and Tạp vụ."""
+"""Editable monthly payroll for Quản lý, Locker, Lễ tân, Support and Tạp vụ."""
 from __future__ import annotations
 
 import calendar
@@ -24,17 +24,19 @@ import vera_web_v2_snapshot as attendance
 import vera_web_v2_work_schedule as work_schedule
 
 
-RELEASE = "department-payroll-current-month-schedule-draft-2026-09-14-v6"
+RELEASE = "department-payroll-support-2026-09-21-v7"
 DEPARTMENTS = {
     "quanly": "Quản lý",
     "locker": "Locker",
     "letan": "Lễ tân",
+    "support": "Support",
     "tapvu": "Tạp vụ",
 }
 CALCULATION_MODES = {
     "quanly": "hourly",
     "locker": "hourly",
     "letan": "hourly",
+    "support": "hourly",
     "tapvu": "monthly",
 }
 VN_TZ = timezone(timedelta(hours=7))
@@ -81,6 +83,21 @@ DEFAULT_CONFIG = {
         "full_day_allowance": 30000,
         "default_base_salary": 0,
         "default_attendance_bonus": 500000,
+        "default_responsibility": 0,
+        "default_seniority": 0,
+        "default_combo_sales": 0,
+    },
+    "support": {
+        "calculation_mode": "hourly",
+        "rate_ca1": 0,
+        "rate_ca2_before_22": 0,
+        "rate_ca2_after_22": 0,
+        "standard_day_hours": 8,
+        "standard_month_days": 26,
+        "full_day_hours": 12,
+        "full_day_allowance": 0,
+        "default_base_salary": 0,
+        "default_attendance_bonus": 0,
         "default_responsibility": 0,
         "default_seniority": 0,
         "default_combo_sales": 0,
@@ -150,7 +167,7 @@ class DepartmentSettingsUpdate(BaseModel):
 
 
 class DepartmentDraft(BaseModel):
-    department: Literal["quanly", "locker", "letan", "tapvu"]
+    department: Literal["quanly", "locker", "letan", "support", "tapvu"]
     month: str = Field(pattern=r"^\d{4}-\d{2}$")
     rows: list[dict[str, Any]] = Field(min_length=1, max_length=300)
 
@@ -242,11 +259,12 @@ def _salary_employee_catalog(conn) -> list[dict[str, Any]]:
     employees = conn.execute(text("""
         SELECT username,COALESCE(full_name,'') AS full_name,lower(COALESCE(role,'')) AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('quanly','letan','locker','tapvu')
+        WHERE lower(COALESCE(role,'')) IN ('quanly','letan','locker','support','tapvu')
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
         ORDER BY CASE lower(COALESCE(role,''))
-          WHEN 'quanly' THEN 0 WHEN 'letan' THEN 1 WHEN 'locker' THEN 2 ELSE 3 END,
+          WHEN 'quanly' THEN 0 WHEN 'letan' THEN 1 WHEN 'locker' THEN 2
+          WHEN 'support' THEN 3 ELSE 4 END,
           COALESCE(stt,2147483647),username
     """)).mappings().all()
     return [{
@@ -288,7 +306,7 @@ def _employee_config_map(conn) -> dict[str, dict[str, Any]]:
 def _salary_config_tables(conn) -> dict[str, list[dict[str, Any]]]:
     rows = _employee_config_rows(conn)
     return {
-        "operations": [row for row in rows if row["department"] in {"quanly", "letan", "locker"}],
+        "operations": [row for row in rows if row["department"] in {"quanly", "letan", "locker", "support"}],
         "tapvu": [row for row in rows if row["department"] == "tapvu"],
     }
 
@@ -537,7 +555,7 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
     definition_rows = conn.execute(text("""
         SELECT department,shift_code,start_time,end_time
         FROM vera_work_shift_definition
-        WHERE department IN ('locker','letan','tapvu')
+        WHERE department IN ('locker','letan','support','tapvu')
     """)).mappings().all()
     definitions: dict[str, dict[str, dict[str, str]]] = {key: {} for key in DEPARTMENTS}
     for item in definition_rows:
@@ -614,7 +632,7 @@ def _combined_employee_catalog(conn) -> dict[str, dict[str, Any]]:
         SELECT username,COALESCE(full_name,'') AS full_name,COALESCE(email,'') AS email,
                lower(COALESCE(role,'')) AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('quanly','letan','locker','tapvu')
+        WHERE lower(COALESCE(role,'')) IN ('quanly','letan','locker','support','tapvu')
     """)).mappings().all()
     return {str(item["username"]).strip().casefold(): dict(item) for item in rows}
 
