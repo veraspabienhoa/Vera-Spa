@@ -372,6 +372,11 @@ def import_ledger_xlsx(conn, content: bytes, *, mode: str, actor: str) -> dict[s
         raise ValueError("File Excel không có dòng dữ liệu hợp lệ.")
 
     if mode == "replace":
+        conn.execute(text(f"""
+            INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
+            SELECT id, 'delete', to_jsonb(current_row), NULL, :actor
+            FROM {TABLE} AS current_row WHERE is_deleted=false
+        """), {"actor": actor})
         conn.execute(text(f"UPDATE {TABLE} SET is_deleted=true, edit_revision=edit_revision+1 WHERE is_deleted=false"))
         existing_keys: set[tuple[Any, ...]] = set()
     else:
