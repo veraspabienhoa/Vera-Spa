@@ -1013,25 +1013,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const statusColumn = findColumn(columns, ['TRANG THAI'])
   const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
   const requestColumn = findColumn(columns, ['YEU CAU'])
-  const openEmployeeBooking = (record) => {
-    const name = cellValue(record, employeeColumn) || 'Nhân viên'
-    setError('')
-    if (!['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA']))))) {
-      setNotice(`${name} chưa vào ca, không thể đặt Booking.`)
-      return
-    }
-    if (hasGroup(record, 'leave')) {
-      setNotice(`${name} đang nghỉ phép, không thể đặt Booking.`)
-      return
-    }
-    if (isCurrentlyOnBreak(record)) {
-      setNotice(`${name} đang nghỉ giữa ca, chưa thể đặt Booking.`)
-      return
-    }
-    setNotice('')
-    setModal(null)
-    setBookingContext({ employeeId: stableEmployeeId(record) })
-  }
   const manualQuickBooking = modal?.kind === 'quick_checkout' && form.checkout_source === 'manual'
   const selectedQuickCheckoutRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickCheckoutEligible(record, columns)) || null
   const areaGroups = useMemo(() => new Map(Object.entries(data.room_groups || {}).map(([name, group]) => [normalizedColumn(name), group])), [data.room_groups])
@@ -1130,6 +1111,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const fmt = value => String(value.getDate()).padStart(2,'0') + '/' + String(value.getMonth()+1).padStart(2,'0')
     return { rows, range: fmt(start) + '–' + fmt(finish) }
   }, [clockMs, columns, employeeColumn, validRecords])
+  const selectedWeeklyRows = weeklyShiftPlan.rows.filter(row => selectedIds.has(row.id))
 
   const chooseFilter = (key) => setActiveFilter((current) => current === key ? 'all' : key)
   const allPendingPayments = asArray(data.pending_payments).length ? asArray(data.pending_payments) : asArray(data.pending).length ? asArray(data.pending) : asArray(data.state?.pending)
@@ -1303,9 +1285,15 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
   const toggleRow = (id) => { setSelectedRoomKey(''); setSelectedIds((current) => {
     const next = new Set(current)
-    if (next.has(id)) next.delete(id); else next.add(id)
+    if (next.has(id)) next.delete(id); else { next.add(id); setWeeklyShiftOpen(true) }
     return next
   }) }
+  const openEmployeeAndShift = (record, index = 0) => {
+    const id = stableEmployeeId(record) || recordId(record, index)
+    setSelectedRoomKey('')
+    setSelectedIds(new Set(id ? [id] : []))
+    setWeeklyShiftOpen(true)
+  }
   const toggleDisplayed = () => { setSelectedRoomKey(''); setSelectedIds((current) => {
     const next = new Set(current)
     displayedRecords.forEach((record, index) => {
@@ -1569,7 +1557,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             {selectedRoomRecords.length ? <div className="tour-room-detail-list">{selectedRoomRecords.map((item, index) => {
               const employee = cellValue(item, employeeColumn) || 'Chưa có tên nhân viên'
               const service = cellValue(item, serviceColumn) || 'Chưa có dịch vụ'
-              return <div className="tour-room-detail-row" key={`${recordId(item, index)}:${index}`}><div className="tour-room-detail-person"><button type="button" className="text-button" disabled={!canOperate} onClick={() => openEmployeeBooking(item)}><strong title={employee}>{employee}</strong></button>{employeeServiceActions(item)}</div><span title={service}>{service}</span></div>
+              return <div className="tour-room-detail-row" key={`${recordId(item, index)}:${index}`}><div className="tour-room-detail-person"><button type="button" className="text-button" disabled={!canOperate} onClick={() => openEmployeeAndShift(item, index)}><strong title={employee}>{employee}</strong></button>{employeeServiceActions(item)}</div><span title={service}>{service}</span></div>
             })}</div> : <div className="tour-room-detail-empty">Phòng đang trống, chưa có nhân viên và dịch vụ.</div>}
           </div>}
         </div>
@@ -1579,9 +1567,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             filterOption={(option, query) => searchTextMatches(option.label, query)}
             options={shiftRecords.map((record) => ({ value: stableEmployeeId(record), label: cellValue(record, employeeColumn), detail: `${cellValue(record, findColumn(columns, ['VAO CA']))} · ${cellValue(record, statusColumn) || 'Sẵn sàng'}` }))}
             onSearch={(query) => { setEmployeeSearch(query); if (employeePickId) setSelectedIds(new Set()); setEmployeePickId('') }}
-            onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])) }}/>
+            onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])); setWeeklyShiftOpen(Boolean(id)) }}/>
           {canEditAppointment && appointmentEditor(appointmentTarget, true)}
-          {isAdmin && <div className="tour-shift-filter" role="group" aria-label="Xếp ca nhân viên đã chọn">{['Ca 1', 'Ca 2'].map((shift) => <button type="button" key={shift} className="secondary-button" title={`${shift}: ghi đè ca tự động đến hết hôm nay`} disabled={selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('set_shift', { shift })}>{shift}</button>)}</div>}<div className="live-tour-weekly-shift" onMouseEnter={() => setWeeklyShiftOpen(true)} onMouseLeave={() => setWeeklyShiftOpen(false)}><button type="button" className="live-tour-weekly-shift-button" onClick={() => setWeeklyShiftOpen(current => !current)} aria-expanded={weeklyShiftOpen}><span className="weekly-desktop">CA TUẦN NÀY</span><span className="weekly-mobile">Ca tuần này</span></button>{weeklyShiftOpen && <div className="live-tour-weekly-shift-popover" role="dialog" aria-label="Ca tuần này"><strong>Ca tuần này · {weeklyShiftPlan.range}</strong>{['Ca 1','Ca 2'].map(shift => { const members = weeklyShiftPlan.rows.filter(row => !row.fixed && row.current === shift); return <div key={shift} className="weekly-shift-group"><b>{shift}: {members.length ? members.map(row => row.name).join(', ') : '—'}</b>{members.map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> → tuần sau <strong>{row.next}</strong></span>)}</div>})}<div className="weekly-shift-group"><b>Cố định: {weeklyShiftPlan.rows.filter(row => row.fixed).map(row => row.name).join(', ') || '—'}</b>{weeklyShiftPlan.rows.filter(row => row.fixed).map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> · không tự đổi</span>)}</div>{weeklyShiftPlan.rows.some(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)) && <div className="weekly-shift-group"><b>Chưa xếp / khác</b>{weeklyShiftPlan.rows.filter(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)).map(row => <span key={row.id || row.name}>{row.name} — {row.current}</span>)}</div>}</div>}</div>
+          {isAdmin && <div className="tour-shift-filter" role="group" aria-label="Xếp ca nhân viên đã chọn">{['Ca 1', 'Ca 2'].map((shift) => <button type="button" key={shift} className="secondary-button" title={`${shift}: ghi đè ca tự động đến hết hôm nay`} disabled={selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('set_shift', { shift })}>{shift}</button>)}</div>}<div className="live-tour-weekly-shift" onMouseEnter={() => setWeeklyShiftOpen(true)} onMouseLeave={() => setWeeklyShiftOpen(false)}><button type="button" className="live-tour-weekly-shift-button" onClick={() => setWeeklyShiftOpen(current => !current)} aria-expanded={weeklyShiftOpen}><span className="weekly-desktop">CA TUẦN NÀY</span><span className="weekly-mobile">Ca tuần này</span></button>{weeklyShiftOpen && <div className="live-tour-weekly-shift-popover" role="dialog" aria-label="Ca tuần này"><strong>Ca tuần này · {weeklyShiftPlan.range}</strong>{selectedWeeklyRows.length > 0 && <div className="weekly-shift-group weekly-shift-selected"><b>Nhân viên đã chọn</b>{selectedWeeklyRows.map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong>{row.fixed ? ' · không tự đổi' : <> → tuần sau <strong>{row.next}</strong></>}</span>)}</div>}{['Ca 1','Ca 2'].map(shift => { const members = weeklyShiftPlan.rows.filter(row => !row.fixed && row.current === shift); return <div key={shift} className="weekly-shift-group"><b>{shift}: {members.length ? members.map(row => row.name).join(', ') : '—'}</b>{members.map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> → tuần sau <strong>{row.next}</strong></span>)}</div>})}<div className="weekly-shift-group"><b>Cố định: {weeklyShiftPlan.rows.filter(row => row.fixed).map(row => row.name).join(', ') || '—'}</b>{weeklyShiftPlan.rows.filter(row => row.fixed).map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> · không tự đổi</span>)}</div>{weeklyShiftPlan.rows.some(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)) && <div className="weekly-shift-group"><b>Chưa xếp / khác</b>{weeklyShiftPlan.rows.filter(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)).map(row => <span key={row.id || row.name}>{row.name} — {row.current}</span>)}</div>}</div>}</div>
           {isAdmin && <div className="live-tour-admin-controls-toggle">
             <button type="button" className="secondary-button" aria-expanded={adminControlsVisible} aria-controls="live-tour-admin-controls" onClick={() => setAdminControlsVisible((visible) => !visible)}>
               {adminControlsVisible ? 'Ẩn điều khiển' : 'Hiện điều khiển'}
@@ -1623,7 +1611,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           if (entry.kind === 'select') return <td className="live-tour-select-col" data-appearance-key="Ô chọn" key="__select"><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleRow(id)} aria-label={`Chọn ${cellValue(item, employeeColumn)}`}/></td>
           if (entry.kind === 'actions') return <td className="live-tour-actions-col" data-appearance-key="Thao tác" key="__actions">{employeeServiceActions(item)}</td>
           const column = entry.column
-          return <td className={columnClass(column)} data-appearance-key={entry.key} key={column}>{column === employeeColumn ? <button type="button" className="text-button" title={String(item[column] ?? '')} disabled={!canOperate && !canPayment && !canBook} onClick={() => openEmployeeBooking(item)}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? String(item[column] ?? '') : (column === statusColumn && hasGroup(item, 'doing') ? 'Thực hiện' : String(breakCellValue(item, column, clockMs)))}</td>
+          return <td className={columnClass(column)} data-appearance-key={entry.key} key={column}>{column === employeeColumn ? <button type="button" className="text-button" title={String(item[column] ?? '')} disabled={!canOperate && !canPayment && !canBook} onClick={() => openEmployeeAndShift(item, index)}>{String(item[column] ?? '')}</button> : column === appointmentColumn && canEditAppointment ? appointmentEditor(item) : column === sttColumn(columns) ? String(item[column] ?? '') : (column === statusColumn && hasGroup(item, 'doing') ? 'Thực hiện' : String(breakCellValue(item, column, clockMs)))}</td>
         })}</tr>
       })}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
