@@ -337,7 +337,7 @@ def _audit_payload(row) -> dict[str, Any]:
     return {key: (value.isoformat() if hasattr(value, "isoformat") else value) for key, value in dict(row).items()}
 
 
-def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, transaction_date: date | None, note: str, actor: str) -> dict[str, Any]:
+def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, transaction_date: date | None, note: str, entered_by_name: str | None, actor: str) -> dict[str, Any]:
     import json
     ensure_schema(conn)
     before = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id AND is_deleted=false FOR UPDATE"), {"id": entry_id}).mappings().first()
@@ -346,10 +346,11 @@ def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, t
     conn.execute(text(f"""
         UPDATE {TABLE}
         SET transaction_type=:transaction_type, amount=:amount, transaction_date=:transaction_date,
-            note=:note, edit_revision=edit_revision+1
+            note=:note, entered_by_name=COALESCE(:entered_by_name, entered_by_name), edit_revision=edit_revision+1
         WHERE id=:id AND is_deleted=false
     """), {"id": entry_id, "transaction_type": transaction_type, "amount": round(float(amount), 2),
-             "transaction_date": transaction_date, "note": str(note or "").strip()})
+             "transaction_date": transaction_date, "note": str(note or "").strip(),
+             "entered_by_name": None if entered_by_name is None else str(entered_by_name).strip()})
     after = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id"), {"id": entry_id}).mappings().one()
     conn.execute(text("""
         INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
