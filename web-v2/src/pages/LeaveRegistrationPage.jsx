@@ -1144,7 +1144,6 @@ function DatePickerControl({ label, value, onChange, min, max }) {
     <div className="date-input-group">
       <span className="date-input-label">{label}</span>
       <VeraDateInput
-        className="date-picker-control"
         aria-label={label}
         value={value}
         min={min}
