@@ -6,18 +6,27 @@ export async function copyPngToClipboard(loadImage) {
     if (blob?.type !== 'image/png' || !blob.size) throw new Error('Không nhận được ảnh PNG hợp lệ. Hãy thử lại.')
     return new Blob([blob], { type: 'image/png' })
   })
-  const userAgent = String(globalThis.navigator?.userAgent || '')
-  const safari = /Safari/i.test(userAgent) && !/(Chrome|Chromium|CriOS|Edg|OPR)/i.test(userAgent)
-  if (safari) {
-    // Safari must start clipboard.write while the click still owns transient activation.
+  // Start clipboard.write during the original click. Waiting for SVG/image/canvas
+  // rendering first loses transient user activation on Chrome/Windows, so the
+  // button appears to do nothing and the PNG cannot be pasted into Zalo.
+  try {
     image.catch(() => {})
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })])
     return
+  } catch (error) {
+    // A few Chromium builds reject Promise-backed ClipboardItem values. Retry
+    // with a concrete PNG while activation is still available when possible.
+    const png = await image
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+      return
+    } catch {
+      const permission = globalThis.isSecureContext === false
+        ? ' Trang phải được mở bằng HTTPS.'
+        : ' Hãy cho phép quyền Clipboard trong Chrome rồi thử lại.'
+      throw new Error(`${error?.message || 'Không thể sao chép ảnh vào clipboard.'}${permission}`)
+    }
   }
-  // Chromium/Windows exposes the PNG to native applications (including Zalo)
-  // reliably when ClipboardItem receives a concrete Blob instead of a Promise.
-  const png = await image
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
 }
 
 

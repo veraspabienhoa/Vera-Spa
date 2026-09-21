@@ -28,6 +28,8 @@ def test_employee_charts_have_independent_sorting_and_service_only_capture():
 
 def test_clipboard_uses_concrete_png_blob_for_chromium_native_apps():
     source = Path("web-v2/src/lib/clipboardImage.js").read_text(encoding="utf-8")
+    assert "new ClipboardItem({ 'image/png': image })" in source
     assert "const png = await image" in source
     assert "new ClipboardItem({ 'image/png': png })" in source
-    assert "Chrome|Chromium|CriOS|Edg|OPR" in source
+    assert "transient user activation" in source
+    assert "quyền Clipboard" in source
