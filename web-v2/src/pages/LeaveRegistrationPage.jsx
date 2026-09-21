@@ -1024,7 +1024,6 @@ export default function LeaveRegistrationPage({ user }) {
             </button>
           </div>
           <div className="list-actions">
-              {['admin', 'quanly', 'letan'].includes(role) && user?.permissions?.leave_export !== false && <button type="button" className="secondary-button compact export-button" onClick={syncLeaveSource} disabled={syncingLeaveSource}><RefreshCw size={15} className={syncingLeaveSource ? 'spin' : ''} /> {syncingLeaveSource ? 'Đang đồng bộ…' : 'Đồng bộ Web V2 → LichNghi_VeraSpa'}</button>}
               {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEditVisibleRecord && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
               {canDeleteVisibleRecord && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || deletableSelectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
