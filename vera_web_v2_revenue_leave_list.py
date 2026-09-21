@@ -522,7 +522,7 @@ def install_revenue_leave_list_routes(
         tip = float(tip_setting["amount"])
         return {
             "ok": True, "release": RELEASE, "source": source,
-            "source_label": "Dịch Manual · Tip Auto" if source == "manual_tip_auto" else "Thủ công",
+            "source_label": "Dịch vụ Manual · Tip Auto" if source == "manual_tip_auto" else "Thủ công",
             "storage": "postgresql", "transaction_table": revenue_store.TABLE, "time_range": time_range,
             "start_date": (start_date or REVENUE_PERIOD_START).isoformat(),
             "start_date_label": (start_date or REVENUE_PERIOD_START).strftime("%d-%m-%Y"),
