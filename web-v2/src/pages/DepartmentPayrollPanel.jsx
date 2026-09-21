@@ -6,7 +6,7 @@ import { getCurrentSession } from '../lib/supabase'
 import VeraMoneyInput from '../components/VeraMoneyInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
-const labels = { quanly: 'Quản lý', locker: 'Locker', letan: 'Lễ tân', tapvu: 'Tạp vụ' }
+const labels = { quanly: 'Quản lý', locker: 'Locker', letan: 'Lễ tân', support: 'Support', tapvu: 'Tạp vụ' }
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + 'đ'
 const monthNow = () => {
   const now = new Date()
@@ -225,7 +225,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     return <section className="department-config-table-section">
       <div className="panel-title-row"><div><h3>{title}</h3><p>Mỗi nhân viên là một dòng; mức đã lưu được dùng trực tiếp khi tính bảng lương tháng.</p></div></div>
       <div className="department-config-add-row">
-        {group === 'operations' && <label>Bộ phận<select value={addDepartment} onChange={(event) => { setAddDepartment(event.target.value); setPendingEmployee((value) => ({ ...value, operations: '' })) }}><option value="quanly">Quản lý</option><option value="letan">Lễ tân</option><option value="locker">Locker</option></select></label>}
+        {group === 'operations' && <label>Bộ phận<select value={addDepartment} onChange={(event) => { setAddDepartment(event.target.value); setPendingEmployee((value) => ({ ...value, operations: '' })) }}><option value="quanly">Quản lý</option><option value="letan">Lễ tân</option><option value="locker">Locker</option><option value="support">Support</option></select></label>}
         <label className="department-config-search"><span>Tìm nhân viên</span><div><Search size={16} /><input value={employeeSearch[group]} placeholder="Nhập tên hoặc tên đăng nhập…" onChange={(event) => { setEmployeeSearch((value) => ({ ...value, [group]: event.target.value })); setPendingEmployee((value) => ({ ...value, [group]: '' })) }} /></div></label>
         <label>Chọn nhân viên<select value={pendingEmployee[group]} onChange={(event) => setPendingEmployee((value) => ({ ...value, [group]: event.target.value }))}><option value="">-- Chọn nhân viên --</option>{candidates.map((item) => <option key={item.employee_username} value={item.employee_username}>{item.employee_name} · {item.employee_username}</option>)}</select></label>
         <button className="secondary-button" type="button" disabled={Boolean(busy) || !pendingEmployee[group]} onClick={() => addEmployeeRow(group)}><Plus size={16} /> Thêm dòng</button>
@@ -246,18 +246,18 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 
   if (settingsOnly) return <div className="feature-page department-payroll-page department-payroll-config-page">
     <section className="panel department-payroll-panel">
-      <div className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Quản lý, Lễ tân và Locker dùng chung bảng thứ nhất. Tạp vụ nằm ở bảng thứ hai bên dưới.</p></div><button className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /> Làm mới</button></div>
+      <div className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Quản lý, Lễ tân, Locker và Support dùng chung bảng thứ nhất. Tạp vụ nằm ở bảng thứ hai bên dưới.</p></div><button className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /> Làm mới</button></div>
       {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
-      {employeeConfigTable('operations', 'BẢNG 1 · QUẢN LÝ / LỄ TÂN / LOCKER', operationsEmployeeFields)}
+      {employeeConfigTable('operations', 'BẢNG 1 · QUẢN LÝ / LỄ TÂN / LOCKER / SUPPORT', operationsEmployeeFields)}
       {employeeConfigTable('tapvu', 'BẢNG 2 · TẠP VỤ', tapvuEmployeeFields)}
-      <div className="setup-note">Email bảng lương của bốn bộ phận dùng cùng mẫu chuẩn đang áp dụng cho Leader/Nhân viên.</div>
+      <div className="setup-note">Email bảng lương của năm bộ phận dùng cùng mẫu chuẩn đang áp dụng cho Leader/Nhân viên.</div>
       {canConfig ? <div className="list-actions department-payroll-actions"><button className="primary-button" type="button" disabled={Boolean(busy)} onClick={saveEmployeeConfigs}><Save size={16} /> {busy === 'employee-settings-save' ? 'Đang lưu…' : 'Lưu toàn bộ cấu hình'}</button></div> : <div className="error-box">Chỉ Admin được thay đổi cấu hình lương và phụ cấp.</div>}
     </section>
   </div>
 
   return <div className="feature-page department-payroll-page">
     <section className="panel department-payroll-panel">
-      <div className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Một bảng chung cho Quản lý, Locker, Lễ tân và Tạp vụ. Quản lý/Locker/Lễ tân tính theo giờ; Tạp vụ tính theo 26 ngày công.</p></div></div>
+      <div className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Một bảng chung cho Quản lý, Locker, Lễ tân, Support và Tạp vụ. Quản lý/Locker/Lễ tân/Support tính theo giờ; Tạp vụ tính theo 26 ngày công.</p></div></div>
       {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
       <div className="department-payroll-toolbar">
         <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]); setEditingHistoryId(''); setCalculationPeriod(null) }} /></label>

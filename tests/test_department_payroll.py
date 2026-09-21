@@ -50,11 +50,14 @@ def test_letan_is_hourly_with_30000_before_22_and_33000_after_22():
     assert row["salary"] == 8 * 27000 + 4.5 * 30000 + 3.5 * 33000
 
 
-def test_quanly_locker_and_letan_are_locked_to_hourly_calculation():
+def test_operations_departments_are_locked_to_hourly_calculation():
     assert CALCULATION_MODES["quanly"] == "hourly"
     assert CALCULATION_MODES["locker"] == "hourly"
     assert CALCULATION_MODES["letan"] == "hourly"
+    assert CALCULATION_MODES["support"] == "hourly"
     assert _clean_config("quanly", {"calculation_mode": "monthly"})["calculation_mode"] == "hourly"
+    assert _clean_config("support", {"calculation_mode": "monthly"})["calculation_mode"] == "hourly"
+    assert DEFAULT_CONFIG["support"]["rate_ca1"] == 0
 
 
 def test_tapvu_uses_base_salary_prorated_over_26_work_days():
