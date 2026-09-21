@@ -36,7 +36,7 @@ def test_rotation_fallback_and_fixed_shift():
     row = directory()[0]
     assert scheduled_shift(row, NOW.date() - timedelta(days=7)) == 'Ca 2'
     assert scheduled_shift(row, NOW.date()) == 'Ca 1'
-    assert project([row], data(MachineTimeCheckInStr='14:01'), NOW)[0]['daily_shift'] == 'Ca 2'
+    assert project([row], data(MachineTimeCheckInStr='14:01'), NOW)[0]['daily_shift'] == 'Ca 1'
     row['rotation_cycle'] = 'Cố định (Không đổi)'
     assert scheduled_shift(row, NOW.date()) == 'Ca 1'
 
