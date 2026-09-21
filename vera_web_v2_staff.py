@@ -51,7 +51,18 @@ STATUS_ALIASES = {
     "da nghi viec han": "Đã nghỉ việc",
     "da nghi viec": "Đã nghỉ việc",
 }
-CYCLE_OPTIONS = ["Luân phiên (14 ngày)", "Theo chu kỳ Tháng", "Cố định (Không đổi)"]
+CYCLE_OPTIONS = ["Theo chu kỳ Tuần", "Cố định (Không đổi)"]
+
+def _cycle_options(conn):
+    row = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='rotation_cycles'")).scalar_one_or_none()
+    custom = row if isinstance(row, list) else []
+    labels = [str(item.get('label') or '').strip() for item in custom if isinstance(item, dict) and item.get('active', True)]
+    result = []
+    for label in [*CYCLE_OPTIONS, *labels]:
+        if label and label not in result:
+            result.append(label)
+    return result
+
 DEPARTMENT_ORDER = ["Nhân viên + Leader", "Lễ tân", "Quản lý", "Locker", "Tạp vụ"]
 class StaffCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
@@ -314,7 +325,7 @@ def _public_employee(row: dict[str, Any], status: str) -> dict[str, Any]:
         "employment_status": status,
         "work_shift": str(row.get("work_shift") or ""),
         "shift_start_date": str(row.get("shift_start_date") or ""),
-        "rotation_cycle": str(row.get("rotation_cycle") or ""),
+        "rotation_cycle": ("Theo chu kỳ Tuần" if str(row.get("rotation_cycle") or "").strip() == "Luân phiên (14 ngày)" else str(row.get("rotation_cycle") or "")),
         "login_locked": bool(row.get("login_locked")),
         "employment_start_date": str(row.get("employment_start_date") or ""),
         "employment_end_date": str(row.get("employment_end_date") or payload.get("Ngày nghỉ việc") or ""),
@@ -570,7 +581,7 @@ def install_staff_routes(
             "permissions": permissions(conn, ident),
             "role_options": allowed_roles(ident),
             "status_options": STATUS_OPTIONS,
-            "cycle_options": CYCLE_OPTIONS,
+            "cycle_options": _cycle_options(conn),
             "shifts_by_department": _shift_catalog(conn, rows),
             "bank_options": vietqr_bank_options(),
         }

@@ -2938,6 +2938,8 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_row_style": style, "_tour_groups": groups,
         "_shift_checkin_date": employee.get("shift_checkin_date", ""),
         "_daily_support_reason": employee.get("synced_leave_reason", ""),
+        "_scheduled_week_shift": employee.get("scheduled_week_shift", ""),
+        "_scheduled_next_shift": employee.get("scheduled_next_shift", ""),
         "_employee_change_allowed": _employee_change_allowed(employee, now),
         "_break_countdown_deadline": attendance_break.get("deadline", "") if not attendance_break.get("in") else "",
         "_break_from_attendance": bool(attendance_break),

@@ -41,8 +41,10 @@ def punches(day, **changes):
     (date(2026, 9, 13), 'Ca 2'),  # The new assignment is not effective yet.
     (date(2026, 9, 14), 'Ca 1'),
     (date(2026, 9, 15), 'Ca 1'),
-    (date(2026, 9, 27), 'Ca 1'),
-    (date(2026, 9, 28), 'Ca 2'),
+    (date(2026, 9, 20), 'Ca 1'),
+    (date(2026, 9, 21), 'Ca 2'),
+    (date(2026, 9, 27), 'Ca 2'),
+    (date(2026, 9, 28), 'Ca 1'),
     (date(2026, 10, 11), 'Ca 2'),
     (date(2026, 10, 12), 'Ca 1'),
 ])
@@ -81,10 +83,10 @@ def test_fallback_and_effective_date_safety(updates, timesoft_shift, expected):
 
 @pytest.mark.parametrize('cycle, day, expected', [
     ('Cố định (Không đổi)', date(2026, 9, 28), 'Ca 1'),
-    ('7 ngày', date(2026, 9, 21), 'Ca 2'),
-    ('7 ngày', date(2026, 9, 28), 'Ca 1'),
-    ('Theo chu kỳ Tháng', date(2026, 10, 5), 'Ca 2'),
-    ('Theo chu kỳ Tháng', date(2026, 11, 2), 'Ca 1'),
+    ('Theo chu kỳ Tuần', date(2026, 9, 21), 'Ca 2'),
+    ('Theo chu kỳ Tuần', date(2026, 9, 28), 'Ca 1'),
+    ('Mỗi 2 ngày', date(2026, 9, 16), 'Ca 2'),
+    ('Mỗi 2 ngày', date(2026, 9, 18), 'Ca 1'),
 ])
 def test_other_existing_rotation_modes_are_preserved(cycle, day, expected):
     stale = 'Ca 2' if expected == 'Ca 1' else 'Ca 1'

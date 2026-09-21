@@ -1,5 +1,6 @@
 """Project today's TimeSoft check-in and daily shift onto the tour directory."""
 from datetime import timedelta
+import re
 
 from vera_web_v2_attendance_query_perf import _datasets
 from vera_web_v2_attendance_v42 import _canonical_employee, _explicit_work_day, _generic_raw_punch, _parse_date, _parse_datetime, _work_day_for_row
@@ -13,17 +14,22 @@ def scheduled_shift(row, day):
     if not base or 'co dinh' in label or 'khong doi' in label or 'co dinh' in cycle:
         return base
     anchor = _parse_date(row.get('shift_start_date'))
-    monday = day - timedelta(days=day.weekday())
-    if not anchor or monday <= anchor:
+    if not anchor or day <= anchor:
         return base
-    if '14 ngay' in cycle or 'luan phien' in cycle:
-        periods = (monday - anchor).days // 14
-    elif 'thang' in cycle:
-        periods = (monday.year - anchor.year) * 12 + monday.month - anchor.month
-    elif '7 ngay' in cycle or 'tuan' in cycle:
-        periods = (monday - anchor).days // 7
+    # Since 21-09-2026 the named weekly cycle switches every 7 days.
+    # Custom Admin cycles are encoded in their label, e.g. "Mỗi 2 ngày".
+    # Legacy "Luân phiên (14 ngày)" is treated as the renamed weekly cycle so
+    # existing employees change correctly without a data migration.
+    if 'co dinh' in cycle or 'khong doi' in cycle:
+        return base
+    if 'luan phien' in cycle or 'theo chu ky tuan' in cycle or cycle == 'tuan':
+        switch_days = 7
     else:
-        return base
+        match = re.search(r'(\d+)\s*ngay', cycle)
+        if not match:
+            return base
+        switch_days = max(1, int(match.group(1)))
+    periods = max(0, (day - anchor).days // switch_days)
     return ('Ca 2' if base == 'Ca 1' else 'Ca 1') if periods % 2 else base
 
 
@@ -79,6 +85,8 @@ def project(directory, datasets, now):
                 bucket['shift'] = shift
     for row in directory:
         data = attendance.get(row['username'], {})
+        row['scheduled_week_shift'] = scheduled_shift(row, day)
+        row['scheduled_next_shift'] = scheduled_shift(row, day + timedelta(days=7))
         row['daily_shift'] = _checked_in_shift(row, day, data.get('shift')) if data.get('checked') else ''
         row['shift_checkin_date'] = day.isoformat()
     return directory
