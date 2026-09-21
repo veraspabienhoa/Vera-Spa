@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { defaultRevenueTipStart, revenueTipTotal } from '../lib/revenueTipPeriod'
 import './RevenuePage.css'
+import VeraDateInput from '../components/VeraDateInput'
 import VeraMoneyInput from '../components/VeraMoneyInput'
 import { formatVeraDate } from '../lib/veraDate'
 
