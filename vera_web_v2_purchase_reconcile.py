@@ -19,6 +19,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from pyxlsb import open_workbook
 import requests
+import time
+from threading import Lock
 
 from vera_google_credentials import google_credentials
 import vera_revenue_store as revenue_store
@@ -46,6 +48,9 @@ DATE_RANGE_PRESETS = {
     "all", "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "next_month", "custom"
 }
 PUBLIC_DRIVE_DOWNLOAD_URL = "https://drive.usercontent.google.com/download"
+PURCHASE_CACHE_TTL_SECONDS = max(5, int(os.getenv("VERA_PURCHASE_CACHE_TTL_SECONDS", "30")))
+_purchase_cache_lock = Lock()
+_purchase_cache: dict[str, Any] = {"loaded_at": 0.0, "rows": None}
 
 
 def _is_xlsb_content(content: bytes) -> bool:
@@ -170,6 +175,29 @@ def _drive_download_purchase_report() -> bytes:
             "Không đọc được BaoCaoMuaHang: "
             f"{type(credential_error).__name__} / {type(public_exc).__name__}.",
         ) from public_exc
+
+
+def _cached_purchase_rows(norm) -> list[dict[str, Any]]:
+    """Download/parse the shared XLSB at most once per short cache window.
+
+    Revenue renders request summary and detail views independently. Without this
+    cache both requests download and parse the same workbook, multiplying network
+    latency and CPU. The lock also provides single-flight behavior for concurrent
+    users while the cache is cold.
+    """
+    now = time.monotonic()
+    cached = _purchase_cache.get("rows")
+    if isinstance(cached, list) and now - float(_purchase_cache.get("loaded_at") or 0) < PURCHASE_CACHE_TTL_SECONDS:
+        return cached
+    with _purchase_cache_lock:
+        now = time.monotonic()
+        cached = _purchase_cache.get("rows")
+        if isinstance(cached, list) and now - float(_purchase_cache.get("loaded_at") or 0) < PURCHASE_CACHE_TTL_SECONDS:
+            return cached
+        rows = _parse_purchase_report(_drive_download_purchase_report(), norm)
+        _purchase_cache["rows"] = rows
+        _purchase_cache["loaded_at"] = now
+        return rows
 
 
 def _header_index(keys: list[str], wanted: str, fallback: int | None = None) -> int | None:
@@ -404,8 +432,7 @@ def install_purchase_reconcile_routes(
             require_feature(conn, ident, REVENUE_FEATURE)
 
         start, end = _resolve_range(preset, start_date, end_date)
-        purchase_content = _drive_download_purchase_report()
-        purchase_all = _parse_purchase_report(purchase_content, norm)
+        purchase_all = _cached_purchase_rows(norm)
         with engine_instance().connect() as conn:
             ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
         for row in ledger_all:
