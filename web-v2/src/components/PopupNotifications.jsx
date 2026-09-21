@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
+import { BellRing, CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
 import { veraApi } from '../lib/api'
 
 const SELECTOR = '[role="alert"],.error-box,.success-box,.warning-box,.setup-note'
@@ -14,15 +14,28 @@ const categoryFor = (type, message) => {
 
 export default function PopupNotifications() {
   const [items, setItems] = useState([])
+  const [trainingDetail, setTrainingDetail] = useState(null)
   const settings = useRef({})
   const seen = useRef(new WeakMap())
   const recentMessages = useRef(new Map())
+  const seenTraining = useRef(new Set())
   useEffect(() => {
     let active = true
     const loadSettings = () => veraApi.notificationSettings().then((result) => {
       if (active) settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item.enabled]))
     }).catch(() => {})
     void loadSettings()
+    const loadTrainingNotifications = () => veraApi.trainingNotifications().then((result) => {
+      if (!active) return
+      const fresh = (result.notifications || []).filter(item => !item.is_read && !seenTraining.current.has(item.id))
+      fresh.forEach(item => seenTraining.current.add(item.id))
+      if (fresh.length) setItems(current => [...current, ...fresh.map(item => ({
+        id: `training-${item.id}`, notificationId: item.id, message: `${item.title} · ${item.body}`,
+        type: 'info', category: 'training_completed', persistent: true,
+      }))].slice(-5))
+    }).catch(() => {})
+    void loadTrainingNotifications()
+    const trainingTimer = window.setInterval(loadTrainingNotifications, 30000)
     const onSettingsChanged = (event) => {
       const item = event?.detail
       if (item?.key) settings.current = { ...settings.current, [item.key]: item.enabled }
@@ -61,13 +74,24 @@ export default function PopupNotifications() {
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
     return () => {
       active = false
+      window.clearInterval(trainingTimer)
       observer.disconnect()
       window.removeEventListener('vera-notification-settings-changed', onSettingsChanged)
     }
   }, [])
-  if (!items.length) return null
-  return <div className="popup-notification-stack" aria-label="Thông báo trên màn hình">{items.map(item => <div key={item.id} className={`popup-notification ${item.type}`} role="status">
-    {item.type === 'success' ? <CheckCircle2 size={19}/> : item.type === 'error' ? <CircleAlert size={19}/> : <Info size={19}/>}
-    <span>{item.message}</span><button type="button" aria-label="Đóng thông báo" onClick={() => setItems(current => current.filter(row => row.id !== item.id))}><X size={16}/></button>
-  </div>)}</div>
+  const openTrainingDetail = async (item) => {
+    if (!item.notificationId) return
+    try {
+      setTrainingDetail(await veraApi.trainingNotificationDetail(item.notificationId))
+      setItems(current => current.filter(row => row.id !== item.id))
+    } catch { /* notification may have been removed */ }
+  }
+  if (!items.length && !trainingDetail) return null
+  const detail = trainingDetail?.detail
+  return <>
+    {!!items.length && <div className="popup-notification-stack" aria-label="Thông báo trên màn hình">{items.map(item => <div key={item.id} className={`popup-notification ${item.type}`} role="status">
+      {item.notificationId ? <BellRing size={19}/> : item.type === 'success' ? <CheckCircle2 size={19}/> : item.type === 'error' ? <CircleAlert size={19}/> : <Info size={19}/>} {item.notificationId ? <button type="button" className="popup-notification-open" onClick={() => openTrainingDetail(item)}>{item.message}<small>Bấm để xem chi tiết</small></button> : <span>{item.message}</span>}<button type="button" aria-label="Đóng thông báo" onClick={() => setItems(current => current.filter(row => row.id !== item.id))}><X size={16}/></button>
+    </div>)}</div>}
+    {trainingDetail && <div className="training-notification-modal" role="dialog" aria-modal="true" aria-label="Chi tiết đánh giá"><div className="training-notification-dialog"><header><div><small>ĐÀO TẠO & ĐÁNH GIÁ</small><h2>{trainingDetail.notification?.title}</h2></div><button type="button" aria-label="Đóng" onClick={() => setTrainingDetail(null)}><X size={20}/></button></header><p>{trainingDetail.notification?.body}</p><dl><div><dt>Nhân viên</dt><dd>{detail?.employee_name}</dd></div><div><dt>Người thực hiện</dt><dd>{detail?.evaluator_name}</dd></div>{detail?.topic && <div><dt>Nội dung</dt><dd>{detail.topic}</dd></div>}{detail?.skill_grade && <div><dt>Điểm kỹ năng</dt><dd>{detail.skill_grade}</dd></div>}{detail?.cycle_name && <div><dt>Đợt đánh giá</dt><dd>{detail.cycle_name}</dd></div>}{detail?.craft_score && <div><dt>Tay nghề / Giao tiếp / Thái độ</dt><dd>{detail.craft_score}/5 · {detail.communication_score}/5 · {detail.attitude_score}/5</dd></div>}{(detail?.comments || detail?.notes) && <div><dt>Nhận xét</dt><dd>{detail.comments || detail.notes}</dd></div>}</dl><button type="button" className="primary-button" onClick={() => setTrainingDetail(null)}>Đóng</button></div></div>}
+  </>
 }
