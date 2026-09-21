@@ -123,6 +123,20 @@ async function deleteRevenueEntry(id) {
   const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
 }
 
+async function importRevenueExcel(file, mode) {
+  if (!file) return null
+  if (!/\.xlsx$/i.test(file.name || '')) throw new Error('Chỉ hỗ trợ file Excel .xlsx.')
+  if (file.size > 15 * 1024 * 1024) throw new Error('File Excel vượt quá 15 MB.')
+  const response = await fetch(`${apiBase}/v2/revenue/import.xlsx?mode=${encodeURIComponent(mode)}`, {
+    method: 'POST',
+    headers: await authorizedHeaders(),
+    body: file,
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  return payload
+}
+
 async function savePeriodTip(amount, startDate, endDate) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const response = await fetch(`${apiBase}/v2/revenue/tip`, {
@@ -442,6 +456,26 @@ export default function RevenuePage({ user }) {
     }
   }
 
+  const handleRevenueImport = async (event, mode) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (mode === 'replace' && !window.confirm('THAY THẾ TOÀN BỘ dữ liệu Doanh thu-Chi phí hiện tại bằng file Excel này? Dữ liệu hiện tại sẽ không còn hiển thị sau khi import.')) return
+    setImportingRevenue(mode)
+    setError('')
+    setNotice('')
+    try {
+      const result = await importRevenueExcel(file, mode)
+      setNotice(result?.message || 'Đã import Excel Doanh thu-Chi phí.')
+      setRevision(value => value + 1)
+      setReconcileRevision(value => value + 1)
+    } catch (err) {
+      setError(err.message || 'Không import được Excel Doanh thu-Chi phí.')
+    } finally {
+      setImportingRevenue('')
+    }
+  }
+
   const exportLedger = async () => {
     setExportingLedger(true)
     setDetailError('')
@@ -497,11 +531,18 @@ export default function RevenuePage({ user }) {
     if (amount === null) return
     const note = window.prompt('Ghi chú', row.note || '')
     if (note === null) return
+    const enteredDateText = window.prompt('Ngày nhập (DD-MM-YYYY)', row.entered_date_label || '')
+    if (enteredDateText === null) return
+    const enteredDate = displayToIsoDate(enteredDateText)
+    if (!enteredDate) { setError('Ngày nhập phải đúng định dạng DD-MM-YYYY.'); return }
+    const enteredTime = window.prompt('Giờ nhập (HH:MM:SS)', row.entered_time || '00:00:00')
+    if (enteredTime === null) return
+    if (!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(String(enteredTime).trim())) { setError('Giờ nhập phải đúng HH:MM hoặc HH:MM:SS.'); return }
     const enteredBy = window.prompt('Người nhập', row.entered_by || '')
     if (enteredBy === null) return
     try {
-      const result = await updateRevenueEntry(row.id, { transaction_type: type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate, note, entered_by_name: enteredBy })
-      setNotice(result.message || 'Đã sửa bản ghi doanh thu. Ngày/Giờ nhập lịch sử được giữ nguyên.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
+      const result = await updateRevenueEntry(row.id, { transaction_type: type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate, note, entered_date: enteredDate, entered_time: String(enteredTime).trim(), entered_by_name: enteredBy })
+      setNotice(result.message || 'Đã sửa toàn bộ dữ liệu bản ghi.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
     } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
   }
 
@@ -559,7 +600,7 @@ export default function RevenuePage({ user }) {
       .reconcile-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}.reconcile-kpi{padding:13px;border:1px solid #e1e7e3;border-radius:14px;background:#fafcfb}.reconcile-kpi span{display:block;font-size:10px;font-weight:900;color:#69766f;letter-spacing:.04em}.reconcile-kpi strong{display:block;margin-top:5px;font-size:19px;color:#173329}.reconcile-kpi.near strong{color:#806800}.reconcile-kpi.bad strong{color:#a13c2f}
       .comparison-filter-bar{display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid #e7ece9;background:#fbfcfb}.comparison-filter-bar label{display:grid;gap:4px;font-size:10px;font-weight:900;color:#5d6b64}.comparison-filter-bar select{min-height:36px;min-width:150px}.comparison-filter-bar small{margin-left:auto;color:#6c7772}
       .revenue-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.revenue-tab{border:1px solid #b8d0c3;background:#fff;color:#24473a;border-radius:12px;padding:10px 14px;font-weight:900;cursor:pointer}.revenue-tab.active{background:#1f513f;color:#fff;border-color:#1f513f}.detail-tab-panel{margin-bottom:18px}.detail-filter-panel{display:grid;grid-template-columns:1.05fr 1fr 1fr;gap:10px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f7faf8;margin-bottom:12px}.detail-filter-panel label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.detail-filter-panel input,.detail-filter-panel select{min-height:42px}.detail-filter-secondary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;grid-column:1/-1}.detail-filter-actions{display:flex;gap:8px;align-items:end;justify-content:flex-end;flex-wrap:wrap;grid-column:1/-1}.detail-filter-actions button{min-height:40px}.detail-filter-actions .active{background:#1f513f;color:#fff;border-color:#1f513f}.admin-revenue-summary{display:grid;gap:14px}
-      .ledger-summary-head{display:flex;align-items:stretch;gap:10px;padding:10px 12px;background:#f5f8f6}.ledger-filter-total{display:flex;align-items:center;gap:9px;min-width:180px;padding:10px 13px;border:1px solid #cbded3;border-radius:12px;background:#fff}.ledger-filter-total.expense{border-color:#e1c49f;background:#fffaf2}.ledger-filter-total svg{color:#8b6b22;flex:0 0 auto}.ledger-filter-total span{display:block;font-size:10px;font-weight:900;color:#68736f;text-transform:uppercase}.ledger-filter-total strong{display:block;margin-top:2px;font-size:18px;color:#173329}.ledger-summary-head .ledger-export{margin-left:auto;align-self:center}
+      .ledger-summary-head{display:flex;align-items:stretch;gap:10px;padding:10px 12px;background:#f5f8f6}.ledger-filter-total{display:flex;align-items:center;gap:9px;min-width:180px;padding:10px 13px;border:1px solid #cbded3;border-radius:12px;background:#fff}.ledger-filter-total.expense{border-color:#e1c49f;background:#fffaf2}.ledger-filter-total svg{color:#8b6b22;flex:0 0 auto}.ledger-filter-total span{display:block;font-size:10px;font-weight:900;color:#68736f;text-transform:uppercase}.ledger-filter-total strong{display:block;margin-top:2px;font-size:18px;color:#173329}.ledger-summary-head .ledger-import,.ledger-summary-head .ledger-export{align-self:center}.ledger-summary-head .ledger-import:first-of-type{margin-left:auto}
 .report-box{min-width:0;max-width:100%;border:1px solid #e2e8e4;border-radius:14px;overflow:hidden}.report-box h3{display:flex;gap:8px;align-items:center;margin:0;padding:11px 13px;background:#f5f8f6;color:#24473a;font-size:13px}.report-scroll{width:100%;max-width:100%;overflow:auto;max-height:430px}.report-table{width:100%;border-collapse:collapse;min-width:650px;font-size:12px}.comparison-table{min-width:1050px}.report-table th,.report-table td{padding:8px 9px;border-bottom:1px solid #edf1ee;white-space:nowrap;text-align:left;vertical-align:top}.report-table th{position:sticky;top:0;background:#dcefe5;z-index:1;font-size:10px;color:#173b2e;text-transform:uppercase;border-bottom:2px solid #79a48e}.report-table .money{text-align:right;font-variant-numeric:tabular-nums}.report-table .detail-cell{white-space:normal;min-width:330px;line-height:1.45}.report-table .detail-cell div+div{margin-top:4px}.report-table tr.mismatch td{background:#fff2ef}.report-table tr.near td{background:#fffceb}.report-table tr.match td{background:#f5fbf7}.report-table tr.purchase-row td{font-weight:700}.status-match{color:#24703e;font-weight:900}.status-near{color:#806800;font-weight:900}.status-mismatch{color:#a13c2f;font-weight:900}
       @media(max-width:1250px){.revenue-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.reconcile-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
       @media(max-width:1050px){.revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -649,7 +690,7 @@ export default function RevenuePage({ user }) {
       </div>
       {detailError && <div className="error-box">{detailError}</div>}
       {detailBusy && !detailData && <div className="revenue-meta">Đang tải dữ liệu…</div>}
-      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article><button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th>{isAdmin && revenueSource !== 'auto' && <th>Thao tác</th>}</tr></thead><tbody>
+      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article>{isAdmin && <><input ref={revenueImportAppendRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'append')} /><input ref={revenueImportReplaceRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'replace')} /><button type="button" className="secondary-button compact ledger-import" disabled={Boolean(importingRevenue)} onClick={() => revenueImportAppendRef.current?.click()}><Upload size={14}/>{importingRevenue === 'append' ? 'Đang import…' : 'Import thêm mới'}</button><button type="button" className="secondary-button compact ledger-import danger-button" disabled={Boolean(importingRevenue)} onClick={() => revenueImportReplaceRef.current?.click()}><Upload size={14}/>{importingRevenue === 'replace' ? 'Đang thay thế…' : 'Import thay toàn bộ'}</button></>}<button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th>{isAdmin && revenueSource !== 'auto' && <th>Thao tác</th>}</tr></thead><tbody>
         {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td>{isAdmin && revenueSource !== 'auto' && <td data-label="Thao tác"><div className="revenue-crud-actions"><button type="button" className="secondary-button compact" disabled={!row.id} onClick={() => editManualRevenue(row)}>Sửa</button><button type="button" className="secondary-button compact danger-button" disabled={!row.id} onClick={() => removeManualRevenue(row)}>Xóa</button></div></td>}</tr>)}
         {!ledgerRows.length && <tr><td colSpan={isAdmin && revenueSource !== 'auto' ? 8 : 7}>Không có dữ liệu phù hợp bộ lọc.</td></tr>}
       </tbody></table></div></div>}
