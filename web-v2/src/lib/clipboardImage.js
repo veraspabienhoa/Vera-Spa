@@ -4,13 +4,20 @@ export async function copyPngToClipboard(loadImage) {
   }
   const image = Promise.resolve().then(loadImage).then(blob => {
     if (blob?.type !== 'image/png' || !blob.size) throw new Error('Không nhận được ảnh PNG hợp lệ. Hãy thử lại.')
-    return blob
+    return new Blob([blob], { type: 'image/png' })
   })
-  // Observe fetch failures even if clipboard permission is denied immediately.
-  image.catch(() => {})
-  // Start the write during the click; awaiting the image first loses Safari's
-  // user gesture. The PNG stays in memory and is never offered as a download.
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })])
+  const userAgent = String(globalThis.navigator?.userAgent || '')
+  const safari = /Safari/i.test(userAgent) && !/(Chrome|Chromium|CriOS|Edg|OPR)/i.test(userAgent)
+  if (safari) {
+    // Safari must start clipboard.write while the click still owns transient activation.
+    image.catch(() => {})
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })])
+    return
+  }
+  // Chromium/Windows exposes the PNG to native applications (including Zalo)
+  // reliably when ClipboardItem receives a concrete Blob instead of a Promise.
+  const png = await image
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
 }
 
 
