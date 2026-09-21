@@ -3621,9 +3621,45 @@ def _export_rows(
         rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
         return "Tip", headers, rows
     if kind == "reports":
-        fields = ["business_date", "effective_at", "employee_name", "service", "room", "bill_no", "customer_name", "customer_phone", "total", "tip", "payment_method", "actor"]
-        headers = ["Ngày", "Ngày giờ hóa đơn", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Khách hàng", "Điện thoại", "Tổng tiền", "Tip", "Thanh toán", "Người tạo"]
-        rows = [[item.get(key) for key in fields] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
+        headers = [
+            "Ngày", "Ngày giờ hóa đơn", "Nhân viên", "Dịch vụ", "Phòng", "Yêu cầu",
+            "Thời gian bắt đầu thực hiện", "Thời gian bắt đầu thực hiện YC", "Số bill",
+            "Khách hàng", "Điện thoại", "Tiền dịch vụ", "Giảm giá", "Tip", "Tổng tiền",
+            "Thanh toán", "Người tạo",
+        ]
+        invoices = {str(item.get("id") or ""): item for item in state.get("invoices", [])}
+        report_items = _report_rows_with_combo_kind(state)
+        report_groups: dict[str, list[dict[str, Any]]] = {}
+        for report in report_items:
+            report_groups.setdefault(str(report.get("invoice_id") or ""), []).append(report)
+        rows = []
+        for item in report_items:
+            if not _event_in_export_bounds(item, bounds):
+                continue
+            invoice_id = str(item.get("invoice_id") or "")
+            invoice = invoices.get(invoice_id) or {}
+            entries = list(invoice.get("entries") or [])
+            entry = next((candidate for candidate in entries if
+                          str(candidate.get("employee_id") or "") == str(item.get("employee_id") or "")
+                          and str(candidate.get("service") or "") == str(item.get("service") or "")
+                          and str(candidate.get("room") or "") == str(item.get("room") or "")), {})
+            request = entry.get("request", item.get("request", ""))
+            requested = _norm(request) == "yc"
+            starts = _board_starts(entry)
+            standard_start = "" if requested else starts.get("board_started_at") or entry.get("started_at") or ""
+            requested_start = starts.get("board_yc_started_at") or entry.get("started_at") or "" if requested else ""
+            group = report_groups.get(invoice_id) or [item]
+            position = next((index for index, report in enumerate(group) if report is item), 0)
+            discount = int(invoice.get("discount") or 0)
+            allocated_discount = discount // len(group) + (1 if position < discount % len(group) else 0)
+            total, tip = int(item.get("total") or 0), int(item.get("tip") or 0)
+            service_money = total + allocated_discount - tip
+            rows.append([
+                item.get("business_date"), item.get("effective_at"), item.get("employee_name"),
+                item.get("service"), item.get("room"), request, standard_start, requested_start,
+                item.get("bill_no"), item.get("customer_name"), item.get("customer_phone"),
+                service_money, allocated_discount, tip, total, item.get("payment_method"), item.get("actor"),
+            ])
         return "Bao_cao", headers, rows
     if kind == "performance":
         headers = ["Nhân viên", "Dịch vụ", "Phòng", "Booking", "TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC", "Hoàn thành", "Quy định (phút)", "Thực tế (phút)", "Kết quả", "TG Xông Hơi (phút)"]

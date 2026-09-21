@@ -16,7 +16,7 @@ export const LETAN_REASON_GROUPS = [
 ]
 
 const EDITOR_ROLES = new Set(['letan', 'quanly'])
-export const EMPLOYEE_SELF_SERVICE_ROLES = new Set(['nhanvien', 'leader', 'locker', 'tapvu'])
+export const EMPLOYEE_SELF_SERVICE_ROLES = new Set(['nhanvien', 'leader', 'locker', 'tapvu', 'support'])
 export function letanReasonGroup(reason, groups = LETAN_REASON_GROUPS) {
   const key = normalizeReason(reason)
   const matched = groups.find((reasons) => reasons.some((item) => normalizeReason(item) === key))

@@ -16,7 +16,7 @@ const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || '
 
 const ROLE_LABELS = {
   admin: 'Admin', giamdoc: 'Giám đốc', quanly: 'Quản lý', letan: 'Lễ tân', leader: 'Leader',
-  nhanvien: 'Nhân viên', locker: 'Locker', tapvu: 'Tạp vụ',
+  nhanvien: 'Nhân viên', locker: 'Locker', tapvu: 'Tạp vụ', support: 'Support',
 }
 
 const EMPTY_CREATE = {
@@ -83,7 +83,7 @@ const shortEmployeeName = (value) => String(value || '')
 
 function departmentForRole(role) {
   if (role === 'nhanvien' || role === 'leader') return 'Nhân viên + Leader'
-  return { giamdoc: 'Giám đốc', letan: 'Lễ tân', quanly: 'Quản lý', locker: 'Locker', tapvu: 'Tạp vụ' }[role] || 'Khác'
+  return { giamdoc: 'Giám đốc', letan: 'Lễ tân', quanly: 'Quản lý', locker: 'Locker', tapvu: 'Tạp vụ', support: 'Support' }[role] || 'Khác'
 }
 
 async function renameSystemNameRequest(username, systemName) {
@@ -240,6 +240,15 @@ export default function EmployeePage({ user }) {
     () => (data?.employees || []).filter((employee) => employee.profile_hidden),
     [data],
   )
+  const statusVisibility = useMemo(() => Object.fromEntries(
+    ['Đã nghỉ việc', 'Tạm thời nghỉ việc'].map((status) => {
+      const employees = (data?.employees || []).filter((employee) => employee.employment_status === status)
+      return [status, {
+        visible: employees.filter((employee) => !employee.profile_hidden),
+        hidden: employees.filter((employee) => employee.profile_hidden),
+      }]
+    }),
+  ), [data])
 
   const permissions = data?.permissions || {}
   const isAdmin = user?.role === 'admin'
@@ -402,6 +411,15 @@ export default function EmployeePage({ user }) {
     setNotice({ type: 'success', message: `Đã hiện lại ${count} nhân viên đang bị ẩn.` })
   })
 
+  const setStatusHidden = (status, hidden) => run(`${hidden ? 'hide' : 'show'}-${status}`, async () => {
+    const employees = statusVisibility[status]?.[hidden ? 'visible' : 'hidden'] || []
+    if (!employees.length) throw new Error(`Không có nhân viên ${status.toLocaleLowerCase('vi')} cần ${hidden ? 'ẩn' : 'hiện'}.`)
+    for (const employee of employees) await veraApi.updateStaff(employee.username, { profile_hidden: hidden })
+    const count = employees.length
+    await load(true)
+    setNotice({ type: 'success', message: `Đã ${hidden ? 'ẩn' : 'hiện'} ${count} nhân viên ${status.toLocaleLowerCase('vi')}.` })
+  })
+
   if (!isApiConfigured) return <div className="setup-note">Mục Nhân viên cần Python API V2 để ghi an toàn.</div>
 
   return (
@@ -522,6 +540,10 @@ export default function EmployeePage({ user }) {
           <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}>Bỏ chọn</button>
           {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(true)}><EyeOff size={17}/> Ẩn đã chọn</button>}
           {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!hiddenEmployees.length || Boolean(busy)} onClick={showHiddenEmployees}>{busy === 'show-hidden-employees' ? <LoaderCircle className="spin" size={17}/> : <Eye size={17}/>} Hiện nhân viên đã ẩn ({hiddenEmployees.length})</button>}
+          {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!statusVisibility['Đã nghỉ việc']?.visible.length || Boolean(busy)} onClick={() => setStatusHidden('Đã nghỉ việc', true)}><EyeOff size={17}/> Ẩn tất cả nhân viên nghỉ việc ({statusVisibility['Đã nghỉ việc']?.visible.length || 0})</button>}
+          {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!statusVisibility['Đã nghỉ việc']?.hidden.length || Boolean(busy)} onClick={() => setStatusHidden('Đã nghỉ việc', false)}><Eye size={17}/> Hiện tất cả nhân viên nghỉ việc ({statusVisibility['Đã nghỉ việc']?.hidden.length || 0})</button>}
+          {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.visible.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', true)}><EyeOff size={17}/> Ẩn tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.visible.length || 0})</button>}
+          {permissions.employees_visibility_manage && <button className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.hidden.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', false)}><Eye size={17}/> Hiện tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.hidden.length || 0})</button>}
         </div>}
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
           <div className="staff-desktop-table table-wrap">

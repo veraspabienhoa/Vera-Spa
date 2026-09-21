@@ -27,7 +27,7 @@ import vera_web_v2_department_attendance as department_attendance
 
 
 RELEASE = "4.2.2-locker-letan-work-schedule"
-ALLOWED_ROLES = {"admin", "quanly", "nhanvien", "leader", "locker", "letan", "tapvu"}
+ALLOWED_ROLES = {"admin", "quanly", "nhanvien", "leader", "locker", "letan", "tapvu", "support"}
 RAW_TIME_ALIASES = {
     "thoi gian", "thoigian", "time", "timestr", "datetime", "datetimestr",
     "checktime", "checktimestr", "checkindatetime", "checkindatetimestr",
@@ -113,7 +113,7 @@ def _eligible_aliases(conn) -> tuple[dict[str, str], dict[str, str]]:
     rows = conn.execute(text("""
         SELECT username, COALESCE(full_name,'') AS full_name, lower(COALESCE(role,'')) AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu')
+        WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu','support')
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc','đang làm việc')) = 'đang làm việc'
     """)).mappings().all()
