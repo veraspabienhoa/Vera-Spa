@@ -56,6 +56,8 @@ def reconcile(state, directory, make_employee, *, today=''):
         worker['roster_eligible'] = bool(row and eligible(row) and key(row['username']) not in assigned)
         if row:
             worker.update(name=row['username'], username=row['username'], role=str(row.get('role') or '').strip().lower())
+            worker['scheduled_week_shift'] = row.get('scheduled_week_shift') or shift_label(row.get('work_shift'), row.get('shift_definitions'))
+            worker['scheduled_next_shift'] = row.get('scheduled_next_shift') or worker['scheduled_week_shift']
             if 'daily_shift' in row:
                 worker['shift_checkin_date'] = row['shift_checkin_date']
             if 'work_shift' in row or 'daily_shift' in row:
@@ -76,6 +78,8 @@ def reconcile(state, directory, make_employee, *, today=''):
     for row in directory:
         if eligible(row) and key(row['username']) not in assigned:
             worker = make_employee(row, len(state['employees']))
+            worker['scheduled_week_shift'] = row.get('scheduled_week_shift') or shift_label(row.get('work_shift'), row.get('shift_definitions'))
+            worker['scheduled_next_shift'] = row.get('scheduled_next_shift') or worker['scheduled_week_shift']
             if 'daily_shift' in row:
                 worker['shift_checkin_date'] = row['shift_checkin_date']
             worker['roster_eligible'] = True
