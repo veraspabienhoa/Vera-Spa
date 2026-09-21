@@ -10,6 +10,14 @@ import { formatVeraDate } from '../lib/veraDate'
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
 const numberText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+const isoToDisplayDate = (value) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : String(value || '')
+}
+const displayToIsoDate = (value) => {
+  const match = String(value || '').trim().match(/^(\d{2})-(\d{2})-(\d{4})$/)
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : ''
+}
 const reconcileFilters = [
   ['all', 'Tất cả'],
   ['yesterday', 'Hôm qua'],
@@ -462,10 +470,12 @@ export default function RevenuePage({ user }) {
     if (amount === null) return
     const note = window.prompt('Ghi chú', row.note || '')
     if (note === null) return
-    const transactionDate = window.prompt('Ngày giao dịch (YYYY-MM-DD)', row.date || '')
-    if (transactionDate === null) return
+    const transactionDateText = window.prompt('Ngày giao dịch (DD-MM-YYYY)', row.date_label || isoToDisplayDate(row.date))
+    if (transactionDateText === null) return
+    const transactionDate = displayToIsoDate(transactionDateText)
+    if (!transactionDate) { setError('Ngày giao dịch phải đúng định dạng DD-MM-YYYY.'); return }
     try {
-      const result = await updateRevenueEntry(row.id, { transaction_type: row.type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate || null, note })
+      const result = await updateRevenueEntry(row.id, { transaction_type: row.type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate, note })
       setNotice(result.message || 'Đã sửa bản ghi doanh thu.'); setRevision(value => value + 1)
     } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
   }
@@ -548,10 +558,9 @@ export default function RevenuePage({ user }) {
         <button type="button" className={revenueSource === 'manual' ? 'active' : ''} onClick={() => setRevenueSource('manual')}>Manual · Thủ công</button>
         <button type="button" className={revenueSource === 'auto' ? 'active' : ''} onClick={() => setRevenueSource('auto')}>Auto · Tự động hệ thống</button>
       </div>
-      <div className="revenue-time-toolbar" role="group" aria-label="Lọc thời gian doanh thu">
-        {reconcileFilters.filter(([value]) => value !== 'next_month').map(([value,label]) => <button type="button" key={value} className={summaryRange === value ? 'active' : ''} onClick={() => { setSummaryRange(value); if (value !== 'custom') { setSummaryStart(''); setSummaryEnd('') } }}>{label}</button>)}
+      <div className="revenue-time-toolbar" role="group" aria-label="Phạm vi doanh thu">
+        <button type="button" className="active" onClick={() => { setSummaryRange('all'); setSummaryStart(''); setSummaryEnd('') }}>Tất cả</button>
       </div>
-      {summaryRange === 'custom' && <div className="revenue-custom-range"><label>Từ ngày<VeraDateInput value={summaryStart} onChange={event => setSummaryStart(event.target.value)}/></label><label>Đến ngày<VeraDateInput value={summaryEnd} onChange={event => setSummaryEnd(event.target.value)}/></label></div>}
       <small>{autoMode ? 'Tự động = Tiền dịch vụ + Tiền tip. Dữ liệu cập nhật lại mỗi 10 giây; nhập thủ công được khóa.' : 'Chế độ thủ công: giữ nguyên luồng nhập Thu/Chi hiện tại.'}</small>
     </section>}
 
@@ -586,7 +595,6 @@ export default function RevenuePage({ user }) {
       {data && <div className="revenue-formula">{autoMode ? <>Tổng doanh thu = Tiền dịch vụ + Tiền tip = <strong>{money(data.total_revenue)}</strong></> : <>Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></>}</div>}
     </div>}
 
-    {isAdmin && revenueSource === 'manual' && Array.isArray(data?.entries) && <section className="report-box revenue-admin-records"><h3>BẢN GHI DOANH THU · ADMIN</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Loại</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Người nhập</th><th>Thao tác</th></tr></thead><tbody>{data.entries.map(row => <tr key={row.id}><td>{row.date_label || '—'}</td><td>{row.type}</td><td className="money">{money(row.amount)}</td><td>{row.note || '—'}</td><td>{row.entered_by || '—'}</td><td><div className="revenue-crud-actions"><button type="button" className="secondary-button" onClick={() => editManualRevenue(row)}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeManualRevenue(row)}>Xóa</button></div></td></tr>)}</tbody></table></div></section>}
     {isAdmin && autoMode && Array.isArray(data?.records) && <section className="report-box revenue-admin-records"><h3>DOANH THU TỰ ĐỘNG TỪ HỆ THỐNG</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Bill</th><th>Nhân viên</th><th>Dịch vụ</th><th className="money">Tiền dịch vụ</th><th className="money">Tip</th><th className="money">Tổng</th></tr></thead><tbody>{data.records.map(row => <tr key={row.id}><td>{row.date_label || '—'}</td><td>{row.bill_no || '—'}</td><td>{row.employee || '—'}</td><td>{row.service || '—'}</td><td className="money">{money(row.service_revenue)}</td><td className="money">{money(row.tip_revenue)}</td><td className="money">{money(row.total_revenue)}</td></tr>)}</tbody></table></div></section>}
 
     <div className="revenue-tabs" role="tablist" aria-label="Doanh thu và chi phí">
@@ -618,9 +626,9 @@ export default function RevenuePage({ user }) {
       </div>
       {detailError && <div className="error-box">{detailError}</div>}
       {detailBusy && !detailData && <div className="revenue-meta">Đang tải dữ liệu…</div>}
-      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article><button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th></tr></thead><tbody>
-        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td></tr>)}
-        {!ledgerRows.length && <tr><td colSpan="7">Không có dữ liệu phù hợp bộ lọc.</td></tr>}
+      {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article><button type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table className="report-table ledger-table"><thead><tr><th>Ngày</th><th>Loại giao dịch</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th>{isAdmin && revenueSource === 'manual' && <th>Thao tác</th>}</tr></thead><tbody>
+        {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={row.is_purchase ? 'purchase-row' : ''}><td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td>{isAdmin && revenueSource === 'manual' && <td data-label="Thao tác"><div className="revenue-crud-actions"><button type="button" className="secondary-button compact" disabled={!row.id} onClick={() => editManualRevenue(row)}>Sửa</button><button type="button" className="secondary-button compact danger-button" disabled={!row.id} onClick={() => removeManualRevenue(row)}>Xóa</button></div></td>}</tr>)}
+        {!ledgerRows.length && <tr><td colSpan={isAdmin && revenueSource === 'manual' ? 8 : 7}>Không có dữ liệu phù hợp bộ lọc.</td></tr>}
       </tbody></table></div></div>}
       {activeTab === 'purchase' && <div className="report-box"><h3><FileSpreadsheet size={16}/> Báo cáo mua hàng</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày nhập</th><th>Chi tiết hàng hóa</th><th className="money">Số lượng</th><th className="money">Đơn giá</th><th className="money">Thành Tiền</th><th>Người đặt</th><th>User</th></tr></thead><tbody>
         {purchaseRows.map((row, index) => <tr key={`${row.date}-${index}`}><td>{row.date_label}</td><td>{row.item || '—'}</td><td className="money">{numberText(row.quantity)}</td><td className="money">{money(row.unit_price)}</td><td className="money">{money(row.amount)}</td><td>{row.buyer || '—'}</td><td>{row.user || '—'}</td></tr>)}
