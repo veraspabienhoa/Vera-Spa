@@ -349,6 +349,8 @@ def install_long_leave_admin_routes(
             payload["Ngày quay lại làm việc"] = body.return_date.strftime("%d/%m/%Y")
             payload["Ghi chú quay lại"] = str(body.note or "").strip()
             payload["Trạng thái kỳ nghỉ"] = "Đã kết thúc"
+            payload["Nguồn kết thúc kỳ nghỉ"] = "manual"
+            payload["Kết thúc lúc"] = datetime.combine(body.return_date, datetime.min.time()).isoformat()
             payload["Người cập nhật"] = ident.employee_username
             payload["Cập nhật lúc"] = now.strftime("%d/%m/%Y %H:%M:%S")
             conn.execute(text("""
