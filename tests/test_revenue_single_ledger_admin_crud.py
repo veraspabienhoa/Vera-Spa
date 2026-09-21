@@ -4,9 +4,10 @@ from pathlib import Path
 def test_revenue_page_uses_single_manual_ledger_and_admin_actions():
     page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
     assert "BẢN GHI DOANH THU · ADMIN" not in page
-    assert "editManualRevenue(row)" in page
-    assert "removeManualRevenue(row)" in page
-    assert "Ngày giao dịch (DD-MM-YYYY)" in page
+    assert "Sửa dòng đã chọn" in page
+    assert "Xóa dòng đã chọn" in page
+    assert 'type="checkbox"' in page
+    assert "Ngày giao dịch<VeraDateInput" in page
     assert "Ngày giao dịch (YYYY-MM-DD)" not in page
     assert "reconcileFilters.filter(([value]) => value !== 'next_month')" not in page
     assert 'aria-label="Phạm vi doanh thu"' not in page

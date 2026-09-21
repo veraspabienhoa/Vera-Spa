@@ -119,6 +119,9 @@
 .performance-status-filter .secondary-button[aria-pressed="true"]{background:#1f5d49;color:#fff;border-color:#1f5d49}
 @media(max-width:760px){.performance-status-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.performance-status-filter .secondary-button{min-width:0;padding:6px 2px;font-size:10px}}
 
+.history-filter-scope .live-tour-filters-search > *:not(:nth-child(2)){display:none}.history-filter-scope .live-tour-filters-search{grid-template-columns:minmax(220px,420px)}
+.live-tour-history-table{max-width:100%;overflow:auto;border:1px solid #cfded6;border-radius:12px}.live-tour-history-table table{width:max-content;min-width:100%;border-collapse:collapse;font-size:11px}.live-tour-history-table th,.live-tour-history-table td{max-width:240px;padding:8px;border:1px solid #dbe5df;white-space:nowrap;vertical-align:top}.live-tour-history-table th{position:sticky;top:0;z-index:1;background:#1f513f;color:#fff}.live-tour-history-table td small{color:#9a3d32;text-decoration:line-through}.live-tour-history-table td strong{color:#18543d}
+
 
 .employee-revenue-section{display:grid;gap:12px;margin:14px 0;padding:14px;border:1px solid #cfded6;border-radius:14px;background:#fff}
 .employee-revenue-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}

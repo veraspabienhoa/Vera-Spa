@@ -18,7 +18,7 @@ def test_revenue_excel_import_append_replace_and_full_admin_edit_are_wired():
     assert "handleRevenueImport(event, 'append')" in page
     assert "handleRevenueImport(event, 'replace')" in page
 
-    for label in ["Ngày giao dịch (DD-MM-YYYY)", "Ngày nhập (DD-MM-YYYY)", "Giờ nhập (HH:MM:SS)", "Người nhập"]:
+    for label in ["Ngày giao dịch<VeraDateInput", "Ngày nhập<VeraDateInput", "Giờ nhập<input", "Người nhập"]:
         assert label in page
     assert "entered_at=COALESCE(:entered_at, entered_at)" in store
 

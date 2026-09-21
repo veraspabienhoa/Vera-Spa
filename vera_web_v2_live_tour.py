@@ -3495,7 +3495,13 @@ def _write_state(
             # Shadow writes share the aggregate transaction. A savepoint keeps a
             # not-yet-installed shadow schema from taking down production.
             with conn.begin_nested():
-                relational_store.sync_changes(conn, previous_state, state, next_revision)
+                previous_audit_id = str(((previous_state or {}).get("audit") or [{}])[-1].get("id") or "")
+                latest_audit = (state.get("audit") or [{}])[-1]
+                history_action = str(latest_audit.get("action") or "projection") if str(latest_audit.get("id") or "") != previous_audit_id else "projection"
+                relational_store.sync_changes(
+                    conn, previous_state, state, next_revision,
+                    actor=actor, action=history_action,
+                )
         except Exception:
             if relational_store.mode() in {"verify", "active"}:
                 raise
@@ -3679,6 +3685,66 @@ def _fill_excel_sheet(sheet, headers: list[Any], rows: list[list[Any]]) -> None:
     for column in sheet.columns:
         width = min(42, max(10, max(len(str(cell.value or "")) for cell in column) + 2))
         sheet.column_dimensions[column[0].column_letter].width = width
+
+
+def _board_history_rows(
+    conn, *, date_from: date | None = None, date_to: date | None = None,
+    employee: str = "", limit: int = 5000,
+) -> list[dict[str, Any]]:
+    relational_store.ensure_schema(conn)
+    rows = conn.execute(text(f"""
+        SELECT id,aggregate_revision,employee_id,employee_name,action,actor,
+               before_ordinal,after_ordinal,before_payload,after_payload,changed_at
+        FROM {relational_store.BOARD_HISTORY_TABLE}
+        WHERE (CAST(:date_from AS date) IS NULL OR (changed_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= CAST(:date_from AS date))
+          AND (CAST(:date_to AS date) IS NULL OR (changed_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= CAST(:date_to AS date))
+          AND (:employee = '' OR employee_name ILIKE '%' || :employee || '%')
+        ORDER BY changed_at DESC,id DESC
+        LIMIT :limit
+    """), {"date_from": date_from, "date_to": date_to, "employee": str(employee or "").strip(), "limit": limit}).mappings().all()
+    output = []
+    for row in rows:
+        changed_at = row["changed_at"]
+        before_payload = row["before_payload"] if isinstance(row["before_payload"], dict) else None
+        after_payload = row["after_payload"] if isinstance(row["after_payload"], dict) else None
+        before_values = _employee_record(before_payload, changed_at) if before_payload else {}
+        after_values = _employee_record(after_payload, changed_at) if after_payload else {}
+        if before_payload:
+            before_values["STT"] = int(row["before_ordinal"] or 0) + 1
+        if after_payload:
+            after_values["STT"] = int(row["after_ordinal"] or 0) + 1
+        changed_columns = [column for column in BOARD_COLUMNS if before_values.get(column, "") != after_values.get(column, "")]
+        output.append({
+            "id": int(row["id"]), "revision": int(row["aggregate_revision"]),
+            "employee_id": str(row["employee_id"]), "employee_name": str(row["employee_name"] or ""),
+            "action": str(row["action"] or "update"), "actor": str(row["actor"] or ""),
+            "changed_at": _iso(changed_at), "changed_at_label": changed_at.astimezone(VN_TZ).strftime("%d-%m-%Y %H:%M:%S"),
+            "before": before_values, "after": after_values, "changed_columns": changed_columns,
+        })
+    return output
+
+
+def _board_history_excel(rows: list[dict[str, Any]]) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Lich_su_Live_Tour"
+    headers = ["Ngày giờ", "Nhân viên", "Người thao tác", "Hành động", "Cột thay đổi"]
+    headers += [f"Trước · {column}" for column in BOARD_COLUMNS]
+    headers += [f"Sau · {column}" for column in BOARD_COLUMNS]
+    body = []
+    for item in rows:
+        before, after = item.get("before") or {}, item.get("after") or {}
+        body.append([
+            item.get("changed_at_label"), item.get("employee_name"), item.get("actor"),
+            item.get("action"), ", ".join(item.get("changed_columns") or []),
+            *[before.get(column, "") for column in BOARD_COLUMNS],
+            *[after.get(column, "") for column in BOARD_COLUMNS],
+        ])
+    _fill_excel_sheet(sheet, headers, body)
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return stream
 
 
 def _customer_detail_excel_bytes(
@@ -4339,6 +4405,33 @@ def install_live_tour_routes(
         return {"revision": revision, "invoices": public["state"]["invoices"],
                 "reports": public["report_rows"], "performance": _service_performance_rows(state) if is_admin else [],
                 "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
+
+    @app.get("/v2/live-tour/board-history")
+    def live_tour_board_history(
+        date_from: date | None = Query(default=None), date_to: date | None = Query(default=None),
+        employee: str = Query(default="", max_length=200), ident: identity_type = Depends(current_identity),
+    ):
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_reports_view")
+            rows = _board_history_rows(conn, date_from=date_from, date_to=date_to, employee=employee)
+        return {"ok": True, "columns": BOARD_COLUMNS, "rows": rows, "count": len(rows)}
+
+    @app.get("/v2/live-tour/board-history/export.xlsx")
+    def live_tour_board_history_export(
+        date_from: date | None = Query(default=None), date_to: date | None = Query(default=None),
+        employee: str = Query(default="", max_length=200), ident: identity_type = Depends(current_identity),
+    ):
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_reports_view")
+            require_feature(conn, ident, "live_tour_export")
+            rows = _board_history_rows(conn, date_from=date_from, date_to=date_to, employee=employee)
+        content = _board_history_excel(rows)
+        filename = f"VERA_LichSu_LiveTour_{datetime.now(VN_TZ):%d-%m-%Y}.xlsx"
+        return StreamingResponse(
+            content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        )
 
     @app.get("/v2/live-tour/my-tips")
     def live_tour_my_tips(ident: identity_type = Depends(current_identity)):

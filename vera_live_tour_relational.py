@@ -18,10 +18,11 @@ from sqlalchemy import text
 
 import vera_resource_concurrency as concurrency
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 META_TABLE = "vera_live_tour_meta"
 MUTATION_TABLE = "vera_live_tour_mutation"
 CLAIM_TABLE = "vera_live_tour_room_claim"
+BOARD_HISTORY_TABLE = "vera_live_tour_board_history"
 
 RESOURCE_COLLECTIONS = (
     "employees", "rooms", "services", "combos", "customers", "pending",
@@ -129,6 +130,23 @@ def ensure_schema(conn) -> None:
             UNIQUE(employee_id, booking_id)
         )
     """))
+    conn.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS {BOARD_HISTORY_TABLE} (
+            id BIGSERIAL PRIMARY KEY,
+            aggregate_revision BIGINT NOT NULL,
+            employee_id TEXT NOT NULL,
+            employee_name TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL DEFAULT 'update',
+            actor TEXT NOT NULL DEFAULT '',
+            before_ordinal INTEGER,
+            after_ordinal INTEGER,
+            before_payload JSONB,
+            after_payload JSONB,
+            changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
+    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{BOARD_HISTORY_TABLE}_time ON {BOARD_HISTORY_TABLE}(changed_at DESC,id DESC)"))
+    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{BOARD_HISTORY_TABLE}_employee ON {BOARD_HISTORY_TABLE}(lower(employee_name),changed_at DESC)"))
 
 
 def _split(state: dict[str, Any]) -> tuple[dict[str, Any], dict[tuple[str, str], tuple[int, dict[str, Any]]]]:
@@ -156,7 +174,7 @@ def schema_exists(conn) -> bool:
 
 def sync_changes(
     conn, before: dict[str, Any] | None, after: dict[str, Any], aggregate_revision: int,
-    *, force: bool = False,
+    *, force: bool = False, actor: str = "", action: str = "update",
 ) -> dict[str, int]:
     """Mirror only changed resource rows; safe to call repeatedly in one transaction."""
     if mode() == "off" and not force:
@@ -177,6 +195,30 @@ def sync_changes(
           payload_hash=EXCLUDED.payload_hash, aggregate_revision=EXCLUDED.aggregate_revision,
           schema_version=EXCLUDED.schema_version, updated_at=NOW()
     """), {"payload": _json(after_meta), "hash": _digest(after_meta), "revision": aggregate_revision, "schema": SCHEMA_VERSION})
+    employee_keys = sorted({key for key in set(old) | set(new) if key[0] == "employees"}) if before is not None else []
+    for key in employee_keys:
+        old_item = old.get(key)
+        new_item = new.get(key)
+        if old_item == new_item:
+            continue
+        before_ordinal, before_payload = old_item if old_item is not None else (None, None)
+        after_ordinal, after_payload = new_item if new_item is not None else (None, None)
+        employee_name = str((after_payload or before_payload or {}).get("name") or "")
+        conn.execute(text(f"""
+            INSERT INTO {BOARD_HISTORY_TABLE}(
+                aggregate_revision,employee_id,employee_name,action,actor,
+                before_ordinal,after_ordinal,before_payload,after_payload,changed_at
+            ) VALUES (
+                :revision,:employee_id,:employee_name,:action,:actor,
+                :before_ordinal,:after_ordinal,CAST(:before_payload AS jsonb),CAST(:after_payload AS jsonb),NOW()
+            )
+        """), {
+            "revision": aggregate_revision, "employee_id": key[1], "employee_name": employee_name,
+            "action": str(action or "update"), "actor": str(actor or ""),
+            "before_ordinal": before_ordinal, "after_ordinal": after_ordinal,
+            "before_payload": _json(before_payload) if before_payload is not None else None,
+            "after_payload": _json(after_payload) if after_payload is not None else None,
+        })
     for key, (ordinal, payload) in new.items():
         if key in old and old[key] == (ordinal, payload):
             continue

@@ -8,4 +8,4 @@ def test_employee_analytics_has_its_own_report_tab_with_full_filters():
     assert "<LiveTourFilters value={filters} onChange={setFilters}" in page
     assert "tab === 'employee' && <LiveTourEmployeeRevenueBreakdown rows={reports}/>" in page
     assert "tab === 'revenue' && <LiveTourEmployeeRevenueBreakdown" not in page
-    assert "tab !== 'employee' && (tab === 'performance'" in page
+    assert "tab !== 'employee' && tab !== 'history' && (tab === 'performance'" in page

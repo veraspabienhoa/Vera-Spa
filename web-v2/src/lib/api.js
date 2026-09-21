@@ -397,6 +397,20 @@ export const veraApi = {
   },
   liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
   liveTourReports: () => request('/v2/live-tour/reports'),
+  liveTourBoardHistory: (query = {}) => {
+    const params = new URLSearchParams()
+    if (query.date_from) params.set('date_from', query.date_from)
+    if (query.date_to) params.set('date_to', query.date_to)
+    if (query.employee?.trim()) params.set('employee', query.employee.trim())
+    return request(`/v2/live-tour/board-history${params.size ? `?${params}` : ''}`)
+  },
+  exportLiveTourBoardHistory: (query = {}) => {
+    const params = new URLSearchParams()
+    if (query.date_from) params.set('date_from', query.date_from)
+    if (query.date_to) params.set('date_to', query.date_to)
+    if (query.employee?.trim()) params.set('employee', query.employee.trim())
+    return download(`/v2/live-tour/board-history/export.xlsx${params.size ? `?${params}` : ''}`, 'VERA_LichSu_LiveTour.xlsx')
+  },
   liveTourMyTips: () => request('/v2/live-tour/my-tips'),
   spaCustomers: () => request('/v2/live-tour/customers'),
   spaSettings: () => request('/v2/live-tour/settings'),
