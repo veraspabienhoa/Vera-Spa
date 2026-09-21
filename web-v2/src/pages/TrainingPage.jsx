@@ -48,7 +48,7 @@ export default function TrainingPage({ user }) {
   const [scopeTrainer, setScopeTrainer] = useState(''); const [scopeEmployees, setScopeEmployees] = useState([])
   const [cycle, setCycle] = useState({ name: '', start_date: today(), end_date: today(), employee_usernames: [], evaluator_usernames: [], instructions: '' })
 
-  const load = async () => { setBusy(true); try { const result = await veraApi.trainingBootstrap(); setData(result); if (!session.employee_username && result.employees?.[0]) setSession(current => ({ ...current, employee_username: result.employees[0].username })); if (!reportEmployee && result.employees?.[0]) setReportEmployee(result.employees[0].username) } catch (error) { setNotice({ type: 'error', text: error.message }) } finally { setBusy(false) } }
+  const load = async () => { setBusy(true); try { const result = await veraApi.trainingBootstrap(); setData(result); if (!session.employee_username && result.training_students?.[0]) setSession(current => ({ ...current, employee_username: result.training_students[0].username })); if (!reportEmployee && result.employees?.[0]) setReportEmployee(result.employees[0].username) } catch (error) { setNotice({ type: 'error', text: error.message }) } finally { setBusy(false) } }
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const activeAssignments = useMemo(() => (data?.assignments || []).filter(item => item.cycle_status === 'active'), [data])
 
@@ -71,7 +71,7 @@ export default function TrainingPage({ user }) {
 
     {tab === 'sessions' && <section className="training-grid">
       {permissions.training_session_create && <form className="training-card" onSubmit={saveSession}><h2>Ghi nhận buổi đào tạo</h2>
-        <div className="training-form-grid"><label>Nhân viên<select required value={session.employee_username} onChange={e => setSession({ ...session, employee_username: e.target.value })}><option value="">Chọn nhân viên</option>{data?.employees?.map(x => <option key={x.username} value={x.username}>{x.full_name}</option>)}</select></label>
+        <div className="training-form-grid"><label>Học viên được đào tạo<select required value={session.employee_username} onChange={e => setSession({ ...session, employee_username: e.target.value })}><option value="">Chọn học viên</option>{data?.training_students?.map(x => <option key={x.username} value={x.username}>{x.full_name}</option>)}</select></label>
         <label>Ngày đào tạo<VeraDateInput required value={session.training_date} onChange={e => setSession({ ...session, training_date: e.target.value })}/></label>
         <label>Từ giờ<input required type="time" value={session.start_time} onChange={e => setSession({ ...session, start_time: e.target.value })}/></label><label>Đến giờ<input required type="time" value={session.end_time} onChange={e => setSession({ ...session, end_time: e.target.value })}/></label>
         <label className="wide">Nội dung/kỹ năng đào tạo<input value={session.topic} onChange={e => setSession({ ...session, topic: e.target.value })} placeholder="Ví dụ: Massage cổ vai gáy"/></label>
