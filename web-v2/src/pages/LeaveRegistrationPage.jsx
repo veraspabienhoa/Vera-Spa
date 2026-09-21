@@ -1,4 +1,5 @@
 import ClearableSearchInput from '../components/ClearableSearchInput'
+import VeraDateInput from '../components/VeraDateInput'
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLeavePageLoader } from '../lib/leavePageLoader'
@@ -1142,19 +1143,14 @@ function DatePickerControl({ label, value, onChange, min, max }) {
   return (
     <div className="date-input-group">
       <span className="date-input-label">{label}</span>
-      <label className="date-picker-control">
-        <span>{formatDateDisplay(value)}</span>
-        <CalendarDays size={18} aria-hidden="true" />
-        <input
-          className="date-picker-native"
-          type="date"
-          aria-label={label}
-          value={value}
-          min={min}
-          max={max}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </label>
+      <VeraDateInput
+        className="date-picker-control"
+        aria-label={label}
+        value={value}
+        min={min}
+        max={max}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   )
 }
