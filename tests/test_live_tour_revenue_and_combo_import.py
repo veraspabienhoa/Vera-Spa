@@ -81,7 +81,7 @@ def import_client(monkeypatch, role, grants=None):
     state['combos'] = [{'id': 'import-combo', 'name': 'Combo 13', 'tickets': 13, 'price': 3000000, 'active': True}]
     _, shared = api_client(monkeypatch, state)
     app = FastAPI()
-    allowed = set(grants or ({'live_tour_combo_import', 'live_tour_customers_view'} if role == 'admin' else set()))
+    allowed = {'live_tour_view', *(grants or ({'live_tour_combo_import', 'live_tour_customers_view'} if role == 'admin' else set()))}
     live.install_live_tour_routes(app, engine_instance=RouteEngine,
         current_identity=lambda: ImportIdentity(role=role), require_feature=lambda _conn, _ident, feature: None if feature in allowed else (_ for _ in ()).throw(Exception('denied')),
         feature_allowed=lambda _conn, _identity, feature: feature in allowed, identity_type=ImportIdentity)
