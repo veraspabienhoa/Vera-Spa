@@ -25,7 +25,7 @@ def scheduled_shift(row, day):
     if 'luan phien' in cycle or 'theo chu ky tuan' in cycle or cycle == 'tuan':
         switch_days = 7
     else:
-        match = re.search(r'(\\d+)\\s*ngay', cycle)
+        match = re.search(r'(\d+)\s*ngay', cycle)
         if not match:
             return base
         switch_days = max(1, int(match.group(1)))
