@@ -182,6 +182,7 @@ export default function RevenuePage({ user }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
+  const [reconcileRevision, setReconcileRevision] = useState(0)
   const [revenueSource, setRevenueSource] = useState('manual')
   const summaryRange = 'all'
   const summaryStart = ''
@@ -349,7 +350,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [filterPreset, customStart, customEnd, revision])
+  }, [filterPreset, customStart, customEnd, reconcileRevision])
 
   useEffect(() => {
     if (detailPreset === 'custom' && (!detailStart || !detailEnd)) {
@@ -372,7 +373,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [detailPreset, detailStart, detailEnd, revision])
+  }, [detailPreset, detailStart, detailEnd, reconcileRevision])
 
   const submitTip = async () => {
     setSavingTip(true)
@@ -430,6 +431,7 @@ export default function RevenuePage({ user }) {
       setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
       setNotice(result.message || 'Đã ghi Thu Chi vào Chi tiết Doanh thu - Chi phí.')
       setRevision((value) => value + 1)
+      setReconcileRevision((value) => value + 1)
     } catch (err) {
       setError(err.message || 'Không ghi được Thu Chi.')
     } finally {
@@ -496,14 +498,14 @@ export default function RevenuePage({ user }) {
     if (enteredBy === null) return
     try {
       const result = await updateRevenueEntry(row.id, { transaction_type: type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate, note, entered_by_name: enteredBy })
-      setNotice(result.message || 'Đã sửa bản ghi doanh thu. Ngày/Giờ nhập lịch sử được giữ nguyên.'); setRevision(value => value + 1)
+      setNotice(result.message || 'Đã sửa bản ghi doanh thu. Ngày/Giờ nhập lịch sử được giữ nguyên.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
     } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
   }
 
   const removeManualRevenue = async (row) => {
     if (!window.confirm(`Xóa bản ghi ${row.type} ${money(row.amount)} ngày ${row.date_label}? Timestamp lịch sử gốc vẫn được giữ trong audit.`)) return
     try {
-      const result = await deleteRevenueEntry(row.id); setNotice(result.message || 'Đã xóa bản ghi.'); setRevision(value => value + 1)
+      const result = await deleteRevenueEntry(row.id); setNotice(result.message || 'Đã xóa bản ghi.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
     } catch (err) { setError(err.message || 'Không xóa được bản ghi doanh thu.') }
   }
 
@@ -567,7 +569,7 @@ export default function RevenuePage({ user }) {
 
     <div className="page-heading">
       <div><span className="eyebrow"><CircleDollarSign size={14} /> Tài chính</span><h1>DOANH THU</h1><p className="revenue-source">Dữ liệu Thu/Chi được lưu trực tiếp trên server VERA SPA.</p></div>
-      <button className="secondary-button" type="button" onClick={() => { setNotice(''); setRevision((value) => value + 1) }} disabled={busy || reconcileBusy}><RefreshCw size={16} className={(busy || reconcileBusy) ? 'spin' : ''} /> Làm mới</button>
+      <button className="secondary-button" type="button" onClick={() => { setNotice(''); setRevision((value) => value + 1); setReconcileRevision((value) => value + 1) }} disabled={busy || reconcileBusy}><RefreshCw size={16} className={(busy || reconcileBusy) ? 'spin' : ''} /> Làm mới</button>
     </div>
     {error && <div className="error-box">{error}</div>}
     {notice && <div className="success-box">{notice}</div>}

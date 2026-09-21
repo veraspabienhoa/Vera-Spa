@@ -112,21 +112,22 @@ function sanitizeLiveTourCacheValue(value) {
 }
 
 function cacheSafeLiveTour(data) {
-  const safeData = sanitizeLiveTourCacheValue(data && typeof data === 'object' ? data : {})
-  // Action responses can contain a financial result alongside the refreshed state.
-  // Never persist that result (or its nested customer identity) in sessionStorage.
-  delete safeData.result
-  const records = asArray(safeData.records)
-  const state = safeData.state && typeof safeData.state === 'object'
-    ? { ...safeData.state, employees: [], customers: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], combo_sale_requests: [], reports: [], audit: [], backups: [] }
+  // Prune large/private collections before recursively sanitizing. The previous
+  // order walked customers, invoices, reports and audit history only to discard
+  // them afterwards, causing avoidable main-thread work after every changed poll.
+  const source = data && typeof data === 'object' ? data : {}
+  const state = source.state && typeof source.state === 'object'
+    ? { ...source.state, employees: [], customers: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], combo_sale_requests: [], reports: [], audit: [], backups: [] }
     : undefined
-  return {
-    ...safeData,
-    records,
+  const candidate = {
+    ...source,
     customers: [], pending_payments: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], combo_sale_requests: [], report_rows: [], reports: {},
     audit: [], history: [], backups: [], pending_changes: [], invoice_changes: [], customer_changes: [], pending_count: 0, combo_sale_request_count: 0,
     ...(state ? { state } : {}),
   }
+  delete candidate.result
+  const safeData = sanitizeLiveTourCacheValue(candidate)
+  return { ...safeData, records: asArray(safeData.records) }
 }
 
 function saveCachedLiveTour(key, data) {
