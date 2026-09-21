@@ -292,7 +292,7 @@ export default function RevenuePage({ user }) {
               : Number(result.tip_revenue || result.period_tip || 0)
             const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
             setData({ ...result, period_tip: autoTip, balance, period_tip_start: defaultTipStartDate, period_tip_end: defaultTipEndDate })
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate) && result.current_date) setEntryDate(result.current_date)
+            if (result.current_date) setEntryDate(current => /^\d{4}-\d{2}-\d{2}$/.test(current) ? current : result.current_date)
             setTipRows(liveTourRows); setTip(autoTip); setTipStart(defaultTipStartDate); setTipEnd(defaultTipEndDate)
           }
         }
