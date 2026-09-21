@@ -4398,8 +4398,6 @@ def install_live_tour_routes(
             raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được sửa lịch hẹn.")
         if action == "update_started_at" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly"}:
             raise HTTPException(403, "Chỉ Admin và Quản lý được nhập TG bắt đầu thực hiện.")
-        if action == "combo_import" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
-            raise HTTPException(403, "Chỉ Admin được nhập combo.")
         if action == "combo_sale_decide" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được duyệt hoặc từ chối yêu cầu bán combo.")
         if action == "customer_combo_update" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
