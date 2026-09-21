@@ -441,6 +441,7 @@ def list_entries(conn, *, start_date: date | None = None, end_date: date | None 
             "id": int(row["id"]), "type": str(row["transaction_type"]), "amount": float(row["amount"]),
             "date": tx_date.isoformat() if tx_date else "", "date_label": tx_date.strftime("%d-%m-%Y") if tx_date else "",
             "note": str(row["note"] or ""), "entered_at": entered.astimezone(VN_TZ).isoformat() if entered else "",
+            "entered_date": entered.astimezone(VN_TZ).date().isoformat() if entered else "",
             "entered_date_label": entered.astimezone(VN_TZ).strftime("%d-%m-%Y") if entered else "",
             "entered_time": entered.astimezone(VN_TZ).strftime("%H:%M:%S") if entered else "",
             "entered_by": str(row["entered_by_name"] or row["entered_by"] or ""),
@@ -453,12 +454,17 @@ def _audit_payload(row) -> dict[str, Any]:
     return {key: (value.isoformat() if hasattr(value, "isoformat") else value) for key, value in dict(row).items()}
 
 
-def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, transaction_date: date | None, note: str, entered_by_name: str | None, entered_at: datetime | None, actor: str) -> dict[str, Any]:
+def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, transaction_date: date | None, note: str, entered_by_name: str | None, entered_at: datetime | None, actor: str, required_entered_date: date | None = None) -> dict[str, Any]:
     import json
     ensure_schema(conn)
     before = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id AND is_deleted=false FOR UPDATE"), {"id": entry_id}).mappings().first()
     if not before:
         raise KeyError(entry_id)
+    original_entered = before["entered_at"]
+    if original_entered and original_entered.tzinfo is None:
+        original_entered = original_entered.replace(tzinfo=timezone.utc)
+    if required_entered_date and (not original_entered or original_entered.astimezone(VN_TZ).date() != required_entered_date):
+        raise PermissionError(entry_id)
     conn.execute(text(f"""
         UPDATE {TABLE}
         SET transaction_type=:transaction_type, amount=:amount, transaction_date=:transaction_date,
@@ -476,12 +482,17 @@ def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, t
     return {"id": entry_id, "revision": int(after["edit_revision"])}
 
 
-def soft_delete_entry(conn, *, entry_id: int, actor: str) -> None:
+def soft_delete_entry(conn, *, entry_id: int, actor: str, required_entered_date: date | None = None) -> None:
     import json
     ensure_schema(conn)
     before = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id AND is_deleted=false FOR UPDATE"), {"id": entry_id}).mappings().first()
     if not before:
         raise KeyError(entry_id)
+    original_entered = before["entered_at"]
+    if original_entered and original_entered.tzinfo is None:
+        original_entered = original_entered.replace(tzinfo=timezone.utc)
+    if required_entered_date and (not original_entered or original_entered.astimezone(VN_TZ).date() != required_entered_date):
+        raise PermissionError(entry_id)
     conn.execute(text(f"UPDATE {TABLE} SET is_deleted=true, edit_revision=edit_revision+1 WHERE id=:id"), {"id": entry_id})
     conn.execute(text("""
         INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
