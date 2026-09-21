@@ -182,6 +182,7 @@ export default function RevenuePage({ user }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
+  const [reconcileRevision, setReconcileRevision] = useState(0)
   const [revenueSource, setRevenueSource] = useState('manual')
   const summaryRange = 'all'
   const summaryStart = ''
@@ -349,7 +350,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [filterPreset, customStart, customEnd, revision])
+  }, [filterPreset, customStart, customEnd, reconcileRevision])
 
   useEffect(() => {
     if (detailPreset === 'custom' && (!detailStart || !detailEnd)) {
@@ -372,7 +373,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [detailPreset, detailStart, detailEnd, revision])
+  }, [detailPreset, detailStart, detailEnd, reconcileRevision])
 
   const submitTip = async () => {
     setSavingTip(true)
@@ -567,7 +568,7 @@ export default function RevenuePage({ user }) {
 
     <div className="page-heading">
       <div><span className="eyebrow"><CircleDollarSign size={14} /> Tài chính</span><h1>DOANH THU</h1><p className="revenue-source">Dữ liệu Thu/Chi được lưu trực tiếp trên server VERA SPA.</p></div>
-      <button className="secondary-button" type="button" onClick={() => { setNotice(''); setRevision((value) => value + 1) }} disabled={busy || reconcileBusy}><RefreshCw size={16} className={(busy || reconcileBusy) ? 'spin' : ''} /> Làm mới</button>
+      <button className="secondary-button" type="button" onClick={() => { setNotice(''); setRevision((value) => value + 1); setReconcileRevision((value) => value + 1) }} disabled={busy || reconcileBusy}><RefreshCw size={16} className={(busy || reconcileBusy) ? 'spin' : ''} /> Làm mới</button>
     </div>
     {error && <div className="error-box">{error}</div>}
     {notice && <div className="success-box">{notice}</div>}
