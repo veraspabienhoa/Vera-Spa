@@ -1838,6 +1838,8 @@ def _required_action_feature(action: str) -> str:
         return "live_tour_view"
     if action in {"report_invoice_update", "report_invoice_delete"}:
         return "live_tour_reports_edit" if action.endswith("update") else "live_tour_reports_delete"
+    if action == "combo_import":
+        return "live_tour_combo_import"
     if action in {"customer_delete", "customer_combo_update", "customer_combo_delete"}:
         return {"customer_delete": "live_tour_customers_delete", "customer_combo_update": "live_tour_customer_combo_edit", "customer_combo_delete": "live_tour_customer_combo_delete"}[action]
     if action in {"paid_invoice_update", "paid_invoice_delete"}:
@@ -1853,7 +1855,7 @@ def _required_action_feature(action: str) -> str:
     if action in {
         "room_upsert", "room_delete", "service_upsert",
         "service_delete", "combo_upsert", "combo_delete", "backup", "restore",
-        "clear_expired", "clear_expired_preview", "combo_import", "combo_sale_decide", "set_vip", "service_area_upsert", "service_area_delete", "settings_reorder", "payment_settings_update", "clear_orphan_pending",
+        "clear_expired", "clear_expired_preview", "combo_sale_decide", "set_vip", "service_area_upsert", "service_area_delete", "settings_reorder", "payment_settings_update", "clear_orphan_pending",
     }:
         return "live_tour_admin"
     return "live_tour_operate"
