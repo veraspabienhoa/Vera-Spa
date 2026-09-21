@@ -86,7 +86,7 @@ def reason_item(rows: list[dict], reason: str) -> dict:
 
 def role_tokens(value: str) -> set[str]:
     n = norm(value)
-    roles = {"admin", "quanly", "letan", "leader", "nhanvien", "locker", "tapvu", "auto update"}
+    roles = {"admin", "quanly", "letan", "leader", "nhanvien", "locker", "tapvu", "support", "auto update"}
     return {r for r in roles if r in n}
 
 

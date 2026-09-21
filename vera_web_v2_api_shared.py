@@ -256,7 +256,7 @@ def _validate_and_prepare(
 ):
     employee = body.employee_name.strip()
     role = str(ident.role or "").strip().lower()
-    employee_like = {"nhanvien", "leader", "locker", "tapvu"}
+    employee_like = {"nhanvien", "leader", "locker", "tapvu", "support"}
     if role in employee_like and norm(employee) != norm(ident.employee_username):
         raise HTTPException(403, "Tài khoản hiện tại chỉ được đăng ký lịch nghỉ của chính mình.")
 

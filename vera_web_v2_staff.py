@@ -40,9 +40,9 @@ STAFF_EXPORT_COLUMNS = [
     "Phân quyền", "Trạng thái làm việc", "Phát sinh tháng", "Có phép tháng",
     "Phép năm", "Ca làm việc", "Ngày bắt đầu ca", "Chu kỳ", "Khóa đăng nhập",
 ]
-ALL_ROLES = ["nhanvien", "leader", "quanly", "letan", "locker", "tapvu", "admin"]
-ROLE_ORDER = ["leader", "nhanvien", "quanly", "letan", "locker", "tapvu", "admin"]
-FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu"}
+ALL_ROLES = ["nhanvien", "leader", "quanly", "letan", "locker", "tapvu", "support", "admin"]
+ROLE_ORDER = ["leader", "nhanvien", "support", "quanly", "letan", "locker", "tapvu", "admin"]
+FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu", "support"}
 STATUS_OPTIONS = ["Đang làm việc", "Tạm thời nghỉ việc", "Đã nghỉ việc"]
 STATUS_ALIASES = {
     "dang lam viec": "Đang làm việc",
@@ -63,7 +63,7 @@ def _cycle_options(conn):
             result.append(label)
     return result
 
-DEPARTMENT_ORDER = ["Nhân viên + Leader", "Lễ tân", "Quản lý", "Locker", "Tạp vụ"]
+DEPARTMENT_ORDER = ["Nhân viên + Leader", "Support", "Lễ tân", "Quản lý", "Locker", "Tạp vụ"]
 class StaffCreate(BaseModel):
     username: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=8, max_length=300)
@@ -188,7 +188,7 @@ def _department(role: str) -> str:
     if value in {"nhanvien", "leader"}:
         return "Nhân viên + Leader"
     return {
-        "letan": "Lễ tân", "quanly": "Quản lý", "locker": "Locker", "tapvu": "Tạp vụ",
+        "letan": "Lễ tân", "quanly": "Quản lý", "locker": "Locker", "tapvu": "Tạp vụ", "support": "Support",
     }.get(value, value or "Khác")
 
 
@@ -522,7 +522,7 @@ def install_staff_routes(
         return output
 
     def allowed_roles(ident) -> list[str]:
-        return ALL_ROLES if str(ident.role).lower() == "admin" else ["nhanvien", "locker", "tapvu"]
+        return ALL_ROLES if str(ident.role).lower() == "admin" else ["nhanvien", "locker", "tapvu", "support"]
 
     def ensure_manageable(ident, target_role: str) -> None:
         if str(ident.role).lower() == "admin":

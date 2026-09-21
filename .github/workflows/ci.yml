@@ -689,7 +689,7 @@ jobs:
               'leave reads avoid duplicate full-row pooler egress': 'SELECT * FROM leave_records" + where' not in phase3 and "payload->'__raw_values' AS raw_values" in phase3 and 'if "__record_uid" in base.columns:' in Path('vera_postgres_phase17.py').read_text(encoding='utf-8'),
               'feature permission reads are cached and batched': '_permission_payload(conn)' in api and 'permission_payload = _permission_payload(conn)' in api and 'permissions_changed=_clear_permission_cache' in api,
               'pooler connections are reused to avoid timezone catalog churn': 'pool_recycle=max(3600' in api and 'recycle = max(3600' in Path('vera_postgres.py').read_text(encoding='utf-8'),
-              'front desk role scope is enforced': 'FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu"}' in staff_api and 'ensure_manageable' in staff_api,
+              'front desk role scope is enforced': 'FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu", "support"}' in staff_api and 'ensure_manageable' in staff_api,
               'employee feature permissions are exposed': all(key in permissions for key in ('staff_list', 'staff_export', 'staff_import', 'shift_assignment_edit', 'account_lock_edit')),
               'React employees page is routed': "page === 'employees'" in app and 'EmployeePage' in app,
               'Web V2 has no demo authentication bypass': 'demoUser' not in app and 'onDemoLogin' not in app and 'VITE_VERA_DEMO_MODE' not in client,

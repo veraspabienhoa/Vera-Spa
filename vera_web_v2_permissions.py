@@ -18,7 +18,7 @@ CREDENTIAL_SHEET_ID = os.getenv(
 )
 WORKSHEET = "PhanQuyenChucNang"
 HEADERS = ["Phạm vi", "Đối tượng", "Chức năng", "Cho phép", "Ngày cập nhật", "Giờ cập nhật", "Người cập nhật"]
-ROLES = ["quanly", "letan", "leader", "nhanvien", "locker", "tapvu"]
+ROLES = ["quanly", "letan", "leader", "nhanvien", "locker", "tapvu", "support"]
 
 FEATURE_GROUPS: dict[str, dict[str, str]] = {
     "Bảng tua": {
@@ -454,6 +454,7 @@ EMPLOYEE = {
 DEFAULT_ROLE_FEATURES = {
     "admin": set(FEATURES), "quanly": set(FRONTDESK), "letan": set(FRONTDESK),
     "leader": set(EMPLOYEE), "nhanvien": set(EMPLOYEE),
+    "support": set(EMPLOYEE),
     "locker": {"tour", "tour_refresh", "live_tour_view", "profile", "profile_edit", "birthday", "birthday_check", "resignation_form", "contract_1_view", "contract_1_export_self"},
     "tapvu": {"profile", "profile_edit", "birthday", "birthday_check", "resignation_form", "contract_1_view", "contract_1_export_self"},
 }

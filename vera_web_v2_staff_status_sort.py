@@ -12,11 +12,12 @@ STATUS_RANK = {
 ROLE_RANK = {
     "leader": 0,
     "nhanvien": 1,
-    "quanly": 2,
-    "letan": 3,
-    "locker": 4,
-    "tapvu": 5,
-    "admin": 6,
+    "support": 2,
+    "quanly": 3,
+    "letan": 4,
+    "locker": 5,
+    "tapvu": 6,
+    "admin": 7,
 }
 
 
