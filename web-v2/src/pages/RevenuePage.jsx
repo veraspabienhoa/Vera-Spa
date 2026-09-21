@@ -179,9 +179,9 @@ export default function RevenuePage({ user }) {
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
   const [revenueSource, setRevenueSource] = useState('manual')
-  const [summaryRange, setSummaryRange] = useState('all')
-  const [summaryStart, setSummaryStart] = useState('')
-  const [summaryEnd, setSummaryEnd] = useState('')
+  const summaryRange = 'all'
+  const summaryStart = ''
+  const summaryEnd = ''
   const [entryDate, setEntryDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }))
   const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
   const [entryIncomeNote, setEntryIncomeNote] = useState('')
