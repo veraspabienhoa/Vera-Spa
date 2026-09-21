@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, RefreshCw, Save, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, RefreshCw, Save, Upload, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { defaultRevenueTipStart, revenueTipTotal } from '../lib/revenueTipPeriod'
@@ -23,23 +23,6 @@ const todayIsoVietnam = () => {
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
   return `${values.year}-${values.month}-${values.day}`
 }
-function RevenueDateInput({ value = '', onChange, min = '', max = '', disabled = false, ariaLabel = 'Ngày' }) {
-  const display = formatVeraDate(value)
-  return <span className={`revenue-native-date ${disabled ? 'disabled' : ''}`}>
-    <span className={`revenue-native-date-value ${display ? '' : 'placeholder'}`}>{display || 'dd-mm-yyyy'}</span>
-    <span className="revenue-native-date-icon" aria-hidden="true"><CalendarDays size={18} /></span>
-    <input
-      type="date"
-      value={/^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? value : ''}
-      min={min || undefined}
-      max={max || undefined}
-      disabled={disabled}
-      onChange={onChange}
-      aria-label={ariaLabel}
-    />
-  </span>
-}
-
 const reconcileFilters = [
   ['all', 'Tất cả'],
   ['yesterday', 'Hôm qua'],
@@ -205,6 +188,9 @@ export default function RevenuePage({ user }) {
   const summaryStart = ''
   const summaryEnd = ''
   const [entryDate, setEntryDate] = useState(todayIsoVietnam)
+  const revenueImportAppendRef = useRef(null)
+  const revenueImportReplaceRef = useRef(null)
+  const [importingRevenue, setImportingRevenue] = useState('')
   const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
   const [entryIncomeNote, setEntryIncomeNote] = useState('')
   const [incomeNoteEdited, setIncomeNoteEdited] = useState(false)
@@ -564,8 +550,7 @@ export default function RevenuePage({ user }) {
       .revenue-period-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dfe7e2;border-radius:15px;background:#fff}
       .revenue-period-card svg{color:#8b6b22;flex:0 0 auto}.revenue-period-card span{display:block;font-size:11px;font-weight:900;letter-spacing:.05em;color:#68736f;text-transform:uppercase}.revenue-period-card strong{display:block;margin-top:3px;font-size:18px;color:#173329}
       .revenue-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.revenue-action-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;min-height:43px}.revenue-action-link.disabled{opacity:.45;pointer-events:none}
-      .revenue-native-date{position:relative;display:flex;align-items:center;width:100%;min-width:0;min-height:42px;border:1px solid #2f6a55;border-radius:10px;background:#fff;overflow:hidden}.revenue-native-date-value{display:block;flex:1;min-width:0;padding:10px 48px 10px 14px;color:#173329;font-size:16px;font-weight:850;font-variant-numeric:tabular-nums}.revenue-native-date-value.placeholder{color:#a7aaa9}.revenue-native-date-icon{position:absolute;right:3px;top:3px;bottom:3px;width:40px;display:grid;place-items:center;border:1px solid #2f6a55;border-radius:8px;background:#edf4f0;color:#245844;pointer-events:none}.revenue-native-date>input[type="date"]{position:absolute;inset:0;width:100%!important;height:100%!important;min-width:0;min-height:0;margin:0;padding:0!important;border:0!important;opacity:.001;cursor:pointer;-webkit-appearance:auto!important;appearance:auto!important}.revenue-native-date.disabled{opacity:.58}.revenue-native-date.disabled>input{cursor:not-allowed}
-      .revenue-entry-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save";gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-area:title;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-date{grid-area:date}.revenue-entry-form .entry-date .revenue-native-date{width:100%;max-width:none}.revenue-entry-form .entry-amount:not(.entry-expense){grid-area:income}.revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}.revenue-entry-form .entry-expense{grid-area:expense}.revenue-entry-form .entry-expense-note{grid-area:expense-note}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form input.auto-note-empty{color:#9aa39f;font-weight:650}.revenue-entry-form button{grid-area:save;min-height:42px;white-space:nowrap;width:100%}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
+            .revenue-entry-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save";gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-area:title;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-date{grid-area:date}.revenue-entry-form .entry-date .vera-date-input{width:100%;max-width:none}.revenue-entry-form .entry-amount:not(.entry-expense){grid-area:income}.revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}.revenue-entry-form .entry-expense{grid-area:expense}.revenue-entry-form .entry-expense-note{grid-area:expense-note}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form input.auto-note-empty{color:#9aa39f;font-weight:650}.revenue-entry-form button{grid-area:save;min-height:42px;white-space:nowrap;width:100%}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
       .revenue-tip-editor{display:grid;grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900;min-width:0}.revenue-tip-editor input{font-size:16px;font-weight:800;min-width:0}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:42px;padding:0 8px;border:1px solid #dfd5b9;border-radius:10px;background:#fff;color:#75694d;font-size:11px;font-weight:900;white-space:nowrap}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px;white-space:nowrap}
       .revenue-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.revenue-card{padding:18px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{width:100%;min-width:0;margin-top:14px;font-size:30px;line-height:1.05;font-weight:900;color:#173329;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}.revenue-card.net{background:#f7faf8;border-color:#d2e0d8}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
       .revenue-formula{margin-top:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:13px;background:#f3f8f5;color:#244a3a;font-size:13px;font-weight:800;text-align:center}.revenue-meta{margin-top:10px;padding:12px 14px;border:1px solid #e4eae6;border-radius:13px;background:#fafcfb;color:#68736f;font-size:12px}
@@ -597,13 +582,13 @@ export default function RevenuePage({ user }) {
       <div className="revenue-source-toggle" role="group" aria-label="Nguồn dữ liệu doanh thu">
         <button type="button" className={revenueSource === 'manual' ? 'active' : ''} onClick={() => setRevenueSource('manual')}>Manual · Thủ công</button>
         <button type="button" className={revenueSource === 'auto' ? 'active' : ''} onClick={() => setRevenueSource('auto')}>Auto · Tự động hệ thống</button>
-        <button type="button" className={revenueSource === 'manual_tip_auto' ? 'active' : ''} onClick={() => setRevenueSource('manual_tip_auto')}>Dịch Manual · Tip Auto</button>
+        <button type="button" className={revenueSource === 'manual_tip_auto' ? 'active' : ''} onClick={() => setRevenueSource('manual_tip_auto')}>Dịch vụ Manual · Tip Auto</button>
       </div>
     </section>}
 
     {canCreateEntry && !autoMode && <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
       <h2>NHẬP DOANH THU - CHI PHÍ</h2>
-      <label className="entry-date">Ngày giao dịch<RevenueDateInput ariaLabel="Ngày giao dịch" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
+      <label className="entry-date">Ngày giao dịch<VeraDateInput aria-label="Ngày giao dịch" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
       <label className="entry-note">Ghi chú Thu<input className={!entryIncomeAmount && !incomeNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/></label>
       <label className="entry-amount entry-expense">Số tiền Chi<VeraMoneyInput value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
@@ -616,13 +601,13 @@ export default function RevenuePage({ user }) {
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Báo cáo tới ngày</span><strong>{busy && !data ? '…' : (data?.current_date_label || '—')}</strong></div></article>
     </section>}
 
-    {canViewAdminRevenueSummary && canEditTip && !systemTipMode && <section className="revenue-tip-editor">
+    {canViewAdminRevenueSummary && canEditTip && !autoMode && <section className="revenue-tip-editor">
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
-      <label>Ngày bắt đầu<RevenueDateInput ariaLabel="Ngày bắt đầu Tiền TIP" value={tipStart} max={tipEnd || data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipStart(event.target.value)} /></label>
-      <label>Đến ngày<RevenueDateInput ariaLabel="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
+      <label>Ngày bắt đầu<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} max={tipEnd || data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipStart(event.target.value)} /></label>
+      <label>Đến ngày<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
       <div className="revenue-tip-current"><button type="button" className="secondary-button" disabled={savingTip || busy || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày này · {data?.current_date_label || '—'}</button></div>
-      <button type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>
-      <small>Tiền TIP tự động cộng từ TIP của nhân viên trong báo cáo hóa đơn Live Tour theo đúng khoảng Ngày bắt đầu → Đến ngày. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định bằng Ngày hiện tại. Đổi một trong hai ngày sẽ tự lọc và tính lại số TIP ngay.</small>
+      {!hybridMode && <button type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>}
+      <small>{hybridMode ? 'Dịch vụ Manual · Tip Auto: ' : ''}Tiền TIP tự động cộng từ TIP của nhân viên trong báo cáo hóa đơn Live Tour theo đúng khoảng Ngày bắt đầu → Đến ngày. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định bằng Ngày hiện tại. Đổi một trong hai ngày sẽ tự lọc và tính lại số TIP ngay.</small>
     </section>}
 
     {canViewAdminRevenueSummary && <div className="admin-revenue-summary">
