@@ -26,6 +26,7 @@ function RevenueBars({
   onCapture,
   copying = false,
   hideValuesInSnapshot = false,
+  captureLabel = 'Chụp biểu đồ',
 }) {
   const sortedItems = useMemo(() => sortChartItems(items, valueKey, sortMode), [items, sortMode, valueKey])
   const max = Math.max(1, ...sortedItems.map(item => Math.max(0, Number(item[valueKey] || 0))))
@@ -43,7 +44,7 @@ function RevenueBars({
             <option value="name_desc">Tên Z → A</option>
           </select>
         </label>
-        {onCapture && <button type="button" className="secondary-button" disabled={copying} onClick={onCapture}><ClipboardCopy size={15}/>{copying ? 'Đang chụp…' : 'Chụp biểu đồ'}</button>}
+        {onCapture && <button type="button" className="secondary-button" disabled={copying} onClick={onCapture}><ClipboardCopy size={15}/>{copying ? 'Đang chụp…' : captureLabel}</button>}
       </div>
     </div>
     <div className="employee-revenue-chart-list">
@@ -60,9 +61,11 @@ function RevenueBars({
 export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
   const items = useMemo(() => summarizeEmployeeRevenue(rows), [rows])
   const serviceChartRef = useRef(null)
+  const tipChartRef = useRef(null)
   const [serviceSort, setServiceSort] = useState('value_desc')
   const [tipSort, setTipSort] = useState('value_desc')
   const [copying, setCopying] = useState(false)
+  const [copyingTip, setCopyingTip] = useState(false)
   const [notice, setNotice] = useState('')
 
   const copyServiceChart = async () => {
@@ -76,6 +79,20 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
       setNotice(error?.message || 'Không chụp được Biểu đồ dịch vụ theo nhân viên.')
     } finally {
       setCopying(false)
+    }
+  }
+
+  const copyTipChart = async () => {
+    if (copyingTip || !tipChartRef.current) return
+    setCopyingTip(true)
+    setNotice('')
+    try {
+      await copyPngToClipboard(() => elementToPngBlob(tipChartRef.current))
+      setNotice('Đã chụp toàn bộ Biểu đồ tiền TIP và lưu ảnh PNG vào clipboard. Cột số tiền đã được loại khỏi ảnh.')
+    } catch (error) {
+      setNotice(error?.message || 'Không chụp được Biểu đồ tiền TIP theo nhân viên.')
+    } finally {
+      setCopyingTip(false)
     }
   }
 
@@ -106,10 +123,10 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
     </div>
     <div className="employee-revenue-table-wrap">
       <table className="employee-revenue-table">
-        <thead><tr><th>Nhân viên</th><th>Số dòng dịch vụ</th><th>Tiền dịch vụ</th><th>Tiền TIP</th><th>Tổng</th></tr></thead>
+        <thead><tr><th>Nhân viên</th><th>Số dòng theo tour</th><th>Số dòng theo yêu cầu</th><th>Số dòng dịch vụ</th><th>Tiền dịch vụ</th><th>Tiền TIP</th><th>Tổng</th></tr></thead>
         <tbody>
-          {items.map(item => <tr key={item.employee}><td>{item.employee}</td><td>{item.rows}</td><td>{money(item.service)}</td><td>{money(item.tip)}</td><td>{money(item.total)}</td></tr>)}
-          {!items.length && <tr><td colSpan="5">Không có dữ liệu phù hợp bộ lọc.</td></tr>}
+          {items.map(item => <tr key={item.employee}><td>{item.employee}</td><td>{item.tourRows}</td><td>{item.requestRows}</td><td>{item.rows}</td><td>{money(item.service)}</td><td>{money(item.tip)}</td><td>{money(item.total)}</td></tr>)}
+          {!items.length && <tr><td colSpan="7">Không có dữ liệu phù hợp bộ lọc.</td></tr>}
         </tbody>
       </table>
     </div>
@@ -120,6 +137,11 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
       sortMode={tipSort}
       onSortModeChange={setTipSort}
       valueFormatter={money}
+      captureRef={tipChartRef}
+      onCapture={copyTipChart}
+      copying={copyingTip}
+      hideValuesInSnapshot
+      captureLabel="Chụp toàn bảng"
     />
   </section>
 }

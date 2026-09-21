@@ -3625,6 +3625,44 @@ def _export_rows(
         headers = ["Ngày", "Ngày giờ hóa đơn", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Khách hàng", "Điện thoại", "Tổng tiền", "Tip", "Thanh toán", "Người tạo"]
         rows = [[item.get(key) for key in fields] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
         return "Bao_cao", headers, rows
+    if kind == "performance":
+        headers = ["Nhân viên", "Dịch vụ", "Phòng", "Booking", "TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC", "Hoàn thành", "Quy định (phút)", "Thực tế (phút)", "Kết quả", "TG Xông Hơi (phút)"]
+        rows = []
+        for item in _service_performance_rows(state):
+            if not _event_in_export_bounds(item, bounds):
+                continue
+            timing = str(bounds.get("performance_timing") or "all")
+            delta = item.get("completion_delta_minutes")
+            if timing == "early" and not (delta is not None and float(delta) < 0):
+                continue
+            if timing == "late" and not (delta is not None and float(delta) > 0):
+                continue
+            if timing == "ontime" and not (delta is not None and float(delta) == 0):
+                continue
+            requested = _norm(item.get("request")) == "yc"
+            standard_start = "" if requested else item.get("board_started_at") or item.get("started_at")
+            requested_start = item.get("board_yc_started_at") or item.get("started_at") if requested else ""
+            rows.append([item.get("employee_name"), item.get("service"), item.get("room"), item.get("booked_at"), standard_start, requested_start, item.get("completed_at"), item.get("duration"), item.get("actual_duration_minutes"), item.get("completion_result"), item.get("steam_minutes")])
+        return "Thoi_gian_dich_vu", headers, rows
+    if kind == "employee":
+        grouped: dict[str, dict[str, Any]] = {}
+        for item in _report_rows_with_combo_kind(state):
+            if not _event_in_export_bounds(item, bounds):
+                continue
+            employee = str(item.get("employee_name") or "").strip() or "Chưa xác định"
+            current = grouped.setdefault(employee, {"tour": 0, "request": 0, "rows": 0, "service": 0, "tip": 0, "total": 0})
+            if _norm(item.get("request")) == "yc":
+                current["request"] += 1
+            else:
+                current["tour"] += 1
+            current["rows"] += 1
+            total, tip = float(item.get("total") or 0), float(item.get("tip") or 0)
+            current["service"] += total - tip
+            current["tip"] += tip
+            current["total"] += total
+        headers = ["Nhân viên", "Số dòng theo tour", "Số dòng theo yêu cầu", "Số dòng dịch vụ", "Tiền dịch vụ", "Tiền TIP", "Tổng"]
+        rows = [[employee, values["tour"], values["request"], values["rows"], values["service"], values["tip"], values["total"]] for employee, values in sorted(grouped.items(), key=lambda pair: (-pair[1]["service"], -pair[1]["tip"], pair[0]))]
+        return "Theo_nhan_vien", headers, rows
     if kind == "customers":
         headers = ["Khách hàng", "Điện thoại", "Combo", "Tổng vé", "Đã dùng", "Còn lại", "Ngày mua"]
         rows = [[customer.get("name"), customer.get("phone"), purchase.get("combo_name"), purchase.get("total"), purchase.get("used"), purchase.get("remaining"), purchase.get("lk") or purchase.get("purchased_at")] for customer in state["customers"] if not customer.get("deleted_at") for purchase in ([p for p in customer.get("combo_purchases", []) if not p.get("deleted_at")] or [{}]) if _event_in_export_bounds(purchase, bounds)]
@@ -4655,7 +4693,7 @@ def install_live_tour_routes(
         time_from: str = Query(default=""), time_to: str = Query(default=""),
         customer_id: str = Query(default=""),
         employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
-        report_kind: str = "",
+        report_kind: str = "", performance_timing: str = "",
         columns: list[str] | None = Query(default=None),
         employee_ids: list[str] | None = Query(default=None),
         ident: identity_type = Depends(current_identity),
@@ -4664,7 +4702,7 @@ def install_live_tour_routes(
         export_kind = kind.strip().lower()
         if export_kind not in {
             "board", "custom", "revenue", "tip", "reports", "customers", "pending", "history",
-            "breaks", "customer_detail",
+            "breaks", "customer_detail", "performance", "employee",
         }:
             raise HTTPException(400, "Loại báo cáo Live Tour không hợp lệ.")
         customer_id_value = str(customer_id or "").strip()
@@ -4674,7 +4712,7 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
-        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending"})
+        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending", "performance", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):

@@ -45,6 +45,28 @@ def test_service_performance_reports_early_late_and_steam_time_from_preserved_ti
     assert rows[0]["steam_minutes"] == 20
 
 
+def test_performance_export_uses_exactly_one_start_column_and_employee_export_counts_tour_request():
+    requested = employee("e1", "An")
+    requested.update({
+        "service": "Body 90", "room": "1.1", "request": "YC", "duration": 90,
+        "started_at": NOW.isoformat(), "board_started_at": (NOW - timedelta(minutes=1)).isoformat(),
+        "board_yc_started_at": NOW.isoformat(), "completed_at": (NOW + timedelta(minutes=90)).isoformat(),
+    })
+    state = state_with(requested)
+    state["reports"] = [
+        {"employee_name": "An", "request": "", "total": 120_000, "tip": 20_000, "effective_at": NOW.isoformat()},
+        {"employee_name": "An", "request": "YC", "total": 230_000, "tip": 30_000, "effective_at": NOW.isoformat()},
+    ]
+    _, headers, rows = live._export_rows(state, "performance", NOW)
+    normal_index, requested_index = headers.index("TG bắt đầu thực hiện"), headers.index("TG bắt đầu thực hiện YC")
+    assert rows[0][normal_index] == ""
+    assert rows[0][requested_index] == NOW.isoformat()
+
+    _, employee_headers, employee_rows = live._export_rows(state, "employee", NOW)
+    assert employee_headers[1:4] == ["Số dòng theo tour", "Số dòng theo yêu cầu", "Số dòng dịch vụ"]
+    assert employee_rows == [["An", 1, 1, 2, 300_000.0, 50_000.0, 350_000.0]]
+
+
 def test_my_tips_route_allows_employee_roles_only_and_returns_no_invoice_money(monkeypatch):
     username = "leader.an"
     state = state_with()

@@ -40,6 +40,8 @@ EXPORT_FEATURES = {
     "revenue": ("live_tour_reports_view",),
     "tip": ("live_tour_reports_view",),
     "reports": ("live_tour_reports_view",),
+    "performance": ("live_tour_reports_view",),
+    "employee": ("live_tour_reports_view",),
     "customers": ("live_tour_customers_view",),
     "pending": ("live_tour_pending_view", "live_tour_invoice_view"),
     "history": ("live_tour_history_view",),

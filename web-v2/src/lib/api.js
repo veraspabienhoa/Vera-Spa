@@ -155,7 +155,7 @@ function liveTourExportParams(kind, query = {}) {
   for (const key of ['columns', 'employee_ids']) {
     if (Array.isArray(query[key])) query[key].forEach((value) => params.append(key, String(value)))
   }
-  for (const key of ['bill_no', 'employee', 'customer', 'service', 'report_kind', 'date_from', 'date_to', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
+  for (const key of ['bill_no', 'employee', 'customer', 'service', 'report_kind', 'performance_timing', 'date_from', 'date_to', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
     const value = String(query?.[key] ?? '').trim()
     if (value) params.set(key, value)
   }

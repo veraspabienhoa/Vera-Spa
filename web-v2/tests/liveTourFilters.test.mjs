@@ -35,11 +35,11 @@ test('reports default to yesterday in Vietnam time', () => {
 test('employee report totals aggregate service money and TIP by filtered report rows', () => {
   assert.deepEqual(summarizeEmployeeRevenue([
     { employee_name: 'An An', total: 550000, tip: 50000 },
-    { employee_name: 'An An', total: 220000, tip: 20000 },
+    { employee_name: 'An An', request: 'YC', total: 220000, tip: 20000 },
     { employee_name: 'Mỹ Duyên', total: 300000, tip: 0 },
   ]), [
-    { employee: 'An An', service: 700000, tip: 70000, total: 770000, rows: 2 },
-    { employee: 'Mỹ Duyên', service: 300000, tip: 0, total: 300000, rows: 1 },
+    { employee: 'An An', service: 700000, tip: 70000, total: 770000, tourRows: 1, requestRows: 1, rows: 2 },
+    { employee: 'Mỹ Duyên', service: 300000, tip: 0, total: 300000, tourRows: 1, requestRows: 0, rows: 1 },
   ])
 })
 test('suggestions include all invoice entries and report rows without duplicates', () => {
