@@ -1771,6 +1771,15 @@ def _change_pending(state, action, payload, actor, now):
         raise HTTPException(400, "Nhập lý do sửa/xóa hóa đơn (tối đa 1000 ký tự).")
     working = deepcopy(state)
     pending = _find_by_id(working["pending"], payload.get("pending_id"), "hóa đơn chờ thanh toán")
+    raw_business_date = pending.get("business_date")
+    try:
+        pending_date = date.fromisoformat(str(raw_business_date)[:10])
+    except (TypeError, ValueError):
+        parsed_at = _parse_datetime(pending.get("effective_at") or pending.get("created_at"))
+        pending_date = parsed_at.astimezone(VN_TZ).date() if parsed_at else None
+    today = now.astimezone(VN_TZ).date()
+    if pending_date not in {today, today - timedelta(days=1)}:
+        raise HTTPException(403, "Chỉ được sửa hoặc xóa hóa đơn chờ của hôm nay và hôm qua.")
     before = deepcopy(pending)
     if action == "pending_delete":
         working["pending"].remove(pending)
@@ -2252,7 +2261,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
     elif action in {"paid_invoice_update", "paid_invoice_delete"}:
         result = change_paid_invoice(state, action, payload, actor, now, money=_bounded_money,
                                      payment_values=_payment_values, canonical_method=_canonical_payment_method,
-                                     available_combo=_available_combo, iso=_iso, max_money=MAX_MONEY, invoice_date=_invoice_date)
+                                     available_combo=_available_combo, iso=_iso, max_money=MAX_MONEY,
+                                     invoice_date=_invoice_date, allowed_delete_date=now.astimezone(VN_TZ).date())
     elif action in {"checkout", "quick_checkout"}:
         result["invoice"] = _checkout(
             state, payload, actor, now, action == "quick_checkout", financial_timing,
