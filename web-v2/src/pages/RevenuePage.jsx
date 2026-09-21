@@ -498,14 +498,14 @@ export default function RevenuePage({ user }) {
     if (enteredBy === null) return
     try {
       const result = await updateRevenueEntry(row.id, { transaction_type: type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate, note, entered_by_name: enteredBy })
-      setNotice(result.message || 'Đã sửa bản ghi doanh thu. Ngày/Giờ nhập lịch sử được giữ nguyên.'); setRevision(value => value + 1)
+      setNotice(result.message || 'Đã sửa bản ghi doanh thu. Ngày/Giờ nhập lịch sử được giữ nguyên.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
     } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
   }
 
   const removeManualRevenue = async (row) => {
     if (!window.confirm(`Xóa bản ghi ${row.type} ${money(row.amount)} ngày ${row.date_label}? Timestamp lịch sử gốc vẫn được giữ trong audit.`)) return
     try {
-      const result = await deleteRevenueEntry(row.id); setNotice(result.message || 'Đã xóa bản ghi.'); setRevision(value => value + 1)
+      const result = await deleteRevenueEntry(row.id); setNotice(result.message || 'Đã xóa bản ghi.'); setRevision(value => value + 1); setReconcileRevision(value => value + 1)
     } catch (err) { setError(err.message || 'Không xóa được bản ghi doanh thu.') }
   }
 
