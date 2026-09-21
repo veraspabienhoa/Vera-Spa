@@ -3196,6 +3196,7 @@ def _state_response(
     can_customers_delete: bool = False,
     can_customer_combo_edit: bool = False,
     can_customer_combo_delete: bool = False,
+    can_combo_import: bool = False,
     can_reports_edit: bool = False,
     can_reports_delete: bool = False,
 
@@ -3356,6 +3357,7 @@ def _state_response(
             "customers_delete": can_customers_delete,
             "customer_combo_edit": can_customer_combo_edit,
             "customer_combo_delete": can_customer_combo_delete,
+            "combo_import": can_combo_import,
             "reports_edit": can_reports_edit,
             "reports_delete": can_reports_delete,
 
