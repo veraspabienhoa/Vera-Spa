@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 
 TABLE = "vera_revenue_entry"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 VN_TZ = timezone(timedelta(hours=7))
 WORKBOOK_EXPORT_URL = "https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
 HEADERS = [
@@ -41,6 +41,19 @@ def ensure_schema(conn) -> None:
     """))
     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_transaction_date ON {TABLE}(transaction_date DESC, id DESC)"))
     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_entered_at ON {TABLE}(entered_at DESC, id DESC)"))
+    conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS is_deleted boolean NOT NULL DEFAULT false"))
+    conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS edit_revision integer NOT NULL DEFAULT 0"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vera_revenue_entry_audit (
+            id bigserial PRIMARY KEY,
+            revenue_entry_id bigint NOT NULL,
+            action text NOT NULL CHECK(action IN ('update','delete')),
+            before_payload jsonb NOT NULL,
+            after_payload jsonb,
+            actor text NOT NULL DEFAULT '',
+            audited_at timestamptz NOT NULL DEFAULT NOW()
+        )
+    """))
     conn.execute(text("""
         INSERT INTO vera_schema_version(component,version,updated_at)
         VALUES('revenue_ledger',:version,NOW())
@@ -217,6 +230,7 @@ def values_from_db(conn) -> list[list[Any]]:
         SELECT transaction_type, amount, transaction_date, note, entered_at,
                entered_by, source_email, source_month
         FROM {TABLE}
+        WHERE is_deleted=false
         ORDER BY COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date), id
     """)).mappings().all()
     values: list[list[Any]] = [list(HEADERS)]
