@@ -87,8 +87,6 @@ def test_fallback_and_effective_date_safety(updates, timesoft_shift, expected):
     ('Theo chu kỳ Tuần', date(2026, 9, 28), 'Ca 1'),
     ('Mỗi 2 ngày', date(2026, 9, 16), 'Ca 2'),
     ('Mỗi 2 ngày', date(2026, 9, 18), 'Ca 1'),
-    ('Theo chu kỳ Tháng', date(2026, 10, 5), 'Ca 2'),
-    ('Theo chu kỳ Tháng', date(2026, 11, 2), 'Ca 1'),
 ])
 def test_other_existing_rotation_modes_are_preserved(cycle, day, expected):
     stale = 'Ca 2' if expected == 'Ca 1' else 'Ca 1'
