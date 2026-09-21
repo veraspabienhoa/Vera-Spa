@@ -311,8 +311,8 @@ def list_entries(conn, *, start_date: date | None = None, end_date: date | None 
                entered_by, entered_by_name, source_name, edit_revision
         FROM {TABLE}
         WHERE is_deleted=false
-          AND (:start_date IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) >= :start_date)
-          AND (:end_date IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) <= :end_date)
+          AND (CAST(:start_date AS date) IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) >= CAST(:start_date AS date))
+          AND (CAST(:end_date AS date) IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) <= CAST(:end_date AS date))
         ORDER BY COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) DESC, id DESC
     """), {"start_date": start_date, "end_date": end_date}).mappings().all()
     output = []
