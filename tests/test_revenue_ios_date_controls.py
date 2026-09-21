@@ -10,7 +10,8 @@ def test_revenue_three_date_controls_use_full_native_hit_area_and_visible_ddmmyy
     assert 'position:absolute;inset:0;width:100%!important;height:100%!important' in page
     assert "opacity:.001" in page
     assert "setEntryDate(result.current_date)" in page
-    assert "const defaultTipStartDate = result.start_date || result.period_tip_start" in page
+    assert "const defaultTipStartDate = defaultRevenueTipStart(result.current_date)" in page
+    assert "const defaultTipStartDate = result.start_date" not in page
     # Keep the previously approved revenue form width/grid unchanged.
     assert 'grid-template-columns:minmax(0,1fr) minmax(0,2fr)' in page
     assert 'grid-template-areas:"title title" "date ."' in page
