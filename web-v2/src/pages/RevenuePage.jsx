@@ -254,35 +254,27 @@ export default function RevenuePage({ user }) {
       setTipRows(null)
       try {
         const result = await loadRevenue({ source: revenueSource, timeRange: summaryRange, start: summaryStart, end: summaryEnd, signal: controller.signal })
-        let liveTourRows = null
-        try {
-          const liveTour = await loadLiveTourReports(controller.signal)
-          liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
-        } catch (tipError) {
-          if (tipError?.name === 'AbortError') throw tipError
+        if (result.source === 'auto') {
           if (!controller.signal.aborted) {
-            setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
+            setData(result); setTipRows(null); setTip(Number(result.tip_revenue || 0)); setTipStart(''); setTipEnd('')
           }
-        }
-        if (!controller.signal.aborted) {
-          const defaultTipStartDate = defaultRevenueTipStart(result.current_date)
-            || result.period_tip_start || result.start_date || ''
-          const defaultTipEndDate = result.current_date || result.period_tip_end || ''
-          const autoTip = Array.isArray(liveTourRows)
-            ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)
-            : Number(result.period_tip || 0)
-          const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
-          setData({
-            ...result,
-            period_tip: autoTip,
-            balance,
-            period_tip_start: defaultTipStartDate,
-            period_tip_end: defaultTipEndDate,
-          })
-          setTipRows(liveTourRows)
-          setTip(autoTip)
-          setTipStart(defaultTipStartDate)
-          setTipEnd(defaultTipEndDate)
+        } else {
+          let liveTourRows = null
+          try {
+            const liveTour = await loadLiveTourReports(controller.signal)
+            liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
+          } catch (tipError) {
+            if (tipError?.name === 'AbortError') throw tipError
+            if (!controller.signal.aborted) setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
+          }
+          if (!controller.signal.aborted) {
+            const defaultTipStartDate = defaultRevenueTipStart(result.current_date) || result.period_tip_start || result.start_date || ''
+            const defaultTipEndDate = result.current_date || result.period_tip_end || ''
+            const autoTip = Array.isArray(liveTourRows) ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate) : Number(result.period_tip || 0)
+            const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
+            setData({ ...result, period_tip: autoTip, balance, period_tip_start: defaultTipStartDate, period_tip_end: defaultTipEndDate })
+            setTipRows(liveTourRows); setTip(autoTip); setTipStart(defaultTipStartDate); setTipEnd(defaultTipEndDate)
+          }
         }
       } catch (err) {
         if (!controller.signal.aborted && err?.name !== 'AbortError') setError(err.message || 'Không tải được Doanh thu.')
