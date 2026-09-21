@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from vera_web_v2_training import EvaluationInput, GRADE_SCORE, TrainingSessionInput
+from vera_web_v2_training import EvaluationInput, GRADE_SCORE, ROLE_TARGETS, TrainingSessionInput
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,13 +51,28 @@ def test_training_feature_is_wired_through_backend_permissions_and_frontend():
     assert "trainingBootstrap" in client and "saveTrainingEvaluation" in client
 
 
-def test_training_backend_enforces_scope_and_evaluator_ownership():
+def test_training_backend_enforces_role_pairs_and_evaluator_ownership():
     source = (ROOT / "vera_web_v2_training.py").read_text(encoding="utf-8")
+    assert ROLE_TARGETS == {"leader": {"nhanvien"}, "quanly": {"letan", "locker", "tapvu"}}
     assert '"training_students": training_students' in source
     assert 'lower(ts.trainer_username)=lower(:viewer)' in source
     assert 'assignment["evaluator_username"]' in source
-    assert "if not _scope_allowed(conn, ident, str(assignment" in source
+    assert "_require_assessment_pair(" in source
+    assert "'đang làm việc', 'active'" in source
     assert 'assignment["cycle_status"] != "active"' in source
+
+
+def test_training_history_filters_and_notifications_are_wired():
+    backend = (ROOT / "vera_web_v2_training.py").read_text(encoding="utf-8")
+    page = (ROOT / "web-v2/src/pages/TrainingPage.jsx").read_text(encoding="utf-8")
+    popup = (ROOT / "web-v2/src/components/PopupNotifications.jsx").read_text(encoding="utf-8")
+    for value in ["vera_training_notification_recipient", "vera_training_notification", '"history": history']:
+        assert value in backend
+    for endpoint in ["notification-recipients", "notifications/{notification_id}/detail"]:
+        assert endpoint in backend
+    assert "Chỉ hiển thị Leader" in page and "Chỉ hiển thị Quản lý" in page
+    assert "Lịch sử Đào tạo & Đánh giá" in page
+    assert "trainingNotificationDetail" in popup
 
 
 def test_training_ui_uses_unrestricted_student_directory_for_daily_log():
