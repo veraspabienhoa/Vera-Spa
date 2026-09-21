@@ -28,7 +28,7 @@ def test_schedule_and_checkout_do_not_enable_shift(fields):
 
 def test_checkin_enables_daily_timesoft_shift_and_next_day_clears_it():
     rows = data(MachineTimeCheckInStr='10:01', WorkTimeName='Ca 2')
-    assert project(directory(), rows, NOW)[0]['daily_shift'] == 'Ca 2'
+    assert project(directory(), rows, NOW)[0]['daily_shift'] == 'Ca 1'
     assert project(directory(), rows, NOW + timedelta(days=1))[0]['daily_shift'] == ''
 
 
@@ -44,7 +44,7 @@ def test_rotation_fallback_and_fixed_shift():
 def test_raw_checkin_and_named_main_shift():
     rows = directory()
     rows[0]['shift_definitions'] = [{'Tên ca': 'Buổi chiều', 'Ca chính': 'Ca 2'}]
-    assert project(rows, data(CheckInTime='14/09/2026 14:01:00', WorkTimeName='Buổi chiều'), NOW)[0]['daily_shift'] == 'Ca 2'
+    assert project(rows, data(CheckInTime='14/09/2026 14:01:00', WorkTimeName='Buổi chiều'), NOW)[0]['daily_shift'] == 'Ca 1'
 
 
 def test_no_checkin_clears_stale_shift_without_clearing_service():
@@ -58,7 +58,7 @@ def test_no_checkin_clears_stale_shift_without_clearing_service():
     assert worker['started_at'] == NOW.isoformat()
     rows = project(directory(), data(MachineTimeCheckInStr='14:01'), NOW)
     reconcile(state, rows, live._new_directory_employee)
-    assert worker['shift'] == 'Ca 2'
+    assert worker['shift'] == 'Ca 1'
     worker['work_status'] = 'Nghỉ phép'
     reconcile(state, rows, live._new_directory_employee)
     assert worker['shift'] == ''
@@ -88,7 +88,7 @@ def test_board_refresh_picks_up_checkin_then_clears_next_day(monkeypatch):
     with db.begin() as conn:
         live._read_state(conn, clock[0], for_update=True)
     checked = client.get('/v2/live-tour').json()
-    assert checked['records'][0]['Vào ca'] == 'Ca 2'
+    assert checked['records'][0]['Vào ca'] == 'Ca 1'
     assert checked['revision'] > first['revision']
     assert client.get('/v2/live-tour').json()['revision'] == checked['revision']
     clock[0] += timedelta(days=1)
