@@ -8,7 +8,7 @@ import os
 import re
 from typing import Any, Callable, Literal
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 import requests
 from sqlalchemy import text
@@ -69,6 +69,8 @@ class RevenueEntryUpdate(BaseModel):
     transaction_date: date | None = None
     note: str = Field(default="", max_length=1000)
     entered_by_name: str | None = Field(default=None, max_length=200)
+    entered_date: date | None = None
+    entered_time: str | None = Field(default=None, max_length=8)
 
 
 def _range_bounds(time_range: str, start: date | None = None, end: date | None = None) -> tuple[date | None, date | None]:
@@ -590,21 +592,49 @@ def install_revenue_leave_list_routes(
         if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được sửa hoặc xóa báo cáo doanh thu.")
 
+    @app.post("/v2/revenue/import.xlsx")
+    async def import_revenue_excel(request: Request, mode: Literal["append", "replace"] = Query("append"), ident=Depends(current_identity)):
+        _require_revenue_admin(ident)
+        content = await request.body()
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            try:
+                result = revenue_store.import_ledger_xlsx(
+                    conn, content, mode=mode,
+                    actor=str(getattr(ident, "employee_username", "") or ""),
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+        action = "thay thế toàn bộ dữ liệu" if mode == "replace" else "cập nhật dữ liệu mới"
+        return {"ok": True, **result, "message": f"Đã {action}: thêm {result['inserted']} dòng, bỏ qua {result['skipped']} dòng trùng."}
+
     @app.patch("/v2/revenue/entries/{entry_id}")
     def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, ident=Depends(current_identity)):
         _require_revenue_admin(ident)
+        entered_at = None
+        if body.entered_date is not None or body.entered_time is not None:
+            if body.entered_date is None or not body.entered_time:
+                raise HTTPException(400, "Phải nhập đủ Ngày nhập và Giờ nhập.")
+            try:
+                entered_clock = datetime.strptime(body.entered_time, "%H:%M:%S").time()
+            except ValueError:
+                try:
+                    entered_clock = datetime.strptime(body.entered_time, "%H:%M").time()
+                except ValueError:
+                    raise HTTPException(400, "Giờ nhập phải đúng HH:MM hoặc HH:MM:SS.")
+            entered_at = datetime.combine(body.entered_date, entered_clock).replace(tzinfo=VN_TZ)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             try:
                 result = revenue_store.update_entry(
                     conn, entry_id=entry_id, transaction_type=body.transaction_type,
                     amount=body.amount, transaction_date=body.transaction_date, note=body.note,
-                    entered_by_name=body.entered_by_name,
+                    entered_by_name=body.entered_by_name, entered_at=entered_at,
                     actor=str(getattr(ident, "employee_username", "") or ""),
                 )
             except KeyError:
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
-        return {"ok": True, **result, "message": "Đã sửa bản ghi; ngày/giờ nhập gốc được giữ nguyên."}
+        return {"ok": True, **result, "message": "Đã sửa toàn bộ dữ liệu bản ghi theo quyền Admin."}
 
     @app.delete("/v2/revenue/entries/{entry_id}")
     def delete_revenue_entry(entry_id: int, ident=Depends(current_identity)):
