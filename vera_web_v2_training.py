@@ -1,16 +1,23 @@
 """Training sessions, periodic employee evaluations, and analytics for Web V2."""
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
+from io import BytesIO
+from pathlib import Path
 from typing import Any, Callable, Literal
 from uuid import uuid4
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, HTTPException, Query, Response
+from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 from sqlalchemy import text
 
 
 GRADE_SCORE = {"E": 1, "D": 2, "C": 3, "B": 4, "A": 5, "A+": 6}
+RATING_LABELS = {"excellent": "Xuất sắc", "good": "Tốt", "average": "Trung bình", "weak": "Yếu"}
 
 
 class TrainingSessionInput(BaseModel):
@@ -159,8 +166,16 @@ def _schema(conn) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_training_session_employee_date
             ON vera_training_session(employee_username, training_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_training_session_trainer_date
+            ON vera_training_session(trainer_username, training_date DESC);
         CREATE INDEX IF NOT EXISTS idx_training_assignment_evaluator
             ON vera_evaluation_assignment(evaluator_username, status);
+        CREATE INDEX IF NOT EXISTS idx_training_assignment_employee_status
+            ON vera_evaluation_assignment(employee_username, status);
+        CREATE INDEX IF NOT EXISTS idx_evaluation_cycle_date_range
+            ON vera_evaluation_cycle(start_date, end_date);
+        CREATE INDEX IF NOT EXISTS idx_employee_evaluation_submitted
+            ON vera_employee_evaluation(submitted_at DESC);
         CREATE INDEX IF NOT EXISTS idx_training_notification_inbox
             ON vera_training_notification(recipient_username, is_read, created_at DESC);
     """))
@@ -191,7 +206,7 @@ def _require_admin(ident) -> None:
 
 def _employee(conn, username: str) -> dict[str, Any] | None:
     row = conn.execute(text("""
-        SELECT e.username, COALESCE(NULLIF(e.full_name,''),e.username) full_name,
+        SELECT e.username, e.username full_name,
                lower(COALESCE(e.role,'')) role,
                COALESCE(e.payload->>'Trạng thái làm việc',e.payload->>'employment_status','Đang làm việc') employment_status
         FROM employees e WHERE lower(e.username)=lower(:username)
@@ -243,6 +258,121 @@ def _dispatch_completed_notifications(conn, *, reference_type: str, reference_id
     return len(recipients)
 
 
+def _dispatch_cycle_notifications(conn, *, cycle_id: str, cycle_name: str) -> int:
+    rows = conn.execute(text("""
+        SELECT employee_username,evaluator_username FROM vera_evaluation_assignment
+        WHERE cycle_id=:cycle
+    """), {"cycle": cycle_id}).mappings().all()
+    recipients = {str(item["employee_username"]) for item in rows}
+    recipients.update(str(item["evaluator_username"]) for item in rows)
+    for recipient in recipients:
+        conn.execute(text("""
+            INSERT INTO vera_training_notification(
+                id,recipient_username,reference_type,reference_id,title,body)
+            VALUES (:id,:recipient,'evaluation_cycle',:cycle,'Đợt đánh giá mới',:body)
+            ON CONFLICT (recipient_username,reference_type,reference_id) DO NOTHING
+        """), {"id": str(uuid4()), "recipient": recipient, "cycle": cycle_id,
+                 "body": f"Bạn được phân công trong đợt: {cycle_name}"})
+    return len(recipients)
+
+
+def _rating_from_grade(grade: str) -> str:
+    if grade in {"A+", "A"}:
+        return "excellent"
+    if grade == "B":
+        return "good"
+    if grade == "C":
+        return "average"
+    return "weak"
+
+
+def _rating_from_scores(item: dict[str, Any]) -> str:
+    values = [float(item.get(key) or 0) for key in (
+        "craft_score", "communication_score", "attitude_score", "discipline_score",
+        "appearance_score", "hygiene_score", "attendance_score",
+    )]
+    average = sum(values) / len(values) if values else 0
+    return "excellent" if average >= 4.5 else "good" if average >= 3.5 else "average" if average >= 2.5 else "weak"
+
+
+def _font_path(bold: bool = False) -> Path | None:
+    names = ["DejaVuSans-Bold.ttf"] if bold else ["DejaVuSans.ttf"]
+    roots = [Path("/usr/share/fonts/truetype/dejavu"), Path("/usr/share/fonts/truetype/freefont")]
+    for root in roots:
+        for name in names:
+            path = root / name
+            if path.exists():
+                return path
+    return None
+
+
+def _export_evaluation_png(item: dict[str, Any]) -> bytes:
+    image = Image.new("RGB", (1400, 1050), "white")
+    draw = ImageDraw.Draw(image)
+    regular_path, bold_path = _font_path(), _font_path(True)
+    regular = ImageFont.truetype(str(regular_path), 30) if regular_path else ImageFont.load_default()
+    small = ImageFont.truetype(str(regular_path), 25) if regular_path else ImageFont.load_default()
+    bold = ImageFont.truetype(str(bold_path or regular_path), 42) if (bold_path or regular_path) else ImageFont.load_default()
+    draw.rectangle((0, 0, 1400, 145), fill="#173d2f")
+    draw.text((60, 42), "VERA SPA · KẾT QUẢ ĐÁNH GIÁ", font=bold, fill="white")
+    draw.text((60, 180), f"Nhân viên: {item['employee_username']}", font=regular, fill="#173d2f")
+    draw.text((60, 225), f"Người đánh giá: {item['evaluator_username']}", font=regular, fill="#173d2f")
+    draw.text((60, 270), f"Đợt: {item['cycle_name']} · {item['end_date']}", font=regular, fill="#173d2f")
+    scores = [
+        ("Tay nghề", item["craft_score"]), ("Giao tiếp", item["communication_score"]),
+        ("Thái độ", item["attitude_score"]), ("Kỷ luật", item["discipline_score"]),
+        ("Ngoại hình", item["appearance_score"]), ("Vệ sinh", item["hygiene_score"]),
+        ("Chuyên cần", item["attendance_score"]),
+    ]
+    y = 355
+    for label, score in scores:
+        draw.text((70, y), label, font=small, fill="#29483d")
+        draw.rounded_rectangle((330, y, 1180, y + 30), radius=14, fill="#e5eee9")
+        draw.rounded_rectangle((330, y, 330 + int(850 * float(score) / 5), y + 30), radius=14, fill="#c99b32")
+        draw.text((1210, y - 3), f"{score}/5", font=small, fill="#173d2f")
+        y += 65
+    draw.text((70, 835), f"Xếp loại: {RATING_LABELS[_rating_from_scores(item)]}", font=regular, fill="#173d2f")
+    notes = str(item.get("comments") or item.get("improvements") or item.get("strengths") or "Không có nhận xét.")
+    draw.text((70, 895), "Nhận xét: " + notes[:100], font=small, fill="#3f5149")
+    output = BytesIO(); image.save(output, format="PNG", optimize=True); return output.getvalue()
+
+
+def _export_evaluation_pdf(item: dict[str, Any]) -> bytes:
+    output = BytesIO()
+    regular_path, bold_path = _font_path(), _font_path(True)
+    regular_name, bold_name = "Helvetica", "Helvetica-Bold"
+    if regular_path:
+        regular_name = "VeraEvaluation"
+        if regular_name not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(regular_name, str(regular_path)))
+    if bold_path:
+        bold_name = "VeraEvaluationBold"
+        if bold_name not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(bold_name, str(bold_path)))
+    pdf = canvas.Canvas(output, pagesize=(595, 842))
+    pdf.setFillColor("#173d2f"); pdf.rect(0, 760, 595, 82, fill=1, stroke=0)
+    pdf.setFillColor("white"); pdf.setFont(bold_name, 18); pdf.drawString(38, 795, "VERA SPA · KẾT QUẢ ĐÁNH GIÁ")
+    pdf.setFillColor("#173d2f"); pdf.setFont(regular_name, 11)
+    pdf.drawString(38, 730, f"Nhân viên: {item['employee_username']}")
+    pdf.drawString(38, 710, f"Người đánh giá: {item['evaluator_username']}")
+    pdf.drawString(38, 690, f"Đợt: {item['cycle_name']} · {item['end_date']}")
+    scores = [("Tay nghề", item["craft_score"]), ("Giao tiếp", item["communication_score"]),
+              ("Thái độ", item["attitude_score"]), ("Kỷ luật", item["discipline_score"]),
+              ("Ngoại hình", item["appearance_score"]), ("Vệ sinh", item["hygiene_score"]),
+              ("Chuyên cần", item["attendance_score"])]
+    y = 640
+    for label, score in scores:
+        pdf.setFont(regular_name, 10); pdf.setFillColor("#29483d"); pdf.drawString(42, y, label)
+        pdf.setFillColor("#e5eee9"); pdf.roundRect(150, y - 2, 330, 12, 6, fill=1, stroke=0)
+        pdf.setFillColor("#c99b32"); pdf.roundRect(150, y - 2, 330 * float(score) / 5, 12, 6, fill=1, stroke=0)
+        pdf.setFillColor("#173d2f"); pdf.drawString(495, y, f"{score}/5"); y -= 45
+    pdf.setFont(bold_name, 12); pdf.drawString(42, 300, f"Xếp loại: {RATING_LABELS[_rating_from_scores(item)]}")
+    pdf.setFont(regular_name, 10)
+    notes = str(item.get("comments") or item.get("improvements") or item.get("strengths") or "Không có nhận xét.")
+    pdf.drawString(42, 272, "Nhận xét: " + notes[:95])
+    pdf.showPage(); pdf.save(); return output.getvalue()
+
+
 def _audit(conn, entity_type: str, entity_id: str, action: str, actor: str, detail: dict | None = None) -> None:
     conn.execute(text("""
         INSERT INTO vera_training_audit(entity_type, entity_id, action, actor_username, detail)
@@ -267,7 +397,7 @@ def install_training_routes(
                 if allowed_roles else " AND FALSE"
             )
             employees = _rows(conn.execute(text("""
-                SELECT e.username, COALESCE(NULLIF(e.full_name,''), e.username) AS full_name,
+                SELECT e.username, e.username AS full_name,
                        lower(COALESCE(e.role,'')) AS role
                 FROM employees e
                 WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'
@@ -278,8 +408,8 @@ def install_training_routes(
                 WHERE lower(ts.trainer_username)=lower(:viewer)
             """
             sessions = _rows(conn.execute(text("""
-                SELECT ts.*, COALESCE(NULLIF(e.full_name,''), ts.employee_username) employee_name,
-                       COALESCE(NULLIF(t.full_name,''), ts.trainer_username) trainer_name,
+                SELECT ts.*, ts.employee_username employee_name,
+                       ts.trainer_username trainer_name,
                        lower(COALESCE(t.role,'')) evaluator_role
                 FROM vera_training_session ts
                 LEFT JOIN employees e ON lower(e.username)=lower(ts.employee_username)
@@ -291,8 +421,8 @@ def install_training_routes(
                 {"viewer": ident.employee_username}))
             assignments = _rows(conn.execute(text("""
                 SELECT a.*, c.name cycle_name, c.start_date, c.end_date, c.status cycle_status,
-                       COALESCE(NULLIF(e.full_name,''), a.employee_username) employee_name,
-                       COALESCE(NULLIF(v.full_name,''), a.evaluator_username) evaluator_name,
+                       a.employee_username employee_name,
+                       a.evaluator_username evaluator_name,
                        lower(COALESCE(v.role,'')) evaluator_role,
                        ev.craft_score, ev.communication_score, ev.attitude_score,
                        ev.discipline_score, ev.appearance_score, ev.hygiene_score,
@@ -314,21 +444,21 @@ def install_training_routes(
                 GROUP BY c.id ORDER BY c.created_at DESC
             """))) if _is_admin(ident) else []
             scopes = _rows(conn.execute(text("""
-                SELECT s.*, COALESCE(NULLIF(t.full_name,''),s.trainer_username) trainer_name,
-                       COALESCE(NULLIF(e.full_name,''),s.employee_username) employee_name
+                SELECT s.*, s.trainer_username trainer_name,
+                       s.employee_username employee_name
                 FROM vera_training_scope s
                 LEFT JOIN employees t ON lower(t.username)=lower(s.trainer_username)
                 LEFT JOIN employees e ON lower(e.username)=lower(s.employee_username)
-                WHERE s.active=TRUE ORDER BY trainer_name, employee_name
+                WHERE s.active=TRUE ORDER BY lower(s.trainer_username), lower(s.employee_username)
             """))) if _is_admin(ident) else []
             people = _rows(conn.execute(text("""
-                SELECT username, COALESCE(NULLIF(full_name,''),username) full_name, lower(COALESCE(role,'')) role
+                SELECT username, username full_name, lower(COALESCE(role,'')) role
                 FROM employees e WHERE COALESCE(payload->>'__deleted','false') <> 'true'
                   AND """ + ACTIVE_EMPLOYEE_SQL + """
                 ORDER BY lower(COALESCE(NULLIF(full_name,''),username))
             """))) if _is_admin(ident) else employees
             evaluators = _rows(conn.execute(text("""
-                SELECT e.username,COALESCE(NULLIF(e.full_name,''),e.username) full_name,lower(COALESCE(e.role,'')) role
+                SELECT e.username,e.username full_name,lower(COALESCE(e.role,'')) role
                 FROM employees e WHERE lower(COALESCE(e.role,'')) IN ('leader','quanly')
                   AND COALESCE(e.payload->>'__deleted','false') <> 'true' AND """ + ACTIVE_EMPLOYEE_SQL + """
                 ORDER BY role,lower(COALESCE(NULLIF(e.full_name,''),e.username))
@@ -340,7 +470,7 @@ def install_training_routes(
                 ORDER BY created_at DESC LIMIT 50
             """), {"viewer": ident.employee_username}))
             notification_recipients = _rows(conn.execute(text("""
-                SELECT r.username,COALESCE(NULLIF(e.full_name,''),r.username) full_name
+                SELECT r.username,r.username full_name
                 FROM vera_training_notification_recipient r
                 LEFT JOIN employees e ON lower(e.username)=lower(r.username)
                 WHERE r.active=TRUE ORDER BY full_name
@@ -455,8 +585,9 @@ def install_training_routes(
             missing = [employees[item]["full_name"] for item in employees if item not in assigned_employees]
             if missing:
                 raise HTTPException(400, "Chưa chọn đúng Leader/Quản lý cho: " + ", ".join(missing))
+            notified = _dispatch_cycle_notifications(conn, cycle_id=cycle_id, cycle_name=body.name)
             _audit(conn, "evaluation_cycle", cycle_id, "create", ident.employee_username)
-            return {"ok": True, "id": cycle_id}
+            return {"ok": True, "id": cycle_id, "notifications_created": notified}
 
     @app.post("/v2/training/cycles/{cycle_id}/{action}")
     def change_cycle_status(cycle_id: str, action: Literal["activate", "close"], ident: identity_type = Depends(current_identity)):
@@ -519,6 +650,12 @@ def install_training_routes(
     def employee_training_report(
         employee_username: str,
         evaluator_role: Literal["all", "leader", "quanly"] = Query(default="all"),
+        q: str = Query(default="", max_length=200),
+        date_from: date | None = Query(default=None),
+        date_to: date | None = Query(default=None),
+        rating: Literal["all", "excellent", "good", "average", "weak"] = Query(default="all"),
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=50, ge=1, le=100),
         ident: identity_type = Depends(current_identity),
     ):
         with engine_instance().begin() as conn:
@@ -528,7 +665,7 @@ def install_training_routes(
             role_clause = "" if evaluator_role == "all" else " AND lower(COALESCE(t.role,''))=:evaluator_role"
             progress = _rows(conn.execute(text("""
                 SELECT ts.id,ts.training_date,ts.start_time,ts.end_time,ts.topic,ts.skill_grade,
-                       ts.learning_attitude,ts.trainer_username,COALESCE(NULLIF(t.full_name,''),ts.trainer_username) evaluator_name,
+                       ts.learning_attitude,ts.trainer_username,ts.trainer_username evaluator_name,
                        lower(COALESCE(t.role,'')) evaluator_role,ts.strengths,ts.improvements,ts.notes,ts.status,ts.created_at
                 FROM vera_training_session ts
                 LEFT JOIN employees t ON lower(t.username)=lower(ts.trainer_username)
@@ -553,7 +690,7 @@ def install_training_routes(
             """), {"employee": employee_username, "evaluator_role": evaluator_role}))
             evaluation_details = _rows(conn.execute(text("""
                 SELECT a.id,c.name cycle_name,c.end_date,a.evaluator_username,
-                       COALESCE(NULLIF(t.full_name,''),a.evaluator_username) evaluator_name,
+                       a.evaluator_username evaluator_name,
                        lower(COALESCE(t.role,'')) evaluator_role,a.status,ev.submitted_at,
                        ev.craft_score,ev.communication_score,ev.attitude_score,ev.discipline_score,
                        ev.appearance_score,ev.hygiene_score,ev.attendance_score,
@@ -568,18 +705,67 @@ def install_training_routes(
             history = [
                 {"type": "daily", "date": item["training_date"], "id": item["id"],
                  "title": item["topic"] or "Đào tạo hằng ngày", "evaluator_name": item["evaluator_name"],
-                 "evaluator_role": item["evaluator_role"], "detail": item}
+                 "evaluator_role": item["evaluator_role"], "rating": _rating_from_grade(item["skill_grade"]),
+                 "rating_label": RATING_LABELS[_rating_from_grade(item["skill_grade"])], "detail": item}
                 for item in progress
             ] + [
                 {"type": "comprehensive", "date": item["end_date"], "id": item["id"],
                  "title": item["cycle_name"], "evaluator_name": item["evaluator_name"],
-                 "evaluator_role": item["evaluator_role"], "detail": item}
+                 "evaluator_role": item["evaluator_role"], "rating": _rating_from_scores(item),
+                 "rating_label": RATING_LABELS[_rating_from_scores(item)], "detail": item}
                 for item in evaluation_details
             ]
+            keyword = q.strip().casefold()
+            if keyword:
+                history = [item for item in history if keyword in " ".join(str(value or "") for value in (
+                    item["title"], item["evaluator_name"], item["detail"].get("notes"),
+                    item["detail"].get("comments"), item["detail"].get("strengths"),
+                    item["detail"].get("improvements"),
+                )).casefold()]
+            if date_from:
+                history = [item for item in history if item.get("date") and item["date"] >= date_from]
+            if date_to:
+                history = [item for item in history if item.get("date") and item["date"] <= date_to]
+            if rating != "all":
+                history = [item for item in history if item["rating"] == rating]
             history.sort(key=lambda item: str(item.get("date") or ""), reverse=True)
+            history_total = len(history)
+            history = history[(page - 1) * page_size:page * page_size]
             return {"employee_username": employee_username, "progress": progress,
                     "evaluations": evaluations, "evaluation_details": evaluation_details,
-                    "history": history, "latest_radar": evaluations[-1] if evaluations else None}
+                    "history": history, "history_total": history_total, "page": page,
+                    "page_size": page_size, "latest_radar": evaluations[-1] if evaluations else None}
+
+    @app.get("/v2/training/evaluations/{assignment_id}/export.{file_format}")
+    def export_evaluation(
+        assignment_id: str,
+        file_format: Literal["pdf", "png"],
+        ident: identity_type = Depends(current_identity),
+    ):
+        with engine_instance().begin() as conn:
+            _schema(conn); require_feature(conn, ident, "training_view")
+            row = conn.execute(text("""
+                SELECT a.id,a.employee_username,a.evaluator_username,c.name cycle_name,c.end_date,
+                       ev.craft_score,ev.communication_score,ev.attitude_score,ev.discipline_score,
+                       ev.appearance_score,ev.hygiene_score,ev.attendance_score,
+                       ev.strengths,ev.improvements,ev.comments
+                FROM vera_evaluation_assignment a
+                JOIN vera_evaluation_cycle c ON c.id=a.cycle_id
+                JOIN vera_employee_evaluation ev ON ev.assignment_id=a.id
+                WHERE a.id=:id AND a.status='submitted'
+            """), {"id": assignment_id}).mappings().first()
+            if not row:
+                raise HTTPException(404, "Không tìm thấy kết quả đánh giá đã hoàn thành.")
+            item = dict(row)
+            if not _is_admin(ident) and str(item["employee_username"]).lower() != ident.employee_username.lower():
+                _require_assessment_pair(conn, ident.employee_username, str(item["employee_username"]))
+        filename = f"VERA_DanhGia_{item['employee_username']}_{assignment_id[:8]}.{file_format}"
+        if file_format == "png":
+            content, media_type = _export_evaluation_png(item), "image/png"
+        else:
+            content, media_type = _export_evaluation_pdf(item), "application/pdf"
+        return Response(content=content, media_type=media_type,
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     @app.put("/v2/training/notification-recipients")
     def save_notification_recipients(body: NotificationRecipientsInput, ident: identity_type = Depends(current_identity)):
@@ -633,18 +819,29 @@ def install_training_routes(
             if not notice: raise HTTPException(404, "Không tìm thấy thông báo.")
             if notice["reference_type"] == "daily_training":
                 detail = conn.execute(text("""
-                    SELECT ts.*,COALESCE(NULLIF(e.full_name,''),ts.employee_username) employee_name,
-                           COALESCE(NULLIF(t.full_name,''),ts.trainer_username) evaluator_name
+                    SELECT ts.*,ts.employee_username employee_name,
+                           ts.trainer_username evaluator_name
                     FROM vera_training_session ts
                     LEFT JOIN employees e ON lower(e.username)=lower(ts.employee_username)
                     LEFT JOIN employees t ON lower(t.username)=lower(ts.trainer_username)
                     WHERE ts.id=:id
                 """), {"id": notice["reference_id"]}).mappings().first()
+            elif notice["reference_type"] == "evaluation_cycle":
+                detail = conn.execute(text("""
+                    SELECT c.id,c.name cycle_name,c.start_date,c.end_date,c.status,
+                           COUNT(DISTINCT a.employee_username)::int employee_count,
+                           COUNT(DISTINCT a.evaluator_username)::int evaluator_count,
+                           STRING_AGG(DISTINCT a.employee_username, ', ' ORDER BY a.employee_username) employee_name,
+                           STRING_AGG(DISTINCT a.evaluator_username, ', ' ORDER BY a.evaluator_username) evaluator_name
+                    FROM vera_evaluation_cycle c
+                    JOIN vera_evaluation_assignment a ON a.cycle_id=c.id
+                    WHERE c.id=:id GROUP BY c.id
+                """), {"id": notice["reference_id"]}).mappings().first()
             else:
                 detail = conn.execute(text("""
                     SELECT a.*,c.name cycle_name,c.end_date,
-                           COALESCE(NULLIF(e.full_name,''),a.employee_username) employee_name,
-                           COALESCE(NULLIF(t.full_name,''),a.evaluator_username) evaluator_name,ev.*
+                           a.employee_username employee_name,
+                           a.evaluator_username evaluator_name,ev.*
                     FROM vera_evaluation_assignment a JOIN vera_evaluation_cycle c ON c.id=a.cycle_id
                     JOIN vera_employee_evaluation ev ON ev.assignment_id=a.id
                     LEFT JOIN employees e ON lower(e.username)=lower(a.employee_username)

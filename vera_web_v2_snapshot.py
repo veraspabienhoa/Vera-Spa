@@ -284,6 +284,10 @@ def _records(conn, start: date, end: date) -> list[dict[str, Any]]:
                 continue
             seen.add(key)
             output.append(item)
+    # Persist idempotent attendance events and automatically close an approved
+    # annual/long leave on the employee's first real TimeSoft check-in.
+    from vera_web_v2_hr_enhancements import sync_attendance_records
+    sync_attendance_records(conn, output)
     return sorted(output, key=lambda item: (datetime.strptime(item["date"], "%d/%m/%Y"), item["employee_name"].casefold()))
 
 

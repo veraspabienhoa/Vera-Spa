@@ -42,6 +42,7 @@ from vera_web_v2_leave_sync_queue import install_leave_sync_queue
 from vera_web_v2_leave_violation_split import install_leave_violation_split_routes
 from vera_web_v2_letan_leave_guard import install_letan_leave_guard
 from vera_web_v2_long_leave_admin import install_long_leave_admin_routes
+from vera_web_v2_hr_enhancements import install_hr_enhancement_routes
 from vera_web_v2_live_tour import install_live_tour_routes
 from vera_web_v2_operations_v41 import install_operations_v41
 from vera_web_v2_notification_settings import install_notification_settings_routes
@@ -201,6 +202,7 @@ install_leave_day_stats_routes(_shared.app, engine_instance=_api._engine_instanc
 install_leave_violation_split_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, policy_rows=_api._policy_rows, field=_api._field, reason_item=_api._reason_item, role_tokens=_api._role_tokens, day_allowed=_api._day_allowed, norm=_api._norm)
 install_leave_preview_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity)
 install_long_leave_admin_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, validate_and_prepare=_shared._validate_and_prepare, leave_create_type=_api.LeaveCreate, sheet_row_for_record=_api._sheet_row_for_record, insert_record=_api._insert_record)
+install_hr_enhancement_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_admin_audit_archive_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
 install_leave_sync_queue(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, validate_and_prepare=_shared._validate_and_prepare, identity_type=_api.Identity, api_module=_api)
 install_letan_leave_guard(_shared.app, api_module=_api, vn_tz=_api.VN_TZ)

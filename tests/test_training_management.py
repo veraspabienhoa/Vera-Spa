@@ -4,7 +4,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from vera_web_v2_training import EvaluationInput, GRADE_SCORE, ROLE_TARGETS, TrainingSessionInput
+from vera_web_v2_training import (
+    EvaluationInput, GRADE_SCORE, ROLE_TARGETS, TrainingSessionInput,
+    _rating_from_grade, _rating_from_scores,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +76,24 @@ def test_training_history_filters_and_notifications_are_wired():
     assert "Chỉ hiển thị Leader" in page and "Chỉ hiển thị Quản lý" in page
     assert "Lịch sử Đào tạo & Đánh giá" in page
     assert "trainingNotificationDetail" in popup
+
+
+def test_training_ratings_exports_and_cycle_notifications_are_wired():
+    backend = (ROOT / "vera_web_v2_training.py").read_text(encoding="utf-8")
+    page = (ROOT / "web-v2/src/pages/TrainingPage.jsx").read_text(encoding="utf-8")
+    assert _rating_from_grade("A+") == "excellent"
+    assert _rating_from_grade("B") == "good"
+    assert _rating_from_grade("C") == "average"
+    assert _rating_from_grade("E") == "weak"
+    scores = {key: 5 for key in (
+        "craft_score", "communication_score", "attitude_score", "discipline_score",
+        "appearance_score", "hygiene_score", "attendance_score",
+    )}
+    assert _rating_from_scores(scores) == "excellent"
+    assert "_dispatch_cycle_notifications" in backend
+    assert 'export.{file_format}' in backend
+    assert "UsernameAutocomplete" in page
+    assert "Xuất sắc" in page and "Ảnh PNG" in page
 
 
 def test_training_ui_uses_unrestricted_student_directory_for_daily_log():

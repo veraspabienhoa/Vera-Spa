@@ -340,7 +340,26 @@ export const veraApi = {
   createEvaluationCycle: (body) => request('/v2/training/cycles', { method: 'POST', body: JSON.stringify(body) }),
   changeEvaluationCycle: (id, action) => request(`/v2/training/cycles/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
   saveTrainingEvaluation: (id, body) => request(`/v2/training/evaluations/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
-  trainingReport: (employee, evaluatorRole = 'all') => request(`/v2/training/reports/${encodeURIComponent(employee)}?evaluator_role=${encodeURIComponent(evaluatorRole)}`),
+  trainingReport: (employee, filters = {}) => {
+    const params = new URLSearchParams()
+    params.set('evaluator_role', filters.evaluator_role || 'all')
+    if (filters.q?.trim()) params.set('q', filters.q.trim())
+    if (filters.date_from) params.set('date_from', filters.date_from)
+    if (filters.date_to) params.set('date_to', filters.date_to)
+    if (filters.rating && filters.rating !== 'all') params.set('rating', filters.rating)
+    params.set('page', String(filters.page || 1))
+    params.set('page_size', String(filters.page_size || 50))
+    return request(`/v2/training/reports/${encodeURIComponent(employee)}?${params}`)
+  },
+  exportTrainingEvaluation: (assignmentId, format) => download(
+    `/v2/training/evaluations/${encodeURIComponent(assignmentId)}/export.${format}`,
+    `VERA_DanhGia_${assignmentId}.${format}`,
+  ),
+  leaveOverlap: (start, end, department = '', threshold = 0.2) => {
+    const params = new URLSearchParams({ start, end, threshold: String(threshold) })
+    if (department) params.set('department_id', department)
+    return request(`/v2/hr/leaves/overlap?${params}`)
+  },
   saveTrainingNotificationRecipients: (usernames) => request('/v2/training/notification-recipients', { method: 'PUT', body: JSON.stringify({ usernames }) }),
   trainingNotifications: () => request('/v2/training/notifications'),
   readTrainingNotification: (id) => request(`/v2/training/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }),
