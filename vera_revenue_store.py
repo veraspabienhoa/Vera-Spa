@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 
 TABLE = "vera_revenue_entry"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 VN_TZ = timezone(timedelta(hours=7))
 WORKBOOK_EXPORT_URL = "https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
 HEADERS = [
@@ -41,6 +41,19 @@ def ensure_schema(conn) -> None:
     """))
     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_transaction_date ON {TABLE}(transaction_date DESC, id DESC)"))
     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_entered_at ON {TABLE}(entered_at DESC, id DESC)"))
+    conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS is_deleted boolean NOT NULL DEFAULT false"))
+    conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS edit_revision integer NOT NULL DEFAULT 0"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS vera_revenue_entry_audit (
+            id bigserial PRIMARY KEY,
+            revenue_entry_id bigint NOT NULL,
+            action text NOT NULL CHECK(action IN ('update','delete')),
+            before_payload jsonb NOT NULL,
+            after_payload jsonb,
+            actor text NOT NULL DEFAULT '',
+            audited_at timestamptz NOT NULL DEFAULT NOW()
+        )
+    """))
     conn.execute(text("""
         INSERT INTO vera_schema_version(component,version,updated_at)
         VALUES('revenue_ledger',:version,NOW())
@@ -217,6 +230,7 @@ def values_from_db(conn) -> list[list[Any]]:
         SELECT transaction_type, amount, transaction_date, note, entered_at,
                entered_by, source_email, source_month
         FROM {TABLE}
+        WHERE is_deleted=false
         ORDER BY COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date), id
     """)).mappings().all()
     values: list[list[Any]] = [list(HEADERS)]
@@ -288,3 +302,69 @@ def find_duplicate_web_entries(conn, *, entries: list[tuple[str, float, str]]) -
             "entered_at": entered_at.astimezone(VN_TZ).isoformat() if entered_at else None,
         })
     return duplicates
+
+
+def list_entries(conn, *, start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
+    ensure_schema(conn)
+    rows = conn.execute(text(f"""
+        SELECT id, transaction_type, amount, transaction_date, note, entered_at,
+               entered_by, entered_by_name, source_name, edit_revision
+        FROM {TABLE}
+        WHERE is_deleted=false
+          AND (:start_date IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) >= :start_date)
+          AND (:end_date IS NULL OR COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) <= :end_date)
+        ORDER BY COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) DESC, id DESC
+    """), {"start_date": start_date, "end_date": end_date}).mappings().all()
+    output = []
+    for row in rows:
+        entered = row["entered_at"]
+        if entered and entered.tzinfo is None:
+            entered = entered.replace(tzinfo=timezone.utc)
+        tx_date = row["transaction_date"] or (entered.astimezone(VN_TZ).date() if entered else None)
+        output.append({
+            "id": int(row["id"]), "type": str(row["transaction_type"]), "amount": float(row["amount"]),
+            "date": tx_date.isoformat() if tx_date else "", "date_label": tx_date.strftime("%d-%m-%Y") if tx_date else "",
+            "note": str(row["note"] or ""), "entered_at": entered.astimezone(VN_TZ).isoformat() if entered else "",
+            "entered_by": str(row["entered_by_name"] or row["entered_by"] or ""),
+            "source": str(row["source_name"] or ""), "revision": int(row["edit_revision"] or 0),
+        })
+    return output
+
+
+def _audit_payload(row) -> dict[str, Any]:
+    return {key: (value.isoformat() if hasattr(value, "isoformat") else value) for key, value in dict(row).items()}
+
+
+def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, transaction_date: date | None, note: str, actor: str) -> dict[str, Any]:
+    import json
+    ensure_schema(conn)
+    before = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id AND is_deleted=false FOR UPDATE"), {"id": entry_id}).mappings().first()
+    if not before:
+        raise KeyError(entry_id)
+    conn.execute(text(f"""
+        UPDATE {TABLE}
+        SET transaction_type=:transaction_type, amount=:amount, transaction_date=:transaction_date,
+            note=:note, edit_revision=edit_revision+1
+        WHERE id=:id AND is_deleted=false
+    """), {"id": entry_id, "transaction_type": transaction_type, "amount": round(float(amount), 2),
+             "transaction_date": transaction_date, "note": str(note or "").strip()})
+    after = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id"), {"id": entry_id}).mappings().one()
+    conn.execute(text("""
+        INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
+        VALUES(:id,'update',CAST(:before AS jsonb),CAST(:after AS jsonb),:actor)
+    """), {"id": entry_id, "before": json.dumps(_audit_payload(before), ensure_ascii=False, default=str),
+             "after": json.dumps(_audit_payload(after), ensure_ascii=False, default=str), "actor": actor})
+    return {"id": entry_id, "revision": int(after["edit_revision"])}
+
+
+def soft_delete_entry(conn, *, entry_id: int, actor: str) -> None:
+    import json
+    ensure_schema(conn)
+    before = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id AND is_deleted=false FOR UPDATE"), {"id": entry_id}).mappings().first()
+    if not before:
+        raise KeyError(entry_id)
+    conn.execute(text(f"UPDATE {TABLE} SET is_deleted=true, edit_revision=edit_revision+1 WHERE id=:id"), {"id": entry_id})
+    conn.execute(text("""
+        INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
+        VALUES(:id,'delete',CAST(:before AS jsonb),NULL,:actor)
+    """), {"id": entry_id, "before": json.dumps(_audit_payload(before), ensure_ascii=False, default=str), "actor": actor})

@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 import json
 import os
 import re
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -20,7 +20,7 @@ import vera_web_v2_permissions as permissions
 import vera_revenue_store as revenue_store
 
 
-RELEASE = "revenue-server-ledger-2026-09-19-v1"
+RELEASE = "revenue-source-toggle-admin-crud-2026-09-21-v1"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_ENTRY_FEATURE = "revenue_entry_create"
@@ -61,6 +61,72 @@ class RevenueEntryCreate(BaseModel):
     expense_amount: float = Field(default=0, ge=0, le=10_000_000_000_000)
     expense_note: str = Field(default="", max_length=1000)
     confirm_duplicate: bool = False
+
+
+class RevenueEntryUpdate(BaseModel):
+    transaction_type: Literal["Thu", "Chi"]
+    amount: float = Field(ge=0, le=10_000_000_000_000)
+    transaction_date: date | None = None
+    note: str = Field(default="", max_length=1000)
+
+
+def _range_bounds(time_range: str, start: date | None = None, end: date | None = None) -> tuple[date | None, date | None]:
+    today = datetime.now(VN_TZ).date()
+    token = str(time_range or "all").strip().lower()
+    if token == "all":
+        return None, None
+    if token == "yesterday":
+        day = today - timedelta(days=1); return day, day
+    if token == "today":
+        return today, today
+    if token == "this_week":
+        first = today - timedelta(days=today.weekday()); return first, first + timedelta(days=6)
+    if token == "last_week":
+        last = today - timedelta(days=today.weekday() + 1); return last - timedelta(days=6), last
+    if token == "this_month":
+        first = today.replace(day=1)
+        next_month = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return first, next_month - timedelta(days=1)
+    if token == "last_month":
+        end_day = today.replace(day=1) - timedelta(days=1); return end_day.replace(day=1), end_day
+    if token == "custom":
+        if not start or not end or start > end:
+            raise HTTPException(400, "Khoảng ngày tùy chỉnh không hợp lệ.")
+        return start, end
+    raise HTTPException(400, "Bộ lọc thời gian không hợp lệ.")
+
+
+def _auto_revenue(conn, start_date: date | None, end_date: date | None) -> dict[str, Any]:
+    rows = conn.execute(text("""
+        SELECT resource_id, payload
+        FROM vera_live_tour_report
+        WHERE deleted_at IS NULL
+        ORDER BY ordinal, resource_id
+    """)).mappings().all()
+    service = tip = 0.0
+    records = []
+    for row in rows:
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        raw_date = payload.get("business_date") or payload.get("effective_at") or payload.get("created_at") or payload.get("recorded_at")
+        parsed = _parse_date(raw_date)
+        if start_date and (not parsed or parsed < start_date):
+            continue
+        if end_date and (not parsed or parsed > end_date):
+            continue
+        service_amount = _money(payload.get("subtotal", payload.get("service_money", 0)))
+        tip_amount = _money(payload.get("tip", 0))
+        service += service_amount
+        tip += tip_amount
+        records.append({
+            "id": str(row["resource_id"]), "date": parsed.isoformat() if parsed else "",
+            "date_label": parsed.strftime("%d-%m-%Y") if parsed else "",
+            "service_revenue": round(service_amount, 2), "tip_revenue": round(tip_amount, 2),
+            "total_revenue": round(service_amount + tip_amount, 2),
+            "employee": str(payload.get("employee_name") or ""), "service": str(payload.get("service") or ""),
+            "bill_no": str(payload.get("bill_no") or ""),
+        })
+    return {"service_revenue": round(service, 2), "tip_revenue": round(tip, 2),
+            "total_revenue": round(service + tip, 2), "transaction_count": len(records), "records": records}
 
 
 def _find_route(app, path: str, method: str):
@@ -417,31 +483,53 @@ def install_revenue_leave_list_routes(
         }
 
     @app.get("/v2/revenue/summary")
-    def revenue_summary(ident=Depends(current_identity)):
+    def revenue_summary(
+        source: Literal["manual", "auto"] = Query("manual"),
+        time_range: str = Query("all"),
+        start: date | None = Query(None),
+        end: date | None = Query(None),
+        ident=Depends(current_identity),
+    ):
+        start_date, end_date = _range_bounds(time_range, start, end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             revenue_store.ensure_schema(conn)
-            values = revenue_store.values_from_db(conn)
-            period_start = _revenue_period_start(norm, values)
-            summary = _revenue_summary(values, norm, period_start=period_start)
-            tip_setting = _period_tip(conn, summary.get("start_date", ""), summary.get("current_date", ""))
+            is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
             can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
+            if source == "auto":
+                auto = _auto_revenue(conn, start_date, end_date)
+                today = datetime.now(VN_TZ).date()
+                return {
+                    "ok": True, "release": RELEASE, "source": "auto", "source_label": "Tự động từ hệ thống",
+                    "storage": "postgresql", "time_range": time_range,
+                    "start_date": start_date.isoformat() if start_date else "",
+                    "end_date": end_date.isoformat() if end_date else "",
+                    "current_date": today.isoformat(), "current_date_label": today.strftime("%d-%m-%Y"),
+                    "can_edit_tip": False, "can_create_entry": False, "can_admin_crud": False,
+                    "total_income": auto["total_revenue"], "total_expense": 0,
+                    "net_income": auto["total_revenue"], "balance": auto["total_revenue"],
+                    "period_tip": auto["tip_revenue"], **auto,
+                }
+            entries = revenue_store.list_entries(conn, start_date=start_date, end_date=end_date)
+            total_income = round(sum(row["amount"] for row in entries if row["type"] == "Thu"), 2)
+            total_expense = round(sum(row["amount"] for row in entries if row["type"] == "Chi"), 2)
+            tip_setting = _period_tip(conn, start_date.isoformat() if start_date else "", end_date.isoformat() if end_date else "")
         tip = float(tip_setting["amount"])
-        summary["period_tip"] = round(tip, 2)
-        summary["period_tip_start"] = tip_setting["period_start"]
-        summary["period_tip_end"] = tip_setting["period_end"]
-        summary["net_income"] = round(summary["total_income"] - summary["total_expense"], 2)
-        summary["balance"] = round(summary["net_income"] - tip, 2)
         return {
-            "ok": True,
-            "release": RELEASE,
-            "source": "Server VERA SPA",
-            "storage": "postgresql",
-            "transaction_table": revenue_store.TABLE,
-            "can_edit_tip": can_edit_tip,
-            "can_create_entry": can_create_entry,
-            **summary,
+            "ok": True, "release": RELEASE, "source": "manual", "source_label": "Thủ công",
+            "storage": "postgresql", "transaction_table": revenue_store.TABLE, "time_range": time_range,
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+            "current_date": datetime.now(VN_TZ).date().isoformat(),
+            "current_date_label": datetime.now(VN_TZ).strftime("%d-%m-%Y"),
+            "can_edit_tip": can_edit_tip, "can_create_entry": can_create_entry,
+            "can_admin_crud": is_admin, "entries": entries, "transaction_count": len(entries),
+            "total_income": total_income, "total_expense": total_expense,
+            "period_tip": round(tip, 2), "period_tip_start": tip_setting["period_start"],
+            "period_tip_end": tip_setting["period_end"],
+            "net_income": round(total_income - total_expense, 2),
+            "balance": round(total_income - total_expense - tip, 2),
         }
 
     @app.post("/v2/revenue/entry")
@@ -489,6 +577,39 @@ def install_revenue_leave_list_routes(
             "saved_rows": saved_rows,
             "message": "Đã lưu cùng thời điểm " + " và ".join(parts) + " trên server.",
         }
+
+    def _require_revenue_admin(ident):
+        if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được sửa hoặc xóa báo cáo doanh thu.")
+
+    @app.patch("/v2/revenue/entries/{entry_id}")
+    def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, ident=Depends(current_identity)):
+        _require_revenue_admin(ident)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            try:
+                result = revenue_store.update_entry(
+                    conn, entry_id=entry_id, transaction_type=body.transaction_type,
+                    amount=body.amount, transaction_date=body.transaction_date, note=body.note,
+                    actor=str(getattr(ident, "employee_username", "") or ""),
+                )
+            except KeyError:
+                raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
+        return {"ok": True, **result, "message": "Đã sửa bản ghi; ngày/giờ nhập gốc được giữ nguyên."}
+
+    @app.delete("/v2/revenue/entries/{entry_id}")
+    def delete_revenue_entry(entry_id: int, ident=Depends(current_identity)):
+        _require_revenue_admin(ident)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            try:
+                revenue_store.soft_delete_entry(
+                    conn, entry_id=entry_id,
+                    actor=str(getattr(ident, "employee_username", "") or ""),
+                )
+            except KeyError:
+                raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
+        return {"ok": True, "message": "Đã xóa bản ghi khỏi báo cáo; timestamp lịch sử gốc không thay đổi."}
 
     @app.put("/v2/revenue/tip")
     def save_revenue_tip(body: RevenueTipUpdate, ident=Depends(current_identity)):

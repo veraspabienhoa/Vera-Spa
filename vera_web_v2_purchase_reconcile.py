@@ -41,7 +41,7 @@ PURCHASE_REPORT_FILE_ID = os.getenv(
 PURCHASE_REPORT_WORKSHEET = os.getenv("VERA_PURCHASE_REPORT_SHEET_NAME", "Input").strip() or "Input"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DATE_RANGE_PRESETS = {
-    "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "next_month", "custom"
+    "all", "today", "yesterday", "this_week", "last_week", "this_month", "last_month", "next_month", "custom"
 }
 PUBLIC_DRIVE_DOWNLOAD_URL = "https://drive.usercontent.google.com/download"
 
@@ -101,6 +101,8 @@ def _resolve_range(
         raise HTTPException(400, "Bộ lọc thời gian không hợp lệ.")
     now_date = today or datetime.now(VN_TZ).date()
 
+    if key == "all":
+        return date(1900, 1, 1), date(2100, 12, 31)
     if key == "today":
         return now_date, now_date
     if key == "yesterday":

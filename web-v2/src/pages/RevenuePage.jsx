@@ -11,6 +11,7 @@ const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
 const numberText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
 const reconcileFilters = [
+  ['all', 'Tất cả'],
   ['yesterday', 'Hôm qua'],
   ['today', 'Hôm nay'],
   ['last_week', 'Tuần trước'],
@@ -41,9 +42,11 @@ async function authorizedHeaders(withJson = false) {
   return headers
 }
 
-async function loadRevenue(signal) {
+async function loadRevenue({ source = 'manual', timeRange = 'all', start = '', end = '', signal }) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const response = await fetch(`${apiBase}/v2/revenue/summary`, { signal, headers: await authorizedHeaders() })
+  const params = new URLSearchParams({ source, time_range: timeRange })
+  if (timeRange === 'custom') { if (start) params.set('start', start); if (end) params.set('end', end) }
+  const response = await fetch(`${apiBase}/v2/revenue/summary?${params.toString()}`, { signal, headers: await authorizedHeaders() })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -96,6 +99,16 @@ async function saveRevenueEntry({ transactionDate, incomeAmount, incomeNote, exp
     throw error
   }
   return payload
+}
+
+async function updateRevenueEntry(id, body) {
+  const response = await fetch(`${apiBase}/v2/revenue/entries/${encodeURIComponent(id)}`, { method: 'PATCH', headers: await authorizedHeaders(true), body: JSON.stringify(body) })
+  const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
+}
+
+async function deleteRevenueEntry(id) {
+  const response = await fetch(`${apiBase}/v2/revenue/entries/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authorizedHeaders() })
+  const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
 }
 
 async function savePeriodTip(amount, startDate, endDate) {
@@ -157,6 +170,10 @@ export default function RevenuePage({ user }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
+  const [revenueSource, setRevenueSource] = useState('manual')
+  const [summaryRange, setSummaryRange] = useState('all')
+  const [summaryStart, setSummaryStart] = useState('')
+  const [summaryEnd, setSummaryEnd] = useState('')
   const [entryDate, setEntryDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }))
   const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
   const [entryIncomeNote, setEntryIncomeNote] = useState('')
@@ -191,6 +208,8 @@ export default function RevenuePage({ user }) {
   const [purchaseUserFilter, setPurchaseUserFilter] = useState('')
   const role = String(user?.role || '').trim().toLowerCase()
   const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'
+  const isAdmin = role === 'admin'
+  const autoMode = isAdmin && revenueSource === 'auto'
   useEffect(() => {
     if (!canViewAdminRevenueSummary && activeTab === 'overview') setActiveTab('ledger')
   }, [activeTab, canViewAdminRevenueSummary])
@@ -234,36 +253,28 @@ export default function RevenuePage({ user }) {
       setTipLoadError('')
       setTipRows(null)
       try {
-        const result = await loadRevenue(controller.signal)
-        let liveTourRows = null
-        try {
-          const liveTour = await loadLiveTourReports(controller.signal)
-          liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
-        } catch (tipError) {
-          if (tipError?.name === 'AbortError') throw tipError
+        const result = await loadRevenue({ source: revenueSource, timeRange: summaryRange, start: summaryStart, end: summaryEnd, signal: controller.signal })
+        if (result.source === 'auto') {
           if (!controller.signal.aborted) {
-            setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
+            setData(result); setTipRows(null); setTip(Number(result.tip_revenue || 0)); setTipStart(''); setTipEnd('')
           }
-        }
-        if (!controller.signal.aborted) {
-          const defaultTipStartDate = defaultRevenueTipStart(result.current_date)
-            || result.period_tip_start || result.start_date || ''
-          const defaultTipEndDate = result.current_date || result.period_tip_end || ''
-          const autoTip = Array.isArray(liveTourRows)
-            ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)
-            : Number(result.period_tip || 0)
-          const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
-          setData({
-            ...result,
-            period_tip: autoTip,
-            balance,
-            period_tip_start: defaultTipStartDate,
-            period_tip_end: defaultTipEndDate,
-          })
-          setTipRows(liveTourRows)
-          setTip(autoTip)
-          setTipStart(defaultTipStartDate)
-          setTipEnd(defaultTipEndDate)
+        } else {
+          let liveTourRows = null
+          try {
+            const liveTour = await loadLiveTourReports(controller.signal)
+            liveTourRows = Array.isArray(liveTour?.reports) ? liveTour.reports : []
+          } catch (tipError) {
+            if (tipError?.name === 'AbortError') throw tipError
+            if (!controller.signal.aborted) setTipLoadError(tipError?.message || 'Không lấy được dữ liệu TIP từ Live Tour.')
+          }
+          if (!controller.signal.aborted) {
+            const defaultTipStartDate = defaultRevenueTipStart(result.current_date) || result.period_tip_start || result.start_date || ''
+            const defaultTipEndDate = result.current_date || result.period_tip_end || ''
+            const autoTip = Array.isArray(liveTourRows) ? revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate) : Number(result.period_tip || 0)
+            const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
+            setData({ ...result, period_tip: autoTip, balance, period_tip_start: defaultTipStartDate, period_tip_end: defaultTipEndDate })
+            setTipRows(liveTourRows); setTip(autoTip); setTipStart(defaultTipStartDate); setTipEnd(defaultTipEndDate)
+          }
         }
       } catch (err) {
         if (!controller.signal.aborted && err?.name !== 'AbortError') setError(err.message || 'Không tải được Doanh thu.')
@@ -273,7 +284,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [revision])
+  }, [revenueSource, summaryEnd, summaryRange, summaryStart, revision])
 
   useEffect(() => {
     if (!Array.isArray(tipRows) || !tipStart || !tipEnd || tipStart > tipEnd) return
@@ -440,6 +451,32 @@ export default function RevenuePage({ user }) {
     }
   }
 
+  useEffect(() => {
+    if (!autoMode) return undefined
+    const timer = window.setInterval(() => setRevision(value => value + 1), 10000)
+    return () => window.clearInterval(timer)
+  }, [autoMode])
+
+  const editManualRevenue = async (row) => {
+    const amount = window.prompt('Số tiền', String(Math.round(Number(row.amount || 0))))
+    if (amount === null) return
+    const note = window.prompt('Ghi chú', row.note || '')
+    if (note === null) return
+    const transactionDate = window.prompt('Ngày giao dịch (YYYY-MM-DD)', row.date || '')
+    if (transactionDate === null) return
+    try {
+      const result = await updateRevenueEntry(row.id, { transaction_type: row.type, amount: Number(String(amount).replace(/\D/g, '')), transaction_date: transactionDate || null, note })
+      setNotice(result.message || 'Đã sửa bản ghi doanh thu.'); setRevision(value => value + 1)
+    } catch (err) { setError(err.message || 'Không sửa được bản ghi doanh thu.') }
+  }
+
+  const removeManualRevenue = async (row) => {
+    if (!window.confirm(`Xóa bản ghi ${row.type} ${money(row.amount)} ngày ${row.date_label}? Timestamp lịch sử gốc vẫn được giữ trong audit.`)) return
+    try {
+      const result = await deleteRevenueEntry(row.id); setNotice(result.message || 'Đã xóa bản ghi.'); setRevision(value => value + 1)
+    } catch (err) { setError(err.message || 'Không xóa được bản ghi doanh thu.') }
+  }
+
   const comparisonRows = useMemo(() => {
     let rows = [...(reconcile?.comparison_rows || [])]
     if (differenceFilter !== 'all') {
@@ -455,7 +492,11 @@ export default function RevenuePage({ user }) {
     return rows
   }, [differenceFilter, reconcile, statusFilter])
 
-  const cards = [
+  const cards = autoMode ? [
+    { key: 'income', label: 'TIỀN DỊCH VỤ', value: data?.service_revenue, icon: TrendingUp },
+    { key: 'tip', label: 'TIỀN TIP', value: data?.tip_revenue, icon: CircleDollarSign },
+    { key: 'balance', label: 'TỔNG DOANH THU', value: data?.total_revenue, icon: WalletCards },
+  ] : [
     { key: 'income', label: 'TỔNG THU', value: data?.total_income, icon: TrendingUp },
     { key: 'expense', label: 'TỔNG CHI', value: data?.total_expense, icon: TrendingDown },
     { key: 'net', label: 'TỔNG THU - TỔNG CHI', value: data?.net_income ?? (Number(data?.total_income || 0) - Number(data?.total_expense || 0)), icon: WalletCards },
@@ -469,7 +510,7 @@ export default function RevenuePage({ user }) {
 
   return <div className="feature-page revenue-page">
     <style>{`
-      .revenue-page .revenue-source{display:flex;gap:8px;align-items:center;color:#68736f;font-size:13px}
+      .revenue-page .revenue-source{display:flex;gap:8px;align-items:center;color:#68736f;font-size:13px}.revenue-source-toolbar{display:grid;gap:10px;margin-bottom:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:15px;background:#f7faf8}.revenue-source-toggle,.revenue-time-toolbar{display:flex;gap:7px;flex-wrap:wrap}.revenue-source-toggle button,.revenue-time-toolbar button{min-height:36px;padding:6px 11px;border:1px solid #b8d0c3;border-radius:10px;background:#fff;color:#24473a;font-weight:900}.revenue-source-toggle button.active,.revenue-time-toolbar button.active{background:#1f513f;color:#fff;border-color:#1f513f}.revenue-custom-range{display:flex;gap:10px;flex-wrap:wrap}.revenue-custom-range label{display:grid;gap:4px;font-size:11px;font-weight:900}.revenue-source-toolbar small{color:#64746d}.revenue-crud-actions{display:flex;gap:5px;white-space:nowrap}.revenue-admin-records{margin:14px 0}
       .revenue-period{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}
       .revenue-period-card{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dfe7e2;border-radius:15px;background:#fff}
       .revenue-period-card svg{color:#8b6b22;flex:0 0 auto}.revenue-period-card span{display:block;font-size:11px;font-weight:900;letter-spacing:.05em;color:#68736f;text-transform:uppercase}.revenue-period-card strong{display:block;margin-top:3px;font-size:18px;color:#173329}
@@ -502,7 +543,19 @@ export default function RevenuePage({ user }) {
     {notice && <div className="success-box">{notice}</div>}
     {tipLoadError && <div className="error-box">{tipLoadError}</div>}
 
-    {canCreateEntry && <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
+    {isAdmin && <section className="revenue-source-toolbar">
+      <div className="revenue-source-toggle" role="group" aria-label="Nguồn dữ liệu doanh thu">
+        <button type="button" className={revenueSource === 'manual' ? 'active' : ''} onClick={() => setRevenueSource('manual')}>Manual · Thủ công</button>
+        <button type="button" className={revenueSource === 'auto' ? 'active' : ''} onClick={() => setRevenueSource('auto')}>Auto · Tự động hệ thống</button>
+      </div>
+      <div className="revenue-time-toolbar" role="group" aria-label="Lọc thời gian doanh thu">
+        {reconcileFilters.filter(([value]) => value !== 'next_month').map(([value,label]) => <button type="button" key={value} className={summaryRange === value ? 'active' : ''} onClick={() => { setSummaryRange(value); if (value !== 'custom') { setSummaryStart(''); setSummaryEnd('') } }}>{label}</button>)}
+      </div>
+      {summaryRange === 'custom' && <div className="revenue-custom-range"><label>Từ ngày<VeraDateInput value={summaryStart} onChange={event => setSummaryStart(event.target.value)}/></label><label>Đến ngày<VeraDateInput value={summaryEnd} onChange={event => setSummaryEnd(event.target.value)}/></label></div>}
+      <small>{autoMode ? 'Tự động = Tiền dịch vụ + Tiền tip. Dữ liệu cập nhật lại mỗi 10 giây; nhập thủ công được khóa.' : 'Chế độ thủ công: giữ nguyên luồng nhập Thu/Chi hiện tại.'}</small>
+    </section>}
+
+    {canCreateEntry && !autoMode && <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
       <h2>NHẬP DOANH THU - CHI PHÍ</h2>
       <label className="entry-date">Ngày giao dịch<VeraDateInput value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
@@ -517,7 +570,7 @@ export default function RevenuePage({ user }) {
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Báo cáo tới ngày</span><strong>{busy && !data ? '…' : (data?.current_date_label || '—')}</strong></div></article>
     </section>}
 
-    {canViewAdminRevenueSummary && canEditTip && <section className="revenue-tip-editor">
+    {canViewAdminRevenueSummary && canEditTip && !autoMode && <section className="revenue-tip-editor">
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
       <label>Ngày bắt đầu<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} max={tipEnd || data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipStart(event.target.value)} /></label>
       <label>Đến ngày<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
@@ -530,8 +583,11 @@ export default function RevenuePage({ user }) {
       <section className="revenue-grid" aria-live="polite">
         {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}`} key={key}><div className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><AutoFitMoney>{busy && !data ? '…' : money(value)}</AutoFitMoney></article>)}
       </section>
-      {data && <div className="revenue-formula">Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></div>}
+      {data && <div className="revenue-formula">{autoMode ? <>Tổng doanh thu = Tiền dịch vụ + Tiền tip = <strong>{money(data.total_revenue)}</strong></> : <>Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></>}</div>}
     </div>}
+
+    {isAdmin && revenueSource === 'manual' && Array.isArray(data?.entries) && <section className="report-box revenue-admin-records"><h3>BẢN GHI DOANH THU · ADMIN</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Loại</th><th className="money">Số tiền</th><th>Ghi chú</th><th>Người nhập</th><th>Thao tác</th></tr></thead><tbody>{data.entries.map(row => <tr key={row.id}><td>{row.date_label || '—'}</td><td>{row.type}</td><td className="money">{money(row.amount)}</td><td>{row.note || '—'}</td><td>{row.entered_by || '—'}</td><td><div className="revenue-crud-actions"><button type="button" className="secondary-button" onClick={() => editManualRevenue(row)}>Sửa</button><button type="button" className="secondary-button danger-button" onClick={() => removeManualRevenue(row)}>Xóa</button></div></td></tr>)}</tbody></table></div></section>}
+    {isAdmin && autoMode && Array.isArray(data?.records) && <section className="report-box revenue-admin-records"><h3>DOANH THU TỰ ĐỘNG TỪ HỆ THỐNG</h3><div className="report-scroll"><table className="report-table"><thead><tr><th>Ngày</th><th>Bill</th><th>Nhân viên</th><th>Dịch vụ</th><th className="money">Tiền dịch vụ</th><th className="money">Tip</th><th className="money">Tổng</th></tr></thead><tbody>{data.records.map(row => <tr key={row.id}><td>{row.date_label || '—'}</td><td>{row.bill_no || '—'}</td><td>{row.employee || '—'}</td><td>{row.service || '—'}</td><td className="money">{money(row.service_revenue)}</td><td className="money">{money(row.tip_revenue)}</td><td className="money">{money(row.total_revenue)}</td></tr>)}</tbody></table></div></section>}
 
     <div className="revenue-tabs" role="tablist" aria-label="Doanh thu và chi phí">
       <button type="button" className={`revenue-tab ${activeTab === 'ledger' ? 'active' : ''}`} onClick={() => setActiveTab('ledger')}>Doanh thu-Chi phí</button>

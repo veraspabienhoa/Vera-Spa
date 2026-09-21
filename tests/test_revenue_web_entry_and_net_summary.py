@@ -12,8 +12,9 @@ def test_revenue_net_summary_and_web_entry_permission_contract():
     assert 'require_feature(conn, ident, REVENUE_ENTRY_FEATURE)' in backend
     assert 'revenue_store.insert_web_entries(' in backend
     assert '"storage": "postgresql"' in backend
-    assert 'summary["net_income"] = round(summary["total_income"] - summary["total_expense"], 2)' in backend
-    assert 'summary["balance"] = round(summary["net_income"] - tip, 2)' in backend
+    assert '"net_income": round(total_income - total_expense, 2)' in backend
+    assert '"balance": round(total_income - total_expense - tip, 2)' in backend
+    assert '"total_revenue": round(service + tip, 2)' in backend
     assert '"can_create_entry": can_create_entry' in backend
 
     assert 'label: \'TỔNG THU - TỔNG CHI\'' in page

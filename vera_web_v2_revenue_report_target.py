@@ -4,7 +4,9 @@ from __future__ import annotations
 import os
 from typing import Any, Callable
 
-from fastapi import Depends
+from datetime import date
+
+from fastapi import Depends, Query
 
 
 RELEASE = "revenue-report-input-last-row-2026-08-31-v1"
@@ -45,8 +47,12 @@ def install_revenue_report_target(
     original_summary = _find_route(app, "/v2/revenue/summary", "GET")
 
     @app.get("/v2/revenue/summary")
-    def revenue_summary_with_input_target(ident=Depends(current_identity)):
-        payload = original_summary(ident=ident)
+    def revenue_summary_with_input_target(
+        source: str = Query("manual"), time_range: str = Query("all"),
+        start: date | None = Query(None), end: date | None = Query(None),
+        ident=Depends(current_identity),
+    ):
+        payload = original_summary(source=source, time_range=time_range, start=start, end=end, ident=ident)
         result = dict(payload) if isinstance(payload, dict) else {"data": payload}
         result["report_url"] = _input_last_row_url(
             str(result.get("report_url") or ""),
