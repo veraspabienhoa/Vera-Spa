@@ -1,13 +1,14 @@
 from pathlib import Path
 
 
-def test_touch_devices_use_real_native_date_input_as_full_field_hit_target():
+def test_touch_devices_keep_visible_date_text_and_native_calendar_hit_target():
     css = Path("web-v2/src/styles.css").read_text(encoding="utf-8")
 
     assert "@media (hover: none) and (pointer: coarse)" in css
     assert ".vera-date-input:not(:has(.vera-date-picker-button:disabled)) > .vera-native-date-picker" in css
-    assert "width: 100% !important;" in css
-    assert "height: 100% !important;" in css
+    assert "width: 46px !important;" in css
+    assert "height: calc(100% - 6px) !important;" in css
+    assert "right: 3px;" in css
     assert ".vera-date-input > .vera-date-picker-button" in css
     assert "pointer-events: none;" in css
 

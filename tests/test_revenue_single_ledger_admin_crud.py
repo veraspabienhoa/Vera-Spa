@@ -9,7 +9,7 @@ def test_revenue_page_uses_single_manual_ledger_and_admin_actions():
     assert "Ngày giao dịch (DD-MM-YYYY)" in page
     assert "Ngày giao dịch (YYYY-MM-DD)" not in page
     assert "reconcileFilters.filter(([value]) => value !== 'next_month')" not in page
-    assert '>Tất cả</button>' in page
+    assert 'aria-label="Phạm vi doanh thu"' not in page
 
 
 def test_main_revenue_ledger_has_ids_and_dd_mm_yyyy_labels():

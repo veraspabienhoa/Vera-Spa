@@ -222,11 +222,11 @@ button:not(:disabled):not(.disabled):not(.search-clear-button):not(.vera-dropdow
 @media (hover: none) and (pointer: coarse) {
   .vera-date-input:not(:has(.vera-date-picker-button:disabled)) > .vera-native-date-picker {
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    width: 100% !important;
-    height: 100% !important;
+    left: auto;
+    right: 3px;
+    top: 3px;
+    width: 46px !important;
+    height: calc(100% - 6px) !important;
     z-index: 4;
     opacity: .001;
     pointer-events: auto;
