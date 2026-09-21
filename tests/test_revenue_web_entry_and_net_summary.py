@@ -48,6 +48,7 @@ def test_revenue_entry_can_save_thu_and_chi_together():
     assert "Lưu Thu + Chi" in page
     assert "income_amount: Number(incomeAmount || 0)" in page
     assert "expense_amount: Number(expenseAmount || 0)" in page
-    assert "Có thể xóa để nhập nội dung Thu mới." in page
-    assert "Có thể xóa để nhập nội dung Chi mới." in page
+    assert "Có thể xóa để nhập nội dung Thu mới." not in page
+    assert "Có thể xóa để nhập nội dung Chi mới." not in page
+    assert "auto-note-empty" in page
     assert "window.confirm(saveError.message)" in page

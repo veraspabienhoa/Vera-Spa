@@ -34,7 +34,7 @@ def test_revenue_detail_tabs_have_independent_filters_like_report_filter_panel()
     assert "['this_week', 'Tuần này']" in page
     assert "['last_month', 'Tháng trước']" in page
     assert "['this_month', 'Tháng này']" in page
-    assert "['next_month', 'Tháng sau']" in page
+    assert "['next_month', 'Tháng sau']" not in page
     assert "['custom', 'Tùy chỉnh']" in page
     assert "Xóa lọc chi tiết" in page
 
