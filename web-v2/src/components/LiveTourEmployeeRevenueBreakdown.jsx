@@ -112,6 +112,19 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
       copying={copying}
       hideValuesInSnapshot
     />
+    <RevenueBars
+      items={items}
+      valueKey="tip"
+      label="Biểu đồ tiền TIP theo nhân viên"
+      sortMode={tipSort}
+      onSortModeChange={setTipSort}
+      valueFormatter={money}
+      captureRef={tipChartRef}
+      onCapture={copyTipChart}
+      copying={copyingTip}
+      hideValuesInSnapshot
+      captureLabel="Chụp toàn bảng"
+    />
     {notice && <p data-snapshot-ignore className="employee-revenue-copy-status">{notice}</p>}
     <div className="employee-revenue-head">
       <div><h3>THỐNG KÊ THEO NHÂN VIÊN</h3><p>Tiền dịch vụ và tiền TIP theo đúng bộ lọc Báo cáo hiện tại.</p></div>
@@ -130,18 +143,5 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
         </tbody>
       </table>
     </div>
-    <RevenueBars
-      items={items}
-      valueKey="tip"
-      label="Biểu đồ tiền TIP theo nhân viên"
-      sortMode={tipSort}
-      onSortModeChange={setTipSort}
-      valueFormatter={money}
-      captureRef={tipChartRef}
-      onCapture={copyTipChart}
-      copying={copyingTip}
-      hideValuesInSnapshot
-      captureLabel="Chụp toàn bảng"
-    />
   </section>
 }
