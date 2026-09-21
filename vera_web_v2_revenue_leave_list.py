@@ -485,7 +485,7 @@ def install_revenue_leave_list_routes(
 
     @app.get("/v2/revenue/summary")
     def revenue_summary(
-        source: Literal["manual", "auto"] = Query("manual"),
+        source: Literal["manual", "auto", "manual_tip_auto"] = Query("manual"),
         time_range: str = Query("all"),
         start: date | None = Query(None),
         end: date | None = Query(None),
@@ -516,18 +516,25 @@ def install_revenue_leave_list_routes(
             total_income = round(sum(row["amount"] for row in entries if row["type"] == "Thu"), 2)
             total_expense = round(sum(row["amount"] for row in entries if row["type"] == "Chi"), 2)
             tip_setting = _period_tip(conn, start_date.isoformat() if start_date else "", end_date.isoformat() if end_date else "")
+            auto_tip = _auto_revenue(conn, start_date, end_date)["tip_revenue"] if source == "manual_tip_auto" else None
         tip = float(tip_setting["amount"])
         return {
-            "ok": True, "release": RELEASE, "source": "manual", "source_label": "Thủ công",
+            "ok": True, "release": RELEASE, "source": source,
+            "source_label": "Dịch Manual · Tip Auto" if source == "manual_tip_auto" else "Thủ công",
             "storage": "postgresql", "transaction_table": revenue_store.TABLE, "time_range": time_range,
-            "start_date": start_date.isoformat() if start_date else "",
+            "start_date": (start_date or REVENUE_PERIOD_START).isoformat(),
+            "start_date_label": (start_date or REVENUE_PERIOD_START).strftime("%d-%m-%Y"),
             "end_date": end_date.isoformat() if end_date else "",
             "current_date": datetime.now(VN_TZ).date().isoformat(),
             "current_date_label": datetime.now(VN_TZ).strftime("%d-%m-%Y"),
             "can_edit_tip": can_edit_tip, "can_create_entry": can_create_entry,
             "can_admin_crud": is_admin, "entries": entries, "transaction_count": len(entries),
             "total_income": total_income, "total_expense": total_expense,
-            "period_tip": round(tip, 2), "period_tip_start": tip_setting["period_start"],
+            "period_tip": round(auto_tip if auto_tip is not None else tip, 2),
+            "tip_revenue": round(auto_tip if auto_tip is not None else tip, 2),
+            "service_revenue": total_income,
+            "total_revenue": round(total_income + (auto_tip if auto_tip is not None else tip), 2),
+            "period_tip_start": tip_setting["period_start"],
             "period_tip_end": tip_setting["period_end"],
             "net_income": round(total_income - total_expense, 2),
             "balance": round(total_income - total_expense - tip, 2),
