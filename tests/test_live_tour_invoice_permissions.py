@@ -1,5 +1,6 @@
 """Invoice corrections, ticket integrity and independent API read/write grants."""
 from copy import deepcopy
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -30,6 +31,11 @@ def paid_state():
 
 
 def scoped_client(monkeypatch, state, grants):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(live, "datetime", FixedDateTime)
     _, shared = api_client(monkeypatch, state)
     def require(_conn, _ident, feature):
         if feature not in grants:
@@ -59,6 +65,22 @@ def test_pending_price_note_and_snapshot_do_not_reprice_or_touch_completed_work(
     assert state["invoices"] == old["invoices"] and state["reports"] == old["reports"]
     assert state["pending_changes"][0]["before"] == pending
     assert len(state["pending_changes"]) == 2
+
+
+def test_pending_changes_are_limited_to_today_and_yesterday():
+    state, pending = pending_state()
+    pending["business_date"] = "2026-09-03"
+    with pytest.raises(HTTPException) as error:
+        action(state, "pending_update", {"pending_id": pending["id"], "note": "Cũ", "reason": "Quá hạn"})
+    assert error.value.status_code == 403
+
+
+def test_paid_invoice_delete_is_limited_to_current_day():
+    state, paid = paid_state()
+    paid["business_date"] = "2026-09-04"
+    with pytest.raises(HTTPException) as error:
+        action(state, "paid_invoice_delete", {"invoice_id": paid["id"], "reason": "Quá hạn"})
+    assert error.value.status_code == 403
 
 
 @pytest.mark.parametrize("payload", [
@@ -365,8 +387,13 @@ def test_legacy_combo_void_returns_tickets_without_guessing_catalog_units():
     assert purchase["used"] == 0 and purchase["remaining"] == 5
 
 
-def test_void_and_audit_survive_reopening_server_state():
+def test_void_and_audit_survive_reopening_server_state(monkeypatch):
     from test_live_tour_server_only import SettingsDatabase, app_client
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(live, "datetime", FixedDateTime)
     state, paid = paid_state()
     database = SettingsDatabase(stored=state)
     _, client = app_client(database)

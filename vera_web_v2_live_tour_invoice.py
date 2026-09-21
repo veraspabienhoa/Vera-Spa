@@ -1,11 +1,12 @@
 """Audited paid-invoice corrections. Never hard-delete the original evidence."""
 from copy import deepcopy
+from datetime import date
 from uuid import uuid4
 
 from fastapi import HTTPException
 
 
-def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None):
+def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None, allowed_delete_date=None):
     deleting = action == "paid_invoice_delete"
     allowed = {"invoice_id", "reason"} if deleting else {"invoice_id", "reason", "note", "entries", "discount", "tip", "payment_method", "invoice_at"}
     if set(payload) - allowed:
@@ -17,6 +18,13 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
     invoice = next((row for row in working["invoices"] if row.get("id") == payload.get("invoice_id")), None)
     if invoice is None:
         raise HTTPException(404, "Không tìm thấy hóa đơn đã thanh toán còn hiệu lực.")
+    if deleting and allowed_delete_date is not None:
+        try:
+            paid_date = date.fromisoformat(str(invoice.get("business_date") or invoice.get("effective_at") or invoice.get("created_at"))[:10])
+        except (TypeError, ValueError):
+            paid_date = None
+        if paid_date != allowed_delete_date:
+            raise HTTPException(403, "Chỉ được xóa hóa đơn đã thanh toán trong ngày hiện tại.")
     before = deepcopy(invoice)
     reports = [row for row in working["reports"] if row.get("invoice_id") == invoice["id"]]
     usage = [row for row in working["combo_usage"] if row.get("invoice_id") == invoice["id"]]
