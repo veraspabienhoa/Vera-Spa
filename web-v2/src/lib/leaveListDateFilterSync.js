@@ -39,7 +39,7 @@ export function startLeaveListDateFilterSync() {
     const offset = label === 'Hôm nay' ? 0 : label === 'Hôm qua' ? -1 : null
     if (offset === null) return
 
-    const viewedDateInput = document.querySelector('.viewed-date-toolbar .date-picker-native')
+    const viewedDateInput = document.querySelector('.viewed-date-toolbar .vera-native-date-picker')
     setReactDateValue(viewedDateInput, localDateValue(offset))
   }, true)
 }
