@@ -22,4 +22,5 @@ def test_revenue_source_toggle_and_admin_crud_are_wired():
     assert "vera_revenue_entry_audit" in store
     assert "Manual · Thủ công" in page and "Auto · Tự động hệ thống" in page
     assert "['all', 'Tất cả']" in page
-    assert "Tự động = Tiền dịch vụ + Tiền tip" in page
+    assert "Dịch Manual · Tip Auto" in page
+    assert "Chế độ thủ công: giữ nguyên luồng nhập Thu/Chi hiện tại." not in page
