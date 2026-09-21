@@ -154,6 +154,35 @@ def _revenue_audit_workbook(rows: list[dict[str, Any]]) -> BytesIO:
     return stream
 
 
+def _revenue_duplicate_workbook(result: dict[str, Any]) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Dữ liệu trùng"
+    headers = ["Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Số dòng", "Số dòng dư", "Người nhập", "Mã dòng"]
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1F513F")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for group in result.get("groups") or []:
+        sheet.append([
+            group.get("date_label") or "", group.get("type") or "", float(group.get("amount") or 0),
+            group.get("note") or "", int(group.get("count") or 0), int(group.get("extra_count") or 0),
+            ", ".join(group.get("entered_by") or []), ", ".join(str(value) for value in (group.get("entry_ids") or [])),
+        ])
+    for cell in sheet["C"][1:]:
+        cell.number_format = '#,##0"đ"'
+    widths = [14, 18, 18, 48, 12, 14, 30, 24]
+    for index, width in enumerate(widths, 1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return stream
+
+
 def _dispatch_revenue_admin_push(*, engine_instance, api_module, event: str, detail: dict[str, Any]) -> None:
     """Deliver after commit; notification failure never rolls back revenue data."""
     if api_module is None:
@@ -641,6 +670,7 @@ def install_revenue_leave_list_routes(
             "current_date": (report_date or datetime.now(VN_TZ).date()).isoformat(),
             "current_date_label": (report_date or datetime.now(VN_TZ).date()).strftime("%d-%m-%Y"),
             "current_date_source": "last_ledger_transaction" if report_date else "server_date_fallback",
+            "business_date": datetime.now(VN_TZ).date().isoformat(),
             "can_edit_tip": can_edit_tip, "can_create_entry": can_create_entry,
             "can_edit_entry": can_edit_entry, "can_delete_entry": can_delete_entry,
             "can_admin_crud": can_edit_entry or can_delete_entry, "entries": entries, "transaction_count": len(entries),
@@ -730,6 +760,7 @@ def install_revenue_leave_list_routes(
 
     @app.patch("/v2/revenue/entries/{entry_id}")
     def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, background_tasks: BackgroundTasks, ident=Depends(current_identity)):
+        admin_unrestricted = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         entered_at = None
         if body.entered_date is not None or body.entered_time is not None:
             if body.entered_date is None or not body.entered_time:
@@ -750,7 +781,7 @@ def install_revenue_leave_list_routes(
                     amount=body.amount, transaction_date=body.transaction_date, note=body.note,
                     entered_by_name=body.entered_by_name, entered_at=entered_at,
                     actor=str(getattr(ident, "employee_username", "") or ""),
-                    required_entered_date=datetime.now(VN_TZ).date(),
+                    required_entered_date=None if admin_unrestricted else datetime.now(VN_TZ).date(),
                 )
             except KeyError:
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
@@ -761,10 +792,11 @@ def install_revenue_leave_list_routes(
             event="update", detail={"entry_id": entry_id, "type": body.transaction_type, "amount": body.amount,
                                     "note": body.note, "actor": str(getattr(ident, "employee_username", "") or "")},
         )
-        return {"ok": True, **result, "message": "Đã sửa bản ghi doanh thu trong ngày hiện tại."}
+        return {"ok": True, **result, "message": "Đã sửa bản ghi doanh thu."}
 
     @app.delete("/v2/revenue/entries/{entry_id}")
     def delete_revenue_entry(entry_id: int, background_tasks: BackgroundTasks, ident=Depends(current_identity)):
+        admin_unrestricted = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         notification_detail: dict[str, Any] = {"entry_id": entry_id, "actor": str(getattr(ident, "employee_username", "") or "")}
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_DELETE_FEATURE)
@@ -775,7 +807,7 @@ def install_revenue_leave_list_routes(
                 revenue_store.soft_delete_entry(
                     conn, entry_id=entry_id,
                     actor=str(getattr(ident, "employee_username", "") or ""),
-                    required_entered_date=datetime.now(VN_TZ).date(),
+                    required_entered_date=None if admin_unrestricted else datetime.now(VN_TZ).date(),
                 )
             except KeyError:
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
@@ -829,6 +861,23 @@ def install_revenue_leave_list_routes(
             require_feature(conn, ident, REVENUE_FEATURE)
             result = revenue_store.duplicate_analysis(conn, start_date=start_date, end_date=end_date)
         return {"ok": True, **result}
+
+    @app.get("/v2/revenue/duplicates/export.xlsx")
+    def revenue_duplicates_export(
+        time_range: str = Query("all"), start: date | None = Query(None),
+        end: date | None = Query(None), ident=Depends(current_identity),
+    ):
+        _require_revenue_admin(ident)
+        start_date, end_date = _range_bounds(time_range, start, end)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            result = revenue_store.duplicate_analysis(conn, start_date=start_date, end_date=end_date)
+        filename = f"VERA_KiemTra_DuLieuTrung_ThuChi_{datetime.now(VN_TZ):%d-%m-%Y}.xlsx"
+        return StreamingResponse(
+            _revenue_duplicate_workbook(result),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @app.put("/v2/revenue/tip")
     def save_revenue_tip(body: RevenueTipUpdate, ident=Depends(current_identity)):

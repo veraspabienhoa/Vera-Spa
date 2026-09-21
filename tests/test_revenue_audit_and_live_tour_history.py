@@ -10,6 +10,7 @@ def test_revenue_admin_audit_duplicate_and_push_contracts():
     assert '@app.get("/v2/revenue/audit")' in routes
     assert '@app.get("/v2/revenue/audit/export.xlsx")' in routes
     assert '@app.get("/v2/revenue/duplicates")' in routes
+    assert '@app.get("/v2/revenue/duplicates/export.xlsx")' in routes
     assert "def list_audit_entries" in store
     assert "def duplicate_analysis" in store
     assert "revenue_manual_changes" in settings
@@ -17,6 +18,9 @@ def test_revenue_admin_audit_duplicate_and_push_contracts():
     assert "Sửa dòng đã chọn" in page and "Xóa dòng đã chọn" in page
     assert "Lịch sử sửa, xóa" in page
     assert "KIỂM TRA DỮ LIỆU TRÙNG" in page
+    assert "activeTab === 'duplicates'" in page
+    assert "isAdmin || (row.entered_date" in page
+    assert "required_entered_date=None if admin_unrestricted" in routes
     assert "window.prompt" not in page
 
 

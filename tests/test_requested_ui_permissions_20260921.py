@@ -11,8 +11,9 @@ def test_weekly_shift_badge_is_in_quick_tools_without_circled_number():
     assert "live-tour-weekly-shift" in quick
     assert "CA TUẦN NÀY ①" not in page
     assert "Ca tuần ①" not in page
-    assert ">CA TUẦN NÀY<" in page
-    assert ">Ca tuần này<" in page
+    assert ">CA TUẦN NÀY{" in page
+    assert ">Ca tuần này{" in page
+    assert "selectedWeeklyShift" in page
     assert "Ca 1" in page and "Ca 2" in page
     assert ".live-tour-page .live-tour-weekly-shift .weekly-desktop{display:none}" in controls
 
