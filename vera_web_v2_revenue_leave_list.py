@@ -578,6 +578,39 @@ def install_revenue_leave_list_routes(
             "message": "Đã lưu cùng thời điểm " + " và ".join(parts) + " trên server.",
         }
 
+    def _require_revenue_admin(ident):
+        if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được sửa hoặc xóa báo cáo doanh thu.")
+
+    @app.patch("/v2/revenue/entries/{entry_id}")
+    def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, ident=Depends(current_identity)):
+        _require_revenue_admin(ident)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            try:
+                result = revenue_store.update_entry(
+                    conn, entry_id=entry_id, transaction_type=body.transaction_type,
+                    amount=body.amount, transaction_date=body.transaction_date, note=body.note,
+                    actor=str(getattr(ident, "employee_username", "") or ""),
+                )
+            except KeyError:
+                raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
+        return {"ok": True, **result, "message": "Đã sửa bản ghi; ngày/giờ nhập gốc được giữ nguyên."}
+
+    @app.delete("/v2/revenue/entries/{entry_id}")
+    def delete_revenue_entry(entry_id: int, ident=Depends(current_identity)):
+        _require_revenue_admin(ident)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            try:
+                revenue_store.soft_delete_entry(
+                    conn, entry_id=entry_id,
+                    actor=str(getattr(ident, "employee_username", "") or ""),
+                )
+            except KeyError:
+                raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
+        return {"ok": True, "message": "Đã xóa bản ghi khỏi báo cáo; timestamp lịch sử gốc không thay đổi."}
+
     @app.put("/v2/revenue/tip")
     def save_revenue_tip(body: RevenueTipUpdate, ident=Depends(current_identity)):
         values = _read_revenue_values(google_client, engine_instance)
