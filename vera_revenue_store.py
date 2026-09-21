@@ -325,6 +325,8 @@ def list_entries(conn, *, start_date: date | None = None, end_date: date | None 
             "id": int(row["id"]), "type": str(row["transaction_type"]), "amount": float(row["amount"]),
             "date": tx_date.isoformat() if tx_date else "", "date_label": tx_date.strftime("%d-%m-%Y") if tx_date else "",
             "note": str(row["note"] or ""), "entered_at": entered.astimezone(VN_TZ).isoformat() if entered else "",
+            "entered_date_label": entered.astimezone(VN_TZ).strftime("%d-%m-%Y") if entered else "",
+            "entered_time": entered.astimezone(VN_TZ).strftime("%H:%M:%S") if entered else "",
             "entered_by": str(row["entered_by_name"] or row["entered_by"] or ""),
             "source": str(row["source_name"] or ""), "revision": int(row["edit_revision"] or 0),
         })
