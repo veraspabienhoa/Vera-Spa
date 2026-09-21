@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import vera_web_v2_live_tour as live
@@ -83,8 +83,10 @@ def import_client(monkeypatch, role, grants=None):
     app = FastAPI()
     allowed = {'live_tour_view', *(grants or ({'live_tour_combo_import', 'live_tour_customers_view'} if role == 'admin' else set()))}
     live.install_live_tour_routes(app, engine_instance=RouteEngine,
-        current_identity=lambda: ImportIdentity(role=role), require_feature=lambda _conn, _ident, feature: None if feature in allowed else (_ for _ in ()).throw(Exception('denied')),
-        feature_allowed=lambda _conn, _identity, feature: feature in allowed, identity_type=ImportIdentity)
+        current_identity=lambda: ImportIdentity(role=role),
+        require_feature=lambda _conn, _ident, feature: None if feature != 'live_tour_combo_import' or feature in allowed else (_ for _ in ()).throw(HTTPException(403, 'Chưa được cấp quyền nhập combo.')),
+        feature_allowed=lambda _conn, _identity, feature: feature in allowed if feature == 'live_tour_combo_import' else True,
+        identity_type=ImportIdentity)
     return TestClient(app, raise_server_exceptions=False), shared
 
 
