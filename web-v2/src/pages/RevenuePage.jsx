@@ -11,6 +11,7 @@ const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
 const numberText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
 const reconcileFilters = [
+  ['all', 'Tất cả'],
   ['yesterday', 'Hôm qua'],
   ['today', 'Hôm nay'],
   ['last_week', 'Tuần trước'],
@@ -41,9 +42,11 @@ async function authorizedHeaders(withJson = false) {
   return headers
 }
 
-async function loadRevenue(signal) {
+async function loadRevenue({ source = 'manual', timeRange = 'all', start = '', end = '', signal }) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const response = await fetch(`${apiBase}/v2/revenue/summary`, { signal, headers: await authorizedHeaders() })
+  const params = new URLSearchParams({ source, time_range: timeRange })
+  if (timeRange === 'custom') { if (start) params.set('start', start); if (end) params.set('end', end) }
+  const response = await fetch(`${apiBase}/v2/revenue/summary?${params.toString()}`, { signal, headers: await authorizedHeaders() })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
@@ -96,6 +99,16 @@ async function saveRevenueEntry({ transactionDate, incomeAmount, incomeNote, exp
     throw error
   }
   return payload
+}
+
+async function updateRevenueEntry(id, body) {
+  const response = await fetch(`${apiBase}/v2/revenue/entries/${encodeURIComponent(id)}`, { method: 'PATCH', headers: await authorizedHeaders(true), body: JSON.stringify(body) })
+  const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
+}
+
+async function deleteRevenueEntry(id) {
+  const response = await fetch(`${apiBase}/v2/revenue/entries/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await authorizedHeaders() })
+  const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`); return payload
 }
 
 async function savePeriodTip(amount, startDate, endDate) {
@@ -157,6 +170,10 @@ export default function RevenuePage({ user }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
+  const [revenueSource, setRevenueSource] = useState('manual')
+  const [summaryRange, setSummaryRange] = useState('all')
+  const [summaryStart, setSummaryStart] = useState('')
+  const [summaryEnd, setSummaryEnd] = useState('')
   const [entryDate, setEntryDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }))
   const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
   const [entryIncomeNote, setEntryIncomeNote] = useState('')
@@ -191,6 +208,8 @@ export default function RevenuePage({ user }) {
   const [purchaseUserFilter, setPurchaseUserFilter] = useState('')
   const role = String(user?.role || '').trim().toLowerCase()
   const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'
+  const isAdmin = role === 'admin'
+  const autoMode = isAdmin && revenueSource === 'auto'
   useEffect(() => {
     if (!canViewAdminRevenueSummary && activeTab === 'overview') setActiveTab('ledger')
   }, [activeTab, canViewAdminRevenueSummary])
@@ -234,7 +253,7 @@ export default function RevenuePage({ user }) {
       setTipLoadError('')
       setTipRows(null)
       try {
-        const result = await loadRevenue(controller.signal)
+        const result = await loadRevenue({ source: revenueSource, timeRange: summaryRange, start: summaryStart, end: summaryEnd, signal: controller.signal })
         let liveTourRows = null
         try {
           const liveTour = await loadLiveTourReports(controller.signal)
@@ -273,7 +292,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [revision])
+  }, [revenueSource, summaryEnd, summaryRange, summaryStart, revision])
 
   useEffect(() => {
     if (!Array.isArray(tipRows) || !tipStart || !tipEnd || tipStart > tipEnd) return
