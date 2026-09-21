@@ -189,8 +189,10 @@
   .live-tour-page .tour-topbar .tour-heading-title{flex:1;gap:8px}
   .live-tour-page .tour-topbar .tour-heading-title h1{font-size:16px;white-space:nowrap}
   .live-tour-page .live-tour-weekly-shift .weekly-desktop{display:none}.live-tour-page .live-tour-weekly-shift .weekly-mobile{display:inline}.live-tour-page .live-tour-weekly-shift-popover{position:fixed;left:6px;right:6px;top:auto;bottom:6px;width:auto;max-height:70vh;border-radius:14px;font-size:12px}
-  .live-tour-page .tour-topbar .tour-shift-filter{flex:1 1 100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.4fr);gap:4px;min-width:0}
-  .live-tour-page .tour-topbar .tour-shift-filter button{min-width:0;min-height:34px;padding:5px 4px;font-size:11px}
+  .live-tour-page .tour-quick-tools .live-tour-shift-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.55fr);align-items:stretch;gap:4px;width:100%;max-width:100%;min-width:0;overflow:visible}
+  .live-tour-page .tour-quick-tools .live-tour-shift-controls .tour-shift-filter{display:contents}
+  .live-tour-page .tour-quick-tools .live-tour-shift-controls button{width:100%;max-width:100%;min-width:0;min-height:34px;padding:5px 3px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .live-tour-page .tour-quick-tools .live-tour-weekly-shift{min-width:0;width:100%}
   .live-tour-page .tour-topbar .live-tour-customer-count{min-width:0;min-height:34px;padding:4px;box-sizing:border-box;justify-content:center;flex-wrap:wrap;white-space:normal}
   .live-tour-page .tour-topbar .tour-heading-actions{flex:1 1 100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;min-width:0;margin-left:0;width:100%}
   .live-tour-page .tour-topbar .tour-heading-actions button{min-width:0;max-width:100%;min-height:40px;padding:7px 6px;font-size:11px;white-space:normal;overflow-wrap:anywhere;justify-content:center;border-radius:10px}
