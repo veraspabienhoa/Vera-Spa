@@ -409,6 +409,9 @@ export const veraApi = {
   ktvShifts: () => request('/v2/staff/ktv-shifts'),
   saveKtvShift: (id, body) => request(`/v2/staff/ktv-shifts${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
   deleteKtvShift: (id, revision) => request(`/v2/staff/ktv-shifts/${encodeURIComponent(id)}?expected_revision=${revision}`, { method: 'DELETE' }),
+  ktvCycles: () => request('/v2/staff/ktv-cycles'),
+  saveKtvCycle: (id, body) => request(`/v2/staff/ktv-cycles${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
+  deleteKtvCycle: (id, revision) => request(`/v2/staff/ktv-cycles/${encodeURIComponent(id)}?expected_revision=${revision}`, { method: 'DELETE' }),
   readLiveTourPng: async (query = {}) => {
     const params = liveTourExportParams('board', query)
     const response = await binaryResponse(`/v2/live-tour/export.png?${params}`, { cache: 'no-store' })
