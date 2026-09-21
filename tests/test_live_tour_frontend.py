@@ -453,7 +453,8 @@ def test_live_tour_cache_recursively_removes_customer_identity_and_action_result
         assert f"'{key}'" in cache_helpers
     assert "value.map(sanitizeLiveTourCacheValue)" in cache_helpers
     assert "Object.entries(value).flatMap" in cache_helpers
-    assert "delete safeData.result" in cache_helpers
+    assert "delete candidate.result" in cache_helpers
+    assert "const safeData = sanitizeLiveTourCacheValue(candidate)" in cache_helpers
     assert "combo_usage: []" in cache_helpers
     assert "combo_purchases: []" in cache_helpers
     assert "cacheSafeLiveTour(cached.data)" in cache_helpers
