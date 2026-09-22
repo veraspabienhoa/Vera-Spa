@@ -2883,3 +2883,8 @@ install_training_routes(
     require_feature=_require_feature,
     identity_type=Identity,
 )
+
+from vera_web_v2_ui_layout import install_ui_layout_routes
+from vera_web_v2_board_history_cleanup import install_board_history_cleanup
+install_ui_layout_routes(app, engine_instance=_engine_instance, current_identity=current_identity, identity_type=Identity)
+install_board_history_cleanup(app, engine_instance=_engine_instance, current_identity=current_identity, identity_type=Identity)

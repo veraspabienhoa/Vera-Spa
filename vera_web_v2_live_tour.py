@@ -3792,6 +3792,7 @@ def _board_history_rows(
             "id": int(row["id"]), "revision": int(row["aggregate_revision"]),
             "employee_id": str(row["employee_id"]), "employee_name": str(row["employee_name"] or ""),
             "action": str(row["action"] or "update"), "actor": str(row["actor"] or ""),
+            "changed_date_label": changed_at.astimezone(VN_TZ).strftime("%d-%m-%Y"), "changed_time_label": changed_at.astimezone(VN_TZ).strftime("%H:%M:%S"),
             "changed_at": _iso(changed_at), "changed_at_label": changed_at.astimezone(VN_TZ).strftime("%d-%m-%Y %H:%M:%S"),
             "before": before_values, "after": after_values, "changed_columns": changed_columns,
         })
@@ -3802,14 +3803,14 @@ def _board_history_excel(rows: list[dict[str, Any]]) -> BytesIO:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Lich_su_Live_Tour"
-    headers = ["Ngày giờ", "Nhân viên", "Người thao tác", "Hành động", "Cột thay đổi"]
+    headers = ["Ngày", "Giờ", "Nhân viên", "Người thao tác", "Hành động", "Cột thay đổi"]
     headers += [f"Trước · {column}" for column in BOARD_COLUMNS]
     headers += [f"Sau · {column}" for column in BOARD_COLUMNS]
     body = []
     for item in rows:
         before, after = item.get("before") or {}, item.get("after") or {}
         body.append([
-            item.get("changed_at_label"), item.get("employee_name"), item.get("actor"),
+            item.get("changed_date_label") or str(item.get("changed_at_label") or "").split(" ")[0], item.get("changed_time_label") or str(item.get("changed_at_label") or "").partition(" ")[2], item.get("employee_name"), item.get("actor"),
             item.get("action"), ", ".join(item.get("changed_columns") or []),
             *[before.get(column, "") for column in BOARD_COLUMNS],
             *[after.get(column, "") for column in BOARD_COLUMNS],

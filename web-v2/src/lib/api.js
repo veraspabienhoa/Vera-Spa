@@ -400,6 +400,10 @@ export const veraApi = {
     return request(`/v2/live-tour?${params}`)
   },
   liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
+  uiLayout: () => request('/v2/ui-layout'),
+  saveUiLayout: (body) => request('/v2/ui-layout', { method: 'PUT', body: JSON.stringify(body) }),
+  previewBoardHistoryCleanup: (body) => request('/v2/live-tour/board-history/cleanup-preview', { method: 'POST', body: JSON.stringify(body) }),
+  deleteBoardHistory: (body) => request('/v2/live-tour/board-history', { method: 'DELETE', body: JSON.stringify(body) }),
   liveTourReports: () => request('/v2/live-tour/reports'),
   liveTourBoardHistory: (query = {}) => {
     const params = new URLSearchParams()

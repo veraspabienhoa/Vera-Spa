@@ -1,0 +1,52 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+import React, { act } from 'react'
+import { JSDOM } from 'jsdom'
+
+const built = await build({ entryPoints: [fileURLToPath(new URL('../src/components/LayoutDesigner.jsx', import.meta.url))], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime'], loader: { '.css': 'empty' }, plugins: [{ name: 'api', setup(b) {
+  b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
+  b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const veraApi=globalThis.__layoutApi', loader: 'js' }))
+} }] })
+
+test('Admin drags within a group, saves desktop only, and another user receives the layout without edit controls', async () => {
+  const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
+  const names = ['window','document','navigator','getComputedStyle','MutationObserver','IS_REACT_ACT_ENVIRONMENT','__layoutApi']
+  const previous = Object.fromEntries(names.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
+  for (const key of ['window','document','navigator','getComputedStyle','MutationObserver']) Object.defineProperty(globalThis,key,{ value: key === 'window' ? dom.window : dom.window[key], configurable:true })
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  let server = { revision: 0, layout: { desktop: {}, mobile: { 'l-mobile': { width: 80 } } } }, actionCalls = 0
+  const writes = []
+  globalThis.__layoutApi = { uiLayout: async () => structuredClone(server), saveUiLayout: async body => { writes.push(body); server = { revision: 1, layout: { ...server.layout, [body.device]: body.items } }; return structuredClone(server) } }
+  const module = { exports: {} }
+  new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports)
+  const Designer = module.exports.default
+  const { createRoot } = await import('react-dom/client')
+  const root = createRoot(document.querySelector('#root'))
+  const screen = role => React.createElement('div', { className:'app-shell' }, React.createElement('nav',{ 'data-vera-node':'nav',style:{display:'flex'} }, ['first','second'].map(id => React.createElement('button',{ key:id, id,'data-vera-node':'button','data-vera-item':id,onClick:()=>actionCalls++ },id))),React.createElement(Designer,{user:{role},page:'settings'}))
+  const click = async text => act(async () => [...document.querySelectorAll('.layout-designer button')].find(el=>el.textContent.includes(text)).click())
+  try {
+    await act(async()=>root.render(screen('admin')))
+    await click('Chỉnh bố cục')
+    const first=document.querySelector('#first'), second=document.querySelector('#second')
+    document.elementFromPoint=()=>second
+    await act(()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
+    await act(()=>first.click())
+    assert.equal(actionCalls,0,'editing must not trigger business actions')
+    await act(()=>document.dispatchEvent(new window.MouseEvent('pointerup',{bubbles:true,clientX:100,clientY:1})))
+    await click('Lưu cho tất cả')
+    assert.equal(writes.length,1)
+    assert.equal(writes[0].device,'desktop')
+    assert.equal(writes[0].items[first.dataset.layoutKey].order,1)
+    assert.equal(writes[0].items[second.dataset.layoutKey].order,0)
+    assert.deepEqual(server.layout.mobile,{'l-mobile':{width:80}})
+    await act(async()=>root.render(screen('nhanvien')))
+    assert.equal(document.querySelector('.layout-designer'),null)
+    assert.match(document.querySelector('style').textContent,/order:1!important/)
+  } finally {
+    await act(()=>root.unmount());dom.window.close()
+    for(const [key,value]of Object.entries(previous)){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key]}
+  }
+})

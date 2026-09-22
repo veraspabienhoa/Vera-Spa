@@ -1,3 +1,4 @@
+import SystemTabs from './components/SystemTabs'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import AppShell from './components/AppShell'
 import PayrollTabs from './components/PayrollTabs'
@@ -15,7 +16,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -232,8 +233,7 @@ export default function App() {
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
         {['settings', 'appearance', 'notifications', 'permissions'].includes(page) && <SettingsPage user={shellUser} initialTab={page === 'settings' ? undefined : page} appearance={<AppearanceSettingsPage user={shellUser} />} notifications={<NotificationSettingsPage user={shellUser} />} permissionSettings={<PermissionsPage user={shellUser} />} />}
         {page === 'auto-check' && <AutoCheckPage user={shellUser} />}
-        {page === 'changes' && <AdminChangesPage user={shellUser} />}
-        {page === 'storage' && <StorageAdminPage />}
+        {['system', 'changes', 'storage'].includes(page) && <SystemTabs user={shellUser} initialTab={page === 'storage' ? 'storage' : 'changes'} changes={<AdminChangesPage user={shellUser} />} storage={<StorageAdminPage />} />}
       </Suspense>
       </>}
     </AppShell>
