@@ -1,5 +1,5 @@
 import { visualCss } from './uiVisualStyle.js'
-export const layoutCandidates = 'header, [role=heading], p, span[data-ui-key], [role=listbox], [role=combobox], h1, h2, h3, section, fieldset, .box, [role=combobox], .vera-date-input, .searchable-select, .nav-list > a, [role="tab"], button, input:not([type="hidden"]), select, textarea, label, .panel, .metric-card, .training-card, .training-tabs > button, .spa-tabs > button, .training-report-filter, .staff-toolbar, .page-heading, .page-heading-row'
+export const layoutCandidates = 'strong, small, b, em, blockquote, figure, figcaption, details, summary, img, div, span, main, nav, aside, footer, form, h4, h5, h6, article, ul, ol, li, table, th, header, [role=heading], p, span[data-ui-key], [role=listbox], [role=combobox], h1, h2, h3, section, fieldset, .box, [role=combobox], .vera-date-input, .searchable-select, .nav-list > a, [role="tab"], button, input:not([type="hidden"]), select, textarea, label, .panel, .metric-card, .training-card, .training-tabs > button, .spa-tabs > button, .training-report-filter, .staff-toolbar, .page-heading, .page-heading-row'
 export function legacyLayoutKey(element, page) {
   const parts = []
   for (let node = element; node && !node.classList?.contains('app-shell'); node = node.parentElement) {
@@ -34,6 +34,7 @@ export function layoutCss(items) {
     if (['start','center','end'].includes(value.content_align)) rules.push(`:is(${selector}):is(button,a,[role="tab"]){align-items:${value.content_align}!important}`)
     if (['left','center','right'].includes(value.text_align)) rules.push(`:is(${selector}):is(button,a,[role="tab"]){justify-content:${{left:'flex-start',center:'center',right:'flex-end'}[value.text_align]}!important}`)
     if (value.appearance && typeof value.appearance === 'object') rules.push(visualCss(selector, value.appearance))
+    if (value.width != null || value.height != null) rules.push(`:is(${selector}):is(span,strong,small,b,em){display:inline-block!important}`)
     if (value.width != null) rules.push(`table:has(th[data-layout-key="${key}"]){table-layout:fixed;width:100%;max-width:100%}`)
     if (value.rows != null) rules.push(`[data-layout-key="${key}"]>button,[data-layout-key="${key}"]>a{min-width:0!important;max-width:100%;white-space:normal!important;overflow-wrap:anywhere;min-height:36px}`)
     if (value.parent && /^(l|u)-[a-z0-9-]+$/.test(value.parent)) rules.push(`[data-layout-key="${value.parent}"][data-layout-block="true"]{display:flex!important;flex-direction:column!important;min-width:0;max-width:100%}`)
