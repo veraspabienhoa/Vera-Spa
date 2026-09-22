@@ -381,6 +381,22 @@ def _audit(conn, entity_type: str, entity_id: str, action: str, actor: str, deta
              "actor": actor, "detail": __import__("json").dumps(detail or {}, ensure_ascii=False)})
 
 
+def _report_employees(conn, employees):
+    """Only permitted employees with daily or submitted comprehensive results."""
+    usernames = {
+        str(row[0]).casefold()
+        for row in conn.execute(text("""
+            SELECT lower(employee_username) FROM vera_training_session
+            UNION
+            SELECT lower(a.employee_username)
+            FROM vera_evaluation_assignment a
+            JOIN vera_employee_evaluation ev ON ev.assignment_id=a.id
+            WHERE a.status='submitted'
+        """))
+    }
+    return [employee for employee in employees if employee["username"].casefold() in usernames]
+
+
 def install_training_routes(
     app, *, engine_instance: Callable[[], Any], current_identity: Callable,
     require_feature: Callable, identity_type: Any,
@@ -476,6 +492,7 @@ def install_training_routes(
                 WHERE r.active=TRUE ORDER BY full_name
             """))) if _is_admin(ident) else []
             return {"employees": employees, "training_students": training_students,
+                    "report_employees": _report_employees(conn, employees),
                     "people": people, "sessions": sessions,
                     "assignments": assignments, "cycles": cycles, "scopes": scopes,
                     "evaluators": evaluators, "notifications": notifications,
