@@ -1,6 +1,6 @@
 import {
   CalendarDays, Camera, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Download, LoaderCircle,
-  PencilLine, Plus, Save, Settings2, Trash2, Upload,
+  PencilLine, Plus, Save, Trash2, Upload,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -338,8 +338,6 @@ export default function WorkSchedulePage({ user }) {
   const autoSaveAttemptRef = useRef('')
   const importedAwaitingManualSaveRef = useRef(false)
   const [shiftDefinitions, setShiftDefinitions] = useState({ quanly: {}, letan: {}, locker: {}, tapvu: {} })
-  const [shiftDrafts, setShiftDrafts] = useState([])
-  const [shiftEditorOpen, setShiftEditorOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -439,11 +437,6 @@ export default function WorkSchedulePage({ user }) {
       }]))
       const definitions = result.shift_definitions || { quanly: {}, letan: {}, locker: {}, tapvu: {} }
       setShiftDefinitions(definitions)
-      setShiftDrafts(department === 'quanly' ? [] : Object.entries(definitions?.[department] || {}).map(([shift_code, spec]) => ({
-        shift_code,
-        start_time: spec?.start || '',
-        end_time: spec?.end || '',
-      })))
       setSaved(mapped)
       setDrafts(mapped)
       importedAwaitingManualSaveRef.current = false
@@ -752,43 +745,6 @@ export default function WorkSchedulePage({ user }) {
   useEffect(() => {
     if (!pendingChanges.length && autoSaveState !== 'saving') setAutoSaveState('saved')
   }, [autoSaveState, pendingChanges.length])
-
-  const changeShiftDraft = (index, field, value) => setShiftDrafts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))
-
-  const addShiftDraft = () => {
-    let number = shiftDrafts.length + 1
-    let name = `Ca mới ${number}`
-    const existing = new Set(shiftDrafts.map((item) => String(item.shift_code || '').toLowerCase()))
-    while (existing.has(name.toLowerCase())) { number += 1; name = `Ca mới ${number}` }
-    setShiftDrafts((current) => [...current, { shift_code: name, start_time: '09:00', end_time: '17:00' }])
-  }
-
-  const removeShiftDraft = (index) => {
-    if (shiftDrafts.length <= 1) return setNotice('Mỗi bộ phận phải còn ít nhất 1 ca làm việc.')
-    setShiftDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index))
-  }
-
-  const saveShiftConfig = async () => {
-    if (!canEdit || department === 'quanly') return
-    setBusy(true)
-    setNotice('')
-    try {
-      const shifts = shiftDrafts.map((item) => ({
-        shift_code: String(item.shift_code || '').trim(),
-        start_time: item.start_time || '',
-        end_time: item.end_time || '',
-      }))
-      if (shifts.some((item) => !item.shift_code || !item.start_time || !item.end_time)) throw new Error('Mỗi ca cần đủ Tên ca, Giờ bắt đầu và Giờ kết thúc.')
-      const result = await scheduleRequest('/v2/work-schedule/shifts', { method: 'PUT', body: JSON.stringify({ department, shifts }) })
-      await load()
-      setShiftEditorOpen(false)
-      setNotice(result.message || 'Đã cập nhật cấu hình ca làm việc.')
-    } catch (error) {
-      setNotice(error.message || 'Không lưu được cấu hình ca.')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const activeShiftDefinitions = shiftDefinitions?.[department] || {}
   const configuredShiftNames = Object.keys(activeShiftDefinitions)
@@ -1099,7 +1055,6 @@ export default function WorkSchedulePage({ user }) {
         <button type="button" className="schedule-copy-button" onClick={() => void exportScheduleTemplate()} disabled={busy || loading}><Download size={16}/> Xuất Excel mẫu</button>
         {canEdit && <><button type="button" className="schedule-copy-button" onClick={() => scheduleFileInputRef.current?.click()} disabled={busy || loading}><Upload size={16}/> Import Excel</button><input ref={scheduleFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importScheduleTemplate(event.target.files?.[0])} /></>}
         <button type="button" className="schedule-copy-button" onClick={() => void captureFullSchedule()} disabled={loading || captureBusy}>{captureBusy ? <LoaderCircle size={16} className="spin" /> : <Camera size={16}/>} {captureBusy ? 'Đang chụp…' : 'Chụp toàn bộ bảng'}</button>
-        {canEdit && department !== 'quanly' && <button type="button" className="schedule-config-button" onClick={() => setShiftEditorOpen((value) => !value)}><Settings2 size={16}/> Tạo / sửa ca</button>}
         {canEdit && <button type="button" className="schedule-save" onClick={() => void saveChanges(false)} disabled={busy || loading || !pendingChanges.length}>{busy ? <LoaderCircle size={16} className="spin" /> : <Save size={16}/>} Lưu lịch</button>}
         {canEdit && <span className={`schedule-autosave-state ${autoSaveState}`}>{importedAwaitingManualSaveRef.current ? 'Excel chờ Lưu lịch' : autoSaveState === 'saving' ? 'Đang tự lưu…' : autoSaveState === 'pending' ? 'Chờ tự lưu' : autoSaveState === 'error' ? 'Tự lưu lỗi' : 'Đã tự lưu'}</span>}
       </div>
@@ -1111,20 +1066,9 @@ export default function WorkSchedulePage({ user }) {
       <VeraDateInput aria-label="Đến ngày" min={customStart} value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} />
     </div>}
 
-    <div className="schedule-department-tabs">{availableDepartments.map((item) => <button type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setDepartment(item); setShiftEditorOpen(false) }}>{DEPARTMENT_INFO[item].label}</button>)}</div>
+    <div className="schedule-department-tabs">{availableDepartments.map((item) => <button type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setDepartment(item) }}>{DEPARTMENT_INFO[item].label}</button>)}</div>
 
     {department !== 'quanly' && <div className="schedule-legend"><strong>{DEPARTMENT_INFO[department].label}</strong>{Object.entries(activeShiftDefinitions).map(([name, spec]) => <span key={name}><strong>{name}:</strong> {formatShiftTime(spec)}</span>)}</div>}
-
-    {shiftEditorOpen && canEdit && department !== 'quanly' && <div className="shift-editor">
-      <div className="shift-editor-head"><strong>TẠO / CHỈNH SỬA CA · {DEPARTMENT_INFO[department].label}</strong><button type="button" className="schedule-config-button" onClick={addShiftDraft}><Plus size={15}/> Thêm ca</button></div>
-      <div className="shift-editor-rows">{shiftDrafts.map((item, index) => <div className="shift-editor-row" key={`${index}-${item.shift_code}`}>
-        <label>Tên ca<input value={item.shift_code} onChange={(event) => changeShiftDraft(index, 'shift_code', event.target.value)} /></label>
-        <label>Bắt đầu<input type="time" value={item.start_time} onChange={(event) => changeShiftDraft(index, 'start_time', event.target.value)} /></label>
-        <label>Kết thúc<input type="time" value={item.end_time} onChange={(event) => changeShiftDraft(index, 'end_time', event.target.value)} /></label>
-        <button type="button" onClick={() => removeShiftDraft(index)}><Trash2 size={15}/></button>
-      </div>)}</div>
-      <div className="shift-editor-actions"><button type="button" className="schedule-copy-button" onClick={() => setShiftEditorOpen(false)}>Hủy</button><button type="button" className="schedule-save" onClick={() => void saveShiftConfig()}><Save size={15}/> Lưu cấu hình ca</button></div>
-    </div>}
 
     {pastePanelOpen && selectedCell && <div className="paste-range-panel">
       <label>Nhân viên<input value={systemName(employees.find((item) => item.username === selectedCell.username)) || selectedCell.username} readOnly /></label>

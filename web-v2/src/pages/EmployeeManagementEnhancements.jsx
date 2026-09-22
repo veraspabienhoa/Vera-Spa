@@ -1,6 +1,4 @@
 import { useEffect } from 'react'
-import ShiftBreakSettingsPanel from './ShiftBreakSettingsPanel'
-import KtvShiftSettingsPanel from './KtvShiftSettingsPanel'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
 
 function downloadPortrait(image, username = 'Nhan_Vien') {
@@ -268,7 +266,5 @@ export default function EmployeeManagementEnhancements({ user }) {
 
   if (!isAdmin && !user?.permissions?.ktv_shift_view) return null
   return <>
-    {user?.permissions?.ktv_shift_view && <KtvShiftSettingsPanel />}
-    {isAdmin && <ShiftBreakSettingsPanel />}
   </>
 }

@@ -69,7 +69,7 @@ function CustomerHistory({ value, canExport }) {
   </div>
 }
 
-export default function SpaManagementPage({ user, mode }) {
+export default function SpaManagementPage({ user, mode, initialTab = 'services', embedded = false }) {
   const customersPage = mode === 'customers'
   const allowed = user?.role === 'admin' || user?.permissions?.[customersPage ? 'live_tour_customers_view' : 'live_tour_admin'] === true
   const canEditCustomer = user?.role === 'admin' || user?.permissions?.live_tour_customers_edit === true
@@ -77,7 +77,7 @@ export default function SpaManagementPage({ user, mode }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [tab, setTab] = useState('services')
+  const [tab, setTab] = useState(initialTab)
   const [search, setSearch] = useState('')
   const [serviceFilter, setServiceFilter] = useState('all')
   const [customerContext, setCustomerContext] = useState(null)
@@ -248,11 +248,12 @@ export default function SpaManagementPage({ user, mode }) {
   if (!allowed) return <div className="error-box" role="alert">Tài khoản chưa được cấp quyền mở {title}.</div>
 
   return <div className="feature-page spa-management">
-    <div className="page-heading"><div><span className="eyebrow">{customersPage ? <Users size={14}/> : <Settings2 size={14}/>} VERA SPA</span><h1>{title}</h1><p>{customersPage ? 'Hồ sơ khách hàng, lịch sử dịch vụ và số vé combo còn lại.' : 'Quản lý dịch vụ và vị trí phục vụ dùng chung với Live Tour.'}</p></div><button className="secondary-button" onClick={refresh} disabled={busy}><RefreshCw size={16}/> Làm mới</button></div>
+    {!embedded && <div className="page-heading"><div><span className="eyebrow">{customersPage ? <Users size={14}/> : <Settings2 size={14}/>} VERA SPA</span><h1>{title}</h1><p>{customersPage ? 'Hồ sơ khách hàng, lịch sử dịch vụ và số vé combo còn lại.' : 'Quản lý dịch vụ và vị trí phục vụ dùng chung với Live Tour.'}</p></div><button className="secondary-button" onClick={refresh} disabled={busy}><RefreshCw size={16}/> Làm mới</button></div>}
+    {embedded && <button className="secondary-button" onClick={refresh} disabled={busy}><RefreshCw size={16}/> Làm mới</button>}
     {error && !editor && <div className="error-box" role="alert">{error}</div>}
     {notice && <div className="success-box" role="status">{notice}</div>}
-    {!customersPage && <div className="spa-tabs" role="tablist" aria-label="Cài đặt"><button role="tab" aria-selected={tab === 'services'} aria-controls="spa-settings-content" id="spa-services-tab" disabled={busy} onClick={() => { setTab('services'); setSearch('') }}>Cài đặt dịch vụ</button><button role="tab" aria-selected={tab === 'areas'} aria-controls="spa-settings-content" id="spa-areas-tab" disabled={busy} onClick={() => { setTab('areas'); setSearch('') }}>Cài đặt khu vực dịch vụ</button></div>}
-    <section className="panel spa-content" id="spa-settings-content" role={customersPage ? undefined : 'tabpanel'} aria-labelledby={customersPage ? undefined : `spa-${tab}-tab`}>
+    {!customersPage && !embedded && <div className="spa-tabs" role="tablist" aria-label="Cài đặt"><button role="tab" aria-selected={tab === 'services'} aria-controls="spa-settings-content" id="spa-services-tab" disabled={busy} onClick={() => { setTab('services'); setSearch('') }}>Cài đặt dịch vụ</button><button role="tab" aria-selected={tab === 'areas'} aria-controls="spa-settings-content" id="spa-areas-tab" disabled={busy} onClick={() => { setTab('areas'); setSearch('') }}>Cài đặt khu vực dịch vụ</button></div>}
+    <section className="panel spa-content" id="spa-settings-content" role={customersPage || embedded ? undefined : 'tabpanel'} aria-labelledby={customersPage || embedded ? undefined : `spa-${tab}-tab`}>
       {!customersPage && tab === 'services' && <div className="spa-service-filters" aria-label="Lọc loại dịch vụ">{[['all', 'Tất cả'], ['service', 'Dịch vụ đơn lẻ'], ['combo', 'Dịch vụ combo']].map(([value, label]) => <button type="button" className="secondary-button" aria-pressed={serviceFilter === value} key={value} onClick={() => setServiceFilter(value)}>{label}</button>)}</div>}
       <div className="spa-toolbar"><ClearableSearchInput type="search" aria-label="Tìm kiếm" placeholder={customersPage ? 'Tìm tên hoặc số điện thoại…' : 'Tìm theo tên…'} value={search} onChange={(event) => setSearch(event.target.value)}/><span>{filtered.length} / {rows.length}</span><div className="spa-actions">{customersPage && data?.can_export && <button className="secondary-button" disabled={busy} onClick={exportCustomers}><Download size={16}/> Xuất Excel</button>}<button className="primary-button" disabled={busy || !data || (customersPage && !canCreateCustomer)} onClick={() => openEditor(addKind)}><Plus size={16}/> Thêm {customersPage ? 'khách hàng' : tab === 'services' ? 'dịch vụ' : 'khu vực'}</button></div></div>
       {busy && !data && <p role="status">Đang tải dữ liệu…</p>}
