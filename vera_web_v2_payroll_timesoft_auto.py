@@ -10,6 +10,8 @@ TimeSoft header expected by ``vera_web_v2_payroll._read_source`` so all Payroll
 """
 from __future__ import annotations
 
+from vera_web_v2_hr import TIP_SQL
+
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 import numbers
@@ -187,10 +189,10 @@ def _time_value(context: dict[str, Any], target_date: date, norm) -> Any:
 
 
 def _known_employee_names(conn, norm) -> dict[str, str]:
-    rows = conn.execute(text("""
+    rows = conn.execute(text(f"""
         SELECT username, COALESCE(full_name,'') AS full_name
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+        WHERE {TIP_SQL}
     """)).mappings().all()
     output: dict[str, str] = {}
     for row in rows:

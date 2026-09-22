@@ -163,6 +163,10 @@ function liveTourExportParams(kind, query = {}) {
 }
 
 export const veraApi = {
+  hr: () => request('/v2/hr'),
+  saveHrDepartment: body => request('/v2/hr/departments', { method: 'PUT', body: JSON.stringify(body) }),
+  deleteHrDepartment: (code, revision) => request(`/v2/hr/departments/${encodeURIComponent(code)}`, { method: 'DELETE', body: JSON.stringify({ revision }) }),
+  assignHrDepartment: (username, department, revision) => request(`/v2/hr/employees/${encodeURIComponent(username)}/department`, { method: 'PUT', body: JSON.stringify({ department, revision }) }),
   health: () => request('/v2/health'),
   me: async () => {
     if (isApiConfigured) return request('/v2/me')

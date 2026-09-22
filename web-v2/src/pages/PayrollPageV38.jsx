@@ -207,7 +207,7 @@ export default function PayrollPageV38({ user }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 8, margin: '14px 0' }}>
             {(data.employees || []).map((item) => <label key={item.employee_name} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 10px', border: '1px solid #e6e0dc', borderRadius: 8 }}>
               <input type="checkbox" checked={selectedSet.has(item.employee_name)} disabled={Boolean(busy)} onChange={() => toggleEmployee(item.employee_name)} />
-              <span><strong>{item.employee_name}</strong><small style={{ display: 'block' }}>{item.role === 'leader' ? 'Leader' : 'Nhân viên'} · {item.has_override ? `${money(item.living_expense)} / ${money(item.locker_support)}` : 'Đang dùng mặc định'}</small></span>
+              <span><strong>{item.employee_name}</strong><small style={{ display: 'block' }}>{item.role === 'leader' ? 'Leader' : item.role === 'nhanvien' ? 'Nhân viên' : item.role} · {item.has_override ? `${money(item.living_expense)} / ${money(item.locker_support)}` : 'Đang dùng mặc định'}</small></span>
             </label>)}
           </div>
 

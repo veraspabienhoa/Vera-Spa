@@ -1,6 +1,8 @@
 """Complete Web V2 payroll workflow: calculate, configure, save and email."""
 from __future__ import annotations
 
+from vera_web_v2_hr import TIP_SQL, DEPARTMENT_SQL
+
 import calendar
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -463,13 +465,13 @@ def _draft_key(start: date, end: date) -> str:
 def _employee_catalog(conn, norm) -> dict[str, dict[str, Any]]:
     return {
         norm(item["username"]): dict(item)
-        for item in conn.execute(text("""
+        for item in conn.execute(text(f"""
             SELECT username,COALESCE(full_name,'') full_name,COALESCE(email,'') email,
                    COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
                    COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status,
                    lower(COALESCE(payload->>'Không tính lương','false')) IN ('1','true','yes','y','có','x') payroll_excluded
             FROM employees
-            WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+            WHERE {TIP_SQL}
               AND COALESCE(payload->>'__deleted', 'false') <> 'true'
         """)).mappings().all()
     }
@@ -1249,13 +1251,13 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             require_feature(conn, ident, "payroll_calculate")
             source = _read_source(payload)
             cfg = _config(conn)
-            employees = [dict(row) for row in conn.execute(text("""
-                SELECT username,COALESCE(full_name,'') full_name,lower(COALESCE(role,'')) role,
+            employees = [dict(row) for row in conn.execute(text(f"""
+                SELECT username,COALESCE(full_name,'') full_name,{DEPARTMENT_SQL} role,
                        COALESCE(email,'') email,COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
                        COALESCE(employment_start_date,'') employment_start_date,
                        COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status
                 FROM employees
-                WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+                WHERE {TIP_SQL}
                   AND COALESCE(payload->>'__deleted', 'false') <> 'true'
                   AND lower(COALESCE(payload->>'Không tính lương','false')) NOT IN ('1','true','yes','y','có','x')
                 ORDER BY COALESCE(stt,2147483647),username
@@ -1406,10 +1408,10 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
     def create_obligation(body: ObligationCreate, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_penalty_obligation")
-            canonical_name = conn.execute(text("""
+            canonical_name = conn.execute(text(f"""
                 SELECT username FROM employees
                 WHERE lower(btrim(username))=lower(btrim(:username))
-                  AND lower(COALESCE(role,'')) IN ('nhanvien','leader') LIMIT 1
+                  AND {TIP_SQL} LIMIT 1
             """), {"username": body.employee_name.strip()}).scalar_one_or_none()
             if not canonical_name:
                 raise HTTPException(400, "Tên nhân viên không khớp chính xác với hồ sơ Nhân viên/Leader.")
@@ -1439,10 +1441,10 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             raise HTTPException(503, "Máy chủ chưa cấu hình mật khẩu gửi email bảng lương.")
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_email")
-            employee_rows = conn.execute(text("""
+            employee_rows = conn.execute(text(f"""
                 SELECT username,COALESCE(full_name,'') full_name,COALESCE(email,'') email,
                        COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name
-                FROM employees WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+                FROM employees WHERE {TIP_SQL}
             """)).mappings().all()
             violation_rows = conn.execute(text("""
                 SELECT employee_name,leave_date,leave_reason,detail,COALESCE(penalty,0) penalty

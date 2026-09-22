@@ -9,8 +9,10 @@ from html import escape
 from io import BytesIO
 import os
 import smtplib
-from typing import Any, Callable, Literal
+from typing import Any, Callable
+import re
 import uuid
+import vera_web_v2_hr as hr
 
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -24,7 +26,7 @@ import vera_web_v2_snapshot as attendance
 import vera_web_v2_work_schedule as work_schedule
 
 
-RELEASE = "department-payroll-support-2026-09-21-v7"
+RELEASE = "department-payroll-hr-2026-09-22-v8"
 DEPARTMENTS = {
     "quanly": "Quản lý",
     "locker": "Locker",
@@ -167,7 +169,7 @@ class DepartmentSettingsUpdate(BaseModel):
 
 
 class DepartmentDraft(BaseModel):
-    department: Literal["quanly", "locker", "letan", "support", "tapvu"]
+    department: str = Field(min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
     month: str = Field(pattern=r"^\d{4}-\d{2}$")
     rows: list[dict[str, Any]] = Field(min_length=1, max_length=300)
 
@@ -216,10 +218,10 @@ def _setting_key(department: str, suffix: str) -> str:
     return f"department_{department}_{suffix}"
 
 
-def _clean_config(department: str, raw: Any) -> dict[str, Any]:
-    defaults = DEFAULT_CONFIG[department]
+def _clean_config(department: str, raw: Any, mode: str | None = None) -> dict[str, Any]:
+    defaults = DEFAULT_CONFIG.get(department, DEFAULT_CONFIG["support"])
     source = raw if isinstance(raw, dict) else {}
-    result = {"calculation_mode": CALCULATION_MODES[department]}
+    result = {"calculation_mode": mode or CALCULATION_MODES.get(department, "hourly")}
     for key, value in defaults.items():
         if key == "calculation_mode":
             continue
@@ -227,15 +229,19 @@ def _clean_config(department: str, raw: Any) -> dict[str, Any]:
     result["standard_day_hours"] = max(1, result["standard_day_hours"])
     result["standard_month_days"] = max(1, result["standard_month_days"])
     result["full_day_hours"] = max(1, result["full_day_hours"])
-    if department == "tapvu":
+    if result["calculation_mode"] == "monthly":
         result["standard_month_days"] = 26
     return result
 
 
 def _settings(conn, department: str) -> dict[str, Any]:
+    definition = hr.admin_departments(conn).get(department)
+    if not definition:
+        raise HTTPException(400, "Bộ phận không thuộc hình thức Lương giờ hoặc Lương tháng. Hãy dùng Lương KTV cho hình thức Tip.")
     config = _clean_config(
         department,
-        payroll._setting(conn, _setting_key(department, "config"), DEFAULT_CONFIG[department]),
+        payroll._setting(conn, _setting_key(department, "config"), DEFAULT_CONFIG.get(department, DEFAULT_CONFIG["support"])),
+        definition["salary_mode"],
     )
     rules = payroll._setting(conn, _setting_key(department, "penalty_rules"), [])
     template = payroll._setting(conn, _setting_key(department, "email_template"), DEFAULT_EMAIL_TEMPLATE)
@@ -245,7 +251,7 @@ def _settings(conn, department: str) -> dict[str, Any]:
         template = DEFAULT_EMAIL_TEMPLATE
     return {
         "department": department,
-        "department_label": DEPARTMENTS[department],
+        "department_label": definition["name"],
         "config": config,
         "penalty_rules": [dict(item) for item in rules if isinstance(item, dict)],
         "email_template": {
@@ -256,10 +262,11 @@ def _settings(conn, department: str) -> dict[str, Any]:
 
 
 def _salary_employee_catalog(conn) -> list[dict[str, Any]]:
-    employees = conn.execute(text("""
-        SELECT username,COALESCE(full_name,'') AS full_name,lower(COALESCE(role,'')) AS role
+    definitions = hr.admin_departments(conn)
+    employees = conn.execute(text(f"""
+        SELECT username,COALESCE(full_name,'') AS full_name,{hr.DEPARTMENT_SQL} AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('quanly','letan','locker','support','tapvu')
+        WHERE {hr.ADMIN_PAY_SQL}
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
         ORDER BY CASE lower(COALESCE(role,''))
@@ -271,7 +278,7 @@ def _salary_employee_catalog(conn) -> list[dict[str, Any]]:
         "employee_username": str(employee.get("username") or "").strip(),
         "employee_name": str(employee.get("full_name") or employee.get("username") or "").strip(),
         "department": str(employee.get("role") or "").strip().lower(),
-        "department_label": DEPARTMENTS[str(employee.get("role") or "").strip().lower()],
+        "department_label": definitions[str(employee.get("role") or "").strip().lower()]["name"],
     } for employee in employees]
 
 
@@ -279,6 +286,7 @@ def _employee_config_rows(conn) -> list[dict[str, Any]]:
     stored = payroll._setting(conn, "department_employee_salary_configs", {})
     stored = stored if isinstance(stored, dict) else {}
     catalog = _salary_employee_catalog(conn)
+    definitions = hr.admin_departments(conn)
     rows = []
     for employee in catalog:
         username = employee["employee_username"]
@@ -288,12 +296,12 @@ def _employee_config_rows(conn) -> list[dict[str, Any]]:
             saved = stored.get(username.casefold())
         if not isinstance(saved, dict):
             continue
-        config = _clean_config(role, {**DEFAULT_CONFIG[role], **saved})
+        config = _clean_config(role, saved, definitions[role]["salary_mode"])
         rows.append({
             "employee_username": username,
             "employee_name": employee["employee_name"],
             "department": role,
-            "department_label": DEPARTMENTS[role],
+            "department_label": employee["department_label"],
             **config,
         })
     return rows
@@ -306,8 +314,8 @@ def _employee_config_map(conn) -> dict[str, dict[str, Any]]:
 def _salary_config_tables(conn) -> dict[str, list[dict[str, Any]]]:
     rows = _employee_config_rows(conn)
     return {
-        "operations": [row for row in rows if row["department"] in {"quanly", "letan", "locker", "support"}],
-        "tapvu": [row for row in rows if row["department"] == "tapvu"],
+        "operations": [row for row in rows if row["calculation_mode"] == "hourly"],
+        "tapvu": [row for row in rows if row["calculation_mode"] == "monthly"],
     }
 
 
@@ -395,10 +403,10 @@ def _recalculate(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _employees(conn, department: str) -> list[dict[str, Any]]:
-    return [dict(row) for row in conn.execute(text("""
+    return [dict(row) for row in conn.execute(text(f"""
         SELECT username,COALESCE(full_name,'') AS full_name,COALESCE(email,'') AS email
         FROM employees
-        WHERE lower(COALESCE(role,''))=:department
+        WHERE {hr.DEPARTMENT_SQL}=:department
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
         ORDER BY COALESCE(stt,2147483647),username
@@ -441,7 +449,7 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str]) 
             "tt": index, "employee_username": username,
             "employee_name": str(employee.get("full_name") or username),
             "email": str(employee.get("email") or ""), "department": department,
-            "department_label": DEPARTMENTS[department], "base_salary": employee_cfg["default_base_salary"],
+            "department_label": settings["department_label"], "base_salary": employee_cfg["default_base_salary"],
             "hours_ca1": hours_ca1, "hours_ca2_before_22": hours_before,
             "hours_ca2_after_22": hours_after,
             "work_days": round(total_hours / employee_cfg["standard_day_hours"], 2),
@@ -506,10 +514,11 @@ def _schedule_totals(
         totals["work_days"] += 1
         shift_code = str(item.get("shift_code") or "")
         regular_minutes = 0
-        if department == "quanly":
+        schedule_department = item.get("schedule_department") or department
+        if schedule_department == "quanly" or (item.get("start_time") and item.get("end_time")):
             regular_minutes = _add_planned_interval(totals, item.get("start_time"), item.get("end_time"), work_day)
         else:
-            spec = (definitions.get(department) or {}).get(shift_code) or {}
+            spec = (definitions.get(schedule_department) or {}).get(shift_code) or {}
             bucket = "ca1" if "ca 1" in norm(shift_code) else "ca2"
             regular_minutes = _add_planned_interval(totals, spec.get("start"), spec.get("end"), work_day, bucket)
 
@@ -517,7 +526,7 @@ def _schedule_totals(
         overtime_shift = str(item.get("overtime_shift") or "")
         if overtime_shift in {"TC Ca 1", "TC Ca 2"}:
             target_shift = overtime_shift.replace("TC ", "", 1)
-            spec = (definitions.get(department) or {}).get(target_shift) or {}
+            spec = (definitions.get(schedule_department) or {}).get(target_shift) or {}
             if spec:
                 overtime_minutes = _add_planned_interval(
                     totals, spec.get("start"), spec.get("end"), work_day,
@@ -546,20 +555,20 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
     employee_configs = _employee_config_map(conn)
     employees = _employees(conn, department)
     records = [dict(item) for item in conn.execute(text("""
-        SELECT work_date,employee_username,shift_code,overtime_shift,start_time,end_time,
+        SELECT work_date,employee_username,department AS schedule_department,shift_code,overtime_shift,start_time,end_time,
                overtime_start_time,overtime_end_time
         FROM vera_work_schedule
-        WHERE work_date BETWEEN :start AND :end AND department=:department
+        WHERE work_date BETWEEN :start AND :end
         ORDER BY work_date,employee_username
     """), {"start": start, "end": end, "department": department}).mappings().all()]
     definition_rows = conn.execute(text("""
         SELECT department,shift_code,start_time,end_time
         FROM vera_work_shift_definition
-        WHERE department IN ('locker','letan','support','tapvu')
+        WHERE department IS NOT NULL
     """)).mappings().all()
-    definitions: dict[str, dict[str, dict[str, str]]] = {key: {} for key in DEPARTMENTS}
+    definitions: dict[str, dict[str, dict[str, str]]] = {key: {} for key in hr.departments(conn)}
     for item in definition_rows:
-        definitions[str(item["department"])][str(item["shift_code"])] = {
+        definitions.setdefault(str(item["department"]), {})[str(item["shift_code"])] = {
             "start": str(item.get("start_time") or "")[:5],
             "end": str(item.get("end_time") or "")[:5],
         }
@@ -573,7 +582,7 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
             "tt": index, "employee_username": username,
             "employee_name": str(employee.get("full_name") or username),
             "email": str(employee.get("email") or ""), "department": department,
-            "department_label": DEPARTMENTS[department],
+            "department_label": hr.admin_departments(conn)[department]["name"],
             "base_salary": employee_cfg["default_base_salary"],
             "hours_ca1": round(totals["minutes_ca1"] / 60, 2),
             "hours_ca2_before_22": round(totals["minutes_ca2_before_22"] / 60, 2),
@@ -599,11 +608,12 @@ def _combined_calculation(conn, month: str, norm: Callable[[Any], str], source: 
     calculator = _schedule_calculation if source == "schedule" else _calculation
     rows: list[dict[str, Any]] = []
     settings: dict[str, Any] = {}
-    for department in DEPARTMENTS:
+    employee_configs = _employee_config_map(conn)
+    for department in hr.admin_departments(conn):
         result = calculator(conn, department, month, norm)
         settings[department] = result
         for row in result["rows"]:
-            cfg = _employee_config_map(conn).get(str(row["employee_username"]).casefold(), result["config"])
+            cfg = employee_configs.get(str(row["employee_username"]).casefold(), result["config"])
             row["calculation_config"] = cfg
             row["calculation_source"] = source
             rows.append(row)
@@ -628,11 +638,11 @@ def _combined_calculation(conn, month: str, norm: Callable[[Any], str], source: 
 
 
 def _combined_employee_catalog(conn) -> dict[str, dict[str, Any]]:
-    rows = conn.execute(text("""
+    rows = conn.execute(text(f"""
         SELECT username,COALESCE(full_name,'') AS full_name,COALESCE(email,'') AS email,
-               lower(COALESCE(role,'')) AS role
+               {hr.DEPARTMENT_SQL} AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('quanly','letan','locker','support','tapvu')
+        WHERE {hr.ADMIN_PAY_SQL}
     """)).mappings().all()
     return {str(item["username"]).strip().casefold(): dict(item) for item in rows}
 
@@ -650,13 +660,13 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
         seen.add(key)
         department = str(employee.get("role") or "").lower()
         supplied_cfg = supplied.get("calculation_config")
-        cfg = _clean_config(department, supplied_cfg) if isinstance(supplied_cfg, dict) else employee_configs.get(key, _settings(conn, department)["config"])
+        cfg = _clean_config(department, supplied_cfg, _settings(conn, department)["config"]["calculation_mode"]) if isinstance(supplied_cfg, dict) else employee_configs.get(key, _settings(conn, department)["config"])
         row = dict(supplied)
         row.update({
             "tt": len(output) + 1, "employee_username": employee["username"],
             "employee_name": employee.get("full_name") or employee["username"],
             "email": employee.get("email") or "", "department": department,
-            "department_label": DEPARTMENTS[department], "calculation_config": cfg,
+            "department_label": hr.admin_departments(conn)[department]["name"], "calculation_config": cfg,
         })
         output.append(_recalculate(row, cfg))
     if not output:
@@ -680,7 +690,7 @@ def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str
             "tt": len(output) + 1, "employee_username": employee["username"],
             "employee_name": employee.get("full_name") or employee["username"],
             "email": employee.get("email") or "", "department": department,
-            "department_label": DEPARTMENTS[department],
+            "department_label": hr.admin_departments(conn)[department]["name"],
         })
         output.append(_recalculate(row, employee_configs.get(str(employee["username"]).casefold(), cfg)))
     if not output:
@@ -689,8 +699,9 @@ def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str
 
 
 def _workbook(rows: list[dict[str, Any]], department: str, label: str) -> bytes:
-    wb = Workbook(); ws = wb.active; ws.title = f"Lương {DEPARTMENTS[department]}"
-    ws.append([f"BẢNG LƯƠNG {DEPARTMENTS[department].upper()} THÁNG {label}"])
+    department_label = str(rows[0].get("department_label") if rows else department)
+    wb = Workbook(); ws = wb.active; ws.title = "Lương bộ phận"
+    ws.append([f"BẢNG LƯƠNG {department_label.upper()} THÁNG {label}"])
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(EXCEL_COLUMNS))
     ws["A1"].font = Font(bold=True, size=16, color="FFFFFF")
     ws["A1"].fill = PatternFill("solid", fgColor="1F513F")
@@ -772,7 +783,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
 
     def valid_department(department: str) -> str:
         value = str(department or "").lower().strip()
-        if value not in DEPARTMENTS:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,49}", value):
             raise HTTPException(404, "Bộ phận không hỗ trợ bảng lương này.")
         return value
 
@@ -782,7 +793,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             require_feature(conn, ident, "payroll_calculate")
             return {
                 "ok": True, "release": RELEASE,
-                "departments": {key: _settings(conn, key) for key in DEPARTMENTS},
+                "departments": {key: _settings(conn, key) for key in hr.admin_departments(conn)},
                 "salary_config_tables": _salary_config_tables(conn),
                 "salary_employee_catalog": _salary_employee_catalog(conn),
                 "email_layout": payroll.PAYROLL_EMAIL_TEMPLATE_RELEASE,
@@ -795,13 +806,14 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_config_edit")
             catalog = {row["employee_username"]: row for row in _salary_employee_catalog(conn)}
-            supplied = {}
+            stored = payroll._setting(conn, "department_employee_salary_configs", {})
+            supplied = {name: config for name, config in stored.items() if name not in catalog} if isinstance(stored, dict) else {}
             for row in body.rows:
                 username = str(row.get("employee_username") or "").strip()
                 employee = catalog.get(username)
                 if not employee or username in supplied:
                     raise HTTPException(400, "Cấu hình có nhân viên trống, trùng hoặc không thuộc đúng bộ phận.")
-                supplied[username] = _clean_config(employee["department"], row)
+                supplied[username] = _clean_config(employee["department"], row, _settings(conn, employee["department"])["config"]["calculation_mode"])
             payroll._put_setting(conn, "department_employee_salary_configs", supplied, ident.employee_username)
             tables = _salary_config_tables(conn)
         return {"ok": True, "salary_config_tables": tables, "message": "Đã lưu cấu hình lương theo từng nhân viên."}
@@ -811,7 +823,6 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         department = valid_department(department)
         if str(ident.role or "").lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được sửa quy định phạt, công thức lương và mẫu email.")
-        config = _clean_config(department, body.config)
         template = {
             "subject": str(body.email_template.get("subject") or "")[:500],
             "body": str(body.email_template.get("body") or "")[:10000],
@@ -821,11 +832,12 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         rules = [item.model_dump() if hasattr(item, "model_dump") else item.dict() for item in body.penalty_rules]
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_config_edit")
+            config = _clean_config(department, body.config, _settings(conn, department)["config"]["calculation_mode"])
             payroll._put_setting(conn, _setting_key(department, "config"), config, ident.employee_username)
             payroll._put_setting(conn, _setting_key(department, "penalty_rules"), rules, ident.employee_username)
             payroll._put_setting(conn, _setting_key(department, "email_template"), template, ident.employee_username)
             saved = _settings(conn, department)
-        return {"ok": True, "message": f"Đã lưu cấu hình {DEPARTMENTS[department]}.", **saved}
+        return {"ok": True, "message": f"Đã lưu cấu hình {department}.", **saved}
 
     @app.get("/v2/department-payroll/calculate")
     def calculate(department: str = Query(...), month: str = Query(...), ident: identity_type = Depends(current_identity)):
@@ -958,7 +970,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             cfg = _settings(conn, department)["config"]
             rows = _clean_rows(conn, department, body.rows, cfg, norm)
             payroll._put_setting(conn, _setting_key(department, f"draft_{body.month}"), rows, ident.employee_username)
-        return {"ok": True, "rows": rows, "message": f"Đã lưu bảng lương nháp {DEPARTMENTS[department]}."}
+        return {"ok": True, "rows": rows, "message": f"Đã lưu bảng lương nháp {department}."}
 
     @app.post("/v2/department-payroll/save")
     def save_official(body: DepartmentDraft, ident: identity_type = Depends(current_identity)):
@@ -974,7 +986,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             history.append({"id": str(uuid.uuid4()), "month": body.month, "month_label": label, "saved_at": datetime.now(VN_TZ).isoformat(), "saved_by": ident.employee_username, "rows": rows})
             payroll._put_setting(conn, _setting_key(department, "history"), history[-120:], ident.employee_username)
             payroll._put_setting(conn, _setting_key(department, f"draft_{body.month}"), rows, ident.employee_username)
-        return {"ok": True, "rows": rows, "message": f"Đã lưu chính thức bảng lương {DEPARTMENTS[department]} tháng {label}."}
+        return {"ok": True, "rows": rows, "message": f"Đã lưu chính thức bảng lương {department} tháng {label}."}
 
     @app.post("/v2/department-payroll/export.xlsx")
     def export_xlsx(body: DepartmentDraft, ident: identity_type = Depends(current_identity)):

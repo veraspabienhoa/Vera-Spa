@@ -14,7 +14,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -47,6 +47,7 @@ const lazyPage = (importer) => lazy(async () => {
 })
 
 const LeaveRegistrationPage = lazyPage(() => import('./pages/LeaveRegistrationPage'))
+const HumanResourcesPage = lazyPage(() => import('./pages/HumanResourcesPage'))
 const EmployeePage = lazyPage(() => import('./pages/EmployeePage'))
 const RulesPage = lazyPage(() => import('./pages/RulesPage'))
 const ProfilePage = lazyPage(() => import('./pages/ProfilePage'))
@@ -216,6 +217,7 @@ export default function App() {
         {page === 'contract-1' && <ContractPage user={shellUser} />}
         {page === 'rules' && <RulesPage user={shellUser} />}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
+        {page === 'hr' && <HumanResourcesPage user={shellUser} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}
         {page === 'payroll' && <PayrollPage user={shellUser} />}
         {page === 'department-payroll' && <DepartmentPayrollPanel user={shellUser} />}
