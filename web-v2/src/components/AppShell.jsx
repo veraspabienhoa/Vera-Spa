@@ -6,7 +6,7 @@ import LayoutDesigner from './LayoutDesigner'
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
 
@@ -373,6 +373,8 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
         .break-alert-stack{position:fixed;z-index:1200;width:min(410px,calc(100vw - 20px));max-height:calc(100vh - 90px);overflow-y:auto;display:grid;gap:6px;margin:0;pointer-events:auto}.break-alert-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:10px;background:#173d31;color:white;box-shadow:0 5px 16px rgba(31,54,46,.18);cursor:move;touch-action:none;user-select:none}.break-alert-toolbar strong{font-size:12px;color:white}.break-alert-toolbar-actions{display:flex;align-items:center;gap:5px}.break-alert-toolbar button,.break-alert-card button,.break-alert-hidden-chip button,.break-alert-global-off button{border:1px solid currentColor;background:#fff;border-radius:7px;padding:4px 7px;font-size:11px;font-weight:800;cursor:pointer}.break-alert-toolbar button{color:#173d31}.break-alert-card{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px;align-items:flex-start;padding:8px 10px;border:1px solid #a92c25;border-radius:10px;background:#fff6f4;box-shadow:0 5px 16px rgba(120,24,17,.13)}.break-alert-card.employee{border-color:#c98212;background:#fff9ed}.break-alert-card>svg{margin-top:1px;color:#a92c25}.break-alert-card.employee>svg{color:#a46708}.break-alert-card strong{display:block;font-size:12px;line-height:1.3;color:#8d211b}.break-alert-card.employee strong{color:#8b5a05}.break-alert-card span{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:#543d38}.break-alert-card .break-alert-timer{font-weight:900;font-size:12px}.break-alert-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap;margin-top:5px}.break-alert-dismiss{color:#6c594f}.break-alert-delete-global{color:#a01818!important;border-color:#a01818!important;background:#fff!important}.break-alert-delete-global:disabled{opacity:.55;cursor:wait}.break-alert-hidden-chip,.break-alert-global-off{position:fixed;z-index:1200;display:flex;align-items:center;gap:7px;border:1px solid #9c6a13;border-radius:10px;background:#fff8e8;box-shadow:0 5px 16px rgba(80,58,20,.16);padding:7px 9px;font-size:11px;font-weight:800}.break-alert-hidden-chip button,.break-alert-global-off button{color:#75500c}.break-alert-global-off{right:18px;top:82px;border-color:#6d746f;background:#f4f6f5;color:#34433d}.break-alert-global-off button{color:#34433d}
         @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05;font-weight:900;color:var(--gold)}.break-alert-stack{width:calc(100vw - 12px);max-height:calc(100vh - 72px)}.break-alert-toolbar{padding:6px}.break-alert-card{padding:7px 8px}.break-alert-global-off{right:6px;top:70px}}
         .sidebar-footer{flex-shrink:0}
+        .sidebar .nav-list > :is(a,button){order:0!important}
+        @media(max-width:820px){.nav-list .appearance-menu-item{display:none!important}}
         @media(max-width:430px){.topbar{flex-wrap:wrap}.topbar-actions{width:100%;justify-content:flex-end}.topbar-title.vera-script-tagline{font-size:20px;white-space:normal}.break-alert-toolbar{align-items:flex-start}.break-alert-toolbar-actions{flex-wrap:wrap;justify-content:flex-end}}
       `}</style>
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''} ${standalone && !standaloneMenuOpen ? 'standalone-hidden' : ''}`}>
@@ -393,7 +395,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             if (anyPermission && !anyPermission.some((key) => user?.permissions?.[key] === true)) return false
             return true
           }).sort((a,b) => (uiItems['u-menu-'+a.id]?.order ?? items.indexOf(a)) - (uiItems['u-menu-'+b.id]?.order ?? items.indexOf(b))).map(({ id, label, icon: Icon, ready }) => (
-            <a data-ui-key={`u-menu-${id}`}
+            <Fragment key={id}><a data-ui-key={`u-menu-${id}`}
               key={id}
               className={`nav-item ${(currentPage === id || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
@@ -403,15 +405,16 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             >
               <Icon size={19} /><span><UiCustomText uiKey={`u-menu-${id}`}>{label}</UiCustomText></span>{!ready && <span className="soon-pill">Sau</span>}
             </a>
+            {id === 'rules' && user?.role === 'admin' && !user?.must_change_password && <button data-ui-key="u-783d8360d527"
+            type="button" className={`nav-item appearance-menu-item ${layoutDesignerOpen ? 'active' : ''}`}
+            ref={layoutTrigger} aria-expanded={layoutDesignerOpen}
+            onClick={() => { setLayoutDesignerOpen(true); setMobileOpen(false); setStandaloneMenuOpen(false) }}
+          ><Settings2 size={19} /><span>Giao diện</span></button>}
+            </Fragment>
           ))}
         </nav>
 
         <div className="sidebar-footer">
-          {user?.role === 'admin' && !user?.must_change_password && <button data-ui-key="u-783d8360d527"
-            type="button" className={`nav-item ${layoutDesignerOpen ? 'active' : ''}`}
-            ref={layoutTrigger} aria-expanded={layoutDesignerOpen}
-            onClick={() => { setLayoutDesignerOpen(true); setMobileOpen(false); setStandaloneMenuOpen(false) }}
-          ><Settings2 size={19} /><span>Giao diện</span></button>}
           <div data-ui-key="u-dd74261c77ac" className="user-card">
             <div className="avatar">{(user?.email || 'V')[0].toUpperCase()}</div>
             <div className="user-copy"><strong>{user?.user_metadata?.full_name || user?.email || 'Nhân viên VERA'}</strong><span>{user?.role ? `Vai trò: ${user.role}` : 'Đang đăng nhập'}</span></div>

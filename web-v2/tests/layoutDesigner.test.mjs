@@ -106,6 +106,20 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     destination.remove();delete first.dataset.uiOrigin;document.elementFromPoint=()=>second
     await click('Tùy chỉnh')
     await act(()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
+    const beforeNudge = server.layout.desktop[first.dataset.layoutKey] || {}
+    await click('Phải →')
+    await click('↓ Xuống')
+    await click('B Đậm')
+    await click('I Nghiêng')
+    await click('Lưu')
+    assert.equal(writes.at(-1).items[first.dataset.layoutKey].offset_x,(beforeNudge.offset_x || 0)+1)
+    assert.equal(writes.at(-1).items[first.dataset.layoutKey].offset_y,(beforeNudge.offset_y || 0)+1)
+    assert.equal(writes.at(-1).items[first.dataset.layoutKey].appearance.font_weight,700)
+    assert.equal(writes.at(-1).items[first.dataset.layoutKey].appearance.font_style,'italic')
+    await click('Tùy chỉnh')
+    await act(()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
+    await click('← Trái')
+    await click('↑ Lên')
     document.querySelector('.layout-inspector-section').open=true
     await click('Mẫu xanh 3D')
     assert.match(document.querySelector('style').textContent,/linear-gradient/)

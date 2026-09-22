@@ -1,4 +1,4 @@
-import { customKinds, isCustomContainer, selectionNodes, boundingSelection, alignSelection, removeLayoutItems, translateSelection } from '../lib/layoutSelection'
+import { customKinds, isCustomContainer, selectionNodes, boundingSelection, alignSelection, distributeSelection, removeLayoutItems, translateSelection } from '../lib/layoutSelection'
 import { createPortal } from 'react-dom'
 import { freeMovePosition } from '../lib/layoutFreeMove'
 import useLayoutToolScale from './useLayoutToolScale'
@@ -48,6 +48,8 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [alignReference, setAlignReference] = useState('selection')
+  const [nudgeStep, setNudgeStep] = useState(1)
   const [freeMove, setFreeMove] = useState(true)
   const [guides, setGuides] = useState(null)
   const dragging = useRef(null)
@@ -126,7 +128,11 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     setDraft(current=>{const next={...current};selection.forEach(key=>{next[key]={...next[key],group_id:id}});return next})
     setGuideTool(grouped?'Group':'Ungroup')
   }
-  const alignMany = mode => setDraft(current=>alignSelection(current,selectionNodes(selection),mode))
+  const alignMany = mode => {
+    const nodes=selectionNodes(selection)
+    const pageBounds=alignReference==='page' ? (selected?.closest('.page-wrap') || document.querySelector('.page-wrap') || document.documentElement).getBoundingClientRect() : undefined
+    setDraft(current=>mode.startsWith('distribute-') ? distributeSelection(current || preview,nodes,mode.slice(11),pageBounds) : alignSelection(current || preview,nodes,mode,pageBounds))
+  }
   const restore = async revision => {
     if (!window.confirm('Khôi phục bố cục thiết bị này từ phiên bản đã chọn?')) return
     setBusy(true)
@@ -333,6 +339,21 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     if (selected?.dataset.layoutLegacy !== selectedKey) delete next[selected?.dataset.layoutLegacy]
     return next
   })
+  const nudge = (dx, dy) => {
+    const nodes = selectionNodes(selection.length ? selection : [selectedKey])
+    setDraft(current => {
+      const items = current || preview
+      return translateSelection(items, nodes.map(node => ({key:node.dataset.layoutKey, original:items[node.dataset.layoutKey] || {}})), dx*nudgeStep, dy*nudgeStep)
+    })
+  }
+  const patchTypography = values => setDraft(current => {
+    const next = {...(current || preview)}
+    for (const key of selection.length ? selection : [selectedKey]) {
+      next[key] = {...next[key], appearance:{...next[key]?.appearance,...values}}
+      if ('font_size' in values) next[key].font_size = values.font_size
+    }
+    return next
+  })
   const step = (direction) => {
     if (!selected?.parentElement) return
     const siblings = [...selected.parentElement.children].filter(item => item.dataset.layoutKey)
@@ -421,7 +442,12 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         <label className="layout-free-mode"><input type="checkbox" aria-label="Kéo tự do" checked={freeMove} onChange={event=>setFreeMove(event.target.checked)}/>Kéo tự do</label>
         <small>Kéo để đặt vị trí; đường ngang/dọc giúp căn cạnh và tâm. Giữ Alt để bỏ bắt dính; Esc hủy lượt kéo. Thả vào dòng khác theo vạch xanh để chèn và tự dàn lại. Bỏ chọn Kéo tự do nếu chỉ muốn sắp xếp.</small>
         <small>Shift/Ctrl + bấm để chọn nhiều thành phần. Đã chọn: {selection.length}. Kéo menu để đổi thứ tự hoặc dùng Trước/Sau.</small>
-        {selection.length>1 && <div className="layout-multi-tools" aria-label="Chỉnh nhiều thành phần"><button type="button" onClick={()=>groupSelection(true)}>Group</button><button type="button" onClick={()=>groupSelection(false)}>Ungroup</button>{[['left','Căn trái'],['center-x','Tâm dọc'],['right','Căn phải'],['top','Căn trên'],['center-y','Tâm ngang'],['bottom','Căn dưới']].map(([mode,label])=><button type="button" key={mode} onClick={()=>alignMany(mode)}>{label}</button>)}<small>Rộng/Cao và tay nắm resize áp dụng cho tất cả thành phần đã chọn.</small></div>}
+        <fieldset className="layout-align-tools" aria-label="Căn chỉnh đối tượng"><legend>Căn chỉnh đối tượng</legend>
+          <label>Căn theo<select aria-label="Căn theo" value={alignReference} onChange={e=>setAlignReference(e.target.value)}><option value="page">Khung trang (Align to Slide)</option><option value="selection">Đối tượng đang chọn (Align Selected Objects)</option></select></label>
+          <div className="layout-multi-tools">{[['left','Căn trái'],['center-x','Căn giữa ngang'],['right','Căn phải'],['top','Căn trên'],['center-y','Căn giữa dọc'],['bottom','Căn dưới'],['distribute-horizontal','Giãn đều ngang'],['distribute-vertical','Giãn đều dọc']].map(([mode,label])=><button type="button" key={mode} disabled={selection.length < (mode.startsWith('distribute-') ? (alignReference==='page'?2:3) : (alignReference==='page'?1:2))} onClick={()=>alignMany(mode)}>{label}</button>)}</div>
+        </fieldset>
+        {selection.length>1 && <div className="layout-multi-tools" aria-label="Chỉnh nhiều thành phần"><button type="button" onClick={()=>groupSelection(true)}>Group</button><button type="button" onClick={()=>groupSelection(false)}>Ungroup</button><small>Rộng/Cao và tay nắm resize áp dụng cho tất cả thành phần đã chọn.</small></div>}
+
         <strong>Bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}</strong>
         <label>Mục menu<select aria-label="Mục menu" value={selectedKey?.startsWith('u-menu-')?selectedKey:''} onChange={e=>{const node=document.querySelector(`.nav-list [data-ui-key="${e.target.value}"]`);if(node)setSelected(node)}}><option value="">Chọn menu để đổi vị trí</option>{[...document.querySelectorAll('.nav-list a[data-ui-key^="u-menu-"]')].map(node=><option key={node.dataset.uiKey} value={node.dataset.uiKey}>{node.textContent}</option>)}</select></label>
         <label>Loại thành phần<select aria-label="Loại thành phần" value={addKind} onChange={e=>setAddKind(e.target.value)}>{Object.entries(customKinds).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
@@ -434,6 +460,10 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         </div>
         {!selectedKey && <small>Bấm chọn thành phần, section, header hoặc text trên trang. Chọn khung cha để chỉnh khung bao ngoài.</small>}
         <div className="layout-designer-actions"><button type="button" disabled={!selectedKey} onClick={() => step(-1)}>← Trước</button><button type="button" disabled={!selectedKey} onClick={() => step(1)}>Sau →</button><button type="button" disabled={!selectedKey} onClick={selectParent}>Chọn khung cha</button></div>
+        <fieldset className="layout-align-tools"><legend>Di chuyển thành phần</legend>
+          <label>Bước di chuyển (px)<input type="number" min="1" step="1" value={nudgeStep} onChange={e=>setNudgeStep(Math.max(1,Math.round(Number(e.target.value)||1)))}/></label>
+          <div className="layout-designer-actions">{[[0,-1,'↑ Lên'],[0,1,'↓ Xuống'],[-1,0,'← Trái'],[1,0,'Phải →']].map(([dx,dy,label])=><button type="button" key={label} disabled={!selectedKey} onClick={()=>nudge(dx,dy)}>{label}</button>)}</div>
+        </fieldset>
         <LayoutToolGuide tab={tab} tool={guideTool}/>
         {Object.entries(preview).some(([,item])=>item.hidden) && <details><summary>Thành phần đã ẩn</summary>{Object.entries(preview).filter(([,item])=>item.hidden).map(([key])=><button type="button" key={key} onClick={()=>setDraft(current=>({...current,[key]:{...current[key],hidden:false}}))}>Hiện lại: {registry[key]?.label || key}</button>)}</details>}
         {selectedKey && <><label>Vị trí X (px)<input type="number" min="-2400" max="2400" value={configuration.offset_x ?? 0} onChange={event=>patch('offset_x',event.target.value)}/></label><label>Vị trí Y (px)<input type="number" min="-2400" max="2400" value={configuration.offset_y ?? 0} onChange={event=>patch('offset_y',event.target.value)}/></label><small>Thông số hiện tại: {metrics?.width ?? '—'} × {metrics?.height ?? '—'} px · {metrics?.rawFont || '—'}. Kéo góc phải dưới để đổi kích thước.</small><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small>{(definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input ref={textEditor} type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
@@ -442,7 +472,11 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         {configuration.custom_kind==='dropdown' && <label>Lựa chọn (mỗi dòng một mục)<textarea value={configuration.custom_options || ''} onChange={e=>setDraft(current=>({...current,[selectedKey]:{...current[selectedKey],custom_options:e.target.value}}))}/></label>}
         {configuration.custom_kind==='table' && <small>Dòng đầu là tiêu đề, các dòng sau là dữ liệu; tách cột bằng |. Bộ lọc tự thêm chỉ tác động bảng tự thêm được liên kết.</small>}
         {configuration.custom_kind && <label>Nội dung<textarea ref={textEditor} aria-label="Nội dung text" maxLength={2000} value={configuration.custom_text || ''} onChange={event=>setDraft(current=>({...current,[selectedKey]:{...current[selectedKey],custom_text:event.target.value}}))}/></label>}
-        <>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ thành phần<input type="number" min="12" max="24" value={configuration.font_size ?? metrics?.appearance?.font_size ?? ''} onChange={e => patch('font_size', e.target.value)}/></label></>
+        <>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ thành phần<input type="number" step="any" value={configuration.appearance?.font_size ?? configuration.font_size ?? metrics?.appearance?.font_size ?? ''} onChange={e => patchTypography({font_size:e.target.value === '' ? undefined : Number(e.target.value)})}/></label></>
+        <fieldset className="layout-align-tools"><legend>Font và kiểu chữ</legend>
+          <label>Font chữ<select value={configuration.appearance?.font_family || metrics?.appearance?.font_family || 'system'} onChange={e=>patchTypography({font_family:e.target.value})}>{[['system','Hệ thống'],['segoe','Segoe UI'],['roboto','Roboto / Arial'],['serif','Georgia']].map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+          <div className="layout-designer-actions"><button type="button" aria-pressed={(configuration.appearance?.font_weight ?? metrics?.appearance?.font_weight ?? 400)>=700} onClick={()=>patchTypography({font_weight:(configuration.appearance?.font_weight ?? metrics?.appearance?.font_weight ?? 400)>=700?400:700})}><b>B</b> Đậm</button><button type="button" aria-pressed={(configuration.appearance?.font_style ?? metrics?.appearance?.font_style)==='italic'} onClick={()=>patchTypography({font_style:(configuration.appearance?.font_style ?? metrics?.appearance?.font_style)==='italic'?'normal':'italic'})}><i>I</i> Nghiêng</button></div>
+        </fieldset>
         {selected?.dataset.uiOrigin && <label>Khung đích<select aria-label="Khung đích" value={configuration.move_to || selected.dataset.uiOrigin} onChange={event => relocate(selected, getLayoutTargets()[event.target.value]?.element)}>{Object.entries(getLayoutTargets()).filter(([key, target]) => (registry[key]?.group || isCustomContainer(preview[key])) && !registry[key]?.locked && canRelocate(selected, target.element)).map(([key,target]) => <option key={key} value={key}>{target.element.getAttribute('aria-label') || target.element.textContent?.trim().slice(0,60) || registry[key]?.file || key}</option>)}</select></label>}
         <details className="layout-inspector-section"><summary>Phong cách & hiệu ứng</summary><UIVisualStyleControls key={selectedKey} value={configuration.appearance} current={metrics?.appearance} onChange={appearance => setDraft(current => ({ ...current, [selectedKey]: { ...configuration, appearance } }))}/></details>
         <fieldset className="layout-align-tools"><legend>Căn chỉnh</legend>

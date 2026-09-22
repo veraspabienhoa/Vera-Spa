@@ -33,3 +33,20 @@ def test_custom_elements_validate_and_keep_plain_text():
     locked=next(key for key,value in REGISTRY.items() if value.get('locked'))
     with pytest.raises(HTTPException): validate_items({locked:LayoutItem(hidden=True)})
     assert validate_items({'l-title':LayoutItem(hidden=True)})['l-title']['hidden'] is True
+
+
+def test_unbounded_finite_font_sizes_and_italic_round_trip():
+    from vera_web_v2_ui_layout import LayoutItem
+    from pydantic import ValidationError
+    import pytest
+    for size in (0, 0.5, 8, 96, 4096):
+        item = LayoutItem(font_size=size, appearance={"font_size": size, "font_style": "italic", "font_weight": 700})
+        restored = LayoutItem.model_validate_json(item.model_dump_json())
+        assert restored.font_size == size
+        assert restored.appearance.font_size == size
+        assert restored.appearance.font_style == "italic"
+    for size in (-1, float("inf"), float("nan")):
+        with pytest.raises(ValidationError):
+            LayoutItem(font_size=size)
+        with pytest.raises(ValidationError):
+            LayoutItem(appearance={"font_size": size})

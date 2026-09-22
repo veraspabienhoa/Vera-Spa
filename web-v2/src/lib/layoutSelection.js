@@ -12,8 +12,8 @@ export function boundingSelection(nodes) {
   return {left,top,right,bottom,width:right-left,height:bottom-top}
 }
 const bounded=n=>Math.max(-2400,Math.min(2400,Math.round(n)))
-export function alignSelection(items,nodes,mode) {
-  const bounds=boundingSelection(nodes),next={...items}
+export function alignSelection(items,nodes,mode,reference) {
+  const bounds=reference || boundingSelection(nodes),next={...items}
   if(!bounds)return next
   nodes.forEach(node=>{
     const key=node.dataset.layoutKey,r=node.getBoundingClientRect(),item=next[key] || {}
@@ -45,5 +45,17 @@ export function translateSelection(items,members,dx,dy) {
   const axis=(delta,name)=>Math.max(Math.max(...members.map(m=>-2400-(m.original?.[name] || 0))),Math.min(Math.min(...members.map(m=>2400-(m.original?.[name] || 0))),delta))
   const x=axis(dx,'offset_x'),y=axis(dy,'offset_y'),next={...items}
   members.forEach(({key,original})=>{next[key]={...next[key],offset_x:(original?.offset_x || 0)+x,offset_y:(original?.offset_y || 0)+y}})
+  return next
+}
+
+export function distributeSelection(items,nodes,axis,reference) {
+  const next={...items}
+  if(nodes.length < (reference ? 2 : 3))return next
+  const horizontal=axis==='horizontal',start=horizontal?'left':'top',end=horizontal?'right':'bottom',size=horizontal?'width':'height',offset=horizontal?'offset_x':'offset_y'
+  const sorted=nodes.map(node=>({node,rect:node.getBoundingClientRect()})).sort((a,b)=>a.rect[start]-b.rect[start])
+  const low=reference?.[start] ?? sorted[0].rect[start],high=reference?.[end] ?? sorted.at(-1).rect[end]
+  const gap=(high-low-sorted.reduce((sum,item)=>sum+item.rect[size],0))/(sorted.length-1)
+  let position=low
+  sorted.forEach(({node,rect})=>{const key=node.dataset.layoutKey,item=next[key] || {};next[key]={...item,[offset]:bounded((item[offset] || 0)+position-rect[start])};position+=rect[size]+gap})
   return next
 }

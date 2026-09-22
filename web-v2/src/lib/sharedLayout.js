@@ -29,7 +29,7 @@ export function layoutCss(items) {
     if (['start','center','end','space-between','space-around','space-evenly'].includes(value.justify_content)) declarations.push(`justify-content:${value.justify_content}!important`)
     if (['start','center','end','stretch'].includes(value.align_items)) declarations.push(`align-items:${value.align_items}!important`)
     const selector = `[data-layout-key="${key}"],[data-layout-legacy="${key}"],[data-ui-key="${key}"]`
-    if (Number.isInteger(value.font_size) && value.font_size >= 12 && value.font_size <= 24) declarations.push(`font-size:${value.font_size}px!important`)
+    if (typeof value.font_size === 'number' && Number.isFinite(value.font_size) && value.font_size >= 0) declarations.push(`font-size:${value.font_size}px!important`)
     if (!value.hidden && [0,1,2,3,4].includes(value.rows)) declarations.push('display:grid!important;grid-template-columns:repeat(var(--ui-columns,2),minmax(0,1fr))!important;gap:6px!important;max-width:100%;min-width:0')
     if (Number.isInteger(value.gap) && value.gap >= 0 && value.gap <= 100) declarations.push(`gap:${value.gap}px!important`)
     rules.push(`${selector}{${declarations.join(';')}}`)
