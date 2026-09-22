@@ -23,9 +23,10 @@ export default function PopupNotifications() {
   useEffect(() => {
     let active = true
     const loadSettings = () => veraApi.notificationSettings().then((result) => {
-      if (active) settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item.enabled]))
+      if (active) settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item]))
     }).catch(() => {})
     void loadSettings()
+    const settingsTimer = window.setInterval(loadSettings,60000)
     const loadTrainingNotifications = () => veraApi.trainingNotifications().then((result) => {
       if (!active) return
       const fresh = (result.notifications || []).filter(item => !item.is_read && !seenTraining.current.has(item.id))
@@ -39,7 +40,7 @@ export default function PopupNotifications() {
     const trainingTimer = window.setInterval(loadTrainingNotifications, 30000)
     const onSettingsChanged = (event) => {
       const item = event?.detail
-      if (item?.key) settings.current = { ...settings.current, [item.key]: item.enabled }
+      if (item?.key) settings.current = { ...settings.current, [item.key]: item }
       else void loadSettings()
     }
     window.addEventListener('vera-notification-settings-changed', onSettingsChanged)
@@ -51,7 +52,9 @@ export default function PopupNotifications() {
       const type = element.classList.contains('success-box') ? 'success'
         : element.classList.contains('warning-box') || element.classList.contains('setup-note') ? 'warning' : 'error'
       const category = categoryFor(type, message)
-      if (settings.current[category] === false) return
+      if (settings.current[category]?.enabled === false) return
+      if (settings.current[category]?.has_rules) void veraApi.routeLocalNotification(category).catch(()=>{})
+      if (settings.current[category]?.routed) return
       const duplicateKey = `${category}:${message.toLocaleLowerCase('vi-VN')}`
       const now = Date.now()
       if (now - Number(recentMessages.current.get(duplicateKey) || 0) < 15000) return
@@ -76,6 +79,7 @@ export default function PopupNotifications() {
     return () => {
       active = false
       window.clearInterval(trainingTimer)
+      window.clearInterval(settingsTimer)
       observer.disconnect()
       window.removeEventListener('vera-notification-settings-changed', onSettingsChanged)
     }

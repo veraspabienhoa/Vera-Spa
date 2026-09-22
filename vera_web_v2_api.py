@@ -11,6 +11,7 @@ The API deliberately fails closed when policy data is missing or a rule cannot
 be interpreted.  That is safer than allowing Web V2 to bypass a legacy rule.
 """
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 from datetime import date, datetime, timedelta, timezone
 import hashlib
@@ -808,6 +809,10 @@ def _refresh_leave_watches(conn, ident: Identity) -> list[dict[str, Any]]:
             "current_paid_count": current,
             "has_unread": unread,
         })
+    from vera_notification_delivery import ensure_schema as ensure_notification_schema
+    ensure_notification_schema(conn)
+    if conn.execute(text("SELECT 1 FROM vera_notification_route WHERE key='leave_watch'")).scalar_one_or_none():
+        for item in output: item['has_unread'] = False
     return output
 
 
@@ -886,8 +891,6 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
             return {"dates": len(dates), "deliveries": 0, "sent": 0, "failed": 0, "deactivated": 0}
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
         subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
-        if not private_key:
-            raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
         counts = _paid_interest_counts(conn, dates)
         for target in dates:
             watch_rows = conn.execute(text("""
@@ -914,6 +917,11 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
                     "watched_date": target,
                     "current_paid_count": current,
                 })
+                if enqueue_notification(conn, 'leave_watch', {
+                    'title':'VERA SPA · Lịch nghỉ thay đổi',
+                    'body': f"Ngày {target.strftime('%d-%m-%Y')}: số lịch nghỉ có phép từ {previous} thành {current}.",
+                    'tag': f"leave-watch-{target}-{previous}-{current}-{datetime.now(VN_TZ).strftime('%Y%m%d%H%M')}"}):
+                    continue
                 subscriptions = conn.execute(text("""
                     SELECT subscription_id::text AS subscription_id, endpoint, p256dh, auth_secret
                     FROM vera_v2_push_subscription
@@ -929,6 +937,7 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
                         "current_count": current,
                     })
 
+    if deliveries and not private_key: raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
     successes = failures = deactivated = 0
     results = []
     for delivery in deliveries:
@@ -971,8 +980,6 @@ def _dispatch_admin_daily_pushes() -> dict[str, int]:
             return {"deliveries": 0, "sent": 0, "failed": 0, "deactivated": 0}
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
         subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
-        if not private_key:
-            raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
         changes = int(conn.execute(text("""
             SELECT COUNT(*) FROM vera_sync_event
             WHERE created_at >= NOW() - INTERVAL '24 hours'
@@ -998,6 +1005,9 @@ def _dispatch_admin_daily_pushes() -> dict[str, int]:
         "url": "https://app.veraspa.vn/",
         "tag": f"vera-admin-daily-{datetime.now(VN_TZ).date().isoformat()}",
     }
+    if route_notification(_engine_instance(), 'admin_daily_summary', payload):
+        return {"deliveries":0,"sent":0,"failed":0,"deactivated":0,"queued":1}
+    if not private_key: raise HTTPException(503, "Máy chủ chưa cấu hình khóa riêng Web Push.")
     successes = failures = deactivated = 0
     for row in subscriptions:
         delivery = {**dict(row), "payload": payload}

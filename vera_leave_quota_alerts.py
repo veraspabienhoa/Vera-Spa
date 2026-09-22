@@ -1,3 +1,4 @@
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 """Admin monthly leave audit and retryable, per-device push delivery."""
 from contextlib import asynccontextmanager
 from datetime import date
@@ -101,6 +102,14 @@ def deliver(engine):
         ensure_schema(conn)
         if not settings.is_enabled(conn, 'leave_quota_exceeded'):
             return
+        routed = False
+        for alert in conn.execute(text('SELECT fingerprint,payload FROM vera_leave_quota_alert WHERE active')).mappings():
+            item = alert['payload']
+            routed = enqueue_notification(conn, 'leave_quota_exceeded', {
+                'title':'VERA SPA · Đăng ký nghỉ vượt hạn mức',
+                'body':f"{item['employee']} · {item['month']}: vượt hạn mức đăng ký nghỉ.",
+                'tag':alert['fingerprint']}) or routed
+        if routed: return
         private_key = _vault_secret(conn, 'vera_v2_vapid_private_key')
         subject = _vault_secret(conn, 'vera_v2_vapid_subject') or APP_URL
         if not private_key:

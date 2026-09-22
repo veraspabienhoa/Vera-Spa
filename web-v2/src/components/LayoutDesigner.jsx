@@ -17,6 +17,7 @@ import AppearanceSettingsPage from '../pages/AppearanceSettingsPage'
 import { formatVeraDateTime } from '../lib/veraDate'
 
 export default function LayoutDesigner({ user, page, open = false, onClose, initialTab }) {
+  const [panelHidden, setPanelHidden] = useState(false)
   const panelFrame = useLayoutPanelFrame()
   const toolScale = useLayoutToolScale()
   const textEditor = useRef(null)
@@ -252,6 +253,11 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     if (!editing) { setDraft({ ...saved.layout[device] }); setEditing(true) }
     setMessage('Chọn bất kỳ thành phần trên trang hoặc chọn khung cha, rồi chỉnh thuộc tính ngay trong bảng công cụ.')
   }
+  const changeDevice = next => {
+    if (next === device) return
+    if ((appearanceDirty || editing && JSON.stringify(draft)!==JSON.stringify(saved.layout[device] || {})) && !window.confirm('Chuyển chế độ và hủy bản xem trước chưa lưu?')) return
+    setDevice(next);setEditing(false);setDraft(null);setSelected(null);setMessage('Đã chuyển chế độ.')
+  }
   const toggleLayout = async () => {
     if (!window.confirm('Thay đổi áp dụng bố cục tùy chỉnh cho tất cả người dùng? Cấu hình đã lưu vẫn được giữ.')) return
     setBusy(true)
@@ -275,31 +281,36 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   return <>
     <LayoutCustomElements items={preview} page={page} editing={editing}/>
     <style>{layoutCss(preview)}{editing && selectedKey ? `[data-layout-key="${selectedKey}"]{outline:3px solid #c49524!important;outline-offset:2px}` : ''}</style>
-    {admin && open && <aside className={`layout-designer ${['rooms','columns','history'].includes(tab) ? 'layout-designer-wide' : ''}`} style={{ ...panelFrame.style, ...toolScale.style }} aria-label="Giao diện Admin" onFocusCapture={event=>{
+    {admin && open && <aside className={`layout-designer ${['rooms','columns','history'].includes(tab) ? 'layout-designer-wide' : ''}`} style={{ ...panelFrame.style, ...toolScale.style, ...(panelHidden ? {width:'auto',height:'auto'} : {}) }} aria-label="Giao diện Admin" onFocusCapture={event=>{
         if(event.target.closest('.layout-tool-guide') || event.target.getAttribute('role') === 'tab')return
         const label=event.target.closest('label')?.childNodes[0]?.textContent?.trim()
         if(label)setGuideTool(/Rộng|Cao tối thiểu/.test(label)?'Kích thước':label)
         else if(event.target.tagName==='BUTTON')setGuideTool(event.target.getAttribute('aria-label') || event.target.textContent?.trim())
       }}>
+      {panelHidden && <button type="button" onClick={()=>setPanelHidden(false)} aria-label="Show bảng công cụ">Show</button>}
+      <div className="layout-panel-content" hidden={panelHidden}>
       <div className="layout-panel-frame-toolbar" role="group" aria-label="Điều khiển bảng công cụ">
         <button type="button" disabled={busy || !loaded} aria-pressed={editing} onClick={beginEditing}>Tùy chỉnh</button>
-        <button type="button" disabled={busy || !loaded || editing || appearanceDirty} aria-pressed={saved.layout._enabled === false} title={editing ? 'Lưu hoặc hủy bản xem trước trước khi tạm dừng' : 'Tạm dừng hoặc bật lại bố cục đã lưu cho tất cả người dùng'} onClick={toggleLayout}>{saved.layout._enabled === false ? 'Tiếp tục' : 'Tạm dừng'}</button>
-        <button type="button" className="layout-panel-drag" {...panelFrame.move} aria-label="Di chuyển bảng công cụ">Di chuyển</button>
+        <button type="button" aria-pressed={tab === 'object'} onClick={()=>chooseTab('object')}>Thành phần</button>
+        <button type="button" disabled={busy || !loaded || editing || appearanceDirty} aria-pressed={saved.layout._enabled === false} aria-label={saved.layout._enabled === false ? 'Tiếp tục' : 'Tạm dùng bố cục mặc định'} title={editing ? 'Lưu hoặc hủy bản xem trước trước khi dùng bố cục mặc định' : 'Tạm dùng bố cục mặc định hoặc bật lại bố cục đã lưu cho tất cả người dùng'} onClick={toggleLayout}>{saved.layout._enabled === false ? 'Tiếp tục' : 'Mặc định'}</button>
         <button type="button" onClick={panelFrame.reset} title="Đặt lại vị trí và kích thước bảng công cụ">Vị trí</button>
+        <button type="button" className="layout-panel-drag" {...panelFrame.move} aria-label="Di chuyển bảng công cụ">Di chuyển</button>
+        <button type="button" onClick={()=>setPanelHidden(true)}>Hide</button>
       </div>
+      <div className="layout-scale-actions">
       <label className="layout-tool-scale">Cỡ nút công cụ · {toolScale.value}%<input type="range" aria-label="Cỡ nút công cụ" min="70" max="110" step="5" value={toolScale.value} onChange={event => toolScale.setValue(Number(event.target.value))}/></label>
+      <div className="layout-quick-actions"><button className="layout-save" title="Lưu cho tất cả người dùng" type="button" disabled={busy || !editing} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button><button type="button" disabled={busy || !editing} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button type="button" disabled={busy || !editing} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button></div>
+      </div>
       <button type="button" disabled={busy} onClick={close} className="layout-close" aria-label="Đóng Giao diện">Đóng ✕</button>
-      <label>Chế độ giao diện<select aria-label="Chế độ giao diện" value={device} disabled={busy} onChange={event=>{
-        if((appearanceDirty || editing && JSON.stringify(draft)!==JSON.stringify(saved.layout[device] || {})) && !window.confirm('Chuyển chế độ và hủy bản xem trước chưa lưu?'))return
-        setDevice(event.target.value);setEditing(false);setDraft(null);setSelected(null);setMessage('Đã chuyển chế độ. Desktop là mặc định khi mở trình duyệt.')
-      }}><option value="desktop">Desktop (mặc định)</option><option value="mobile">Mobile</option></select></label>
-      <LayoutToolGuide tab={tab} tool={guideTool}/>
-      <div className="layout-center-tabs" role="tablist" aria-label="Giao diện">{[['object','Thành phần'],['columns','Cấu hình cột'],['rooms','Phòng Live Tour'],['history','Lịch sử']].map(([key,label]) => <button type="button" role="tab" key={key} aria-selected={tab === key} onClick={() => chooseTab(key)}>{label}</button>)}</div>
+      <div className="layout-device-toolbar" role="group" aria-label="Chọn giao diện">
+        <button type="button" aria-pressed={tab === 'rooms'} onClick={()=>chooseTab('rooms')}>Phòng Live Tour</button>
+        <button type="button" aria-pressed={tab === 'columns'} onClick={()=>chooseTab('columns')}>Cấu hình cột</button>
+        {['desktop','mobile'].map(mode=><label key={mode}><input type="checkbox" aria-label={mode === 'desktop' ? 'Desktop' : 'Mobile'} checked={device === mode} disabled={busy} onChange={()=>changeDevice(mode)}/>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</label>)}
+      </div>
       {tab === 'columns' && <><UICustomizationColumns page={page} items={preview} onChange={(key,width) => { setEditing(true); setDraft(current => ({ ...(current || saved.layout[device]), [key]: { ...(current || saved.layout[device])?.[key], width } })) }}/>{editing && <div className="layout-designer-actions"><button disabled={busy} onClick={save}>Lưu độ rộng cột</button><button disabled={busy} onClick={() => {setEditing(false);setDraft(null)}}>Hủy</button></div>}</>}
       {['rooms','columns'].includes(tab) && <AppearanceSettingsPage user={user} section={tab} onDirtyChange={setAppearanceDirty} />}
       {tab === 'history' && <div><p>Khôi phục chỉ áp dụng cho bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}. Cấu hình phòng và cột Live Tour được quản lý riêng trong hai mục tương ứng.</p>{history.map(item => <div className="layout-history-row" key={item.revision}><span>#{item.revision} · {item.actor} · {formatVeraDateTime(item.created_at)} · {item.device}</span><button disabled={busy} onClick={() => restore(item.revision)}>Khôi phục</button></div>)}{!history.length && <p>Chưa có lịch sử bố cục.</p>}</div>}
       {tab === 'object' && <>
-      <small>Chọn thành phần trên trang để chỉnh kích thước, nội dung, màu sắc và căn chỉnh. Desktop/Mobile lưu riêng.</small>
       {!editing ? <>{message && <small role="status">{message}</small>}</> : <>
         <strong>Bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}</strong>
         <div className="layout-designer-actions layout-element-actions">
@@ -309,8 +320,10 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
           <button type="button" disabled={!selectedKey} onClick={removeElement}>{configuration.custom_kind === 'box' ? 'Xóa box' : configuration.custom_kind === 'text' ? 'Xóa text' : 'Xóa khỏi giao diện'}</button>
         </div>
         {!selectedKey && <small>Bấm chọn thành phần, section, header hoặc text trên trang. Chọn khung cha để chỉnh khung bao ngoài.</small>}
+        <div className="layout-designer-actions"><button type="button" disabled={!selectedKey} onClick={() => step(-1)}>← Trước</button><button type="button" disabled={!selectedKey} onClick={() => step(1)}>Sau →</button><button type="button" disabled={!selectedKey} onClick={selectParent}>Chọn khung cha</button></div>
+        <LayoutToolGuide tab={tab} tool={guideTool}/>
         {Object.entries(preview).some(([,item])=>item.hidden) && <details><summary>Thành phần đã ẩn</summary>{Object.entries(preview).filter(([,item])=>item.hidden).map(([key])=><button type="button" key={key} onClick={()=>setDraft(current=>({...current,[key]:{...current[key],hidden:false}}))}>Hiện lại: {registry[key]?.label || key}</button>)}</details>}
-        {selectedKey && <><small>Thông số hiện tại: {metrics?.width ?? '—'} × {metrics?.height ?? '—'} px · {metrics?.rawFont || '—'}. Kéo góc phải dưới để đổi kích thước.</small><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small><div className="layout-designer-actions"><button type="button" onClick={() => step(-1)}>← Trước</button><button type="button" onClick={() => step(1)}>Sau →</button><button type="button" onClick={selectParent}>Chọn khung cha</button></div>{(definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input ref={textEditor} type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
+        {selectedKey && <><small>Thông số hiện tại: {metrics?.width ?? '—'} × {metrics?.height ?? '—'} px · {metrics?.rawFont || '—'}. Kéo góc phải dưới để đổi kích thước.</small><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small>{(definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input ref={textEditor} type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
         {descendants.length > 0 && <label>Thành phần bên trong<select aria-label="Thành phần bên trong" value="" onChange={event=>{const node=descendants.find(item=>item.dataset.layoutKey===event.target.value);if(node){setSelected(node);setInlineTarget(null)}}}><option value="">Chọn thành phần con ({descendants.length})</option>{descendants.map((node,index)=><option key={`${node.dataset.layoutKey}-${index}`} value={node.dataset.layoutKey}>{node.tagName.toLowerCase()} · {node.getAttribute('aria-label') || node.textContent?.trim().slice(0,60) || node.getAttribute('placeholder') || node.tagName}</option>)}</select></label>}
         {configuration.custom_kind && <label>Nội dung<textarea ref={textEditor} aria-label="Nội dung text" maxLength={2000} value={configuration.custom_text || ''} onChange={event=>setDraft(current=>({...current,[selectedKey]:{...current[selectedKey],custom_text:event.target.value}}))}/></label>}
         <>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ thành phần<input type="number" min="12" max="24" value={configuration.font_size ?? metrics?.appearance?.font_size ?? ''} onChange={e => patch('font_size', e.target.value)}/></label></>
@@ -321,13 +334,14 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         <label>Căn dọc nội dung<select value={configuration.content_align || ''} onChange={e => patch('content_align', e.target.value)}><option value="">Mặc định</option>{[['start','Trên'],['center','Giữa'],['end','Dưới']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {isContainer && <><small>Căn nhóm theo trục của bố cục Flex/Grid hiện tại.</small><label>Phân bố nhóm<select value={configuration.justify_content || ''} onChange={e => patch('justify_content', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['space-between','Giãn hai đầu'],['space-around','Giãn quanh'],['space-evenly','Giãn đều']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Căn thành phần<select value={configuration.align_items || ''} onChange={e => patch('align_items', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['stretch','Kéo giãn']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Khoảng cách (px)<input type="number" min="0" max="100" value={configuration.gap ?? ''} onChange={e => patch('gap', e.target.value)}/></label></>}
         </fieldset><label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? metrics?.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? metrics?.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; if(configuration.custom_kind){next[selectedKey]={custom_kind:configuration.custom_kind,custom_text:configuration.custom_text,custom_page:configuration.custom_page,custom_anchor:configuration.custom_anchor};return next} delete next[selectedKey]; delete next[selected?.dataset.layoutLegacy]; return next })}>Khôi phục thành phần</button></>}
-        <div className="layout-designer-actions"><button className="layout-save" type="button" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu cho tất cả'}</button><button type="button" disabled={busy} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button type="button" disabled={busy} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button></div>
+
         {message && <small role="status">{message}</small>}
       </>}
       </>}
       {!editing && ['rooms','columns','history'].includes(tab) && message && <small role="status">{message}</small>}
     {inlineTarget && editing && <InlineLabelEditor key={inlineTarget.dataset.layoutKey} target={inlineTarget} value={configuration.label ?? definition?.label ?? inlineTarget.textContent?.trim() ?? ''} onCommit={value => { patch('label', value.trim()); setInlineTarget(null) }} onCancel={() => setInlineTarget(null)} />}
-      <button type="button" className="layout-panel-resize" {...panelFrame.resize} aria-label="Kéo đổi kích thước bảng công cụ">↘ Kéo giãn bảng công cụ</button>
+      </div>
+      {!panelHidden && <button type="button" className="layout-panel-resize" {...panelFrame.resize} aria-label="Kéo đổi kích thước bảng công cụ">Resize</button>}
     </aside>}
     {editing && selectedKey && <LayoutResizeOverlay selected={selected} onResize={resizeSelection} onMetrics={refreshMetrics}/>}
   </>

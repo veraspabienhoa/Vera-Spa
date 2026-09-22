@@ -1,3 +1,4 @@
+import NotificationInbox from './NotificationInbox'
 import { getCustomization, subscribeCustomization } from '../lib/uiCustomizationStore'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
@@ -108,20 +109,27 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
 
   useEffect(() => {
     let active = true
-    veraApi.notificationSettings().then((result) => {
-      if (active) setNotificationSettings(Object.fromEntries((result.settings || []).map((item) => [item.key, item.enabled])))
+    const loadSettings=()=>veraApi.notificationSettings().then((result) => {
+      if (active) setNotificationSettings(Object.fromEntries((result.settings || []).flatMap((item) => [[item.key, item.enabled],[`${item.key}_routed`,item.routed],[`${item.key}_has_rules`,item.has_rules]])))
     }).catch(() => { if (active) setNotificationSettings({}) })
-    return () => { active = false }
+    void loadSettings()
+    const timer=window.setInterval(loadSettings,60000)
+    window.addEventListener('vera-notification-settings-changed',loadSettings)
+    return () => { active = false;window.clearInterval(timer);window.removeEventListener('vera-notification-settings-changed',loadSettings) }
   }, [user?.employee_username])
 
   useEffect(() => {
     const viewerRole = String(user?.role || '').toLowerCase()
     const currentDay = new Date().getDate()
+    if(notificationSettings?.birthday_routed || notificationSettings?.birthday === false) setBirthdayNotice(null)
     if (!notificationSettings || notificationSettings.birthday === false || user?.must_change_password || !user?.permissions?.birthday || !['admin', 'quanly', 'letan'].includes(viewerRole) || currentDay > 5) return
     const today = new Date().toISOString().slice(0, 10)
     if (window.localStorage.getItem('vera-birthday-dismissed') === today) return
     veraApi.birthdays().then((result) => {
-      if ((result.birthdays || []).length) setBirthdayNotice(result)
+      if ((result.birthdays || []).length) {
+        if(notificationSettings.birthday_has_rules) void veraApi.routeLocalNotification('birthday').catch(()=>{})
+        if(!notificationSettings.birthday_routed) setBirthdayNotice(result)
+      }
     }).catch(() => {})
   }, [notificationSettings, user?.must_change_password, user?.permissions?.birthday, user?.role])
 
@@ -450,6 +458,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           </div>}
 
           {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => choose('birthday', true)}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div>}
+          {!user?.must_change_password && <NotificationInbox/>}
           {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>

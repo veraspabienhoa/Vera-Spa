@@ -1,5 +1,6 @@
 """Reliable employee Web Push outbox for PostgreSQL auto penalties."""
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 import json
 from typing import Any
@@ -138,28 +139,31 @@ def notify_pending(engine, limit: int = 100) -> dict[str, int]:
                 penalty = _penalty(conn, event.get("leave_record_uid"))
                 private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
                 subject = _vault_secret(conn, "vera_v2_vapid_subject") or APP_URL
+            minutes = int(round(float(event.get("minutes") or 0)))
+            minute_text = f" ({minutes} phút)" if minutes > 0 else ""
+            payload = {
+                "kind": "auto-penalty-recorded",
+                "title": "VERA SPA · Hệ thống đã ghi phạt",
+                "body": (
+                    f"{event['employee_name']}: {event['reason']}{minute_text}. "
+                    f"Mức phạt {_money(penalty)}."
+                ),
+                "url": APP_URL,
+                "tag": f"vera-auto-penalty-{event['id']}",
+                "employee": event["employee_name"],
+                "event_id": event["id"],
+                "department": department,
+            }
             if suppressed:
                 error = "Thông báo chấm công của bộ phận đang tắt."
+            elif route_notification(engine, 'auto_penalty', payload):
+                sent = 1  # durably accepted; the central worker owns per-recipient retries
+                result['queued'] = result.get('queued', 0) + 1
             elif not subscriptions:
                 error = "Nhân viên chưa bật thông báo Web Push."
             elif not private_key:
                 error = "Thiếu khóa VAPID để gửi Web Push."
             else:
-                minutes = int(round(float(event.get("minutes") or 0)))
-                minute_text = f" ({minutes} phút)" if minutes > 0 else ""
-                payload = {
-                    "kind": "auto-penalty-recorded",
-                    "title": "VERA SPA · Hệ thống đã ghi phạt",
-                    "body": (
-                        f"{event['employee_name']}: {event['reason']}{minute_text}. "
-                        f"Mức phạt {_money(penalty)}."
-                    ),
-                    "url": APP_URL,
-                    "tag": f"vera-auto-penalty-{event['id']}",
-                    "employee": event["employee_name"],
-                    "event_id": event["id"],
-                    "department": department,
-                }
                 errors = []
                 for subscription in subscriptions:
                     ok, status, send_error = _send(subscription, payload, private_key, subject)

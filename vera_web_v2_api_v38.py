@@ -213,7 +213,7 @@ install_revenue_report_target(_shared.app, current_identity=_api.current_identit
 install_purchase_reconcile_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, google_client=_api._google_client)
 install_purchase_reconcile_v2(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_purchase_reconcile_alert_check(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client)
-install_notification_settings_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+install_notification_settings_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity, api_module=_api)
 
 install_attendance_v42(_shared.app, engine_instance=_api._engine_instance)
 install_department_attendance_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)

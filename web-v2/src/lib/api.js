@@ -336,8 +336,14 @@ export const veraApi = {
   importComboSalesExcel: (file, department) => upload('/v2/work-schedule/combo-sales/import.xlsx', file, { department }),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   notificationSettings: () => request('/v2/notification-settings'),
-  updateNotificationSetting: (key, enabled) => request(`/v2/notification-settings/${encodeURIComponent(key)}`, {
-    method: 'PUT', body: JSON.stringify({ enabled }),
+  notificationTasks: () => request('/v2/notification-settings/tasks'),
+  createNotification: body => request('/v2/notification-settings', { method:'POST', body:JSON.stringify(body) }),
+  orderNotifications: body => request('/v2/notification-settings/order', { method:'PUT', body:JSON.stringify(body) }),
+  notificationInbox: () => request('/v2/notification-inbox'),
+  readNotification: id => request(`/v2/notification-inbox/${id}/read`, { method:'POST' }),
+  routeLocalNotification: key => request(`/v2/notification-local/${encodeURIComponent(key)}`, { method:'POST' }),
+  updateNotificationSetting: (key, changes) => request(`/v2/notification-settings/${encodeURIComponent(key)}`, {
+    method: 'PUT', body: JSON.stringify(typeof changes === 'boolean' ? { enabled: changes } : changes),
   }),
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),

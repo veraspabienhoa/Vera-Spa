@@ -6,6 +6,7 @@ background push containing the exact audit summary and field-level changes.
 Only active Admin push subscriptions receive these notifications.
 """
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 from datetime import datetime
 from typing import Any, Callable
@@ -75,8 +76,6 @@ def _dispatch_admin_change_pushes(
                 return
             private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
             subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or APP_URL
-            if not private_key:
-                return
             stmt = text(f"""
                 SELECT id, event_type, record_uid, employee_name, leave_date,
                        actor, old_data, new_data, created_at
@@ -103,7 +102,7 @@ def _dispatch_admin_change_pushes(
                 ORDER BY s.updated_at DESC
             """)).mappings().all()
 
-        if not latest or not subscriptions:
+        if not latest:
             return
 
         delivery_results: list[dict[str, Any]] = []
@@ -131,6 +130,9 @@ def _dispatch_admin_change_pushes(
                 "dismissible": True,
                 "timestamp": timestamp,
             }
+            if route_notification(engine_instance(), 'admin_leave_changes', payload):
+                continue
+            if not private_key: continue
             for subscription in subscriptions:
                 delivery = {**dict(subscription), "payload": payload}
                 ok, status, error_text = api_module._send_web_push(delivery, private_key, subject)

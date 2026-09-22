@@ -1,50 +1,62 @@
-import { BellRing, Check, LoaderCircle, Power, PowerOff } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { BellRing, GripVertical, Search } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
+import './NotificationSettingsPage.css'
 
+const normalized = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g,'d').toLowerCase()
+function Recipients({ options, selected, onChange }) {
+  const [search,setSearch] = useState('')
+  const filtered=options.filter(item=>normalized(`${item.name} ${item.username} ${item.role}`).includes(normalized(search)))
+  return <fieldset className="notification-recipients"><legend>Người nhận · đã chọn {selected.length}</legend>
+    <input aria-label="Tìm người nhận" placeholder="Tìm tên hoặc tài khoản…" value={search} onChange={event=>setSearch(event.target.value)}/>
+    <div className="notification-selected">{options.filter(item=>selected.includes(item.id)).map(item=><button type="button" key={item.id} onClick={()=>onChange(selected.filter(id=>id!==item.id))}>{item.name} ×</button>)}</div>
+    <div className="notification-recipient-list">{filtered.map(item=><label key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={event=>onChange(event.target.checked?[...selected,item.id]:selected.filter(id=>id!==item.id))}/><span>{item.name}<small>{item.username} · {item.role}</small></span></label>)}{!filtered.length && <small>Không tìm thấy tài khoản.</small>}</div>
+  </fieldset>
+}
 export default function NotificationSettingsPage({ user }) {
-  const [items, setItems] = useState([])
-  const [busyKey, setBusyKey] = useState('')
-  const [error, setError] = useState('')
-  const [savedKey, setSavedKey] = useState('')
-  const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
-
-  useEffect(() => {
-    let active = true
-    veraApi.notificationSettings()
-      .then((result) => { if (active) setItems(result.settings || []) })
-      .catch((err) => { if (active) setError(err.message || 'Không tải được cấu hình thông báo.') })
-    return () => { active = false }
-  }, [])
-
-  const toggle = async (item) => {
-    if (!isAdmin || busyKey) return
-    setBusyKey(item.key); setError(''); setSavedKey('')
-    try {
-      const result = await veraApi.updateNotificationSetting(item.key, !item.enabled)
-      setItems((current) => current.map((entry) => entry.key === item.key ? result.setting : entry))
-      window.dispatchEvent(new CustomEvent('vera-notification-settings-changed', { detail: result.setting }))
-      setSavedKey(item.key)
-      window.setTimeout(() => setSavedKey(''), 1800)
-    } catch (err) {
-      setError(err.message || 'Không lưu được cấu hình thông báo.')
-    } finally { setBusyKey('') }
+  const [data,setData]=useState({settings:[],recipients:[],channels:[],revision:0})
+  const [tasks,setTasks]=useState([]), [query,setQuery]=useState(''), [taskQuery,setTaskQuery]=useState('')
+  const [editor,setEditor]=useState(null),[draft,setDraft]=useState(null)
+  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
+  const dragged=useRef(null)
+  const admin=String(user?.role || '').toLowerCase()==='admin'
+  const reload=async()=>{setData(await veraApi.notificationSettings())}
+  useEffect(()=>{let active=true;Promise.all([veraApi.notificationSettings(),admin?veraApi.notificationTasks():Promise.resolve({tasks:[]})]).then(([settings,result])=>{if(active){setData(settings);setTasks(result.tasks || [])}}).catch(err=>{if(active)setError(err.message)});return()=>{active=false}},[admin])
+  const perform=async action=>{
+    if(busy)return
+    setBusy(true);setError('');setNotice('')
+    try{const result=await action();setData(result);setEditor(null);setDraft(null);setNotice('Đã lưu cấu hình thông báo.');window.dispatchEvent(new CustomEvent('vera-notification-settings-changed'))}
+    catch(err){setError(err.message || 'Không lưu được cấu hình.')}finally{setBusy(false)}
   }
-
+  const open=item=>{setEditor(item?.key || 'new');setDraft({label:item?.label || '',source_key:item?.source_key || '',enabled:item?.enabled ?? true,recipients:item?.recipients || [],channels:item?.channels?.length?item.channels:['in_app']});setTaskQuery('');setError('')}
+  const reorder=(source,target)=>{
+    if(!source || source===target || busy)return
+    const keys=data.settings.map(item=>item.key), from=keys.indexOf(source), to=keys.indexOf(target)
+    if(from<0 || to<0)return
+    keys.splice(to,0,...keys.splice(from,1))
+    void perform(()=>veraApi.orderNotifications({keys,revision:data.revision}))
+  }
+  const visible=data.settings.filter(item=>normalized(`${item.label} ${item.description}`).includes(normalized(query)))
   return <div className="notification-settings-page">
-    <style>{`
-      .notification-settings-page{display:grid;gap:14px}.notification-settings-head{display:flex;align-items:center;gap:12px}.notification-settings-head svg{color:#205a46}.notification-settings-head h2{margin:0;font-size:22px}.notification-settings-head p{margin:3px 0 0;color:#65756e;font-size:13px}.notification-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.notification-setting-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:16px;border:1px solid #ccddd5;border-radius:16px;background:#fff}.notification-setting-card h3{margin:0 0 5px;font-size:16px}.notification-setting-card p{margin:0 0 9px;color:#5f6f68;font-size:13px;line-height:1.45}.notification-setting-meta{display:flex;gap:7px;flex-wrap:wrap}.notification-setting-meta span{padding:4px 8px;border-radius:999px;background:#eef5f1;color:#345a4c;font-size:11px}.notification-switch{display:flex;align-items:center;gap:8px;min-width:112px;justify-content:center;padding:10px 12px;border:1px solid #b84a4a;border-radius:12px;background:#fff;color:#a42626;font-weight:800;cursor:pointer}.notification-switch.on{border-color:#25634c;background:#205a46;color:#fff}.notification-switch:disabled{opacity:.58;cursor:not-allowed}.notification-settings-error{padding:10px 12px;border-radius:10px;background:#fff0f0;color:#aa2727}.notification-settings-empty{padding:24px;text-align:center;color:#66756f}@media(max-width:760px){.notification-settings-grid{grid-template-columns:1fr}.notification-setting-card{padding:13px}.notification-switch{min-width:96px;padding:9px}.notification-settings-head h2{font-size:19px}}
-    `}</style>
-    <section data-ui-key="u-f7155a46ffb7" className="panel notification-settings-head"><BellRing size={28}/><div><h2>QUẢN LÝ THÔNG BÁO</h2><p>Admin có thể bật hoặc tắt riêng từng loại thông báo cho toàn hệ thống.</p></div></section>
-    {error && <div className="notification-settings-error" role="alert">{error}</div>}
-    <section data-ui-key="u-c19f7b85711e" className="notification-settings-grid">
-      {items.map((item) => <article className="notification-setting-card" key={item.key}>
-        <div><h3>{item.label}</h3><p>{item.description}</p><div className="notification-setting-meta"><span>Người nhận: {item.audience}</span><span>Kênh: {item.channel}</span>{savedKey === item.key && <span><Check size={11}/> Đã lưu</span>}</div></div>
-        <button data-ui-key="u-1f631b7ce36d" type="button" className={`notification-switch ${item.enabled ? 'on' : ''}`} disabled={!isAdmin || Boolean(busyKey)} onClick={() => toggle(item)} aria-pressed={item.enabled}>
-          {busyKey === item.key ? <LoaderCircle size={17}/> : item.enabled ? <Power size={17}/> : <PowerOff size={17}/>} {item.enabled ? 'Đang bật' : 'Đã tắt'}
-        </button>
-      </article>)}
-    </section>
-    {!items.length && !error && <div data-ui-key="u-31471c177441" className="panel notification-settings-empty">Đang tải danh sách thông báo…</div>}
+    <header className="panel notification-settings-head"><BellRing/><div><h2>THÔNG BÁO</h2><p>Chọn người nhận, kênh gửi và sắp xếp các thông báo của hệ thống.</p></div></header>
+    {error && <div className="error-box" role="alert">{error} <button disabled={busy} onClick={()=>{void reload().then(()=>{setError('');setEditor(null)}).catch(err=>setError(err.message))}}>Tải lại cấu hình</button></div>}
+    {notice && <p role="status">{notice}</p>}
+    <div className="notification-settings-toolbar"><label><Search size={16}/><input aria-label="Tìm thông báo" placeholder="Tìm thông báo…" value={query} onChange={event=>setQuery(event.target.value)}/></label>{admin && <button type="button" disabled={busy} onClick={()=>open(null)}>+ Tạo thông báo</button>}</div>
+    {editor && draft && <section className="panel notification-editor" aria-label={editor==='new'?'Tạo thông báo':'Cấu hình thông báo'}>
+      <h3>{editor==='new'?'Tạo thông báo mới':draft.label}</h3>
+      {editor==='new' && <><label>Tên thông báo<input maxLength={120} value={draft.label} onChange={event=>setDraft({...draft,label:event.target.value})}/></label>
+        <label>Tìm tác vụ<input aria-label="Tìm tác vụ" value={taskQuery} onChange={event=>setTaskQuery(event.target.value)} placeholder="Tìm module, thao tác, thông báo…"/></label>
+        <label>Tác vụ kích hoạt<select aria-label="Tác vụ kích hoạt" value={draft.source_key} onChange={event=>{const task=tasks.find(item=>item.key===event.target.value);setDraft({...draft,source_key:event.target.value,label:draft.label || task?.label?.slice(0,120) || ''})}}><option value="">Chọn tác vụ…</option>{tasks.filter(item=>item.key===draft.source_key || normalized(`${item.label} ${item.group} ${item.description}`).includes(normalized(taskQuery))).map(item=><option key={item.key} value={item.key}>{item.label}</option>)}</select></label><small>Thông báo tác vụ được tạo sau khi API báo thành công. Nội dung mặc định không đính kèm dữ liệu nghiệp vụ.</small></>}
+      <Recipients options={data.recipients || []} selected={draft.recipients} onChange={recipients=>setDraft({...draft,recipients})}/>
+      <fieldset><legend>Kênh thông báo</legend>{(data.channels || []).map(channel=><label className="notification-channel" key={channel.key}><input type="checkbox" checked={draft.channels.includes(channel.key)} onChange={event=>setDraft({...draft,channels:event.target.checked?[...draft.channels,channel.key]:draft.channels.filter(key=>key!==channel.key)})}/>{channel.label}</label>)}<small>Kênh đẩy cần người nhận bật thông báo trên thiết bị. Nếu chưa sẵn sàng, hệ thống giữ hàng đợi và thử lại.</small></fieldset>
+      <div className="notification-settings-toolbar"><button type="button" disabled={busy || !draft.recipients.length || !draft.channels.length || (editor==='new' && (!draft.label.trim() || !draft.source_key))} onClick={()=>perform(()=>editor==='new'?veraApi.createNotification({...draft,revision:data.revision}):veraApi.updateNotificationSetting(editor,{...draft,revision:data.revision}))}>Lưu thông báo</button><button disabled={busy} onClick={()=>{setEditor(null);setDraft(null)}}>Hủy</button>{editor!=='new' && !data.settings.find(item=>item.key===editor)?.custom && <button disabled={busy} onClick={()=>perform(()=>veraApi.updateNotificationSetting(editor,{enabled:draft.enabled,reset_routing:true,revision:data.revision}))}>Khôi phục người nhận/kênh mặc định</button>}</div>
+    </section>}
+    <small>Kéo tay nắm để sắp xếp; dùng ↑ / ↓ trên điện thoại hoặc bàn phím. Thứ tự được lưu cho toàn hệ thống.</small>
+    <section className="notification-settings-grid">{visible.map(item=>{const index=data.settings.findIndex(row=>row.key===item.key);return <article className="notification-setting-card" key={item.key} onDragOver={event=>{if(admin && !busy){event.preventDefault();event.currentTarget.classList.add('drag-over')}}} onDragLeave={event=>event.currentTarget.classList.remove('drag-over')} onDrop={event=>{event.preventDefault();event.currentTarget.classList.remove('drag-over');reorder(dragged.current,item.key);dragged.current=null}}>
+      <div className="notification-card-order"><button type="button" aria-label={`Kéo ${item.label}`} draggable={admin && !busy && !editor} disabled={!admin || busy || Boolean(editor)} onDragStart={event=>{dragged.current=item.key;event.dataTransfer.setData('text/plain',item.key);event.dataTransfer.effectAllowed='move'}} onDragEnd={()=>{dragged.current=null;document.querySelectorAll('.notification-setting-card.drag-over').forEach(node=>node.classList.remove('drag-over'))}}><GripVertical size={18}/></button><span>{index+1}</span><button type="button" aria-label={`Đưa ${item.label} lên`} disabled={!admin || busy || Boolean(editor) || index===0} onClick={()=>reorder(item.key,data.settings[index-1].key)}>↑</button><button type="button" aria-label={`Đưa ${item.label} xuống`} disabled={!admin || busy || Boolean(editor) || index===data.settings.length-1} onClick={()=>reorder(item.key,data.settings[index+1].key)}>↓</button></div>
+      <div><h3>{item.label}</h3><p>{item.description}</p><small>Người nhận: {item.routed?item.recipients?.map(id=>data.recipients.find(person=>person.id===id)?.name || 'Tài khoản không còn hoạt động').join(', '):item.audience}</small><small>Kênh: {item.routed?item.channels?.map(key=>data.channels.find(channel=>channel.key===key)?.label).join(', '):item.channel}</small></div>
+      <div className="notification-card-actions"><button type="button" aria-pressed={item.enabled} disabled={!admin || busy || Boolean(editor)} onClick={()=>perform(()=>veraApi.updateNotificationSetting(item.key,{enabled:!item.enabled,revision:data.revision}))}>{item.enabled?'Đang bật':'Đã tắt'}</button>{admin && <button type="button" disabled={busy} onClick={()=>open(item)}>Người nhận / Kênh</button>}</div>
+    </article>})}</section>
+    {!visible.length && <p>Chưa có thông báo phù hợp.</p>}
   </div>
 }

@@ -1,5 +1,6 @@
 """Revenue summary and leave-list read enhancements for VERA SPA Web V2."""
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 import csv
 from datetime import date, datetime, timedelta, timezone
@@ -201,19 +202,22 @@ def _dispatch_revenue_admin_push(*, engine_instance, api_module, event: str, det
                 WHERE s.is_active=true AND p.is_active=true AND lower(COALESCE(p.role,''))='admin'
                 ORDER BY s.updated_at DESC
             """)).mappings().all()
-        if not private_key or not subscriptions:
-            return
         action_label = {"create": "Nhập mới", "update": "Sửa", "delete": "Xóa", "import": "Import"}.get(event, event)
         amount = round(float(detail.get("amount") or 0))
         body = f"{detail.get('actor') or 'Hệ thống'} · {detail.get('type') or ''} {amount:,}đ · {detail.get('note') or ''}".replace(",", ".")
         results = []
-        for subscription in subscriptions:
-            delivery = {**dict(subscription), "payload": {
+        payload = {
                 "title": f"VERA SPA · {action_label} Thu Chi thủ công",
                 "body": body[:900], "url": "https://app.veraspa.vn/", "kind": "revenue-manual-change",
                 "tag": f"vera-revenue-{event}-{detail.get('entry_id') or detail.get('nonce') or datetime.now().timestamp()}",
                 "dismissible": True,
-            }}
+            }
+        from uuid import uuid4
+        payload['event_id'] = uuid4().hex
+        if route_notification(engine_instance(), 'revenue_manual_changes', payload): return
+        if not private_key: return
+        for subscription in subscriptions:
+            delivery = {**dict(subscription), 'payload': payload}
             ok, status, error_text = api_module._send_web_push(delivery, private_key, subject)
             results.append({"subscription_id": subscription["subscription_id"], "ok": bool(ok),
                             "inactive": (not ok) and status in {404, 410}, "last_error": str(error_text or "")[:1000]})
