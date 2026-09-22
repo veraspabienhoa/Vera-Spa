@@ -1,6 +1,6 @@
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
-import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, Palette, ShieldCheck, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
@@ -12,9 +12,7 @@ const items = [
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker'] },
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
-  { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, anyPermission: ['live_tour_admin', 'ktv_shift_view', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_quanly', 'work_schedule_tapvu'] },
-  { id: 'appearance', label: 'Giao diện', icon: Palette, ready: true, adminOnly: true },
-  { id: 'notifications', label: 'Thông báo', icon: BellRing, ready: true, adminOnly: true },
+  { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, anyPermission: ['live_tour_admin', 'ktv_shift_view', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_quanly', 'work_schedule_tapvu', 'permission_admin'] },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
@@ -25,7 +23,6 @@ const items = [
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
   { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
   { id: 'hr', label: 'Nhân sự', icon: Users, ready: true, adminOnly: true },
-  { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck, ready: true, permission: 'permission_admin' },
   { id: 'long-leave', label: 'Phép năm', icon: ClipboardList, ready: true, anyPermission: ['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'] },
   { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
   { id: 'rules', label: 'Nội quy', icon: FileText, ready: true, permission: 'official_rules_view' },
@@ -382,7 +379,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           }).map(({ id, label, icon: Icon, ready }) => (
             <a
               key={id}
-              className={`nav-item ${(currentPage === id || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
+              className={`nav-item ${(currentPage === id || (['appearance', 'notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
               onClick={(event) => chooseFromLink(event, id, ready)}
               aria-disabled={!ready || undefined}
