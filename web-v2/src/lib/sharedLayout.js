@@ -18,6 +18,7 @@ export function layoutCss(items) {
   for (const [key, value] of Object.entries(items || {})) {
     if (!/^(l|u)-[a-z0-9-]+$/.test(key)) continue
     const declarations = []
+    if (value.hidden === true) declarations.push('display:none!important')
     if (Number.isInteger(value.order) && value.order >= 0 && value.order <= 10000) declarations.push(`order:${value.order}!important`)
     if (Number.isInteger(value.width) && value.width >= 32 && value.width <= 2400) declarations.push(`width:min(${value.width}px,100%)!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;flex:0 1 auto!important`)
     if (Number.isInteger(value.height) && value.height >= 24 && value.height <= 1600) declarations.push(`min-height:${value.height}px!important;height:auto!important;overflow-wrap:anywhere`)
@@ -27,7 +28,7 @@ export function layoutCss(items) {
     if (['start','center','end','stretch'].includes(value.align_items)) declarations.push(`align-items:${value.align_items}!important`)
     const selector = `[data-layout-key="${key}"],[data-layout-legacy="${key}"],[data-ui-key="${key}"]`
     if (Number.isInteger(value.font_size) && value.font_size >= 12 && value.font_size <= 24) declarations.push(`font-size:${value.font_size}px!important`)
-    if ([0,1,2,3,4].includes(value.rows)) declarations.push('display:grid!important;grid-template-columns:repeat(var(--ui-columns,2),minmax(0,1fr))!important;gap:6px!important;max-width:100%;min-width:0')
+    if (!value.hidden && [0,1,2,3,4].includes(value.rows)) declarations.push('display:grid!important;grid-template-columns:repeat(var(--ui-columns,2),minmax(0,1fr))!important;gap:6px!important;max-width:100%;min-width:0')
     if (Number.isInteger(value.gap) && value.gap >= 0 && value.gap <= 100) declarations.push(`gap:${value.gap}px!important`)
     rules.push(`${selector}{${declarations.join(';')}}`)
     if (['start','center','end'].includes(value.content_align)) rules.push(`:is(${selector}):is(button,a,[role="tab"]){align-items:${value.content_align}!important}`)
