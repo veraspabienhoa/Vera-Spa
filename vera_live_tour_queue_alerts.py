@@ -1,5 +1,6 @@
 """Operational Web Push alerts for Live Tour projection queue health."""
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 from datetime import datetime, timezone
 import json
@@ -266,6 +267,9 @@ def _deliver(engine_instance, event: str, metrics: dict[str, Any], conditions: l
         subscriptions = _admin_subscriptions(conn)
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
         subject = _vault_secret(conn, "vera_v2_vapid_subject") or APP_URL
+    payload = _payload(event, metrics, conditions)
+    payload['event_id'] = f"{event}:{datetime.now(timezone.utc).isoformat()}"
+    if route_notification(engine_instance(), 'live_tour_queue', payload): return 1, ''
     if not subscriptions:
         return 0, "Không có Web Push subscription đang hoạt động cho admin/quản lý."
     if not private_key:

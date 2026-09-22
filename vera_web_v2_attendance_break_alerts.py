@@ -5,6 +5,7 @@ refresh layer to update today's FaceID dataset in PostgreSQL. If TimeSoft cannot
 be refreshed and the PostgreSQL snapshot is stale, active alerts fail closed.
 """
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 from datetime import date, datetime, time, timedelta
 import hashlib
@@ -389,18 +390,26 @@ def install_attendance_break_alerts(app, *, engine_instance: Callable[[], Any], 
                 remaining = fact["remaining_seconds"]
                 if freshness["fresh"] and fact["break_in"] is None and 0 < remaining <= REMINDER_SECONDS and not state.get("reminder_sent_at"):
                     subscriptions = _employee_subscriptions(conn, fact["employee"])
+                    if enqueue_notification(conn, 'attendance_break', _payload(fact, 'reminder'), f"{fact['key']}:reminder"):
+                        subscriptions = []
+                        state['reminder_sent_at'] = now_aware.isoformat()
                     if subscriptions:
                         deliveries.extend({**row, "payload": _payload(fact, "reminder")} for row in subscriptions)
                         state["reminder_sent_at"] = now_aware.isoformat()
                 if freshness["fresh"] and fact["break_in"] is None and remaining <= 0 and not state.get("overdue_sent_at"):
                     if management_cache is None:
                         management_cache = _management_subscriptions(conn)
+                    if enqueue_notification(conn, 'attendance_break', _payload(fact, 'overdue'), f"{fact['key']}:overdue"):
+                        management_cache = []
+                        state['overdue_sent_at'] = now_aware.isoformat()
                     if management_cache:
                         deliveries.extend({**row, "payload": _payload(fact, "overdue")} for row in management_cache)
                         state["overdue_sent_at"] = now_aware.isoformat()
                 if fact["break_in"] is not None and state.get("overdue_sent_at") and not state.get("cleared_at"):
                     if management_cache is None:
                         management_cache = _management_subscriptions(conn)
+                    if enqueue_notification(conn, 'attendance_break', _payload(fact, 'clear'), f"{fact['key']}:clear"):
+                        management_cache = []
                     if management_cache:
                         deliveries.extend({**row, "payload": _payload(fact, "clear")} for row in management_cache)
                     state["cleared_at"] = now_aware.isoformat()
@@ -413,9 +422,14 @@ def install_attendance_break_alerts(app, *, engine_instance: Callable[[], Any], 
                 })
                 _save_state(conn, fact["key"], state)
             viewer_alerts = _viewer_alerts(facts, ident, now, bool(freshness["fresh"]))
+            from vera_notification_delivery import ensure_schema as ensure_notification_schema
+            ensure_notification_schema(conn)
+            if conn.execute(text("SELECT 1 FROM vera_notification_route WHERE key='attendance_break'")).scalar_one_or_none():
+                viewer_alerts = []
             if freshness['fresh']:
                 from vera_missing_checkin_notifications import viewer_missing_checkins
-                viewer_alerts.extend(viewer_missing_checkins(conn, ident, now))
+                if not conn.execute(text("SELECT 1 FROM vera_notification_route WHERE key='missing_checkin'")).scalar_one_or_none():
+                    viewer_alerts.extend(viewer_missing_checkins(conn, ident, now))
 
         delivery_result = _send_payloads(api_module, engine_instance, deliveries)
         return {

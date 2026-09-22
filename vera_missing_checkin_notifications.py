@@ -1,5 +1,6 @@
 """Web Push alerts for scheduled employees missing FaceID after 15 minutes."""
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
@@ -342,6 +343,14 @@ def notify_missing_scheduled_checkins(
             "url": APP_URL, "tag": f"vera-missing-checkin-{work_day.isoformat()}-{key}",
             "employee": username, "department": department, "deadline": deadline.isoformat(),
         }
+        try:
+            routed = route_notification(engine, 'missing_checkin', payload)
+        except Exception:
+            result['failed'] += 1
+            continue
+        if routed:
+            result['notified'] += 1
+            continue
         visible_alerts.append({**payload, 'key': key, 'audience': 'staff', 'level': 'overdue',
             'deadline_iso': deadline.isoformat(), 'date': work_day.strftime('%d/%m/%Y')})
         if not pending_audiences:

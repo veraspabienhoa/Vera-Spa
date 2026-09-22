@@ -5,6 +5,7 @@ Every successful request is mirrored synchronously to the legacy ``NghiDaiHan``
 worksheet so the current Streamlit approval workflow keeps seeing the same data.
 """
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 import calendar
 from datetime import date, datetime, timedelta
@@ -417,8 +418,6 @@ def _send_admin_push(engine_instance, api_module, payload: dict[str, Any]) -> di
                 return result
             private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
             subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
-            if not private_key:
-                return result
             subscriptions = conn.execute(text("""
                 SELECT s.subscription_id::text subscription_id,s.endpoint,s.p256dh,s.auth_secret
                 FROM vera_v2_push_subscription s
@@ -433,6 +432,9 @@ def _send_admin_push(engine_instance, api_module, payload: dict[str, Any]) -> di
             "url": "https://app.veraspa.vn/?page=long-leave",
             "tag": f"vera-long-leave-{payload.get('ID','')}",
         }
+        if route_notification(engine_instance(), 'long_leave_requests', push_payload):
+            return {"sent": 0, "failed": 0, "queued": 1}
+        if not private_key: return result
         for row in subscriptions:
             ok, _status, _error = api_module._send_web_push({**dict(row), "payload": push_payload}, private_key, subject)
             result["sent" if ok else "failed"] += 1

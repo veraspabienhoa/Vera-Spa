@@ -62,6 +62,7 @@ def test_missing_alert_visible_without_push_key_and_cleared_after_checkin(monkey
     class Engine:
         def connect(self): return Connection()
         def begin(self): return Connection()
+    monkeypatch.setattr(alerts, 'route_notification', lambda *_: False)
     monkeypatch.setattr(alerts, '_scheduled_rows', lambda *_: [])
     monkeypatch.setattr(alerts, '_staff_scheduled_rows', lambda *_: [{'employee_username': 'linhdan', 'employee_name': 'Linh Đan', 'department': 'nhanvien', 'shift_code': 'Ca 1', 'start_time': '09:00'}])
     monkeypatch.setattr(alerts, '_delivery_state', lambda *_: {})

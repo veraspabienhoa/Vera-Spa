@@ -66,3 +66,21 @@
 .layout-inspector-section .layout-align-tools{margin-top:8px}
 .layout-designer{container-type:inline-size}
 .layout-designer .layout-panel-frame-toolbar>button{font-size:clamp(10px,3.1cqw,var(--layout-tool-font,13px))}
+
+/* The scrollable body is separate from the permanently anchored resize handle. */
+.layout-designer{display:flex;flex-direction:column;overflow:hidden}
+.layout-panel-content{display:grid;align-content:start;gap:var(--layout-tool-gap,8px);min-height:0;min-width:0;overflow:auto;padding:0 3px 44px 0;overscroll-behavior:contain}
+.layout-panel-content[hidden]{display:none}
+.layout-designer .layout-panel-frame-toolbar{grid-template-columns:repeat(6,minmax(0,1fr))}
+.layout-designer .layout-panel-frame-toolbar>button{white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+.layout-device-toolbar{display:grid;grid-template-columns:1.4fr 1.4fr 1fr 1fr;gap:4px;align-items:center}
+.layout-designer .layout-device-toolbar label{display:flex;align-items:center;gap:3px;font-size:11px;white-space:nowrap}
+.layout-designer .layout-device-toolbar input[type=checkbox]{width:14px;height:14px;min-width:14px;accent-color:#174d3a}
+.layout-designer .layout-device-toolbar button{font-size:11px;padding-inline:3px;min-width:0}
+.layout-designer .layout-panel-resize{position:absolute!important;right:8px;bottom:8px;z-index:3;margin:0;min-height:28px;padding:5px 9px}
+
+/* Keep density and save actions on one row directly below the frame toolbar. */
+.layout-scale-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:center;min-width:0}
+.layout-designer .layout-scale-actions .layout-tool-scale{font-size:clamp(10px,3cqw,13px);min-width:0;line-height:1.3}
+.layout-quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;min-width:0}
+.layout-designer .layout-quick-actions button{min-width:0;padding-inline:2px;font-size:clamp(10px,3cqw,13px);white-space:normal;overflow-wrap:anywhere;line-height:1.2}

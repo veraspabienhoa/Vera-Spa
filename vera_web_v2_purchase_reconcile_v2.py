@@ -10,6 +10,7 @@ notification to active admin, quanly, and letan subscriptions. Alert state is
 persisted per business date so ordinary page refreshes do not spam users.
 """
 from __future__ import annotations
+from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 from collections import defaultdict
 from datetime import date, datetime
@@ -250,7 +251,7 @@ def _dispatch_mismatch_alerts(
                     ORDER BY s.updated_at DESC
                 """)).mappings().all()]
 
-        if not pending or not private_key or not subscriptions:
+        if not pending:
             return
 
         delivery_results: list[dict[str, Any]] = []
@@ -270,6 +271,10 @@ def _dispatch_mismatch_alerts(
                 "timestamp": timestamp,
             }
             row_success = False
+            if route_notification(engine_instance(), 'purchase_reconcile', payload):
+                successful_dates.add(business_date)
+                continue
+            if not private_key: continue
             for subscription in subscriptions:
                 delivery = {**subscription, "payload": payload}
                 ok, status_code, error_text = api_module._send_web_push(

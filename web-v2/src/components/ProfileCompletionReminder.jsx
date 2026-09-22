@@ -85,6 +85,8 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
       const nextMissing = profile.profile_requirement_exempt
         ? []
         : missingProfileFields(profile, identityResult || {})
+      if (nextMissing.length && profileReminder?.has_rules) void veraApi.routeLocalNotification('profile_completion').catch(()=>{})
+      if (profileReminder?.routed) { setMissing([]); return }
       setMissing(nextMissing)
       setDismissed(false)
       if (nextMissing.length) void showSystemNotification(username, nextMissing)
@@ -97,7 +99,8 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
     void load()
     const refresh = () => void load()
     window.addEventListener('vera-profile-updated', refresh)
-    return () => window.removeEventListener('vera-profile-updated', refresh)
+    window.addEventListener('vera-notification-settings-changed',refresh)
+    return () => {window.removeEventListener('vera-profile-updated', refresh);window.removeEventListener('vera-notification-settings-changed',refresh)}
   }, [load])
 
   const text = useMemo(() => missing.join(', '), [missing])

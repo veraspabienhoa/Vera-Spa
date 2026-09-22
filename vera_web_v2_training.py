@@ -1,5 +1,7 @@
 """Training sessions, periodic employee evaluations, and analytics for Web V2."""
 from __future__ import annotations
+from vera_notification_delivery import enqueue as enqueue_notification
+import vera_web_v2_notification_settings as notification_settings
 
 from datetime import date, datetime, time
 from io import BytesIO
@@ -234,6 +236,7 @@ def _require_assessment_pair(conn, evaluator_username: str, evaluatee_username: 
 
 
 def _dispatch_completed_notifications(conn, *, reference_type: str, reference_id: str, evaluatee: dict, evaluator: dict) -> int:
+    if not notification_settings.is_enabled(conn, 'training_completed'): return 0
     recipients = {
         str(row[0]) for row in conn.execute(text("""
             SELECT e.username FROM employees e
@@ -248,6 +251,7 @@ def _dispatch_completed_notifications(conn, *, reference_type: str, reference_id
     label = "Đào tạo hằng ngày" if reference_type == "daily_training" else "Đánh giá tổng hợp"
     title = f"{label} đã hoàn thành"
     body = f"{evaluatee['full_name']} · Người thực hiện: {evaluator['full_name']}"
+    if enqueue_notification(conn, 'training_completed', {'title':title,'body':body,'tag':f'{reference_type}:{reference_id}'}): return 1
     for recipient in {item.strip() for item in recipients if item and item.strip()}:
         conn.execute(text("""
             INSERT INTO vera_training_notification(id,recipient_username,reference_type,reference_id,title,body)
@@ -259,6 +263,8 @@ def _dispatch_completed_notifications(conn, *, reference_type: str, reference_id
 
 
 def _dispatch_cycle_notifications(conn, *, cycle_id: str, cycle_name: str) -> int:
+    if not notification_settings.is_enabled(conn, 'training_cycle'): return 0
+    if enqueue_notification(conn, 'training_cycle', {'title':'Đợt đánh giá mới','body':f'Đợt đánh giá: {cycle_name}','tag':cycle_id}): return 1
     rows = conn.execute(text("""
         SELECT employee_username,evaluator_username FROM vera_evaluation_assignment
         WHERE cycle_id=:cycle
