@@ -221,8 +221,7 @@ export default function App() {
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'hr' && <HumanResourcesPage user={shellUser} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}
-        {(page === 'payroll' || page === 'department-payroll') && <PayrollTabs user={shellUser} initialTab={page === 'department-payroll' ? 'administrative' : 'ktv'} ktv={<PayrollPage user={shellUser} />} administrative={<DepartmentPayrollPanel user={shellUser} />} />}
-        {page === 'payroll-config' && <DepartmentPayrollSettingsPage user={shellUser} />}
+        {(page === 'payroll' || page === 'department-payroll' || page === 'payroll-config') && <PayrollTabs user={shellUser} initialTab={page === 'payroll-config' ? 'configuration' : page === 'department-payroll' ? 'administrative' : 'ktv'} ktv={<PayrollPage user={shellUser} />} administrative={<DepartmentPayrollPanel user={shellUser} />} configuration={<DepartmentPayrollSettingsPage user={shellUser} />} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}

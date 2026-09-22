@@ -6,4 +6,4 @@
 .payroll-menu-tabs button:focus-visible{outline:3px solid #c69831;outline-offset:3px}
 .payroll-tabs-page>[role="tabpanel"]{min-width:0;max-width:100%}
 .payroll-tabs-page>[hidden]{display:none!important}
-@media(max-width:600px){.payroll-menu-tabs{flex-wrap:nowrap}.payroll-menu-tabs button{flex:1;min-width:0;padding:10px 8px;font-size:14px}}
+@media(max-width:600px){.payroll-menu-tabs{flex-wrap:wrap}.payroll-menu-tabs button{flex:1 1 140px;min-width:0;padding:10px 8px;font-size:14px}}

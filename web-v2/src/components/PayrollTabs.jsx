@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import './PayrollTabs.css'
 
-export default function PayrollTabs({ user, initialTab = 'ktv', ktv, administrative }) {
+export default function PayrollTabs({ user, initialTab = 'ktv', ktv, administrative, configuration }) {
   const admin = user?.role === 'admin'
   const tabs = [
     { id: 'ktv', label: 'Lương KTV', allowed: admin || user?.permissions?.payroll_history === true, content: ktv },
     { id: 'administrative', label: 'Lương hành chánh', allowed: admin || user?.permissions?.payroll_calculate === true, content: administrative },
+    { id: 'configuration', label: 'Cấu hình lương', allowed: admin, content: configuration },
   ].filter(tab => tab.allowed)
   const [selected, setSelected] = useState(initialTab)
   const active = tabs.find(tab => tab.id === selected)?.id || tabs[0]?.id
