@@ -622,6 +622,9 @@ def install_staff_routes(
         merged = dict(row)
         if "role" in values:
             merged["role"] = validate_role(ident, values["role"])
+            if merged["role"] != row.get("role"):
+                from vera_web_v2_hr import preserve_employee_department
+                preserve_employee_department(conn, row["username"], row.get("role"), ident.employee_username)
         if "full_name" in values:
             merged["full_name"] = str(values["full_name"] or "").strip()
         if "gender" in values:

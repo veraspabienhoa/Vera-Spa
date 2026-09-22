@@ -5,6 +5,8 @@ and Admin deferral of current-period penalties into the next payroll period.
 """
 from __future__ import annotations
 
+from vera_web_v2_hr import TIP_SQL
+
 from datetime import date, timedelta
 import hashlib
 import json
@@ -95,11 +97,11 @@ def _next_period_start(period_start: date, period_end: date) -> date:
 
 
 def _canonical_employee(conn, employee_name: str) -> str:
-    canonical = conn.execute(text("""
+    canonical = conn.execute(text(f"""
         SELECT username
         FROM employees
         WHERE lower(btrim(username))=lower(btrim(:username))
-          AND lower(COALESCE(role,'')) IN ('nhanvien','leader')
+          AND {TIP_SQL}
         LIMIT 1
     """), {"username": employee_name.strip()}).scalar_one_or_none()
     if not canonical:

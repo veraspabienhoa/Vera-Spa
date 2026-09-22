@@ -46,12 +46,12 @@ def test_official_department_payroll_is_one_record_per_month():
 def test_salary_configuration_is_split_into_two_employee_tables():
     panel = (ROOT / "web-v2/src/pages/DepartmentPayrollPanel.jsx").read_text(encoding="utf-8")
     backend = (ROOT / "vera_web_v2_department_payroll.py").read_text(encoding="utf-8")
-    assert "BẢNG 1 · QUẢN LÝ / LỄ TÂN / LOCKER / SUPPORT" in panel
-    assert "BẢNG 2 · TẠP VỤ" in panel
+    assert "BẢNG 1 · LƯƠNG GIỜ" in panel
+    assert "BẢNG 2 · LƯƠNG THÁNG" in panel
     assert "Mỗi nhân viên là một dòng" in panel
     assert '"operations": [row for row in rows' in backend
     assert '"support": "Support"' in backend
-    assert '<option value="support">Support</option>' in panel
+    assert 'Object.entries(settings)' in panel
     assert '"department_employee_salary_configs"' in backend
 
 

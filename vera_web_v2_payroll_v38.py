@@ -9,6 +9,8 @@ _net helper.
 """
 from __future__ import annotations
 
+from vera_web_v2_hr import TIP_SQL, DEPARTMENT_SQL
+
 import json
 from typing import Any
 
@@ -106,12 +108,12 @@ def _load_or_bootstrap_overrides(conn, *, google_client, norm, actor: str) -> tu
 
 
 def _eligible_employees(conn) -> list[dict[str, str]]:
-    return [dict(row) for row in conn.execute(text("""
+    return [dict(row) for row in conn.execute(text(f"""
         SELECT username,
                COALESCE(full_name,'') AS full_name,
-               lower(COALESCE(role,'')) AS role
+               {DEPARTMENT_SQL} AS role
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('nhanvien','leader')
+        WHERE {TIP_SQL}
         ORDER BY COALESCE(stt,2147483647), username
     """)).mappings().all()]
 

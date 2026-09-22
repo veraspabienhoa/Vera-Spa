@@ -11,6 +11,8 @@ re-applies those adjustments, so deleted rows do not unexpectedly reappear.
 """
 from __future__ import annotations
 
+from vera_web_v2_hr import TIP_SQL
+
 from datetime import date
 import hashlib
 import unicodedata
@@ -264,11 +266,11 @@ def _require_admin(ident) -> None:
 
 
 def _canonical_employee(conn, employee_name: str) -> str:
-    canonical = conn.execute(text("""
+    canonical = conn.execute(text(f"""
         SELECT username
         FROM employees
         WHERE lower(btrim(username))=lower(btrim(:username))
-          AND lower(COALESCE(role,'')) IN ('nhanvien','leader')
+          AND {TIP_SQL}
         LIMIT 1
     """), {"username": employee_name.strip()}).scalar_one_or_none()
     if not canonical:

@@ -26,6 +26,7 @@ const items = [
   { id: 'contract-1', label: 'Hợp đồng', icon: FileSignature, ready: true, permission: 'contract_1_view' },
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
   { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
+  { id: 'hr', label: 'Nhân sự', icon: Users, ready: true, adminOnly: true },
   { id: 'permissions', label: 'Phân quyền', icon: ShieldCheck, ready: true, permission: 'permission_admin' },
   { id: 'long-leave', label: 'Phép năm', icon: ClipboardList, ready: true, anyPermission: ['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'] },
   { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
