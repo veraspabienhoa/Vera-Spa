@@ -14,3 +14,12 @@
 .training-report-filter.compact-filter,.training-report-filter.history-filter{display:grid;grid-template-columns:minmax(260px,520px) auto;align-items:end;padding:14px;border:1px solid #d5e2da;border-radius:15px;background:#fff}.training-report-filter.history-filter{grid-template-columns:minmax(260px,1fr) minmax(190px,.5fr) auto}.training-report-filter.compact-filter .username-autocomplete,.training-report-filter.history-filter .username-autocomplete{margin:0}.training-report-filter.history-filter label{margin:0}
 .criteria-history-chart svg{width:100%;min-height:250px}.criteria-history-chart line{stroke:#dbe5df}.criteria-history-chart polyline{fill:none;stroke-width:3}.criteria-history-chart text{font-size:10px;fill:#66776e;text-anchor:middle}.criteria-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 14px}.criteria-legend span{display:flex;align-items:center;gap:5px;font-size:.75rem}.criteria-legend i{width:12px;height:4px;border-radius:4px}.settings-filters{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media(max-width:600px){.training-report-filter.compact-filter,.training-report-filter.history-filter,.settings-filters{grid-template-columns:1fr}}
+
+/* Keep evaluation types distinct with both color and their existing text labels. */
+.training-page .timeline{gap:10px}
+.training-page .timeline .training-history-item{padding:14px;border-radius:12px;min-width:0}
+.training-page .timeline .training-history-item.daily{background:#eef6ff;border:1px solid #9bbfdf;border-left:5px solid #28689c}
+.training-page .timeline .training-history-item.comprehensive{background:#fff7e5;border:1px solid #ddbd6e;border-left:5px solid #a47514}
+.training-page .history-kind.daily{background:#d6eaff;color:#164f7c}
+.training-page .history-kind.comprehensive{background:#f7e2a7;color:#674500}
+.training-page .training-history-item>div{min-width:0;overflow-wrap:anywhere}
