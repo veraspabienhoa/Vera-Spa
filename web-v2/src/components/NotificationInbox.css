@@ -1,0 +1,7 @@
+.notification-inbox { position: relative; flex: 0 0 auto; }
+.topbar-actions { flex-wrap: wrap; }
+.notification-inbox-trigger { position: relative; }
+.topbar-actions .topbar-open-tab-button { width: 148px; min-height: 32px; }
+.notification-unread-dot { position: absolute; top: 2px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #bd2736; }
+.notification-inbox > .panel { position: absolute; top: calc(100% + 8px); right: 0; width: min(420px, calc(100vw - 32px)); max-height: 65dvh; overflow: auto; z-index: 50; background: white; border: 1px solid #406f59; box-shadow: 0 8px 24px #12372b26; text-align: left; }
+@media(max-width:600px) { .topbar-actions .topbar-open-tab-button { width: 128px; min-height: 30px; } .notification-inbox > .panel { position: fixed; top: 100px; left: 16px; right: 16px; width: auto; } }
