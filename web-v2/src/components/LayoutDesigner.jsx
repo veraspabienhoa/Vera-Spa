@@ -3,9 +3,10 @@ import { veraApi } from '../lib/api'
 import { layoutCandidates, layoutCss, layoutKey } from '../lib/sharedLayout'
 import './LayoutDesigner.css'
 
-export default function LayoutDesigner({ user, page }) {
+export default function LayoutDesigner({ user, page, open = false, onClose }) {
   const admin = user?.role === 'admin'
-  const [editing, setEditing] = useState(false)
+  const [editingEnabled, setEditing] = useState(false)
+  const editing = admin && open && editingEnabled
   const [device, setDevice] = useState(() => window.innerWidth <= 768 ? 'mobile' : 'desktop')
   const [saved, setSaved] = useState({ layout: { mobile: {}, desktop: {} }, revision: 0 })
   const [draft, setDraft] = useState(null)
@@ -129,6 +130,12 @@ export default function LayoutDesigner({ user, page }) {
     }
     setSelected(parent)
   }
+  const close = () => {
+    if (busy) return
+    if (editing && JSON.stringify(draft) !== JSON.stringify(saved.layout[device] || {}) && !window.confirm('Đóng và hủy các thay đổi bố cục chưa lưu?')) return
+    setEditing(false); setDraft(null); setSelected(null); setMessage(''); dragging.current = null
+    onClose?.()
+  }
   const save = async () => {
     setBusy(true); setMessage('')
     try {
@@ -139,7 +146,8 @@ export default function LayoutDesigner({ user, page }) {
   }
   return <>
     <style>{layoutCss(preview)}{editing && selectedKey ? `[data-layout-key="${selectedKey}"]{outline:3px solid #c49524!important;outline-offset:2px}` : ''}</style>
-    {admin && <aside className="layout-designer" aria-label="Tùy chỉnh bố cục Admin">
+    {admin && open && <aside className="layout-designer" aria-label="Tùy chỉnh bố cục Admin">
+      <button type="button" disabled={busy} onClick={close} aria-label="Đóng chỉnh bố cục">Đóng ✕</button>
       {!editing ? <><button type="button" disabled={!loaded} onClick={() => { setDraft({ ...saved.layout[device] }); setEditing(true); setMessage('Chọn một thành phần. Kéo thả trong cùng nhóm để đổi vị trí.') }}>Chỉnh bố cục · {device === 'mobile' ? 'Mobile' : 'Desktop'}</button>{message && <small role="status">{message}</small>}</> : <>
         <strong>Bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}</strong><small>Chọn menu, tab, nút hoặc khung; kéo thả trong cùng nhóm. Bản còn lại được giữ riêng.</small>
         {selectedKey && <><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small><div className="layout-designer-actions"><button type="button" onClick={() => step(-1)}>← Trước</button><button type="button" onClick={() => step(1)}>Sau →</button><button type="button" onClick={selectParent}>Chọn khung cha</button></div><label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; delete next[selectedKey]; return next })}>Khôi phục thành phần</button></>}

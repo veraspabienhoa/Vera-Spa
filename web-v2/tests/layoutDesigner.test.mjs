@@ -25,10 +25,13 @@ test('Admin drags within a group, saves desktop only, and another user receives 
   const Designer = module.exports.default
   const { createRoot } = await import('react-dom/client')
   const root = createRoot(document.querySelector('#root'))
-  const screen = role => React.createElement('div', { className:'app-shell' }, React.createElement('nav',{ 'data-vera-node':'nav',style:{display:'flex'} }, ['first','second'].map(id => React.createElement('button',{ key:id, id,'data-vera-node':'button','data-vera-item':id,onClick:()=>actionCalls++ },id))),React.createElement(Designer,{user:{role},page:'settings'}))
+  let closeCalls = 0
+  const screen = (role, open = false) => React.createElement('div', { className:'app-shell' }, React.createElement('nav',{ 'data-vera-node':'nav',style:{display:'flex'} }, ['first','second'].map(id => React.createElement('button',{ key:id, id,'data-vera-node':'button','data-vera-item':id,onClick:()=>actionCalls++ },id))),React.createElement(Designer,{user:{role},page:'settings',open,onClose:()=>{closeCalls++;root.render(screen(role,false))}}))
   const click = async text => act(async () => [...document.querySelectorAll('.layout-designer button')].find(el=>el.textContent.includes(text)).click())
   try {
     await act(async()=>root.render(screen('admin')))
+    assert.equal(document.querySelector('.layout-designer'),null,'closed by default')
+    await act(async()=>root.render(screen('admin',true)))
     await click('Chỉnh bố cục')
     const first=document.querySelector('#first'), second=document.querySelector('#second')
     document.elementFromPoint=()=>second
@@ -42,7 +45,20 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     assert.equal(writes[0].items[first.dataset.layoutKey].order,1)
     assert.equal(writes[0].items[second.dataset.layoutKey].order,0)
     assert.deepEqual(server.layout.mobile,{'l-mobile':{width:80}})
-    await act(async()=>root.render(screen('nhanvien')))
+    await click('Đóng')
+    assert.equal(closeCalls,1)
+    assert.equal(document.querySelector('.layout-designer'),null)
+    await act(()=>first.click())
+    assert.equal(actionCalls,1,'closing restores business clicks')
+    Object.defineProperty(window,'innerWidth',{value:390,configurable:true})
+    await act(()=>window.dispatchEvent(new window.Event('resize')))
+    await act(async()=>root.render(screen('admin',true)))
+    assert.match(document.querySelector('.layout-designer').textContent,/Mobile/)
+    await click('Đóng')
+    assert.equal(document.querySelector('.layout-designer'),null)
+    Object.defineProperty(window,'innerWidth',{value:1024,configurable:true})
+    await act(()=>window.dispatchEvent(new window.Event('resize')))
+    await act(async()=>root.render(screen('nhanvien',true)))
     assert.equal(document.querySelector('.layout-designer'),null)
     assert.match(document.querySelector('style').textContent,/order:1!important/)
   } finally {
