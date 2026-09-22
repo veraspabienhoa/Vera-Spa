@@ -47,3 +47,15 @@ test('alignment accepts only safe values and explicit gap overrides row defaults
   assert.ok(css.indexOf('gap:18px')>css.indexOf('gap:6px'))
   assert.doesNotMatch(layoutCss({'u-test':{text_align:'left;color:red',gap:-1}}),/color:red|gap:-1/)
 })
+
+
+test('visual styles are scoped, guard disabled states and reject CSS injection', () => {
+  const css=layoutCss({'u-test':{appearance:{normal:{background:'#ffffff',gradient:'#f4f7f6',shadow:'raised'},hover:{text:'#14532d'},selected:{background:'#1b5e20'},radius:10,depth:3,hover_lift:2,press_sink:2,glass_blur:8}}})
+  assert.match(css,/linear-gradient\(135deg/)
+  assert.match(css,/prefers-reduced-motion:reduce/)
+  assert.match(css,/:not\(:disabled/)
+  assert.match(css,/aria-selected/)
+  assert.match(css,/backdrop-filter:blur\(8px\)/)
+  const bad=layoutCss({'u-test':{appearance:{normal:{background:'red;display:none',shadow:'url(https://bad)'},radius:900,font_family:'url(https://bad)'}}})
+  assert.doesNotMatch(bad,/display:none|https:|900px/)
+})
