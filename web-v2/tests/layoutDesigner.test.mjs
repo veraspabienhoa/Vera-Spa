@@ -22,7 +22,7 @@ test('Admin drags within a group, saves desktop only, and another user receives 
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   let server = { revision: 0, layout: { desktop: {}, mobile: { 'l-mobile': { width: 80 } } } }, actionCalls = 0
   const writes = []
-  globalThis.__layoutApi = { uiLayout: async () => structuredClone(server), saveUiLayout: async body => { writes.push(body); server = { revision: 1, layout: { ...server.layout, [body.device]: body.items } }; return structuredClone(server) } }
+  globalThis.__layoutApi = { uiLayoutHistory:async()=>({items:[]}), uiLayout: async () => structuredClone(server), saveUiLayout: async body => { writes.push(body); server = { revision: 1, layout: { ...server.layout, [body.device]: body.items } }; return structuredClone(server) } }
   const module = { exports: {} }
   new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports)
   const Designer = module.exports.default
@@ -38,7 +38,7 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     const topbar=document.querySelector('.layout-panel-frame-toolbar')
     assert.deepEqual([...topbar.querySelectorAll('button')].map(node=>node.textContent), ['Tùy chỉnh','Thành phần','Mặc định','Vị trí','Di chuyển','Hide'])
     assert.equal([...topbar.querySelectorAll('button')].find(node=>node.textContent==='Thành phần').getAttribute('aria-pressed'),'true')
-    assert.equal([...document.querySelectorAll('button')].some(node=>node.textContent==='Lịch sử'),false)
+    assert.equal([...document.querySelectorAll('button')].some(node=>node.textContent==='Lịch sử'),true)
     await click('Hide')
     assert.equal(document.querySelector('.layout-panel-content').hidden,true)
     await click('Show')
@@ -56,7 +56,7 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     await act(()=>document.querySelector('[aria-label="Kéo đổi kích thước bảng công cụ"]').dispatchEvent(new window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,shiftKey:true})))
     assert.equal(JSON.parse(localStorage.getItem('vera-layout-panel-frame-v1')).width,380)
     await click('Tùy chỉnh')
-    await act(async()=>document.querySelector('.layout-free-mode input').click())
+    await act(async()=>document.querySelector('[aria-label="Kéo tự do"]').click())
     const first=document.querySelector('#first'), second=document.querySelector('#second')
     document.elementFromPoint=()=>second
     await act(()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
@@ -70,7 +70,7 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     assert.equal(writes[0].items[second.dataset.layoutKey].order,0)
     assert.deepEqual(server.layout.mobile,{'l-mobile':{width:80}})
     await click('Tùy chỉnh')
-    await act(async()=>document.querySelector('.layout-free-mode input').click())
+    await act(async()=>document.querySelector('[aria-label="Kéo tự do"]').click())
     first.getBoundingClientRect=()=>({left:100,top:100,right:160,bottom:130,width:60,height:30})
     await act(async()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:110,clientY:110})))
     await act(async()=>document.dispatchEvent(new window.MouseEvent('pointermove',{bubbles:true,clientX:190,clientY:150,altKey:true})))
@@ -162,6 +162,50 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     assert.ok(document.querySelector('.layout-custom-box'))
     await click('Xóa box')
     assert.equal(document.querySelector('.layout-custom-box'),null)
+    // Shift selection, batch dimensions and group membership survive saving.
+    await act(async()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:110,clientY:110})))
+    await act(async()=>document.dispatchEvent(new window.MouseEvent('pointerup',{bubbles:true,clientX:110,clientY:110})))
+    second.getBoundingClientRect=()=>({left:240,top:180,right:300,bottom:210,width:60,height:30})
+    await act(async()=>second.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,shiftKey:true})))
+    assert.ok(document.querySelector('[aria-label="Chỉnh nhiều thành phần"]'))
+    const width=[...document.querySelectorAll('.layout-designer label')].find(el=>el.textContent.startsWith('Rộng (px)')).querySelector('input')
+    await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(width,'180');width.dispatchEvent(new window.Event('input',{bubbles:true}))})
+    await click('Căn trái')
+    await click('Group')
+    await click('Lưu')
+    const grouped=writes.at(-1).items
+    assert.equal(grouped[first.dataset.layoutKey].width,180)
+    assert.equal(grouped[second.dataset.layoutKey].width,180)
+    assert.equal(grouped[first.dataset.layoutKey].group_id,grouped[second.dataset.layoutKey].group_id)
+    assert.equal(grouped[second.dataset.layoutKey].offset_x,-140)
+    await click('Tùy chỉnh')
+    await act(async()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:110,clientY:110})))
+    await act(async()=>document.dispatchEvent(new window.MouseEvent('pointerup',{bubbles:true,clientX:110,clientY:110})))
+    assert.ok(document.querySelector('[aria-label="Chỉnh nhiều thành phần"]'),'clicking one grouped item selects the group')
+    await act(async()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:110,clientY:110})))
+    await act(async()=>document.dispatchEvent(new window.MouseEvent('pointermove',{bubbles:true,clientX:150,clientY:140,altKey:true})))
+    assert.match(document.querySelector('style').textContent,/translate:40px 30px/)
+    assert.match(document.querySelector('style').textContent,/translate:-100px 30px/)
+    await act(async()=>document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})))
+    assert.doesNotMatch(document.querySelector('style').textContent,/translate:40px 30px/)
+    await click('Ungroup')
+    await click('Lưu')
+    assert.equal(writes.at(-1).items[first.dataset.layoutKey].group_id,undefined)
+    await click('Lịch sử')
+    assert.match(document.querySelector('.layout-panel-content').textContent,/Chưa có lịch sử/)
+    await click('Tùy chỉnh')
+    // Menu moves persist ordering without triggering navigation.
+    const menu=document.createElement('nav');menu.className='nav-list';menu.dataset.layoutKey='l-menu'
+    for(const key of ['u-menu-live-tour','u-menu-settings']){const a=document.createElement('a');a.dataset.uiKey=key;a.dataset.layoutKey=key;a.dataset.layoutEditable='true';a.textContent=key;menu.append(a)}
+    document.querySelector('.app-shell').append(menu)
+    const [menuFirst,menuSecond]=menu.children;document.elementFromPoint=()=>menuSecond
+    await act(async()=>menuFirst.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:10,clientY:10})))
+    await act(async()=>document.dispatchEvent(new window.MouseEvent('pointerup',{bubbles:true,clientX:10,clientY:80})))
+    await click('Lưu')
+    assert.equal(writes.at(-1).items['u-menu-live-tour'].order,1)
+    assert.equal(writes.at(-1).items['u-menu-settings'].order,0)
+    menu.remove();document.elementFromPoint=()=>second
+    await click('Tùy chỉnh')
     // Parent/descendant navigation exposes one inspector, without changing tool tabs.
     await act(()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
     await click('Chọn khung cha')

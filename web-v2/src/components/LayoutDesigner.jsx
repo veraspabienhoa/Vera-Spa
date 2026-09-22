@@ -1,3 +1,4 @@
+import { customKinds, isCustomContainer, selectionNodes, boundingSelection, alignSelection, removeLayoutItems, translateSelection } from '../lib/layoutSelection'
 import { createPortal } from 'react-dom'
 import { freeMovePosition } from '../lib/layoutFreeMove'
 import useLayoutToolScale from './useLayoutToolScale'
@@ -37,7 +38,13 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const [device, setDevice] = useState('desktop')
   const [saved, setSaved] = useState({ layout: { mobile: {}, desktop: {} }, revision: 0 })
   const [draft, setDraft] = useState(null)
-  const [selected, setSelected] = useState(null)
+  const [selected, setPrimary] = useState(null)
+  const [selection, setSelection] = useState([])
+  const selectionRef=useRef([]);selectionRef.current=selection
+  const setSelected = node => {setPrimary(node);setSelection(node?.dataset.layoutKey?[node.dataset.layoutKey]:[])}
+  const [snapEnabled,setSnapEnabled]=useState(true)
+  const [centerLines,setCenterLines]=useState(true)
+  const [addKind,setAddKind]=useState('frame')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -52,7 +59,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     if (!selectedKey) return
     const frame = window.requestAnimationFrame(() => {
       const current = document.querySelector(`[data-layout-key="${selectedKey}"],[data-ui-key="${selectedKey}"]`)
-      if (current) { current.dataset.layoutKey = selectedKey; setSelected(current) }
+      if (current) { current.dataset.layoutKey = selectedKey; setPrimary(current) }
     })
     return () => window.cancelAnimationFrame(frame)
   }, [selectedKey, preview])
@@ -63,12 +70,15 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     return () => window.cancelAnimationFrame(frame)
   }, [selected, preview])
   const resizeSelection = (size, phase) => {
-    if (phase === 'start') { resizeOriginal.current = { ...configuration }; return }
-    if (phase === 'end') { resizeOriginal.current = null; return }
-    const previous = resizeOriginal.current
-    if (phase === 'cancel') resizeOriginal.current = null
-    if (phase === 'cancel' && !previous) return
-    setDraft(current => ({ ...current, [selectedKey]: phase === 'cancel' ? previous : { ...current?.[selectedKey], ...size } }))
+    const keys=selectionRef.current.length?selectionRef.current:[selectedKey]
+    if(phase==='start'){resizeOriginal.current=Object.fromEntries(keys.map(key=>[key,preview[key]]));return}
+    if(phase==='end'){resizeOriginal.current=null;return}
+    if(phase==='cancel'){
+      const original=resizeOriginal.current;resizeOriginal.current=null
+      if(original)setDraft(current=>{const next={...current};Object.entries(original).forEach(([key,item])=>{if(item)next[key]=item;else delete next[key]});return next})
+      return
+    }
+    setDraft(current=>{const next={...current};keys.forEach(key=>{next[key]={...next[key],...size}});return next})
   }
   const definition = registry[selectedKey?.split('--')[0]]
   useEffect(() => { publishCustomization(preview, editing) }, [preview, editing])
@@ -94,8 +104,9 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const addElement = kind => {
     const key = `l-custom-${crypto.randomUUID()}`
     const anchor = configuration.custom_kind ? configuration.custom_anchor : selectedKey
-    setDraft(current => ({ ...current, [key]: {custom_kind:kind,custom_text:kind === 'box' ? 'Box mới' : 'Nội dung mới',custom_page:page,...(anchor ? {custom_anchor:anchor} : {}),order:Object.keys(current || {}).length} }))
-    setNewKey(key);setGuideTool(kind === 'box' ? 'Thêm box' : 'Thêm text')
+    const destination=isCustomContainer(configuration)?selectedKey:undefined
+    setDraft(current => ({ ...current, [key]: {custom_kind:kind,custom_text:kind==='table'?'Tên | Ngày | Loại\nMẫu A | 23-09-2026 | Lựa chọn 1':kind==='text'?'Nội dung mới':customKinds[kind],...(kind==='dropdown'?{custom_options:'Lựa chọn 1\nLựa chọn 2'}:{}),custom_page:page,...(destination?{move_to:destination}:anchor ? {custom_anchor:anchor} : {}),order:Object.keys(current || {}).length} }))
+    setNewKey(key);setGuideTool(['box','text'].includes(kind)?'Thêm '+kind:'Loại thành phần')
   }
   useEffect(() => {
     if (!newKey) return undefined
@@ -106,9 +117,16 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   },[newKey])
   const removeElement = () => {
     setGuideTool('Xóa / Ẩn')
-    if (!window.confirm(configuration.custom_kind ? 'Xóa thành phần tự thêm trong bản xem trước?' : 'Ẩn thành phần này khỏi giao diện? Dữ liệu nghiệp vụ được giữ nguyên.')) return
-    setDraft(current=>{const next={...current};if(configuration.custom_kind)delete next[selectedKey];else next[selectedKey]={...configuration,hidden:true};return next});setSelected(null)
+    if(!window.confirm('Xóa các thành phần tự thêm đã chọn (kèm phần con), hoặc ẩn thành phần có sẵn? Dữ liệu nghiệp vụ được giữ nguyên.'))return
+    setDraft(current=>removeLayoutItems(current,selection.length?selection:[selectedKey]));setSelected(null)
   }
+  const groupSelection = grouped => {
+    if(grouped && selectionNodes(selection).some(node=>node.closest('.nav-list'))){setMessage('Menu được sắp xếp riêng bằng kéo lên/xuống hoặc Trước/Sau.');return}
+    const id=grouped?'g-'+crypto.randomUUID():undefined
+    setDraft(current=>{const next={...current};selection.forEach(key=>{next[key]={...next[key],group_id:id}});return next})
+    setGuideTool(grouped?'Group':'Ungroup')
+  }
+  const alignMany = mode => setDraft(current=>alignSelection(current,selectionNodes(selection),mode))
   const restore = async revision => {
     if (!window.confirm('Khôi phục bố cục thiết bị này từ phiên bản đã chọn?')) return
     setBusy(true)
@@ -167,16 +185,25 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     if (!source?.dataset.uiOrigin || !destination || !canRelocate(source, destination)) { setMessage('Chọn thành phần trong nhóm nút và khung đích cùng biểu mẫu.'); return }
     const key = source.dataset.layoutKey
     const destinationKey = destination.dataset.uiDropzone
-    if (!key || !destinationKey || registry[destinationKey]?.locked || !registry[destinationKey]?.group) return
-    const peers = [...destination.querySelectorAll('[data-ui-origin]')].filter(node => node !== source && node.closest('[data-ui-dropzone]') === destination)
+    if (!key || !destinationKey || registry[destinationKey]?.locked || (!registry[destinationKey]?.group && !isCustomContainer(preview[destinationKey]))) return
+    const moving=selectionRef.current.includes(key)?selectionNodes(selectionRef.current):[source]
+    if(moving.some(node=>!node.dataset.uiOrigin || !canRelocate(node,destination))){setMessage('Các thành phần cần cùng biểu mẫu và hỗ trợ chuyển khung.');return}
+    const peers = [...destination.querySelectorAll('[data-ui-origin]')].filter(node => !moving.includes(node) && node.closest('[data-ui-dropzone]') === destination)
       .sort((a,b)=>(preview[a.dataset.layoutKey]?.order ?? peersIndex(a))-(preview[b.dataset.layoutKey]?.order ?? peersIndex(b)))
     function peersIndex(node) { return [...destination.querySelectorAll('[data-ui-origin]')].indexOf(node) }
     const index = before ? peers.indexOf(before) : peers.length
-    peers.splice(index < 0 ? peers.length : index,0,source)
-    setDraft(current => {const next={...current};peers.forEach((node,order)=>{const k=node.dataset.layoutKey || node.dataset.uiKey;if(k)next[k]={...next[k],parent:destinationKey,order,...(node===source?{move_to:destinationKey,offset_x:0,offset_y:0}:{})}});return next})
-    setSelected(source); setMessage('Đã chuyển khung trong bản xem trước. Bấm Lưu cho tất cả để áp dụng.')
+    peers.splice(index < 0 ? peers.length : index,0,...moving)
+    setDraft(current => {const next={...current};peers.forEach((node,order)=>{const k=node.dataset.layoutKey || node.dataset.uiKey;if(k)next[k]={...next[k],parent:destinationKey,order,...(moving.includes(node)?{move_to:destinationKey,offset_x:0,offset_y:0}:{})}});return next})
+    setPrimary(source); setMessage('Đã chuyển khung trong bản xem trước. Bấm Lưu cho tất cả để áp dụng.')
   }
   const move = (source, target) => {
+    if(source?.closest('.nav-list') && target?.closest('.nav-list')===source.closest('.nav-list')){
+      const nodes=[...source.closest('.nav-list').querySelectorAll('a[data-ui-key^="u-menu-"]')].sort((a,b)=>(preview[a.dataset.uiKey]?.order ?? [...source.parentElement.children].indexOf(a))-(preview[b.dataset.uiKey]?.order ?? [...source.parentElement.children].indexOf(b)))
+      const from=nodes.indexOf(source),to=nodes.indexOf(target)
+      if(from<0 || to<0)return
+      nodes.splice(to,0,...nodes.splice(from,1))
+      setDraft(current=>{const next={...current};nodes.forEach((node,order)=>{next[node.dataset.uiKey]={...next[node.dataset.uiKey],order,offset_x:0,offset_y:0}});return next});return
+    }
     if (!source || !target || source === target) return
     if (source.parentElement !== target.parentElement) { relocate(source, target.closest('[data-ui-dropzone]')); return }
     const parent = source.parentElement
@@ -198,29 +225,40 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const relocateRef = useRef(relocate); relocateRef.current = relocate
   useEffect(() => {
     if (!editing) return undefined
-    const candidate = target => target?.closest?.('[data-layout-editable="true"]')
+    const candidate = target => target?.closest?.('.nav-list > a[data-layout-editable="true"]') || target?.closest?.('[data-ui-key^="l-custom-"][data-layout-editable="true"]') || target?.closest?.('[data-layout-editable="true"]')
     const down = event => {
       if (event.button !== 0 || event.target.closest('.layout-designer,.layout-resize-overlay')) return
       const element = candidate(event.target)
       if (!element) return
       event.preventDefault(); event.stopPropagation()
-      setInlineTarget(null); setSelected(element)
+      const clicked=element.dataset.layoutKey
+      if(event.shiftKey || event.ctrlKey || event.metaKey){
+        const old=selectionRef.current
+        const keys=old.includes(clicked)?old.filter(key=>key!==clicked):[...old,clicked]
+        const independent=selectionNodes(keys).map(node=>node.dataset.layoutKey)
+        setSelection(independent);setPrimary(independent.includes(clicked)?element:selectionNodes(independent)[0] || null);return
+      }
+      const group=dragPreview.current[clicked]?.group_id
+      const keys=group?Object.keys(dragPreview.current).filter(key=>dragPreview.current[key]?.group_id===group):selectionRef.current.includes(clicked)?selectionRef.current:[clicked]
+      const nodes=selectionNodes(keys)
+      const members=nodes.map(node=>({key:node.dataset.layoutKey,original:dragPreview.current[node.dataset.layoutKey]}))
+      setInlineTarget(null);setPrimary(element);setSelection(nodes.map(node=>node.dataset.layoutKey))
       element.dataset.layoutDragging = 'true'
       const key = element.dataset.layoutKey
       const original = dragPreview.current[key]
-      const rect = element.getBoundingClientRect()
-      const targets = [element.parentElement, ...element.parentElement.children].filter(node => node !== element && !node.contains(element) && !element.contains(node)).map(node => node.getBoundingClientRect()).filter(r => r.width && r.height)
-      targets.push(element.parentElement.getBoundingClientRect())
-      dragging.current = { element, key, original, rect, targets, pointer: event.pointerId, x: event.clientX, y: event.clientY, scrollX: window.scrollX, scrollY: window.scrollY }
+      const rect = boundingSelection(nodes) || element.getBoundingClientRect()
+      const targets = [...document.querySelectorAll('.app-shell [data-layout-editable="true"]')].filter(node=>!node.closest('.layout-designer') && !nodes.some(member=>member===node || member.contains(node) || node.contains(member))).map(node=>node.getBoundingClientRect()).filter(r=>r.width && r.height && r.bottom>=0 && r.top<=window.innerHeight)
+      targets.push(element.parentElement.getBoundingClientRect(),{left:0,right:window.innerWidth,top:0,bottom:window.innerHeight,width:window.innerWidth,height:window.innerHeight})
+      dragging.current = { element, key, original, rect, targets, members, menu:Boolean(element.closest('.nav-list')),  pointer: event.pointerId, x: event.clientX, y: event.clientY, scrollX: window.scrollX, scrollY: window.scrollY }
     }
     const dropAt = (event, start) => {
-      const prior = start.element.style.pointerEvents
-      start.element.style.pointerEvents = 'none'
+      const hidden=selectionNodes(start.members.map(member=>member.key)).map(node=>[node,node.style.pointerEvents])
+      hidden.forEach(([node])=>{node.style.pointerEvents='none'})
       let hit
-      try {hit=document.elementFromPoint(event.clientX,event.clientY)} finally {start.element.style.pointerEvents=prior}
+      try {hit=document.elementFromPoint(event.clientX,event.clientY)} finally {hidden.forEach(([node,value])=>{node.style.pointerEvents=value})}
       if (!hit || hit.closest('.layout-designer')) return null
       const destination=hit.closest('[data-ui-dropzone]')
-      if (!start.element.dataset.uiOrigin || !destination || !canRelocate(start.element,destination) || !registry[destination.dataset.uiDropzone]?.group || registry[destination.dataset.uiDropzone]?.locked) return null
+      if (!start.element.dataset.uiOrigin || !destination || !canRelocate(start.element,destination) || (!registry[destination.dataset.uiDropzone]?.group && !isCustomContainer(dragPreview.current[destination.dataset.uiDropzone])) || registry[destination.dataset.uiDropzone]?.locked) return null
       const peer=hit.closest('[data-ui-origin]')
       const current=start.element.closest('[data-ui-dropzone]')
       // In free mode, same-row gestures remain free positioning; different rows reflow.
@@ -242,16 +280,16 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       start.moved = true
       event.preventDefault()
       start.drop=dropAt(event,start)
-      if (!freeMove) {setGuides({drop:start.drop?.line});return}
-      const result = freeMovePosition(start, dx, dy, window.innerWidth, !event.altKey, window.scrollX, window.scrollY)
-      setDraft(current => ({...current, [start.key]: {...current?.[start.key], offset_x:result.x, offset_y:result.y}}))
+      if (!freeMove || start.menu) {setGuides({drop:start.drop?.line});return}
+      const result = freeMovePosition(start, dx, dy, window.innerWidth, snapEnabled && !event.altKey, window.scrollX, window.scrollY)
+      setDraft(current=>translateSelection(current,start.members,result.x-(start.original?.offset_x || 0),result.y-(start.original?.offset_y || 0)))
       setGuides({...result.guides,drop:start.drop?.line})
     }
     const cancel = () => {
       const start = dragging.current; dragging.current = null; setGuides(null)
       if (!start) return
       delete start.element.dataset.layoutDragging
-      if (start.moved) setDraft(current => {const next={...current};if(start.original)next[start.key]=start.original;else delete next[start.key];return next})
+      if (start.moved) setDraft(current => {const next={...current};start.members.forEach(({key,original})=>{if(original)next[key]=original;else delete next[key]});return next})
     }
     const escape = event => { if(event.key === 'Escape') cancel() }
     const up = event => {
@@ -261,7 +299,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         const drop=dropAt(event,start)
         if(drop){dragging.current=null;delete start.element.dataset.layoutDragging;setGuides(null);relocateRef.current(start.element,drop.destination,drop.before);return}
       }
-      if (freeMove) { motion(event); dragging.current=null; delete start.element.dataset.layoutDragging; setGuides(null); return }
+      if (freeMove && !start.menu) { motion(event); dragging.current=null; delete start.element.dataset.layoutDragging; setGuides(null); return }
       dragging.current = null
       if (!start) return
       delete start.element.dataset.layoutDragging
@@ -288,9 +326,10 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     document.addEventListener('click', block, true)
     document.addEventListener('submit', block, true)
     return () => { cancel(); document.removeEventListener('pointermove', motion, true); document.removeEventListener('pointercancel', cancel, true); document.removeEventListener('keydown', escape, true); window.removeEventListener('blur', cancel); document.removeEventListener('dblclick', rename, true); document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('click', block, true); document.removeEventListener('submit', block, true) }
-  }, [editing, freeMove])
+  }, [editing, freeMove, snapEnabled])
   const patch = (key, value) => setDraft(current => {
     const next = { ...current, [selectedKey]: { ...configuration, [key]: value === '' ? undefined : ['label','mode','text_align','content_align','justify_content','align_items'].includes(key) ? value : Number(value) } }
+    if(['width','height','text_align','content_align','font_size'].includes(key))selection.forEach(id=>{next[id]={...next[id],[key]:next[selectedKey][key]}})
     if (selected?.dataset.layoutLegacy !== selectedKey) delete next[selected?.dataset.layoutLegacy]
     return next
   })
@@ -349,7 +388,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   }
   return <>
     <LayoutCustomElements items={preview} page={page} editing={editing}/>
-    <style>{layoutCss(preview)}{editing && selectedKey ? `[data-layout-key="${selectedKey}"]{outline:3px solid #c49524!important;outline-offset:2px}` : ''}</style>
+    <style>{layoutCss(preview)}{editing ? selection.map(key=>`[data-layout-key="${key}"]{outline:3px solid #c49524!important;outline-offset:2px}`).join('') : ''}</style>
     {admin && open && <aside className={`layout-designer ${['rooms','columns','history'].includes(tab) ? 'layout-designer-wide' : ''}`} style={{ ...panelFrame.style, ...toolScale.style, ...(panelHidden ? {width:'auto',height:'auto'} : {}) }} aria-label="Giao diện Admin" onFocusCapture={event=>{
         if(event.target.closest('.layout-tool-guide') || event.target.getAttribute('role') === 'tab')return
         const label=event.target.closest('label')?.childNodes[0]?.textContent?.trim()
@@ -377,14 +416,21 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       {tab === 'history' && <div><p>Khôi phục chỉ áp dụng cho bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}. Cấu hình phòng và cột Live Tour được quản lý riêng trong hai mục tương ứng.</p>{history.map(item => <div className="layout-history-row" key={item.revision}><span>#{item.revision} · {item.actor} · {formatVeraDateTime(item.created_at)} · {item.device}</span><button disabled={busy} onClick={() => restore(item.revision)}>Khôi phục</button></div>)}{!history.length && <p>Chưa có lịch sử bố cục.</p>}</div>}
       {tab === 'object' && <>
       {!editing ? <>{message && <small role="status">{message}</small>}</> : <>
-        <label className="layout-free-mode"><input type="checkbox" checked={freeMove} onChange={event=>setFreeMove(event.target.checked)}/>Kéo tự do</label>
+        <label className="layout-free-mode"><input type="checkbox" checked={snapEnabled} onChange={e=>setSnapEnabled(e.target.checked)}/>Bắt dính cạnh và tâm</label>
+        <label className="layout-free-mode"><input type="checkbox" checked={centerLines} onChange={e=>setCenterLines(e.target.checked)}/>Đường tâm ngang/dọc</label>
+        <label className="layout-free-mode"><input type="checkbox" aria-label="Kéo tự do" checked={freeMove} onChange={event=>setFreeMove(event.target.checked)}/>Kéo tự do</label>
         <small>Kéo để đặt vị trí; đường ngang/dọc giúp căn cạnh và tâm. Giữ Alt để bỏ bắt dính; Esc hủy lượt kéo. Thả vào dòng khác theo vạch xanh để chèn và tự dàn lại. Bỏ chọn Kéo tự do nếu chỉ muốn sắp xếp.</small>
+        <small>Shift/Ctrl + bấm để chọn nhiều thành phần. Đã chọn: {selection.length}. Kéo menu để đổi thứ tự hoặc dùng Trước/Sau.</small>
+        {selection.length>1 && <div className="layout-multi-tools" aria-label="Chỉnh nhiều thành phần"><button type="button" onClick={()=>groupSelection(true)}>Group</button><button type="button" onClick={()=>groupSelection(false)}>Ungroup</button>{[['left','Căn trái'],['center-x','Tâm dọc'],['right','Căn phải'],['top','Căn trên'],['center-y','Tâm ngang'],['bottom','Căn dưới']].map(([mode,label])=><button type="button" key={mode} onClick={()=>alignMany(mode)}>{label}</button>)}<small>Rộng/Cao và tay nắm resize áp dụng cho tất cả thành phần đã chọn.</small></div>}
         <strong>Bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}</strong>
+        <label>Mục menu<select aria-label="Mục menu" value={selectedKey?.startsWith('u-menu-')?selectedKey:''} onChange={e=>{const node=document.querySelector(`.nav-list [data-ui-key="${e.target.value}"]`);if(node)setSelected(node)}}><option value="">Chọn menu để đổi vị trí</option>{[...document.querySelectorAll('.nav-list a[data-ui-key^="u-menu-"]')].map(node=><option key={node.dataset.uiKey} value={node.dataset.uiKey}>{node.textContent}</option>)}</select></label>
+        <label>Loại thành phần<select aria-label="Loại thành phần" value={addKind} onChange={e=>setAddKind(e.target.value)}>{Object.entries(customKinds).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+        <button type="button" onClick={()=>addElement(addKind)}>Thêm {customKinds[addKind]}</button>
         <div className="layout-designer-actions layout-element-actions">
           <button type="button" onClick={()=>addElement('box')}>Thêm box</button>
           <button type="button" onClick={()=>addElement('text')}>Thêm text</button>
           <button type="button" disabled={!canEditText} onClick={()=>{setGuideTool('Sửa text');textEditor.current?.focus()}}>Sửa text</button>
-          <button type="button" disabled={!selectedKey} onClick={removeElement}>{configuration.custom_kind === 'box' ? 'Xóa box' : configuration.custom_kind === 'text' ? 'Xóa text' : 'Xóa khỏi giao diện'}</button>
+          <button type="button" disabled={!selectedKey} onClick={removeElement}>{configuration.custom_kind ? 'Xóa '+(configuration.custom_kind==='box'?'box':configuration.custom_kind==='text'?'text':customKinds[configuration.custom_kind]) : 'Xóa khỏi giao diện'}</button>
         </div>
         {!selectedKey && <small>Bấm chọn thành phần, section, header hoặc text trên trang. Chọn khung cha để chỉnh khung bao ngoài.</small>}
         <div className="layout-designer-actions"><button type="button" disabled={!selectedKey} onClick={() => step(-1)}>← Trước</button><button type="button" disabled={!selectedKey} onClick={() => step(1)}>Sau →</button><button type="button" disabled={!selectedKey} onClick={selectParent}>Chọn khung cha</button></div>
@@ -392,15 +438,18 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         {Object.entries(preview).some(([,item])=>item.hidden) && <details><summary>Thành phần đã ẩn</summary>{Object.entries(preview).filter(([,item])=>item.hidden).map(([key])=><button type="button" key={key} onClick={()=>setDraft(current=>({...current,[key]:{...current[key],hidden:false}}))}>Hiện lại: {registry[key]?.label || key}</button>)}</details>}
         {selectedKey && <><label>Vị trí X (px)<input type="number" min="-2400" max="2400" value={configuration.offset_x ?? 0} onChange={event=>patch('offset_x',event.target.value)}/></label><label>Vị trí Y (px)<input type="number" min="-2400" max="2400" value={configuration.offset_y ?? 0} onChange={event=>patch('offset_y',event.target.value)}/></label><small>Thông số hiện tại: {metrics?.width ?? '—'} × {metrics?.height ?? '—'} px · {metrics?.rawFont || '—'}. Kéo góc phải dưới để đổi kích thước.</small><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small>{(definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input ref={textEditor} type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
         {descendants.length > 0 && <label>Thành phần bên trong<select aria-label="Thành phần bên trong" value="" onChange={event=>{const node=descendants.find(item=>item.dataset.layoutKey===event.target.value);if(node){setSelected(node);setInlineTarget(null)}}}><option value="">Chọn thành phần con ({descendants.length})</option>{descendants.map((node,index)=><option key={`${node.dataset.layoutKey}-${index}`} value={node.dataset.layoutKey}>{node.tagName.toLowerCase()} · {node.getAttribute('aria-label') || node.textContent?.trim().slice(0,60) || node.getAttribute('placeholder') || node.tagName}</option>)}</select></label>}
+        {['search','dropdown','date','filter'].includes(configuration.custom_kind) && <label>Bảng cần lọc<select aria-label="Bảng cần lọc" value={configuration.custom_target || ''} onChange={e=>setDraft(current=>({...current,[selectedKey]:{...current[selectedKey],custom_target:e.target.value || undefined}}))}><option value="">Chưa liên kết bảng</option>{Object.entries(preview).filter(([,item])=>item.custom_kind==='table' && item.custom_page===page).map(([key,item])=><option key={key} value={key}>{item.custom_text?.split('\n')[0] || key}</option>)}</select></label>}
+        {configuration.custom_kind==='dropdown' && <label>Lựa chọn (mỗi dòng một mục)<textarea value={configuration.custom_options || ''} onChange={e=>setDraft(current=>({...current,[selectedKey]:{...current[selectedKey],custom_options:e.target.value}}))}/></label>}
+        {configuration.custom_kind==='table' && <small>Dòng đầu là tiêu đề, các dòng sau là dữ liệu; tách cột bằng |. Bộ lọc tự thêm chỉ tác động bảng tự thêm được liên kết.</small>}
         {configuration.custom_kind && <label>Nội dung<textarea ref={textEditor} aria-label="Nội dung text" maxLength={2000} value={configuration.custom_text || ''} onChange={event=>setDraft(current=>({...current,[selectedKey]:{...current[selectedKey],custom_text:event.target.value}}))}/></label>}
         <>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ thành phần<input type="number" min="12" max="24" value={configuration.font_size ?? metrics?.appearance?.font_size ?? ''} onChange={e => patch('font_size', e.target.value)}/></label></>
-        {selected?.dataset.uiOrigin && <label>Khung đích<select aria-label="Khung đích" value={configuration.move_to || selected.dataset.uiOrigin} onChange={event => relocate(selected, getLayoutTargets()[event.target.value]?.element)}>{Object.entries(getLayoutTargets()).filter(([key, target]) => registry[key]?.group && !registry[key]?.locked && canRelocate(selected, target.element)).map(([key,target]) => <option key={key} value={key}>{target.element.getAttribute('aria-label') || target.element.textContent?.trim().slice(0,60) || registry[key]?.file || key}</option>)}</select></label>}
+        {selected?.dataset.uiOrigin && <label>Khung đích<select aria-label="Khung đích" value={configuration.move_to || selected.dataset.uiOrigin} onChange={event => relocate(selected, getLayoutTargets()[event.target.value]?.element)}>{Object.entries(getLayoutTargets()).filter(([key, target]) => (registry[key]?.group || isCustomContainer(preview[key])) && !registry[key]?.locked && canRelocate(selected, target.element)).map(([key,target]) => <option key={key} value={key}>{target.element.getAttribute('aria-label') || target.element.textContent?.trim().slice(0,60) || registry[key]?.file || key}</option>)}</select></label>}
         <details className="layout-inspector-section"><summary>Phong cách & hiệu ứng</summary><UIVisualStyleControls key={selectedKey} value={configuration.appearance} current={metrics?.appearance} onChange={appearance => setDraft(current => ({ ...current, [selectedKey]: { ...configuration, appearance } }))}/></details>
         <fieldset className="layout-align-tools"><legend>Căn chỉnh</legend>
         <label>Căn chữ<select value={configuration.text_align || ''} onChange={e => patch('text_align', e.target.value)}><option value="">Mặc định</option>{[['left','Trái'],['center','Giữa'],['right','Phải'],['justify','Đều hai bên']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>Căn dọc nội dung<select value={configuration.content_align || ''} onChange={e => patch('content_align', e.target.value)}><option value="">Mặc định</option>{[['start','Trên'],['center','Giữa'],['end','Dưới']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {isContainer && <><small>Căn nhóm theo trục của bố cục Flex/Grid hiện tại.</small><label>Phân bố nhóm<select value={configuration.justify_content || ''} onChange={e => patch('justify_content', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['space-between','Giãn hai đầu'],['space-around','Giãn quanh'],['space-evenly','Giãn đều']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Căn thành phần<select value={configuration.align_items || ''} onChange={e => patch('align_items', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['stretch','Kéo giãn']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Khoảng cách (px)<input type="number" min="0" max="100" value={configuration.gap ?? ''} onChange={e => patch('gap', e.target.value)}/></label></>}
-        </fieldset><label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? metrics?.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? metrics?.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; if(configuration.custom_kind){next[selectedKey]={custom_kind:configuration.custom_kind,custom_text:configuration.custom_text,custom_page:configuration.custom_page,custom_anchor:configuration.custom_anchor};return next} delete next[selectedKey]; delete next[selected?.dataset.layoutLegacy]; return next })}>Khôi phục thành phần</button></>}
+        </fieldset><label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? metrics?.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? metrics?.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; if(configuration.custom_kind){next[selectedKey]={custom_kind:configuration.custom_kind,custom_text:configuration.custom_text,custom_page:configuration.custom_page,custom_anchor:configuration.custom_anchor,custom_options:configuration.custom_options,custom_target:configuration.custom_target};return next} delete next[selectedKey]; delete next[selected?.dataset.layoutLegacy]; return next })}>Khôi phục thành phần</button></>}
 
         {message && <small role="status">{message}</small>}
       </>}
@@ -408,8 +457,10 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       {!editing && ['rooms','columns','history'].includes(tab) && message && <small role="status">{message}</small>}
     {inlineTarget && editing && <InlineLabelEditor key={inlineTarget.dataset.layoutKey} target={inlineTarget} value={configuration.label ?? definition?.label ?? inlineTarget.textContent?.trim() ?? ''} onCommit={value => { patch('label', value.trim()); setInlineTarget(null) }} onCancel={() => setInlineTarget(null)} />}
       </div>
+      {!panelHidden && <button type="button" className="layout-history-fixed" disabled={busy} onClick={()=>chooseTab('history')}>Lịch sử</button>}
       {!panelHidden && <button type="button" className="layout-panel-resize" {...panelFrame.resize} aria-label="Kéo đổi kích thước bảng công cụ">Resize</button>}
     </aside>}
+    {editing && centerLines && createPortal(<div className="layout-center-guides" aria-hidden="true"><i className="layout-center-vertical"/><i className="layout-center-horizontal"/></div>,document.body)}
     {editing && guides && createPortal(<div className="layout-alignment-guides" aria-hidden="true"><>{Number.isFinite(guides.x) && <div className="layout-guide-vertical" style={{left:guides.x}}/>}{Number.isFinite(guides.y) && <div className="layout-guide-horizontal" style={{top:guides.y}}/>}{guides.drop && <div className="layout-drop-line" style={{left:guides.drop.x,top:guides.drop.y,width:guides.drop.width,height:guides.drop.height}}/>}</></div>, document.body)}
     {editing && selectedKey && <LayoutResizeOverlay selected={selected} onResize={resizeSelection} onMetrics={refreshMetrics}/>}
   </>

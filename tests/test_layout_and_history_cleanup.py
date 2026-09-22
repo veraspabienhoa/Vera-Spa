@@ -145,3 +145,20 @@ def test_free_position_offsets_are_preserved_and_bounded():
     assert validate_items({'l-free':item})['l-free'] == {'offset_x':-180,'offset_y':450}
     with pytest.raises(ValidationError): LayoutItem(offset_x=2401)
     with pytest.raises(ValidationError): LayoutItem(offset_y=-2401)
+
+
+def test_custom_containers_widgets_groups_and_cycle_validation():
+    items={
+        'l-custom-frame':LayoutItem(custom_kind='frame',custom_page='settings'),
+        'l-custom-row':LayoutItem(custom_kind='row',custom_page='settings',move_to='l-custom-frame'),
+        'l-custom-table':LayoutItem(custom_kind='table',custom_page='settings',move_to='l-custom-row',custom_text='Tên | Loại\nA | 1'),
+        'l-custom-search':LayoutItem(custom_kind='search',custom_page='settings',custom_target='l-custom-table',group_id='g-one'),
+        'l-custom-dropdown':LayoutItem(custom_kind='dropdown',custom_page='settings',custom_options='1\n2',custom_target='l-custom-table'),
+        'l-custom-date':LayoutItem(custom_kind='date',custom_page='settings',custom_target='l-custom-table'),
+        'l-custom-filter':LayoutItem(custom_kind='filter',custom_page='settings',custom_target='l-custom-table'),
+    }
+    assert len(validate_items(items))==7
+    with pytest.raises(HTTPException):validate_items({**items,'l-custom-frame':items['l-custom-frame'].model_copy(update={'move_to':'l-custom-row'})})
+    with pytest.raises(HTTPException):validate_items({**items,'l-custom-search':items['l-custom-search'].model_copy(update={'custom_target':'l-custom-row'})})
+    with pytest.raises(HTTPException):validate_items({**items,'l-custom-table':items['l-custom-table'].model_copy(update={'custom_page':'other'})})
+    with pytest.raises(ValidationError):LayoutItem(group_id='body{color:red}')

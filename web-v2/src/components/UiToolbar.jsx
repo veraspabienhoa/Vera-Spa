@@ -28,7 +28,8 @@ export default forwardRef(function UiToolbar({ children, ...props }, forwardedRe
     const node = cloneElement(child, { 'data-ui-origin': groupKey })
     const destination = targets[items[key]?.move_to]
     // A missing/hidden destination falls back to the original location.
-    if (!destination || destination.element === ref.current || !canRelocate(ref.current, destination.element)) return node
+    const source = typeof document==='undefined' ? ref.current : document.querySelector(`[data-ui-key="${key}"][data-ui-origin="${groupKey}"]`) || ref.current
+    if (!destination || destination.element === ref.current || !canRelocate(source, destination.element)) return node
     return createPortal(node, destination.slot, key)
   })
   const hasRelocation = nodes.some(child => items[child?.props?.['data-ui-key']]?.move_to)
