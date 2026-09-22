@@ -38,7 +38,10 @@ class VisualStyle(BaseModel):
 
 class LayoutItem(BaseModel):
     hidden: bool | None = None
-    custom_kind: Literal['box', 'text'] | None = None
+    custom_kind: Literal['box', 'text', 'frame', 'row', 'search', 'dropdown', 'date', 'table', 'filter'] | None = None
+    group_id: str | None = Field(default=None, pattern=r'^g-[a-z0-9-]{1,70}$')
+    custom_target: str | None = Field(default=None, pattern=r'^l-custom-[a-z0-9-]{1,70}$')
+    custom_options: str | None = Field(default=None, max_length=2000)
     custom_text: str | None = Field(default=None, max_length=2000)
     custom_page: str | None = Field(default=None, pattern=r'^[a-z][a-z0-9-]{0,60}$')
     custom_anchor: str | None = Field(default=None, pattern=r'^[lu]-[a-z0-9-]{1,100}$')
@@ -85,7 +88,7 @@ def validate_items(items):
         if item.custom_kind:
             if not key.startswith('l-custom-') or not item.custom_page or (item.custom_anchor and item.custom_anchor.startswith('l-custom-')):
                 raise HTTPException(400, 'Thành phần tùy chỉnh không hợp lệ.')
-        elif any(value is not None for value in [item.custom_text, item.custom_page, item.custom_anchor]):
+        elif any(value is not None for value in [item.custom_text, item.custom_page, item.custom_anchor, item.custom_target, item.custom_options]):
             raise HTTPException(400, 'Thiếu loại thành phần tùy chỉnh.')
         definition = definition_for(key)
         if definition and definition.get('locked') and item.model_dump(exclude_none=True):
@@ -94,9 +97,17 @@ def validate_items(items):
             raise HTTPException(400, 'Không thể đổi tên nội dung động hoặc dữ liệu nghiệp vụ.')
         if (item.rows is not None or item.mode is not None) and (not definition or not definition.get('group')):
             raise HTTPException(400, 'Chỉ nhóm nút được thay đổi số dòng.')
+        if item.custom_target:
+            target_item=items.get(item.custom_target)
+            if not item.custom_kind or not target_item or target_item.custom_kind != 'table' or target_item.custom_page != item.custom_page:
+                raise HTTPException(400, 'Bộ lọc phải liên kết với bảng tự thêm trên cùng trang.')
         if item.move_to:
             destination = definition_for(item.move_to)
-            if not destination or not destination.get('group') or destination.get('locked') or item.move_to == key:
+            custom_destination=items.get(item.move_to)
+            custom_ok=custom_destination and custom_destination.custom_kind in ('frame','row','box')
+            if custom_ok and item.custom_kind and item.custom_page != custom_destination.custom_page:
+                raise HTTPException(400, 'Chỉ chuyển thành phần tự thêm trong cùng trang.')
+            if (not custom_ok and (not destination or not destination.get('group') or destination.get('locked'))) or item.move_to == key:
                 raise HTTPException(400, 'Khung đích không hỗ trợ di chuyển.')
             visited = {key}
             target = item.move_to

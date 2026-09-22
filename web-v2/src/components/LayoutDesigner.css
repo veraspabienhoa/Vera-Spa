@@ -100,3 +100,10 @@
 
 .layout-drop-line{position:absolute;background:#059669;box-shadow:0 0 0 2px #fff;border-radius:2px}
 .layout-designer:has(.layout-panel-header:not([hidden])){min-height:min(340px,calc(100dvh - 16px))}
+.layout-designer .layout-history-fixed{position:absolute;left:8px;bottom:8px;z-index:3;min-height:28px;padding:5px 9px;background:#174d3a;color:#fff}
+.layout-multi-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:8px;border:1px solid #8abfa3;border-radius:8px}.layout-multi-tools small{grid-column:1/-1}
+.layout-center-guides{position:fixed;inset:0;z-index:9998;pointer-events:none}.layout-center-guides i{position:absolute;display:block}.layout-center-vertical{left:50%;top:0;bottom:0;border-left:1px dashed #4288aa}.layout-center-horizontal{top:50%;left:0;right:0;border-top:1px dashed #4288aa}
+.layout-custom-frame,.layout-custom-row{box-sizing:border-box;border:1px solid #8abfa3;border-radius:10px;padding:12px;min-height:70px;min-width:0;max-width:100%;gap:10px;background:#f4f8f5}.layout-custom-frame{display:flex;flex-direction:column}.layout-custom-row{display:flex;flex-wrap:wrap;align-items:center}.layout-custom-caption{font-weight:600}.layout-custom-row>.layout-custom-caption{flex-basis:100%}
+.layout-custom-search,.layout-custom-dropdown,.layout-custom-date,.layout-custom-filter{box-sizing:border-box;min-width:0;max-width:100%}.layout-custom-search input,.layout-custom-dropdown select{box-sizing:border-box;max-width:100%;width:100%;padding:8px;border:1px solid #8abfa3;border-radius:6px}.layout-custom-filter button{padding:8px 16px;border:1px solid #365f50;border-radius:6px;color:#174d3a;background:#eef6f0}
+.layout-custom-table{max-width:100%;min-width:0;overflow:auto}.layout-custom-table table{border-collapse:collapse;width:100%;table-layout:fixed}.layout-custom-table th,.layout-custom-table td{border:1px solid #8abfa3;padding:8px;overflow-wrap:anywhere}.layout-custom-table th{background:#eaf3ed}
+[data-layout-editable=true] .layout-custom-caption{pointer-events:none}
