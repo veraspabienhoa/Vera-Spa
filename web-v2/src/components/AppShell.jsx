@@ -423,10 +423,11 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       {sidebarOpen && <button data-ui-key="u-3833c8d2c1ff" className="sidebar-backdrop" onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu" />}
 
       <main className="main-area">
-        {currentPage !== 'live-tour' && <header className="topbar">
+        {(currentPage !== 'live-tour' || (isAdmin && !user?.must_change_password)) && <header className="topbar">
           {navigationToggle}
           <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
           <UiToolbar data-ui-key="u-d08e23e02899" className="topbar-actions">
+            {isAdmin && !user?.must_change_password && <NotificationInbox/>}
             {currentPage !== 'tour' && currentPage !== 'live-tour' && <button data-ui-key="u-f10aa9b76c0d" data-ui-label-default="Mở tab mới" type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /><UiCustomText uiKey="u-f10aa9b76c0d"> Mở tab mới</UiCustomText></button>}
             <button data-ui-key="u-ae117d0698c3" data-ui-label-default="Làm mới" type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /><UiCustomText uiKey="u-ae117d0698c3"> Làm mới</UiCustomText></button>
           </UiToolbar>
@@ -460,7 +461,6 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           </div>}
 
           {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => choose('birthday', true)}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div>}
-          {!user?.must_change_password && <NotificationInbox/>}
           {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>
