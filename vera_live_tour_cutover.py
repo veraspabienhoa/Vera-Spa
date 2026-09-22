@@ -39,7 +39,7 @@ def run(conn, rollback=False):
         for item in canonical.get(collection, []):
             item.setdefault('id', str(uuid4()))
     store.sync_changes(conn, row['value_json'], canonical, row['revision'], force=True)
-    conn.execute(text(f"UPDATE {store.META_TABLE} SET payload=payload || '{{\"_resource_ready\":true}}'::jsonb WHERE singleton=1"))
+    conn.execute(text(f"UPDATE {store.META_TABLE} SET payload=payload || jsonb_build_object('_resource_ready',true) WHERE singleton=1"))
     return {'ok':True,'revision':row['revision'],'mode':'resources'}
 
 

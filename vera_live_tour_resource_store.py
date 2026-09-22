@@ -140,12 +140,13 @@ def write(conn, before, after, actor):
     # lock also orders commits, avoiding a missed revision from sequence gaps.
     changes = {key: value for key, value in after_meta.items() if before_meta.get(key) != value and key != 'idempotency'}
     receipts = {key: value for key, value in after_meta.get('idempotency', {}).items() if before_meta.get('idempotency', {}).get(key) != value}
+    removed_receipts = sorted(set(before_meta.get('idempotency', {})) - set(after_meta.get('idempotency', {})))
     revision = int(conn.execute(text(f"""
         UPDATE {relational.META_TABLE}
-        SET payload=payload || CAST(:patch AS jsonb) || jsonb_build_object('idempotency',COALESCE(payload->'idempotency','{{}}'::jsonb) || CAST(:receipts AS jsonb)),
+        SET payload=payload || CAST(:patch AS jsonb) || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{{}}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb)),
             aggregate_revision=aggregate_revision+1, updated_at=NOW(), payload_hash='active'
         WHERE singleton=1 RETURNING aggregate_revision
-    """), {'patch': relational._json(changes), 'receipts': relational._json(receipts)}).scalar_one())
+    """), {'patch': relational._json(changes), 'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
     if conn.info.get('live_tour_exclusive', True):
         conn.execute(text(f"UPDATE {relational.META_TABLE} SET payload=jsonb_set(payload,'{{_configuration_revision}}',to_jsonb(CAST(:revision AS bigint))) WHERE singleton=1"), {'revision':revision})
     for key in sorted(set(old) | set(new)):

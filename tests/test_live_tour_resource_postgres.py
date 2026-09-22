@@ -150,3 +150,30 @@ def test_checkout_retry_is_idempotent_and_lists_read_current_canonical_storage(d
     invoices=client.get('/v2/live-tour/collections/invoices').json()
     assert invoices['total']==1 and len(invoices['data']['state']['invoices'])==1
     assert client.get('/v2/live-tour?view=board').json()['state']['invoices']==[]
+
+
+def test_customer_reservation_lock_is_shared_across_distinct_employees(database):
+    with database.begin() as first:
+        begin(first, 'e1', action='booking', customer_id='shared-customer', room='1.1')
+        with database.begin() as second:
+            with pytest.raises(HTTPException) as exc:
+                begin(second, 'e2', key='second-combo-booking', action='booking', customer_id='shared-customer', room='2.1')
+            assert exc.value.status_code == 503
+
+
+def test_receipt_pruning_removes_only_keys_from_its_snapshot(database):
+    with database.begin() as conn:
+        store.lock(conn)
+        before, _, _ = store.read(conn)
+        after = deepcopy(before)
+        after['idempotency'] = {'old': {'action': 'set_vip'}, 'payment': {'action': 'checkout'}}
+        revision = store.write(conn, before, after, 'admin')
+    with database.begin() as conn:
+        before, _, _ = begin(conn, 'e1', revision=revision)
+        after = deepcopy(before)
+        after['idempotency'].pop('old')
+        after['idempotency']['new'] = {'action': 'set_vip'}
+        store.write(conn, before, after, 'admin')
+    with database.begin() as conn:
+        state, _, _ = store.read(conn)
+        assert set(state['idempotency']) == {'payment', 'new'}
