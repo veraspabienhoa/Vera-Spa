@@ -1,3 +1,5 @@
+import './LeaveQuotaCheck.css'
+import { ShieldAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDate } from '../lib/veraDate'
@@ -26,8 +28,7 @@ export default function LeaveQuotaCheck({ start, end }) {
     }
   }
   return <div className="leave-list-personal-summary-note">
-    <button data-ui-key="u-67672e9aae74" type="button" disabled={busy || !start || !end} onClick={check}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức'}</button>
-    <p>Kiểm tra tất cả nhân viên, trọn từng tháng trong khoảng ngày đang chọn. Ngày nghỉ tính đúng 0,5 ngày; cuối tuần đếm ngày Thứ Bảy/Chủ Nhật thuộc Nhóm 3; phát sinh đếm số bản ghi.</p>
+    <button className="leave-quota-check-button" data-ui-key="u-67672e9aae74" type="button" disabled={busy || !start || !end} onClick={check}><ShieldAlert size={22} aria-hidden="true"/>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức'}</button>
     {error && <p role="alert">{error}</p>}
     {result && <div aria-live="polite">
       <p>{formatVeraDate(result.start)} – {formatVeraDate(result.end)}: {result.items.length ? `${result.items.length} trường hợp nhân viên/tháng vượt hạn mức` : 'Không phát hiện trường hợp vượt hạn mức.'}</p>

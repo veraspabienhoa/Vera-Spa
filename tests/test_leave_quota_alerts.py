@@ -95,3 +95,47 @@ def test_delivery_retries_failed_device_without_holding_connection(monkeypatch):
     alerts.deliver(Engine())
     assert state['attempts']==['a','b','b']
     assert state['sent']=={'a','b'}
+
+
+def test_quota_permission_is_enforced_before_report_and_can_be_revoked(monkeypatch):
+    from fastapi import HTTPException
+    from vera_web_v2_permissions import FEATURES, permission_closure, DEFAULT_ROLE_FEATURES
+    assert FEATURES['leave_quota_check'] == 'Kiểm tra vượt hạn mức'
+    assert 'leave' in permission_closure({'leave_quota_check'})
+    assert 'leave_quota_check' not in DEFAULT_ROLE_FEATURES['nhanvien']
+    state = {'allowed': False, 'reads': 0}
+    class Engine:
+        @contextmanager
+        def connect(self):
+            yield object()
+    def authorize(conn, ident, feature):
+        assert feature == 'leave_quota_check'
+        if not state['allowed']: raise HTTPException(403, 'Denied')
+    def report(*args):
+        state['reads'] += 1
+        return []
+    monkeypatch.setattr(alerts, 'read_report', report)
+    app = FastAPI()
+    alerts.install(app, engine_instance=Engine, current_identity=lambda: SimpleNamespace(role='nhanvien'), identity_type=object, require_feature=authorize)
+    client = TestClient(app)
+    url = '/v2/leave/quota-check?start=2026-09-01&end=2026-09-30'
+    assert client.get(url).status_code == 403
+    assert state['reads'] == 0
+    state['allowed'] = True
+    assert client.get(url).status_code == 200
+    state['allowed'] = False
+    assert client.get(url).status_code == 403
+    assert state['reads'] == 1
+
+
+def test_layout_destinations_reject_locked_targets_and_cycles():
+    from fastapi import HTTPException
+    from vera_web_v2_ui_layout import LayoutItem, REGISTRY, validate_items
+    import pytest
+    groups = [key for key, value in REGISTRY.items() if value.get('group') and not value.get('locked')]
+    first, second = groups[:2]
+    assert validate_items({first: LayoutItem(move_to=second)})[first]['move_to'] == second
+    with pytest.raises(HTTPException):
+        validate_items({first: LayoutItem(move_to=second), second: LayoutItem(move_to=first)})
+    with pytest.raises(HTTPException):
+        validate_items({first: LayoutItem(move_to='u-missing')})

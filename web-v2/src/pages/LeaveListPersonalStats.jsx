@@ -107,13 +107,12 @@ export default function LeaveListPersonalStats({ user }) {
     <section data-ui-key="u-951352fc0cc8" className={`leave-list-personal-summary ${isAdmin ? 'admin' : ''}`} aria-live="polite">
       <div className="leave-list-personal-summary-head"><strong>THỐNG KÊ TRONG DANH SÁCH</strong><span>{subtitle}</span></div>
       <div className="leave-list-personal-summary-grid">{stats.map((item) => <div className={`leave-list-personal-stat ${item.key}`} key={item.key}><div className="leave-list-personal-stat-label">{item.icon && <span aria-hidden="true">{item.icon}</span>}{item.label}</div><div className="leave-list-personal-stat-value">{busy ? '…' : item.value}</div></div>)}</div>
-      <div className="leave-list-personal-summary-note">Tổng ngày nghỉ/Có phép cộng theo ngày thực tế (0,5 tính đúng 0,5); Phát sinh/Không phép đếm số bản ghi.{!isAdmin && ' Tiền vi phạm không hiển thị cho tài khoản này.'}</div>
       {allowances.map(item => <div className="leave-list-personal-summary-note" key={`${item.employee}-${item.month}`}>
         <strong>Quỹ phép {item.employee} · {item.month.split('-').reverse().join('/')}</strong>
         <div>Định mức: {formatLeaveDays(item.base)} · Đã ứng từ tháng trước: {formatLeaveDays(item.deducted)} · Còn được nghỉ: {formatLeaveDays(item.remaining)} ngày</div>
         <div>Nghỉ bệnh: {formatLeaveDays(item.sick)} · Ứng thêm: {formatLeaveDays(item.borrowed)} · Trừ phép tháng kế tiếp: {formatLeaveDays(item.next_deduction)} ngày</div>
       </div>)}
-      {isAdmin && <LeaveQuotaCheck start={context.start} end={context.end} />}
+      {(isAdmin || user?.permissions?.leave_quota_check === true) && <LeaveQuotaCheck start={context.start} end={context.end} />}
       {error && <div className="leave-list-personal-summary-error">{error}</div>}
     </section>
   </>, target)

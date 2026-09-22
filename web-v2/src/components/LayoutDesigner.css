@@ -37,3 +37,5 @@
 @media(prefers-reduced-motion:reduce){.layout-designer button{transition:none;transform:none!important}}
 
 .layout-align-tools{min-width:0;margin:0;padding:12px;display:grid;gap:10px;border:1px solid #8abfa3;border-radius:12px}.layout-align-tools legend{font-weight:700;color:#0f4c3a}
+
+[data-ui-dropzone][data-ui-layout-editing=true]{min-height:36px}[data-ui-dropzone][data-ui-layout-editing=true]:hover{outline:2px dashed #27835b;outline-offset:3px}
