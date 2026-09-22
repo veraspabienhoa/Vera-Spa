@@ -38,7 +38,7 @@ def punches(day, **changes):
 
 
 @pytest.mark.parametrize('day, expected', [
-    (date(2026, 9, 13), 'Ca 2'),  # The new assignment is not effective yet.
+    (date(2026, 9, 13), ''),  # The new assignment is not effective yet.
     (date(2026, 9, 14), 'Ca 1'),
     (date(2026, 9, 15), 'Ca 1'),
     (date(2026, 9, 20), 'Ca 1'),
@@ -51,7 +51,7 @@ def punches(day, **changes):
 @pytest.mark.parametrize('timesoft_shift', ['Ca 1', 'Ca 2'])
 def test_effective_assignment_and_rotation_win_over_timesoft(day, expected, timesoft_shift):
     if day < date(2026, 9, 14):
-        expected = timesoft_shift
+        expected = ''
     rows = project([staff()], punches(day, WorkTimeName=timesoft_shift), now_on(day))
     assert rows[0]['daily_shift'] == expected
 
@@ -65,17 +65,17 @@ def test_both_employee_aliases_and_stored_date_formats(start, name):
 
 
 @pytest.mark.parametrize('updates, timesoft_shift, expected', [
-    ({'work_shift': ''}, 'Ca 2', 'Ca 2'),
-    ({'work_shift': 'Chưa chọn'}, 'Ca 2', 'Ca 2'),
+    ({'work_shift': ''}, 'Ca 2', ''),
+    ({'work_shift': 'Chưa chọn'}, 'Ca 2', ''),
     ({'work_shift': ''}, '', ''),
-    ({'shift_start_date': '16/09/2026'}, 'Ca 2', 'Ca 2'),
+    ({'shift_start_date': '16/09/2026'}, 'Ca 2', ''),
     ({'shift_start_date': '16/09/2026'}, '', ''),
-    ({'shift_start_date': '31/02/2026'}, 'Ca 2', 'Ca 2'),
+    ({'shift_start_date': '31/02/2026'}, 'Ca 2', ''),
     ({'shift_start_date': '31/02/2026'}, '', ''),
     ({'shift_start_date': ''}, 'Ca 2', 'Ca 1'),
     ({'shift_start_date': None}, 'Ca 2', 'Ca 1'),
 ])
-def test_fallback_and_effective_date_safety(updates, timesoft_shift, expected):
+def test_no_timesoft_fallback_and_effective_date_safety(updates, timesoft_shift, expected):
     day = date(2026, 9, 15)
     rows = project([staff(**updates)], punches(day, WorkTimeName=timesoft_shift), now_on(day))
     assert rows[0]['daily_shift'] == expected

@@ -23,6 +23,8 @@ import vera_web_v2_attendance_v42 as v42
 import vera_web_v2_department_attendance as department_attendance
 import vera_web_v2_snapshot as snapshot
 from vera_attendance_rules import apply_break_restriction
+from vera_shift_assignment import scheduled_shift
+from vera_web_v2_live_tour_roster import shift_label
 
 
 RELEASE = "attendance-date-key-query-2026-09-07-v4-role-department"
@@ -74,7 +76,7 @@ def _active_roster(conn) -> list[dict[str, Any]]:
         SELECT username,
                COALESCE(full_name,'') AS full_name,
                lower(COALESCE(role,'nhanvien')) AS role,
-               COALESCE(work_shift,'') AS work_shift,
+               COALESCE(work_shift,'') AS work_shift, shift_start_date, rotation_cycle,
                COALESCE(employment_start_date,'') AS employment_start_date,
                COALESCE(payload,'{}'::jsonb) AS payload
         FROM employees
@@ -148,7 +150,7 @@ def _definition_for_shift(
         name = str(item.get("Tên ca") or "").strip()
         if not name or str(item.get("Trạng thái") or "").strip().casefold() == "đã xóa":
             continue
-        item_department = str(item.get("Bộ phận") or "").strip()
+        item_department = str(item.get("Bộ phận") or "Nhân viên + Leader").strip()
         if department and v42._norm(item_department) != v42._norm(department):
             continue
         score = 0
@@ -163,6 +165,30 @@ def _definition_for_shift(
     return max(candidates, key=lambda value: value[0])[1] if candidates else {}
 
 
+def _vera_shift_fields(roster, work_day, definitions, schedule=None):
+    """Resolve names and clock times without any TimeSoft schedule fallback."""
+    role = str(roster.get('role') or '').lower()
+    if role in {'quanly', 'letan', 'locker', 'tapvu'} or schedule:
+        item = schedule or {}
+        name = str(item.get('shift_code') or '')
+        working = name and v42._norm(name) != 'nghi'
+        return name, str(item.get('start_time') or '') if working else '', str(item.get('end_time') or '') if working else ''
+    if role in {'leader', 'nhanvien'}:
+        assigned = scheduled_shift({**roster, 'shift_definitions': definitions}, work_day)
+        if not assigned:
+            return '', '', ''
+        original = str(roster.get('work_shift') or '')
+        name, start, end = _parse_employee_shift(original)
+        if shift_label(original, definitions) != assigned:
+            name, start, end = assigned, '', ''
+    else:
+        name, start, end = _parse_employee_shift(roster.get('work_shift'))
+    definition = _definition_for_shift(name, definitions, role)
+    return (str(definition.get('Tên ca') or name),
+            str(definition.get('Giờ bắt đầu') or start),
+            str(definition.get('Giờ kết thúc') or end))
+
+
 def _placeholder_record(
     roster: dict[str, Any],
     work_day: date,
@@ -174,8 +200,7 @@ def _placeholder_record(
     username = str(roster.get("username") or "").strip()
     role = str(roster.get("role") or "").strip().lower()
     department = ROLE_DEPARTMENT.get(role, role or "Khác")
-    work_shift = str(roster.get("work_shift") or "").strip()
-    shift_name, shift_start, shift_end = _parse_employee_shift(work_shift)
+    shift_name, shift_start, shift_end = _vera_shift_fields(roster, work_day, definitions, schedule)
     attendance_expected = True
     attendance_note = "Chưa có dữ liệu FaceID từ TimeSoft"
 
@@ -307,6 +332,13 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
     aliases, roles = v42._eligible_aliases(conn)
     datasets = _datasets(conn, start, end)
     schedules = _schedule_map(conn, start, end)
+    profiles = {
+        v42._norm(row['username']): dict(row)
+        for row in conn.execute(text("""
+            SELECT username, role, work_shift, shift_start_date, rotation_cycle
+            FROM employees
+        """)).mappings().all()
+    }
 
     grouped: dict[tuple[date, str], dict[str, Any]] = defaultdict(
         lambda: {"rows": [], "punches": []}
@@ -335,8 +367,15 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
         rows = bucket["rows"]
         if not rows:
             continue
-        representative = max(rows, key=v42._representative_score)
+        representative = dict(max(rows, key=v42._representative_score))
         role = roles.get(v42._norm(employee), "")
+        profile = profiles.get(v42._norm(employee), {'role': role})
+        name, shift_start, shift_end = _vera_shift_fields(
+            profile, work_day, definitions, schedules.get((work_day, v42._norm(employee))),
+        )
+        representative.update(WorkTimeName=name, ShiftName=name,
+                              StartWorkTime=shift_start, EndWorkTime=shift_end,
+                              ShiftStartTime=shift_start, ShiftEndTime=shift_end)
         cfg = department_attendance.apply_midshift_break_control(
             snapshot._shift_config(representative, definitions, break_config),
             role,
@@ -409,7 +448,9 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
             if faceid.get("raw_faceid_count", 0) >= 2
             else "TimeSoft"
         )
-        base["attendance_expected"] = scheduled if role in {"quanly", "letan", "locker", "tapvu"} else True
+        base["attendance_expected"] = scheduled if role in {"quanly", "letan", "locker", "tapvu"} else bool(name)
+        if not name and role in {"leader", "nhanvien"}:
+            base["attendance_note"] = "Chưa phân ca có hiệu lực trong Vera Spa"
         base["attendance_roster_only"] = False
         output.append(base)
 
