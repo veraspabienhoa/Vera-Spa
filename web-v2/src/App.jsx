@@ -220,7 +220,6 @@ export default function App() {
         {page === 'rules' && <RulesPage user={shellUser} />}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'hr' && <HumanResourcesPage user={shellUser} />}
-        {page === 'permissions' && <PermissionsPage user={shellUser} />}
         {(page === 'payroll' || page === 'department-payroll' || page === 'payroll-config') && <PayrollTabs user={shellUser} initialTab={page === 'payroll-config' ? 'configuration' : page === 'department-payroll' ? 'administrative' : 'ktv'} ktv={<PayrollPage user={shellUser} />} administrative={<DepartmentPayrollPanel user={shellUser} />} configuration={<DepartmentPayrollSettingsPage user={shellUser} />} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}
@@ -231,9 +230,7 @@ export default function App() {
         {page === 'live-tour' && <LiveTourPage user={shellUser} navigationToggle={navigationToggle} />}
         {page === 'milk-tea' && <MilkTeaPage user={shellUser} />}
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
-        {page === 'settings' && <SettingsPage user={shellUser} />}
-        {page === 'appearance' && <AppearanceSettingsPage user={shellUser} />}
-        {page === 'notifications' && <NotificationSettingsPage user={shellUser} />}
+        {['settings', 'appearance', 'notifications', 'permissions'].includes(page) && <SettingsPage user={shellUser} initialTab={page === 'settings' ? undefined : page} appearance={<AppearanceSettingsPage user={shellUser} />} notifications={<NotificationSettingsPage user={shellUser} />} permissionSettings={<PermissionsPage user={shellUser} />} />}
         {page === 'auto-check' && <AutoCheckPage user={shellUser} />}
         {page === 'changes' && <AdminChangesPage user={shellUser} />}
         {page === 'storage' && <StorageAdminPage />}
