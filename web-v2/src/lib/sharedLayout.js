@@ -18,6 +18,8 @@ export function layoutCss(items) {
   for (const [key, value] of Object.entries(items || {})) {
     if (!/^(l|u)-[a-z0-9-]+$/.test(key)) continue
     const declarations = []
+    const offset = v => Number.isInteger(v) && Math.abs(v) <= 2400 ? v : 0
+    if (offset(value.offset_x) || offset(value.offset_y)) declarations.push(`translate:${offset(value.offset_x)}px ${offset(value.offset_y)}px!important`)
     if (value.hidden === true) declarations.push('display:none!important')
     if (Number.isInteger(value.order) && value.order >= 0 && value.order <= 10000) declarations.push(`order:${value.order}!important`)
     if (Number.isInteger(value.width) && value.width >= 32 && value.width <= 2400) declarations.push(`width:min(${value.width}px,100%)!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;flex:0 1 auto!important`)
@@ -34,7 +36,7 @@ export function layoutCss(items) {
     if (['start','center','end'].includes(value.content_align)) rules.push(`:is(${selector}):is(button,a,[role="tab"]){align-items:${value.content_align}!important}`)
     if (['left','center','right'].includes(value.text_align)) rules.push(`:is(${selector}):is(button,a,[role="tab"]){justify-content:${{left:'flex-start',center:'center',right:'flex-end'}[value.text_align]}!important}`)
     if (value.appearance && typeof value.appearance === 'object') rules.push(visualCss(selector, value.appearance))
-    if (value.width != null || value.height != null) rules.push(`:is(${selector}):is(span,strong,small,b,em){display:inline-block!important}`)
+    if (value.width != null || value.height != null || offset(value.offset_x) || offset(value.offset_y)) rules.push(`:is(${selector}):is(span,strong,small,b,em){display:inline-block!important}`)
     if (value.width != null) rules.push(`table:has(th[data-layout-key="${key}"]){table-layout:fixed;width:100%;max-width:100%}`)
     if (value.rows != null) rules.push(`[data-layout-key="${key}"]>button,[data-layout-key="${key}"]>a{min-width:0!important;max-width:100%;white-space:normal!important;overflow-wrap:anywhere;min-height:36px}`)
     if (value.parent && /^(l|u)-[a-z0-9-]+$/.test(value.parent)) rules.push(`[data-layout-key="${value.parent}"][data-layout-block="true"]{display:flex!important;flex-direction:column!important;min-width:0;max-width:100%}`)

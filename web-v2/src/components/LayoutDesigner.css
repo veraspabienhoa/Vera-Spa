@@ -84,3 +84,19 @@
 .layout-designer .layout-scale-actions .layout-tool-scale{font-size:clamp(10px,3cqw,13px);min-width:0;line-height:1.3}
 .layout-quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;min-width:0}
 .layout-designer .layout-quick-actions button{min-width:0;padding-inline:2px;font-size:clamp(10px,3cqw,13px);white-space:normal;overflow-wrap:anywhere;line-height:1.2}
+
+/* Header never participates in the inspector's scroll area. */
+.layout-panel-header{flex:none;display:grid;gap:6px;min-width:0;background:#f4f8f5;border-bottom:1px solid #8abfa3;padding-bottom:8px}
+.layout-panel-header[hidden]{display:none}
+.layout-panel-content{flex:1 1 auto}
+.layout-fixed-actions{display:grid;grid-template-columns:1.4fr 1.4fr 1fr 0.7fr 0.7fr;gap:4px}
+.layout-designer .layout-fixed-actions button{min-width:0;padding-inline:2px;font-size:clamp(10px,3cqw,13px);line-height:1.2}
+.layout-designer .layout-device-toolbar{display:flex;gap:14px}
+.layout-designer .layout-free-mode{display:flex;gap:6px}
+.layout-designer .layout-free-mode input{width:16px}
+.layout-alignment-guides{position:fixed;inset:0;z-index:10002;pointer-events:none}
+.layout-guide-vertical{position:absolute;top:0;bottom:0;border-left:1px dashed #db2777}
+.layout-guide-horizontal{position:absolute;left:0;right:0;border-top:1px dashed #db2777}
+
+.layout-drop-line{position:absolute;background:#059669;box-shadow:0 0 0 2px #fff;border-radius:2px}
+.layout-designer:has(.layout-panel-header:not([hidden])){min-height:min(340px,calc(100dvh - 16px))}

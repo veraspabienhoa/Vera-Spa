@@ -59,3 +59,10 @@ test('visual styles are scoped, guard disabled states and reject CSS injection',
   const bad=layoutCss({'u-test':{appearance:{normal:{background:'red;display:none',shadow:'url(https://bad)'},radius:900,font_family:'url(https://bad)'}}})
   assert.doesNotMatch(bad,/display:none|https:|900px/)
 })
+
+// Free position is independently bounded and cannot inject CSS.
+test('free translation is scoped, bounded and composes with appearance transforms',()=>{
+ const css=layoutCss({'l-free':{offset_x:-45,offset_y:90},'l-invalid':{offset_x:'1px;color:red',offset_y:9000}})
+ assert.match(css,/translate:-45px 90px!important/)
+ assert.doesNotMatch(css,/color:red|9000px/)
+})
