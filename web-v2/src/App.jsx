@@ -64,6 +64,7 @@ const LiveTourPage = lazyPage(() => import('./pages/LiveTourPage'))
 const MilkTeaPage = lazyPage(() => import('./pages/MilkTeaPage'))
 const SpaManagementPage = lazyPage(() => import('./pages/SpaManagementPage'))
 const AutoCheckPage = lazyPage(() => import('./pages/AutoCheckPage'))
+const SettingsPage = lazyPage(() => import('./pages/SettingsPage'))
 const AppearanceSettingsPage = lazyPage(() => import('./pages/AppearanceSettingsPage'))
 const NotificationSettingsPage = lazyPage(() => import('./pages/NotificationSettingsPage'))
 const LongLeaveSection = lazyPage(() => import('./components/LongLeaveSection'))
@@ -231,7 +232,7 @@ export default function App() {
         {page === 'live-tour' && <LiveTourPage user={shellUser} navigationToggle={navigationToggle} />}
         {page === 'milk-tea' && <MilkTeaPage user={shellUser} />}
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
-        {page === 'settings' && <SpaManagementPage user={shellUser} mode="settings" />}
+        {page === 'settings' && <SettingsPage user={shellUser} />}
         {page === 'appearance' && <AppearanceSettingsPage user={shellUser} />}
         {page === 'notifications' && <NotificationSettingsPage user={shellUser} />}
         {page === 'auto-check' && <AutoCheckPage user={shellUser} />}

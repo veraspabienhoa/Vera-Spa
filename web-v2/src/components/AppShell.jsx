@@ -12,7 +12,7 @@ const items = [
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker'] },
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
-  { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, permission: 'live_tour_admin' },
+  { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, anyPermission: ['live_tour_admin', 'ktv_shift_view', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_quanly', 'work_schedule_tapvu'] },
   { id: 'appearance', label: 'Giao diện', icon: Palette, ready: true, adminOnly: true },
   { id: 'notifications', label: 'Thông báo', icon: BellRing, ready: true, adminOnly: true },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },

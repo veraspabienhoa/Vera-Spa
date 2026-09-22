@@ -105,7 +105,7 @@ def test_training_ui_uses_unrestricted_student_directory_for_daily_log():
 def test_date_picker_anchor_and_requested_layout_order_are_wired():
     styles = (ROOT / "web-v2/src/styles.css").read_text(encoding="utf-8")
     revenue = (ROOT / "web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
-    employee = (ROOT / "web-v2/src/pages/EmployeeManagementEnhancements.jsx").read_text(encoding="utf-8")
+    employee = (ROOT / "web-v2/src/pages/SettingsPage.jsx").read_text(encoding="utf-8")
     assert ".vera-date-input > .vera-native-date-picker {\n  position: absolute;" in styles
     assert "left: -10000px" not in styles
     assert "Doanh thu theo bộ lọc" in revenue and "Chi phí theo bộ lọc" in revenue

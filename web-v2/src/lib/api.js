@@ -424,6 +424,11 @@ export const veraApi = {
     return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)
   },
   importLiveTourExcel: (file, expectedRevision) => upload('/v2/live-tour/import.xlsx', file, { expected_revision: expectedRevision }),
+  scheduleShiftSettings: () => {
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+    return request(`/v2/work-schedule?start=${day}&end=${day}`)
+  },
+  saveScheduleShifts: body => request('/v2/work-schedule/shifts', { method: 'PUT', body: JSON.stringify(body) }),
   ktvShifts: () => request('/v2/staff/ktv-shifts'),
   saveKtvShift: (id, body) => request(`/v2/staff/ktv-shifts${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
   deleteKtvShift: (id, revision) => request(`/v2/staff/ktv-shifts/${encodeURIComponent(id)}?expected_revision=${revision}`, { method: 'DELETE' }),
