@@ -1,6 +1,7 @@
 """Configurable daily late-arrival and early-departure clocks for staff."""
 import re
 from sqlalchemy import text
+import vera_live_tour_resource_store as resource_store
 from vera_web_v2_live_tour_roster import key
 
 DEFAULT_HOURS = {'late1': '15:00', 'late2': '17:00', 'early1': '15:00', 'early2': '17:00'}
@@ -41,4 +42,8 @@ def daily_clock(conn, day, employee, kind):
     if len(matches) != 1:
         return None
     row = matches[0]
-    return clock_for(scheduled_shift(row, day), kind, row.get('partial_leave_times'))
+    settings = row.get('partial_leave_times')
+    if resource_store.enabled():
+        state, _, _ = resource_store.read(conn)
+        settings = state.get('payment_settings', {}).get('partial_leave_times')
+    return clock_for(scheduled_shift(row, day), kind, settings)

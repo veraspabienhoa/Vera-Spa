@@ -1,3 +1,4 @@
+import { observeLayoutNodes } from '../lib/observeLayoutNodes'
 import { customKinds, isCustomContainer, selectionNodes, boundingSelection, alignSelection, distributeSelection, removeLayoutItems, translateSelection } from '../lib/layoutSelection'
 import { createPortal } from 'react-dom'
 import { freeMovePosition } from '../lib/layoutFreeMove'
@@ -157,8 +158,10 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   useEffect(() => {
     const root = document.querySelector('.app-shell')
     if (!root) return undefined
-    const identify = () => {
-      for (const element of root.querySelectorAll('[data-vera-node],[data-ui-key]')) {
+    const identify = elements => {
+      const counts = new Map()
+      if (editing) root.querySelectorAll('[data-ui-key]').forEach(node=>counts.set(node.dataset.uiKey,(counts.get(node.dataset.uiKey)||0)+1))
+      for (const element of elements) {
         if (element.closest('.layout-designer, .layout-resize-overlay, .break-alert-stack')) continue
         if (element.closest('table') && !element.matches('table,th')) continue
         let key = layoutKey(element, page)
@@ -170,7 +173,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         if (!key) continue
         element.dataset.layoutKey = key
         element.dataset.layoutLegacy = legacyLayoutKey(element, page)
-        element.dataset.layoutEditable = editing && !element.matches('.app-shell,.main-area,.sidebar') && !registry[key.split('--')[0]]?.locked && (element.matches(layoutCandidates) || key.startsWith('l-custom-')) && root.querySelectorAll(`[data-ui-key="${key}"]`).length <= 1 ? 'true' : 'false'
+        element.dataset.layoutEditable = editing && !element.matches('.app-shell,.main-area,.sidebar') && !registry[key.split('--')[0]]?.locked && (element.matches(layoutCandidates) || key.startsWith('l-custom-')) && (counts.get(key) || 0) <= 1 ? 'true' : 'false'
         const parent = element.parentElement
         if (parent?.dataset.veraNode || parent?.dataset.uiKey) {
           parent.dataset.layoutKey = layoutKey(parent, page)
@@ -179,14 +182,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         }
       }
     }
-    identify()
-    let frame = null
-    const observer = new MutationObserver(() => {
-      if (frame !== null) return
-      frame = window.requestAnimationFrame(() => { frame = null; identify() })
-    })
-    observer.observe(root, { childList: true, subtree: true })
-    return () => { observer.disconnect(); if (frame !== null) window.cancelAnimationFrame(frame) }
+    return observeLayoutNodes(root, identify)
   }, [page, editing])
   const relocate = (source, destination, before = null) => {
     if (!source?.dataset.uiOrigin || !destination || !canRelocate(source, destination)) { setMessage('Chọn thành phần trong nhóm nút và khung đích cùng biểu mẫu.'); return }

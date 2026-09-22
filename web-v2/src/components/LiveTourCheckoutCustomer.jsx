@@ -2,7 +2,7 @@ import LiveTourSearchSelect from './LiveTourSearchSelect'
 import { customerMatches } from '../lib/customerSearch'
 import { customerTicketLabel } from '../lib/liveTourComboBooking'
 
-export default function LiveTourCheckoutCustomer({ customers, form, setForm, disabled, customerRequired = false, onSelectCustomer }) {
+export default function LiveTourCheckoutCustomer({ customers, form, setForm, disabled, customerRequired = false, onSelectCustomer, onSearch }) {
   const options = customers.map((customer) => ({
     value: String(customer.id || customer._id || customer.customer_id || ''),
     label: customer.name || customer.customer_name || '',
@@ -17,10 +17,11 @@ export default function LiveTourCheckoutCustomer({ customers, form, setForm, dis
       combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,
       ...onSelectCustomer?.(customers.find(row => String(row.id || row._id || row.customer_id) === id)) }))
   }
-  const type = (field, query) => setForm((current) => ({ ...current, customer_id: '',
+  const type = (field, query) => { onSearch?.(query); setForm((current) => ({ ...current, customer_id: '',
     // When replacing a linked customer, never keep the previous person's other field.
     ...(current.customer_id ? { customer_name: '', phone: '' } : {}), [field]: query,
     combo_purchase_id: '', payment_method: current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method }))
+  }
   return <>
     <LiveTourSearchSelect label="Khách hàng" value={form.customer_id} searchValue={form.customer_name} required={customerRequired}
       options={options} disabled={disabled} placeholder="Tìm tên hoặc nhập khách mới" emptyLabel="Khách lẻ"

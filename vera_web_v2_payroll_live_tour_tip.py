@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, Query
 from sqlalchemy import text
 
 import vera_web_v2_payroll as payroll
+import vera_live_tour_resource_store as resource_store
 from vera_web_v2_payroll_timesoft_auto import _workbook
 
 
@@ -31,11 +32,14 @@ def _row_date(row: dict[str, Any]) -> date | None:
 
 
 def _live_tour_tip_rows(conn, start: date, end: date) -> list[dict[str, Any]]:
-    payload = conn.execute(text("""
-        SELECT value_json FROM vera_app_setting
-        WHERE category='live_tour' AND setting_key='state'
-        LIMIT 1
-    """)).scalar_one_or_none()
+    if resource_store.enabled():
+        payload, _, _ = resource_store.read(conn)
+    else:
+        payload = conn.execute(text("""
+            SELECT value_json FROM vera_app_setting
+            WHERE category='live_tour' AND setting_key='state'
+            LIMIT 1
+        """)).scalar_one_or_none()
     if isinstance(payload, str):
         try:
             payload = json.loads(payload)

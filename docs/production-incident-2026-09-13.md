@@ -355,3 +355,13 @@ phải bằng chứng đã đọc hay sửa dữ liệu Production.
 Kiểm chứng cục bộ: 1.312 kiểm thử Python đạt, gồm các trường hợp ca Vera
 trái nhãn TimeSoft, đổi chu kỳ, ngày hiệu lực, thiếu ca và các hồi quy pool/
 notification/booking. Chưa deploy hoặc xác minh ca Phương Vy trên Production.
+
+## 22-09-2026: Live Tour performance changes (not deployed)
+
+The proposed resource-storage release adds an explicit offline cutover with parity
+verification and an export-back rollback. Never switch active/shadow modes without
+the corresponding cutover while all writers are stopped. See
+[live-tour-resource-performance.md](live-tour-resource-performance.md).
+Local regressions do not establish production performance or deployment success;
+resource transaction tests use an isolated PostgreSQL CI service. No production
+latency multiplier has been measured.

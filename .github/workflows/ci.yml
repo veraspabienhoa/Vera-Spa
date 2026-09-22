@@ -20,6 +20,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vera_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vera_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -1183,7 +1196,9 @@ jobs:
 
       - name: Run pytest suite
         if: always()
-        run: python -m pytest -q
+        env:
+          VERA_TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/vera_test
+        run: python scripts/run_pytest_offline.py -q
 
   web-v2:
     name: React Web V2 build
@@ -1215,7 +1230,7 @@ jobs:
         run: node --test tests/authRecovery.test.mjs tests/authSessionTransport.test.mjs
 
       - name: Verify Live Tour appointment editing and checkout display
-        run: node --test tests/liveTourAppointments.test.mjs tests/liveTourFilters.test.mjs tests/paymentPresentation.test.mjs tests/liveTourBreaktime.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs tests/searchableDropdowns.test.mjs tests/liveTourReceipt.test.mjs
+        run: node --test tests/liveTourDetails.test.mjs tests/observeLayoutNodes.test.mjs tests/liveTourQuickCombo.test.mjs tests/liveTourAppointments.test.mjs tests/liveTourFilters.test.mjs tests/paymentPresentation.test.mjs tests/liveTourBreaktime.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs tests/searchableDropdowns.test.mjs tests/liveTourReceipt.test.mjs
 
       - name: Lint
         run: npm run lint

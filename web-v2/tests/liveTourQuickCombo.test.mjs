@@ -17,7 +17,7 @@ test('automatic combo preview, required date, customer switch and live refresh',
   const customers = [{ id: 'c1', name: 'Khách Combo', phone: '0901234567', combo_purchases: [{ id: 'p1', combo_name: 'Combo Body', remaining: 3, component_balances: [{ service_id: 'body', total: 3, remaining: 3 }] }] }, { id: 'c2', name: 'Khách thường', combo_purchases: [] }]
   const data = { revision: 1, columns: ['Tên nhân viên', 'Vào ca'], records: [{ _id: 'e1', 'Tên nhân viên': 'An', 'Vào ca': 'Ca 1' }], state: { employees: [{ id: 'e1', name: 'An', work_status: 'Đi làm', shift: 'Ca 1' }], services, customers }, customers, services, catalogs: { rooms: [{ id: 'r1', name: '1.1' }] }, capabilities: { payment: true, booking: true, customers: true }, payment_settings: {} }
   let reads = 0
-  for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true, __quickApi: { liveTour: async () => { reads++; return data } } })) Object.defineProperty(globalThis, key, { value, configurable: true })
+  for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true, __quickApi: { liveTourCollection:async()=>({data,revision:data.revision,page:1,pages:1,total:0}), liveTour: async () => { reads++; return data } } })) Object.defineProperty(globalThis, key, { value, configurable: true })
   const { createRoot } = await import('react-dom/client')
   const module = { exports: {} }
   new Function('require', 'module', 'exports', built.outputFiles[0].text)(require, module, module.exports)
