@@ -365,3 +365,12 @@ the corresponding cutover while all writers are stopped. See
 Local regressions do not establish production performance or deployment success;
 resource transaction tests use an isolated PostgreSQL CI service. No production
 latency multiplier has been measured.
+
+## Scoped Live Tour start follow-up (not deployed)
+
+The proposed follow-up removes whole-board employee writes from `start` in active
+resource mode. A metadata invalidation marker resets manual ordering; only selected
+employees are written. `start_room` locks and rechecks all waiting members. The
+existing room/customer constraints and exclusive reorder/restore fence remain.
+Rollback materializes effective manual flags for old releases. This change does
+not itself activate resource storage or establish a production speed multiplier.

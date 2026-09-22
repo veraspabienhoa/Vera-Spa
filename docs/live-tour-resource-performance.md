@@ -24,9 +24,9 @@ writes become active only afterwards.
 Booking, employee edits, pending and paid invoice operations use sorted,
 non-waiting advisory locks for employee, physical room, customer, invoice and
 idempotency resources. A shared maintenance fence allows unrelated work. Invoice
-numbering and corrections retain a short ledger invariant lock. Start/reorder,
-restore, configuration and projection retain an exclusive fence because they can
-change global ordering/roster. Contention returns 503 with Retry-After; stale
+numbering and corrections retain a short ledger invariant lock. Start and start-room now use scoped resource locks too. Reorder, restore,
+configuration and projection retain an exclusive fence because they can change
+global ordering/roster. Contention returns 503 with Retry-After; stale
 resources return 409. Idempotent retries return the committed result.
 
 Transactions read one consistent resource snapshot, validate their locked read
@@ -79,3 +79,26 @@ SQL-indexed search/pagination and narrower action reads are further improvements
 if profiling shows these dominate. Whole-board maintenance and invoice numbering
 remain intentional serialization points. Compare equivalent datasets and cold/warm
 runs before making a numeric performance claim.
+
+## Scoped start and manual ordering
+
+In active resource mode `start` and `start_room` share the maintenance fence.
+Start locks the selected employee, physical room and customer reservation domain;
+start-room resolves every waiting member, locks all those employees/rooms/customers,
+and rereads membership after locking. A changed membership rejects the stale plan.
+Two unrelated rooms can start concurrently. The same room/customer/employee still
+conflicts, preserving PR occupancy, combo reservation and duplicate-start rules.
+
+A standard start sets `manual_order_active=false` instead of deleting flags on all
+employee rows. This monotonic invalidation is merged into metadata at commit;
+concurrent starts write the same value. Only exclusive manual ordering/replacement
+can turn it back on. Reads and public board flags honor the effective value, while
+YC starts preserve the current manual-order state. Reorder/restore cannot overlap
+starts because their maintenance fence is exclusive. Publication metadata still
+has its short commit-time row lock; this is not a claim of zero shared locking.
+
+No new schema migration is needed for this marker. Existing records without it
+retain their legacy semantics. Shadow mode still uses its original global lock;
+deploying this change alone does not activate resource mode. Follow the offline
+activation procedure above. Rollback materializes cleared manual flags before
+exporting to the old aggregate, so a prior release cannot revive obsolete ordering.

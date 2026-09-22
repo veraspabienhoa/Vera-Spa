@@ -177,3 +177,141 @@ def test_receipt_pruning_removes_only_keys_from_its_snapshot(database):
     with database.begin() as conn:
         state, _, _ = store.read(conn)
         assert set(state['idempotency']) == {'payment', 'new'}
+
+
+def prepare_starts(database, *, same_room=False, second_on_break=False):
+    with database.begin() as conn:
+        store.lock(conn)
+        before, _, _ = store.read(conn)
+        state = deepcopy(before)
+        state['employees'].append(employee('e3', 'Chưa thực hiện'))
+        for index, row in enumerate(state['employees'][:2], 1):
+            row.update(service='Body 90', room=f'1.{index}' if same_room else f'{index}.1',
+                       status='Đang chờ', duration=90, booked_at=live._iso(NOW),
+                       booking_id=f'booking-{index}', service_price=220000)
+        if second_on_break:
+            state['employees'][1]['break_started_at'] = live._iso(NOW)
+        live._apply_action(state, 'admin_reorder', {'employee_id':'e1','direction':'top'}, 'admin', NOW)
+        return store.write(conn, before, state, 'admin')
+
+
+def test_two_starts_on_distinct_rooms_commit_together_without_other_employee_writes(database):
+    revision = prepare_starts(database)
+    with database.begin() as conn:
+        initial, _, versions = store.read(conn)
+    barrier = Barrier(2)
+    def start(identifier):
+        with database.begin() as conn:
+            state, _, fresh = begin(conn, identifier, key='start-'+identifier, revision=revision, action='start')
+            assert fresh and conn.info['live_tour_exclusive'] is False
+            working = deepcopy(state)
+            live._apply_action(working, 'start', {'employee_id':identifier}, 'admin', NOW)
+            barrier.wait(timeout=5)
+            return store.write(conn, state, working, 'admin')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(start, ['e1','e2'])) == [revision+1, revision+2]
+    with database.begin() as conn:
+        final, _, final_versions = store.read(conn)
+    assert [row['tour_count'] for row in final['employees'][:2]] == [1,1]
+    assert all(row['status'] == 'Đang thực hiện' for row in final['employees'][:2])
+    assert final['employees'][2] == initial['employees'][2]
+    assert final_versions[('employees','e3')] == versions[('employees','e3')]
+    assert final['manual_order_active'] is False
+    assert not any(row['_manual_order'] for row in live._state_response(final, revision+2, NOW)['records'])
+    assert live._state_response(final, revision+2, NOW)['records'][0]['_employee_id'] == 'e3'
+
+
+def test_start_room_locks_all_its_members_and_conflicts_with_same_room_start(database):
+    revision = prepare_starts(database, same_room=True)
+    with database.begin() as first:
+        state, _, fresh = begin(first, '', action='start_room', room='1', revision=revision)
+        assert fresh and first.info['live_tour_exclusive'] is False
+        assert {('live_tour_employee','e1'),('live_tour_employee','e2')} <= set(first.info['live_tour_resources'])
+        with database.begin() as second:
+            with pytest.raises(HTTPException) as exc:
+                begin(second, 'e2', action='start', revision=revision, key='conflicting-start')
+            assert exc.value.status_code == 503
+        # An unrelated employee edit can still hold its own locks concurrently.
+        with database.begin() as unrelated:
+            _, _, fresh = begin(unrelated, 'e3', revision=revision, key='unrelated-edit')
+            assert fresh
+        changed = deepcopy(state)
+        result = live._apply_action(changed, 'start_room', {'room':'1'}, 'admin', NOW)
+        assert result['count'] == 2
+        store.write(first, state, changed, 'admin')
+
+
+def test_start_same_physical_room_serializes_even_for_different_employees(database):
+    revision = prepare_starts(database, same_room=True)
+    with database.begin() as first:
+        begin(first, 'e1', action='start', revision=revision)
+        with database.begin() as second:
+            with pytest.raises(HTTPException) as exc:
+                begin(second, 'e2', action='start', revision=revision, key='same-room-start')
+            assert exc.value.status_code == 503
+
+
+def test_failed_room_start_does_not_change_any_member_or_manual_order(database):
+    revision = prepare_starts(database, same_room=True, second_on_break=True)
+    with database.begin() as conn:
+        original, _, _ = store.read(conn)
+    with pytest.raises(HTTPException):
+        with database.begin() as conn:
+            state, _, _ = begin(conn, '', action='start_room', room='1', revision=revision)
+            changed = deepcopy(state)
+            live._apply_action(changed, 'start_room', {'room':'1'}, 'admin', NOW)
+            store.write(conn, state, changed, 'admin')
+    with database.begin() as conn:
+        current, current_revision, _ = store.read(conn)
+    assert current == original and current_revision == revision
+
+
+def test_start_excludes_reorder_and_rollback_materializes_effective_order(database):
+    revision = prepare_starts(database)
+    with database.begin() as conn:
+        before, _, _ = begin(conn, 'e1', action='start', revision=revision)
+        with database.begin() as other:
+            with pytest.raises(HTTPException):
+                store.lock(other)
+        after = deepcopy(before)
+        live._apply_action(after, 'start', {'employee_id':'e1'}, 'admin', NOW)
+        store.write(conn, before, after, 'admin')
+    with database.begin() as conn:
+        cutover(conn, rollback=True)
+        restored = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='live_tour'")).scalar_one()
+    assert 'manual_order_active' not in restored
+    assert not any(row.get('manual_order') for row in restored['employees'])
+    assert restored['employees'][0]['tour_count'] == 1
+
+
+def test_start_retry_counts_tour_once_and_stale_new_request_is_rejected(database, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from pydantic import BaseModel
+    class Identity(BaseModel):
+        employee_username: str = 'admin'
+        full_name: str = 'Admin'
+        role: str = 'admin'
+    class FixedDateTime(live.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+    monkeypatch.setattr(live, 'datetime', FixedDateTime)
+    revision = prepare_starts(database)
+    app = FastAPI()
+    live.install_live_tour_routes(app, engine_instance=lambda:database, current_identity=lambda:Identity(),
+                                 require_feature=lambda *args:None, feature_allowed=lambda *args:True, identity_type=Identity)
+    client = TestClient(app)
+    body = {'action':'start','expected_revision':revision,'idempotency_key':'start-once-1234',
+            'response_view':'board','payload':{'employee_id':'e1'}}
+    first = client.post('/v2/live-tour/action', json=body)
+    assert first.status_code == 200, first.text
+    retry = client.post('/v2/live-tour/action', json=body)
+    assert retry.status_code == 200 and retry.json()['duplicate'] is True
+    stale = client.post('/v2/live-tour/action', json={**body,'idempotency_key':'new-stale-start'})
+    assert stale.status_code == 409
+    with database.begin() as conn:
+        state, current_revision, _ = store.read(conn)
+    assert state['employees'][0]['tour_count'] == 1
+    assert current_revision == revision + 1
+    assert not any(row['_manual_order'] for row in retry.json()['records'])
