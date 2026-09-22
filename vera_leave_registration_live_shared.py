@@ -14,6 +14,7 @@ from typing import Any, Mapping
 import pandas as pd
 
 from vera_leave_registration_shared import norm
+from vera_leave_advance import balances as advance_balances, is_approved_sick
 from vera_progressive_penalty import (
     DEFAULT_WEEKEND_UNPAID_ENABLED,
     applies as progressive_applies,
@@ -496,16 +497,31 @@ def validate_leave_registration_request_live(payload, live_df, credentials_df, r
             if limit_ps > 0 and used_ps >= limit_ps:
                 result["errors"].append(f"Vượt giới hạn Phát sinh. Nhân viên này chỉ được đăng ký {limit_ps:g} lần phát sinh/tháng.")
                 return result
-        elif not is_nghi_ly_do_khac and not is_long_sick_range_reason and "không phép" not in norm_reason and val_songay > 0:
-            month_user = user_hist_quota[(user_hist_quota["M"] == curr_m) & (user_hist_quota["Y"] == curr_y)]
-            if not month_user.empty and "Lý do nghỉ" in month_user.columns:
-                cp_mask = ~month_user["Lý do nghỉ"].astype(str).str.lower().str.contains("không phép|phát sinh|lý do khác", na=False, regex=True)
-                used_cp = float(pd.to_numeric(month_user.loc[cp_mask, "Số ngày tính"], errors="coerce").fillna(0).sum())
-            else:
-                used_cp = 0.0
-            if limit_cp > 0 and used_cp + total_phep_required > limit_cp:
-                result["errors"].append(f"Vượt số ngày Có phép trong tháng. Nhân viên này chỉ được nghỉ tối đa {limit_cp:g} ngày/tháng.")
-                return result
+        elif not is_nghi_ly_do_khac and not is_approved_sick(reason) and not is_long_sick_range_reason and "không phép" not in norm_reason and val_songay > 0:
+            history = user_hist.to_dict('records')
+            allowance = advance_balances(history, end_date, base=limit_cp, since=start_date)
+            for month in sorted({d.strftime('%Y-%m') for d in selected_dates}):
+                balance = allowance[month]
+                required = val_songay * sum(d.strftime('%Y-%m') == month for d in selected_dates)
+                if limit_cp > 0 and required > balance['remaining'] + 1e-9:
+                    result["errors"].append(
+                        f"Vượt số ngày Có phép trong tháng {month[5:]}/{month[:4]}. "
+                        f"Định mức {limit_cp:g} ngày; đã ứng từ tháng trước {balance['deducted']:g} ngày; "
+                        f"còn {balance['remaining']:g} ngày, đăng ký thêm {required:g} ngày."
+                    )
+                    return result
+
+    if is_approved_sick(reason) and val_songay > 0 and limit_cp > 0:
+        projected = user_hist.to_dict('records') + [
+            {"Ngày": d, "Lý do nghỉ": reason, "Số ngày tính": val_songay} for d in selected_dates
+        ]
+        allowance = advance_balances(projected, end_date, base=limit_cp, since=start_date)
+        for month in sorted({d.strftime('%Y-%m') for d in selected_dates}):
+            if allowance[month]['next_deduction'] > 0:
+                result['warnings'].append(
+                    f"Tháng {month[5:]}/{month[:4]}: nghỉ bệnh ứng phép; "
+                    f"tháng kế tiếp bị trừ {allowance[month]['next_deduction']:g} ngày phép."
+                )
 
     special_day_exempt = special_exempt(role, reason)
     for target_date in selected_dates:

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from datetime import date
+from calendar import monthrange
 from typing import Any
 
 from fastapi import Depends, HTTPException, Query
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
+from vera_leave_advance import balances as advance_balances
 
 from vera_leave_registration_shared import count_unique_leave_people, summarize_leave_days
 
@@ -120,6 +122,7 @@ def install_leave_day_stats_routes(
             raise HTTPException(400, "Khoảng thống kê tối đa là 366 ngày.")
 
         employee_filter = employee.strip()
+        monthly_allowances = []
 
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "leave")
@@ -132,6 +135,22 @@ def install_leave_day_stats_routes(
                 ORDER BY leave_date, employee_name, record_uid
             """), {"start_date": start_date, "end_date": end_date}).mappings().all()
 
+            if employee_filter:
+                employees = conn.execute(text("SELECT username, monthly_leave FROM employees")).mappings().all()
+                matched = [emp for emp in employees if employee_name_matches(emp['username'], employee_filter)]
+                if matched:
+                    history = conn.execute(text("""
+                        SELECT employee_name,leave_date,leave_reason,calculated_days FROM leave_records
+                        WHERE lower(btrim(employee_name)) IN :names AND leave_date <= :end
+                    """).bindparams(bindparam('names', expanding=True)),
+                        {'names': [emp['username'].strip().lower() for emp in matched], 'end': end_date.replace(day=monthrange(end_date.year, end_date.month)[1])}).mappings().all()
+                    for emp in matched:
+                        personal = [r for r in history if str(r['employee_name']).strip().lower() == emp['username'].strip().lower()]
+                        balances = advance_balances(personal, end_date, base=float(emp['monthly_leave'] or 5), since=start_date)
+                        for month, balance in balances.items():
+                            if start_date.strftime('%Y-%m') <= month <= end_date.strftime('%Y-%m'):
+                                monthly_allowances.append({'employee': emp['username'], 'month': month, **balance})
+
         if employee_filter:
             rows = [row for row in rows if employee_name_matches(row["employee_name"], employee_filter)]
         summary = summarize_leave_days(rows)
@@ -139,6 +158,7 @@ def install_leave_day_stats_routes(
             summary.pop("total_penalty", None)
         return {
             "summary": summary,
+            "monthly_allowances": monthly_allowances,
             "release": LEAVE_DAY_STATS_RELEASE,
             "scope": "employee_filter" if employee_filter else "all_registered_employees",
         }
