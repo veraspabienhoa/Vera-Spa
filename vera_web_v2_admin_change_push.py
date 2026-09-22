@@ -193,6 +193,8 @@ def install_admin_change_push(
         raise RuntimeError("Không tìm thấy đủ route lịch nghỉ để cài thông báo Admin tức thời.")
 
     def enqueue(background_tasks: BackgroundTasks, event_type: str, record_uids: list[str], actor: str) -> None:
+        from vera_leave_quota_alerts import check_and_notify
+        background_tasks.add_task(check_and_notify, engine_instance)
         background_tasks.add_task(
             _dispatch_admin_change_pushes,
             engine_instance=engine_instance,

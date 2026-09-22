@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 RELEASE = "notification-settings-2026-09-20-v1"
 CATALOG = (
+    ("leave_quota_exceeded", "Vượt hạn mức đăng ký nghỉ", "Cảnh báo vượt 5 ngày, 2 lần cuối tuần Nhóm 3 hoặc 2 lần phát sinh trong tháng.", "Admin", "Thông báo đẩy"),
     ("birthday", "Sinh nhật", "Nhắc sinh nhật nhân viên trong tháng.", "Quản lý, lễ tân", "Trong ứng dụng"),
     ("profile_completion", "Hoàn thiện hồ sơ", "Nhắc nhân viên bổ sung thông tin và ảnh CCCD còn thiếu.", "Nhân viên", "Trong ứng dụng, thiết bị"),
     ("leave_watch", "Theo dõi ngày nghỉ", "Thông báo khi danh sách đăng ký nghỉ ở ngày đang theo dõi thay đổi.", "Người theo dõi", "Trong ứng dụng"),
