@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import AppShell from './components/AppShell'
+import PayrollTabs from './components/PayrollTabs'
 import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
 import ProfileCompletionReminder from './components/ProfileCompletionReminder'
 import LoginPage from './pages/LoginPage'
@@ -220,8 +221,7 @@ export default function App() {
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'hr' && <HumanResourcesPage user={shellUser} />}
         {page === 'permissions' && <PermissionsPage user={shellUser} />}
-        {page === 'payroll' && <PayrollPage user={shellUser} />}
-        {page === 'department-payroll' && <DepartmentPayrollPanel user={shellUser} />}
+        {(page === 'payroll' || page === 'department-payroll') && <PayrollTabs user={shellUser} initialTab={page === 'department-payroll' ? 'administrative' : 'ktv'} ktv={<PayrollPage user={shellUser} />} administrative={<DepartmentPayrollPanel user={shellUser} />} />}
         {page === 'payroll-config' && <DepartmentPayrollSettingsPage user={shellUser} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}

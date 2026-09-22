@@ -4,14 +4,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_department_payroll_has_dedicated_menu_and_route():
+def test_department_payroll_is_in_shared_payroll_menu():
     shell = (ROOT / "web-v2/src/components/AppShell.jsx").read_text(encoding="utf-8")
     app = (ROOT / "web-v2/src/App.jsx").read_text(encoding="utf-8")
     payroll = (ROOT / "web-v2/src/pages/PayrollPageV38.jsx").read_text(encoding="utf-8")
     panel = (ROOT / "web-v2/src/pages/DepartmentPayrollPanel.jsx").read_text(encoding="utf-8")
-    assert "id: 'payroll', label: 'Lương KTV'" in shell
-    assert "id: 'department-payroll', label: 'Lương hành chánh'" in shell
-    assert "page === 'department-payroll' && <DepartmentPayrollPanel" in app
+    assert "id: 'payroll', label: 'Bảng Lương'" in shell
+    assert "id: 'department-payroll', label:" not in shell
+    tabs = (ROOT / "web-v2/src/components/PayrollTabs.jsx").read_text(encoding="utf-8")
+    assert "Lương KTV" in tabs and "Lương hành chánh" in tabs
+    assert "payroll_history" in tabs and "payroll_calculate" in tabs
+    assert "administrative={<DepartmentPayrollPanel" in app
     assert "import DepartmentPayrollPanel" not in payroll
     assert "Chọn tất cả có email" in panel
     assert "Tính lương nháp từ Thống kê tháng" in panel
