@@ -3,3 +3,5 @@
 
 .vera-receipt-brand{font-family:'Cinzel Decorative',Georgia,serif;font-weight:900}.vera-receipt-address{text-align:center;font-size:11px;margin-top:-12px}.tour-payment-qr{display:grid;justify-items:center;gap:6px;text-align:center;margin:12px 0;break-inside:avoid}.tour-payment-qr img{width:200px;max-width:100%;height:auto}.tour-tip-cards{display:flex;flex-wrap:wrap;gap:6px}.tour-tip-cards button{flex:0 0 auto}
 .tour-tip-cards .tour-page-items-content{display:flex;flex-wrap:wrap;gap:6px}
+
+.customer-screen-control{display:grid;gap:8px;margin:10px 0}.customer-screen-control small{font-size:12px}@media print{.customer-screen-control{display:none!important}}

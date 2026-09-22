@@ -23,3 +23,5 @@
 .training-page .history-kind.daily{background:#d6eaff;color:#164f7c}
 .training-page .history-kind.comprehensive{background:#f7e2a7;color:#674500}
 .training-page .training-history-item>div{min-width:0;overflow-wrap:anywhere}
+
+.training-daily-report,.training-employee-roster{min-width:0;overflow-wrap:anywhere}.training-daily-report table,.training-employee-roster table{width:100%;table-layout:fixed;border-collapse:collapse}.training-daily-report th,.training-daily-report td,.training-employee-roster td,.training-employee-roster th{border:1px solid #b8cbbf;padding:10px;text-align:left;vertical-align:top}.training-daily-report th:first-child{width:22%}.training-daily-report th:nth-child(2){width:18%}.training-daily-report article+article{border-top:1px solid #b8cbbf;margin-top:10px;padding-top:10px}.training-daily-report p{margin:6px 0}.training-employee-roster button[aria-pressed=true]{font-weight:900;text-decoration:underline}@media(max-width:760px){.training-daily-report,.training-employee-roster{padding:10px}.training-daily-report td,.training-daily-report th{padding:6px;font-size:12px}.training-grid>*{min-width:0}}

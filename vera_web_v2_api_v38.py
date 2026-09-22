@@ -236,3 +236,6 @@ app.version = PAYROLL_V38_RELEASE
 
 from vera_leave_quota_alerts import install as install_leave_quota_alerts
 install_leave_quota_alerts(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+
+from vera_web_v2_products import install_product_routes
+install_product_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)

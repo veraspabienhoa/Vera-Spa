@@ -24,6 +24,7 @@ import './searchable-dropdowns.css'
 import './visibility-cleanup.css'
 import './clear-borders.css'
 import './live-tour-mobile-overrides.css'
+import './mobile-system.css'
 
 void registerVeraServiceWorker().catch(() => {})
 startPurchaseReconcileAlertWatcher()

@@ -1,3 +1,4 @@
+import ProductSettings from './ProductSettings'
 import UiToolbar from '../components/UiToolbar'
 import { useEffect, useState } from 'react'
 import SpaManagementPage from './SpaManagementPage'
@@ -16,6 +17,7 @@ export default function SettingsPage({ user, initialTab, notifications, permissi
   const shifts = ktv || schedule || admin
   const tabs = [
     ...(catalog ? [['services', 'Cài đặt dịch vụ'], ['areas', 'Cài đặt khu vực dịch vụ']] : []),
+    ...(admin ? [['products', 'Cài đặt sản phẩm']] : []),
     ...(shifts ? [['shifts', 'Cài đặt ca']] : []),
     ...(admin ? [['notifications', 'Thông báo']] : []),
     ...(admin || permissions.permission_admin === true ? [['permissions', 'Phân quyền']] : []),
@@ -40,7 +42,7 @@ export default function SettingsPage({ user, initialTab, notifications, permissi
       {tabs.map(([key, label]) => <button data-ui-key="u-71f5ef37dfd5" type="button" key={key} id={`settings-${key}-tab`} role="tab" tabIndex={activeTab === key ? 0 : -1} aria-selected={activeTab === key} aria-controls="settings-content" onClick={() => setTab(key)}>{label}</button>)}
     </UiToolbar>
     <div id="settings-content" role="tabpanel" aria-labelledby={`settings-${activeTab}-tab`}>
-      {activeTab === 'notifications' ? notifications : activeTab === 'permissions' ? permissionSettings : activeTab === 'shifts' ? <>
+      {activeTab === 'products' ? <ProductSettings/> : activeTab === 'notifications' ? notifications : activeTab === 'permissions' ? permissionSettings : activeTab === 'shifts' ? <>
         {ktv && <KtvShiftSettingsPanel />}
         {schedule && <DepartmentShiftSettingsPanel />}
         {admin && <ShiftBreakSettingsPanel />}

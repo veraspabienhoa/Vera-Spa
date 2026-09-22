@@ -10,6 +10,7 @@ from datetime import date, datetime, time
 import json
 from typing import Any, Callable
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -116,7 +117,7 @@ def sync_leave_periods(conn) -> int:
             continue
         request_id = str(payload.get("ID") or str(row.get("logical_id") or "").split(":", 1)[-1])
         returned = _parse_vn_date(payload.get("Ngày quay lại làm việc"))
-        actual_end = datetime.combine(returned, time.min) if returned else None
+        actual_end = datetime.combine(returned, time.min, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")) if returned else None
         source = str(payload.get("Nguồn kết thúc kỳ nghỉ") or ("manual" if returned else "")).strip()
         conn.execute(text("""
             INSERT INTO vera_hr_leave_period(
@@ -139,6 +140,15 @@ def sync_leave_periods(conn) -> int:
                  "actual_end": actual_end, "status": _status(payload, row.get("record_status")),
                  "source": source, "revision": int(row.get("revision") or 0)})
         count += 1
+    # Remove projections for rejected/deleted requests so they cannot remain
+    # pending in the heatmap or be closed by a later check-in.
+    conn.execute(text("""
+        DELETE FROM vera_hr_leave_period p WHERE NOT EXISTS (
+            SELECT 1 FROM vera_phase14_record r
+            WHERE r.dataset=:dataset AND r.logical_id='long:' || p.request_id
+              AND r.record_status IN ('Chờ duyệt','Đã duyệt')
+        )
+    """), {"dataset": LONG_LEAVE_DATASET})
     return count
 
 
@@ -157,11 +167,11 @@ def _resolve_username(conn, value: Any, employee_code: Any = "") -> str:
 
 def record_checkin(conn, *, username: str, checkin_at: datetime, source: str,
                    external_id: str = "", payload: dict[str, Any] | None = None,
-                   actor: str = "timesoft", sync_projection: bool = True) -> dict[str, Any]:
-    ensure_hr_schema(conn)
+                   actor: str = "timesoft", sync_projection: bool = True, employee_code: str = "") -> dict[str, Any]:
+    checkin_at = checkin_at.replace(tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")) if checkin_at.tzinfo is None else checkin_at.astimezone(ZoneInfo("Asia/Ho_Chi_Minh"))
     if sync_projection:
         sync_leave_periods(conn)
-    username = _resolve_username(conn, username)
+    username = _resolve_username(conn, username, employee_code)
     log_id = str(uuid4())
     inserted = conn.execute(text("""
         INSERT INTO vera_hr_attendance_log(id,employee_username,checkin_at,source,external_id,raw_payload)
@@ -170,25 +180,40 @@ def record_checkin(conn, *, username: str, checkin_at: datetime, source: str,
         RETURNING id
     """), {"id": log_id, "employee": username, "checkin": checkin_at, "source": source,
              "external_id": external_id, "payload": json.dumps(payload or {}, ensure_ascii=False)}).scalar_one_or_none()
-    if not inserted:
-        return {"inserted": False, "leave_closed": False, "username": username}
+    # Replay cached check-ins after approval as well; the attendance log is
+    # deduplicated independently from whether a leave can now be closed.
+    log_id = inserted or conn.execute(text("""
+        SELECT id FROM vera_hr_attendance_log
+        WHERE employee_username=:employee AND checkin_at=:checkin AND source=:source
+    """), {"employee": username, "checkin": checkin_at, "source": source}).scalar_one_or_none()
 
     leave = conn.execute(text("""
         SELECT * FROM vera_hr_leave_period
         WHERE lower(employee_username)=lower(:employee)
           AND status='approved'
-          AND scheduled_start<=CAST(:checkin AS date)
-          AND scheduled_end>=CAST(:checkin AS date)
+          AND scheduled_start<=:checkin_date
         ORDER BY scheduled_start DESC LIMIT 1 FOR UPDATE
-    """), {"employee": username, "checkin": checkin_at}).mappings().first()
+    """), {"employee": username, "checkin_date": checkin_at.date()}).mappings().first()
     if not leave:
-        return {"inserted": True, "leave_closed": False, "username": username, "attendance_log_id": inserted}
+        return {"inserted": bool(inserted), "leave_closed": False, "username": username, "attendance_log_id": log_id}
+
+    # Use the earliest known real punch, not the order caches were fetched.
+    first_checkin = conn.execute(text("""
+        SELECT id,checkin_at FROM vera_hr_attendance_log
+        WHERE lower(employee_username)=lower(:employee)
+          AND (checkin_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date>=:start
+          AND checkin_at<=:checkin
+        ORDER BY checkin_at LIMIT 1
+    """), {"employee": username, "start": leave["scheduled_start"], "checkin": checkin_at}).mappings().first()
+    if first_checkin:
+        checkin_at = first_checkin["checkin_at"].astimezone(ZoneInfo("Asia/Ho_Chi_Minh"))
+        log_id = first_checkin["id"]
 
     # A later explicit manual correction remains authoritative until another
     # explicit correction.  Otherwise the first real check-in closes the leave.
     if str(leave.get("end_source") or "") == "manual":
-        return {"inserted": True, "leave_closed": False, "manual_override": True,
-                "username": username, "attendance_log_id": inserted}
+        return {"inserted": bool(inserted), "leave_closed": False, "manual_override": True,
+                "username": username, "attendance_log_id": log_id}
 
     logical_id = f"long:{leave['request_id']}"
     canonical = conn.execute(text("""
@@ -196,7 +221,7 @@ def record_checkin(conn, *, username: str, checkin_at: datetime, source: str,
         WHERE dataset=:dataset AND logical_id=:logical_id FOR UPDATE
     """), {"dataset": LONG_LEAVE_DATASET, "logical_id": logical_id}).mappings().first()
     if not canonical:
-        return {"inserted": True, "leave_closed": False, "username": username, "attendance_log_id": inserted}
+        return {"inserted": bool(inserted), "leave_closed": False, "username": username, "attendance_log_id": log_id}
     canonical_payload = _payload_value(canonical.get("payload"))
     canonical_payload["Ngày quay lại làm việc"] = checkin_at.strftime("%d/%m/%Y")
     canonical_payload["Ghi chú quay lại"] = "Tự động kết thúc theo lần Check-in TimeSoft đầu tiên."
@@ -221,15 +246,15 @@ def record_checkin(conn, *, username: str, checkin_at: datetime, source: str,
         VALUES (:request_id,:employee,:previous,:actual,:source,:log_id,:actor)
     """), {"request_id": leave["request_id"], "employee": username,
              "previous": leave.get("actual_end_at"), "actual": checkin_at,
-             "source": source, "log_id": inserted, "actor": actor})
-    return {"inserted": True, "leave_closed": True, "request_id": leave["request_id"],
-            "username": username, "attendance_log_id": inserted}
+             "source": source, "log_id": log_id, "actor": actor})
+    return {"inserted": bool(inserted), "leave_closed": True, "request_id": leave["request_id"],
+            "username": username, "attendance_log_id": log_id}
 
 
 def sync_attendance_records(conn, records: list[dict[str, Any]], *, source: str = "timesoft-cache") -> dict[str, int]:
     sync_leave_periods(conn)
     inserted = closed = 0
-    for item in records:
+    for item in sorted(records, key=lambda item: (_parse_vn_date(item.get("date")) or date.min, str(item.get("check_in") or ""))):
         check_in = str(item.get("check_in") or "").strip()
         work_day = _parse_vn_date(item.get("date"))
         if not check_in or not work_day:
@@ -238,11 +263,11 @@ def sync_attendance_records(conn, records: list[dict[str, Any]], *, source: str 
             clock = datetime.strptime(check_in.split()[-1][:5], "%H:%M").time()
         except ValueError:
             continue
-        username = _resolve_username(conn, item.get("employee_name"), item.get("employee_code"))
+        username = str(item.get("employee_name") or "").strip()
         result = record_checkin(
             conn, username=username, checkin_at=datetime.combine(work_day, clock),
             source=source, external_id=f"{username}:{work_day.isoformat()}:{clock.isoformat()}", payload=item,
-            sync_projection=False,
+            sync_projection=False, employee_code=str(item.get("employee_code") or ""),
         )
         inserted += int(result.get("inserted", False))
         closed += int(result.get("leave_closed", False))
@@ -283,10 +308,13 @@ def install_hr_enhancement_routes(
             params = {"start": start, "end": end, "department": department_id.strip().lower()}
             department_clause = "" if not params["department"] else " AND department_id=:department"
             rows = conn.execute(text("""
-                SELECT request_id,employee_username,department_id,leave_type,scheduled_start,
-                       scheduled_end,status
-                FROM vera_hr_leave_period
-                WHERE status IN ('pending','approved')
+                SELECT p.request_id,p.employee_username,p.department_id,p.leave_type,p.scheduled_start,
+                       p.scheduled_end,p.status
+                FROM vera_hr_leave_period p
+                JOIN employees e ON lower(btrim(e.username))=lower(btrim(p.employee_username))
+                WHERE COALESCE(e.payload->>'__deleted','false')<>'true'
+                  AND lower(COALESCE(e.payload->>'Trạng thái làm việc',e.payload->>'employment_status','Đang làm việc')) IN ('đang làm việc','active')
+                  AND p.status IN ('pending','approved')
                   AND scheduled_start<=:end AND scheduled_end>=:start
             """ + department_clause + " ORDER BY scheduled_start,employee_username"), params).mappings().all()
             headcounts = dict(conn.execute(text("""
@@ -301,12 +329,12 @@ def install_hr_enhancement_routes(
             groups: dict[str, list[dict[str, Any]]] = {}
             for raw in rows:
                 item = dict(raw)
-                if item["scheduled_start"] <= cursor <= item["scheduled_end"]:
+                if _parse_vn_date(item["scheduled_start"]) <= cursor <= _parse_vn_date(item["scheduled_end"]):
                     groups.setdefault(str(item["department_id"] or ""), []).append(item)
             departments = []
             for dept, items in sorted(groups.items()):
                 total = int(headcounts.get(dept, 0))
-                usernames = sorted({str(item["employee_username"]) for item in items})
+                usernames = sorted({str(item["employee_username"]).strip().casefold(): str(item["employee_username"]).strip() for item in items}.values())
                 ratio = len(usernames) / total if total else 0
                 departments.append({"department_id": dept, "headcount": total,
                                     "leave_count": len(usernames), "ratio": round(ratio, 4),
@@ -314,7 +342,8 @@ def install_hr_enhancement_routes(
                                     "usernames": usernames, "requests": items})
             days.append({"date": cursor.isoformat(), "departments": departments,
                          "leave_count": sum(item["leave_count"] for item in departments),
-                         "has_alert": any(item["exceeds_threshold"] for item in departments)})
+                         "has_alert": sum(item["leave_count"] for item in departments) >= 3,
+                         "pending_count": len({str(item["employee_username"]).casefold() for items in groups.values() for item in items if item["status"] == "pending"})})
             cursor = date.fromordinal(cursor.toordinal() + 1)
         return {"start": start.isoformat(), "end": end.isoformat(),
                 "department_id": department_id, "threshold": threshold,
