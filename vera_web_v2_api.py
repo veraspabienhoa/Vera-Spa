@@ -918,9 +918,10 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
                     "current_paid_count": current,
                 })
                 if enqueue_notification(conn, 'leave_watch', {
+                    'watched_date': target.isoformat(),
                     'title':'VERA SPA · Lịch nghỉ thay đổi',
                     'body': f"Ngày {target.strftime('%d-%m-%Y')}: số lịch nghỉ có phép từ {previous} thành {current}.",
-                    'tag': f"leave-watch-{target}-{previous}-{current}-{datetime.now(VN_TZ).strftime('%Y%m%d%H%M')}"}):
+                    'tag': f"leave-watch-{target}-{current}-{datetime.now(VN_TZ).strftime('%Y%m%d%H%M')}"}):
                     continue
                 subscriptions = conn.execute(text("""
                     SELECT subscription_id::text AS subscription_id, endpoint, p256dh, auth_secret

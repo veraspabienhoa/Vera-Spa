@@ -151,3 +151,50 @@ def test_inbox_read_update_always_scoped_to_authenticated_user(monkeypatch):
     assert response.status_code==200
     assert queries[-1][1]['recipient']==Identity().auth_user_id
     assert 'recipient=:recipient' in queries[-1][0]
+
+
+def test_group_validation_keeps_supported_groups_and_rejects_unrelated_watchers():
+    conn=SimpleNamespace(execute=lambda *_:Result([{'id':'active'}]))
+    assert settings._recipients(conn,['active','group:all','group:admin','group:all']) == ['active','group:admin','group:all']
+    with pytest.raises(settings.HTTPException): settings._recipients(conn,['group:unknown'])
+    with pytest.raises(settings.HTTPException) as exc:
+        settings._write_route(conn,'birthday','birthday','Title',['group:watchers'],['in_app'],False,'admin')
+    assert exc.value.status_code == 400
+
+
+def test_group_routing_resolves_accounts_once_with_event_date_and_deduplicates(monkeypatch):
+    monkeypatch.setattr(delivery,'ensure_schema',lambda _:None)
+    queries=[]
+    class Conn:
+        def execute(self,statement,params=None):
+            query=str(statement);queries.append((query,params))
+            if 'SELECT r.*' in query:
+                return Result([{'key':'leave_watch','custom':False,'enabled':True,'recipients':['group:watchers','group:admin','a'],'channels':['in_app','push']}])
+            if 'SELECT p.auth_user_id::text AS id' in query: return Result([{'id':'a'},{'id':'b'},{'id':'a'}])
+            return Result()
+    assert delivery.enqueue(Conn(),'leave_watch',{'title':'Changed','tag':'event-1','watched_date':'2026-09-23'})
+    resolution=[(q,p) for q,p in queries if 'SELECT p.auth_user_id::text AS id' in q][0]
+    assert resolution[1]['source']=='leave_watch' and resolution[1]['watched_date']=='2026-09-23'
+    assert 'w.auth_user_id=p.auth_user_id' in resolution[0] and 'w.watched_date::text=:watched_date' in resolution[0]
+    assert 'p.is_active' in resolution[0]
+    writes=[p for q,p in queries if 'INSERT INTO vera_notification_delivery' in q]
+    assert len(writes)==4 and {p['recipient'] for p in writes}=={'a','b'}
+    assert all(json.loads(p['payload'])['watched_date']=='2026-09-23' for p in writes)
+
+
+def test_removed_group_membership_is_rechecked_before_network_send(monkeypatch):
+    monkeypatch.setattr(delivery,'ensure_schema',lambda _:None)
+    queries=[]
+    class Engine:
+        @contextmanager
+        def begin(self):yield self
+        connect=begin
+        def execute(self,q,p=None):
+            q=str(q);queries.append((q,p))
+            if 'WITH pending' in q:return Result([{'id':1,'rule_key':'leave_watch','recipient':'former','payload':{'watched_date':'2026-09-23'}}])
+            return Result()
+    delivery.dispatch_pending(Engine(),lambda *_:pytest.fail('Removed recipient must not receive a push'),lambda *_:None)
+    grant=[(q,p) for q,p in queries if 'SELECT 1 FROM vera_notification_route' in q][0]
+    assert grant[1]['watched_date']=='2026-09-23'
+    assert 'p.is_active' in grant[0] and "'group:' || p.role" in grant[0]
+    assert [p for q,p in queries if 'last_error=:error' in q][0]['complete'] is True
