@@ -12,6 +12,7 @@ export default function LeaveListPersonalStats({ user }) {
   const [target, setTarget] = useState(null)
   const [context, setContext] = useState({ start: '', end: '', employee: '', displayStart: '', displayEnd: '' })
   const [summary, setSummary] = useState(emptyLeaveDaySummary)
+  const [allowances, setAllowances] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const contextRef = useRef(context)
@@ -35,7 +36,7 @@ export default function LeaveListPersonalStats({ user }) {
       if (sameContext(contextRef.current, next)) return
       contextRef.current = next
       requestRevisionRef.current += 1
-      setSummary(emptyLeaveDaySummary())
+      setSummary(emptyLeaveDaySummary()); setAllowances([])
       setError('')
       setBusy(true)
       setContext(next)
@@ -59,12 +60,12 @@ export default function LeaveListPersonalStats({ user }) {
     let cancelled = false
     const revision = ++requestRevisionRef.current
     const load = async () => {
-      setBusy(true); setError(''); setSummary(emptyLeaveDaySummary())
+      setBusy(true); setError(''); setSummary(emptyLeaveDaySummary()); setAllowances([])
       try {
         const result = await veraApi.leaveListStats(context.start, context.end, context.employee)
-        if (!cancelled && revision === requestRevisionRef.current) setSummary({ ...emptyLeaveDaySummary(), ...(result.summary || {}) })
+        if (!cancelled && revision === requestRevisionRef.current) { setSummary({ ...emptyLeaveDaySummary(), ...(result.summary || {}) }); setAllowances(result.monthly_allowances || []) }
       } catch (err) {
-        if (!cancelled && revision === requestRevisionRef.current) { setSummary(emptyLeaveDaySummary()); setError(err.message || 'Không tải được thống kê nghỉ.') }
+        if (!cancelled && revision === requestRevisionRef.current) { setSummary(emptyLeaveDaySummary()); setAllowances([]); setError(err.message || 'Không tải được thống kê nghỉ.') }
       } finally {
         if (!cancelled && revision === requestRevisionRef.current) setBusy(false)
       }
@@ -107,6 +108,11 @@ export default function LeaveListPersonalStats({ user }) {
       <div className="leave-list-personal-summary-head"><strong>THỐNG KÊ TRONG DANH SÁCH</strong><span>{subtitle}</span></div>
       <div className="leave-list-personal-summary-grid">{stats.map((item) => <div className={`leave-list-personal-stat ${item.key}`} key={item.key}><div className="leave-list-personal-stat-label">{item.icon && <span aria-hidden="true">{item.icon}</span>}{item.label}</div><div className="leave-list-personal-stat-value">{busy ? '…' : item.value}</div></div>)}</div>
       <div className="leave-list-personal-summary-note">Tổng ngày nghỉ/Có phép cộng theo ngày thực tế (0,5 tính đúng 0,5); Phát sinh/Không phép đếm số bản ghi.{!isAdmin && ' Tiền vi phạm không hiển thị cho tài khoản này.'}</div>
+      {allowances.map(item => <div className="leave-list-personal-summary-note" key={`${item.employee}-${item.month}`}>
+        <strong>Quỹ phép {item.employee} · {item.month.split('-').reverse().join('/')}</strong>
+        <div>Định mức: {formatLeaveDays(item.base)} · Đã ứng từ tháng trước: {formatLeaveDays(item.deducted)} · Còn được nghỉ: {formatLeaveDays(item.remaining)} ngày</div>
+        <div>Nghỉ bệnh: {formatLeaveDays(item.sick)} · Ứng thêm: {formatLeaveDays(item.borrowed)} · Trừ phép tháng kế tiếp: {formatLeaveDays(item.next_deduction)} ngày</div>
+      </div>)}
       {isAdmin && <LeaveQuotaCheck start={context.start} end={context.end} />}
       {error && <div className="leave-list-personal-summary-error">{error}</div>}
     </section>

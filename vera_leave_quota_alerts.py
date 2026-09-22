@@ -11,6 +11,7 @@ from threading import Event, Thread
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy import text
 from vera_leave_registration_shared import summarize_leave_days
+from vera_leave_advance import balances as advance_balances
 from vera_web_v2_policy_v40 import GROUP3_WEEKEND_REASON_KEYS, _reason_key
 import vera_web_v2_notification_settings as settings
 from vera_auto_penalty_notifications import _send, _vault_secret, APP_URL
@@ -28,15 +29,21 @@ def summarize(rows):
         if employee:
             groups[(employee.casefold(), day.strftime('%Y-%m'))].append({**dict(row), 'leave_date': day})
     result = []
-    for (_, month), records in sorted(groups.items()):
+    histories = defaultdict(list)
+    for (employee, _), records in groups.items():
+        histories[employee].extend(records)
+    allowances = {employee: advance_balances(records, max(r['leave_date'] for r in records)) for employee, records in histories.items()}
+    for (employee, month), records in sorted(groups.items()):
         summary = summarize_leave_days(records)
         weekends = {r['leave_date'] for r in records if r['leave_date'].weekday() >= 5
                     and _reason_key(r['leave_reason']) in GROUP3_WEEKEND_REASON_KEYS}
         values = {'days': summary['total_leave'], 'weekends': len(weekends), 'generated': summary['generated']}
-        exceeded = [key for key, limit in LIMITS.items() if values[key] > limit]
+        balance = allowances[employee][month]
+        values['days'] = balance['ordinary']
+        exceeded = [key for key, limit in LIMITS.items() if (balance['ordinary_excess'] > 0 if key == 'days' else values[key] > limit)]
         if exceeded:
             result.append({'employee': records[0]['employee_name'].strip(), 'month': month,
-                           **values, 'exceeded': exceeded})
+                           **values, 'day_limit': balance['available'], 'borrowed': balance['borrowed'], 'exceeded': exceeded})
     return result
 
 
@@ -46,10 +53,11 @@ def read_report(conn, start=None, end=None):
     where = ''
     if start is not None:
         params = {'start': start.replace(day=1), 'end': end.replace(day=monthrange(end.year, end.month)[1])}
-        where = 'WHERE leave_date BETWEEN :start AND :end'
+        where = 'WHERE leave_date <= :end'
     rows = conn.execute(text(f'''SELECT employee_name, leave_date, leave_reason, leave_type,
         calculated_days FROM leave_records {where} ORDER BY leave_date, record_uid'''), params).mappings().all()
-    return summarize(rows)
+    items = summarize(rows)
+    return [item for item in items if start is None or item['month'] >= start.strftime('%Y-%m')]
 
 
 def ensure_schema(conn):
@@ -115,7 +123,7 @@ def deliver(engine):
         item = delivery['payload']
         month = '/'.join(reversed(item['month'].split('-')))
         labels = {'days': 'ngày nghỉ', 'weekends': 'lần cuối tuần Nhóm 3', 'generated': 'lần phát sinh'}
-        detail = '; '.join(f"{item[k]:g}/{LIMITS[k]} {labels[k]}" for k in item['exceeded'])
+        detail = '; '.join(f"{item[k]:g}/{item.get('day_limit', 5) if k == 'days' else LIMITS[k]} {labels[k]}" for k in item['exceeded'])
         payload = {'title': 'VERA SPA · Đăng ký nghỉ vượt hạn mức',
                    'body': f"{item['employee']} · {month}: {detail}",
                    'tag': f"leave-quota-{delivery['fingerprint']}", 'url': APP_URL,

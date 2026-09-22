@@ -33,7 +33,7 @@ export default function LeaveQuotaCheck({ start, end }) {
       <p>{formatVeraDate(result.start)} – {formatVeraDate(result.end)}: {result.items.length ? `${result.items.length} trường hợp nhân viên/tháng vượt hạn mức` : 'Không phát hiện trường hợp vượt hạn mức.'}</p>
       {result.items.map(item => <div key={`${item.employee}-${item.month}`} style={{ border: '1px solid #b45309', borderRadius: 8, padding: 8, marginTop: 8, background: '#fffbeb', overflowWrap: 'anywhere' }}>
         <strong>{item.employee} · {item.month.split('-').reverse().join('/')}</strong>
-        <div>{item.exceeded.map(key => `${labels[key]}: ${Number(item[key]).toLocaleString('vi-VN')}/${result.limits[key]}`).join(' · ')}</div>
+        <div>{item.exceeded.map(key => `${labels[key]}: ${Number(item[key]).toLocaleString('vi-VN')}/${key === 'days' ? (item.day_limit ?? result.limits[key]) : result.limits[key]}`).join(' · ')}</div>
       </div>)}
     </div>}
   </div>
