@@ -1329,6 +1329,13 @@ def _employee_change_allowed(employee: dict[str, Any], now: datetime) -> bool:
     return 0 <= seconds_left <= limit * 60
 
 
+def _can_start_outside_shift(role: str, granted: bool, now: datetime) -> bool:
+    """Only Admin is unrestricted; delegated access ends at 02:00 Vietnam time."""
+    return str(role or "").strip().lower() == "admin" or (
+        granted is True and now.astimezone(VN_TZ).hour < 2
+    )
+
+
 def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime, *, admin_start=False) -> None:
     if not admin_start and (_norm(employee.get("work_status")) != "di lam" or _shift_bucket(employee) not in {"ca1", "ca2"}):
         raise HTTPException(409, "Nhân viên phải đang Đi làm và được xếp Ca 1/Ca 2.")
@@ -3200,6 +3207,7 @@ def _state_response(
     can_reports_view: bool | None = None, can_history_view: bool | None = None,
     can_backup: bool | None = None,
     can_reorder: bool = False,
+    can_start_outside_shift: bool = False,
     viewer_bank: dict | None = None,
     can_invoice_date_edit: bool = False,
     can_customers_edit: bool = False,
@@ -3352,6 +3360,7 @@ def _state_response(
         },
         "capabilities": {
             "appointment_edit": can_appointment_edit, "reorder": can_reorder,
+            "start_outside_shift": can_start_outside_shift,
             "admin": can_admin, "catalog_admin": can_admin, "manage_catalog": can_admin,
             "operate": can_operate, "payment": can_payment, "export": can_export,
             "booking": can_booking, "invoice_view": can_invoice_view,
@@ -4680,7 +4689,10 @@ def install_live_tour_routes(
             working = deepcopy(state)
             payload.pop("_manual_break_allowed", None)
             payload.pop("_admin_start", None)
-            if action in {"start", "start_room"} and str(getattr(ident, "role", "") or "").strip().lower() == "admin":
+            if action in {"start", "start_room"} and _can_start_outside_shift(
+                getattr(ident, "role", ""), grants.get("can_start_outside_shift", False),
+                datetime.now(timezone),
+            ):
                 payload["_admin_start"] = True
             if manual_break_allowed:
                 payload["_manual_break_allowed"] = True

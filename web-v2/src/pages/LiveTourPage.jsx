@@ -1,3 +1,4 @@
+import { canStartOutsideShift } from '../lib/liveTourStartPermission'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
@@ -614,6 +615,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canEditAppointment = capability('appointment_edit', false)
   const canReorder = capability('reorder', isAdmin || user?.permissions?.live_tour_reorder === true)
   const canOperate = capability('operate', isAdmin || user?.permissions?.live_tour_operate === true)
+  const allowStartOutsideShift = canStartOutsideShift(isAdmin, capability('start_outside_shift', false), clockMs)
   const canPayment = capability('payment', isAdmin || user?.permissions?.live_tour_payment === true)
   const canAdmin = capability('admin', isAdmin || user?.permissions?.live_tour_admin === true)
   const canExport = capability('export', isAdmin || user?.permissions?.live_tour_export === true)
@@ -1092,7 +1094,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const counts = roomActionCounts.get(areaKey(room)) || {}
     return canOperate && <LiveTourServiceActions room target={areaLabel(room)} waiting={counts.waiting} doing={counts.doing} busy={Boolean(actionBusy)} onStart={() => runRoomAction(room, 'start_room')} onFinish={() => runRoomAction(room, 'finish_room')}/>
   }
-  const employeeServiceActions = (record) => canOperate && <LiveTourServiceActions target={cellValue(record, employeeColumn)} canStart={!hasGroup(record, 'leave') && ['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA']))))} waiting={hasGroup(record, 'waiting') && !hasGroup(record, 'doing') ? 1 : 0} doing={hasGroup(record, 'doing') ? 1 : 0} busy={Boolean(actionBusy) || !stableEmployeeId(record)} onStart={() => executeAction('start', {}, [stableEmployeeId(record)])} onFinish={() => executeAction('finish_to_pending', {}, [stableEmployeeId(record)])}/>
+  const employeeServiceActions = (record) => canOperate && <LiveTourServiceActions target={cellValue(record, employeeColumn)} canStart={allowStartOutsideShift || (!hasGroup(record, 'leave') && ['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA'])))))} waiting={hasGroup(record, 'waiting') && !hasGroup(record, 'doing') ? 1 : 0} doing={hasGroup(record, 'doing') ? 1 : 0} busy={Boolean(actionBusy) || !stableEmployeeId(record)} onStart={() => executeAction('start', {}, [stableEmployeeId(record)])} onFinish={() => executeAction('finish_to_pending', {}, [stableEmployeeId(record)])}/>
   const searchedRoomKeys = useMemo(() => {
     const needle = normalizedColumn(employeeSearch)
     return new Set(needle ? shiftRecords.flatMap((record) => searchTextMatches(cellValue(record, employeeColumn), needle) ? [assignmentAreaKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
