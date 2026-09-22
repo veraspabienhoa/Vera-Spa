@@ -163,6 +163,7 @@ function liveTourExportParams(kind, query = {}) {
 }
 
 export const veraApi = {
+  leaveQuotaCheck: (start, end) => request(`/v2/leave/quota-check?${new URLSearchParams({ start, end })}`),
   hr: () => request('/v2/hr'),
   saveHrDepartment: body => request('/v2/hr/departments', { method: 'PUT', body: JSON.stringify(body) }),
   deleteHrDepartment: (code, revision) => request(`/v2/hr/departments/${encodeURIComponent(code)}`, { method: 'DELETE', body: JSON.stringify({ revision }) }),

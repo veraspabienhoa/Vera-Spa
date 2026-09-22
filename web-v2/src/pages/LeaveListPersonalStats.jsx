@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import LeaveQuotaCheck from './LeaveQuotaCheck'
 import { veraApi } from '../lib/api'
 import { emptyLeaveDaySummary, formatLeaveDays } from '../lib/leaveStats'
 
@@ -106,6 +107,7 @@ export default function LeaveListPersonalStats({ user }) {
       <div className="leave-list-personal-summary-head"><strong>THỐNG KÊ TRONG DANH SÁCH</strong><span>{subtitle}</span></div>
       <div className="leave-list-personal-summary-grid">{stats.map((item) => <div className={`leave-list-personal-stat ${item.key}`} key={item.key}><div className="leave-list-personal-stat-label">{item.icon && <span aria-hidden="true">{item.icon}</span>}{item.label}</div><div className="leave-list-personal-stat-value">{busy ? '…' : item.value}</div></div>)}</div>
       <div className="leave-list-personal-summary-note">Tổng ngày nghỉ/Có phép cộng theo ngày thực tế (0,5 tính đúng 0,5); Phát sinh/Không phép đếm số bản ghi.{!isAdmin && ' Tiền vi phạm không hiển thị cho tài khoản này.'}</div>
+      {isAdmin && <LeaveQuotaCheck start={context.start} end={context.end} />}
       {error && <div className="leave-list-personal-summary-error">{error}</div>}
     </section>
   </>, target)

@@ -233,3 +233,6 @@ install_excel_export_style(_shared.app)
 
 app = _shared.app
 app.version = PAYROLL_V38_RELEASE
+
+from vera_leave_quota_alerts import install as install_leave_quota_alerts
+install_leave_quota_alerts(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
