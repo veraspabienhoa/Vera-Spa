@@ -13,6 +13,11 @@ class LayoutItem(BaseModel):
     order: int | None = Field(default=None, ge=0, le=10000)
     width: int | None = Field(default=None, ge=32, le=2400)
     height: int | None = Field(default=None, ge=24, le=1600)
+    text_align: Literal['left', 'center', 'right', 'justify'] | None = None
+    content_align: Literal['start', 'center', 'end'] | None = None
+    justify_content: Literal['start', 'center', 'end', 'space-between', 'space-around', 'space-evenly'] | None = None
+    align_items: Literal['start', 'center', 'end', 'stretch'] | None = None
+    gap: int | None = Field(default=None, ge=0, le=100)
     parent: str | None = Field(default=None, max_length=80)
     label: str | None = Field(default=None, max_length=100)
     mode: Literal['fit', 'group'] | None = None

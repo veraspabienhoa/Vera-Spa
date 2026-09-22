@@ -398,7 +398,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             type="button" className={`nav-item ${layoutDesignerOpen ? 'active' : ''}`}
             ref={layoutTrigger} aria-expanded={layoutDesignerOpen}
             onClick={() => { setLayoutDesignerOpen(true); setMobileOpen(false); setStandaloneMenuOpen(false) }}
-          ><Settings2 size={19} /><span>Chỉnh bố cục</span></button>}
+          ><Settings2 size={19} /><span>Giao diện</span></button>}
         </nav>
 
         <div className="sidebar-footer">

@@ -38,3 +38,12 @@ test('source identities survive added whitespace and comments', () => {
   const keys = code => [...transformSync(code, options).code.matchAll(/data-vera-node="([^"]+)"/g)].map(match => match[1])
   assert.deepEqual(keys(source), keys('\n// unrelated comment\n\n' + source))
 })
+
+
+test('alignment accepts only safe values and explicit gap overrides row defaults', () => {
+  const css=layoutCss({'u-test':{text_align:'right',content_align:'center',justify_content:'space-evenly',align_items:'stretch',rows:2,gap:18}})
+  assert.match(css,/text-align:right!important/)
+  assert.match(css,/justify-content:space-evenly!important/)
+  assert.ok(css.indexOf('gap:18px')>css.indexOf('gap:6px'))
+  assert.doesNotMatch(layoutCss({'u-test':{text_align:'left;color:red',gap:-1}}),/color:red|gap:-1/)
+})
