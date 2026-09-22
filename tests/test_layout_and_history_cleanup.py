@@ -138,3 +138,10 @@ def test_restore_uses_snapshot_and_expected_revision_and_creates_new_audit():
     assert result['revision']==3
     assert result['layout']['desktop']=={'l-restored':{'width':150}}
     assert any(sql.startswith('INSERT INTO vera_ui_layout_audit') for sql,_ in conn.calls)
+
+
+def test_free_position_offsets_are_preserved_and_bounded():
+    item = LayoutItem(offset_x=-180, offset_y=450)
+    assert validate_items({'l-free':item})['l-free'] == {'offset_x':-180,'offset_y':450}
+    with pytest.raises(ValidationError): LayoutItem(offset_x=2401)
+    with pytest.raises(ValidationError): LayoutItem(offset_y=-2401)

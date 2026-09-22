@@ -46,6 +46,8 @@ class LayoutItem(BaseModel):
     order: int | None = Field(default=None, ge=0, le=10000)
     width: int | None = Field(default=None, ge=32, le=2400)
     height: int | None = Field(default=None, ge=24, le=1600)
+    offset_x: int | None = Field(default=None, ge=-2400, le=2400)
+    offset_y: int | None = Field(default=None, ge=-2400, le=2400)
     text_align: Literal['left', 'center', 'right', 'justify'] | None = None
     content_align: Literal['start', 'center', 'end'] | None = None
     justify_content: Literal['start', 'center', 'end', 'space-between', 'space-around', 'space-evenly'] | None = None

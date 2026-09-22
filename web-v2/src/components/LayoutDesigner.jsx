@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+import { freeMovePosition } from '../lib/layoutFreeMove'
 import useLayoutToolScale from './useLayoutToolScale'
 import useLayoutPanelFrame from './useLayoutPanelFrame'
 import LayoutToolGuide from './LayoutToolGuide'
@@ -39,8 +41,12 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [freeMove, setFreeMove] = useState(true)
+  const [guides, setGuides] = useState(null)
   const dragging = useRef(null)
   const preview = useMemo(() => editing && draft ? draft : saved.layout._enabled === false ? {} : saved.layout[device] || {}, [editing, draft, saved.layout, device])
+  const dragPreview = useRef(preview)
+  dragPreview.current = preview
   const selectedKey = selected?.dataset.layoutKey
   useEffect(() => {
     if (!selectedKey) return
@@ -157,12 +163,17 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     observer.observe(root, { childList: true, subtree: true })
     return () => { observer.disconnect(); if (frame !== null) window.cancelAnimationFrame(frame) }
   }, [page, editing])
-  const relocate = (source, destination) => {
+  const relocate = (source, destination, before = null) => {
     if (!source?.dataset.uiOrigin || !destination || !canRelocate(source, destination)) { setMessage('Chọn thành phần trong nhóm nút và khung đích cùng biểu mẫu.'); return }
     const key = source.dataset.layoutKey
     const destinationKey = destination.dataset.uiDropzone
     if (!key || !destinationKey || registry[destinationKey]?.locked || !registry[destinationKey]?.group) return
-    setDraft(current => ({ ...current, [key]: { ...current?.[key], move_to: destinationKey, parent: destinationKey, order: destination.children.length } }))
+    const peers = [...destination.querySelectorAll('[data-ui-origin]')].filter(node => node !== source && node.closest('[data-ui-dropzone]') === destination)
+      .sort((a,b)=>(preview[a.dataset.layoutKey]?.order ?? peersIndex(a))-(preview[b.dataset.layoutKey]?.order ?? peersIndex(b)))
+    function peersIndex(node) { return [...destination.querySelectorAll('[data-ui-origin]')].indexOf(node) }
+    const index = before ? peers.indexOf(before) : peers.length
+    peers.splice(index < 0 ? peers.length : index,0,source)
+    setDraft(current => {const next={...current};peers.forEach((node,order)=>{const k=node.dataset.layoutKey || node.dataset.uiKey;if(k)next[k]={...next[k],parent:destinationKey,order,...(node===source?{move_to:destinationKey,offset_x:0,offset_y:0}:{})}});return next})
     setSelected(source); setMessage('Đã chuyển khung trong bản xem trước. Bấm Lưu cho tất cả để áp dụng.')
   }
   const move = (source, target) => {
@@ -184,20 +195,74 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     setSelected(source); setMessage('Đã đổi vị trí trong bản xem trước. Bấm Lưu để áp dụng cho mọi người.')
   }
   const moveRef = useRef(move); moveRef.current = move
+  const relocateRef = useRef(relocate); relocateRef.current = relocate
   useEffect(() => {
     if (!editing) return undefined
     const candidate = target => target?.closest?.('[data-layout-editable="true"]')
     const down = event => {
-      if (event.target.closest('.layout-designer,.layout-resize-overlay')) return
+      if (event.button !== 0 || event.target.closest('.layout-designer,.layout-resize-overlay')) return
       const element = candidate(event.target)
       if (!element) return
       event.preventDefault(); event.stopPropagation()
       setInlineTarget(null); setSelected(element)
       element.dataset.layoutDragging = 'true'
-      dragging.current = { element, x: event.clientX, y: event.clientY }
+      const key = element.dataset.layoutKey
+      const original = dragPreview.current[key]
+      const rect = element.getBoundingClientRect()
+      const targets = [element.parentElement, ...element.parentElement.children].filter(node => node !== element && !node.contains(element) && !element.contains(node)).map(node => node.getBoundingClientRect()).filter(r => r.width && r.height)
+      targets.push(element.parentElement.getBoundingClientRect())
+      dragging.current = { element, key, original, rect, targets, pointer: event.pointerId, x: event.clientX, y: event.clientY, scrollX: window.scrollX, scrollY: window.scrollY }
     }
+    const dropAt = (event, start) => {
+      const prior = start.element.style.pointerEvents
+      start.element.style.pointerEvents = 'none'
+      let hit
+      try {hit=document.elementFromPoint(event.clientX,event.clientY)} finally {start.element.style.pointerEvents=prior}
+      if (!hit || hit.closest('.layout-designer')) return null
+      const destination=hit.closest('[data-ui-dropzone]')
+      if (!start.element.dataset.uiOrigin || !destination || !canRelocate(start.element,destination) || !registry[destination.dataset.uiDropzone]?.group || registry[destination.dataset.uiDropzone]?.locked) return null
+      const peer=hit.closest('[data-ui-origin]')
+      const current=start.element.closest('[data-ui-dropzone]')
+      // In free mode, same-row gestures remain free positioning; different rows reflow.
+      if(freeMove && destination===current && (!peer || Math.abs(peer.getBoundingClientRect().top-start.rect.top)<8))return null
+      const peers=[...destination.querySelectorAll('[data-ui-origin]')].filter(node=>node!==start.element && node.closest('[data-ui-dropzone]')===destination)
+      const vertical=getComputedStyle(destination).flexDirection==='column'
+      const r=peer?.getBoundingClientRect()
+      const after=r && (vertical ? event.clientY>(r.top+r.bottom)/2 : event.clientX>(r.left+r.right)/2)
+      const ordered=peers.sort((a,b)=>(dragPreview.current[a.dataset.layoutKey]?.order ?? peers.indexOf(a))-(dragPreview.current[b.dataset.layoutKey]?.order ?? peers.indexOf(b)))
+      const before=peer ? (after ? ordered[ordered.indexOf(peer)+1] : peer) : null
+      const rect=destination.getBoundingClientRect()
+      return {destination,before,line:r ? (vertical?{x:r.left,y:after?r.bottom:r.top,width:r.width,height:2}:{x:after?r.right:r.left,y:r.top,width:2,height:r.height}):{x:rect.left,y:rect.top,width:rect.width,height:2}}
+    }
+    const motion = event => {
+      const start = dragging.current
+      if (!start || start.pointer !== event.pointerId) return
+      const dx = event.clientX - start.x, dy = event.clientY - start.y
+      if (!start.moved && Math.hypot(dx,dy) <= 4) return
+      start.moved = true
+      event.preventDefault()
+      start.drop=dropAt(event,start)
+      if (!freeMove) {setGuides({drop:start.drop?.line});return}
+      const result = freeMovePosition(start, dx, dy, window.innerWidth, !event.altKey, window.scrollX, window.scrollY)
+      setDraft(current => ({...current, [start.key]: {...current?.[start.key], offset_x:result.x, offset_y:result.y}}))
+      setGuides({...result.guides,drop:start.drop?.line})
+    }
+    const cancel = () => {
+      const start = dragging.current; dragging.current = null; setGuides(null)
+      if (!start) return
+      delete start.element.dataset.layoutDragging
+      if (start.moved) setDraft(current => {const next={...current};if(start.original)next[start.key]=start.original;else delete next[start.key];return next})
+    }
+    const escape = event => { if(event.key === 'Escape') cancel() }
     const up = event => {
-      const start = dragging.current; dragging.current = null
+      const start = dragging.current
+      if (!start || start.pointer !== event.pointerId) return
+      if (start.moved || Math.hypot(event.clientX-start.x,event.clientY-start.y)>12) {
+        const drop=dropAt(event,start)
+        if(drop){dragging.current=null;delete start.element.dataset.layoutDragging;setGuides(null);relocateRef.current(start.element,drop.destination,drop.before);return}
+      }
+      if (freeMove) { motion(event); dragging.current=null; delete start.element.dataset.layoutDragging; setGuides(null); return }
+      dragging.current = null
       if (!start) return
       delete start.element.dataset.layoutDragging
       const hit = document.elementFromPoint(event.clientX, event.clientY)
@@ -213,13 +278,17 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       setSelected(element); setInlineTarget(element)
     }
     const block = event => { if (!event.target.closest('.layout-designer,.layout-resize-overlay')) { event.preventDefault(); event.stopPropagation() } }
+    document.addEventListener('pointermove', motion, true)
+    document.addEventListener('pointercancel', cancel, true)
+    document.addEventListener('keydown', escape, true)
+    window.addEventListener('blur', cancel)
     document.addEventListener('dblclick', rename, true)
     document.addEventListener('pointerdown', down, true)
     document.addEventListener('pointerup', up, true)
     document.addEventListener('click', block, true)
     document.addEventListener('submit', block, true)
-    return () => { document.removeEventListener('dblclick', rename, true); document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('click', block, true); document.removeEventListener('submit', block, true) }
-  }, [editing])
+    return () => { cancel(); document.removeEventListener('pointermove', motion, true); document.removeEventListener('pointercancel', cancel, true); document.removeEventListener('keydown', escape, true); window.removeEventListener('blur', cancel); document.removeEventListener('dblclick', rename, true); document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('click', block, true); document.removeEventListener('submit', block, true) }
+  }, [editing, freeMove])
   const patch = (key, value) => setDraft(current => {
     const next = { ...current, [selectedKey]: { ...configuration, [key]: value === '' ? undefined : ['label','mode','text_align','content_align','justify_content','align_items'].includes(key) ? value : Number(value) } }
     if (selected?.dataset.layoutLegacy !== selectedKey) delete next[selected?.dataset.layoutLegacy]
@@ -288,7 +357,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         else if(event.target.tagName==='BUTTON')setGuideTool(event.target.getAttribute('aria-label') || event.target.textContent?.trim())
       }}>
       {panelHidden && <button type="button" onClick={()=>setPanelHidden(false)} aria-label="Show bảng công cụ">Show</button>}
-      <div className="layout-panel-content" hidden={panelHidden}>
+      <div className="layout-panel-header" hidden={panelHidden}>
       <div className="layout-panel-frame-toolbar" role="group" aria-label="Điều khiển bảng công cụ">
         <button type="button" disabled={busy || !loaded} aria-pressed={editing} onClick={beginEditing}>Tùy chỉnh</button>
         <button type="button" aria-pressed={tab === 'object'} onClick={()=>chooseTab('object')}>Thành phần</button>
@@ -297,21 +366,19 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         <button type="button" className="layout-panel-drag" {...panelFrame.move} aria-label="Di chuyển bảng công cụ">Di chuyển</button>
         <button type="button" onClick={()=>setPanelHidden(true)}>Hide</button>
       </div>
-      <div className="layout-scale-actions">
+      <div className="layout-fixed-actions"><button type="button" aria-pressed={tab === 'rooms'} onClick={()=>chooseTab('rooms')}>Phòng Live Tour</button><button type="button" aria-pressed={tab === 'columns'} onClick={()=>chooseTab('columns')}>Cấu hình cột</button><button type="button" disabled={busy || !editing} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button><button type="button" disabled={busy || !editing} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button className="layout-save" title="Lưu cho tất cả người dùng" type="button" disabled={busy || !editing} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button></div>
       <label className="layout-tool-scale">Cỡ nút công cụ · {toolScale.value}%<input type="range" aria-label="Cỡ nút công cụ" min="70" max="110" step="5" value={toolScale.value} onChange={event => toolScale.setValue(Number(event.target.value))}/></label>
-      <div className="layout-quick-actions"><button className="layout-save" title="Lưu cho tất cả người dùng" type="button" disabled={busy || !editing} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button><button type="button" disabled={busy || !editing} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button type="button" disabled={busy || !editing} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button></div>
-      </div>
+      <div className="layout-device-toolbar">        {['desktop','mobile'].map(mode=><label key={mode}><input type="checkbox" aria-label={mode === 'desktop' ? 'Desktop' : 'Mobile'} checked={device === mode} disabled={busy} onChange={()=>changeDevice(mode)}/>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</label>)}</div>
       <button type="button" disabled={busy} onClick={close} className="layout-close" aria-label="Đóng Giao diện">Đóng ✕</button>
-      <div className="layout-device-toolbar" role="group" aria-label="Chọn giao diện">
-        <button type="button" aria-pressed={tab === 'rooms'} onClick={()=>chooseTab('rooms')}>Phòng Live Tour</button>
-        <button type="button" aria-pressed={tab === 'columns'} onClick={()=>chooseTab('columns')}>Cấu hình cột</button>
-        {['desktop','mobile'].map(mode=><label key={mode}><input type="checkbox" aria-label={mode === 'desktop' ? 'Desktop' : 'Mobile'} checked={device === mode} disabled={busy} onChange={()=>changeDevice(mode)}/>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</label>)}
       </div>
+      <div className="layout-panel-content" hidden={panelHidden}>
       {tab === 'columns' && <><UICustomizationColumns page={page} items={preview} onChange={(key,width) => { setEditing(true); setDraft(current => ({ ...(current || saved.layout[device]), [key]: { ...(current || saved.layout[device])?.[key], width } })) }}/>{editing && <div className="layout-designer-actions"><button disabled={busy} onClick={save}>Lưu độ rộng cột</button><button disabled={busy} onClick={() => {setEditing(false);setDraft(null)}}>Hủy</button></div>}</>}
       {['rooms','columns'].includes(tab) && <AppearanceSettingsPage user={user} section={tab} onDirtyChange={setAppearanceDirty} />}
       {tab === 'history' && <div><p>Khôi phục chỉ áp dụng cho bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}. Cấu hình phòng và cột Live Tour được quản lý riêng trong hai mục tương ứng.</p>{history.map(item => <div className="layout-history-row" key={item.revision}><span>#{item.revision} · {item.actor} · {formatVeraDateTime(item.created_at)} · {item.device}</span><button disabled={busy} onClick={() => restore(item.revision)}>Khôi phục</button></div>)}{!history.length && <p>Chưa có lịch sử bố cục.</p>}</div>}
       {tab === 'object' && <>
       {!editing ? <>{message && <small role="status">{message}</small>}</> : <>
+        <label className="layout-free-mode"><input type="checkbox" checked={freeMove} onChange={event=>setFreeMove(event.target.checked)}/>Kéo tự do</label>
+        <small>Kéo để đặt vị trí; đường ngang/dọc giúp căn cạnh và tâm. Giữ Alt để bỏ bắt dính; Esc hủy lượt kéo. Thả vào dòng khác theo vạch xanh để chèn và tự dàn lại. Bỏ chọn Kéo tự do nếu chỉ muốn sắp xếp.</small>
         <strong>Bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}</strong>
         <div className="layout-designer-actions layout-element-actions">
           <button type="button" onClick={()=>addElement('box')}>Thêm box</button>
@@ -323,7 +390,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         <div className="layout-designer-actions"><button type="button" disabled={!selectedKey} onClick={() => step(-1)}>← Trước</button><button type="button" disabled={!selectedKey} onClick={() => step(1)}>Sau →</button><button type="button" disabled={!selectedKey} onClick={selectParent}>Chọn khung cha</button></div>
         <LayoutToolGuide tab={tab} tool={guideTool}/>
         {Object.entries(preview).some(([,item])=>item.hidden) && <details><summary>Thành phần đã ẩn</summary>{Object.entries(preview).filter(([,item])=>item.hidden).map(([key])=><button type="button" key={key} onClick={()=>setDraft(current=>({...current,[key]:{...current[key],hidden:false}}))}>Hiện lại: {registry[key]?.label || key}</button>)}</details>}
-        {selectedKey && <><small>Thông số hiện tại: {metrics?.width ?? '—'} × {metrics?.height ?? '—'} px · {metrics?.rawFont || '—'}. Kéo góc phải dưới để đổi kích thước.</small><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small>{(definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input ref={textEditor} type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
+        {selectedKey && <><label>Vị trí X (px)<input type="number" min="-2400" max="2400" value={configuration.offset_x ?? 0} onChange={event=>patch('offset_x',event.target.value)}/></label><label>Vị trí Y (px)<input type="number" min="-2400" max="2400" value={configuration.offset_y ?? 0} onChange={event=>patch('offset_y',event.target.value)}/></label><small>Thông số hiện tại: {metrics?.width ?? '—'} × {metrics?.height ?? '—'} px · {metrics?.rawFont || '—'}. Kéo góc phải dưới để đổi kích thước.</small><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small>{(definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input ref={textEditor} type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
         {descendants.length > 0 && <label>Thành phần bên trong<select aria-label="Thành phần bên trong" value="" onChange={event=>{const node=descendants.find(item=>item.dataset.layoutKey===event.target.value);if(node){setSelected(node);setInlineTarget(null)}}}><option value="">Chọn thành phần con ({descendants.length})</option>{descendants.map((node,index)=><option key={`${node.dataset.layoutKey}-${index}`} value={node.dataset.layoutKey}>{node.tagName.toLowerCase()} · {node.getAttribute('aria-label') || node.textContent?.trim().slice(0,60) || node.getAttribute('placeholder') || node.tagName}</option>)}</select></label>}
         {configuration.custom_kind && <label>Nội dung<textarea ref={textEditor} aria-label="Nội dung text" maxLength={2000} value={configuration.custom_text || ''} onChange={event=>setDraft(current=>({...current,[selectedKey]:{...current[selectedKey],custom_text:event.target.value}}))}/></label>}
         <>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ thành phần<input type="number" min="12" max="24" value={configuration.font_size ?? metrics?.appearance?.font_size ?? ''} onChange={e => patch('font_size', e.target.value)}/></label></>
@@ -343,6 +410,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       </div>
       {!panelHidden && <button type="button" className="layout-panel-resize" {...panelFrame.resize} aria-label="Kéo đổi kích thước bảng công cụ">Resize</button>}
     </aside>}
+    {editing && guides && createPortal(<div className="layout-alignment-guides" aria-hidden="true"><>{Number.isFinite(guides.x) && <div className="layout-guide-vertical" style={{left:guides.x}}/>}{Number.isFinite(guides.y) && <div className="layout-guide-horizontal" style={{top:guides.y}}/>}{guides.drop && <div className="layout-drop-line" style={{left:guides.drop.x,top:guides.drop.y,width:guides.drop.width,height:guides.drop.height}}/>}</></div>, document.body)}
     {editing && selectedKey && <LayoutResizeOverlay selected={selected} onResize={resizeSelection} onMetrics={refreshMetrics}/>}
   </>
 }
