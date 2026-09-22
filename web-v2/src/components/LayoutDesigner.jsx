@@ -9,6 +9,7 @@ import AppearanceSettingsPage from '../pages/AppearanceSettingsPage'
 import { formatVeraDateTime } from '../lib/veraDate'
 
 export default function LayoutDesigner({ user, page, open = false, onClose, initialTab }) {
+  const [inlineTarget, setInlineTarget] = useState(null)
   const [tab, setTab] = useState(initialTab || 'order')
   const [history, setHistory] = useState([])
   const [appearanceDirty, setAppearanceDirty] = useState(false)
@@ -78,7 +79,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     window.addEventListener('focus', refresh)
     return () => { active = false; window.clearInterval(interval); window.removeEventListener('focus', refresh) }
   }, [editing, admin])
-  useEffect(() => { setSelected(null) }, [page])
+  useEffect(() => { setSelected(null); setInlineTarget(null) }, [page, editing, tab, device])
   useEffect(() => {
     const root = document.querySelector('.app-shell')
     if (!root) return undefined
@@ -150,15 +151,24 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       const target = candidate(document.elementFromPoint(event.clientX, event.clientY))
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) moveRef.current(start.element, target)
     }
+    const rename = event => {
+      if (event.target.closest('.layout-designer')) return
+      const element = candidate(event.target)
+      const entry = registry[element?.dataset.layoutKey?.split('--')[0]]
+      if (tab !== 'labels' || !element || !(entry?.label || entry?.dynamic_label)) return
+      event.preventDefault(); event.stopPropagation()
+      setSelected(element); setInlineTarget(element)
+    }
     const block = event => { if (!event.target.closest('.layout-designer')) { event.preventDefault(); event.stopPropagation() } }
+    document.addEventListener('dblclick', rename, true)
     document.addEventListener('pointerdown', down, true)
     document.addEventListener('pointerup', up, true)
     document.addEventListener('click', block, true)
     document.addEventListener('submit', block, true)
-    return () => { document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('click', block, true); document.removeEventListener('submit', block, true) }
-  }, [editing])
+    return () => { document.removeEventListener('dblclick', rename, true); document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('click', block, true); document.removeEventListener('submit', block, true) }
+  }, [editing, tab])
   const patch = (key, value) => setDraft(current => {
-    const next = { ...current, [selectedKey]: { ...configuration, [key]: value === '' ? undefined : ['label','mode'].includes(key) ? value : Number(value) } }
+    const next = { ...current, [selectedKey]: { ...configuration, [key]: value === '' ? undefined : ['label','mode','text_align','content_align','justify_content','align_items'].includes(key) ? value : Number(value) } }
     if (selected?.dataset.layoutLegacy !== selectedKey) delete next[selected?.dataset.layoutLegacy]
     return next
   })
@@ -195,31 +205,52 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   }
   return <>
     <style>{layoutCss(preview)}{editing && selectedKey ? `[data-layout-key="${selectedKey}"]{outline:3px solid #c49524!important;outline-offset:2px}` : ''}</style>
-    {admin && open && <aside className={`layout-designer ${['rooms','columns','history'].includes(tab) ? 'layout-designer-wide' : ''}`} aria-label="Tùy chỉnh bố cục Admin">
-      <button type="button" disabled={busy} onClick={close} aria-label="Đóng chỉnh bố cục">Đóng ✕</button>
-      <strong>Chỉnh bố cục</strong>
+    {admin && open && <aside className={`layout-designer ${['rooms','columns','history'].includes(tab) ? 'layout-designer-wide' : ''}`} aria-label="Giao diện Admin">
+      <button type="button" disabled={busy} onClick={close} className="layout-close" aria-label="Đóng Giao diện">Đóng ✕</button>
+      <strong className="layout-center-title">Giao diện</strong>
       {!editing && <button type="button" disabled={busy || !loaded} onClick={async () => {
         if (!window.confirm('Thay đổi áp dụng bố cục tùy chỉnh cho tất cả người dùng? Cấu hình đã lưu vẫn được giữ.')) return
         setBusy(true)
         try { setSaved(await veraApi.saveUiLayout({ device, revision: saved.revision, items: saved.layout[device] || {}, enabled: saved.layout._enabled === false })); setMessage('Đã cập nhật chế độ áp dụng bố cục.') }
         catch(error) { setMessage(error.message) } finally { setBusy(false) }
       }}>{saved.layout._enabled === false ? 'Bật lại bố cục đã lưu' : 'Tạm dùng bố cục mặc định'}</button>}
-      <div className="layout-center-tabs" role="tablist" aria-label="Chỉnh bố cục">{[['order','Sắp xếp'],['buttons','Nút bấm'],['labels','Tên hiển thị'],['columns','Bảng & cột'],['rooms','Phòng Live Tour'],['history','Lịch sử']].map(([key,label]) => <button type="button" role="tab" key={key} aria-selected={tab === key} onClick={() => chooseTab(key)}>{label}</button>)}</div>
+      <div className="layout-center-tabs" role="tablist" aria-label="Giao diện">{[['order','Sắp xếp'],['buttons','Nút bấm'],['labels','Tên hiển thị'],['columns','Bảng & cột'],['rooms','Phòng Live Tour'],['history','Lịch sử']].map(([key,label]) => <button type="button" role="tab" key={key} aria-selected={tab === key} onClick={() => chooseTab(key)}>{label}</button>)}</div>
       {tab === 'columns' && <><UICustomizationColumns page={page} items={preview} onChange={(key,width) => { setEditing(true); setDraft(current => ({ ...(current || saved.layout[device]), [key]: { ...(current || saved.layout[device])?.[key], width } })) }}/>{editing && <div className="layout-designer-actions"><button disabled={busy} onClick={save}>Lưu độ rộng cột</button><button disabled={busy} onClick={() => {setEditing(false);setDraft(null)}}>Hủy</button></div>}</>}
       {['rooms','columns'].includes(tab) && <AppearanceSettingsPage user={user} section={tab} onDirtyChange={setAppearanceDirty} />}
       {tab === 'history' && <div><p>Khôi phục chỉ áp dụng cho bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}. Cấu hình phòng và cột Live Tour được quản lý riêng trong hai mục tương ứng.</p>{history.map(item => <div className="layout-history-row" key={item.revision}><span>#{item.revision} · {item.actor} · {formatVeraDateTime(item.created_at)} · {item.device}</span><button disabled={busy} onClick={() => restore(item.revision)}>Khôi phục</button></div>)}{!history.length && <p>Chưa có lịch sử bố cục.</p>}</div>}
       {['order','buttons','labels'].includes(tab) && <>
+      {tab === 'labels' && <small>Nhấp đúp vào menu, tab hoặc nút trên trang để sửa tên tại chỗ. Trên điện thoại: chạm chọn rồi sửa ô Tên hiển thị. Bấm Lưu cho tất cả để áp dụng.</small>}
       <small>Mở trang cần chỉnh trước, sau đó chọn thành phần trên trang. Cấu hình lưu dùng chung; Mobile và Desktop độc lập.</small>
-      {!editing ? <><button type="button" disabled={!loaded} onClick={() => { setDraft({ ...saved.layout[device] }); setEditing(true); setMessage('Chọn một thành phần. Kéo thả trong cùng nhóm để đổi vị trí.') }}>Chỉnh bố cục · {device === 'mobile' ? 'Mobile' : 'Desktop'}</button>{message && <small role="status">{message}</small>}</> : <>
+      {!editing ? <><button type="button" disabled={!loaded} onClick={() => { setDraft({ ...saved.layout[device] }); setEditing(true); setMessage('Chọn một thành phần. Kéo thả trong cùng nhóm để đổi vị trí.') }}>Chỉnh giao diện · {device === 'mobile' ? 'Mobile' : 'Desktop'}</button>{message && <small role="status">{message}</small>}</> : <>
         <strong>Bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}</strong><small>Chọn menu, tab, nút hoặc khung; kéo thả trong cùng nhóm. Bản còn lại được giữ riêng.</small>
         {selectedKey && <><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small><div className="layout-designer-actions"><button type="button" onClick={() => step(-1)}>← Trước</button><button type="button" onClick={() => step(1)}>Sau →</button><button type="button" onClick={selectParent}>Chọn khung cha</button></div>{tab === 'labels' && (definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
         {tab === 'buttons' && <><small>Chọn khung cha của nhóm nút để chỉnh số dòng hoặc gom nhóm.</small>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ nút<input type="number" min="12" max="24" value={configuration.font_size ?? ''} onChange={e => patch('font_size', e.target.value)}/></label></>}
-        <label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; delete next[selectedKey]; delete next[selected?.dataset.layoutLegacy]; return next })}>Khôi phục thành phần</button></>}
-        <div className="layout-designer-actions"><button type="button" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu cho tất cả'}</button><button type="button" disabled={busy} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button type="button" disabled={busy} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button></div>
+        <fieldset className="layout-align-tools"><legend>Căn chỉnh</legend>
+        <label>Căn chữ<select value={configuration.text_align || ''} onChange={e => patch('text_align', e.target.value)}><option value="">Mặc định</option>{[['left','Trái'],['center','Giữa'],['right','Phải'],['justify','Đều hai bên']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>Căn dọc nội dung<select value={configuration.content_align || ''} onChange={e => patch('content_align', e.target.value)}><option value="">Mặc định</option>{[['start','Trên'],['center','Giữa'],['end','Dưới']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        {definition?.group && <><small>Căn nhóm theo trục của bố cục Flex/Grid hiện tại.</small><label>Phân bố nhóm<select value={configuration.justify_content || ''} onChange={e => patch('justify_content', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['space-between','Giãn hai đầu'],['space-around','Giãn quanh'],['space-evenly','Giãn đều']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Căn thành phần<select value={configuration.align_items || ''} onChange={e => patch('align_items', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['stretch','Kéo giãn']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Khoảng cách (px)<input type="number" min="0" max="100" value={configuration.gap ?? ''} onChange={e => patch('gap', e.target.value)}/></label></>}
+        </fieldset><label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; delete next[selectedKey]; delete next[selected?.dataset.layoutLegacy]; return next })}>Khôi phục thành phần</button></>}
+        <div className="layout-designer-actions"><button className="layout-save" type="button" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu cho tất cả'}</button><button type="button" disabled={busy} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button type="button" disabled={busy} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button></div>
         {message && <small role="status">{message}</small>}
       </>}
       </>}
       {!editing && ['rooms','columns','history'].includes(tab) && message && <small role="status">{message}</small>}
+    {inlineTarget && editing && tab === 'labels' && <InlineLabelEditor key={inlineTarget.dataset.layoutKey} target={inlineTarget} value={configuration.label ?? definition?.label ?? inlineTarget.textContent?.trim() ?? ''} onCommit={value => { patch('label', value.trim()); setInlineTarget(null) }} onCancel={() => setInlineTarget(null)} />}
     </aside>}
   </>
+}
+
+function InlineLabelEditor({ target, value, onCommit, onCancel }) {
+  const input = useRef(null)
+  const cancelled = useRef(false)
+  const rect = target.getBoundingClientRect()
+  useEffect(() => { input.current?.focus(); input.current?.select() }, [])
+  return <input ref={input} className="layout-inline-label" aria-label="Sửa tên trực tiếp" maxLength={100} defaultValue={value}
+    style={{ position: 'fixed', left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(Math.max(rect.width, 180), window.innerWidth - 16) - 8)), top: Math.max(8, Math.min(rect.top, window.innerHeight - 60)), width: Math.min(Math.max(rect.width, 180), window.innerWidth - 16) }}
+    onBlur={event => { if (!cancelled.current) onCommit(event.target.value) }}
+    onKeyDown={event => {
+      if (event.nativeEvent.isComposing) return
+      if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() }
+      if (event.key === 'Escape') { event.preventDefault(); cancelled.current = true; onCancel() }
+    }} />
 }

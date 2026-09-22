@@ -15,3 +15,25 @@
 .ui-more-actions>div{position:absolute;right:0;top:100%;z-index:50;background:white;border:1px solid #365f50;border-radius:8px;padding:8px;display:grid;gap:6px;width:min(260px,80vw);max-height:60vh;overflow:auto}
 [data-layout-dragging=true]{outline:3px solid #b88616!important;opacity:.65}
 .layout-designer button:focus-visible,.ui-more-actions summary:focus-visible{outline:3px solid #b88616;outline-offset:2px}
+
+/* Scoped appearance center surfaces and tactile controls. */
+.layout-designer{box-sizing:border-box;width:390px;max-width:calc(100vw - 24px);gap:12px;padding:16px;background:linear-gradient(135deg,#fffffffA,#f4f7f6f5);border:1px solid #16653440;border-radius:16px;box-shadow:0 10px 30px -5px #0002,0 4px 12px -2px #16653418;color:#1a3028;scrollbar-gutter:stable}
+.layout-designer-wide{width:min(1050px,calc(100vw - 24px))}
+.layout-designer>*{min-width:0}
+.layout-designer .layout-center-title{font-size:18px;font-weight:700;color:#0f4c3a;letter-spacing:-.2px;text-shadow:0 1px 2px #0001}
+.layout-designer small,.layout-designer p{line-height:1.5;color:#556b62;overflow-wrap:anywhere}
+.layout-designer button{min-height:40px;max-width:100%;padding:8px 12px;border:1.5px solid #286345;border-radius:10px;background:#fff;color:#1b5e20;font-weight:600;white-space:normal;overflow-wrap:anywhere;box-shadow:0 3px 0 #134216,0 4px 8px #0001;transition:transform .2s ease,box-shadow .2s ease,background-color .2s ease}
+.layout-designer button:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.layout-designer button:not(:disabled):active{transform:translateY(2px);box-shadow:0 1px 0 #134216,0 2px 4px #0001}
+.layout-designer .layout-center-tabs button[aria-selected=true],.layout-designer button.layout-save{background:linear-gradient(135deg,#1b5e20,#0f3813);color:#fff;border-color:#0f3813;box-shadow:inset 0 2px 4px #ffffff30,0 4px 10px #1b5e2040}
+.layout-designer .layout-close{width:100%;border-radius:12px}
+.layout-designer input:not([type=checkbox]):not([type=radio]),.layout-designer select{box-sizing:border-box;min-width:0;max-width:100%;min-height:42px;padding:8px 12px;background:#fff;border:1.5px solid #8abfa3;border-radius:10px;color:#334155;box-shadow:inset 0 1px 3px #0001}
+.layout-designer input:focus-visible,.layout-designer select:focus-visible,.layout-designer button:focus-visible{outline:3px solid #b88616;outline-offset:3px}
+.layout-designer .layout-inline-label{z-index:10002;border:2px dashed #1b5e20!important;font-size:16px;box-shadow:0 8px 24px #0003!important}
+.layout-designer .layout-center-tabs{grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-flow:row;gap:8px;padding-bottom:4px}
+.layout-designer-actions{gap:9px;padding-bottom:3px}
+@media(hover:hover) and (prefers-reduced-motion:no-preference){.layout-designer button:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 5px 0 #134216,0 8px 15px #1b5e2026}.layout-designer button:not(:disabled):active{transform:translateY(2px)}}
+@media(max-width:480px){.layout-designer{left:8px;bottom:8px;max-width:calc(100vw - 16px);padding:12px;max-height:75dvh}.layout-designer-wide{max-height:85dvh}.layout-designer input,.layout-designer select{font-size:16px}.layout-designer label{grid-template-columns:minmax(0,1fr) minmax(90px,120px)}.layout-designer-actions>button{flex:1 1 auto}}
+@media(prefers-reduced-motion:reduce){.layout-designer button{transition:none;transform:none!important}}
+
+.layout-align-tools{min-width:0;margin:0;padding:12px;display:grid;gap:10px;border:1px solid #8abfa3;border-radius:12px}.layout-align-tools legend{font-weight:700;color:#0f4c3a}

@@ -1,4 +1,7 @@
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
+const registry = JSON.parse(readFileSync(new URL('../../vera_ui_registry.json', import.meta.url)))
+const labelKey = Object.keys(registry).find(key => registry[key].tag === 'button' && registry[key].label && !registry[key].locked)
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { createRequire } from 'node:module'
@@ -26,13 +29,13 @@ test('Admin drags within a group, saves desktop only, and another user receives 
   const { createRoot } = await import('react-dom/client')
   const root = createRoot(document.querySelector('#root'))
   let closeCalls = 0
-  const screen = (role, open = false) => React.createElement('div', { className:'app-shell' }, React.createElement('nav',{ 'data-vera-node':'nav',style:{display:'flex'} }, ['first','second'].map(id => React.createElement('button',{ key:id, id,'data-vera-node':'button','data-vera-item':id,onClick:()=>actionCalls++ },id))),React.createElement(Designer,{user:{role},page:'settings',open,onClose:()=>{closeCalls++;root.render(screen(role,false))}}))
+  const screen = (role, open = false) => React.createElement('div', { className:'app-shell' }, React.createElement('nav',{ 'data-vera-node':'nav',style:{display:'flex'} }, ['first','second'].map(id => React.createElement('button',{ key:id, id,'data-ui-key':id === 'first' ? labelKey : undefined,'data-vera-node':'button','data-vera-item':id,onClick:()=>actionCalls++ },id))),React.createElement(Designer,{user:{role},page:'settings',open,onClose:()=>{closeCalls++;root.render(screen(role,false))}}))
   const click = async text => act(async () => [...document.querySelectorAll('.layout-designer button')].find(el=>el.textContent.includes(text)).click())
   try {
     await act(async()=>root.render(screen('admin')))
     assert.equal(document.querySelector('.layout-designer'),null,'closed by default')
     await act(async()=>root.render(screen('admin',true)))
-    await click('Chỉnh bố cục')
+    await click('Chỉnh giao diện')
     const first=document.querySelector('#first'), second=document.querySelector('#second')
     document.elementFromPoint=()=>second
     await act(()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
@@ -44,6 +47,22 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     assert.equal(writes[0].device,'desktop')
     assert.equal(writes[0].items[first.dataset.layoutKey].order,1)
     assert.equal(writes[0].items[second.dataset.layoutKey].order,0)
+    assert.deepEqual(server.layout.mobile,{'l-mobile':{width:80}})
+    await click('Tên hiển thị')
+    await click('Chỉnh giao diện')
+    await act(()=>first.dispatchEvent(new window.MouseEvent('dblclick',{bubbles:true})))
+    let editor=document.querySelector('[aria-label="Sửa tên trực tiếp"]')
+    assert.ok(editor)
+    editor.value='Tên mới'
+    await act(()=>editor.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})))
+    assert.equal(document.querySelector('[aria-label="Sửa tên trực tiếp"]'),null)
+    await act(()=>first.dispatchEvent(new window.MouseEvent('dblclick',{bubbles:true})))
+    editor=document.querySelector('[aria-label="Sửa tên trực tiếp"]')
+    editor.value='Tên dùng chung'
+    await act(()=>editor.blur())
+    await click('Lưu cho tất cả')
+    assert.equal(writes.at(-1).items[labelKey].label,'Tên dùng chung')
+    assert.equal(actionCalls,0)
     assert.deepEqual(server.layout.mobile,{'l-mobile':{width:80}})
     await click('Đóng')
     assert.equal(closeCalls,1)
