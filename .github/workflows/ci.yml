@@ -1155,7 +1155,7 @@ jobs:
         run: npm ci
 
       - name: Verify inline leave editing and role policies
-        run: npm run test:leave-edit
+        run: npm run test:leave-edit && node --test tests/autoSave.test.mjs tests/profileAutoSave.test.mjs
 
       - name: Verify authentication transport and session recovery
         run: node --test tests/authRecovery.test.mjs tests/authSessionTransport.test.mjs

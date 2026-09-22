@@ -169,3 +169,12 @@ body .live-tour-page .tour-table tbody tr > :is(td, th) {
 body .live-tour-page .tour-table thead :is(th, td) {
   border: 2px solid #264f3c !important;
 }
+
+/* Staff shift totals are independent of table filters. */
+.staff-shift-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.staff-shift-summary .metric-card { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; border: 1px solid #386452; }
+.staff-shift-summary .shift-2 { background: #fff8e7; border-color: #a77b25; }
+.staff-shift-summary strong { font-size: 1.7rem; }
+.autosave-fields { display: contents; }
+@media (max-width: 900px) { .staff-shift-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .staff-shift-summary { gap: 6px; } .staff-shift-summary .metric-card { padding: 10px; font-size: .8rem; } }

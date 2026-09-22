@@ -1,5 +1,6 @@
+import useAutoSave from '../hooks/useAutoSave'
 import { BellRing, CheckCircle2, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { refreshProfileReferenceData } from '../lib/profileReferenceRefresh'
 import EmployeeIdentityPanel from './EmployeeIdentityPanel'
@@ -18,6 +19,11 @@ const toVnDate = (value) => {
 export default function ProfilePage({ user, onPasswordChanged, forcePasswordChange = false }) {
   const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', gender: '', ethnicity: '', phone: '', email: '', address: '', province: '', ward: '', address_detail: '', bank_account: '', bank_name: '', cccd_number: '', cccd_issue_date: '', cccd_issue_place: '' })
   const [references, setReferences] = useState({ provinces: [], wards: [], banks: [], bank_options: [] })
+  const formRef = useRef(null)
+  const savingRef = useRef(false)
+  const [baseline, setBaseline] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordDone, setPasswordDone] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -31,7 +37,11 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
     setLoading(true)
     try {
       const [result, catalogs] = await Promise.all([veraApi.profile(), veraApi.profileReferenceData()])
-      setForm((current) => ({ ...current, ...result.profile, birth_date: toInputDate(result.profile.birth_date), cccd_issue_date: toInputDate(result.profile.cccd_issue_date), current_password: '', new_password: '' }))
+      setForm((current) => {
+        const next = { ...current, ...result.profile, birth_date: toInputDate(result.profile.birth_date), cccd_issue_date: toInputDate(result.profile.cccd_issue_date), current_password: '', new_password: '' }
+        setBaseline(JSON.stringify(next))
+        return next
+      })
       setAdminUsername(result.profile.username || '')
       let wards = []
       const province = (catalogs.provinces || []).find((item) => item.name === result.profile.province)
@@ -47,11 +57,15 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   }, [])
 
   const submit = async (event) => {
-    event.preventDefault(); setSaving(true); setNotice(null)
+    event?.preventDefault()
+    if (savingRef.current || passwordDone || !formRef.current?.checkValidity()) return
+    savingRef.current = true
+    setSaving(true); setNotice(null)
     try {
       if ((forcePasswordChange || form.new_password) && !form.current_password) {
         throw new Error('Chỉ khi đổi mật khẩu mới cần nhập Mật khẩu hiện tại.')
       }
+      if ((forcePasswordChange || form.new_password) && form.new_password !== confirmPassword) throw new Error('Xác nhận mật khẩu mới chưa khớp.')
       const payload = { ...form, birth_date: toVnDate(form.birth_date), cccd_issue_date: toVnDate(form.cccd_issue_date) }; delete payload.bank_code
       delete payload.district
       if (!forcePasswordChange && !form.new_password) {
@@ -61,11 +75,20 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       const result = await veraApi.updateProfile(payload)
       setNotice({ status: 'success', message: result.message })
       window.dispatchEvent(new CustomEvent('vera-profile-updated'))
-      if (result.password_changed) window.setTimeout(onPasswordChanged, 1200)
-      else await load()
+      setBaseline(JSON.stringify(form))
+      if (result.password_changed) {
+        setPasswordDone(true)
+        setForm((current) => ({ ...current, current_password: '', new_password: '' }))
+        setConfirmPassword('')
+        window.setTimeout(onPasswordChanged, 1200)
+      }
     } catch (error) { setNotice({ status: 'error', message: `KHÔNG THÀNH CÔNG (${error.message})` }) }
-    finally { setSaving(false) }
+    finally { savingRef.current = false; setSaving(false) }
   }
+  const passwordComplete = !(forcePasswordChange || form.new_password || form.current_password || confirmPassword)
+    || Boolean(form.current_password && form.new_password.length >= 8 && form.new_password === confirmPassword)
+  useAutoSave({ signature: JSON.stringify(form) !== baseline ? JSON.stringify([form, confirmPassword]) : '', enabled: !loading && !saving && !passwordDone && passwordComplete && JSON.stringify(form) !== baseline, save: submit, rootRef: formRef, lockRef: savingRef })
+
   const togglePush = async () => {
     setPushBusy(true); setNotice(null)
     try {
@@ -142,7 +165,8 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
     <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật hồ sơ mà không bắt buộc thay đổi mật khẩu.'}</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button></div>
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}
     <section className="panel profile-panel">
-      <form className="profile-form" onSubmit={submit}>
+      <form ref={formRef} className="profile-form" onSubmit={submit}>
+        <p className="wide-field" role="status">{saving ? 'Đang tự lưu…' : 'Thông tin được tự lưu khi nhập xong và rời ô. Đổi mật khẩu cần nhập đủ mật khẩu hiện tại, mật khẩu mới và xác nhận.'}</p>
         <div className="profile-field-section wide-field">Thông tin cá nhân</div>
         <label>Họ và tên đầy đủ<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
         <label>Ngày sinh<VeraDateInput aria-label="Ngày sinh" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} /></label>
@@ -163,10 +187,11 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <label>Mã ngân hàng tự động<input value={form.bank_code || ''} readOnly aria-label="Mã ngân hàng tự động" placeholder="Tự động: VCB / ACB / TCB…" /></label>
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value.replace(/\D/g, '').slice(0, 19) })} inputMode="numeric" /></label>
         <div className="profile-password-box wide-field">
-          <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3><p>{forcePasswordChange ? 'Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.' : 'Để trống cả hai ô nếu chỉ cập nhật hồ sơ. Hệ thống không yêu cầu đổi mật khẩu khi lưu thông tin cá nhân.'}</p>
+          <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3><p>{forcePasswordChange ? 'Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.' : 'Để trống các ô mật khẩu nếu chỉ cập nhật hồ sơ. Hệ thống không yêu cầu đổi mật khẩu khi lưu thông tin cá nhân.'}</p>
           <div className="profile-password-grid">
             <label>Mật khẩu hiện tại<input type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required={passwordRequired} autoComplete="current-password" /></label>
             <label>Mật khẩu mới<input type="password" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Để trống nếu không đổi" autoComplete="new-password" /></label>
+            <label>Xác nhận mật khẩu mới<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required={passwordRequired} autoComplete="new-password" /></label>
           </div>
         </div>
         <EmployeeIdentityPanel username={user?.employee_username || ''} className="wide-field" onIdentityExtracted={(fields) => setForm((current) => ({

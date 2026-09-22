@@ -5,6 +5,8 @@ read or written by these routes.  The browser never receives passwords or
 token hashes and never writes the employees table directly.
 """
 from vera_search_text import search_text_matches
+from vera_shift_assignment import scheduled_shift
+from vera_web_v2_live_tour_roster import key as shift_key
 
 from datetime import date, datetime
 from io import BytesIO
@@ -245,6 +247,21 @@ def _shift_catalog(conn, employee_rows: list[dict[str, Any]]) -> dict[str, list[
         if shift and shift not in output.setdefault(department, []):
             output[department].append(shift)
     return output
+
+
+def staff_shift_summary(rows, day, definitions=None):
+    summary = {f"ca_{shift}_{kind}": 0 for shift in (1, 2) for kind in ("regular", "fixed", "total")}
+    for row in rows:
+        if row.get("role") not in {"leader", "nhanvien"} or row.get("employment_status") != "Đang làm việc":
+            continue
+        shift = scheduled_shift({**row, "shift_definitions": definitions or []}, day)
+        if shift not in {"Ca 1", "Ca 2"}:
+            continue
+        label = shift_key(f"{row.get('work_shift', '')} {row.get('rotation_cycle', '')}")
+        kind = "fixed" if "co dinh" in label or "khong doi" in label else "regular"
+        summary[f"ca_{shift[-1]}_{kind}"] += 1
+        summary[f"ca_{shift[-1]}_total"] += 1
+    return summary
 
 
 def _employee_payload(row: dict[str, Any], status: str) -> dict[str, Any]:
@@ -575,7 +592,9 @@ def install_staff_routes(
             "temporary": sum(row["employment_status"] == STATUS_OPTIONS[1] for row in all_public),
             "left": sum(row["employment_status"] == STATUS_OPTIONS[2] for row in all_public),
         }
+        definitions = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='shift_definitions' LIMIT 1")).scalar_one_or_none()
         return {
+            "shift_summary": staff_shift_summary(all_public, datetime.now(vn_tz).date(), definitions if isinstance(definitions, list) else []),
             "employees": public_rows,
             "summary": summary,
             "permissions": permissions(conn, ident),
