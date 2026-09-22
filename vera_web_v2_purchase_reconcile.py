@@ -439,7 +439,12 @@ def install_purchase_reconcile_routes(
             require_feature(conn, ident, REVENUE_FEATURE)
 
         start, end = _resolve_range(preset, start_date, end_date)
-        purchase_all = _cached_purchase_rows(norm)
+        from vera_purchase_store import server_reconcile_rows
+        with engine_instance().connect() as conn:
+            purchase_all = server_reconcile_rows(conn)
+        server_source = purchase_all is not None
+        if purchase_all is None:
+            purchase_all = _cached_purchase_rows(norm)
         with engine_instance().connect() as conn:
             ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
         for row in ledger_all:
@@ -471,7 +476,7 @@ def install_purchase_reconcile_routes(
             "end_date": end.isoformat(),
             "start_date_label": _fmt_date(start),
             "end_date_label": _fmt_date(end),
-            "purchase_source": "BaoCaoMuaHang.xlsb",
+            "purchase_source": "Server VERA SPA · Nhập mua" if server_source else "BaoCaoMuaHang.xlsb",
             "purchase_worksheet": PURCHASE_REPORT_WORKSHEET,
             "ledger_source": "Server VERA SPA",
             "ledger_worksheet": "vera_revenue_entry",

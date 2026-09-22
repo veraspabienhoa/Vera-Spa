@@ -163,6 +163,13 @@ function liveTourExportParams(kind, query = {}) {
 }
 
 export const veraApi = {
+  purchases: params => request(`/v2/purchases?${new URLSearchParams(params)}`),
+  createPurchases: body => request('/v2/purchases', { method: 'POST', body: JSON.stringify(body) }),
+  editPurchase: (id, body) => request(`/v2/purchases/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deletePurchase: (id, revision) => request(`/v2/purchases/${id}?revision=${revision}`, { method: 'DELETE' }),
+  importPurchases: (file, mode) => upload('/v2/purchases/import', file, { mode, request_id: crypto.randomUUID() }),
+  exportPurchases: params => download(`/v2/purchases/export.xlsx?${new URLSearchParams(params)}`, 'NhapMua.xlsx'),
+  purchaseAudit: () => request('/v2/purchases/audit'),
   products: () => request('/v2/products'),
   saveProduct: (body) => request(body.id ? `/v2/products/${encodeURIComponent(body.id)}` : '/v2/products', { method:body.id ? 'PUT' : 'POST', body:JSON.stringify(body) }),
   uiLayoutHistory: () => request('/v2/ui-layout/history'),

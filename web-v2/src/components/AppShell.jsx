@@ -22,6 +22,7 @@ const items = [
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
+  { id: 'purchases', label: 'Nhập mua', icon: CircleDollarSign, ready: true, permission: 'purchase_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'training', label: 'Đào tạo & đánh giá', icon: ClipboardList, ready: true, permission: 'training_view' },
   { id: 'contract-1', label: 'Hợp đồng', icon: FileSignature, ready: true, permission: 'contract_1_view' },

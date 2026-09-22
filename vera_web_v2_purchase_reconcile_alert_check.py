@@ -49,8 +49,12 @@ def install_purchase_reconcile_alert_check(
         end = today
 
         try:
-            purchase_content = base._drive_download_purchase_report()
-            purchase_all = base._parse_purchase_report(purchase_content, norm)
+            from vera_purchase_store import server_reconcile_rows
+            with engine_instance().connect() as conn:
+                purchase_all = server_reconcile_rows(conn)
+            if purchase_all is None:
+                purchase_content = base._drive_download_purchase_report()
+                purchase_all = base._parse_purchase_report(purchase_content, norm)
             revenue_values = base._read_revenue_values(google_client, engine_instance)
             ledger_all = base._parse_revenue_input(revenue_values, norm)
             purchase_rows = base._filtered(purchase_all, start, end)
