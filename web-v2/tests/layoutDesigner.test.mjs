@@ -8,6 +8,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
+import { startSearchableDropdowns } from '../src/lib/searchableDropdowns.js'
 
 const built = await build({ entryPoints: [fileURLToPath(new URL('../src/components/LayoutDesigner.jsx', import.meta.url))], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime'], loader: { '.css': 'empty' }, plugins: [{ name: 'api', setup(b) {
   b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
@@ -56,8 +57,37 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     await act(()=>document.querySelector('[aria-label="Kéo đổi kích thước bảng công cụ"]').dispatchEvent(new window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,shiftKey:true})))
     assert.equal(JSON.parse(localStorage.getItem('vera-layout-panel-frame-v1')).width,380)
     await click('Tùy chỉnh')
+    assert.ok(document.querySelector('.layout-device-toolbar .layout-close'))
+    assert.doesNotMatch(document.querySelector('.layout-designer').textContent,/Kéo để đặt vị trí|Shift\/Ctrl|Đã chọn: 0|Bấm chọn thành phần, section/)
+    // Floating dropdowns must remain interactive while page actions are blocked.
+    const stopDropdowns = startSearchableDropdowns(document)
+    for (const width of [1200,390]) {
+      Object.defineProperty(window,'innerWidth',{value:width,configurable:true})
+      const select=document.querySelector('[aria-label="Căn theo"]')
+      await act(()=>select.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,cancelable:true})))
+      const popup=document.querySelector('[data-layout-inspector-popup="true"]')
+      assert.ok(popup)
+      const option=[...popup.querySelectorAll('[role="option"]')].find(node=>node.textContent.includes('Align to Slide'))
+      await act(()=>{option.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,cancelable:true}));option.click()})
+      assert.equal(select.value,'page')
+      assert.equal(document.querySelector('.vera-searchable-dropdown'),null)
+      await act(()=>select.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,cancelable:true})))
+      await act(()=>[...document.querySelectorAll('.vera-searchable-dropdown [role="option"]')].find(node=>node.textContent.includes('Align Selected Objects')).click())
+      assert.equal(select.value,'selection')
+    }
+    stopDropdowns()
+    Object.defineProperty(window,'innerWidth',{value:1024,configurable:true})
+    assert.ok([...document.querySelectorAll('.layout-multi-tools button')].some(node=>node.textContent.includes('Distribute Horizontally')))
+    assert.ok([...document.querySelectorAll('.layout-multi-tools button')].some(node=>node.textContent.includes('Distribute Vertically')))
     await act(async()=>document.querySelector('[aria-label="Kéo tự do"]').click())
     const first=document.querySelector('#first'), second=document.querySelector('#second')
+    const multi=[...document.querySelectorAll('.layout-free-mode')].find(node=>node.textContent==='Chọn nhiều đối tượng').querySelector('input')
+    await act(()=>multi.click())
+    for(const node of [first,second]) await act(()=>node.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
+    assert.equal([...document.querySelectorAll('button')].find(node=>node.textContent==='Group').disabled,false,'touch users can select multiple objects without modifier keys')
+    await act(()=>second.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
+    assert.equal([...document.querySelectorAll('button')].some(node=>node.textContent==='Group'),false,'tapping a selected object removes it from the selection')
+    await act(()=>multi.click())
     document.elementFromPoint=()=>second
     await act(()=>first.dispatchEvent(new window.MouseEvent('pointerdown',{bubbles:true,clientX:1,clientY:1})))
     await act(()=>first.click())

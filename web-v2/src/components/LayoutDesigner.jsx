@@ -50,6 +50,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const [loaded, setLoaded] = useState(false)
   const [alignReference, setAlignReference] = useState('selection')
   const [nudgeStep, setNudgeStep] = useState(1)
+  const [multiSelect, setMultiSelect] = useState(false)
   const [freeMove, setFreeMove] = useState(true)
   const [guides, setGuides] = useState(null)
   const dragging = useRef(null)
@@ -233,12 +234,12 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     if (!editing) return undefined
     const candidate = target => target?.closest?.('.nav-list > a[data-layout-editable="true"]') || target?.closest?.('[data-ui-key^="l-custom-"][data-layout-editable="true"]') || target?.closest?.('[data-layout-editable="true"]')
     const down = event => {
-      if (event.button !== 0 || event.target.closest('.layout-designer,.layout-resize-overlay')) return
+      if (event.button !== 0 || event.target.closest('.layout-designer,.layout-resize-overlay,[data-layout-inspector-popup="true"]')) return
       const element = candidate(event.target)
       if (!element) return
       event.preventDefault(); event.stopPropagation()
       const clicked=element.dataset.layoutKey
-      if(event.shiftKey || event.ctrlKey || event.metaKey){
+      if(multiSelect || event.shiftKey || event.ctrlKey || event.metaKey){
         const old=selectionRef.current
         const keys=old.includes(clicked)?old.filter(key=>key!==clicked):[...old,clicked]
         const independent=selectionNodes(keys).map(node=>node.dataset.layoutKey)
@@ -314,14 +315,14 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) moveRef.current(start.element, target)
     }
     const rename = event => {
-      if (event.target.closest('.layout-designer,.layout-resize-overlay')) return
+      if (event.target.closest('.layout-designer,.layout-resize-overlay,[data-layout-inspector-popup="true"]')) return
       const element = candidate(event.target)
       const entry = registry[element?.dataset.layoutKey?.split('--')[0]]
       if (!element || !(entry?.label || entry?.dynamic_label)) return
       event.preventDefault(); event.stopPropagation()
       setSelected(element); setInlineTarget(element)
     }
-    const block = event => { if (!event.target.closest('.layout-designer,.layout-resize-overlay')) { event.preventDefault(); event.stopPropagation() } }
+    const block = event => { if (!event.target.closest('.layout-designer,.layout-resize-overlay,[data-layout-inspector-popup="true"]')) { event.preventDefault(); event.stopPropagation() } }
     document.addEventListener('pointermove', motion, true)
     document.addEventListener('pointercancel', cancel, true)
     document.addEventListener('keydown', escape, true)
@@ -332,7 +333,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     document.addEventListener('click', block, true)
     document.addEventListener('submit', block, true)
     return () => { cancel(); document.removeEventListener('pointermove', motion, true); document.removeEventListener('pointercancel', cancel, true); document.removeEventListener('keydown', escape, true); window.removeEventListener('blur', cancel); document.removeEventListener('dblclick', rename, true); document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('click', block, true); document.removeEventListener('submit', block, true) }
-  }, [editing, freeMove, snapEnabled])
+  }, [editing, freeMove, snapEnabled, multiSelect])
   const patch = (key, value) => setDraft(current => {
     const next = { ...current, [selectedKey]: { ...configuration, [key]: value === '' ? undefined : ['label','mode','text_align','content_align','justify_content','align_items'].includes(key) ? value : Number(value) } }
     if(['width','height','text_align','content_align','font_size'].includes(key))selection.forEach(id=>{next[id]={...next[id],[key]:next[selectedKey][key]}})
@@ -373,14 +374,14 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     setSelected(parent)
   }
   const descendants = selected ? [...selected.querySelectorAll('[data-layout-editable="true"]')]
-    .filter(node => !node.closest('.layout-designer,.layout-resize-overlay')) : []
+    .filter(node => !node.closest('.layout-designer,.layout-resize-overlay,[data-layout-inspector-popup="true"]')) : []
   const canEditText = Boolean(configuration.custom_kind || definition?.label || definition?.dynamic_label)
   const isContainer = Boolean(definition?.group || selected?.matches('header,section,main,nav,aside,footer,div,fieldset,form'))
   const beginEditing = () => {
     if (appearanceDirty && !window.confirm('Hủy thay đổi giao diện Live Tour chưa lưu để tùy chỉnh thành phần?')) return
     setTab('object'); setGuideTool('Tùy chỉnh')
     if (!editing) { setDraft({ ...saved.layout[device] }); setEditing(true) }
-    setMessage('Chọn bất kỳ thành phần trên trang hoặc chọn khung cha, rồi chỉnh thuộc tính ngay trong bảng công cụ.')
+    setMessage('')
   }
   const changeDevice = next => {
     if (next === device) return
@@ -428,8 +429,8 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       </div>
       <div className="layout-fixed-actions"><button type="button" aria-pressed={tab === 'rooms'} onClick={()=>chooseTab('rooms')}>Phòng Live Tour</button><button type="button" aria-pressed={tab === 'columns'} onClick={()=>chooseTab('columns')}>Cấu hình cột</button><button type="button" disabled={busy || !editing} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button><button type="button" disabled={busy || !editing} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button className="layout-save" title="Lưu cho tất cả người dùng" type="button" disabled={busy || !editing} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button></div>
       <label className="layout-tool-scale">Cỡ nút công cụ · {toolScale.value}%<input type="range" aria-label="Cỡ nút công cụ" min="70" max="110" step="5" value={toolScale.value} onChange={event => toolScale.setValue(Number(event.target.value))}/></label>
-      <div className="layout-device-toolbar">        {['desktop','mobile'].map(mode=><label key={mode}><input type="checkbox" aria-label={mode === 'desktop' ? 'Desktop' : 'Mobile'} checked={device === mode} disabled={busy} onChange={()=>changeDevice(mode)}/>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</label>)}</div>
-      <button type="button" disabled={busy} onClick={close} className="layout-close" aria-label="Đóng Giao diện">Đóng ✕</button>
+      <div className="layout-device-toolbar">        {['desktop','mobile'].map(mode=><label key={mode}><input type="checkbox" aria-label={mode === 'desktop' ? 'Desktop' : 'Mobile'} checked={device === mode} disabled={busy} onChange={()=>changeDevice(mode)}/>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</label>)}
+      <button type="button" disabled={busy} onClick={close} className="layout-close" aria-label="Đóng Giao diện">Đóng ✕</button></div>
       </div>
       <div className="layout-panel-content" hidden={panelHidden}>
       {tab === 'columns' && <><UICustomizationColumns page={page} items={preview} onChange={(key,width) => { setEditing(true); setDraft(current => ({ ...(current || saved.layout[device]), [key]: { ...(current || saved.layout[device])?.[key], width } })) }}/>{editing && <div className="layout-designer-actions"><button disabled={busy} onClick={save}>Lưu độ rộng cột</button><button disabled={busy} onClick={() => {setEditing(false);setDraft(null)}}>Hủy</button></div>}</>}
@@ -440,11 +441,10 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         <label className="layout-free-mode"><input type="checkbox" checked={snapEnabled} onChange={e=>setSnapEnabled(e.target.checked)}/>Bắt dính cạnh và tâm</label>
         <label className="layout-free-mode"><input type="checkbox" checked={centerLines} onChange={e=>setCenterLines(e.target.checked)}/>Đường tâm ngang/dọc</label>
         <label className="layout-free-mode"><input type="checkbox" aria-label="Kéo tự do" checked={freeMove} onChange={event=>setFreeMove(event.target.checked)}/>Kéo tự do</label>
-        <small>Kéo để đặt vị trí; đường ngang/dọc giúp căn cạnh và tâm. Giữ Alt để bỏ bắt dính; Esc hủy lượt kéo. Thả vào dòng khác theo vạch xanh để chèn và tự dàn lại. Bỏ chọn Kéo tự do nếu chỉ muốn sắp xếp.</small>
-        <small>Shift/Ctrl + bấm để chọn nhiều thành phần. Đã chọn: {selection.length}. Kéo menu để đổi thứ tự hoặc dùng Trước/Sau.</small>
+        <label className="layout-free-mode"><input type="checkbox" checked={multiSelect} onChange={e=>setMultiSelect(e.target.checked)}/>Chọn nhiều đối tượng</label>
         <fieldset className="layout-align-tools" aria-label="Căn chỉnh đối tượng"><legend>Căn chỉnh đối tượng</legend>
           <label>Căn theo<select aria-label="Căn theo" value={alignReference} onChange={e=>setAlignReference(e.target.value)}><option value="page">Khung trang (Align to Slide)</option><option value="selection">Đối tượng đang chọn (Align Selected Objects)</option></select></label>
-          <div className="layout-multi-tools">{[['left','Căn trái'],['center-x','Căn giữa ngang'],['right','Căn phải'],['top','Căn trên'],['center-y','Căn giữa dọc'],['bottom','Căn dưới'],['distribute-horizontal','Giãn đều ngang'],['distribute-vertical','Giãn đều dọc']].map(([mode,label])=><button type="button" key={mode} disabled={selection.length < (mode.startsWith('distribute-') ? (alignReference==='page'?2:3) : (alignReference==='page'?1:2))} onClick={()=>alignMany(mode)}>{label}</button>)}</div>
+          <div className="layout-multi-tools">{[['left','Căn trái'],['center-x','Căn giữa ngang'],['right','Căn phải'],['top','Căn trên'],['center-y','Căn giữa dọc'],['bottom','Căn dưới'],['distribute-horizontal','Distribute Horizontally · Dàn đều ngang'],['distribute-vertical','Distribute Vertically · Dàn đều dọc']].map(([mode,label])=><button type="button" key={mode} disabled={selection.length < (mode.startsWith('distribute-') ? (alignReference==='page'?2:3) : (alignReference==='page'?1:2))} onClick={()=>alignMany(mode)}>{label}</button>)}</div>
         </fieldset>
         {selection.length>1 && <div className="layout-multi-tools" aria-label="Chỉnh nhiều thành phần"><button type="button" onClick={()=>groupSelection(true)}>Group</button><button type="button" onClick={()=>groupSelection(false)}>Ungroup</button><small>Rộng/Cao và tay nắm resize áp dụng cho tất cả thành phần đã chọn.</small></div>}
 
@@ -458,7 +458,6 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
           <button type="button" disabled={!canEditText} onClick={()=>{setGuideTool('Sửa text');textEditor.current?.focus()}}>Sửa text</button>
           <button type="button" disabled={!selectedKey} onClick={removeElement}>{configuration.custom_kind ? 'Xóa '+(configuration.custom_kind==='box'?'box':configuration.custom_kind==='text'?'text':customKinds[configuration.custom_kind]) : 'Xóa khỏi giao diện'}</button>
         </div>
-        {!selectedKey && <small>Bấm chọn thành phần, section, header hoặc text trên trang. Chọn khung cha để chỉnh khung bao ngoài.</small>}
         <div className="layout-designer-actions"><button type="button" disabled={!selectedKey} onClick={() => step(-1)}>← Trước</button><button type="button" disabled={!selectedKey} onClick={() => step(1)}>Sau →</button><button type="button" disabled={!selectedKey} onClick={selectParent}>Chọn khung cha</button></div>
         <fieldset className="layout-align-tools"><legend>Di chuyển thành phần</legend>
           <label>Bước di chuyển (px)<input type="number" min="1" step="1" value={nudgeStep} onChange={e=>setNudgeStep(Math.max(1,Math.round(Number(e.target.value)||1)))}/></label>
