@@ -18,6 +18,7 @@ class LayoutItem(BaseModel):
     justify_content: Literal['start', 'center', 'end', 'space-between', 'space-around', 'space-evenly'] | None = None
     align_items: Literal['start', 'center', 'end', 'stretch'] | None = None
     gap: int | None = Field(default=None, ge=0, le=100)
+    move_to: str | None = Field(default=None, max_length=80)
     parent: str | None = Field(default=None, max_length=80)
     label: str | None = Field(default=None, max_length=100)
     mode: Literal['fit', 'group'] | None = None
@@ -53,6 +54,17 @@ def validate_items(items):
             raise HTTPException(400, 'Không thể đổi tên nội dung động hoặc dữ liệu nghiệp vụ.')
         if (item.rows is not None or item.mode is not None) and (not definition or not definition.get('group')):
             raise HTTPException(400, 'Chỉ nhóm nút được thay đổi số dòng.')
+        if item.move_to:
+            destination = definition_for(item.move_to)
+            if not destination or not destination.get('group') or destination.get('locked') or item.move_to == key:
+                raise HTTPException(400, 'Khung đích không hỗ trợ di chuyển.')
+            visited = {key}
+            target = item.move_to
+            while target:
+                if target in visited:
+                    raise HTTPException(400, 'Không thể di chuyển vòng giữa các khung.')
+                visited.add(target)
+                target = items[target].move_to if target in items else None
         if item.parent and not (re.fullmatch(r'l-[a-z0-9-]{1,70}', item.parent) or definition_for(item.parent)):
             raise HTTPException(400, 'Nhóm bố cục không hợp lệ.')
     return {key: item.model_dump(exclude_none=True) for key, item in items.items()}

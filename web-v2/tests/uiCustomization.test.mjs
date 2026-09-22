@@ -32,5 +32,20 @@ test('Labels preserve business handler; toolbar sorts actual DOM, groups safely,
   await act(()=>publishCustomization({}))
   assert.equal(document.querySelector('details'),null)
   assert.equal(document.querySelector('button').textContent,'a')
+  const screen=(showTarget=true,showAction=true)=>React.createElement('main',null,
+    React.createElement(Toolbar,{'data-ui-key':'u-source'},showAction ? buttons : buttons.slice(1)),
+    showTarget && React.createElement(Toolbar,{'data-ui-key':'u-target'},React.createElement('button',{'data-ui-key':'u-other'},'Other')))
+  await act(()=>root.render(screen()))
+  await act(()=>publishCustomization({'u-a':{move_to:'u-target'}}))
+  assert.equal(document.querySelector('[data-ui-key="u-a"]').closest('[data-ui-dropzone]').dataset.uiDropzone,'u-target')
+  await act(()=>document.querySelector('[data-ui-key="u-a"]').click())
+  assert.equal(count,2,'moving preserves the action handler')
+  await act(()=>root.render(screen(true,false)))
+  assert.equal(document.querySelector('[data-ui-key="u-a"]'),null,'hidden actions are not resurrected by saved layout')
+  await act(()=>root.render(screen(false)))
+  assert.equal(document.querySelector('[data-ui-key="u-a"]').closest('[data-ui-dropzone]').dataset.uiDropzone,'u-source','missing target falls back')
+  await act(()=>root.render(screen()))
+  await act(()=>publishCustomization({}))
+  assert.equal(document.querySelector('[data-ui-key="u-a"]').closest('[data-ui-dropzone]').dataset.uiDropzone,'u-source','restore default')
  }finally{await act(()=>root.unmount());dom.window.close();for(const [key,value] of Object.entries(saved)){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key]}}
 })

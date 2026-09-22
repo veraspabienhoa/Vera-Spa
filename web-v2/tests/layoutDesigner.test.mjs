@@ -77,9 +77,13 @@ test('Admin drags within a group, saves desktop only, and another user receives 
     assert.equal(document.querySelector('.layout-designer'),null)
     Object.defineProperty(window,'innerWidth',{value:1024,configurable:true})
     await act(()=>window.dispatchEvent(new window.Event('resize')))
+    window.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}})
+    await act(()=>window.dispatchEvent(new window.Event('resize')))
+    await act(async()=>root.render(screen('admin',true)))
+    assert.match(document.querySelector('.layout-designer').textContent,/Mobile/,'touch device remains mobile in landscape')
     await act(async()=>root.render(screen('nhanvien',true)))
     assert.equal(document.querySelector('.layout-designer'),null)
-    assert.match(document.querySelector('style').textContent,/order:1!important/)
+    assert.match(document.querySelector('style').textContent,/width:min\(80px,100%\)/)
   } finally {
     await act(()=>root.unmount());dom.window.close()
     for(const [key,value]of Object.entries(previous)){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key]}

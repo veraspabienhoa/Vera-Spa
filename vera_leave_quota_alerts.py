@@ -149,14 +149,16 @@ def check_and_notify(engine_instance):
         logging.getLogger(__name__).warning('Leave quota notification retry: %s', type(exc).__name__)
 
 
-def install(app, *, engine_instance, current_identity, identity_type):
+def install(app, *, engine_instance, current_identity, identity_type, require_feature=None):
     @app.get('/v2/leave/quota-check')
     def check(start: date = Query(), end: date = Query(), ident: identity_type = Depends(current_identity)):
-        if str(ident.role).strip().lower() != 'admin':
-            raise HTTPException(403, 'Chỉ Admin được kiểm tra hạn mức.')
+        if require_feature is None and str(ident.role).strip().lower() != 'admin':
+            raise HTTPException(403, 'Tài khoản chưa được cấp quyền kiểm tra vượt hạn mức.')
         if end < start or (end.year-start.year)*12+end.month-start.month > 11:
             raise HTTPException(400, 'Chọn khoảng thời gian tối đa 12 tháng.')
         with engine_instance().connect() as conn:
+            if require_feature is not None:
+                require_feature(conn, ident, "leave_quota_check")
             items = read_report(conn, start, end)
         return {'items': items, 'limits': LIMITS, 'start': start.replace(day=1).isoformat(),
                 'end': end.replace(day=monthrange(end.year,end.month)[1]).isoformat()}

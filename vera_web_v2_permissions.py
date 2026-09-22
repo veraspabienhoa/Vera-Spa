@@ -57,6 +57,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
     "Lịch nghỉ": {
         "leave": "Xem Đăng ký nghỉ", "leave_manage": "Xem Quản lý lịch nghỉ",
         "leave_create": "Đăng ký / ghi lịch nghỉ",
+        "leave_quota_check": "Kiểm tra vượt hạn mức",
         "leave_export": "Export Excel", "leave_email": "Gửi email báo cáo",
         "leave_detail_edit": "Sửa trực tiếp danh sách", "leave_detail_delete": "Xóa dòng trong danh sách",
         "leave_manage_edit": "Quản lý lịch nghỉ · Sửa", "leave_manage_delete": "Quản lý lịch nghỉ · Xóa",
@@ -159,7 +160,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         "tour", "tour_refresh", "tour_leave_sync",
     ]},
     {"id": "leave", "label": "Đăng ký nghỉ / Quản lý lịch nghỉ", "view_feature": "leave", "features": [
-        "leave", "leave_manage", "leave_create", "leave_export", "leave_email",
+        "leave", "leave_manage", "leave_create", "leave_quota_check", "leave_export", "leave_email",
         "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete",
         "leave_today_khong_phep_edit_delete", "employee_penalty_view",
     ]},
@@ -312,6 +313,7 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     # Lịch nghỉ
     "leave_manage": {"leave"},
     "leave_create": {"leave"},
+    "leave_quota_check": {"leave"},
     "leave_export": {"leave"},
     "leave_email": {"leave_manage"},
     "leave_detail_edit": {"leave_manage"},
