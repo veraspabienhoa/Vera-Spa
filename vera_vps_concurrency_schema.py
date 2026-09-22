@@ -75,7 +75,7 @@ def _backfill(conn) -> dict:
         WHERE category='live_tour' AND setting_key='state'
     """)).mappings().first()
     mirrored = {"upserted": 0, "deleted": 0}
-    if aggregate:
+    if aggregate and live_tour.mode() != "active":
         state = aggregate["value_json"]
         if not isinstance(state, dict):
             state = json.loads(state)
@@ -104,7 +104,10 @@ def _verify(conn) -> dict:
         WHERE category='live_tour' AND setting_key='state'
     """)).mappings().first()
     parity = {"ok": True, "empty": True}
-    if aggregate:
+    if live_tour.mode() == "active":
+        canonical, revision = live_tour.load_state(conn)
+        parity = {"ok": bool((canonical or {}).get("_resource_ready")), "mode": "active", "revision": revision}
+    elif aggregate:
         state = aggregate["value_json"]
         if not isinstance(state, dict):
             state = json.loads(state)

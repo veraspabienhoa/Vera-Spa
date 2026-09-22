@@ -2,7 +2,7 @@ import { useState } from 'react'
 import LiveTourCheckoutCustomer from './LiveTourCheckoutCustomer'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 
-export default function LiveTourComboImportFields({ customers, combos, form, setForm }) {
+export default function LiveTourComboImportFields({ customers, combos, form, setForm, onSearch }) {
   const [customerSearchOpen, setCustomerSearchOpen] = useState(true)
   const selected = combos.find(combo => String(combo.id) === form.combo_id)
   const parts = selected?.components || []
@@ -13,7 +13,7 @@ export default function LiveTourComboImportFields({ customers, combos, form, set
   })
   return <>
     <div className="live-tour-field wide live-tour-combo-customer-search-toggle"><button data-ui-key="u-6eb243224fe7" type="button" className="secondary-button" aria-pressed={customerSearchOpen} onClick={() => setCustomerSearchOpen(current => !current)}>{customerSearchOpen ? 'Tắt tìm kiếm khách hàng' : 'Mở tìm kiếm khách hàng'}</button></div>
-    <LiveTourCheckoutCustomer customers={customerSearchOpen ? customers : []} form={form} setForm={setForm} customerRequired/>
+    <LiveTourCheckoutCustomer onSearch={onSearch} customers={customerSearchOpen ? customers : []} form={form} setForm={setForm} customerRequired/>
     <LiveTourSearchSelect label="Combo" placeholder="Gõ để tìm và chọn combo…" required value={form.combo_id}
       options={combos.map(combo => ({ value: String(combo.id), label: combo.name,
         detail: `${combo.tickets ?? 0} lượt · ${Number(combo.price || 0).toLocaleString('vi-VN')} đ` }))}

@@ -23,7 +23,7 @@ const built = await build({
   plugins: [{ name: 'mock-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const veraApi = globalThis.__tourTestApi;', loader: 'js' }))
-b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(UiToolbar|UiCustomText|VeraDateInput|ClearableSearchInput|LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
+b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(UiToolbar|UiCustomText|VeraDateInput|ClearableSearchInput|LiveTour(Board|PendingPanel|InvoicesPanel|CustomersPanel|ReportsPanel|HistoryPanel|CatalogPanel|AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
     b.onLoad({ filter: /.*/, namespace: 'dialog' }, () => ({ contents: 'export default function Dialog(){return null}', loader: 'js' }))
   } }],
 })
@@ -42,6 +42,7 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   let fail = conflict
   globalThis.__tourTestApi = {
     liveTour: async () => structuredClone(data),
+    liveTourCollection: async () => ({data:structuredClone(data),page:1,pages:1,total:0,revision:data.revision}),
     liveTourCustomerHistory: async (customerId) => ({ customer: structuredClone(data.customers.find((customer) => customer.id === customerId)), summary: { combo_remaining: 7 }, combo_purchases: structuredClone(data.customers.find((customer) => customer.id === customerId)?.combo_purchases || []), combo_usage: [{ id: 'u1', service: 'Body 90', business_date: TODAY_VN }], invoices: [], reports: [], pending: [] }),
     exportLiveTourExcel: async (kind, query) => { exports.push({ kind, query }) },
     liveTourAction: async (body) => {

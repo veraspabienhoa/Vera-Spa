@@ -409,14 +409,15 @@ export const veraApi = {
   }),
   birthdays: (month = new Date().getMonth() + 1) => request(`/v2/birthdays?month=${encodeURIComponent(month)}`),
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
-  liveTour: (refresh = false, includeHidden = false, knownRevision = null) => {
+  liveTour: (refresh = false, includeHidden = false, knownRevision = null, view = 'full') => {
     const params = new URLSearchParams({
-      refresh: refresh ? 'true' : 'false',
+      view, refresh: refresh ? 'true' : 'false',
       include_hidden: includeHidden ? 'true' : 'false',
     })
     if (Number.isInteger(knownRevision) && knownRevision >= 0) params.set('known_revision', String(knownRevision))
     return request(`/v2/live-tour?${params}`)
   },
+  liveTourCollection: (panel, query = {}) => request(`/v2/live-tour/collections/${encodeURIComponent(panel)}?${new URLSearchParams(Object.entries(query).filter(([,value])=>value !== '' && value != null))}`),
   liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
   uiLayout: () => request('/v2/ui-layout'),
   saveUiLayout: (body) => request('/v2/ui-layout', { method: 'PUT', body: JSON.stringify(body) }),

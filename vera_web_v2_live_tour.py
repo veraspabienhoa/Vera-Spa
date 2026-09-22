@@ -9,6 +9,8 @@ from __future__ import annotations
 from vera_web_v2_live_tour_attendance import AttendanceBreakReader, sync_breaks
 from vera_web_v2_live_tour_lock import acquire_state_lock, try_state_lock
 import vera_live_tour_relational as relational_store
+import vera_live_tour_resource_store as resource_store
+import vera_live_tour_lists as list_queries
 import vera_postgres_job_queue as job_queue
 import vera_live_tour_queue_alerts as queue_alerts
 
@@ -125,6 +127,7 @@ DEFAULT_COMBOS = [
 
 
 class LiveTourAction(BaseModel):
+    response_view: str = "full"
     action: str = Field(min_length=1, max_length=80)
     expected_revision: int | None = Field(default=None, ge=0)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
@@ -1129,28 +1132,46 @@ def _entry_ticket_units(state, entry):
     return _service_ticket_units(state, entry.get("service"))
 
 
-def _available_combo(state, customer_id, purchase, *, employee_ids=(), pending_id=""):
+def _combo_reservations(state):
+    """Build the reservation index once for a response, never reuse across writes."""
+    index = {}
+    rows = [row for row in state["employees"] if row.get("service")]
+    rows.extend({**row, "customer_id": pending.get("customer_id")} for pending in state["pending"] for row in pending.get("entries", []))
+    for row in rows:
+        key = (row.get("customer_id"), row.get("combo_purchase_id"))
+        total, parts = index.setdefault(key, [0, {}])
+        index[key][0] = total + int(row.get("combo_reserved_units") or 0)
+        for part in row.get("combo_reserved_components") or []:
+            service = part["service_id"]
+            parts[service] = parts.get(service, 0) + part["units"]
+    return index
+
+
+def _available_combo(state, customer_id, purchase, *, employee_ids=(), pending_id="", reservation_index=None):
     """Subtract open reservations without changing the purchased ticket ledger.
 
     Called under the same state lock as booking/checkout. Include hidden and
     retained assignments; exclude only the transaction currently being edited.
     """
     available = deepcopy(purchase)
-    reservations = [row for row in state["employees"]
-                    if row.get("service") and row.get("id") not in employee_ids
-                    and row.get("customer_id") == customer_id]
-    for pending in state["pending"]:
-        if pending.get("id") != pending_id and pending.get("customer_id") == customer_id:
-            reservations.extend(pending.get("entries") or [])
-    reserved = 0
-    by_service = {}
-    for row in reservations:
-        if row.get("combo_purchase_id") != purchase.get("id"):
-            continue
-        reserved += int(row.get("combo_reserved_units") or 0)
-        for part in row.get("combo_reserved_components") or []:
-            key = part["service_id"]
-            by_service[key] = by_service.get(key, 0) + part["units"]
+    if reservation_index is not None and not employee_ids and not pending_id:
+        reserved, by_service = reservation_index.get((customer_id, purchase.get("id")), (0, {}))
+    else:
+        reservations = [row for row in state["employees"]
+                        if row.get("service") and row.get("id") not in employee_ids
+                        and row.get("customer_id") == customer_id]
+        for pending in state["pending"]:
+            if pending.get("id") != pending_id and pending.get("customer_id") == customer_id:
+                reservations.extend(pending.get("entries") or [])
+        reserved = 0
+        by_service = {}
+        for row in reservations:
+            if row.get("combo_purchase_id") != purchase.get("id"):
+                continue
+            reserved += int(row.get("combo_reserved_units") or 0)
+            for part in row.get("combo_reserved_components") or []:
+                key = part["service_id"]
+                by_service[key] = by_service.get(key, 0) + part["units"]
     if purchase.get("deleted_at"):
         available["remaining"] = 0
         for part in available.get("component_balances", []):
@@ -3195,6 +3216,18 @@ def _service_performance_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: str(row.get("completed_at") or ""), reverse=True)
 
 
+_DETAIL_COLLECTIONS = frozenset({"customers", "pending", "invoices", "reports", "combo_usage", "combo_sale_requests", "audit", "backups", "pending_changes", "invoice_changes", "customer_changes", "break_events"})
+
+
+def _board_response(state, revision, now, **grants):
+    lightweight = {**state, **{key: [] for key in _DETAIL_COLLECTIONS if key not in {"pending", "combo_sale_requests"}}, "idempotency": {}}
+    result = _state_response(lightweight, revision, now, **grants)
+    result["pending_count"] = len(state["pending"]) if grants.get("can_pending_view") else 0
+    result["combo_sale_request_count"] = sum(row.get("status") == "pending" for row in state.get("combo_sale_requests", [])) if grants.get("can_admin") else 0
+    result["view"] = "board"
+    return result
+
+
 def _state_response(
     state: dict[str, Any], revision: int, now: datetime, *, include_hidden: bool = False,
     can_admin: bool = False, can_operate: bool = False, can_appointment_edit: bool = False,
@@ -3257,6 +3290,7 @@ def _state_response(
     }
     customers = []
     if can_customers_view:
+        reservation_index = _combo_reservations(state)
         for item in state["customers"]:
             if item.get("deleted_at"):
                 continue
@@ -3264,7 +3298,7 @@ def _state_response(
             customer["combo_purchases"] = [p for p in customer.get("combo_purchases", []) if not p.get("deleted_at")]
             purchases = list(customer.get("combo_purchases") or [])
             for purchase in purchases:
-                available_purchase = _available_combo(state, customer["id"], purchase)
+                available_purchase = _available_combo(state, customer["id"], purchase, reservation_index=reservation_index)
                 purchase["booking_remaining"] = available_purchase["remaining"]
                 purchase["booking_reserved"] = available_purchase["booking_reserved"]
                 for part, available_part in zip(purchase.get("component_balances", []), available_purchase.get("component_balances", [])):
@@ -3422,11 +3456,15 @@ def _auto_start_waiting(state, now):
 
 
 def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_records=None, directory_records=None, leave_records=None) -> tuple[dict[str, Any], int]:
-    suffix = " FOR UPDATE" if for_update else ""
-    row = conn.execute(text(f"""
-        SELECT value_json, revision FROM vera_app_setting
-        WHERE category=:category AND setting_key=:key{suffix}
-    """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+    if resource_store.enabled():
+        resource_state, resource_revision, _ = resource_store.read(conn)
+        row = {"value_json": resource_state, "revision": resource_revision}
+    else:
+        suffix = " FOR UPDATE" if for_update else ""
+        row = conn.execute(text(f"""
+            SELECT value_json, revision FROM vera_app_setting
+            WHERE category=:category AND setting_key=:key{suffix}
+        """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
     if row:
         state = _normalize_state(row.get("value_json"), now)
         revision = int(row.get("revision") or 0)
@@ -3475,6 +3513,10 @@ def _write_state(
     conn, state: dict[str, Any], revision: int, actor: str,
     *, previous_state: dict[str, Any] | None = None,
 ) -> int:
+    if resource_store.enabled():
+        if previous_state is None:
+            raise RuntimeError("Resource writes require the original snapshot")
+        return resource_store.write(conn, previous_state, state, actor)
     if previous_state is None and relational_store.mode() != "off":
         try:
             current = conn.execute(text("""
@@ -4258,7 +4300,12 @@ def install_live_tour_routes(
     def apply_projection(now, records, directory, leaves):
         # The critical section contains only canonical state read/merge/write.
         with engine_instance().begin() as conn:
-            if not try_state_lock(conn, STATE_LOCK):
+            if resource_store.enabled():
+                try:
+                    resource_store.lock(conn)
+                except HTTPException:
+                    return False
+            elif not try_state_lock(conn, STATE_LOCK):
                 return False
             exists = conn.execute(text(
                 "SELECT revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"
@@ -4368,6 +4415,9 @@ def install_live_tour_routes(
         writes outside their critical section materially shortens the global
         Live Tour lock while preserving revision/idempotency validation.
         """
+        if resource_store.enabled():
+            state, revision, _ = resource_store.read(conn)
+            return _normalize_state(state, now), revision
         suffix = " FOR UPDATE" if for_update else ""
         row = conn.execute(text(f"""
             SELECT value_json, revision FROM vera_app_setting
@@ -4378,7 +4428,24 @@ def install_live_tour_routes(
         # Bootstrap is the only case where the full projection path is needed.
         return read_state(conn, now, for_update=for_update)
 
+    def read_board_view(conn, now):
+        collections = set(relational_store.RESOURCE_COLLECTIONS) - (_DETAIL_COLLECTIONS - {"pending", "combo_sale_requests"})
+        if resource_store.enabled():
+            state, revision, _ = resource_store.read(conn, collections=collections)
+            return _normalize_state(state, now), revision
+        omitted = sorted((_DETAIL_COLLECTIONS - {"pending", "combo_sale_requests"}) | {"idempotency"})
+        # Static server-owned keys only; PostgreSQL strips history before sending
+        # JSON to the application, avoiding decoding/copying the full ledger.
+        keys = ",".join("'" + key + "'" for key in omitted)
+        row = conn.execute(text(f"SELECT value_json - ARRAY[{keys}] AS value_json, revision FROM vera_app_setting WHERE category=:category AND setting_key=:key"), {"category":STATE_CATEGORY,"key":STATE_KEY}).mappings().first()
+        if row:
+            return _normalize_state(row["value_json"], now), int(row["revision"])
+        return read_board(conn, now)
+
     def read_board(conn, now, *, project=True):
+        if resource_store.enabled():
+            state, revision, _ = resource_store.read(conn)
+            return _normalize_state(state, now), revision
         # Request threads only read the last committed board snapshot. Projection is
         # owned by the PostgreSQL queue worker, so GET traffic cannot extend STATE_LOCK.
         row = conn.execute(text("""
@@ -4409,7 +4476,7 @@ def install_live_tour_routes(
 
     def action_response(
         *, state: dict[str, Any], revision: int, now: datetime, action: str,
-        result: dict[str, Any], grants: dict[str, bool], duplicate: bool = False,
+        result: dict[str, Any], grants: dict[str, bool], duplicate: bool = False, response_view: str = "full",
     ) -> dict[str, Any]:
         def readable_result(value):
             if isinstance(value, list):
@@ -4441,12 +4508,13 @@ def install_live_tour_routes(
             "ok": True, "duplicate": duplicate, "action": action,
             "revision": revision, "result": public_result,
             **({"message": str(result.get("message"))} if result.get("message") else {}),
-            **({"capabilities": {name: grants[f"can_{name}"] for name in CAPABILITY_FEATURES}} if action.startswith("report_invoice_") else _state_response(state, revision, now, **grants)),
+            **({"capabilities": {name: grants[f"can_{name}"] for name in CAPABILITY_FEATURES}} if action.startswith("report_invoice_") else (_board_response if response_view == "board" else _state_response)(state, revision, now, **grants)),
         }
 
     @app.get("/v2/live-tour")
     def live_tour(
         refresh: bool = Query(default=False),
+        view: str = Query(default="full", pattern="^(full|board)$"),
         known_revision: int | None = Query(default=None, ge=0),
         include_hidden: bool = Query(default=False),
         ident: identity_type = Depends(current_identity),
@@ -4458,24 +4526,91 @@ def install_live_tour_routes(
             # deserializing, projecting and serializing the complete aggregate
             # when the browser already has the current committed revision.
             if known_revision is not None and not refresh:
-                current_revision = conn.execute(text("""
-                    SELECT revision FROM vera_app_setting
-                    WHERE category=:category AND setting_key=:key
-                """), {"category": STATE_CATEGORY, "key": STATE_KEY}).scalar_one_or_none()
+                if resource_store.enabled():
+                    current_revision = conn.execute(text(f"SELECT aggregate_revision FROM {relational_store.META_TABLE} WHERE singleton=1")).scalar_one_or_none()
+                else:
+                    current_revision = conn.execute(text("""
+                        SELECT revision FROM vera_app_setting
+                        WHERE category=:category AND setting_key=:key
+                    """), {"category": STATE_CATEGORY, "key": STATE_KEY}).scalar_one_or_none()
                 if current_revision is not None and int(current_revision) == known_revision:
                     return {"unchanged": True, "revision": int(current_revision), "countdown_at": _iso(now)}
             # First loads and deliberate refreshes preserve the existing fresh
             # projection behavior. A conditional poll whose revision changed
             # reads the newly committed snapshot; the scheduler already owns
             # routine projection and other devices need not repeat it.
-            state, revision = read_board(
+            state, revision = read_board_view(conn, now) if view == "board" else read_board(
                 conn, now, project=refresh or known_revision is None,
             )
             grants = permissions(conn, ident)
-        return _state_response(
+        return (_board_response if view == "board" else _state_response)(
             state, revision, now, include_hidden=include_hidden,
             **grants,
         )
+
+    @app.get("/v2/live-tour/collections/{panel}")
+    def live_tour_collection(
+        panel: str, page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=100),
+        search: str = Query(default="", max_length=200), customer_id: str = "",
+        date_from: str = "", date_to: str = "", employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
+        ident: identity_type = Depends(current_identity),
+    ):
+        groups = {"customers": ("customers",), "pending": ("pending",), "invoices": ("invoices",),
+                  "reports": ("reports",), "history": ("audit", "break_events", "pending_changes", "invoice_changes", "customer_changes", "backups")}
+        features = {"customers":"live_tour_customers_view", "pending":"live_tour_pending_view", "invoices":"live_tour_paid_invoice_view", "reports":"live_tour_reports_view", "history":"live_tour_history_view"}
+        if panel not in groups:
+            raise HTTPException(404, "Không có danh sách này.")
+        bounds = _parse_export_bounds(date_from=date_from,date_to=date_to)
+        bounds.update(employee=employee,customer=customer,service=service,bill_no=bill_no,calendar_date=True)
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_view")
+            if panel == "history" and feature_allowed(conn, ident, "live_tour_backup"):
+                pass
+            else:
+                require_feature(conn, ident, features[panel])
+            if panel == "pending":
+                require_feature(conn, ident, "live_tour_invoice_view")
+            state, revision = read_board(conn, now, project=False)
+            grants = permissions(conn, ident)
+        selected = {**state, **{key: [] for key in _DETAIL_COLLECTIONS}, "idempotency": {}}
+        totals = {}
+        report_totals = None
+        for key in groups[panel]:
+            allowed = {"audit": grants.get("can_history_view"), "break_events": grants.get("can_history_view"),
+                       "pending_changes": grants.get("can_history_view") and grants.get("can_pending_view") and grants.get("can_invoice_view"),
+                       "invoice_changes": grants.get("can_history_view") and grants.get("can_paid_invoice_view"),
+                       "customer_changes": grants.get("can_history_view") and grants.get("can_customers_view"), "backups": grants.get("can_backup")}
+            values = state.get(key, []) if allowed.get(key, True) else []
+            if key == "customers":
+                values = [row for row in values if not row.get("deleted_at") and (not customer_id or str(row.get("id")) == customer_id)
+                          and list_queries.customer_matches(row,search)]
+            else:
+                values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,history=panel=="history")]
+            # Preserve source ordering inside each page, newest pages first.
+            totals[key] = len(values)
+            if key == "reports":
+                total = sum(float(row.get("total") or 0) for row in values)
+                tip = sum(float(row.get("tip") or 0) for row in values)
+                report_totals = {"totalRevenue":total,"tip":tip,"serviceRevenue":total-tip,"invoiceCount":len({row.get("invoice_id") or row.get("bill_no") for row in values if row.get("invoice_id") or row.get("bill_no")})}
+            end = max(0, len(values) - (page-1)*page_size)
+            selected[key] = values[max(0,end-page_size):end]
+        if panel == "customers":
+            # Reservation amounts include ALL open assignments, not just a page.
+            selected["pending"] = state["pending"]
+        if panel == "reports":
+            invoice_ids = {row.get("invoice_id") for row in selected["reports"]}
+            selected["invoices"] = [row for row in state["invoices"] if row.get("id") in invoice_ids]
+        public = _state_response(selected, revision, now, **grants)
+        fields = {"customers":["customers"], "pending":["pending_payments","pending"], "invoices":[],
+                  "reports":["report_rows","reports"], "history":["audit","history","break_events","pending_changes","invoice_changes","customer_changes","backups"]}[panel]
+        data = {key:public[key] for key in fields}
+        data["state"] = {key:public["state"].get(key,[]) for key in groups[panel] if key in public["state"]}
+        if panel == "reports":
+            data["state"]["invoices"] = public["state"]["invoices"]
+            data["report_totals"] = report_totals
+        return {"revision":revision,"data":data,"page":page,"page_size":page_size,"total":sum(totals.values()),
+                "pages":max(1,max(((total+page_size-1)//page_size for total in totals.values()),default=1))}
 
     @app.get("/v2/live-tour/reports")
     def live_tour_reports(ident: identity_type = Depends(current_identity)):
@@ -4666,21 +4801,29 @@ def install_live_tour_routes(
                 )
                 return action_response(
                     state=state, revision=revision, now=now, action=action,
-                    result={"queued": True, "refresh_seconds": PROJECTION_REFRESH_SECONDS}, grants=grants,
+                    result={"queued": True, "refresh_seconds": PROJECTION_REFRESH_SECONDS}, grants=grants, response_view=body.response_view,
                 )
-            acquire_state_lock(conn, STATE_LOCK)
-            state, revision = read_state_without_projection(conn, now, for_update=True)
+            resource_fresh = False
+            if resource_store.enabled():
+                state, revision, resource_fresh = resource_store.begin_action(
+                    conn, action, payload, body.expected_revision, idempotency_key,
+                    _counter_business_date(now).isoformat(),
+                )
+                state = _normalize_state(state, now)
+            else:
+                acquire_state_lock(conn, STATE_LOCK)
+                state, revision = read_state_without_projection(conn, now, for_update=True)
             previous = _idempotency_replay(
                 state, idempotency_key, action=action, actor=actor, payload_hash=payload_hash,
             )
             if previous:
                 return action_response(
                     state=state, revision=revision, now=now, action=action,
-                    result=deepcopy(previous.get("result") or {}), grants=grants, duplicate=True,
+                    result=deepcopy(previous.get("result") or {}), grants=grants, duplicate=True, response_view=body.response_view,
                 )
             if body.expected_revision is None:
                 raise HTTPException(428, "Thiếu phiên bản Live Tour. Hãy tải lại bảng trước khi thao tác.")
-            if body.expected_revision != revision:
+            if body.expected_revision != revision and not resource_fresh:
                 raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.")
             if action == "clear_expired_preview":
                 return {"ok": True, "base_revision": revision, **_expired_preview(state, payload, now)}
@@ -4716,9 +4859,12 @@ def install_live_tour_routes(
             next_revision = _write_state_compat(
                 conn, working, revision, actor, previous_state=state,
             )
+        if resource_store.enabled():
+            with engine_instance().begin() as response_conn:
+                working, next_revision = read_board(response_conn, now, project=False)
         return action_response(
             state=working, revision=next_revision, now=now, action=action,
-            result=result, grants=grants,
+            result=result, grants=grants, response_view=body.response_view,
         )
 
     @app.get("/v2/live-tour/projection-queue/health")
@@ -4809,7 +4955,10 @@ def install_live_tour_routes(
         actor = str(ident.employee_username or ident.full_name or "web_v2")
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_admin")
-            acquire_state_lock(conn, STATE_LOCK)
+            if resource_store.enabled():
+                resource_store.lock(conn)
+            else:
+                acquire_state_lock(conn, STATE_LOCK)
             state, revision = read_state(conn, now, for_update=True)
             if expected_revision != revision:
                 raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi Import lại.")

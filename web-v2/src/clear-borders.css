@@ -178,3 +178,6 @@ body .live-tour-page .tour-table thead :is(th, td) {
 .autosave-fields { display: contents; }
 @media (max-width: 900px) { .staff-shift-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .staff-shift-summary { gap: 6px; } .staff-shift-summary .metric-card { padding: 10px; font-size: .8rem; } }
+
+/* Live Tour paginated detail panels follow the shared system controls. */
+.live-tour-pagination { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; }
