@@ -20,6 +20,10 @@ def run(conn, rollback=False):
     if rollback:
         state, revision, _ = resources.read(conn)
         state.pop('_resource_ready', None)
+        # Old releases do not understand the resource-mode invalidation marker.
+        if state.pop('manual_order_active', True) is False:
+            for employee in state['employees']:
+                employee.pop('manual_order', None)
         conn.execute(text("UPDATE vera_app_setting SET value_json=CAST(:state AS jsonb),revision=:revision,updated_at=NOW() WHERE category='live_tour' AND setting_key='state'"), {'state':store._json(state),'revision':revision})
         meta, _ = store._split(state)
         conn.execute(text(f"UPDATE {store.META_TABLE} SET payload=CAST(:payload AS jsonb),payload_hash=:hash WHERE singleton=1"), {'payload':store._json(meta),'hash':store._digest(meta)})

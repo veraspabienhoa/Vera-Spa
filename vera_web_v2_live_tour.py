@@ -757,6 +757,9 @@ def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
     for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "combo_sale_requests", "break_events", "audit", "backups", "pending_changes"):
         if not isinstance(state.get(key), list):
             state[key] = deepcopy(defaults[key])
+    if state.get("manual_order_active") is False:
+        for row in state.get("employees", []):
+            row.pop("manual_order", None)
     # An explicitly empty catalog is a saved choice, not an uninitialized state.
     state["version"] = STATE_VERSION
     state.setdefault("payment_settings", _default_payment_settings())
@@ -1328,9 +1331,9 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
 def _capture_tour_position(employee: dict[str, Any], now: datetime, state: dict | None = None) -> dict[str, Any]:
     record = _employee_record(employee, now)
     return {
-        "board_index": _ordered_employees(state["employees"], now).index(employee) if state else None,
+        "board_index": _ordered_employees(state["employees"], now, manual_order_active=state.get("manual_order_active", True)).index(employee) if state else None,
         "sort_index": employee.get("sort_index", 0),
-        "manual_order": any(row.get("manual_order") for row in state["employees"]) if state else False,
+        "manual_order": state.get("manual_order_active", True) and any(row.get("manual_order") for row in state["employees"]) if state else False,
         "display": {column: record.get(column, "") for column in ("TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC")},
         "counter_key": "request_count" if _norm(employee.get("request")) == "yc" else "tour_count",
         "counter_day": _counter_business_date(now).isoformat(),
@@ -1375,10 +1378,13 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
         employee["request_count"] = int(employee.get("request_count") or 0) + 1
     else:
         employee["tour_count"] = int(employee.get("tour_count") or 0) + 1
-        # A manual move lasts until the next standard tour starts. Clear the
-        # whole board override so API, browser and exports use start-time order.
-        for row in state["employees"]:
-            row.pop("manual_order", None)
+        # In resource mode invalidate manual ordering without writing unrelated
+        # employee rows. Concurrent starts merge the same false metadata value.
+        state["manual_order_active"] = False
+        if not resource_store.enabled():
+            # Preserve the aggregate format for legacy/shadow writers.
+            for row in state["employees"]:
+                row.pop("manual_order", None)
     _preserve_board_starts(employee)
     employee["board_yc_started_at" if _norm(employee.get("request")) == "yc" else "board_started_at"] = _iso(now)
     employee["status"] = "Đang thực hiện"
@@ -2063,9 +2069,10 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         _clear_assignment(source, now)
         source["sort_index"] = original_position["sort_index"]
         source["last_assignment_display"] = original_position["display"]
-        if original_position.get("board_index") is not None and (original_position.get("manual_order") or any(row.get("manual_order") for row in state["employees"])):
-            restored_order = [row for row in _ordered_employees(state["employees"], now) if row["id"] != source["id"]]
+        if original_position.get("board_index") is not None and (original_position.get("manual_order") or (state.get("manual_order_active", True) and any(row.get("manual_order") for row in state["employees"]))):
+            restored_order = [row for row in _ordered_employees(state["employees"], now, manual_order_active=state.get("manual_order_active", True)) if row["id"] != source["id"]]
             restored_order.insert(min(original_position["board_index"], len(restored_order)), source)
+            state["manual_order_active"] = True
             for index, row in enumerate(restored_order):
                 row["sort_index"] = index
                 row["manual_order"] = True
@@ -2403,7 +2410,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         employee = _employee(state, payload.get("employee_id"))
         # Positions refer to visible roster members; retained assignments are not rows.
         retained = [row for row in state["employees"] if row.get("roster_eligible") is False]
-        ordered = _ordered_employees([row for row in state["employees"] if row.get("roster_eligible") is not False], now)
+        ordered = _ordered_employees([row for row in state["employees"] if row.get("roster_eligible") is not False], now, manual_order_active=state.get("manual_order_active", True))
         if employee not in ordered:
             raise HTTPException(409, "Nhân viên không còn trong danh sách bảng tua.")
         peers = list(ordered) if action == "admin_reorder" else [item for item in ordered if _employee_time_key(item, now) == _employee_time_key(employee, now)]
@@ -2426,6 +2433,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         peer_iter = iter(peers)
         ordered = [next(peer_iter) if item["id"] in peer_ids else item for item in ordered]
         ordered = [item for item in ordered if _norm(item.get("work_status")) != "nghi phep"] + [item for item in ordered if _norm(item.get("work_status")) == "nghi phep"]
+        if action == "admin_reorder":
+            state["manual_order_active"] = True
         for index, item in enumerate(ordered):
             item["sort_index"] = index
             if action == "admin_reorder":
@@ -2890,8 +2899,8 @@ def _employee_time_key(employee: dict[str, Any], now: datetime) -> tuple[int, in
             rank, int(started.timestamp()) if started else 0)
 
 
-def _ordered_employees(employees: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
-    if any(item.get("manual_order") for item in employees):
+def _ordered_employees(employees: list[dict[str, Any]], now: datetime, *, manual_order_active: bool = True) -> list[dict[str, Any]]:
+    if manual_order_active and any(item.get("manual_order") for item in employees):
         return sorted(employees, key=lambda item: (_norm(item.get("work_status")) == "nghi phep", int(item.get("sort_index") or 0)))
     return sorted(employees, key=lambda item: (
         *_employee_time_key(item, now), int(item.get("sort_index") or 0), _norm(item.get("name")),
@@ -3265,8 +3274,11 @@ def _state_response(
     pending_access = can_pending_view and can_invoice_view
     customer_pii = can_customers_view or can_invoice_view or can_paid_invoice_view
     state = deepcopy(state)
+    if state.get("manual_order_active") is False:
+        for row in state["employees"]:
+            row.pop("manual_order", None)
     _ensure_counter_day(state, now)
-    ordered = _ordered_employees([row for row in state["employees"] if row.get("roster_eligible") is not False], now)
+    ordered = _ordered_employees([row for row in state["employees"] if row.get("roster_eligible") is not False], now, manual_order_active=state.get("manual_order_active", True))
     can_recover_hidden = False
     for item in ordered:
         item["hidden"] = False
@@ -3649,7 +3661,7 @@ def _export_rows(
     bounds = bounds or _parse_export_bounds()
     if kind == "board":
         employees = [
-            item for item in _ordered_employees(state["employees"], now)
+            item for item in _ordered_employees(state["employees"], now, manual_order_active=state.get("manual_order_active", True))
             if item.get("roster_eligible") is not False
             and _event_in_export_bounds(item, bounds, fallback_business_date=state.get("business_date"))
         ]
@@ -4145,7 +4157,7 @@ COPY_BOARD_COLUMNS = [
 
 def _png_bytes(state: dict[str, Any], now: datetime, *, include_hidden: bool = False) -> bytes:
     import textwrap
-    employees = [item for item in _ordered_employees(state["employees"], now) if item.get("roster_eligible") is not False]
+    employees = [item for item in _ordered_employees(state["employees"], now, manual_order_active=state.get("manual_order_active", True)) if item.get("roster_eligible") is not False]
     records = [{**_employee_record(item, now), "STT": i} for i, item in enumerate(employees, 1)]
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     try:

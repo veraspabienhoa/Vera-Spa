@@ -13,7 +13,7 @@ import vera_live_tour_relational as relational
 import vera_resource_concurrency as concurrency
 
 FENCE = 'vera:live-tour:resource-fence:v1'
-INDEPENDENT = frozenset({'update_appointment', 'set_vip', 'add_minutes', 'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'complete', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'move_pending', 'finish_to_pending', 'checkout', 'quick_checkout', 'pending_update', 'pending_delete', 'paid_invoice_update', 'paid_invoice_delete', 'combo_purchase', 'combo_import'})
+INDEPENDENT = frozenset({'start', 'start_room', 'update_appointment', 'set_vip', 'add_minutes', 'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'complete', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'move_pending', 'finish_to_pending', 'checkout', 'quick_checkout', 'pending_update', 'pending_delete', 'paid_invoice_update', 'paid_invoice_delete', 'combo_purchase', 'combo_import'})
 FINANCIAL = frozenset({'checkout','quick_checkout','paid_invoice_update','paid_invoice_delete','combo_purchase','combo_import'})
 
 
@@ -64,6 +64,9 @@ def action_resources(state, action, payload, idempotency_key):
             parts.append(record)
             parts.extend(record.get('entries', []))
             ids.update(str(row['employee_id']) for row in record.get('entries', []) if row.get('employee_id'))
+    if action == 'start_room':
+        from vera_web_v2_live_tour import _room_action_members
+        ids.update(str(row['id']) for row in _room_action_members(state, str(payload.get('room') or '').strip(), action))
     parts.extend(row for row in state['employees'] if str(row.get('id')) in ids)
     resources.update(('live_tour_employee', value) for value in ids)
     for part in parts:
@@ -133,7 +136,9 @@ def write(conn, before, after, actor):
                 continue
             if key[0] in domains and (domains[key[0]],key[1]) not in locked:
                 raise HTTPException(409, 'Phạm vi giao dịch đã đổi. Hãy làm mới rồi thử lại.')
-        allowed_meta = {'updated_at','counter_business_date','bill_counters','idempotency'}
+        allowed_meta = {'updated_at','counter_business_date','bill_counters','idempotency','manual_order_active'}
+        if before_meta.get('manual_order_active') != after_meta.get('manual_order_active') and after_meta.get('manual_order_active') is not False:
+            raise HTTPException(409, 'Chỉ tác vụ sắp xếp toàn bảng được bật thứ tự thủ công.')
         if any(before_meta.get(key) != value and key not in allowed_meta for key,value in after_meta.items()):
             raise HTTPException(409, 'Cấu hình đã đổi. Hãy làm mới rồi thử lại.')
     # Allocate the publication revision at commit time. The short metadata row
