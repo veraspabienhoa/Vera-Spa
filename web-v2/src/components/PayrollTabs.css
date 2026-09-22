@@ -1,0 +1,9 @@
+.payroll-tabs-page{min-width:0;max-width:100%;display:grid;gap:16px}
+.payroll-tabs-page>h1{margin:0}
+.payroll-menu-tabs{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.payroll-menu-tabs button{border:2px solid #365f50;border-radius:12px;padding:12px 18px;background:#fff;color:#204b3b;font:inherit;font-weight:700;cursor:pointer}
+.payroll-menu-tabs button[aria-selected="true"]{background:#204b3b;color:#fff}
+.payroll-menu-tabs button:focus-visible{outline:3px solid #c69831;outline-offset:3px}
+.payroll-tabs-page>[role="tabpanel"]{min-width:0;max-width:100%}
+.payroll-tabs-page>[hidden]{display:none!important}
+@media(max-width:600px){.payroll-menu-tabs{flex-wrap:nowrap}.payroll-menu-tabs button{flex:1;min-width:0;padding:10px 8px;font-size:14px}}

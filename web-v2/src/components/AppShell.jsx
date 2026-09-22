@@ -17,8 +17,7 @@ const items = [
   { id: 'notifications', label: 'Thông báo', icon: BellRing, ready: true, adminOnly: true },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
-  { id: 'payroll', label: 'Lương KTV', icon: WalletCards, ready: true, permission: 'payroll_history' },
-  { id: 'department-payroll', label: 'Lương hành chánh', icon: WalletCards, ready: true, permission: 'payroll_calculate' },
+  { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
   { id: 'payroll-config', label: 'Cấu hình lương', icon: Settings2, ready: true, permission: 'payroll_config_edit', adminOnly: true },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
@@ -384,7 +383,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           }).map(({ id, label, icon: Icon, ready }) => (
             <a
               key={id}
-              className={`nav-item ${currentPage === id ? 'active' : ''} ${ready ? '' : 'disabled'}`}
+              className={`nav-item ${(currentPage === id || (currentPage === 'department-payroll' && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
               onClick={(event) => chooseFromLink(event, id, ready)}
               aria-disabled={!ready || undefined}
