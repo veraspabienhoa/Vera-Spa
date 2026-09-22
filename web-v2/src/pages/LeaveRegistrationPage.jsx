@@ -1,3 +1,4 @@
+import useAutoSave from '../hooks/useAutoSave'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import VeraDateInput from '../components/VeraDateInput'
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
@@ -120,6 +121,9 @@ export default function LeaveRegistrationPage({ user }) {
   const [letanLeavePolicy, setLetanLeavePolicy] = useState({ enabled: true })
   const [employees, setEmployees] = useState([])
   const [selectedUids, setSelectedUids] = useState([])
+  const leaveFormRef = useRef(null)
+  const leavePageRef = useRef(null)
+  const mutationRef = useRef(false)
   const [reasonDrafts, setReasonDrafts] = useState({})
   const [form, setForm] = useState(emptyForm)
   const [busy, setBusy] = useState(true)
@@ -486,7 +490,8 @@ export default function LeaveRegistrationPage({ user }) {
   }
 
   const saveEdits = async () => {
-    if (changedRecords.length === 0) return
+    if (mutationRef.current || changedRecords.length === 0) return
+    mutationRef.current = true
     const updatedCount = changedRecords.length
     setManaging(true)
     setListActionNotice(null)
@@ -524,9 +529,11 @@ export default function LeaveRegistrationPage({ user }) {
         message: err.message || 'Không sửa được lịch nghỉ.',
       })
     } finally {
+      mutationRef.current = false
       setManaging(false)
     }
   }
+  useAutoSave({ signature: JSON.stringify(changedRecords.map((item) => [item.record_uid, reasonDrafts[item.record_uid]])), enabled: !busy && !managing && !saving && changedRecords.length > 0, save: saveEdits, rootRef: leavePageRef, lockRef: mutationRef })
 
   const deleteSelected = async () => {
     if (deletableSelectedUids.length === 0) return
@@ -650,7 +657,8 @@ export default function LeaveRegistrationPage({ user }) {
   }
 
   const submit = async (event) => {
-    event.preventDefault()
+    event?.preventDefault()
+    if (mutationRef.current || !leaveFormRef.current?.checkValidity()) return
     setMessage('')
     setWarnings([])
     setError('')
@@ -662,6 +670,7 @@ export default function LeaveRegistrationPage({ user }) {
           : 'Tài khoản hiện tại chưa được cấp quyền ghi lịch nghỉ.')
       return
     }
+    mutationRef.current = true
     setSaving(true)
     try {
       const payload = {
@@ -689,12 +698,14 @@ export default function LeaveRegistrationPage({ user }) {
     } catch (err) {
       setError(`KHÔNG THÀNH CÔNG (${err.message || 'Không ghi được lịch nghỉ.'})`)
     } finally {
+      mutationRef.current = false
       setSaving(false)
     }
   }
+  useAutoSave({ signature: JSON.stringify([date, form]), enabled: canCreate && !busy && !saving && !managing && Boolean(form.employee_name && form.leave_reason) && (!selectedReason?.requires_manual_penalty || form.manual_penalty !== ''), save: submit, rootRef: leaveFormRef, lockRef: mutationRef, waitForExit: true })
 
   return (
-    <div>
+    <div ref={leavePageRef}>
       <div className="page-heading-row">
         <div><h1 className="page-title">Đăng ký nghỉ</h1></div>
         <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /> Làm mới</button>
@@ -792,7 +803,9 @@ export default function LeaveRegistrationPage({ user }) {
               riêng Loại nghỉ Không phép trước ít nhất {employeeSelfServicePolicy.unpaid_notice_days} ngày.
             </div>
           )}
-          <form className="leave-form" onSubmit={submit}>
+          <form ref={leaveFormRef} className="leave-form" onSubmit={submit}>
+            <p role="status">Lịch nghỉ tự lưu khi nhập đủ và rời khung đăng ký. Có thể bấm Ghi để lưu ngay.</p>
+            <fieldset disabled={saving || managing} className="autosave-fields">
             <label>Tên nhân viên</label>
             <select
               value={form.employee_name}
@@ -854,6 +867,7 @@ export default function LeaveRegistrationPage({ user }) {
             {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
             {error && <div className="error-box">{error}</div>}
             <button className="primary-button" type="submit" disabled={saving || !canCreate}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
+            </fieldset>
           </form>
         </section>
 

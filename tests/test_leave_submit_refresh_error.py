@@ -23,6 +23,8 @@ function harness(failedRead = '', failedCreate = false) {
   let reading = false
   const context = {
     isApiConfigured: true, canCreate: true, canChooseEmployee: true,
+    useAutoSave: () => {}, busy: false, saving: false, managing: false,
+    mutationRef: { current: false }, leaveFormRef: { current: { checkValidity: () => true } },
     dateIsPast: false, date: '2026-09-09', rangeStart: '', rangeEnd: '',
     listRangeStart: '', listRangeEnd: '', statsEmployeeFilter: '', identityKey: 'test',
     recordReasonsRevision: { current: 0 }, recordReasonsRef: { current: {} }, latestLoad: { current: null },

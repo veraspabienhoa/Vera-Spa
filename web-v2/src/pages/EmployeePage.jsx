@@ -1,3 +1,4 @@
+import useAutoSave from '../hooks/useAutoSave'
 import { searchTextMatches } from '../lib/searchText'
 import {
   BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
@@ -158,6 +159,9 @@ export default function EmployeePage({ user }) {
   const [profileScrollRequest, setProfileScrollRequest] = useState(0)
   const [bankCatalogBusy, setBankCatalogBusy] = useState(false)
   const profileSectionRef = useRef(null)
+  const listRef = useRef(null)
+  const savingRef = useRef(false)
+  const [profileBaseline, setProfileBaseline] = useState('')
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true)
@@ -305,14 +309,23 @@ export default function EmployeePage({ user }) {
   })
 
   const saveRows = () => run('save', async () => {
-    if (!dirtyRows.length) throw new Error('Chưa có thay đổi cần lưu.')
-    for (const employee of dirtyRows) {
-      await veraApi.updateStaff(employee.username, changedPayload(employee, drafts[employee.username]))
-    }
-    const count = dirtyRows.length
-    await load(true)
-    setNotice({ type: 'success', message: `Đã lưu thay đổi cho ${count} nhân viên.` })
+    if (savingRef.current || !dirtyRows.length || listRef.current?.querySelector(':invalid')) return
+    savingRef.current = true
+    try {
+      for (const employee of dirtyRows) {
+        const result = await veraApi.updateStaff(employee.username, changedPayload(employee, drafts[employee.username]))
+        // Advance the saved baseline only. Edits made while awaiting the API stay in drafts.
+        setData((current) => ({ ...current, employees: current.employees.map((row) => row.username === employee.username ? result.employee : row) }))
+      }
+      let refreshWarning = ''
+      try {
+        const fresh = await veraApi.staff()
+        setData((current) => ({ ...current, summary: fresh.summary, shift_summary: fresh.shift_summary }))
+      } catch { refreshWarning = ' Thống kê chưa tải lại được; hãy bấm Làm mới.' }
+      setNotice({ type: 'success', message: `Đã tự lưu thay đổi cho ${dirtyRows.length} nhân viên.${refreshWarning}` })
+    } finally { savingRef.current = false }
   })
+  useAutoSave({ signature: dirtyRows.length ? JSON.stringify(dirtyRows.map((row) => [row.username, drafts[row.username]])) : '', enabled: canSaveRows && !loading && !busy && dirtyRows.length > 0, save: saveRows, rootRef: listRef, lockRef: savingRef })
 
   const deleteSelected = () => run('delete', async () => {
     if (!selected.length) throw new Error('Chưa chọn nhân viên cần xóa.')
@@ -348,10 +361,12 @@ export default function EmployeePage({ user }) {
 
   const openProfile = (employee) => {
     setProfileUser(employee.username)
-    setProfileDraft(Object.fromEntries(PROFILE_FIELDS.map(([field]) => [
+    const draft = Object.fromEntries(PROFILE_FIELDS.map(([field]) => [
       field,
       field.includes('date') ? toInputDate(employee[field]) : employee[field] ?? '',
-    ])))
+    ]))
+    setProfileDraft(draft)
+    setProfileBaseline(JSON.stringify(draft))
     setProfileScrollRequest((request) => request + 1)
   }
 
@@ -362,16 +377,21 @@ export default function EmployeePage({ user }) {
   }
 
   const saveProfile = () => run('profile', async () => {
-    const payload = { ...profileDraft }; delete payload.bank_code
-    payload.birth_date = datePayload(payload.birth_date)
-    payload.employment_start_date = datePayload(payload.employment_start_date)
-    payload.employment_end_date = datePayload(payload.employment_end_date)
-    payload.cccd_issue_date = datePayload(payload.cccd_issue_date)
-    const result = await veraApi.updateStaff(profileUser, payload)
-    setProfileUser('')
-    await load(true)
-    setNotice({ type: 'success', message: result.message })
+    if (savingRef.current || profileSectionRef.current?.querySelector(':invalid')) return
+    savingRef.current = true
+    try {
+      const payload = { ...profileDraft }; delete payload.bank_code
+      payload.birth_date = datePayload(payload.birth_date)
+      payload.employment_start_date = datePayload(payload.employment_start_date)
+      payload.employment_end_date = datePayload(payload.employment_end_date)
+      payload.cccd_issue_date = datePayload(payload.cccd_issue_date)
+      const result = await veraApi.updateStaff(profileUser, payload)
+      setProfileBaseline(JSON.stringify(profileDraft))
+      setData((current) => ({ ...current, employees: current.employees.map((row) => row.username === profileUser ? result.employee : row) }))
+      setNotice({ type: 'success', message: result.message })
+    } finally { savingRef.current = false }
   })
+  useAutoSave({ signature: JSON.stringify(profileDraft) !== profileBaseline ? JSON.stringify(profileDraft) : '', enabled: Boolean(profileUser) && !busy && JSON.stringify(profileDraft) !== profileBaseline, save: saveProfile, rootRef: profileSectionRef, lockRef: savingRef })
 
   const toggleSelected = (username) => {
     setSelected((current) => current.includes(username)
@@ -533,8 +553,12 @@ export default function EmployeePage({ user }) {
         </div>
       </section>}
 
-      <section className="panel staff-list-panel">
+      <section ref={listRef} className="panel staff-list-panel">
         <div className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /> Làm mới</button></div>
+        <div className="staff-shift-summary" aria-label="Thống kê ca Leader và Nhân viên đang làm việc">
+          {[1, 2].flatMap((shift) => [['regular', `Số lượng nhân viên Ca ${shift}`], ['fixed', `Cố định Ca ${shift}`], ['total', `Tổng Ca ${shift}`]].map(([kind, label]) => <div className={`metric-card shift-${shift}`} key={`${shift}-${kind}`}><span>{label}</span><strong>{data?.shift_summary?.[`ca_${shift}_${kind}`] ?? 0}</strong></div>))}
+        </div>
+        <p role="status">{busy === 'save' || busy === 'profile' ? 'Đang tự lưu…' : dirtyRows.length ? 'Có thay đổi chờ tự lưu khi nhập xong.' : 'Các thay đổi được tự động lưu sau khi nhập xong.'}</p>
         {canSelectRows && <div className="staff-list-selection-actions">
           <button className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/> Chọn tất cả</button>
           <button className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}>Bỏ chọn</button>

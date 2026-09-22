@@ -210,3 +210,27 @@ test('a delayed save refreshes the current filters instead of reopening the earl
     assert.match(f.dom.window.document.body.textContent, /LƯU SỬA THÀNH CÔNG/)
   } finally { completeSave({}); await f.dispose() }
 })
+
+test('completed leave automatically saves on leaving the form and does not create twice', async () => {
+  let creates = 0, finish
+  const f = await fixture({ records: [], catalog: { [iso(0)]: [{ name: 'Nghỉ CÓ phép' }] }, setupApi(api) {
+    api.employees = async () => ({ employees: [{ username: 'Test', role: 'nhanvien', employment_status: 'Đang làm việc' }] })
+    api.createLeave = async () => { creates += 1; await new Promise((resolve) => { finish = resolve }); return { warnings: [] } }
+  } })
+  try {
+    const form = f.dom.window.document.querySelector('.leave-form')
+    const [employee, reason] = form.querySelectorAll('select')
+    await act(() => {
+      employee.value = 'Test'; employee.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }))
+      reason.value = 'Nghỉ CÓ phép'; reason.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }))
+    })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1000)) })
+    assert.equal(creates, 1)
+    await act(() => form.dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true })))
+    assert.equal(creates, 1, 'manual submit during autosave must share the same lock')
+    await act(async () => finish())
+    assert.equal(employee.value, '')
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1000)) })
+    assert.equal(creates, 1, 'successful reset must not create again')
+  } finally { await f.dispose() }
+})
