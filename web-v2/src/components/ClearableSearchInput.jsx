@@ -1,3 +1,4 @@
+import UiCustomText from './UiCustomText'
 import { forwardRef, useRef } from 'react'
 import './ClearableSearchInput.css'
 
@@ -16,7 +17,7 @@ const ClearableSearchInput = forwardRef(function ClearableSearchInput({ onClear,
     input.current = node
     if (typeof forwardedRef === 'function') forwardedRef(node)
     else if (forwardedRef) forwardedRef.current = node
-  }}/>{Boolean(props.value) && <button type="button" className="search-clear-button" disabled={props.disabled || props.readOnly} aria-label={`Clear ${props['aria-label'] || props.placeholder || ''}`} onMouseDown={event => event.preventDefault()} onClick={clear}>Clear</button>}</span>
+  }}/>{Boolean(props.value) && <button data-ui-key="u-ecd3445ac028" data-ui-label-default="Clear" type="button" className="search-clear-button" disabled={props.disabled || props.readOnly} aria-label={`Clear ${props['aria-label'] || props.placeholder || ''}`} onMouseDown={event => event.preventDefault()} onClick={clear}><UiCustomText uiKey="u-ecd3445ac028">Clear</UiCustomText></button>}</span>
 })
 
 export default ClearableSearchInput

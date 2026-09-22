@@ -2,15 +2,15 @@
 export default function layoutIdentity({ types: t }) {
   return { visitor: { JSXOpeningElement(path, state) {
     const name = path.node.name
-    if (!t.isJSXIdentifier(name) || !/^[a-z]/.test(name.name)) return
+    if (!t.isJSXIdentifier(name) || !(/^[a-z]/.test(name.name) || name.name === 'UiToolbar')) return
     const file = (state.filename || '').replaceAll('\\', '/').split('/src/')[1]
-    if (!file || file.includes('LayoutDesigner')) return
+    if (!file || /LayoutDesigner|UiToolbar|UiCustomText|UICustomization/.test(file)) return
     const owner = path.findParent(parent => parent.isFunction())
     const ownerName = owner?.node.id?.name || owner?.parentPath?.node.id?.name || 'module'
     const staticAttributes = path.node.attributes.filter(attr => t.isJSXAttribute(attr)
       && ['id', 'className', 'role', 'aria-label', 'name', 'data-label'].includes(attr.name.name)
       && t.isStringLiteral(attr.value)).map(attr => `${attr.name.name}=${attr.value.value}`).join('|')
-    const signature = `${file}:${ownerName}:${name.name}:${staticAttributes}`
+    const signature = `${file}:${ownerName}:${name.name === 'UiToolbar' ? 'div' : name.name}:${staticAttributes}`
     state.layoutOccurrences ||= new Map()
     const occurrence = state.layoutOccurrences.get(signature) || 0
     state.layoutOccurrences.set(signature, occurrence + 1)

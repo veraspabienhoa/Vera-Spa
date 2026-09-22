@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
 import {
   Download, FileCheck2, FileText, LoaderCircle, Plus, RefreshCw,
@@ -36,7 +38,7 @@ function Notice({ notice, onClose }) {
     <div className={`rules-notice ${notice.type}`} role="status">
       <strong>{notice.type === 'success' ? 'THÀNH CÔNG' : 'KHÔNG THÀNH CÔNG'}</strong>
       <span>{notice.message}</span>
-      <button type="button" onClick={onClose} aria-label="Đóng thông báo">×</button>
+      <button data-ui-key="u-1861ebb8a0a3" data-ui-label-default="×" type="button" onClick={onClose} aria-label="Đóng thông báo"><UiCustomText uiKey="u-1861ebb8a0a3">×</UiCustomText></button>
     </div>
   )
 }
@@ -402,15 +404,15 @@ export default function RulesPage() {
         @media(max-width:900px){.department-rules-grid{grid-template-columns:1fr}.department-rule-row{grid-template-columns:auto 1fr auto}.department-rule-row .department-rule-amount,.department-rule-row .department-rule-note{grid-column:2/3}}
         @media(max-width:720px){.rules-filter-row{grid-template-columns:1fr}.rules-page .rules-control-panel{padding:12px}}
       `}</style>
-      <div className="page-heading-row rules-heading">
+      <div data-ui-key="u-b88ff8c44721" className="page-heading-row rules-heading">
         <div>
           <span className="eyebrow"><FileText size={14} /> Quy định vận hành</span>
           <h1 className="page-title">Bảng nội quy</h1>
           <p className="page-subtitle">Quản lý đầy đủ lý do nghỉ, ngày phép, mức phạt và quyền đăng ký/hủy đang áp dụng.</p>
         </div>
-        <button className="secondary-button" onClick={discard} disabled={loading || busy === 'save'}>
-          <RefreshCw size={17} className={loading ? 'spin' : ''} /> Làm mới
-        </button>
+        <button data-ui-key="u-f3eeda5d3c4e" data-ui-label-default="Làm mới" className="secondary-button" onClick={discard} disabled={loading || busy === 'save'}>
+          <RefreshCw size={17} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-f3eeda5d3c4e"> Làm mới
+        </UiCustomText></button>
       </div>
 
       <Notice notice={notice} onClose={() => setNotice(null)} />
@@ -422,12 +424,12 @@ export default function RulesPage() {
           ['Số cột', columns.length, ShieldCheck],
           ['Cập nhật gần nhất', displayDateTime(data?.updated_at), RefreshCw],
         ].map(([label, value, Icon]) => (
-          <div className="metric-card" key={label}><div className="metric-icon"><Icon size={21} /></div><div><span>{label}</span><strong className={label === 'Cập nhật gần nhất' ? 'metric-small-value' : ''}>{value}</strong></div></div>
+          <div data-ui-key="u-a228562451fe" className="metric-card" key={label}><div className="metric-icon"><Icon size={21} /></div><div><span>{label}</span><strong className={label === 'Cập nhật gần nhất' ? 'metric-small-value' : ''}>{value}</strong></div></div>
         ))}
       </div>
 
-      <section className="panel late-threshold-panel">
-        <div className="panel-title-row">
+      <section data-ui-key="u-7059df17c382" className="panel late-threshold-panel">
+        <div data-ui-key="u-a46d449218ce" className="panel-title-row">
           <div>
             <h2>NGƯỠNG TỰ ĐỘNG PHẠT ĐI TRỄ</h2>
             <p>Hệ thống chỉ tạo phạt khi số phút trễ sau khi trừ Hỗ trợ đạt ngưỡng này.</p>
@@ -440,15 +442,15 @@ export default function RulesPage() {
               ? <input type="number" min="5" max="180" inputMode="numeric" value={numberInputDisplayValue(lateThreshold)} onChange={(event) => setLateThreshold(event.target.value)} />
               : <strong>{lateThreshold} phút</strong>}
           </label>
-          {canEditLateThreshold && <button className="primary-button" disabled={!lateThresholdDirty || busy === 'late-threshold'} onClick={saveLateThreshold}>
+          {canEditLateThreshold && <button data-ui-key="u-d0db6c8b4796" className="primary-button" disabled={!lateThresholdDirty || busy === 'late-threshold'} onClick={saveLateThreshold}>
             {busy === 'late-threshold' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Áp dụng ngưỡng mới
           </button>}
         </div>
         <p className="page-subtitle" style={{ marginTop: 10 }}>Ví dụ: ngưỡng 5 phút thì trễ 4 phút không phạt; trễ từ 5 phút trở lên mới phạt.</p>
       </section>
 
-      <section className="panel weekend-unpaid-nth-panel">
-        <div className="panel-title-row">
+      <section data-ui-key="u-c8a830458926" className="panel weekend-unpaid-nth-panel">
+        <div data-ui-key="u-48ba3acb6907" className="panel-title-row">
           <div>
             <h2>NGƯỜI THỨ N – VI PHẠM CUỐI TUẦN</h2>
             <p>Công tắc áp dụng cho Nghỉ, Đi trễ và Về sớm không phép vào Thứ Bảy và Chủ nhật.</p>
@@ -465,7 +467,7 @@ export default function RulesPage() {
               chỉ chịu mức phạt theo Nội quy, không cộng thêm 100.000đ/người. Ngày thường không thay đổi.
             </p>
           </div>
-          {canEditWeekendUnpaidNthPenalty && <button
+          {canEditWeekendUnpaidNthPenalty && <button data-ui-key="u-4028ff411299"
             type="button"
             className={weekendUnpaidNthPenalty.enabled ? 'danger-button' : 'primary-button'}
             disabled={busy === 'weekend-unpaid-nth-penalty'}
@@ -480,8 +482,8 @@ export default function RulesPage() {
         {!canEditWeekendUnpaidNthPenalty && <p className="weekend-unpaid-nth-admin-note"><ShieldCheck size={15} /> Chỉ Admin được thay đổi công tắc này.</p>}
       </section>
 
-      <section className="panel employee-self-service-panel">
-        <div className="panel-title-row">
+      <section data-ui-key="u-bc343fbf501e" className="panel employee-self-service-panel">
+        <div data-ui-key="u-dec909ddbd84" className="panel-title-row">
           <div>
             <h2>NHÂN VIÊN TỰ ĐĂNG KÝ / SỬA / XÓA LỊCH NGHỈ</h2>
             <p>Áp dụng cho tài khoản Nhân viên, Leader, Locker và Tạp vụ đối với lịch nghỉ của chính mình.</p>
@@ -504,8 +506,8 @@ export default function RulesPage() {
         </div>
         <div className="daily-quota-footer">
           <span><ShieldCheck size={15} /> Khi tạm dừng, hệ thống quay lại áp dụng Phân quyền và các cột đăng ký/hủy trong Bảng nội quy hiện hành.</span>
-          {canEditEmployeeSelfServicePolicy && <div className="rules-toolbar">
-            <button
+          {canEditEmployeeSelfServicePolicy && <UiToolbar data-ui-key="u-579aa96d51ad" className="rules-toolbar">
+            <button data-ui-key="u-597c70e48707"
               type="button"
               className={employeeSelfServicePolicy.enabled ? 'danger-button' : 'primary-button'}
               disabled={busy === 'employee-self-service-policy'}
@@ -514,7 +516,7 @@ export default function RulesPage() {
               {busy === 'employee-self-service-policy' ? <LoaderCircle size={17} className="spin" /> : <Power size={17} />}
               {employeeSelfServicePolicy.enabled ? 'Tạm dừng nội quy' : 'Kích hoạt nội quy'}
             </button>
-            <button
+            <button data-ui-key="u-4a5f12b19370"
               type="button"
               className="primary-button"
               disabled={!employeeSelfServiceDirty || busy === 'employee-self-service-policy'}
@@ -523,7 +525,7 @@ export default function RulesPage() {
               {busy === 'employee-self-service-policy' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
               Lưu thay đổi
             </button>
-          </div>}
+          </UiToolbar>}
         </div>
         {!canEditEmployeeSelfServicePolicy && <p className="weekend-unpaid-nth-admin-note"><ShieldCheck size={15} /> Chỉ Admin được kích hoạt, tạm dừng hoặc thay đổi nội quy này.</p>}
       </section>
@@ -537,8 +539,8 @@ export default function RulesPage() {
         onSave={saveLetanLeavePolicy}
       />
 
-      <section className="panel daily-quota-panel">
-        <div className="panel-title-row">
+      <section data-ui-key="u-a38b0ba3614a" className="panel daily-quota-panel">
+        <div data-ui-key="u-a694bdbc2fa5" className="panel-title-row">
           <div>
             <h2>HẠN MỨC NGHỈ THEO NGÀY</h2>
             <p>Số nhân viên tối đa được nghỉ CÓ phép và nghỉ phát sinh trong từng ngày.</p>
@@ -546,8 +548,8 @@ export default function RulesPage() {
           {quotaDirty && <span className="rules-unsaved-chip">Chưa áp dụng</span>}
         </div>
         <div className="daily-quota-table-wrap">
-          <table className="daily-quota-table">
-            <thead><tr><th>Thứ</th><th>Nghỉ CÓ phép</th><th>Nghỉ phát sinh</th></tr></thead>
+          <table data-ui-key="u-de1b4d8e6a3c" className="daily-quota-table">
+            <thead><tr><th data-ui-key="u-50c8291aec9f" data-ui-label-default="Thứ"><UiCustomText uiKey="u-50c8291aec9f">Thứ</UiCustomText></th><th data-ui-key="u-b553cb88fc00" data-ui-label-default="Nghỉ CÓ phép"><UiCustomText uiKey="u-b553cb88fc00">Nghỉ CÓ phép</UiCustomText></th><th data-ui-key="u-b0d62738e2d3" data-ui-label-default="Nghỉ phát sinh"><UiCustomText uiKey="u-b0d62738e2d3">Nghỉ phát sinh</UiCustomText></th></tr></thead>
             <tbody>{quotaRows.map((item) => (
               <tr key={item.weekday}>
                 <td><strong>{item.weekday_label}</strong></td>
@@ -565,14 +567,14 @@ export default function RulesPage() {
         </div>
         <div className="daily-quota-footer">
           <span><ShieldCheck size={15} /> Chỉ Admin được thay đổi và áp dụng hạn mức này.</span>
-          {canEditDailyQuota && <button className="primary-button" disabled={!quotaDirty || busy === 'quota'} onClick={saveDailyQuota}>
+          {canEditDailyQuota && <button data-ui-key="u-9c322c19927c" className="primary-button" disabled={!quotaDirty || busy === 'quota'} onClick={saveDailyQuota}>
             {busy === 'quota' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Áp dụng nội quy mới
           </button>}
         </div>
       </section>
 
-      <section className="panel department-rules-panel">
-        <div className="panel-title-row">
+      <section data-ui-key="u-c044cb90c7c2" className="panel department-rules-panel">
+        <div data-ui-key="u-6de79bf12a5d" className="panel-title-row">
           <div>
             <h2>NỘI QUY LOCKER / LỄ TÂN</h2>
             <p>Admin nhập nội dung và mức phạt tại đây. Khi bấm áp dụng, cùng cấu hình này được sử dụng trong hệ thống và bảng lương bộ phận.</p>
@@ -581,53 +583,53 @@ export default function RulesPage() {
         <div className="department-rules-grid">{Object.entries(departmentRuleLabels).map(([department, label]) => {
           const rules = departmentRules[department] || []
           const ruleDirty = departmentRulesDirty(department)
-          return <div className="department-rules-card" key={department}>
-            <div className="department-rules-card-head"><h3>{label.toUpperCase()}</h3>{ruleDirty && <span className="rules-unsaved-chip">Chưa áp dụng</span>}</div>
+          return <div data-ui-key="u-c91b62368f20" className="department-rules-card" key={department}>
+            <div data-ui-key="u-2057f6a29fd5" className="department-rules-card-head"><h3>{label.toUpperCase()}</h3>{ruleDirty && <span className="rules-unsaved-chip">Chưa áp dụng</span>}</div>
             <div className="department-rules-list">{rules.map((rule) => <div className="department-rule-row" key={rule.id}>
               <input type="checkbox" checked={rule.enabled !== false} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'enabled', event.target.checked)} aria-label={`Áp dụng ${rule.name || label}`} />
               <input type="text" placeholder="Nội dung vi phạm" value={rule.name || ''} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'name', event.target.value)} />
               <input className="department-rule-amount" type="number" min="0" inputMode="numeric" placeholder="Mức phạt" value={numberInputDisplayValue(rule.amount)} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'amount', Number(event.target.value))} />
               <input className="department-rule-note" type="text" placeholder="Ghi chú" value={rule.note || ''} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'note', event.target.value)} />
-              {canEditDepartmentRules && <button type="button" className="icon-button danger" onClick={() => removeDepartmentRule(department, rule.id)} aria-label={`Xóa nội quy ${label}`}><Trash2 size={15} /></button>}
+              {canEditDepartmentRules && <button data-ui-key="u-cedb2f83521b" type="button" className="icon-button danger" onClick={() => removeDepartmentRule(department, rule.id)} aria-label={`Xóa nội quy ${label}`}><Trash2 size={15} /></button>}
             </div>)}</div>
             {!rules.length && <div className="department-rules-empty">Chưa có nội dung phạt. Admin sẽ nhập sau.</div>}
-            {canEditDepartmentRules && <div className="department-rules-actions">
-              <button type="button" className="secondary-button" onClick={() => addDepartmentRule(department)}><Plus size={15} /> Thêm nội quy</button>
-              <button type="button" className="primary-button" disabled={!ruleDirty || busy === `department-${department}`} onClick={() => saveDepartmentRules(department)}>{busy === `department-${department}` ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />} Áp dụng {label}</button>
-            </div>}
+            {canEditDepartmentRules && <UiToolbar data-ui-key="u-7a5b303285d8" className="department-rules-actions">
+              <button data-ui-key="u-151d867779a2" data-ui-label-default="Thêm nội quy" type="button" className="secondary-button" onClick={() => addDepartmentRule(department)}><Plus size={15} /><UiCustomText uiKey="u-151d867779a2"> Thêm nội quy</UiCustomText></button>
+              <button data-ui-key="u-1fe5427e0433" type="button" className="primary-button" disabled={!ruleDirty || busy === `department-${department}`} onClick={() => saveDepartmentRules(department)}>{busy === `department-${department}` ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />} Áp dụng {label}</button>
+            </UiToolbar>}
           </div>
         })}</div>
       </section>
 
-      <section className="panel rules-control-panel">
+      <section data-ui-key="u-31b21f743960" className="panel rules-control-panel">
         <div className="rules-filter-row">
           <div className="rules-search"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tìm trong toàn bộ Bảng nội quy" /></div>
           <label>Lý do nghỉ<select value={reasonFilter} onChange={(event) => setReasonFilter(event.target.value)}><option value="">Tất cả lý do nghỉ</option>{reasonOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
           <label>Loại nghỉ<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="">Tất cả loại nghỉ</option>{typeOptions.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         </div>
-        {canEdit && <div className="rules-toolbar" style={{ marginTop: 9 }}>
-          <div className="rules-add-column"><input value={newColumn} onChange={(event) => setNewColumn(event.target.value)} placeholder="Tên cột mới" /><button className="secondary-button" onClick={addColumn}><Plus size={16} /> Thêm cột</button></div>
-          <div className="rules-delete-column"><select value={deleteColumn} onChange={(event) => setDeleteColumn(event.target.value)}><option value="">Chọn cột cần xóa</option>{deletableColumns.map((column) => <option key={column}>{column}</option>)}</select><button className="danger-button" disabled={!deleteColumn} onClick={removeColumn}><Trash2 size={16} /> Xóa cột</button></div>
-        </div>}
+        {canEdit && <UiToolbar data-ui-key="u-ad0598c8b88a" className="rules-toolbar" style={{ marginTop: 9 }}>
+          <div className="rules-add-column"><input value={newColumn} onChange={(event) => setNewColumn(event.target.value)} placeholder="Tên cột mới" /><button data-ui-key="u-7f92e5e893c6" data-ui-label-default="Thêm cột" className="secondary-button" onClick={addColumn}><Plus size={16} /><UiCustomText uiKey="u-7f92e5e893c6"> Thêm cột</UiCustomText></button></div>
+          <div className="rules-delete-column"><select value={deleteColumn} onChange={(event) => setDeleteColumn(event.target.value)}><option value="">Chọn cột cần xóa</option>{deletableColumns.map((column) => <option key={column}>{column}</option>)}</select><button data-ui-key="u-7b3ae67a6980" data-ui-label-default="Xóa cột" className="danger-button" disabled={!deleteColumn} onClick={removeColumn}><Trash2 size={16} /><UiCustomText uiKey="u-7b3ae67a6980"> Xóa cột</UiCustomText></button></div>
+        </UiToolbar>}
         <div className="rules-actionbar">
-          {canEdit && <button className="primary-button" onClick={addRow}><Plus size={17} /> Thêm dòng</button>}
-          {permissions.official_rules_export && <button className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportRulesExcel())}><Download size={17} /> Export Excel</button>}
+          {canEdit && <button data-ui-key="u-d3e024d5e421" data-ui-label-default="Thêm dòng" className="primary-button" onClick={addRow}><Plus size={17} /><UiCustomText uiKey="u-d3e024d5e421"> Thêm dòng</UiCustomText></button>}
+          {permissions.official_rules_export && <button data-ui-key="u-dfcfd317a293" data-ui-label-default="Export Excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportRulesExcel())}><Download size={17} /><UiCustomText uiKey="u-dfcfd317a293"> Export Excel</UiCustomText></button>}
           {permissions.official_rules_import && <>
             <input ref={importRef} className="rules-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importExcel} />
-            <button className="secondary-button" disabled={busy === 'import'} onClick={() => importRef.current?.click()}><Upload size={17} /> Import Excel</button>
+            <button data-ui-key="u-3ad4df54b688" data-ui-label-default="Import Excel" className="secondary-button" disabled={busy === 'import'} onClick={() => importRef.current?.click()}><Upload size={17} /><UiCustomText uiKey="u-3ad4df54b688"> Import Excel</UiCustomText></button>
           </>}
-          {canEdit && <button className="secondary-button" disabled={!dirty || busy === 'save'} onClick={save}>{busy === 'save' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Ghi thay đổi & áp dụng</button>}
-          {canEdit && <button className="danger-button rules-delete-rows" disabled={!selected.length} onClick={removeSelected}><Trash2 size={17} /> Xóa dòng đã chọn ({selected.length})</button>}
+          {canEdit && <button data-ui-key="u-51b5431ae5eb" className="secondary-button" disabled={!dirty || busy === 'save'} onClick={save}>{busy === 'save' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Ghi thay đổi & áp dụng</button>}
+          {canEdit && <button data-ui-key="u-4f5b3d0d8d83" className="danger-button rules-delete-rows" disabled={!selected.length} onClick={removeSelected}><Trash2 size={17} /> Xóa dòng đã chọn ({selected.length})</button>}
         </div>
         {!canEdit && <div className="rules-view-note"><ShieldCheck size={16} /> Bạn đang ở chế độ chỉ xem. Chỉ Admin/Quản lý được phép thay đổi Bảng nội quy.</div>}
       </section>
 
-      <section className="panel rules-grid-panel">
-        <div className="panel-title-row"><div><h2>BẢNG NỘI QUY</h2><p>{visibleRows.length} / {rows.length} dòng · {data?.updated_by ? `Cập nhật bởi ${data.updated_by}` : 'Chưa có người cập nhật'}.</p></div>{dirty && <span className="rules-unsaved-chip">Chưa ghi</span>}</div>
+      <section data-ui-key="u-70dcbd5c56b7" className="panel rules-grid-panel">
+        <div data-ui-key="u-002b1c2b9b6f" className="panel-title-row"><div><h2>BẢNG NỘI QUY</h2><p>{visibleRows.length} / {rows.length} dòng · {data?.updated_by ? `Cập nhật bởi ${data.updated_by}` : 'Chưa có người cập nhật'}.</p></div>{dirty && <span className="rules-unsaved-chip">Chưa ghi</span>}</div>
         {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải Bảng nội quy…</div> : <>
           <div className="rules-desktop-table table-wrap">
-            <table className="rules-table">
-              <thead><tr>{canEdit && <th className="rules-select-column">Chọn</th>}{columns.map((column) => <th key={column} className={requiredColumns.has(column) ? 'required' : ''}>{column}</th>)}</tr></thead>
+            <table data-ui-key="u-6422d71adff5" className="rules-table">
+              <thead><tr>{canEdit && <th data-ui-key="u-1b55cdb1c452" data-ui-label-default="Chọn" className="rules-select-column"><UiCustomText uiKey="u-1b55cdb1c452">Chọn</UiCustomText></th>}{columns.map((column) => <th data-ui-key="u-039558ffbc48" key={column} className={requiredColumns.has(column) ? 'required' : ''}>{column}</th>)}</tr></thead>
               <tbody>{visibleRows.map((row) => <tr key={row.id}>
                 {canEdit && <td className="center rules-select-column"><input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggleSelected(row.id)} aria-label={`Chọn ${row.values['Lý do nghỉ'] || row.id}`} /></td>}
                 {columns.map((column) => <td key={column}>{canEdit
@@ -644,7 +646,7 @@ export default function RulesPage() {
               <div className="rules-mobile-head">
                 {canEdit && <input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggleSelected(row.id)} aria-label={`Chọn ${row.values['Lý do nghỉ'] || row.id}`} />}
                 <div><span>Dòng {index + 1}</span><strong>{row.values['Lý do nghỉ'] || 'Chưa nhập lý do nghỉ'}</strong><small>{row.values['Loại nghỉ'] || 'Chưa chọn loại nghỉ'}</small></div>
-                <button className="text-button" onClick={() => toggleExpanded(row.id)}>{open ? 'Thu gọn' : canEdit ? 'Sửa' : 'Chi tiết'}</button>
+                <button data-ui-key="u-21b45e1c2b45" className="text-button" onClick={() => toggleExpanded(row.id)}>{open ? 'Thu gọn' : canEdit ? 'Sửa' : 'Chi tiết'}</button>
               </div>
               {!open && <div className="rules-mobile-summary"><span>Ngày tính: <strong>{String(row.values['Số ngày tính phép'] ?? '') || '—'}</strong></span><span>Phạt: <strong>{String(row.values['Phạt vi phạm'] ?? '') || '0'} đ</strong></span></div>}
               {open && <div className="rules-mobile-fields">{columns.map((column) => <label key={column}>{column}{canEdit

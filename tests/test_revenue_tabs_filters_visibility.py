@@ -1,8 +1,9 @@
+from ui_source import read_ui_source
 from pathlib import Path
 
 
 def test_revenue_summary_is_admin_and_giamdoc_only_in_ui():
-    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     assert "const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'" in page
     assert "canViewAdminRevenueSummary && <section className=\"revenue-period\"" in page
     assert "canViewAdminRevenueSummary && canEditTip" in page
@@ -10,7 +11,7 @@ def test_revenue_summary_is_admin_and_giamdoc_only_in_ui():
 
 
 def test_revenue_entry_heading_and_detail_tabs_are_renamed():
-    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     assert "NHẬP DOANH THU - CHI PHÍ" in page
     assert ">Doanh thu-Chi phí</button>" in page
     assert ">Báo cáo mua hàng</button>" in page
@@ -19,7 +20,7 @@ def test_revenue_entry_heading_and_detail_tabs_are_renamed():
 
 
 def test_revenue_detail_tabs_have_independent_filters_like_report_filter_panel():
-    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     assert "const [detailPreset, setDetailPreset]" in page
     assert "const [detailStart, setDetailStart]" in page
     assert "const [detailEnd, setDetailEnd]" in page
@@ -40,7 +41,7 @@ def test_revenue_detail_tabs_have_independent_filters_like_report_filter_panel()
 
 
 def test_purchase_reconciliation_stays_on_overview_after_detail_tabs():
-    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     tabs_at = page.index('className="revenue-tabs"')
     reconcile_at = page.index("activeTab === 'overview' && <section className=\"reconcile-panel\"")
     assert reconcile_at > tabs_at
@@ -48,8 +49,8 @@ def test_purchase_reconciliation_stays_on_overview_after_detail_tabs():
 
 
 def test_revenue_entry_defaults_notes_fits_kpis_and_exports_excel():
-    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
-    money_input = Path("web-v2/src/components/VeraMoneyInput.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
+    money_input = read_ui_source(Path("web-v2/src/components/VeraMoneyInput.jsx"))
     assert "defaultRevenueNote('Doanh thu', entryDate)" in page
     assert "defaultRevenueNote('Chi phí', entryDate)" in page
     assert "setIncomeNoteEdited(true)" in page
@@ -64,7 +65,7 @@ def test_revenue_entry_defaults_notes_fits_kpis_and_exports_excel():
 
 
 def test_revenue_tip_and_mobile_ledger_layout_are_bounded():
-    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     assert "grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr) auto" in page
     assert page.count("Báo cáo tới ngày") >= 1
     assert "Dùng ngày này · {data?.current_date_label || '—'}" in page
@@ -76,7 +77,7 @@ def test_revenue_tip_and_mobile_ledger_layout_are_bounded():
 
 
 def test_mobile_ledger_shows_every_column_as_card_fields():
-    page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     for label in ("Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Ngày nhập", "Giờ nhập", "Người nhập"):
         assert f'data-label="{label}"' in page
     assert ".ledger-table thead{display:none}" in page

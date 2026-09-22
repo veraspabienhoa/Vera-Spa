@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
@@ -54,8 +56,8 @@ async function changeAccumulation(method, path, body) {
 
 function PeriodTable({ periods }) {
   return <div className="responsive-data-table payroll-personal-table">
-    <table>
-      <thead><tr><th>Kỳ lương</th><th>Từ ngày</th><th>Đến ngày</th><th>Tích lũy đã đóng</th><th>Hoàn trả tích lũy</th><th>Ngày lưu</th></tr></thead>
+    <table data-ui-key="u-65853d6dfa46">
+      <thead><tr><th data-ui-key="u-268aafc40e30" data-ui-label-default="Kỳ lương"><UiCustomText uiKey="u-268aafc40e30">Kỳ lương</UiCustomText></th><th data-ui-key="u-8e0297315458" data-ui-label-default="Từ ngày"><UiCustomText uiKey="u-8e0297315458">Từ ngày</UiCustomText></th><th data-ui-key="u-97c978fcbd30" data-ui-label-default="Đến ngày"><UiCustomText uiKey="u-97c978fcbd30">Đến ngày</UiCustomText></th><th data-ui-key="u-10830d22c67a" data-ui-label-default="Tích lũy đã đóng"><UiCustomText uiKey="u-10830d22c67a">Tích lũy đã đóng</UiCustomText></th><th data-ui-key="u-cac8622f98de" data-ui-label-default="Hoàn trả tích lũy"><UiCustomText uiKey="u-cac8622f98de">Hoàn trả tích lũy</UiCustomText></th><th data-ui-key="u-ae7883325508" data-ui-label-default="Ngày lưu"><UiCustomText uiKey="u-ae7883325508">Ngày lưu</UiCustomText></th></tr></thead>
       <tbody>{(periods || []).map((item, index) => <tr key={`${item.batch}-${item.start}-${index}`}>
         <td><strong>{item.batch}</strong></td>
         <td>{formatVeraDate(item.start, '—')}</td>
@@ -72,8 +74,8 @@ function PeriodTable({ periods }) {
 function ObligationList({ obligations }) {
   if (!(obligations || []).length) return <div className="payroll-personal-clear"><CheckCircle2 size={18} /> Không có Nghĩa vụ Vi phạm chưa hoàn thành.</div>
   return <div className="responsive-data-table payroll-personal-table">
-    <table>
-      <thead><tr><th>Số tiền</th><th>Bắt đầu trừ</th><th>Kỳ phát sinh</th><th>Nội dung</th><th>Trạng thái</th></tr></thead>
+    <table data-ui-key="u-7306a9dafa58">
+      <thead><tr><th data-ui-key="u-6d3656fdfb12" data-ui-label-default="Số tiền"><UiCustomText uiKey="u-6d3656fdfb12">Số tiền</UiCustomText></th><th data-ui-key="u-b4b017be2356" data-ui-label-default="Bắt đầu trừ"><UiCustomText uiKey="u-b4b017be2356">Bắt đầu trừ</UiCustomText></th><th data-ui-key="u-5ca6dadfc187" data-ui-label-default="Kỳ phát sinh"><UiCustomText uiKey="u-5ca6dadfc187">Kỳ phát sinh</UiCustomText></th><th data-ui-key="u-a1767a89312d" data-ui-label-default="Nội dung"><UiCustomText uiKey="u-a1767a89312d">Nội dung</UiCustomText></th><th data-ui-key="u-1253d3d5de2c" data-ui-label-default="Trạng thái"><UiCustomText uiKey="u-1253d3d5de2c">Trạng thái</UiCustomText></th></tr></thead>
       <tbody>{obligations.map((item, index) => <tr key={`${item.employee_name}-${item.due_from}-${index}`}>
         <td className="money-cell"><strong>{money(item.amount)}</strong></td>
         <td>{item.due_from || '—'}</td>
@@ -87,8 +89,8 @@ function ObligationList({ obligations }) {
 
 function AdminTrackingTable({ rows, emptyText, editable = false, onAdd, onEdit, onDelete, busyEmployee }) {
   return <div className="responsive-data-table payroll-personal-admin-table">
-    <table>
-      <thead><tr><th>Nhân viên</th><th>Chức vụ</th><th>Mục tiêu</th><th>Đã đóng</th><th>Còn lại</th><th>Số kỳ đã đóng</th><th>Nghĩa vụ chưa hoàn thành</th>{editable && <th>Điều chỉnh</th>}<th>Chi tiết</th></tr></thead>
+    <table data-ui-key="u-13729c3f283d">
+      <thead><tr><th data-ui-key="u-b8abc53194ad" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-b8abc53194ad">Nhân viên</UiCustomText></th><th data-ui-key="u-e18ba31cc8e8" data-ui-label-default="Chức vụ"><UiCustomText uiKey="u-e18ba31cc8e8">Chức vụ</UiCustomText></th><th data-ui-key="u-7b2d89623e9f" data-ui-label-default="Mục tiêu"><UiCustomText uiKey="u-7b2d89623e9f">Mục tiêu</UiCustomText></th><th data-ui-key="u-f555826028b3" data-ui-label-default="Đã đóng"><UiCustomText uiKey="u-f555826028b3">Đã đóng</UiCustomText></th><th data-ui-key="u-96afd521d8c8" data-ui-label-default="Còn lại"><UiCustomText uiKey="u-96afd521d8c8">Còn lại</UiCustomText></th><th data-ui-key="u-34587517909b" data-ui-label-default="Số kỳ đã đóng"><UiCustomText uiKey="u-34587517909b">Số kỳ đã đóng</UiCustomText></th><th data-ui-key="u-b8c16b90a984" data-ui-label-default="Nghĩa vụ chưa hoàn thành"><UiCustomText uiKey="u-b8c16b90a984">Nghĩa vụ chưa hoàn thành</UiCustomText></th>{editable && <th data-ui-key="u-2062001a960d" data-ui-label-default="Điều chỉnh"><UiCustomText uiKey="u-2062001a960d">Điều chỉnh</UiCustomText></th>}<th data-ui-key="u-a8196a74ec62" data-ui-label-default="Chi tiết"><UiCustomText uiKey="u-a8196a74ec62">Chi tiết</UiCustomText></th></tr></thead>
       <tbody>{rows.map((item) => <tr key={item.employee_name}>
         <td><strong>{item.employee_name}</strong><small>{item.full_name || '—'}</small></td>
         <td>{roleLabel(item.role)}</td>
@@ -97,11 +99,11 @@ function AdminTrackingTable({ rows, emptyText, editable = false, onAdd, onEdit, 
         <td className="money-cell"><strong>{money(item.remaining)}</strong></td>
         <td className="center">{Number(item.period_count || 0).toLocaleString('vi-VN')}</td>
         <td className="money-cell">{money(item.obligation_total)}</td>
-        {editable && <td><div className="payroll-personal-adjust-actions">
-          <button type="button" className="secondary-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onAdd(item)}><Plus size={14}/> Thêm</button>
-          <button type="button" className="secondary-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onEdit(item)}><Pencil size={14}/> Sửa</button>
-          <button type="button" className="danger-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onDelete(item)}><Trash2 size={14}/> Xóa</button>
-        </div></td>}
+        {editable && <td><UiToolbar data-ui-key="u-69dd62201bf7" className="payroll-personal-adjust-actions">
+          <button data-ui-key="u-054c1fca60ba" data-ui-label-default="Thêm" type="button" className="secondary-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onAdd(item)}><Plus size={14}/><UiCustomText uiKey="u-054c1fca60ba"> Thêm</UiCustomText></button>
+          <button data-ui-key="u-b62fc80d8402" data-ui-label-default="Sửa" type="button" className="secondary-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onEdit(item)}><Pencil size={14}/><UiCustomText uiKey="u-b62fc80d8402"> Sửa</UiCustomText></button>
+          <button data-ui-key="u-1651647ec58a" data-ui-label-default="Xóa" type="button" className="danger-button compact" disabled={busyEmployee === item.employee_name} onClick={() => onDelete(item)}><Trash2 size={14}/><UiCustomText uiKey="u-1651647ec58a"> Xóa</UiCustomText></button>
+        </UiToolbar></td>}
         <td><details className="payroll-personal-row-details"><summary>Xem</summary><h4>TÍCH LŨY THEO TỪNG KỲ LƯƠNG</h4><PeriodTable periods={item.periods} /><h4>NGHĨA VỤ VI PHẠM CHƯA HOÀN THÀNH</h4><ObligationList obligations={item.obligations} /></details></td>
       </tr>)}</tbody>
     </table>
@@ -199,15 +201,15 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
       @media(max-width:760px){.payroll-personal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-personal-heading{display:grid}.payroll-personal-heading-actions{width:100%}.payroll-personal-heading-actions button{flex:1}.payroll-personal-search{max-width:none;width:100%}.payroll-personal-section-title{align-items:flex-start}.payroll-personal-section-title button{white-space:nowrap}}
     `}</style>
 
-    {standalone && <div className="page-heading payroll-personal-heading"><div><span className="eyebrow"><WalletCards size={14} /> Cá nhân</span><h1>BẢNG LƯƠNG</h1><p>Theo dõi Tích lũy đã đóng và Nghĩa vụ Vi phạm chưa hoàn thành của bạn.</p></div>{!isAdmin && <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button>}</div>}
+    {standalone && <div data-ui-key="u-8007533e667a" className="page-heading payroll-personal-heading"><div><span className="eyebrow"><WalletCards size={14} /> Cá nhân</span><h1>BẢNG LƯƠNG</h1><p>Theo dõi Tích lũy đã đóng và Nghĩa vụ Vi phạm chưa hoàn thành của bạn.</p></div>{!isAdmin && <button data-ui-key="u-49039e5e0205" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/><UiCustomText uiKey="u-49039e5e0205"> Làm mới</UiCustomText></button>}</div>}
 
-    <section className="panel payroll-personal-section">
-      <div className="payroll-personal-heading">
+    <section data-ui-key="u-5dda7820be54" className="panel payroll-personal-section">
+      <div data-ui-key="u-814461590659" className="payroll-personal-heading">
         <div><h2>{isAdmin ? 'THEO DÕI TÍCH LŨY NHÂN VIÊN' : 'TÍCH LŨY & NGHĨA VỤ VI PHẠM CỦA TÔI'}</h2><p>{isAdmin ? 'Chỉ theo dõi Leader và Nhân viên. Admin có thể thêm, sửa hoặc xóa số tiền Tích lũy ở nhóm đang còn đóng.' : 'Hiển thị số tiền Tích lũy hiện tại và Nghĩa vụ Vi phạm đang mở.'}</p></div>
-        <div className="payroll-personal-heading-actions">
-          {isAdmin && <button className="secondary-button" type="button" onClick={() => setSectionOpen((value) => !value)}>{sectionOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {sectionOpen ? 'Ẩn' : 'Hiện'}</button>}
-          {sectionOpen && !standalone && <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/> Làm mới</button>}
-        </div>
+        <UiToolbar data-ui-key="u-bdb11366d99a" className="payroll-personal-heading-actions">
+          {isAdmin && <button data-ui-key="u-757f2d641bd8" className="secondary-button" type="button" onClick={() => setSectionOpen((value) => !value)}>{sectionOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {sectionOpen ? 'Ẩn' : 'Hiện'}</button>}
+          {sectionOpen && !standalone && <button data-ui-key="u-fb93e571f9ff" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/><UiCustomText uiKey="u-fb93e571f9ff"> Làm mới</UiCustomText></button>}
+        </UiToolbar>
       </div>
 
       {isAdmin && !sectionOpen && <div className="payroll-personal-collapsed-note">Khu vực này mặc định được ẩn để giao diện Bảng lương gọn hơn.</div>}
@@ -230,7 +232,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
 
           <div className="payroll-personal-section-title">
             <h3>ĐÃ HOÀN THÀNH ĐÓNG TIỀN TÍCH LŨY ({completedRows.length})</h3>
-            <button className="secondary-button compact" type="button" onClick={() => setCompletedOpen((value) => !value)}>{completedOpen ? <ChevronDown size={15}/> : <ChevronRight size={15}/>} {completedOpen ? 'Ẩn' : 'Hiện'}</button>
+            <button data-ui-key="u-428bd8320a0a" className="secondary-button compact" type="button" onClick={() => setCompletedOpen((value) => !value)}>{completedOpen ? <ChevronDown size={15}/> : <ChevronRight size={15}/>} {completedOpen ? 'Ẩn' : 'Hiện'}</button>
           </div>
           {completedOpen && <AdminTrackingTable rows={completedRows} emptyText="Chưa có Leader/Nhân viên hoàn thành đóng tiền tích lũy." />}
         </> : mine && <>

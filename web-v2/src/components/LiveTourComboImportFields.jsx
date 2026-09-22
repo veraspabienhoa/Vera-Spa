@@ -12,7 +12,7 @@ export default function LiveTourComboImportFields({ customers, combos, form, set
     return { ...current, component_remaining: balances, remaining: String(Object.values(balances).reduce((sum, count) => sum + Number(count || 0), 0)) }
   })
   return <>
-    <div className="live-tour-field wide live-tour-combo-customer-search-toggle"><button type="button" className="secondary-button" aria-pressed={customerSearchOpen} onClick={() => setCustomerSearchOpen(current => !current)}>{customerSearchOpen ? 'Tắt tìm kiếm khách hàng' : 'Mở tìm kiếm khách hàng'}</button></div>
+    <div className="live-tour-field wide live-tour-combo-customer-search-toggle"><button data-ui-key="u-6eb243224fe7" type="button" className="secondary-button" aria-pressed={customerSearchOpen} onClick={() => setCustomerSearchOpen(current => !current)}>{customerSearchOpen ? 'Tắt tìm kiếm khách hàng' : 'Mở tìm kiếm khách hàng'}</button></div>
     <LiveTourCheckoutCustomer customers={customerSearchOpen ? customers : []} form={form} setForm={setForm} customerRequired/>
     <LiveTourSearchSelect label="Combo" placeholder="Gõ để tìm và chọn combo…" required value={form.combo_id}
       options={combos.map(combo => ({ value: String(combo.id), label: combo.name,

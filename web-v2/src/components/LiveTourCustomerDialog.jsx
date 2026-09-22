@@ -1,3 +1,4 @@
+import UiCustomText from './UiCustomText'
 import { useState } from 'react'
 import useDialogFocus from '../lib/useDialogFocus'
 import './LiveTourBookingDialog.css'
@@ -20,8 +21,8 @@ export default function LiveTourCustomerDialog({ context, busy, error, onAction,
       ...(!deleting ? purchase ? { note, ...(parts.length ? { components: parts.map(p => ({ service_id: p.service_id, remaining: Number(p.remaining) })) } : { remaining: Number(remaining) }) } : { customer_name: name, customer_phone: phone } : {}) }
     if (await onAction(action, payload, [], { expectedRevision: revision })) onClose()
   }
-  return <div className="live-tour-modal-backdrop"><section ref={ref} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="live-tour-modal-head"><strong>{title} · {customer.name}</strong><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Đóng</button></div>
+  return <div className="live-tour-modal-backdrop"><section data-ui-key="u-27e85fc9ad0d" ref={ref} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="live-tour-modal-head"><strong>{title} · {customer.name}</strong><button data-ui-key="u-f227e0371e42" data-ui-label-default="Đóng" type="button" className="secondary-button" disabled={busy} onClick={onClose}><UiCustomText uiKey="u-f227e0371e42">Đóng</UiCustomText></button></div>
     {error && <p role="alert" className="error-box">{error}</p>}
     <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
       {purchase && <p className="wide">{purchase.combo_name} · Đã dùng {purchase.used || 0} vé</p>}
@@ -45,7 +46,7 @@ export default function LiveTourCustomerDialog({ context, busy, error, onAction,
         <label className="live-tour-field wide"><span>Ghi chú</span><textarea maxLength={2000} value={note} onChange={e => setNote(e.target.value)}/></label>
       </> : <><label className="live-tour-field"><span>Tên khách hàng</span><input required maxLength={150} value={name} onChange={e => setName(e.target.value)}/></label><label className="live-tour-field"><span>Điện thoại</span><input maxLength={30} value={phone} onChange={e => setPhone(e.target.value)}/></label></>}
       <label className="live-tour-field wide"><span>Lý do *</span><textarea required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)}/></label>
-      <button type="submit" className={deleting ? 'secondary-button danger-button' : 'primary-button'} disabled={!reason.trim()}>{deleting ? 'Xác nhận xóa' : 'Lưu thay đổi'}</button>
+      <button data-ui-key="u-04f2587aae79" type="submit" className={deleting ? 'secondary-button danger-button' : 'primary-button'} disabled={!reason.trim()}>{deleting ? 'Xác nhận xóa' : 'Lưu thay đổi'}</button>
     </fieldset></form>
   </section></div>
 }

@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import VeraDateInput from '../components/VeraDateInput'
 import { veraApi } from '../lib/api'
@@ -24,10 +26,10 @@ export default function MilkTeaPage({ user }) {
   const total = rows.reduce((sum, row) => sum + Number(row.tip || 0), 0)
   const employeeName = String(data.rows?.[0]?.employee_name || user?.employee_username || '').trim()
   const changePreset = preset => setFilters(current => ({ ...current, preset, ...tourDateRange(preset) }))
-  if (!allowed) return <div className="panel">Chỉ tài khoản Leader và Nhân viên được xem Trà sữa của chính mình.</div>
+  if (!allowed) return <div data-ui-key="u-25d6d59e931b" className="panel">Chỉ tài khoản Leader và Nhân viên được xem Trà sữa của chính mình.</div>
   return <div className="feature-page spa-page milk-tea-page">
-    <div className="page-heading milk-tea-heading">
-      <div className="milk-tea-heading-copy">
+    <div data-ui-key="u-d5e27f110104" className="page-heading milk-tea-heading">
+      <div data-ui-key="u-95ed4d6f1a8d" className="milk-tea-heading-copy">
         <span className="eyebrow">VERA SPA</span>
         <div className="milk-tea-title-row">
           <h1>Trà sữa</h1>
@@ -35,20 +37,20 @@ export default function MilkTeaPage({ user }) {
         </div>
         <p>Tiền Tip của riêng tài khoản {user?.employee_username || ''}; không hiển thị tiền dịch vụ.</p>
       </div>
-      <button className="secondary-button" disabled={busy} onClick={load}>{busy ? 'Đang tải…' : 'Làm mới'}</button>
+      <button data-ui-key="u-e5996bbfaf53" className="secondary-button" disabled={busy} onClick={load}>{busy ? 'Đang tải…' : 'Làm mới'}</button>
     </div>
     {error && <div className="error-box" role="alert">{error}</div>}
-    <section className="panel spa-content">
-      <div className="milk-tea-filters">
+    <section data-ui-key="u-4ef30a5028d5" className="panel spa-content">
+      <UiToolbar data-ui-key="u-261a2d0029c8" className="milk-tea-filters">
         <label><span>Thời gian</span><select value={filters.preset} onChange={event => changePreset(event.target.value)}>{TOUR_DATE_PRESETS.filter(([id]) => id !== 'all').map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
         <label><span>Từ ngày</span><VeraDateInput value={filters.date_from} max={filters.date_to || undefined} onChange={event => setFilters(current => ({ ...current, date_from: event.target.value, preset: 'custom' }))}/></label>
         <label><span>Đến ngày</span><VeraDateInput value={filters.date_to} min={filters.date_from || undefined} onChange={event => setFilters(current => ({ ...current, date_to: event.target.value, preset: 'custom' }))}/></label>
-      </div>
+      </UiToolbar>
       <div className="milk-tea-summary"><span>Số hóa đơn<strong>{rows.length}</strong></span><span>Tiền Tip<strong>{money(total)}</strong></span></div>
 
-      <div className="responsive-data-table milk-tea-table milk-tea-table-desktop"><table><thead><tr><th>Ngày giờ hóa đơn</th><th>Số hóa đơn</th><th>Dịch vụ</th><th>Phòng</th><th>Tiền Tip</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td data-label="Ngày giờ hóa đơn">{formatVeraDateTime(row.effective_at || row.business_date)}</td><td data-label="Số hóa đơn">{row.bill_no || '—'}</td><td data-label="Dịch vụ">{(row.services || []).join(', ') || '—'}</td><td data-label="Phòng">{(row.rooms || []).join(', ') || '—'}</td><td data-label="Tiền Tip"><strong>{money(row.tip)}</strong></td></tr>)}</tbody></table></div>
+      <div className="responsive-data-table milk-tea-table milk-tea-table-desktop"><table data-ui-key="u-d7e52b0dc4e5"><thead><tr><th data-ui-key="u-5089afe507f4" data-ui-label-default="Ngày giờ hóa đơn"><UiCustomText uiKey="u-5089afe507f4">Ngày giờ hóa đơn</UiCustomText></th><th data-ui-key="u-05826720dd2e" data-ui-label-default="Số hóa đơn"><UiCustomText uiKey="u-05826720dd2e">Số hóa đơn</UiCustomText></th><th data-ui-key="u-5c9d687e5e64" data-ui-label-default="Dịch vụ"><UiCustomText uiKey="u-5c9d687e5e64">Dịch vụ</UiCustomText></th><th data-ui-key="u-80301e26dd51" data-ui-label-default="Phòng"><UiCustomText uiKey="u-80301e26dd51">Phòng</UiCustomText></th><th data-ui-key="u-153083486114" data-ui-label-default="Tiền Tip"><UiCustomText uiKey="u-153083486114">Tiền Tip</UiCustomText></th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td data-label="Ngày giờ hóa đơn">{formatVeraDateTime(row.effective_at || row.business_date)}</td><td data-label="Số hóa đơn">{row.bill_no || '—'}</td><td data-label="Dịch vụ">{(row.services || []).join(', ') || '—'}</td><td data-label="Phòng">{(row.rooms || []).join(', ') || '—'}</td><td data-label="Tiền Tip"><strong>{money(row.tip)}</strong></td></tr>)}</tbody></table></div>
 
-      <div className="milk-tea-table-mobile" aria-label="Danh sách tiền Tip trên mobile"><table><colgroup><col className="milk-col-date"/><col className="milk-col-service"/><col className="milk-col-room"/><col className="milk-col-tip"/><col className="milk-col-bill"/></colgroup><thead><tr><th>Ngày giờ hóa đơn</th><th>Dịch vụ</th><th>Phòng</th><th>Tiền Tip</th><th>Số hóa đơn</th></tr></thead><tbody>{rows.map(row => <tr key={`mobile-${row.id}`}><td>{formatVeraDateTime(row.effective_at || row.business_date)}</td><td>{(row.services || []).join(', ') || '—'}</td><td>{(row.rooms || []).join(', ') || '—'}</td><td><strong>{money(row.tip)}</strong></td><td>{row.bill_no || '—'}</td></tr>)}</tbody></table></div>
+      <div className="milk-tea-table-mobile" aria-label="Danh sách tiền Tip trên mobile"><table data-ui-key="u-c7770078773c"><colgroup><col className="milk-col-date"/><col className="milk-col-service"/><col className="milk-col-room"/><col className="milk-col-tip"/><col className="milk-col-bill"/></colgroup><thead><tr><th data-ui-key="u-f0114ceb6deb" data-ui-label-default="Ngày giờ hóa đơn"><UiCustomText uiKey="u-f0114ceb6deb">Ngày giờ hóa đơn</UiCustomText></th><th data-ui-key="u-a7b2392dd6c9" data-ui-label-default="Dịch vụ"><UiCustomText uiKey="u-a7b2392dd6c9">Dịch vụ</UiCustomText></th><th data-ui-key="u-9f61ad873678" data-ui-label-default="Phòng"><UiCustomText uiKey="u-9f61ad873678">Phòng</UiCustomText></th><th data-ui-key="u-f7a35f47fdd2" data-ui-label-default="Tiền Tip"><UiCustomText uiKey="u-f7a35f47fdd2">Tiền Tip</UiCustomText></th><th data-ui-key="u-59ab250ee3f3" data-ui-label-default="Số hóa đơn"><UiCustomText uiKey="u-59ab250ee3f3">Số hóa đơn</UiCustomText></th></tr></thead><tbody>{rows.map(row => <tr key={`mobile-${row.id}`}><td>{formatVeraDateTime(row.effective_at || row.business_date)}</td><td>{(row.services || []).join(', ') || '—'}</td><td>{(row.rooms || []).join(', ') || '—'}</td><td><strong>{money(row.tip)}</strong></td><td>{row.bill_no || '—'}</td></tr>)}</tbody></table></div>
 
       {!rows.length && !busy && <p>Không có tiền Tip trong khoảng thời gian đã chọn.</p>}
     </section>

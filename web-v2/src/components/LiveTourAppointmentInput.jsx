@@ -26,7 +26,7 @@ export default function LiveTourAppointmentInput({ value = '', employeeName, rev
       title={employeeName ? `Lịch hẹn của ${employeeName} · Enter để lưu, Esc để hủy` : 'Tìm hoặc chọn đúng một nhân viên để lưu lịch hẹn'}
       onChange={(event) => setDraft({ value: event.target.value, revision: draft?.revision ?? revision })}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setDraft(null) } }}/></span>
-    {(quick || dirty) && <button type="submit" className="secondary-button" disabled={!dirty || disabled || busy}>{quick ? 'Lưu lịch hẹn' : 'Lưu'}</button>}
+    {(quick || dirty) && <button data-ui-key="u-4c09b839d5bc" type="submit" className="secondary-button" disabled={!dirty || disabled || busy}>{quick ? 'Lưu lịch hẹn' : 'Lưu'}</button>}
     {quick && employeeName && <span className="live-tour-appointment-target">{employeeName}</span>}
   </form>
 }

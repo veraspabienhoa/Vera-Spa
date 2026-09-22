@@ -1,8 +1,9 @@
+from ui_source import read_ui_source
 from pathlib import Path
 
 
 def test_revenue_reconcile_is_separate_from_detail_tabs_and_stays_on_overview():
-    source = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
+    source = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
 
     tabs = source.index('className="revenue-tabs"')
     ledger_tab = source.index("Doanh thu-Chi phí", tabs)

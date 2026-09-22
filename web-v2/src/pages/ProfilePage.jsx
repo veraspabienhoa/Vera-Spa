@@ -1,3 +1,4 @@
+import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
 import { BellRing, CheckCircle2, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -162,9 +163,9 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   const passwordRequired = forcePasswordChange || Boolean(form.new_password)
 
   return <div className="feature-page">
-    <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật hồ sơ mà không bắt buộc thay đổi mật khẩu.'}</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button></div>
+    <div data-ui-key="u-02ad0292fa11" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật hồ sơ mà không bắt buộc thay đổi mật khẩu.'}</p></div><button data-ui-key="u-eb800f2fd183" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-eb800f2fd183"> Làm mới</UiCustomText></button></div>
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}
-    <section className="panel profile-panel">
+    <section data-ui-key="u-99eefc96a586" className="panel profile-panel">
       <form ref={formRef} className="profile-form" onSubmit={submit}>
         <p className="wide-field" role="status">{saving ? 'Đang tự lưu…' : 'Thông tin được tự lưu khi nhập xong và rời ô. Đổi mật khẩu cần nhập đủ mật khẩu hiện tại, mật khẩu mới và xác nhận.'}</p>
         <div className="profile-field-section wide-field">Thông tin cá nhân</div>
@@ -179,11 +180,11 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <div className="profile-field-section wide-field">Thông tin liên hệ & Địa chỉ</div>
         <label>Điện thoại<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
         <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
-        <label>Tỉnh/Thành phố<select value={form.province} onChange={(e) => void changeProvince(e.target.value)}><option value="">-- Chọn Tỉnh/Thành phố --</option>{form.province && !references.provinces.some((item) => item.name === form.province) && <option>{form.province}</option>}{references.provinces.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('provinces')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'provinces' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
-        <label>Phường/Xã<select value={form.ward} onChange={(e) => setForm({ ...form, ward: e.target.value })} disabled={!form.province}><option value="">-- Chọn Phường/Xã --</option>{form.ward && !references.wards.includes(form.ward) && <option>{form.ward}</option>}{references.wards.map((ward) => <option key={ward}>{ward}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('wards')} disabled={Boolean(referenceBusy) || !form.province}><RefreshCw size={14} className={referenceBusy === 'wards' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
+        <label>Tỉnh/Thành phố<select value={form.province} onChange={(e) => void changeProvince(e.target.value)}><option value="">-- Chọn Tỉnh/Thành phố --</option>{form.province && !references.provinces.some((item) => item.name === form.province) && <option>{form.province}</option>}{references.provinces.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}</select><button data-ui-key="u-6c554f6b68b4" data-ui-label-default="Cập nhật danh mục" type="button" className="secondary-button compact" onClick={() => void refreshReference('provinces')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'provinces' ? 'spin' : ''}/><UiCustomText uiKey="u-6c554f6b68b4"> Cập nhật danh mục</UiCustomText></button></label>
+        <label>Phường/Xã<select value={form.ward} onChange={(e) => setForm({ ...form, ward: e.target.value })} disabled={!form.province}><option value="">-- Chọn Phường/Xã --</option>{form.ward && !references.wards.includes(form.ward) && <option>{form.ward}</option>}{references.wards.map((ward) => <option key={ward}>{ward}</option>)}</select><button data-ui-key="u-07c24bce88bd" data-ui-label-default="Cập nhật danh mục" type="button" className="secondary-button compact" onClick={() => void refreshReference('wards')} disabled={Boolean(referenceBusy) || !form.province}><RefreshCw size={14} className={referenceBusy === 'wards' ? 'spin' : ''}/><UiCustomText uiKey="u-07c24bce88bd"> Cập nhật danh mục</UiCustomText></button></label>
         <label className="wide-field">Địa chỉ cụ thể (Số nhà, tên đường...)<input value={form.address_detail} onChange={(e) => setForm({ ...form, address_detail: e.target.value })} placeholder="Số nhà, tên đường, ấp/khu phố" /></label>
         <div className="profile-field-section wide-field">Thông tin thanh toán/Ngân hàng</div>
-        <label>Tên ngân hàng<select value={form.bank_code || form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value, bank_code: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{(references.bank_options || []).map((bank) => <option key={bank.code} value={bank.code}>{bank.short_name || bank.code}{bank.name && bank.name !== bank.short_name ? ` · ${bank.name}` : ''}</option>)}</select><button type="button" className="secondary-button compact" onClick={() => void refreshReference('banks')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'banks' ? 'spin' : ''}/> Cập nhật danh mục</button></label>
+        <label>Tên ngân hàng<select value={form.bank_code || form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value, bank_code: e.target.value })}><option value="">-- Chọn ngân hàng --</option>{(references.bank_options || []).map((bank) => <option key={bank.code} value={bank.code}>{bank.short_name || bank.code}{bank.name && bank.name !== bank.short_name ? ` · ${bank.name}` : ''}</option>)}</select><button data-ui-key="u-0d7f1f7d783b" data-ui-label-default="Cập nhật danh mục" type="button" className="secondary-button compact" onClick={() => void refreshReference('banks')} disabled={Boolean(referenceBusy)}><RefreshCw size={14} className={referenceBusy === 'banks' ? 'spin' : ''}/><UiCustomText uiKey="u-0d7f1f7d783b"> Cập nhật danh mục</UiCustomText></button></label>
         <label>Mã ngân hàng tự động<input value={form.bank_code || ''} readOnly aria-label="Mã ngân hàng tự động" placeholder="Tự động: VCB / ACB / TCB…" /></label>
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value.replace(/\D/g, '').slice(0, 19) })} inputMode="numeric" /></label>
         <div className="profile-password-box wide-field">
@@ -201,22 +202,22 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
           cccd_issue_date: current.cccd_issue_date || toInputDate(fields.cccd_issue_date) || '',
           cccd_issue_place: current.cccd_issue_place || fields.cccd_issue_place || '',
         }))} />
-        <button className="primary-button wide-field" disabled={saving}><Save size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>
+        <button data-ui-key="u-659d131a516a" className="primary-button wide-field" disabled={saving}><Save size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>
       </form>
     </section>
-    {user?.role === 'admin' && !forcePasswordChange && <section className="panel android-push-panel admin-username-panel">
+    {user?.role === 'admin' && !forcePasswordChange && <section data-ui-key="u-7b5ff454d01f" className="panel android-push-panel admin-username-panel">
       <div>
         <span className="eyebrow"><ShieldCheck size={14} /> Chỉ Admin</span>
         <h2>ĐỔI TÊN ĐĂNG NHẬP ADMIN</h2>
         <label>Tên đăng nhập mới<input value={adminUsername} onChange={(event) => setAdminUsername(event.target.value)} maxLength="120" autoComplete="username" /></label>
       </div>
-      <button className="primary-button" type="button" onClick={renameAdminUsername} disabled={renamingUsername || loading}>
+      <button data-ui-key="u-fc1100275f20" className="primary-button" type="button" onClick={renameAdminUsername} disabled={renamingUsername || loading}>
         <Save size={16} /> {renamingUsername ? 'Đang đổi…' : 'Đổi tên đăng nhập'}
       </button>
     </section>}
-    <section className="panel android-push-panel">
+    <section data-ui-key="u-3a2f78fdca27" className="panel android-push-panel">
       <div><span className="eyebrow"><Smartphone size={14} /> iPhone · Android</span><h2>THÔNG BÁO MÀN HÌNH KHÓA</h2><p>Mỗi điện thoại đăng nhập có thể bật Web Push riêng. Trên iPhone/iPad, hãy thêm VERA SPA vào Màn hình chính rồi mở từ biểu tượng; trên Android, dùng Chrome. Chế độ Không làm phiền vẫn có thể chặn âm thanh.</p></div>
-      <button className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo thiết bị này')}</button>
+      <button data-ui-key="u-8d2b4d049425" className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo thiết bị này')}</button>
       {!push.supported && !push.loading && <div className="warning-box">{push.reason || 'Trình duyệt hoặc thiết bị này chưa hỗ trợ Web Push.'}</div>}
     </section>
   </div>

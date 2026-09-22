@@ -1,8 +1,11 @@
+import { getCustomization, subscribeCustomization } from '../lib/uiCustomizationStore'
+import UiToolbar from './UiToolbar'
+import UiCustomText from './UiCustomText'
 import LayoutDesigner from './LayoutDesigner'
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
 
@@ -85,7 +88,9 @@ const liveAlertTiming = (alert, nowMs) => {
 
 export default function AppShell({ user, currentPage, standalone = false, onPageChange, onRefreshCurrentPage, onSignOut, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [layoutDesignerOpen, setLayoutDesignerOpen] = useState(false)
+  const layoutTrigger = useRef(null)
+  const [layoutDesignerOpen, setLayoutDesignerOpen] = useState(currentPage === 'appearance')
+  const { items: uiItems } = useSyncExternalStore(subscribeCustomization, getCustomization, getCustomization)
   const [standaloneMenuOpen, setStandaloneMenuOpen] = useState(false)
   const [birthdayNotice, setBirthdayNotice] = useState(null)
   const [notificationSettings, setNotificationSettings] = useState(null)
@@ -345,8 +350,8 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
 
   const sidebarOpen = mobileOpen || (standalone && standaloneMenuOpen)
   const navigationToggle = standalone
-    ? <button type="button" className="standalone-menu-toggle icon-button" onClick={() => setStandaloneMenuOpen((value) => !value)} aria-label={standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'} aria-expanded={standaloneMenuOpen}>{standaloneMenuOpen ? <X size={20} /> : <Menu size={20} />} {standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'}</button>
-    : <button type="button" className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu" aria-expanded={mobileOpen}><Menu size={22} /></button>
+    ? <button data-ui-key="u-c7ea03a89a43" type="button" className="standalone-menu-toggle icon-button" onClick={() => setStandaloneMenuOpen((value) => !value)} aria-label={standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'} aria-expanded={standaloneMenuOpen}>{standaloneMenuOpen ? <X size={20} /> : <Menu size={20} />} {standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'}</button>
+    : <button data-ui-key="u-b36248799e5c" type="button" className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu" aria-expanded={mobileOpen}><Menu size={22} /></button>
 
   return (
     <div className={`app-shell ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`} onPointerDown={beginMenuSwipe} onPointerUp={endMenuSwipe} onPointerCancel={cancelMenuSwipe}>
@@ -364,7 +369,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
         <div className="brand-block">
           <div className="brand-mark">VERA</div>
           <div><div className="brand-name">SPA</div></div>
-          <button className="mobile-close icon-button" onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu"><X size={20} /></button>
+          <button data-ui-key="u-8012b53e9821" className="mobile-close icon-button" onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu"><X size={20} /></button>
         </div>
 
         <div className="menu-caption">MENU</div>
@@ -377,78 +382,78 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             if (permission && user?.permissions?.[permission] !== true) return false
             if (anyPermission && !anyPermission.some((key) => user?.permissions?.[key] === true)) return false
             return true
-          }).map(({ id, label, icon: Icon, ready }) => (
-            <a
+          }).sort((a,b) => (uiItems['u-menu-'+a.id]?.order ?? items.indexOf(a)) - (uiItems['u-menu-'+b.id]?.order ?? items.indexOf(b))).map(({ id, label, icon: Icon, ready }) => (
+            <a data-ui-key={`u-menu-${id}`}
               key={id}
-              className={`nav-item ${(currentPage === id || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['appearance', 'notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
+              className={`nav-item ${(currentPage === id || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
               onClick={(event) => chooseFromLink(event, id, ready)}
               aria-disabled={!ready || undefined}
               title={ready ? `${label} · Có thể nhấp chuột phải để mở tab mới` : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}
             >
-              <Icon size={19} /><span>{label}</span>{!ready && <span className="soon-pill">Sau</span>}
+              <Icon size={19} /><span><UiCustomText uiKey={`u-menu-${id}`}>{label}</UiCustomText></span>{!ready && <span className="soon-pill">Sau</span>}
             </a>
           ))}
-          {user?.role === 'admin' && !user?.must_change_password && <button
+          {user?.role === 'admin' && !user?.must_change_password && <button data-ui-key="u-783d8360d527"
             type="button" className={`nav-item ${layoutDesignerOpen ? 'active' : ''}`}
-            aria-expanded={layoutDesignerOpen}
+            ref={layoutTrigger} aria-expanded={layoutDesignerOpen}
             onClick={() => { setLayoutDesignerOpen(true); setMobileOpen(false); setStandaloneMenuOpen(false) }}
           ><Settings2 size={19} /><span>Chỉnh bố cục</span></button>}
         </nav>
 
         <div className="sidebar-footer">
-          <div className="user-card">
+          <div data-ui-key="u-dd74261c77ac" className="user-card">
             <div className="avatar">{(user?.email || 'V')[0].toUpperCase()}</div>
             <div className="user-copy"><strong>{user?.user_metadata?.full_name || user?.email || 'Nhân viên VERA'}</strong><span>{user?.role ? `Vai trò: ${user.role}` : 'Đang đăng nhập'}</span></div>
           </div>
-          <button className="signout-button" onClick={onSignOut}><LogOut size={18} /> Đăng xuất</button>
+          <button data-ui-key="u-0ef0dfbc34fb" data-ui-label-default="Đăng xuất" className="signout-button" onClick={onSignOut}><LogOut size={18} /><UiCustomText uiKey="u-0ef0dfbc34fb"> Đăng xuất</UiCustomText></button>
         </div>
       </aside>
 
-      {sidebarOpen && <button className="sidebar-backdrop" onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu" />}
+      {sidebarOpen && <button data-ui-key="u-3833c8d2c1ff" className="sidebar-backdrop" onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu" />}
 
       <main className="main-area">
         {currentPage !== 'live-tour' && <header className="topbar">
           {navigationToggle}
           <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
-          <div className="topbar-actions">
-            {currentPage !== 'tour' && currentPage !== 'live-tour' && <button type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /> Mở tab mới</button>}
-            <button type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /> Làm mới</button>
-          </div>
+          <UiToolbar data-ui-key="u-d08e23e02899" className="topbar-actions">
+            {currentPage !== 'tour' && currentPage !== 'live-tour' && <button data-ui-key="u-f10aa9b76c0d" data-ui-label-default="Mở tab mới" type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /><UiCustomText uiKey="u-f10aa9b76c0d"> Mở tab mới</UiCustomText></button>}
+            <button data-ui-key="u-ae117d0698c3" data-ui-label-default="Làm mới" type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /><UiCustomText uiKey="u-ae117d0698c3"> Làm mới</UiCustomText></button>
+          </UiToolbar>
         </header>}
         <div className={`page-wrap ${currentPage === 'tour' ? 'tour-page-wrap' : currentPage === 'live-tour' ? 'tour-page-wrap live-tour-page-wrap' : ''}`.trim()}>
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
 
-          {isAdmin && breakAlertControl.disabled && <div className="break-alert-global-off"><span>Thông báo nghỉ giữa ca đang TẮT cho mọi tài khoản.</span><button type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(false)}>{breakAlertControl.busy ? 'Đang bật…' : 'Bật lại'}</button></div>}
+          {isAdmin && breakAlertControl.disabled && <div className="break-alert-global-off"><span>Thông báo nghỉ giữa ca đang TẮT cho mọi tài khoản.</span><button data-ui-key="u-c49a507e2857" type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(false)}>{breakAlertControl.busy ? 'Đang bật…' : 'Bật lại'}</button></div>}
 
-          {!breakAlertControl.disabled && breakAlerts.length > 0 && breakAlertsHidden && <div className="break-alert-hidden-chip" style={alertPositionStyle}><BellRing size={15} /><span>{breakAlerts.length} cảnh báo đang tạm ẩn</span><button type="button" onClick={() => setBreakAlertsHidden(false)}>Hiện</button></div>}
+          {!breakAlertControl.disabled && breakAlerts.length > 0 && breakAlertsHidden && <div className="break-alert-hidden-chip" style={alertPositionStyle}><BellRing size={15} /><span>{breakAlerts.length} cảnh báo đang tạm ẩn</span><button data-ui-key="u-b92d7cc74167" data-ui-label-default="Hiện" type="button" onClick={() => setBreakAlertsHidden(false)}><UiCustomText uiKey="u-b92d7cc74167">Hiện</UiCustomText></button></div>}
 
           {!breakAlertControl.disabled && breakAlerts.length > 0 && !breakAlertsHidden && <div ref={breakAlertStackRef} className="break-alert-stack" style={alertPositionStyle} aria-live="assertive">
-            <div className="break-alert-toolbar" onPointerDown={beginAlertDrag} onPointerMove={moveAlertDrag} onPointerUp={endAlertDrag} onPointerCancel={endAlertDrag}>
+            <UiToolbar data-ui-key="u-1b670af1a7f7" className="break-alert-toolbar" onPointerDown={beginAlertDrag} onPointerMove={moveAlertDrag} onPointerUp={endAlertDrag} onPointerCancel={endAlertDrag}>
               <strong>🔔 {breakAlerts.length} cảnh báo · kéo để di chuyển</strong>
-              <div className="break-alert-toolbar-actions">
-                <button type="button" onClick={() => setBreakAlertsHidden(true)}>Ẩn tạm</button>
-                {isAdmin && <button type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(true)}>{breakAlertControl.busy ? 'Đang tắt…' : 'Tắt tất cả'}</button>}
-              </div>
-            </div>
+              <UiToolbar data-ui-key="u-65c033d3e44a" className="break-alert-toolbar-actions">
+                <button data-ui-key="u-4e999c8465ec" data-ui-label-default="Ẩn tạm" type="button" onClick={() => setBreakAlertsHidden(true)}><UiCustomText uiKey="u-4e999c8465ec">Ẩn tạm</UiCustomText></button>
+                {isAdmin && <button data-ui-key="u-7dbf5823d6e9" type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(true)}>{breakAlertControl.busy ? 'Đang tắt…' : 'Tắt tất cả'}</button>}
+              </UiToolbar>
+            </UiToolbar>
             {breakAlerts.map((alert) => <div key={alert.tag || alert.key} className={`break-alert-card ${alert.audience === 'employee' ? 'employee' : ''}`}>
               <BellRing size={16} />
               <div>
                 <strong>{alert.kind === 'missing-scheduled-checkin' ? `CHƯA CHECK-IN · ${alert.employee}` : alert.audience === 'staff' ? `VÀO LẠI TRỄ · ${alert.employee}` : `NHẮC VÀO LẠI · ${alert.employee}`}</strong>
                 {alert.kind === 'missing-scheduled-checkin' ? <span>{alert.body}</span> : <><span>{alert.break_out} → hạn {alert.deadline} · {alert.planned_minutes} phút.</span><span className="break-alert-timer">{liveAlertTiming(alert, clockMs)}</span></>}
-                {isAdmin && <div className="break-alert-actions">
-                  <button type="button" className="break-alert-dismiss" onClick={() => dismissBreakAlert(alert)}>Tắt trên máy này</button>
-                  {alert.kind !== 'missing-scheduled-checkin' && <button type="button" className="break-alert-delete-global" disabled={Boolean(deletingBreakAlertTag)} onClick={() => void deleteBreakAlertForAll(alert)}>{deletingBreakAlertTag === alert.tag ? 'Đang xóa…' : 'Xóa cho tất cả'}</button>}
-                </div>}
+                {isAdmin && <UiToolbar data-ui-key="u-2b13a3616750" className="break-alert-actions">
+                  <button data-ui-key="u-cc625132fd3a" data-ui-label-default="Tắt trên máy này" type="button" className="break-alert-dismiss" onClick={() => dismissBreakAlert(alert)}><UiCustomText uiKey="u-cc625132fd3a">Tắt trên máy này</UiCustomText></button>
+                  {alert.kind !== 'missing-scheduled-checkin' && <button data-ui-key="u-9f16caed0e55" type="button" className="break-alert-delete-global" disabled={Boolean(deletingBreakAlertTag)} onClick={() => void deleteBreakAlertForAll(alert)}>{deletingBreakAlertTag === alert.tag ? 'Đang xóa…' : 'Xóa cho tất cả'}</button>}
+                </UiToolbar>}
               </div>
             </div>)}
           </div>}
 
-          {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button type="button" onClick={() => choose('birthday', true)}>Xem</button><button type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng">×</button></div>}
+          {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => choose('birthday', true)}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div>}
           {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>
-      <LayoutDesigner user={user} page={currentPage} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => setLayoutDesignerOpen(false)}/>
+      <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus() }}/>
       <BackToTop/>
       <PopupNotifications/>
     </div>

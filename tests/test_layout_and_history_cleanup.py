@@ -88,3 +88,53 @@ def test_history_cleanup_exact_scope_all_matching_rows_and_cutoff(monkeypatch):
         with pytest.raises(HTTPException): delete(body.model_copy(update={'confirm': confirm}), ident)
         assert len(conn.calls) == before
     with pytest.raises(ValidationError): HistoryFilter(date_from='2026-09-23', date_to='2026-09-22')
+
+
+def test_registered_labels_and_toolbar_options_are_validated_and_audited():
+    from vera_web_v2_ui_layout import REGISTRY
+    label_key = next(k for k,v in REGISTRY.items() if v.get('label') and not v.get('locked'))
+    group_key = next(k for k,v in REGISTRY.items() if v.get('group') and not v.get('locked'))
+    locked_key = next(k for k,v in REGISTRY.items() if v.get('locked'))
+    assert validate_items({label_key:LayoutItem(label='  Tên mới  ')})[label_key]['label']=='Tên mới'
+    assert validate_items({group_key:LayoutItem(rows=2,mode='group')})[group_key]['rows']==2
+    for item in ({'u-nonexistent':LayoutItem(width=100)}, {locked_key:LayoutItem(width=100)}, {'l-old':LayoutItem(label='New')}):
+        with pytest.raises(HTTPException): validate_items(item)
+    with pytest.raises(ValidationError): LayoutItem(label='<img src=x onerror=alert(1)>')
+    with pytest.raises(ValidationError): LayoutItem(rows=8)
+    routes,conn=fixture(install_ui_layout_routes)
+    routes['PUT','/v2/ui-layout'](LayoutWrite(device='desktop',revision=2,items={label_key:{'label':'Tên mới'}}),SimpleNamespace(role='admin',employee_username='Admin'))
+    audit=[params for sql,params in conn.calls if sql.startswith('INSERT INTO vera_ui_layout_audit')]
+    assert len(audit)==1 and audit[0]['actor']=='Admin'
+    assert json.loads(audit[0]['before'])['desktop']=={'l-original':{'width':100}}
+    assert json.loads(audit[0]['after'])['desktop'][label_key]['label']=='Tên mới'
+    before=len(conn.calls)
+    for route,args in [(routes['GET','/v2/ui-layout/history'],()),(routes['POST','/v2/ui-layout/restore/{revision}'],(2,LayoutWrite(device='desktop',revision=3,items={})) )]:
+        with pytest.raises(HTTPException): route(*args,ident=SimpleNamespace(role='nhanvien'))
+    assert len(conn.calls)==before
+
+
+def test_layout_corrupt_field_falls_back_without_losing_valid_values():
+    from vera_web_v2_ui_layout import read_layout
+    conn=Conn()
+    conn.row['value_json']={'desktop':{'l-valid':{'width':120,'height':999999,'label':'bad'}},'mobile':None}
+    # Unregistered labels invalidate that legacy entry; unsupported metadata is never applied.
+    assert read_layout(conn)['layout']['desktop']=={}
+    conn.row['value_json']['desktop']['l-valid'].pop('label')
+    assert read_layout(conn)['layout']['desktop']['l-valid']=={'width':120}
+    assert read_layout(conn)['layout']['mobile']=={}
+
+
+def test_restore_uses_snapshot_and_expected_revision_and_creates_new_audit():
+    class HistoryConn(Conn):
+        def execute(self,query,params=None):
+            self.history_read='SELECT after_json' in str(query)
+            return super().execute(query,params)
+        def first(self):
+            if self.history_read:return {'after_json':{'desktop':{'l-restored':{'width':150}},'mobile':{}}}
+            return self.row
+    app=App();conn=HistoryConn()
+    install_ui_layout_routes(app,engine_instance=lambda:conn,current_identity=lambda:None,identity_type=object)
+    result=app.routes['POST','/v2/ui-layout/restore/{revision}'](1,LayoutWrite(device='desktop',revision=2,items={}),SimpleNamespace(role='admin',employee_username='Admin'))
+    assert result['revision']==3
+    assert result['layout']['desktop']=={'l-restored':{'width':150}}
+    assert any(sql.startswith('INSERT INTO vera_ui_layout_audit') for sql,_ in conn.calls)

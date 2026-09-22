@@ -1,3 +1,5 @@
+import UiToolbar from './UiToolbar'
+import UiCustomText from './UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
 import VeraDateTimeInput from './VeraDateTimeInput'
 import { isComboRedemption } from '../lib/paymentPresentation'
@@ -35,8 +37,8 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
     if (result) onClose()
   }
   return <div className="live-tour-modal-backdrop" onClick={() => { if (!busy) onClose() }}>
-    <section ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={`${deleting ? 'Hủy' : 'Sửa'} hóa đơn đã thanh toán`} onClick={(event) => event.stopPropagation()}>
-      <div className="live-tour-modal-head"><strong>{deleting ? 'Xóa / hủy' : 'Sửa'} hóa đơn đã thanh toán</strong><button type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
+    <section data-ui-key="u-022439885343" ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={`${deleting ? 'Hủy' : 'Sửa'} hóa đơn đã thanh toán`} onClick={(event) => event.stopPropagation()}>
+      <div className="live-tour-modal-head"><strong>{deleting ? 'Xóa / hủy' : 'Sửa'} hóa đơn đã thanh toán</strong><button data-ui-key="u-9dbbb3e4bef1" type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
       <p><strong>{item.bill_no} · {item.customer_name || 'Khách lẻ'}</strong><br/>{formatVeraDate(item.business_date)} · {item.payment_method} · {money(item.total)}</p>
       {error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất.</p>}
       <p className={deleting ? 'error-box' : 'setup-note'}>{deleting
@@ -45,7 +47,7 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
       <p>Đây là điều chỉnh sổ hệ thống; không tự hoàn tiền qua ngân hàng hoặc thẻ. Cần đối soát thu/hoàn tiền thực tế riêng.</p>
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {!deleting && canEditDate && true && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><VeraDateTimeInput required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
-        {item.entries.map((entry, index) => <div className="wide live-tour-data-card" key={index}><strong>{entry.employee_name || 'Bán combo'} · {entry.service}</strong><small>{entry.room}</small>
+        {item.entries.map((entry, index) => <div data-ui-key="u-f3166d51ac8c" className="wide live-tour-data-card" key={index}><strong>{entry.employee_name || 'Bán combo'} · {entry.service}</strong><small>{entry.room}</small>
           {deleting ? <span>{money(covered ? 0 : entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><VeraMoneyInput max="10000000000" required disabled={covered} value={covered ? '0' : prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
         </div>)}
         {!deleting && <>
@@ -56,7 +58,7 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
           <div className="wide tour-booking-total"><span>Tổng tiền sau sửa{covered ? ' (combo đã trả trước)' : ''}</span><strong>{money(total)}</strong></div>
         </>}
         <label className="live-tour-field wide"><span>Lý do {deleting ? 'hủy' : 'sửa'} *</span><textarea required maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>
-        <div className="live-tour-modal-actions wide"><button type="button" className="secondary-button" onClick={onClose}>Đóng</button><button className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!reason.trim()}>{deleting ? 'Xác nhận hủy hóa đơn' : 'Lưu điều chỉnh hóa đơn'}</button></div>
+        <UiToolbar data-ui-key="u-04c00bbd323b" className="live-tour-modal-actions wide"><button data-ui-key="u-ad34181f38ce" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-ad34181f38ce">Đóng</UiCustomText></button><button data-ui-key="u-03d2b0024e0c" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!reason.trim()}>{deleting ? 'Xác nhận hủy hóa đơn' : 'Lưu điều chỉnh hóa đơn'}</button></UiToolbar>
       </fieldset></form>
     </section>
   </div>

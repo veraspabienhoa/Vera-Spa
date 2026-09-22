@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { LoaderCircle, Power, Save, ShieldCheck } from 'lucide-react'
 
 export default function LetanLeavePolicyRules({
@@ -23,7 +25,7 @@ export default function LetanLeavePolicyRules({
   }
 
   return (
-    <section className="panel letan-leave-policy-panel">
+    <section data-ui-key="u-3eeabe7d2b6c" className="panel letan-leave-policy-panel">
       <style>{`
         .letan-leave-policy-panel{margin-top:16px}
         .letan-policy-note{display:grid;gap:5px;margin:10px 0 14px;padding:11px 13px;border:1px solid #d7e2dc;border-radius:12px;background:#f7faf8;color:#31483d;font-size:13px;line-height:1.45}
@@ -46,7 +48,7 @@ export default function LetanLeavePolicyRules({
           .letan-policy-reason-number{width:20px;height:20px}
         }
       `}</style>
-      <div className="panel-title-row">
+      <div data-ui-key="u-77dcad04860f" className="panel-title-row">
         <div>
           <h2>QUYỀN SỬA / XÓA ĐĂNG KÝ – TÀI KHOẢN LỄ TÂN</h2>
           <p>Quy tắc hệ thống áp dụng bắt buộc cho tài khoản có vai trò Lễ tân khi nội quy đang kích hoạt.</p>
@@ -65,9 +67,9 @@ export default function LetanLeavePolicyRules({
       </div>
 
       <div className="letan-policy-table-wrap">
-        <table className="letan-policy-table">
+        <table data-ui-key="u-ba1425a4e81f" className="letan-policy-table">
           <thead>
-            <tr><th>Nhóm</th><th>Ba Lý do nghỉ được phép đổi qua lại trong đúng cùng nhóm</th></tr>
+            <tr><th data-ui-key="u-15b00159894e" data-ui-label-default="Nhóm"><UiCustomText uiKey="u-15b00159894e">Nhóm</UiCustomText></th><th data-ui-key="u-166492af8563" data-ui-label-default="Ba Lý do nghỉ được phép đổi qua lại trong đúng cùng nhóm"><UiCustomText uiKey="u-166492af8563">Ba Lý do nghỉ được phép đổi qua lại trong đúng cùng nhóm</UiCustomText></th></tr>
           </thead>
           <tbody>
             {groups.map((group, groupIndex) => (
@@ -92,18 +94,18 @@ export default function LetanLeavePolicyRules({
         </table>
       </div>
 
-      <div className="letan-policy-actions">
+      <UiToolbar data-ui-key="u-ebec6c4296ad" className="letan-policy-actions">
         <span><ShieldCheck size={15} /> Chỉ Admin được kích hoạt, tạm ngưng hoặc sửa năm nhóm nội quy này.</span>
-        {canEdit && <div className="letan-policy-actions-buttons">
-          <button type="button" className={policy?.enabled ? 'danger-button' : 'primary-button'} disabled={busy} onClick={() => onSave?.(!policy?.enabled)}>
+        {canEdit && <UiToolbar data-ui-key="u-4bb89adbedee" className="letan-policy-actions-buttons">
+          <button data-ui-key="u-c3d6c00f9100" type="button" className={policy?.enabled ? 'danger-button' : 'primary-button'} disabled={busy} onClick={() => onSave?.(!policy?.enabled)}>
             {busy ? <LoaderCircle size={17} className="spin" /> : <Power size={17} />}
             {policy?.enabled ? 'Tạm ngưng kích hoạt' : 'Kích hoạt nội quy'}
           </button>
-          <button type="button" className="primary-button" disabled={!dirty || busy} onClick={() => onSave?.(policy?.enabled)}>
+          <button data-ui-key="u-073832a450d1" type="button" className="primary-button" disabled={!dirty || busy} onClick={() => onSave?.(policy?.enabled)}>
             {busy ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Lưu sửa đổi nội quy
           </button>
-        </div>}
-      </div>
+        </UiToolbar>}
+      </UiToolbar>
     </section>
   )
 }

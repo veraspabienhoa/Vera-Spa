@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { Clock3, Crown, DoorOpen, ExternalLink, LayoutGrid, Link2, RefreshCw, Save, Search } from 'lucide-react'
@@ -464,28 +466,28 @@ export default function TourPage({ user }) {
     `}</style>
     <div className="tour-board-top">
       <div className="tour-topbar">
-        <div className="tour-heading-title"><h1>BẢNG TUA</h1></div>
+        <div data-ui-key="u-f81afc46cea8" className="tour-heading-title"><h1>BẢNG TUA</h1></div>
         <div className="tour-shift-filter" aria-label="Lọc Bảng tua theo ca">
-          <button type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}>Tất cả</button>
-          <button type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}>Ca 1</button>
-          <button type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}>Ca 2</button>
+          <button data-ui-key="u-a9fc83bde7c6" data-ui-label-default="Tất cả" type="button" className={shiftFilter === 'all' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('all')}><UiCustomText uiKey="u-a9fc83bde7c6">Tất cả</UiCustomText></button>
+          <button data-ui-key="u-9b725b485e10" data-ui-label-default="Ca 1" type="button" className={shiftFilter === 'ca1' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca1')}><UiCustomText uiKey="u-9b725b485e10">Ca 1</UiCustomText></button>
+          <button data-ui-key="u-a7c07134cf33" data-ui-label-default="Ca 2" type="button" className={shiftFilter === 'ca2' ? 'primary-button' : 'secondary-button'} onClick={() => setShiftFilter('ca2')}><UiCustomText uiKey="u-a7c07134cf33">Ca 2</UiCustomText></button>
         </div>
-        <div className="tour-heading-actions">{isAdmin && <button type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><Link2 size={16} /> {showAdminTools ? 'Ẩn Link & màu dòng' : 'Hiện Link & màu dòng'}</button>}<button type="button" className="secondary-button" onClick={openTourInNewTab}><ExternalLink size={16} /> Mở tab mới</button>{user?.permissions?.tour_refresh && <button className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới Bảng tua</button>}</div>
+        <UiToolbar data-ui-key="u-05953170bde4" className="tour-heading-actions">{isAdmin && <button data-ui-key="u-b85a6f2d0c8b" type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><Link2 size={16} /> {showAdminTools ? 'Ẩn Link & màu dòng' : 'Hiện Link & màu dòng'}</button>}<button data-ui-key="u-3c56a07ed977" data-ui-label-default="Mở tab mới" type="button" className="secondary-button" onClick={openTourInNewTab}><ExternalLink size={16} /><UiCustomText uiKey="u-3c56a07ed977"> Mở tab mới</UiCustomText></button>{user?.permissions?.tour_refresh && <button data-ui-key="u-af6c0dfc47f2" data-ui-label-default="Làm mới Bảng tua" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-af6c0dfc47f2"> Làm mới Bảng tua</UiCustomText></button>}</UiToolbar>
       </div>
       {error && <div className="error-box">{error}</div>}
       {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
       {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
       <div className="tour-control-layout">
-        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
+        <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button data-ui-key="u-7ba0d2e58f62" type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
         <div className="tour-room-segment-buttons" aria-label="Chọn phân khúc phòng">
-          <button type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ<br/>PHÒNG</span><small>{roomCatalog.length} phòng</small></button>
-          <button type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>STANDARD<br/>ROOM</span><small>{standardRooms.length} phòng</small></button>
-          <button type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP ROOM</span><small>{vipRooms.length} phòng</small></button>
+          <button data-ui-key="u-a2e3dc465e60" type="button" className={`tour-room-segment-button all ${roomSegment === 'all' ? 'active' : ''}`} onClick={() => { setRoomSegment('all'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'all'}><LayoutGrid size={18}/><span>TẤT CẢ<br/>PHÒNG</span><small>{roomCatalog.length} phòng</small></button>
+          <button data-ui-key="u-55a7f7e41cc0" type="button" className={`tour-room-segment-button standard ${roomSegment === 'standard' ? 'active' : ''}`} onClick={() => { setRoomSegment('standard'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'standard'}><DoorOpen size={20}/><span>STANDARD<br/>ROOM</span><small>{standardRooms.length} phòng</small></button>
+          <button data-ui-key="u-0d87ef45a0ee" type="button" className={`tour-room-segment-button vip ${roomSegment === 'vip' ? 'active' : ''}`} onClick={() => { setRoomSegment('vip'); setSelectedRoomKey('') }} aria-pressed={roomSegment === 'vip'}><Crown size={20}/><span>VIP ROOM</span><small>{vipRooms.length} phòng</small></button>
         </div>
       </div>
-      <section className="panel tour-table-panel tour-room-table-panel">
+      <section data-ui-key="u-f0776413dc76" className="panel tour-table-panel tour-room-table-panel">
       <div className={`tour-room-panel ${roomSegment}`}>
-        <div className="tour-room-panel-head"><div className="tour-room-panel-title">{roomSegment === 'vip' ? <Crown size={16}/> : roomSegment === 'standard' ? <DoorOpen size={16}/> : <LayoutGrid size={16}/>} {roomSegment === 'vip' ? 'Phòng VIP' : roomSegment === 'standard' ? 'Phòng Standard' : 'Tất cả phòng'}</div><small>{displayedRooms.filter((room) => availableRoomKeys.has(roomKey(room))).length} phòng đang trống</small></div>
+        <div data-ui-key="u-de0cfe604c10" className="tour-room-panel-head"><div data-ui-key="u-6415c74d8512" className="tour-room-panel-title">{roomSegment === 'vip' ? <Crown size={16}/> : roomSegment === 'standard' ? <DoorOpen size={16}/> : <LayoutGrid size={16}/>} {roomSegment === 'vip' ? 'Phòng VIP' : roomSegment === 'standard' ? 'Phòng Standard' : 'Tất cả phòng'}</div><small>{displayedRooms.filter((room) => availableRoomKeys.has(roomKey(room))).length} phòng đang trống</small></div>
         <div className="tour-room-grid">
           {displayedRooms.map((room) => {
             const key = roomKey(room)
@@ -497,8 +499,8 @@ export default function TourPage({ user }) {
             const employee = cellValue(record, employeeColumn)
             const status = cellValue(record, statusColumn)
             const hasPrivateService = records.some((item) => isPrivateService(cellValue(item, serviceColumn)))
-            return <button type="button" className={`tour-room-card ${isVipRoom(room) ? 'vip' : 'standard'} state-${state} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
-              <div className="tour-room-card-head"><strong>{roomLabel(room)} <span className="tour-room-customer-count">- {data.rooms?.customer_counts?.[room] ?? records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{isVipRoom(room) ? 'VIP' : 'STANDARD'}</span></div>
+            return <button data-ui-key="u-1cd74afe5d07" type="button" className={`tour-room-card ${isVipRoom(room) ? 'vip' : 'standard'} state-${state} ${hasPrivateService ? 'has-private-service' : ''} ${selectedRoomKey === key ? 'selected' : ''} ${searchedRoomKeys.has(key) ? 'search-match' : ''}`.trim()} key={key} onClick={() => setSelectedRoomKey((current) => current === key ? '' : key)} aria-expanded={selectedRoomKey === key}>
+              <div data-ui-key="u-98618e1ba4ff" className="tour-room-card-head"><strong>{roomLabel(room)} <span className="tour-room-customer-count">- {data.rooms?.customer_counts?.[room] ?? records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</span></strong><span className="tour-room-type">{isVipRoom(room) ? 'VIP' : 'STANDARD'}</span></div>
               <div className="tour-room-countdown"><Clock3 size={16}/><span>{roomCountdown(record, remainingColumn, clockMs, available, occupied)}</span></div>
               <div className="tour-room-meta" title={[employee, status].filter(Boolean).join(' · ')}>{[employee, status].filter(Boolean).join(' · ') || (available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên')}</div>
               {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
@@ -520,24 +522,24 @@ export default function TourPage({ user }) {
       </div>
       </section>
     </div>
-    <section className="panel tour-table-panel tour-records-panel">
-      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table><thead><tr>{columns.map((column) => <th className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
+    <section data-ui-key="u-132bfc3eac6c" className="panel tour-table-panel tour-records-panel">
+      <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table data-ui-key="u-2d2b3ec3e5b5"><thead><tr>{columns.map((column) => <th data-ui-key="u-12a0fc75c68a" className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
       {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
     {isAdmin && showAdminTools && <>
-    <section className="panel tour-source-panel">
+    <section data-ui-key="u-d37dc07d703a" className="panel tour-source-panel">
       <div className="tour-source-head"><strong><Link2 size={15}/> Link file TourVera</strong><small>Chỉ Admin · cấu hình dùng chung, không cần sửa code khi đổi file</small></div>
       <form className="tour-source-form" onSubmit={saveTourSource}>
         <input type="url" value={tourSourceDraft} onChange={(event) => setTourSourceDraft(event.target.value)} placeholder="Dán link Google Drive của TourVera.xlsm" aria-label="Link Google Drive của TourVera" required />
-        <button type="submit" className="primary-button" disabled={tourSourceBusy || !tourSourceDraft.trim()}><Save size={15}/> {tourSourceBusy ? 'Đang kiểm tra…' : 'Lưu link'}</button>
+        <button data-ui-key="u-5420788073b7" type="submit" className="primary-button" disabled={tourSourceBusy || !tourSourceDraft.trim()}><Save size={15}/> {tourSourceBusy ? 'Đang kiểm tra…' : 'Lưu link'}</button>
       </form>
       <div className="tour-source-meta">
         {tourSource?.name && <span>File hiện tại: <strong>{tourSource.name}</strong></span>}
-        {tourSource?.url && <a href={tourSource.url} target="_blank" rel="noreferrer">Mở trên Google Drive</a>}
+        {tourSource?.url && <a data-ui-key="u-1d79fee43981" data-ui-label-default="Mở trên Google Drive" href={tourSource.url} target="_blank" rel="noreferrer"><UiCustomText uiKey="u-1d79fee43981">Mở trên Google Drive</UiCustomText></a>}
         {tourSourceNotice.text && <span className={`tour-source-notice ${tourSourceNotice.error ? 'error' : ''}`}>{tourSourceNotice.text}</span>}
       </div>
     </section>
-    <section className="panel tour-legend"><div className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu áp dụng cho toàn bộ dòng và Break luôn được ưu tiên cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
+    <section data-ui-key="u-8af6abaa4666" className="panel tour-legend"><div data-ui-key="u-ebcbf3590d43" className="panel-title-row"><div><h2>MÀU DÒNG</h2><p>Màu áp dụng cho toàn bộ dòng và Break luôn được ưu tiên cao nhất.</p></div></div><div className="tour-legend-grid"><span className="green">≥15 phút · Xanh</span><span className="yellow">0–&lt;15 · Vàng</span><span className="red">-15–&lt;0 · Đỏ</span><span className="blank">≤-15 · Làm trống</span><span className="break">Break · Cam</span><span className="waiting">Đang chờ · Tím</span><span className="idle">Đi làm + Vào ca + đang rảnh</span><span className="leave">Nghỉ phép · Chữ mờ</span></div></section>
     </>}
     <div className="setup-note tour-countdown-note">Thời gian còn lại do hệ thống tự đếm: Yêu cầu trống dùng “TG bắt đầu thực hiện”; Yêu cầu YC dùng “TG bắt đầu thực hiện YC”; cả hai cộng theo Thời lượng.</div>
   </div>

@@ -1,3 +1,4 @@
+from ui_source import read_ui_source
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -47,7 +48,7 @@ def test_all_four_departments_accept_custom_overtime_range():
 
 
 def test_schedule_page_has_monthly_statistics_and_clickable_total_highlight():
-    source = (ROOT / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
+    source = read_ui_source((ROOT / "web-v2/src/pages/WorkSchedulePage.jsx"))
     assert "THỐNG KÊ THÁNG" in source
     assert "employeeMatchesTotal" in source
     assert "Từ giờ tới giờ" in source
@@ -127,7 +128,7 @@ def test_staff_status_update_survives_google_credentials_failure():
 
 
 def test_combo_sales_table_is_rendered_after_monthly_statistics():
-    source = (ROOT / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
+    source = read_ui_source((ROOT / "web-v2/src/pages/WorkSchedulePage.jsx"))
     assert source.index('className="schedule-scroll monthly-statistics"') < source.index("{!loading && comboEditor}")
     assert "comboEmployees.map" in source
     assert "BẢNG CỦA" in source

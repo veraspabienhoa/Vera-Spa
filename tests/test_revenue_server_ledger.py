@@ -1,3 +1,5 @@
+from ui_source import read_ui_source
+from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 
@@ -30,7 +32,7 @@ def test_revenue_workbook_parser_preserves_rows_and_audit_timestamp():
 
 
 def test_revenue_page_displays_server_audit_columns():
-    source = open("web-v2/src/pages/RevenuePage.jsx", encoding="utf-8").read()
+    source = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     assert "Dữ liệu Thu/Chi được lưu trực tiếp trên server VERA SPA" in source
     assert "<th>Ngày nhập</th><th>Giờ nhập</th><th>Người nhập</th>" in source
     assert "row.entered_date_label" in source

@@ -76,9 +76,9 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
       }}/>
     {open && !disabled && createPortal(<div ref={menu} className="tour-search-popup tour-search-scroll" style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onMouseDown={(event) => event.preventDefault()}>
       <div role="listbox" id={`${id}-options`} aria-label={label}>
-        {!required && <button type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { if (freeSearch) onSearch?.(''); choose({ value: '', label: '' }) }}>{emptyLabel}</button>}
+        {!required && <button data-ui-key="u-54261a9bf95d" type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { if (freeSearch) onSearch?.(''); choose({ value: '', label: '' }) }}>{emptyLabel}</button>}
         {matches.map((item, i) => {
-          return <button type="button" tabIndex={-1} role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={`${i === activeIndex ? 'highlighted' : ''} ${item.className || ''}`} onClick={() => choose(item)}><span className="tour-select-option-heading"><strong>{item.displayLabel || item.label}</strong>{item.badge && <strong className="tour-ticket-badge">{item.badge}</strong>}</span>{item.detail && !item.displayLabel && <small>{item.detail}</small>}</button>
+          return <button data-ui-key="u-0be5b3c0c55a" type="button" tabIndex={-1} role="option" id={`${id}-${i}`} key={item.value} aria-selected={value === item.value} className={`${i === activeIndex ? 'highlighted' : ''} ${item.className || ''}`} onClick={() => choose(item)}><span className="tour-select-option-heading"><strong>{item.displayLabel || item.label}</strong>{item.badge && <strong className="tour-ticket-badge">{item.badge}</strong>}</span>{item.detail && !item.displayLabel && <small>{item.detail}</small>}</button>
         })}
         {!matches.length && <p>Không có kết quả phù hợp.</p>}
       </div>

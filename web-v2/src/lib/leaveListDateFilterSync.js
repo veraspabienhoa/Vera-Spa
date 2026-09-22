@@ -35,7 +35,7 @@ export function startLeaveListDateFilterSync() {
     const button = target?.closest('.leave-list-panel .range-filter-buttons[aria-label="Lọc thời gian danh sách"] button')
     if (!button) return
 
-    const label = String(button.textContent || '').replace(/\s+/g, ' ').trim()
+    const label = String(button.dataset.uiLabelDefault || button.textContent || '').replace(/\s+/g, ' ').trim()
     const offset = label === 'Hôm nay' ? 0 : label === 'Hôm qua' ? -1 : null
     if (offset === null) return
 

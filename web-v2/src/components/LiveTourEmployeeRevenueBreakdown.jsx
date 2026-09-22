@@ -1,3 +1,5 @@
+import UiToolbar from './UiToolbar'
+import UiCustomText from './UiCustomText'
 import { ClipboardCopy } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 
@@ -34,7 +36,7 @@ function RevenueBars({
   return <div ref={captureRef} className="employee-revenue-chart" aria-label={label}>
     <div className="employee-revenue-chart-head">
       <h4>{label}</h4>
-      <div className="employee-revenue-chart-actions" data-snapshot-ignore>
+      <UiToolbar data-ui-key="u-ef1ca3a0ca06" className="employee-revenue-chart-actions" data-snapshot-ignore>
         <label>
           <span>Sắp xếp</span>
           <select aria-label={`Sắp xếp ${label}`} value={sortMode} onChange={(event) => onSortModeChange(event.target.value)}>
@@ -44,8 +46,8 @@ function RevenueBars({
             <option value="name_desc">Tên Z → A</option>
           </select>
         </label>
-        {onCapture && <button type="button" className="secondary-button" disabled={copying} onClick={onCapture}><ClipboardCopy size={15}/>{copying ? 'Đang chụp…' : captureLabel}</button>}
-      </div>
+        {onCapture && <button data-ui-key="u-3c4ac8ea1ccf" type="button" className="secondary-button" disabled={copying} onClick={onCapture}><ClipboardCopy size={15}/>{copying ? 'Đang chụp…' : captureLabel}</button>}
+      </UiToolbar>
     </div>
     <div className="employee-revenue-chart-list">
       {sortedItems.map(item => <div className="employee-revenue-chart-row" key={item.employee}>
@@ -99,7 +101,7 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
   const serviceTotal = items.reduce((sum, item) => sum + Number(item.service || 0), 0)
   const tipTotal = items.reduce((sum, item) => sum + Number(item.tip || 0), 0)
 
-  return <section className="employee-revenue-section" aria-label="Thống kê doanh thu theo nhân viên">
+  return <section data-ui-key="u-7887eeaa4028" className="employee-revenue-section" aria-label="Thống kê doanh thu theo nhân viên">
     <RevenueBars
       items={items}
       valueKey="rows"
@@ -135,8 +137,8 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
       <div><span>Tiền TIP</span><strong>{money(tipTotal)}</strong></div>
     </div>
     <div className="employee-revenue-table-wrap">
-      <table className="employee-revenue-table">
-        <thead><tr><th>Nhân viên</th><th>Số dòng theo tour</th><th>Số dòng theo yêu cầu</th><th>Số dòng dịch vụ</th><th>Tiền dịch vụ</th><th>Tiền TIP</th><th>Tổng</th></tr></thead>
+      <table data-ui-key="u-f8ab6688e487" className="employee-revenue-table">
+        <thead><tr><th data-ui-key="u-577b62b1e913" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-577b62b1e913">Nhân viên</UiCustomText></th><th data-ui-key="u-792bcb3d5bba" data-ui-label-default="Số dòng theo tour"><UiCustomText uiKey="u-792bcb3d5bba">Số dòng theo tour</UiCustomText></th><th data-ui-key="u-d04f54c8b12d" data-ui-label-default="Số dòng theo yêu cầu"><UiCustomText uiKey="u-d04f54c8b12d">Số dòng theo yêu cầu</UiCustomText></th><th data-ui-key="u-3f321e267c13" data-ui-label-default="Số dòng dịch vụ"><UiCustomText uiKey="u-3f321e267c13">Số dòng dịch vụ</UiCustomText></th><th data-ui-key="u-8b648f70a5eb" data-ui-label-default="Tiền dịch vụ"><UiCustomText uiKey="u-8b648f70a5eb">Tiền dịch vụ</UiCustomText></th><th data-ui-key="u-44cf97a87026" data-ui-label-default="Tiền TIP"><UiCustomText uiKey="u-44cf97a87026">Tiền TIP</UiCustomText></th><th data-ui-key="u-8e94256b50f1" data-ui-label-default="Tổng"><UiCustomText uiKey="u-8e94256b50f1">Tổng</UiCustomText></th></tr></thead>
         <tbody>
           {items.map(item => <tr key={item.employee}><td>{item.employee}</td><td>{item.tourRows}</td><td>{item.requestRows}</td><td>{item.rows}</td><td>{money(item.service)}</td><td>{money(item.tip)}</td><td>{money(item.total)}</td></tr>)}
           {!items.length && <tr><td colSpan="7">Không có dữ liệu phù hợp bộ lọc.</td></tr>}

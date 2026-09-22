@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import VeraDateInput from '../components/VeraDateInput'
@@ -706,9 +708,9 @@ export default function LeaveRegistrationPage({ user }) {
 
   return (
     <div ref={leavePageRef}>
-      <div className="page-heading-row">
+      <div data-ui-key="u-2f745fc2db4b" className="page-heading-row">
         <div><h1 className="page-title">Đăng ký nghỉ</h1></div>
-        <button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /> Làm mới</button>
+        <button data-ui-key="u-a75ced431985" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-a75ced431985"> Làm mới</UiCustomText></button>
       </div>
 
       {!isApiConfigured && (
@@ -723,14 +725,14 @@ export default function LeaveRegistrationPage({ user }) {
         <div className="warning-box"><strong>Chế độ chỉ xem.</strong> Tài khoản này chưa được cấp quyền ghi lịch nghỉ.</div>
       )}
 
-      <div className="date-toolbar viewed-date-toolbar">
+      <UiToolbar data-ui-key="u-03cf771004d1" className="date-toolbar viewed-date-toolbar">
         <DatePickerControl
           label="Ngày đang xem"
           value={date}
           onChange={selectViewedDate}
           max={role === 'admin' ? undefined : maxEmployeeDate}
         />
-        <button
+        <button data-ui-key="u-97e97b7f1418"
           type="button"
           className={`watch-current-date-button ${watchedDateSet.has(date) ? 'active' : ''} ${unreadWatchDateSet.has(date) ? 'ringing' : ''}`}
           onClick={() => toggleWatchDate(date)}
@@ -740,7 +742,7 @@ export default function LeaveRegistrationPage({ user }) {
           {watchedDateSet.has(date) ? <BellRing size={17} /> : <Bell size={17} />}
           {watchedDateSet.has(date) ? 'Đang quan tâm ngày này' : 'Quan tâm ngày này'}
         </button>
-        <button
+        <button data-ui-key="u-a1afda5e3fbc"
           type="button"
           className={`push-toggle-button ${pushState.subscribed ? 'active' : ''}`}
           onClick={togglePushNotifications}
@@ -756,14 +758,14 @@ export default function LeaveRegistrationPage({ user }) {
         {!pushState.loading && !pushState.supported && pushState.reason && (
           <span className="push-support-note">{pushState.reason}</span>
         )}
-      </div>
+      </UiToolbar>
 
       {pushMessage && <div className="success-box push-status-box">{pushMessage}</div>}
 
       {unreadWatchDates.length > 0 && (
-        <section className="watch-notification-panel ringing" role="alert" aria-live="assertive">
-          <div className="watch-notification-heading">
-            <button type="button" className="watch-ringing-button" onClick={ringWatchBell} aria-label="Phát lại chuông thông báo">
+        <section data-ui-key="u-32fb4b567164" className="watch-notification-panel ringing" role="alert" aria-live="assertive">
+          <div data-ui-key="u-5fb72f06c361" className="watch-notification-heading">
+            <button data-ui-key="u-0720dc449144" type="button" className="watch-ringing-button" onClick={ringWatchBell} aria-label="Phát lại chuông thông báo">
               <BellRing className="watch-ringing-icon" size={19} />
             </button>
             <div>
@@ -781,9 +783,9 @@ export default function LeaveRegistrationPage({ user }) {
                     ? ` từ ${item.last_seen_paid_count} thành ${item.current_paid_count}.`
                     : `; hiện có ${item.current_paid_count}.`}
                 </span>
-                <button type="button" onClick={() => acknowledgeWatchDate(item.date)} disabled={watchBusyDate === item.date}>
+                <button data-ui-key="u-f2d195b0f735" data-ui-label-default="Đã xem" type="button" onClick={() => acknowledgeWatchDate(item.date)} disabled={watchBusyDate === item.date}><UiCustomText uiKey="u-f2d195b0f735">
                   Đã xem
-                </button>
+                </UiCustomText></button>
               </div>
             ))}
           </div>
@@ -793,8 +795,8 @@ export default function LeaveRegistrationPage({ user }) {
       {watchError && <div className="error-box watch-error-box">{watchError}</div>}
 
       <div className="content-grid">
-        <section className="panel registration-panel">
-          <div className="panel-title-row">
+        <section data-ui-key="u-3ad934e889f0" className="panel registration-panel">
+          <div data-ui-key="u-d92c5005f472" className="panel-title-row">
             <div><h2>ĐĂNG KÝ MỚI</h2></div>
           </div>
           {employeeSelfService && (
@@ -866,13 +868,13 @@ export default function LeaveRegistrationPage({ user }) {
             {message && <div className="success-box">{message}</div>}
             {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
             {error && <div className="error-box">{error}</div>}
-            <button className="primary-button" type="submit" disabled={saving || !canCreate}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
+            <button data-ui-key="u-7712757bd8c0" className="primary-button" type="submit" disabled={saving || !canCreate}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
             </fieldset>
           </form>
         </section>
 
-        <section className="panel daily-summary-panel">
-          <div className="panel-title-row">
+        <section data-ui-key="u-1da4ebbbf42b" className="panel daily-summary-panel">
+          <div data-ui-key="u-18eec50740be" className="panel-title-row">
             <div>
               <h2>THỐNG KÊ</h2>
               <p>
@@ -880,17 +882,17 @@ export default function LeaveRegistrationPage({ user }) {
                 {statsEmployeeFilter ? ` · Nhân viên: ${statsEmployeeFilter}` : ''}.
               </p>
             </div>
-            <div className="list-actions statistics-title-actions">
+            <UiToolbar data-ui-key="u-e85272e9d623" className="list-actions statistics-title-actions">
               {canViewPenalty && <div className="penalty-chip">Tổng tiền phạt: {loadState.daily === 'ready' ? `${statsTotalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}
-              <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
-                <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
-              </button>
-            </div>
+              <button data-ui-key="u-7f2d0324788b" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={busy}>
+                <RefreshCw size={15} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-7f2d0324788b"> Làm mới
+              </UiCustomText></button>
+            </UiToolbar>
           </div>
-          <div className="list-filter-toolbar statistics-filter-toolbar">
+          <UiToolbar data-ui-key="u-3f286760a70f" className="list-filter-toolbar statistics-filter-toolbar">
             <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian thống kê">
               {STAT_DATE_FILTERS.map((filter) => (
-                <button
+                <button data-ui-key="u-9b43d234f8b2"
                   type="button"
                   key={filter}
                   className={rangeFilter === filter ? 'active' : ''}
@@ -927,12 +929,12 @@ export default function LeaveRegistrationPage({ user }) {
               <datalist id="statistics-employee-options">
                 {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
               </datalist>
-              <div className="statistics-search-actions">
-                <button type="button" className="secondary-button compact" onClick={() => setStatsEmployeeFilter(statsEmployeeSearch.trim())} disabled={busy}>
-                  <Search size={14} /> Tìm
-                </button>
+              <UiToolbar data-ui-key="u-9aba1185d8a1" className="statistics-search-actions">
+                <button data-ui-key="u-f2d17432d990" data-ui-label-default="Tìm" type="button" className="secondary-button compact" onClick={() => setStatsEmployeeFilter(statsEmployeeSearch.trim())} disabled={busy}>
+                  <Search size={14} /><UiCustomText uiKey="u-f2d17432d990"> Tìm
+                </UiCustomText></button>
                 {(statsEmployeeFilter || statsEmployeeSearch) && (
-                  <button
+                  <button data-ui-key="u-75e16b4be615" data-ui-label-default="Bỏ lọc"
                     type="button"
                     className="secondary-button compact"
                     onClick={() => {
@@ -941,14 +943,14 @@ export default function LeaveRegistrationPage({ user }) {
                     }}
                     disabled={busy}
                   >
-                    <X size={14} /> Bỏ lọc
-                  </button>
+                    <X size={14} /><UiCustomText uiKey="u-75e16b4be615"> Bỏ lọc
+                  </UiCustomText></button>
                 )}
-              </div>
+              </UiToolbar>
             </div>
-          </div>
+          </UiToolbar>
           <div className="table-wrap daily-summary-wrap" aria-busy={loadState.daily === 'loading'}>
-            <table className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
+            <table data-ui-key="u-dc5f9cd8d11f" className={`daily-summary-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
               <colgroup>
                 <col className="daily-col-date" />
                 <col className="daily-col-weekday" />
@@ -960,13 +962,13 @@ export default function LeaveRegistrationPage({ user }) {
               </colgroup>
               <thead>
                 <tr>
-                  <th>Ngày</th>
-                  <th><span className="full-column-label">Thứ ngày</span><span className="compact-column-label">Thứ</span></th>
-                  <th className="center"><span className="full-column-label">Tổng nghỉ</span><span className="compact-column-label">Nghỉ</span></th>
-                  <th className="center"><span className="full-column-label">✅ Có phép</span><span className="compact-column-label">Phép</span></th>
-                  <th className="center"><span className="full-column-label">⚠️ Phát sinh</span><span className="compact-column-label">PS</span></th>
-                  <th className="center"><span className="full-column-label">❌ Không phép</span><span className="compact-column-label">K.phép</span></th>
-                  {canViewPenalty && <th className="right"><span className="full-column-label">💰 Tổng tiền phạt</span><span className="compact-column-label">Phạt</span></th>}
+                  <th data-ui-key="u-acb18b777955" data-ui-label-default="Ngày"><UiCustomText uiKey="u-acb18b777955">Ngày</UiCustomText></th>
+                  <th data-ui-key="u-5065da3b81fb"><span className="full-column-label">Thứ ngày</span><span className="compact-column-label">Thứ</span></th>
+                  <th data-ui-key="u-f5d227449098" className="center"><span className="full-column-label">Tổng nghỉ</span><span className="compact-column-label">Nghỉ</span></th>
+                  <th data-ui-key="u-52511d1d3ecc" className="center"><span className="full-column-label">✅ Có phép</span><span className="compact-column-label">Phép</span></th>
+                  <th data-ui-key="u-41df05a165db" className="center"><span className="full-column-label">⚠️ Phát sinh</span><span className="compact-column-label">PS</span></th>
+                  <th data-ui-key="u-19a64ea770bf" className="center"><span className="full-column-label">❌ Không phép</span><span className="compact-column-label">K.phép</span></th>
+                  {canViewPenalty && <th data-ui-key="u-ab9266c56a98" className="right"><span className="full-column-label">💰 Tổng tiền phạt</span><span className="compact-column-label">Phạt</span></th>}
                 </tr>
               </thead>
               <tbody>
@@ -977,11 +979,11 @@ export default function LeaveRegistrationPage({ user }) {
                 ) : dailyStats.map((day) => (
                   <tr key={day.date} className={day.date === date ? 'selected-day-row' : ''}>
                     <td>
-                      <div className="daily-date-actions">
-                        <button type="button" className="date-link" onClick={() => selectViewedDate(day.date)}>
+                      <UiToolbar data-ui-key="u-1902657b4ec3" className="daily-date-actions">
+                        <button data-ui-key="u-f648a7666974" type="button" className="date-link" onClick={() => selectViewedDate(day.date)}>
                           {formatDateDisplay(day.date)}
                         </button>
-                        <button
+                        <button data-ui-key="u-0d08896737af"
                           type="button"
                           className={`watch-date-icon ${watchedDateSet.has(day.date) ? 'active' : ''} ${unreadWatchDateSet.has(day.date) ? 'ringing' : ''}`}
                           onClick={() => toggleWatchDate(day.date)}
@@ -991,7 +993,7 @@ export default function LeaveRegistrationPage({ user }) {
                         >
                           {watchedDateSet.has(day.date) ? <BellRing size={14} /> : <Bell size={14} />}
                         </button>
-                      </div>
+                      </UiToolbar>
                     </td>
                     <td>{day.weekday_label}</td>
                     <td className="center"><span className="daily-stat-value">{day.total_leave}</span></td>
@@ -1006,8 +1008,8 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
         </section>
 
-        <section className="panel leave-list-panel">
-          <div className="panel-title-row">
+        <section data-ui-key="u-6a4d9baaa43d" className="panel leave-list-panel">
+          <div data-ui-key="u-8b2d8ad1d8f1" className="panel-title-row">
             <div>
               <h2>DANH SÁCH</h2>
               <p>
@@ -1017,16 +1019,16 @@ export default function LeaveRegistrationPage({ user }) {
                   : `Có ${filteredRecords.length} lịch nghỉ.`}
               </p>
             </div>
-            <button type="button" className="secondary-button compact" onClick={load} disabled={busy}>
-              <RefreshCw size={15} className={busy ? 'spin' : ''} /> Làm mới
-            </button>
+            <button data-ui-key="u-4c4154cfd167" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={busy}>
+              <RefreshCw size={15} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-4c4154cfd167"> Làm mới
+            </UiCustomText></button>
           </div>
-          <div className="list-actions">
-              {role === 'admin' && <button type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
-              {canEditVisibleRecord && <button type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /> Lưu sửa</button>}
-              {canDeleteVisibleRecord && <button type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || deletableSelectedUids.length === 0}><Trash2 size={15} /> Xóa đã chọn</button>}
+          <UiToolbar data-ui-key="u-673fd5d1a86a" className="list-actions">
+              {role === 'admin' && <button data-ui-key="u-ac98242f10d4" type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
+              {canEditVisibleRecord && <button data-ui-key="u-1ce6547689e1" data-ui-label-default="Lưu sửa" type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /><UiCustomText uiKey="u-1ce6547689e1"> Lưu sửa</UiCustomText></button>}
+              {canDeleteVisibleRecord && <button data-ui-key="u-dad1744abe2f" data-ui-label-default="Xóa đã chọn" type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || deletableSelectedUids.length === 0}><Trash2 size={15} /><UiCustomText uiKey="u-dad1744abe2f"> Xóa đã chọn</UiCustomText></button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {loadState.records === 'ready' ? `${totalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}
-          </div>
+          </UiToolbar>
           {listActionNotice && (
             <div
               className={`list-action-notice ${listActionNotice.status} ${listActionNotice.action}`}
@@ -1044,15 +1046,15 @@ export default function LeaveRegistrationPage({ user }) {
                 </strong>
                 <span>{listActionNotice.message}</span>
               </div>
-              <button type="button" className="list-action-notice-close" onClick={() => setListActionNotice(null)} aria-label="Đóng thông báo">
+              <button data-ui-key="u-3ea62cdcdeb4" type="button" className="list-action-notice-close" onClick={() => setListActionNotice(null)} aria-label="Đóng thông báo">
                 <X size={15} />
               </button>
             </div>
           )}
-          <div className="list-filter-toolbar">
+          <UiToolbar data-ui-key="u-1bf317df3f46" className="list-filter-toolbar">
             <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian danh sách">
               {LIST_DATE_FILTERS.map((filter) => (
-                <button
+                <button data-ui-key="u-0512fe10d2e8"
                   type="button"
                   key={filter}
                   className={listRangeFilter === filter ? 'active' : ''}
@@ -1085,9 +1087,9 @@ export default function LeaveRegistrationPage({ user }) {
             <datalist id="list-employee-options">
               {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
             </datalist>
-          </div>
+          </UiToolbar>
           <div className="table-wrap leave-list-wrap" aria-busy={loadState.records === 'loading'}>
-            <table className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
+            <table data-ui-key="u-1d60b99a3b6d" className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
               <colgroup>
                 <col className="leave-col-select" />
                 <col className="leave-col-date" />
@@ -1097,7 +1099,7 @@ export default function LeaveRegistrationPage({ user }) {
                 <col className="leave-col-detail" />
                 {canViewPenalty && <col className="leave-col-penalty" />}
               </colgroup>
-              <thead><tr><th className="select-column">Chọn</th><th>Ngày</th><th>Thứ</th><th>Nhân viên</th><th>Lý do</th><th>Chi tiết</th>{canViewPenalty && <th className="right">Phạt</th>}</tr></thead>
+              <thead><tr><th data-ui-key="u-3f090c8da00d" data-ui-label-default="Chọn" className="select-column"><UiCustomText uiKey="u-3f090c8da00d">Chọn</UiCustomText></th><th data-ui-key="u-06ade8ca026c" data-ui-label-default="Ngày"><UiCustomText uiKey="u-06ade8ca026c">Ngày</UiCustomText></th><th data-ui-key="u-e58316817ea9" data-ui-label-default="Thứ"><UiCustomText uiKey="u-e58316817ea9">Thứ</UiCustomText></th><th data-ui-key="u-cf02e7475dd8" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-cf02e7475dd8">Nhân viên</UiCustomText></th><th data-ui-key="u-a8a96dc68700" data-ui-label-default="Lý do"><UiCustomText uiKey="u-a8a96dc68700">Lý do</UiCustomText></th><th data-ui-key="u-802a8e189292" data-ui-label-default="Chi tiết"><UiCustomText uiKey="u-802a8e189292">Chi tiết</UiCustomText></th>{canViewPenalty && <th data-ui-key="u-5034577af92e" data-ui-label-default="Phạt" className="right"><UiCustomText uiKey="u-5034577af92e">Phạt</UiCustomText></th>}</tr></thead>
               <tbody>
                 {loadState.records !== 'ready' ? (
                   <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell" role="status">{loadState.records === 'loading' ? 'Đang tải danh sách lịch nghỉ…' : 'Chưa tải được danh sách. Vui lòng bấm Làm mới.'}</td></tr>
@@ -1106,7 +1108,7 @@ export default function LeaveRegistrationPage({ user }) {
                 ) : filteredRecords.map((item) => (
                   <tr key={item.record_uid || `${item.employee_name}-${item.leave_reason}`}>
                     <td className="select-column"><input type="checkbox" aria-label={`Chọn lịch của ${shortEmployeeName(item.employee_name)}`} checked={canDeleteRecord(item) && selectedUids.includes(item.record_uid)} onChange={() => toggleSelected(item)} disabled={!canDeleteRecord(item) || managing} /></td>
-                    <td><button type="button" className="date-link list-date-link" onClick={() => selectViewedDate(item.leave_date)}>{formatDateDisplay(item.leave_date)}</button></td>
+                    <td><button data-ui-key="u-32bb2e0b8700" type="button" className="date-link list-date-link" onClick={() => selectViewedDate(item.leave_date)}>{formatDateDisplay(item.leave_date)}</button></td>
                     <td className="weekday-cell">{item.weekday_label || weekdayForDate(item.leave_date)}</td>
                     <td><strong>{shortEmployeeName(item.employee_name)}</strong></td>
                     <td className="reason-edit-cell">
@@ -1118,7 +1120,7 @@ export default function LeaveRegistrationPage({ user }) {
                       ) : <span>{item.leave_reason}</span>}
                       {canEditRecord(item) && isApiConfigured && !recordReasonsByDate[item.leave_date] && !letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && (
                         recordReasonErrors[item.leave_date]
-                          ? <div role="alert"><small>{recordReasonErrors[item.leave_date]}</small><button type="button" className="text-button" disabled={managing} onClick={() => fetchRecordReasons(item.leave_date)}>Thử tải lại lý do</button></div>
+                          ? <div role="alert"><small>{recordReasonErrors[item.leave_date]}</small><button data-ui-key="u-26f8c2b95ba3" data-ui-label-default="Thử tải lại lý do" type="button" className="text-button" disabled={managing} onClick={() => fetchRecordReasons(item.leave_date)}><UiCustomText uiKey="u-26f8c2b95ba3">Thử tải lại lý do</UiCustomText></button></div>
                           : <small role="status">Đang tải lý do nghỉ cho ngày {formatDateDisplay(item.leave_date)}…</small>
                       )}
                     </td>

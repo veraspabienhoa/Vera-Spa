@@ -1,3 +1,5 @@
+import UiToolbar from './UiToolbar'
+import UiCustomText from './UiCustomText'
 import { AlertTriangle, UserRoundPen, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -109,9 +111,9 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
     `}</style>
     <AlertTriangle size={18} />
     <div className="profile-completion-reminder-content"><strong>HỒ SƠ CHƯA ĐẦY ĐỦ</strong><p>Còn thiếu: {text}.</p></div>
-    <div className="profile-completion-reminder-actions">
-      <button type="button" className="primary-button compact" onClick={onOpenProfile}><UserRoundPen size={14}/> Cập nhật hồ sơ</button>
-      <button type="button" className="secondary-button compact" onClick={() => setDismissed(true)}><X size={14}/> Đóng</button>
-    </div>
+    <UiToolbar data-ui-key="u-0b55aee6f19a" className="profile-completion-reminder-actions">
+      <button data-ui-key="u-cb964d3cd078" data-ui-label-default="Cập nhật hồ sơ" type="button" className="primary-button compact" onClick={onOpenProfile}><UserRoundPen size={14}/><UiCustomText uiKey="u-cb964d3cd078"> Cập nhật hồ sơ</UiCustomText></button>
+      <button data-ui-key="u-6dd538dc5ee1" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={() => setDismissed(true)}><X size={14}/><UiCustomText uiKey="u-6dd538dc5ee1"> Đóng</UiCustomText></button>
+    </UiToolbar>
   </div>
 }

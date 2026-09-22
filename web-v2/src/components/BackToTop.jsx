@@ -1,3 +1,4 @@
+import UiCustomText from './UiCustomText'
 import { ArrowUp } from 'lucide-react'
 import './BackToTop.css'
 export default function BackToTop() {
@@ -6,5 +7,5 @@ export default function BackToTop() {
     window.scrollTo({ top: 0, behavior })
     document.querySelectorAll('main, .page-wrap, .live-tour-workspace, .live-tour-page').forEach(node => node.scrollTo?.({ top: 0, behavior }))
   }
-  return <button type="button" className="back-to-top" onClick={go} aria-label="Về đầu trang" title="Về đầu trang"><ArrowUp size={18}/>Về đầu trang</button>
+  return <button data-ui-key="u-cb8512ce607d" data-ui-label-default="Về đầu trang" type="button" className="back-to-top" onClick={go} aria-label="Về đầu trang" title="Về đầu trang"><ArrowUp size={18}/><UiCustomText uiKey="u-cb8512ce607d">Về đầu trang</UiCustomText></button>
 }

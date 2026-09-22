@@ -6,7 +6,7 @@ function realProfileSaveButton(topButton) {
   return Array.from(panel.querySelectorAll('button')).find((button) => (
     button !== topButton
     && !button.classList.contains('vera-profile-save-top')
-    && /^Lưu hồ sơ$/i.test(clean(button.textContent))
+    && /^Lưu hồ sơ$/i.test(clean(button.dataset.uiLabelDefault || button.textContent))
   )) || null
 }
 
