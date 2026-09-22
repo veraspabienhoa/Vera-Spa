@@ -15,7 +15,9 @@ def test_weekly_shift_badge_is_in_quick_tools_without_circled_number():
     assert ">Ca tuần này{" in page
     assert "selectedWeeklyShift" in page
     assert "Ca 1" in page and "Ca 2" in page
+    assert 'className="live-tour-shift-controls"' in quick
     assert ".live-tour-page .live-tour-weekly-shift .weekly-desktop{display:none}" in controls
+    assert ".tour-quick-tools .live-tour-shift-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.55fr)" in controls
 
 
 def test_revenue_ledger_filters_match_visible_ledger_columns():
