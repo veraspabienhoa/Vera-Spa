@@ -9,7 +9,35 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+class VisualState(BaseModel):
+    background: str | None = Field(default=None, pattern=r'^#[0-9a-fA-F]{6}$')
+    gradient: str | None = Field(default=None, pattern=r'^#[0-9a-fA-F]{6}$')
+    text: str | None = Field(default=None, pattern=r'^#[0-9a-fA-F]{6}$')
+    border: str | None = Field(default=None, pattern=r'^#[0-9a-fA-F]{6}$')
+    shadow: Literal['none', 'soft', 'medium', 'strong', 'inset', 'raised'] | None = None
+
+class VisualStyle(BaseModel):
+    normal: VisualState | None = None
+    hover: VisualState | None = None
+    pressed: VisualState | None = None
+    selected: VisualState | None = None
+    focus: VisualState | None = None
+    radius: int | None = Field(default=None, ge=0, le=40)
+    border_width: int | None = Field(default=None, ge=1, le=6)
+    padding_x: int | None = Field(default=None, ge=0, le=40)
+    padding_y: int | None = Field(default=None, ge=0, le=32)
+    font_size: int | None = Field(default=None, ge=12, le=32)
+    font_weight: Literal[400, 500, 600, 700, 800] | None = None
+    font_family: Literal['system', 'segoe', 'roboto', 'serif'] | None = None
+    glass_blur: int | None = Field(default=None, ge=0, le=20)
+    glass_opacity: int | None = Field(default=None, ge=20, le=100)
+    depth: int | None = Field(default=None, ge=0, le=8)
+    transition_ms: int | None = Field(default=None, ge=0, le=600)
+    hover_lift: int | None = Field(default=None, ge=0, le=6)
+    press_sink: int | None = Field(default=None, ge=0, le=6)
+
 class LayoutItem(BaseModel):
+    appearance: VisualStyle | None = None
     order: int | None = Field(default=None, ge=0, le=10000)
     width: int | None = Field(default=None, ge=32, le=2400)
     height: int | None = Field(default=None, ge=24, le=1600)
