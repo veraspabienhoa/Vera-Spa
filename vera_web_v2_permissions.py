@@ -28,6 +28,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
     "Live Tour": {
         "live_tour_view": "Xem Live Tour",
         "live_tour_operate": "Xếp tua và vận hành",
+        "live_tour_start_outside_shift": "Thực hiện khi chưa vào ca / nghỉ phép (00:00–02:00, giờ Việt Nam)",
         "live_tour_reorder": "Thay đổi thứ tự nhân viên / STT toàn bảng",
         "live_tour_booking": "Đặt booking (cần quyền Xem Live Tour)",
         "live_tour_payment": "Thanh toán, tạo khách hàng và bán combo",
@@ -140,7 +141,7 @@ FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in gr
 # permission. Dynamic features become visible automatically once registered.
 PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
     {"id": "live-tour", "label": "Live Tour", "view_feature": "live_tour_view", "features": [
-        "live_tour_view", "live_tour_operate", "live_tour_reorder", "live_tour_booking",
+        "live_tour_view", "live_tour_operate", "live_tour_start_outside_shift", "live_tour_reorder", "live_tour_booking",
         "live_tour_payment", "live_tour_invoice_view", "live_tour_pending_view",
         "live_tour_invoice_edit", "live_tour_invoice_delete", "live_tour_paid_invoice_view",
         "live_tour_paid_invoice_edit", "live_tour_paid_invoice_delete",
@@ -285,6 +286,7 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
 
     # Live Tour
     "live_tour_operate": {"live_tour_view"},
+    "live_tour_start_outside_shift": {"live_tour_view", "live_tour_operate"},
     "live_tour_reorder": {"live_tour_view", "live_tour_operate"},
     "live_tour_booking": {"live_tour_view"},
     "live_tour_payment": {"live_tour_view"},
