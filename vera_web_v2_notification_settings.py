@@ -5,7 +5,7 @@ from typing import Any, Callable, Literal
 import json
 import uuid
 from pydantic import Field, field_validator
-from vera_notification_delivery import ensure_schema as ensure_routing_schema
+from vera_notification_delivery import ensure_schema as ensure_routing_schema, RECIPIENT_GROUPS, recipient_membership_sql
 from vera_notification_tasks import task_catalog, TaskNotificationMiddleware
 
 from fastapi import Depends, HTTPException
@@ -127,13 +127,15 @@ def _recipients(conn, values):
         raise HTTPException(400, 'Chọn ít nhất một người nhận.')
     wanted = sorted(set(values))
     active = {str(row['id']) for row in conn.execute(text('SELECT auth_user_id::text AS id FROM vera_v2_user_profile WHERE is_active')).mappings()}
-    if any(value not in active for value in wanted):
+    if any(value not in active and value not in RECIPIENT_GROUPS for value in wanted):
         raise HTTPException(400, 'Người nhận không tồn tại hoặc tài khoản đã bị khóa.')
     return wanted
 
 
 def _write_route(conn, key, source, label, recipients, channels, custom, actor):
     recipients = _recipients(conn, recipients)
+    if 'group:watchers' in recipients and source != 'leave_watch':
+        raise HTTPException(400, 'Người theo dõi chỉ áp dụng cho thông báo theo dõi ngày nghỉ.')
     if not channels:
         raise HTTPException(400, 'Chọn ít nhất một kênh thông báo.')
     conn.execute(text("""INSERT INTO vera_notification_route(key,source_key,label,recipients,channels,custom,updated_by)
@@ -251,10 +253,11 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
     def inbox(ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             ensure_schema(conn); ensure_routing_schema(conn)
-            rows=conn.execute(text("""SELECT d.id,d.payload,d.created_at,d.read_at FROM vera_notification_delivery d
+            rows=conn.execute(text(f"""SELECT d.id,d.payload,d.created_at,d.read_at FROM vera_notification_delivery d
                 JOIN vera_notification_route r ON r.key=d.rule_key
+                JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
                 LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-                WHERE d.recipient=:recipient AND d.channel='in_app' AND r.recipients ? :recipient
+                WHERE d.recipient=:recipient AND d.channel='in_app' AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
                 AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE)
                 ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
             return {'notifications':[dict(row) for row in rows]}

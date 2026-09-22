@@ -50,6 +50,34 @@ def fingerprint(source, payload):
     return hashlib.sha256(f'{source}:{identity}'.encode()).hexdigest()
 
 
+RECIPIENT_GROUPS = {
+    'group:nhanvien': 'Nhân viên', 'group:letan': 'Lễ tân',
+    'group:watchers': 'Người theo dõi', 'group:quanly': 'Quản lý',
+    'group:giamdoc': 'Giám đốc', 'group:all': 'Tất cả tài khoản', 'group:admin': 'Admin',
+}
+
+
+def recipient_membership_sql(recipients='r.recipients', source='r.source_key', watched_date=':watched_date'):
+    """Trusted SQL fragments only; the account alias p must be joined and active."""
+    return f"""({recipients} ? p.auth_user_id::text
+        OR {recipients} ? 'group:all'
+        OR (p.role IN ('nhanvien','letan','quanly','giamdoc','admin')
+            AND {recipients} ? ('group:' || p.role))
+        OR ({recipients} ? 'group:watchers' AND {source}='leave_watch'
+            AND EXISTS(SELECT 1 FROM vera_v2_leave_watch w
+                WHERE w.auth_user_id=p.auth_user_id AND w.watched_date::text={watched_date})))"""
+
+
+def resolve_recipients(conn, values, source, payload):
+    # Legacy explicit-ID rules keep their existing path; inserts still check active accounts.
+    if not any(value.startswith('group:') for value in values):
+        return set(values)
+    predicate=recipient_membership_sql('CAST(:recipients AS jsonb)', ':source')
+    return {str(row['id']) for row in conn.execute(text(
+        'SELECT p.auth_user_id::text AS id FROM vera_v2_user_profile p WHERE p.is_active AND '+predicate),
+        {'recipients':json.dumps(values),'source':source,'watched_date':payload.get('watched_date')}).mappings()}
+
+
 def enqueue(conn, source_key, payload, event_key=None):
     ensure_schema(conn)
     rules = [dict(row) for row in conn.execute(text('''SELECT r.*, COALESCE(s.enabled,TRUE) AS enabled
@@ -60,10 +88,14 @@ def enqueue(conn, source_key, payload, event_key=None):
     # Store plain text and a fixed application URL, never arbitrary HTML or external links.
     safe = {'title': str(payload.get('title') or 'VERA SPA')[:160], 'body': str(payload.get('body') or '')[:2000],
             'url': APP_URL, 'tag': event_key, 'kind': source_key}
+    if source_key == 'leave_watch' and payload.get('watched_date'):
+        from datetime import date
+        try: safe['watched_date'] = date.fromisoformat(str(payload['watched_date'])).isoformat()
+        except ValueError: pass
     for rule in rules:
         if not rule['enabled']:
             continue
-        for recipient in set(rule['recipients']):
+        for recipient in resolve_recipients(conn, rule['recipients'], source_key, safe):
             for channel in set(rule['channels']):
                 conn.execute(text('''INSERT INTO vera_notification_delivery(event_key,rule_key,recipient,channel,payload)
                     SELECT :event,:rule,:recipient,:channel,CAST(:payload AS jsonb)
@@ -94,11 +126,11 @@ def dispatch_pending(engine, send, vault, limit=30):
         try:
             with engine.connect() as conn:
                 # Recheck current recipient/channel grants before delivering a queued notification.
-                allowed = conn.execute(text('''SELECT 1 FROM vera_notification_route r
+                allowed = conn.execute(text(f'''SELECT 1 FROM vera_notification_route r
                     JOIN vera_v2_user_profile p ON p.auth_user_id::text=:recipient AND p.is_active
                     LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-                    WHERE r.key=:key AND r.recipients ? :recipient AND r.channels ? 'push'
-                    AND COALESCE(s.enabled,TRUE)'''), {'key': row['rule_key'], 'recipient': row['recipient']}).scalar_one_or_none()
+                    WHERE r.key=:key AND {recipient_membership_sql()} AND r.channels ? 'push'
+                    AND COALESCE(s.enabled,TRUE)'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date')}).scalar_one_or_none()
                 subscriptions = [dict(r) for r in conn.execute(text('''SELECT subscription_id::text AS subscription_id,
                     endpoint,p256dh,auth_secret FROM vera_v2_push_subscription
                     WHERE auth_user_id::text=:recipient AND is_active'''), {'recipient': row['recipient']}).mappings()] if allowed else []
