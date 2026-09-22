@@ -85,6 +85,7 @@ const liveAlertTiming = (alert, nowMs) => {
 
 export default function AppShell({ user, currentPage, standalone = false, onPageChange, onRefreshCurrentPage, onSignOut, children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [layoutDesignerOpen, setLayoutDesignerOpen] = useState(false)
   const [standaloneMenuOpen, setStandaloneMenuOpen] = useState(false)
   const [birthdayNotice, setBirthdayNotice] = useState(null)
   const [notificationSettings, setNotificationSettings] = useState(null)
@@ -388,6 +389,11 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
               <Icon size={19} /><span>{label}</span>{!ready && <span className="soon-pill">Sau</span>}
             </a>
           ))}
+          {user?.role === 'admin' && !user?.must_change_password && <button
+            type="button" className={`nav-item ${layoutDesignerOpen ? 'active' : ''}`}
+            aria-expanded={layoutDesignerOpen}
+            onClick={() => { setLayoutDesignerOpen(true); setMobileOpen(false); setStandaloneMenuOpen(false) }}
+          ><Settings2 size={19} /><span>Chỉnh bố cục</span></button>}
         </nav>
 
         <div className="sidebar-footer">
@@ -442,7 +448,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>
-      <LayoutDesigner user={user} page={currentPage}/>
+      <LayoutDesigner user={user} page={currentPage} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => setLayoutDesignerOpen(false)}/>
       <BackToTop/>
       <PopupNotifications/>
     </div>
