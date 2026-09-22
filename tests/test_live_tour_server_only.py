@@ -131,6 +131,7 @@ def test_booking_is_persisted_and_read_by_a_new_app_instance(monkeypatch):
             return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
     monkeypatch.setattr(live, 'datetime', FixedDateTime)
     database = SettingsDatabase()
+    database.directory[0]['work_shift'] = 'Ca 1'
     database.datasets = [{'payload': [{'EmployeeName': 'server-ktv', 'WorkDateStr': NOW.strftime('%d/%m/%Y'), 'MachineTimeCheckInStr': '09:00', 'WorkTimeName': 'Ca 1'}]}]
     _, first = app_client(database)
     data = first.get("/v2/live-tour").json()

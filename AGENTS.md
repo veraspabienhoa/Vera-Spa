@@ -55,3 +55,7 @@ from hypotheses and historical configuration from current configuration.
 - Tables, header rows and buttons use clear, solid borders throughout desktop and mobile. Extend `web-v2/src/clear-borders.css` for shared styling; retain danger/selected states, VIP gold borders, shift highlights and keyboard focus. In the Live Tour table, the employee-name button and inline appointment input have no border because their table cells already provide the grid; retain a focus outline and keep the quick appointment toolbar bordered. Keep Clear buttons stationary on hover and their menus closed after clearing.
 - Live Tour exception (latest user request): remove internal body-cell grid lines, including the before-shift cell border; keep the outer table frame and STT header-row borders on desktop/mobile and print. Preserve status colors, selection feedback and keyboard focus. Other tables retain their grids.
 - Table capture images follow the source table border treatment (including the Live Tour exception). Do not change receipt dimensions or financial data to adjust borders.
+
+## Shift source policy (22-09-2026)
+
+- Vera Spa staff assignments, effective dates, rotation cycles, daily work schedules and explicit Admin overrides are authoritative for shifts. TimeSoft supplies FaceID/check-in/out evidence only. Never use its WorkTimeName/ShiftName or scheduled start/end as a fallback for missing Vera assignments. Live Tour and attendance must share the Vera shift resolver.

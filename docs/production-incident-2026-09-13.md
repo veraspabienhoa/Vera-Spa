@@ -331,3 +331,27 @@ python -m pytest -q tests/test_attendance_connection_reuse.py tests/test_auth_po
 Workflow thông báo cần đủ phụ thuộc cho các module chấm công được kiểm thử,
 bao gồm `requests` và `gspread`. Giữ kiểm tra hồi quy khi đổi thiết kế; cập nhật
 kiểm tra hành vi cũ cho đúng ranh giới giao dịch, không chỉ tắt một kiểm tra đỏ.
+
+## Ca Live Tour và Chấm công không đồng nhất — 22-09-2026, chưa deploy
+
+Người dùng báo Phương Vy trên Live Tour là Ca 2, Chấm công là Ca 1 và xác
+nhận ca đúng là Ca 1. Chưa truy cập hồ sơ, ca Admin ghi đè hoặc runtime
+Production của nhân viên này; không kết luận nguyên nhân riêng từ báo cáo đó.
+
+Rà soát mã xác nhận Chấm công dùng WorkTimeName và giờ ca TimeSoft cho KTV
+có FaceID; dòng chưa có FaceID chỉ dùng ca gốc và không tính luân phiên.
+Live Tour tính chu kỳ Vera nhưng vẫn lấy nhãn TimeSoft dự phòng nếu hồ sơ
+không có ca hiệu lực. Đây là các đường gây sai lệch đã xác nhận trong mã.
+
+Bản sửa dùng chung bộ tính ca Vera theo ngày hiệu lực/chu kỳ cho Live Tour
+và Chấm công, loại bỏ dự phòng TimeSoft; dữ liệu TimeSoft vẫn cung cấp
+FaceID. Chấm công thay nhãn và giờ ca trước bước đọc cấu hình ca/nghỉ giữa
+ca. Không gán cứng ca theo tên nhân viên, không thay hồ sơ hoặc tài chính.
+Giữ Admin đổi ca trong ngày trên Live Tour; nếu Phương Vy vẫn lệch sau
+triển khai cần đối chiếu hồ sơ và manual_shift_date/manual_shift_by thực tế.
+Kiểm thử tình huống mô phỏng hồ sơ Phương Vy Ca 1 và TimeSoft Ca 2 không
+phải bằng chứng đã đọc hay sửa dữ liệu Production.
+
+Kiểm chứng cục bộ: 1.312 kiểm thử Python đạt, gồm các trường hợp ca Vera
+trái nhãn TimeSoft, đổi chu kỳ, ngày hiệu lực, thiếu ca và các hồi quy pool/
+notification/booking. Chưa deploy hoặc xác minh ca Phương Vy trên Production.
