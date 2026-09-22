@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 const KEY='vera-layout-panel-frame-v1'
 const fit = frame => {
- const width=Math.max(240,Math.min(frame.width,window.innerWidth-16)),height=Math.max(240,Math.min(frame.height,window.innerHeight-16))
+ const width=Math.max(240,Math.min(frame.width,window.innerWidth-16)),height=Math.max(Math.min(340,window.innerHeight-16),Math.min(frame.height,window.innerHeight-16))
  return {width,height,left:Math.max(8,Math.min(frame.left,window.innerWidth-width-8)),top:Math.max(8,Math.min(frame.top,window.innerHeight-height-8))}
 }
 export default function useLayoutPanelFrame() {
