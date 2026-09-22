@@ -1,6 +1,7 @@
+import LayoutDesigner from './LayoutDesigner'
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
-import { Activity, BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
@@ -21,12 +22,11 @@ const items = [
   { id: 'training', label: 'Đào tạo & đánh giá', icon: ClipboardList, ready: true, permission: 'training_view' },
   { id: 'contract-1', label: 'Hợp đồng', icon: FileSignature, ready: true, permission: 'contract_1_view' },
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
-  { id: 'changes', label: 'Thay đổi hệ thống', icon: Activity, ready: true, permission: 'audit_admin_view' },
+  { id: 'system', label: 'Hệ thống', icon: HardDrive, ready: true, anyPermission: ['audit_admin_view', 'storage_admin_view'] },
   { id: 'hr', label: 'Nhân sự', icon: Users, ready: true, adminOnly: true },
   { id: 'long-leave', label: 'Phép năm', icon: ClipboardList, ready: true, anyPermission: ['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'] },
   { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
   { id: 'rules', label: 'Nội quy', icon: FileText, ready: true, permission: 'official_rules_view' },
-  { id: 'storage', label: 'Bộ nhớ hệ thống', icon: HardDrive, ready: true, permission: 'storage_admin_view' },
 ]
 
 const BREAK_ALERT_DISMISSED_KEY = 'vera-break-alerts-admin-dismissed'
@@ -379,7 +379,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           }).map(({ id, label, icon: Icon, ready }) => (
             <a
               key={id}
-              className={`nav-item ${(currentPage === id || (['appearance', 'notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
+              className={`nav-item ${(currentPage === id || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['appearance', 'notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
               onClick={(event) => chooseFromLink(event, id, ready)}
               aria-disabled={!ready || undefined}
@@ -442,6 +442,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>
+      <LayoutDesigner user={user} page={currentPage}/>
       <BackToTop/>
       <PopupNotifications/>
     </div>

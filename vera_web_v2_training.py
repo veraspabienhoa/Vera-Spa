@@ -491,7 +491,12 @@ def install_training_routes(
                 LEFT JOIN employees e ON lower(e.username)=lower(r.username)
                 WHERE r.active=TRUE ORDER BY full_name
             """))) if _is_admin(ident) else []
-            return {"employees": employees, "training_students": training_students,
+            from vera_web_v2_hr import registry, department_code
+            hr = registry(conn)
+            for person in people:
+                code = department_code(person, hr)
+                person["department"] = hr["departments"].get(code, {}).get("name", code)
+            return {"departments": [item["name"] for item in hr["departments"].values() if item.get("active", True)], "employees": employees, "training_students": training_students,
                     "report_employees": _report_employees(conn, employees),
                     "people": people, "sessions": sessions,
                     "assignments": assignments, "cycles": cycles, "scopes": scopes,

@@ -1,4 +1,4 @@
-import { formatVeraDateTime } from '../lib/veraDate'
+import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import LiveTourFilters from '../components/LiveTourFilters'
@@ -29,6 +29,9 @@ export default function LiveTourReportsPage({ user }) {
   const [context, setContext] = useState(null)
   const [receipt, setReceipt] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [historyRefresh, setHistoryRefresh] = useState(0)
+  const [historyNotice, setHistoryNotice] = useState('')
+  const [deletingHistory, setDeletingHistory] = useState(false)
   const [error, setError] = useState('')
   const historyDateFrom = filters.date_from
   const historyDateTo = filters.date_to
@@ -42,7 +45,21 @@ export default function LiveTourReportsPage({ user }) {
     setBusy(true); setError('')
     veraApi.liveTourBoardHistory({ date_from: historyDateFrom, date_to: historyDateTo, employee: historyEmployee }).then(result => { if (active) setHistory(result) }).catch(e => { if (active) setError(e.message) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
-  }, [allowed, historyDateFrom, historyDateTo, historyEmployee, tab])
+  }, [allowed, historyDateFrom, historyDateTo, historyEmployee, tab, historyRefresh])
+  const cleanupHistory = async () => {
+    if (deletingHistory) return
+    setDeletingHistory(true); setError(''); setHistoryNotice('')
+    const scope = { date_from: historyDateFrom || null, date_to: historyDateTo || null, employee: historyEmployee || '' }
+    try {
+      const preview = await veraApi.previewBoardHistoryCleanup(scope)
+      if (!preview.count) { setHistoryNotice('Không có lịch sử khớp bộ lọc.'); return }
+      const dates = `${scope.date_from ? formatVeraDate(scope.date_from) : 'Tất cả'} → ${scope.date_to ? formatVeraDate(scope.date_to) : 'Tất cả'}`
+      if (!window.confirm(`Xóa vĩnh viễn ${preview.count} bản ghi lịch sử bảng tua?\n${dates}\nNhân viên: ${scope.employee || 'Tất cả'}\nKhông thể hoàn tác. Dữ liệu bảng tua hiện tại và hóa đơn vẫn được giữ nguyên.`)) return
+      const result = await veraApi.deleteBoardHistory({ ...scope, cutoff_id: preview.cutoff_id, confirm: true })
+      setHistoryNotice(`Đã xóa ${result.deleted} bản ghi lịch sử.`)
+      setHistoryRefresh(value => value + 1)
+    } catch (e) { setError(e.message) } finally { setDeletingHistory(false) }
+  }
   const act = async (action, payload, _ids, options) => {
     if (running.current) return null
     running.current = true; setBusy(true); setError('')
@@ -88,7 +105,9 @@ export default function LiveTourReportsPage({ user }) {
       {tab !== 'performance' && <p>{rows.length} dòng</p>}
       {grants.export && <button className="secondary-button" onClick={() => (tab === 'history' ? veraApi.exportLiveTourBoardHistory(filters) : veraApi.exportLiveTourExcel(tab === 'tip' ? 'tip' : tab === 'performance' ? 'performance' : tab === 'employee' ? 'employee' : 'reports', { ...filters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}), ...(tab === 'performance' ? { performance_timing: performanceTiming } : {}) })).catch(e => setError(e.message))}>Xuất Excel theo bộ lọc</button>}
       {tab === 'invoices' && !grants.paid_invoice_view && <p>Cần quyền Xem hóa đơn đã thanh toán để mở báo cáo hóa đơn.</p>}
-      {tab === 'history' && <div className="responsive-data-table live-tour-history-table"><table><thead><tr><th>Ngày giờ</th><th>Nhân viên</th><th>Người thao tác</th><th>Hành động</th><th>Cột thay đổi</th>{history.columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.changed_at_label}</td><td><strong>{row.employee_name}</strong></td><td>{row.actor || 'Hệ thống'}</td><td>{row.action}</td><td>{(row.changed_columns || []).join(', ') || '—'}</td>{history.columns.map(column => <td key={column}>{row.changed_columns?.includes(column) && row.before?.[column] !== undefined ? <><small>{String(row.before?.[column] ?? '—')}</small><br/><strong>{String(row.after?.[column] ?? '—')}</strong></> : String(row.after?.[column] ?? row.before?.[column] ?? '—')}</td>)}</tr>)}</tbody></table></div>}
+      {tab === 'history' && isAdmin && <button className="danger-button" disabled={busy || deletingHistory} onClick={cleanupHistory}>{deletingHistory ? 'Đang xử lý…' : 'Xóa lịch sử theo bộ lọc'}</button>}
+      {tab === 'history' && historyNotice && <p role="status">{historyNotice}</p>}
+      {tab === 'history' && <div className="responsive-data-table live-tour-history-table"><table><thead><tr><th>Ngày</th><th>Giờ</th><th>Nhân viên</th><th>Người thao tác</th><th>Hành động</th><th>Cột thay đổi</th>{history.columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}><td>{row.changed_date_label || row.changed_at_label?.split(' ')[0]}</td><td>{row.changed_time_label || row.changed_at_label?.split(' ')[1]}</td><td><strong>{row.employee_name}</strong></td><td>{row.actor || 'Hệ thống'}</td><td>{row.action}</td><td>{(row.changed_columns || []).join(', ') || '—'}</td>{history.columns.map(column => <td key={column}>{row.changed_columns?.includes(column) && row.before?.[column] !== undefined ? <><small>{String(row.before?.[column] ?? '—')}</small><br/><strong>{String(row.after?.[column] ?? '—')}</strong></> : String(row.after?.[column] ?? row.before?.[column] ?? '—')}</td>)}</tr>)}</tbody></table></div>}
       {tab !== 'employee' && tab !== 'history' && (tab === 'performance' ? <div className="responsive-data-table live-tour-report-table performance-report-table"><table><thead><tr><th>Nhân viên / dịch vụ</th><th>Booking</th><th>TG bắt đầu thực hiện</th><th>TG bắt đầu thực hiện YC</th><th>Hoàn thành</th><th>Quy định</th><th>Thực tế</th><th>Kết quả</th><th>TG Xông Hơi</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}><td data-label="Nhân viên / dịch vụ"><strong>{row.employee_name}</strong><br/>{[row.service, row.room].filter(Boolean).join(' · ')}</td><td data-label="Booking">{formatVeraDateTime(row.booked_at)}</td><td data-label="TG bắt đầu thực hiện">{formatVeraDateTime(performanceStart(row, false))}</td><td data-label="TG bắt đầu thực hiện YC">{formatVeraDateTime(performanceStart(row, true))}</td><td data-label="Hoàn thành">{formatVeraDateTime(row.completed_at)}</td><td data-label="Quy định">{row.duration == null ? '—' : `${row.duration} phút`}</td><td data-label="Thực tế">{row.actual_duration_minutes} phút</td><td data-label="Kết quả"><span className={Number(row.completion_delta_minutes) < 0 ? 'report-early' : Number(row.completion_delta_minutes) > 0 ? 'report-late' : 'report-ontime'}>{row.completion_result}</span></td><td data-label="TG Xông Hơi">{row.steam_minutes == null ? '—' : `${row.steam_minutes} phút`}</td></tr>)}</tbody></table></div> : <div className="responsive-data-table live-tour-report-table"><table><thead><tr><th>Ngày giờ hóa đơn</th><th>Hóa đơn / khách hàng</th><th>Nhân viên / dịch vụ / phòng</th>{tab !== 'tip' && <><th className="report-money-column">Tiền dịch vụ</th><th className="report-money-column">Giảm giá</th></>}<th className="report-money-column">Tiền Tip</th>{tab !== 'tip' && <th className="report-money-column">Tổng tiền</th>}<th className="report-actions-column">Thao tác</th></tr></thead><tbody>{rows.map(row => {
         const invoice = tab === 'invoices' ? row : data.invoices.find(i => i.id === row.invoice_id)
         const amounts = invoiceMoneyValues(invoice || row)
