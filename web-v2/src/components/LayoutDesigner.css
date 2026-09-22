@@ -107,3 +107,14 @@
 .layout-custom-search,.layout-custom-dropdown,.layout-custom-date,.layout-custom-filter{box-sizing:border-box;min-width:0;max-width:100%}.layout-custom-search input,.layout-custom-dropdown select{box-sizing:border-box;max-width:100%;width:100%;padding:8px;border:1px solid #8abfa3;border-radius:6px}.layout-custom-filter button{padding:8px 16px;border:1px solid #365f50;border-radius:6px;color:#174d3a;background:#eef6f0}
 .layout-custom-table{max-width:100%;min-width:0;overflow:auto}.layout-custom-table table{border-collapse:collapse;width:100%;table-layout:fixed}.layout-custom-table th,.layout-custom-table td{border:1px solid #8abfa3;padding:8px;overflow-wrap:anywhere}.layout-custom-table th{background:#eaf3ed}
 [data-layout-editable=true] .layout-custom-caption{pointer-events:none}
+
+/* Inspector dropdowns get 10% more width without widening the panel. */
+.layout-designer label:has(>select){grid-template-columns:minmax(0,1fr) 121px}
+.layout-designer .layout-device-toolbar .layout-close{width:auto;margin-left:auto;flex:1}
+@media(max-width:820px){
+  .layout-designer{overflow:auto;display:block}
+  .layout-designer .layout-panel-header{margin-bottom:8px}
+  .layout-designer .layout-panel-frame-toolbar{position:static}
+  .layout-designer .layout-panel-content{overflow:visible}
+  .layout-designer label:has(>select){grid-template-columns:minmax(0,1fr) minmax(99px,132px)}
+}

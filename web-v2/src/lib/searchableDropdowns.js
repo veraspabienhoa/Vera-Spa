@@ -133,6 +133,7 @@ export function startSearchableDropdowns(doc = document) {
     close()
     const menu = doc.createElement('div')
     menu.className = 'vera-searchable-dropdown'
+    if (source.closest('.layout-designer')) menu.dataset.layoutInspectorPopup = 'true'
     const listId = isDatalist(source) ? source.getAttribute('list') : null
     const compact = compactViewport()
     const input = listId && !compact ? source : doc.createElement('input')
