@@ -49,3 +49,20 @@
 .layout-panel-frame-toolbar{position:sticky;top:0;z-index:2;display:flex;gap:8px;padding:6px;background:#f4f8f5;border-radius:10px}.layout-designer .layout-panel-drag{flex:1;touch-action:none;cursor:move}.layout-designer .layout-panel-resize{position:sticky;bottom:0;justify-self:end;touch-action:none;cursor:nwse-resize;background:#174d3a;color:white}.layout-designer .layout-panel-drag:hover,.layout-designer .layout-panel-resize:hover{transform:none!important}
 
 .layout-designer{align-content:start;grid-auto-rows:max-content}
+
+/* Inspector controls share a browser-local density setting; page objects do not. */
+.layout-designer{gap:var(--layout-tool-gap,8px);overscroll-behavior:contain}
+.layout-designer button{font-size:var(--layout-tool-font,13px);min-height:var(--layout-tool-height,40px);padding:var(--layout-tool-padding-y,8px) var(--layout-tool-padding-x,10px)}
+.layout-designer .layout-panel-frame-toolbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:4px;align-items:stretch}
+.layout-designer .layout-panel-frame-toolbar>button{min-width:0;padding-inline:2px;white-space:nowrap;overflow-wrap:normal;font-size:clamp(10px,var(--layout-tool-font,13px),13px)}
+.layout-designer .layout-panel-frame-toolbar button[aria-pressed=true]{background:#174d3a;color:#fff}
+.layout-designer .layout-center-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--layout-tool-gap,8px)}
+.layout-designer .layout-tool-scale{grid-template-columns:1fr;gap:0}
+.layout-designer .layout-tool-scale input[type=range]{width:100%;min-height:28px;padding:0;border:0;box-shadow:none;accent-color:#1b5e20}
+.layout-designer .layout-element-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.layout-designer textarea{box-sizing:border-box;min-width:0;width:100%;min-height:90px;border:1px solid #8abfa3;border-radius:8px;padding:8px;font:inherit;resize:vertical}
+.layout-inspector-section{border:1px solid #8abfa3;border-radius:10px;padding:8px;min-width:0}
+.layout-inspector-section>summary{font-weight:700;cursor:pointer;min-height:28px;display:list-item}
+.layout-inspector-section .layout-align-tools{margin-top:8px}
+.layout-designer{container-type:inline-size}
+.layout-designer .layout-panel-frame-toolbar>button{font-size:clamp(10px,3.1cqw,var(--layout-tool-font,13px))}
