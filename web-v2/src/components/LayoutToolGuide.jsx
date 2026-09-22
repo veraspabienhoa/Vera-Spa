@@ -1,0 +1,26 @@
+const guides = {
+ 'Lưu cho tất cả':['Kiểm tra loại cấu hình Desktop/Mobile đang chọn.','Quan sát trang, tên, kích thước và thành phần đã thêm/ẩn.','Bấm Lưu cho tất cả và chờ thông báo thành công.','Thiết bị khác nhận cấu hình trong khoảng một phút; nếu báo xung đột hãy tải lại cấu hình trước khi sửa tiếp.'],
+ 'Hủy':['Kiểm tra xem có thay đổi nào cần lưu trước không.','Bấm Hủy để bỏ toàn bộ bản xem trước đang sửa.','Cấu hình đã lưu vẫn được giữ; mở chỉnh sửa lại khi cần.'],
+ 'Mặc định':['Chọn đúng Desktop hoặc Mobile.','Bấm Mặc định và xác nhận để xóa tùy chỉnh của chế độ đó trong bản xem trước.','Kiểm tra kết quả; bấm Lưu cho tất cả để áp dụng hoặc Hủy để giữ bản cũ.'],
+ 'Khôi phục thành phần':['Chọn thành phần cần đặt lại.','Bấm Khôi phục thành phần để bỏ kiểu/kích thước/vị trí tùy chỉnh của nó.','Box/text tự thêm giữ nội dung; dùng Xóa box/text nếu muốn bỏ hẳn.','Kiểm tra rồi Lưu cho tất cả.'],
+ 'Di chuyển bảng công cụ':['Giữ chuột hoặc chạm thanh tiêu đề Giao diện.','Kéo bảng sang vị trí mong muốn trong màn hình.','Thả để giữ vị trí trên trình duyệt này; phím mũi tên cũng di chuyển được.','Bấm ↺ Vị trí để khôi phục vị trí và kích thước mặc định.'],
+ 'Kéo đổi kích thước bảng công cụ':['Giữ nút kéo giãn ở cuối bảng điều khiển.','Kéo ngang để đổi rộng, dọc để đổi cao.','Thả để giữ kích thước; Esc hủy lượt kéo.','Dùng ↺ Vị trí nếu muốn trả bảng về mặc định.'],
+ order:['Bấm Chỉnh giao diện để bật chế độ sửa.','Chọn thành phần trên trang; viền chọn cho biết đối tượng đang chỉnh.','Kéo trong nhóm hoặc chọn Khung đích để chuyển giữa các nhóm tương thích. Dùng Trước/Sau để đổi thứ tự.','Bấm Lưu cho tất cả; Hủy để bỏ bản xem trước.'],
+ buttons:['Bật chỉnh sửa rồi chọn một nút trên trang.','Bấm Chọn khung cha nếu cần chỉnh cả nhóm nút.','Chọn số dòng, cách gom nhóm hoặc cỡ chữ. Xem kết quả ngay trên trang.','Lưu cho tất cả khi bố trí đã phù hợp.'],
+ labels:['Bật chỉnh sửa rồi chọn menu/tab/nút có nhãn cố định.','Nhấp đúp chữ hoặc sửa ô Tên hiển thị. Với text tự thêm, sửa ô Nội dung.','Enter xác nhận lần sửa trực tiếp; Escape hủy. Không nhập dữ liệu khách hàng vào nhãn dùng chung.','Bấm Lưu cho tất cả để áp dụng tên mới.'],
+ style:['Bật chỉnh sửa và chọn thành phần cần trang trí.','Chọn trạng thái Bình thường/Rê chuột/Đang nhấn/Đang chọn/Focus.','Chọn màu, font, bóng hoặc Mẫu xanh 3D; chỉnh thông số và quan sát bản xem trước.','Xóa hiệu ứng để bỏ riêng kiểu trang trí; Lưu cho tất cả để áp dụng.'],
+ columns:['Mở trang có bảng cần chỉnh.','Chọn cột và nhập độ rộng trong danh sách công cụ.','Kiểm tra bảng trên loại thiết bị đang mở.','Lưu độ rộng cột; cấu hình cột Live Tour dùng nút lưu trong phần riêng của nó.'],
+ rooms:['Mở nhóm Phòng Live Tour.','Chọn cấu hình phòng/hiển thị cần thay đổi.','Điều chỉnh thông số trong biểu mẫu và kiểm tra bản xem trước nếu có.','Dùng nút lưu của phần Phòng Live Tour.'],
+ history:['Chọn Desktop hoặc Mobile trong ô Chế độ giao diện.','Xem phiên bản, người lưu và thời gian trong danh sách.','Bấm Khôi phục ở phiên bản muốn dùng rồi xác nhận.','Bản khôi phục áp dụng cho loại thiết bị đó; cấu hình phòng/cột riêng quản lý ở mục tương ứng.'],
+ elements:['Bấm Chỉnh giao diện.','Chọn vị trí trên trang rồi bấm Thêm box hoặc Thêm text; nếu chưa chọn, thành phần xuất hiện cuối nội dung trang.','Chọn thành phần mới; sửa Nội dung, kéo góc đổi kích thước hoặc vào Hiệu ứng.','Xóa sẽ bỏ box/text tự thêm; Ẩn chỉ ẩn thành phần có sẵn. Lưu cho tất cả để áp dụng.'],
+ 'Thêm box':['Chọn thành phần làm mốc trên trang hoặc bỏ chọn để thêm cuối trang.','Bấm Thêm box. Một khung có viền xuất hiện sau mốc.','Nhập Nội dung; kéo góc hoặc nhập rộng/cao; chỉnh màu/viền trong Hiệu ứng.','Lưu cho tất cả. Box mới là phần trình bày, không tự tạo dữ liệu nghiệp vụ.'],
+ 'Thêm text':['Chọn thành phần làm mốc rồi bấm Thêm text.','Nhập văn bản trong ô Nội dung; nội dung hiển thị dạng chữ thuần.','Chỉnh font, màu, căn chữ và kích thước.','Lưu cho tất cả để người dùng thấy trên trang và loại thiết bị tương ứng.'],
+ 'Xóa / Ẩn':['Chọn thành phần cần bỏ khỏi giao diện.','Bấm Xóa box/text hoặc Ẩn thành phần rồi xác nhận.','Kiểm tra bản xem trước; dùng Hiện lại cho phần bị ẩn hoặc Hủy để bỏ thay đổi.','Lưu cho tất cả. Dữ liệu nghiệp vụ không bị xóa; lịch sử cấu hình cho phép khôi phục.'],
+ 'Kích thước':['Chọn thành phần hoặc Chọn khung cha.','Xem kích thước đang hiển thị; kéo tay nắm góc phải dưới hoặc nhập rộng/cao.','Dùng phím mũi tên trên tay nắm để chỉnh 1px, Shift để chỉnh 10px; Esc hủy lượt kéo.','Chiều cao là tối thiểu để không cắt chữ. Lưu cho tất cả để giữ kích thước.'],
+ 'Chọn khung cha':['Chọn thành phần con trên trang.','Bấm Chọn khung cha để chọn khung bao ngoài gần nhất có thể chỉnh.','Kiểm tra dòng Đã chọn và thông số hiện tại trước khi thay đổi.','Chỉnh rộng/cao/căn nhóm/hiệu ứng rồi Lưu cho tất cả.'],
+}
+export default function LayoutToolGuide({ tab, tool }) {
+ const steps=guides[tool] || guides[tab] || guides.order
+ return <section className="layout-tool-guide" aria-label="Hướng dẫn công cụ"><strong>Hướng dẫn: {tool || ({order:'Sắp xếp',buttons:'Nút bấm',labels:'Tên hiển thị',style:'Hiệu ứng',columns:'Bảng & cột',rooms:'Phòng Live Tour',history:'Lịch sử',elements:'Thêm / Xóa'})[tab]}</strong>
+ {tool && !guides[tool] && <p>Chọn đối tượng, chỉnh “{tool}”, kiểm tra kết quả trên trang rồi lưu.</p>}<ol>{steps.map(step=><li key={step}>{step}</li>)}</ol></section>
+}

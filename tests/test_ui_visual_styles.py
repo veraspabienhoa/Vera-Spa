@@ -21,3 +21,15 @@ def test_visual_settings_roundtrip_with_layout():
 def test_visual_settings_reject_unsafe_or_unbounded_values(appearance):
     with pytest.raises(ValidationError):
         LayoutItem(appearance=appearance)
+
+
+def test_custom_elements_validate_and_keep_plain_text():
+    from fastapi import HTTPException
+    item=LayoutItem(custom_kind='text',custom_text='<script>plain text only</script>',custom_page='settings')
+    assert validate_items({'l-custom-demo':item})['l-custom-demo']['custom_text'].startswith('<script>')
+    with pytest.raises(HTTPException): validate_items({'l-other':item})
+    with pytest.raises(HTTPException): validate_items({'l-custom-demo':LayoutItem(custom_kind='box')})
+    with pytest.raises(HTTPException): validate_items({'l-custom-demo':LayoutItem(custom_kind='box',custom_page='settings',custom_anchor='l-custom-demo')})
+    locked=next(key for key,value in REGISTRY.items() if value.get('locked'))
+    with pytest.raises(HTTPException): validate_items({locked:LayoutItem(hidden=True)})
+    assert validate_items({'l-title':LayoutItem(hidden=True)})['l-title']['hidden'] is True

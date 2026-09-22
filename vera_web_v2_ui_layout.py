@@ -37,6 +37,11 @@ class VisualStyle(BaseModel):
     press_sink: int | None = Field(default=None, ge=0, le=6)
 
 class LayoutItem(BaseModel):
+    hidden: bool | None = None
+    custom_kind: Literal['box', 'text'] | None = None
+    custom_text: str | None = Field(default=None, max_length=2000)
+    custom_page: str | None = Field(default=None, pattern=r'^[a-z][a-z0-9-]{0,60}$')
+    custom_anchor: str | None = Field(default=None, pattern=r'^[lu]-[a-z0-9-]{1,100}$')
     appearance: VisualStyle | None = None
     order: int | None = Field(default=None, ge=0, le=10000)
     width: int | None = Field(default=None, ge=32, le=2400)
@@ -75,6 +80,11 @@ def validate_items(items):
     if len(items) > 2000 or any(not (re.fullmatch(r'l-[a-z0-9-]{1,70}', key) or definition_for(key)) for key in items):
         raise HTTPException(400, 'Bố cục không hợp lệ hoặc vượt quá 2.000 thành phần.')
     for key, item in items.items():
+        if item.custom_kind:
+            if not key.startswith('l-custom-') or not item.custom_page or (item.custom_anchor and item.custom_anchor.startswith('l-custom-')):
+                raise HTTPException(400, 'Thành phần tùy chỉnh không hợp lệ.')
+        elif any(value is not None for value in [item.custom_text, item.custom_page, item.custom_anchor]):
+            raise HTTPException(400, 'Thiếu loại thành phần tùy chỉnh.')
         definition = definition_for(key)
         if definition and definition.get('locked') and item.model_dump(exclude_none=True):
             raise HTTPException(400, 'Thành phần này được khóa để bảo đảm thao tác hệ thống.')
