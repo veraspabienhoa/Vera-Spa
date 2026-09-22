@@ -16,7 +16,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -47,6 +47,8 @@ const lazyPage = (importer) => lazy(async () => {
     window.sessionStorage.removeItem('vera-v2-chunk-reload'); throw error
   }
 })
+
+const PurchasePage = lazyPage(() => import('./pages/PurchasePage'))
 
 const LeaveRegistrationPage = lazyPage(() => import('./pages/LeaveRegistrationPage'))
 const HumanResourcesPage = lazyPage(() => import('./pages/HumanResourcesPage'))
@@ -223,6 +225,7 @@ export default function App() {
         {page === 'hr' && <HumanResourcesPage user={shellUser} />}
         {(page === 'payroll' || page === 'department-payroll' || page === 'payroll-config') && <PayrollTabs user={shellUser} initialTab={page === 'payroll-config' ? 'configuration' : page === 'department-payroll' ? 'administrative' : 'ktv'} ktv={<PayrollPage user={shellUser} />} administrative={<DepartmentPayrollPanel user={shellUser} />} configuration={<DepartmentPayrollSettingsPage user={shellUser} />} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
+        {page === 'purchases' && <PurchasePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
         {page === 'birthday' && <BirthdayPage />}

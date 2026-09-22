@@ -63,6 +63,7 @@ from vera_web_v2_purchase_reconcile_alert_check import install_purchase_reconcil
 from vera_web_v2_purchase_reconcile_v2 import install_purchase_reconcile_v2
 from vera_web_v2_revenue_leave_list import install_revenue_leave_list_routes
 from vera_web_v2_revenue_report_target import install_revenue_report_target
+from vera_web_v2_purchases import install_purchase_routes
 from vera_web_v2_shift_break_admin import install_shift_break_admin_routes
 from vera_web_v2_ktv_shifts import install_ktv_shift_routes
 from vera_web_v2_staff_security import install_staff_security_routes
@@ -210,6 +211,7 @@ install_leave_sync_queue(_shared.app, engine_instance=_api._engine_instance, cur
 install_letan_leave_guard(_shared.app, api_module=_api, vn_tz=_api.VN_TZ)
 install_revenue_leave_list_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, norm=_api._norm, progressive_key=_api._progressive_key, google_client=_api._google_client, api_module=_api)
 install_revenue_report_target(_shared.app, current_identity=_api.current_identity)
+install_purchase_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed)
 install_purchase_reconcile_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, norm=_api._norm, google_client=_api._google_client)
 install_purchase_reconcile_v2(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_purchase_reconcile_alert_check(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client)
