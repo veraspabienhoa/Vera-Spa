@@ -1,3 +1,5 @@
+import LayoutResizeOverlay from './LayoutResizeOverlay'
+import { readLayoutMetrics } from '../lib/layoutMetrics'
 import UIVisualStyleControls from './UIVisualStyleControls'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { getLayoutTargets, canRelocate } from '../lib/uiLayoutTargets'
@@ -13,6 +15,8 @@ import { formatVeraDateTime } from '../lib/veraDate'
 function layoutDevice() { return window.innerWidth <= 768 || window.matchMedia?.('(hover: none) and (pointer: coarse)').matches ? 'mobile' : 'desktop' }
 
 export default function LayoutDesigner({ user, page, open = false, onClose, initialTab }) {
+  const [metrics, setMetrics] = useState(null)
+  const resizeOriginal = useRef(null)
   const [inlineTarget, setInlineTarget] = useState(null)
   const [tab, setTab] = useState(initialTab || 'order')
   const [history, setHistory] = useState([])
@@ -40,6 +44,19 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     return () => window.cancelAnimationFrame(frame)
   }, [selectedKey, preview])
   const configuration = preview[selectedKey] || preview[selected?.dataset.layoutLegacy] || {}
+  const refreshMetrics = () => { const next = readLayoutMetrics(selected); setMetrics(current => JSON.stringify(current) === JSON.stringify(next) ? current : next) }
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => { const next = readLayoutMetrics(selected); setMetrics(current => JSON.stringify(current) === JSON.stringify(next) ? current : next) })
+    return () => window.cancelAnimationFrame(frame)
+  }, [selected, preview])
+  const resizeSelection = (size, phase) => {
+    if (phase === 'start') { resizeOriginal.current = { ...configuration }; return }
+    if (phase === 'end') { resizeOriginal.current = null; return }
+    const previous = resizeOriginal.current
+    if (phase === 'cancel') resizeOriginal.current = null
+    if (phase === 'cancel' && !previous) return
+    setDraft(current => ({ ...current, [selectedKey]: phase === 'cancel' ? previous : { ...current?.[selectedKey], ...size } }))
+  }
   const definition = registry[selectedKey?.split('--')[0]]
   useEffect(() => { publishCustomization(preview, editing) }, [preview, editing])
   useEffect(() => { if (initialTab) setTab(initialTab) }, [initialTab])
@@ -99,7 +116,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     if (!root) return undefined
     const identify = () => {
       for (const element of root.querySelectorAll('[data-vera-node],[data-ui-key]')) {
-        if (element.closest('.layout-designer, .break-alert-stack')) continue
+        if (element.closest('.layout-designer, .layout-resize-overlay, .break-alert-stack')) continue
         if (element.closest('table') && !element.matches('table,th')) continue
         let key = layoutKey(element, page)
         if (element.matches('th') && element.dataset.veraItem) {
@@ -159,7 +176,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     if (!editing) return undefined
     const candidate = target => target?.closest?.('[data-layout-editable="true"]')
     const down = event => {
-      if (event.target.closest('.layout-designer')) return
+      if (event.target.closest('.layout-designer,.layout-resize-overlay')) return
       const element = candidate(event.target)
       if (!element) return
       event.preventDefault(); event.stopPropagation()
@@ -176,14 +193,14 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 12) moveRef.current(start.element, target)
     }
     const rename = event => {
-      if (event.target.closest('.layout-designer')) return
+      if (event.target.closest('.layout-designer,.layout-resize-overlay')) return
       const element = candidate(event.target)
       const entry = registry[element?.dataset.layoutKey?.split('--')[0]]
       if (tab !== 'labels' || !element || !(entry?.label || entry?.dynamic_label)) return
       event.preventDefault(); event.stopPropagation()
       setSelected(element); setInlineTarget(element)
     }
-    const block = event => { if (!event.target.closest('.layout-designer')) { event.preventDefault(); event.stopPropagation() } }
+    const block = event => { if (!event.target.closest('.layout-designer,.layout-resize-overlay')) { event.preventDefault(); event.stopPropagation() } }
     document.addEventListener('dblclick', rename, true)
     document.addEventListener('pointerdown', down, true)
     document.addEventListener('pointerup', up, true)
@@ -203,7 +220,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     move(selected, siblings[siblings.indexOf(selected) + direction])
   }
   const selectParent = () => {
-    const parent = selected?.closest('[data-ui-dropzone]') || selected?.parentElement
+    const parent = selected?.parentElement?.closest('[data-ui-dropzone]') || selected?.parentElement
     if ((!parent?.dataset.veraNode && !parent?.dataset.uiKey) || registry[parent?.dataset.uiKey]?.locked || parent.matches('.app-shell,.sidebar,.main-area,table,thead,tbody,tr,td,th')) return
     parent.dataset.layoutKey = layoutKey(parent, page)
     parent.dataset.layoutEditable = 'true'
@@ -247,15 +264,15 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       <small>Mở trang cần chỉnh trước, sau đó chọn thành phần trên trang. Cấu hình lưu dùng chung; Mobile và Desktop độc lập.</small>
       {!editing ? <><button type="button" disabled={!loaded} onClick={() => { setDraft({ ...saved.layout[device] }); setEditing(true); setMessage('Chọn một thành phần. Kéo thả trong cùng nhóm để đổi vị trí.') }}>Chỉnh giao diện · {device === 'mobile' ? 'Mobile' : 'Desktop'}</button>{message && <small role="status">{message}</small>}</> : <>
         <strong>Bố cục {device === 'mobile' ? 'Mobile' : 'Desktop'}</strong><small>Chọn thành phần; kéo sang nhóm khác hoặc chọn Khung đích. Mobile và Desktop lưu riêng.</small>
-        {selectedKey && <><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small><div className="layout-designer-actions"><button type="button" onClick={() => step(-1)}>← Trước</button><button type="button" onClick={() => step(1)}>Sau →</button><button type="button" onClick={selectParent}>Chọn khung cha</button></div>{tab === 'labels' && (definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
-        {tab === 'buttons' && <><small>Chọn khung cha của nhóm nút để chỉnh số dòng hoặc gom nhóm.</small>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ nút<input type="number" min="12" max="24" value={configuration.font_size ?? ''} onChange={e => patch('font_size', e.target.value)}/></label></>}
+        {selectedKey && <><small>Thông số hiện tại: {metrics?.width ?? '—'} × {metrics?.height ?? '—'} px · {metrics?.rawFont || '—'}. Kéo góc phải dưới để đổi kích thước.</small><small>Đã chọn: {selected.getAttribute('aria-label') || selected.textContent?.trim().slice(0, 70) || selected.tagName}</small><div className="layout-designer-actions"><button type="button" onClick={() => step(-1)}>← Trước</button><button type="button" onClick={() => step(1)}>Sau →</button><button type="button" onClick={selectParent}>Chọn khung cha</button></div>{tab === 'labels' && (definition?.label || definition?.dynamic_label) && <label>Tên hiển thị<input type="text" maxLength={100} value={configuration.label ?? definition.label ?? selected.textContent?.trim()} onChange={e => patch('label', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') patch('label', '') }} /></label>}
+        {tab === 'buttons' && <><small>Chọn khung cha của nhóm nút để chỉnh số dòng hoặc gom nhóm.</small>{definition?.group && <><label>Số dòng<select value={configuration.rows ?? 0} onChange={e => patch('rows', e.target.value)}><option value="0">Tự động theo màn hình</option>{[1,2,3,4].map(n => <option key={n} value={n}>{n} dòng</option>)}</select></label><label>Cách hiển thị<select value={configuration.mode || 'fit'} onChange={e => patch('mode', e.target.value)}><option value="fit">Vừa màn hình</option><option value="group">Gom nút phụ (nhóm chỉ có nút)</option></select></label></>}<label>Cỡ chữ nút<input type="number" min="12" max="24" value={configuration.font_size ?? metrics?.appearance?.font_size ?? ''} onChange={e => patch('font_size', e.target.value)}/></label></>}
         {selected?.dataset.uiOrigin && <label>Khung đích<select aria-label="Khung đích" value={configuration.move_to || selected.dataset.uiOrigin} onChange={event => relocate(selected, getLayoutTargets()[event.target.value]?.element)}>{Object.entries(getLayoutTargets()).filter(([key, target]) => registry[key]?.group && !registry[key]?.locked && canRelocate(selected, target.element)).map(([key,target]) => <option key={key} value={key}>{target.element.getAttribute('aria-label') || target.element.textContent?.trim().slice(0,60) || registry[key]?.file || key}</option>)}</select></label>}
-        {tab === 'style' && <UIVisualStyleControls value={configuration.appearance} onChange={appearance => setDraft(current => ({ ...current, [selectedKey]: { ...configuration, appearance } }))}/>}
+        {tab === 'style' && <UIVisualStyleControls value={configuration.appearance} current={metrics?.appearance} onChange={appearance => setDraft(current => ({ ...current, [selectedKey]: { ...configuration, appearance } }))}/>}
         <fieldset className="layout-align-tools"><legend>Căn chỉnh</legend>
         <label>Căn chữ<select value={configuration.text_align || ''} onChange={e => patch('text_align', e.target.value)}><option value="">Mặc định</option>{[['left','Trái'],['center','Giữa'],['right','Phải'],['justify','Đều hai bên']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>Căn dọc nội dung<select value={configuration.content_align || ''} onChange={e => patch('content_align', e.target.value)}><option value="">Mặc định</option>{[['start','Trên'],['center','Giữa'],['end','Dưới']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {definition?.group && <><small>Căn nhóm theo trục của bố cục Flex/Grid hiện tại.</small><label>Phân bố nhóm<select value={configuration.justify_content || ''} onChange={e => patch('justify_content', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['space-between','Giãn hai đầu'],['space-around','Giãn quanh'],['space-evenly','Giãn đều']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Căn thành phần<select value={configuration.align_items || ''} onChange={e => patch('align_items', e.target.value)}><option value="">Mặc định</option>{[['start','Đầu'],['center','Giữa'],['end','Cuối'],['stretch','Kéo giãn']].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Khoảng cách (px)<input type="number" min="0" max="100" value={configuration.gap ?? ''} onChange={e => patch('gap', e.target.value)}/></label></>}
-        </fieldset><label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; delete next[selectedKey]; delete next[selected?.dataset.layoutLegacy]; return next })}>Khôi phục thành phần</button></>}
+        </fieldset><label>Rộng (px)<input type="number" min="32" max="2400" value={configuration.width ?? metrics?.width ?? ''} placeholder="Tự động" onChange={e => patch('width', e.target.value)}/></label><label>Cao tối thiểu (px)<input type="number" min="24" max="1600" value={configuration.height ?? metrics?.height ?? ''} placeholder="Tự động" onChange={e => patch('height', e.target.value)}/></label><button type="button" onClick={() => setDraft(current => { const next = { ...current }; delete next[selectedKey]; delete next[selected?.dataset.layoutLegacy]; return next })}>Khôi phục thành phần</button></>}
         <div className="layout-designer-actions"><button className="layout-save" type="button" disabled={busy} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu cho tất cả'}</button><button type="button" disabled={busy} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button type="button" disabled={busy} onClick={() => { if (window.confirm('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.')) setDraft({}) }}>Mặc định</button></div>
         {message && <small role="status">{message}</small>}
       </>}
@@ -263,6 +280,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       {!editing && ['rooms','columns','history'].includes(tab) && message && <small role="status">{message}</small>}
     {inlineTarget && editing && tab === 'labels' && <InlineLabelEditor key={inlineTarget.dataset.layoutKey} target={inlineTarget} value={configuration.label ?? definition?.label ?? inlineTarget.textContent?.trim() ?? ''} onCommit={value => { patch('label', value.trim()); setInlineTarget(null) }} onCancel={() => setInlineTarget(null)} />}
     </aside>}
+    {editing && selectedKey && <LayoutResizeOverlay selected={selected} onResize={resizeSelection} onMetrics={refreshMetrics}/>}
   </>
 }
 

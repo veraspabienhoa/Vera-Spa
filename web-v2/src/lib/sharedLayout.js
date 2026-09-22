@@ -1,5 +1,5 @@
 import { visualCss } from './uiVisualStyle.js'
-export const layoutCandidates = '.nav-list > a, [role="tab"], button, input:not([type="hidden"]), select, textarea, label, .panel, .metric-card, .training-card, .training-tabs > button, .spa-tabs > button, .training-report-filter, .staff-toolbar, .page-heading, .page-heading-row'
+export const layoutCandidates = 'header, [role=heading], p, span[data-ui-key], [role=listbox], [role=combobox], h1, h2, h3, section, fieldset, .box, [role=combobox], .vera-date-input, .searchable-select, .nav-list > a, [role="tab"], button, input:not([type="hidden"]), select, textarea, label, .panel, .metric-card, .training-card, .training-tabs > button, .spa-tabs > button, .training-report-filter, .staff-toolbar, .page-heading, .page-heading-row'
 export function legacyLayoutKey(element, page) {
   const parts = []
   for (let node = element; node && !node.classList?.contains('app-shell'); node = node.parentElement) {
@@ -19,7 +19,7 @@ export function layoutCss(items) {
     if (!/^(l|u)-[a-z0-9-]+$/.test(key)) continue
     const declarations = []
     if (Number.isInteger(value.order) && value.order >= 0 && value.order <= 10000) declarations.push(`order:${value.order}!important`)
-    if (Number.isInteger(value.width) && value.width >= 32 && value.width <= 2400) declarations.push(`width:min(${value.width}px,100%)!important;max-width:100%!important;min-width:0!important;box-sizing:border-box`)
+    if (Number.isInteger(value.width) && value.width >= 32 && value.width <= 2400) declarations.push(`width:min(${value.width}px,100%)!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;flex:0 1 auto!important`)
     if (Number.isInteger(value.height) && value.height >= 24 && value.height <= 1600) declarations.push(`min-height:${value.height}px!important;height:auto!important;overflow-wrap:anywhere`)
     if (['left','center','right','justify'].includes(value.text_align)) declarations.push(`text-align:${value.text_align}!important`)
     if (['start','center','end'].includes(value.content_align)) declarations.push(`align-content:${value.content_align}!important`)
