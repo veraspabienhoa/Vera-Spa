@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ShoppingCart, RefreshCw, Upload, Download, TrendingDown, Plus, History } from 'lucide-react'
 import { veraApi } from '../lib/api'
 import VeraDateInput from '../components/VeraDateInput'
 import VeraMoneyInput from '../components/VeraMoneyInput'
@@ -82,37 +83,49 @@ export default function PurchasePage({ user }) {
     const file = event.target.files[0]; event.target.value = ''; if (!file) return
     await run(async () => {
       const result = await veraApi.importPurchases(file,importMode.current)
+      setPreset('all'); setFilters(filtersEmpty); setSelected([])
       setMessage(`Đã xử lý ${result.source_rows} dòng; thêm mới ${result.inserted}, đã có ${result.skipped}. Tổng file: ${money(result.total)}.`)
       setReload(n => n+1)
     })
   }
   const filter = (key,value) => setFilters(old => ({ ...old,[key]:value }))
   return <section className="purchase-page" data-ui-key="page:purchases">
-    <h1>Nhập mua</h1>
+    <div className="page-heading">
+      <div><span className="eyebrow"><ShoppingCart size={14} /> Tài chính</span><h1>NHẬP MUA</h1><p>Dữ liệu mua hàng được lưu trực tiếp trên server VERA SPA.</p></div>
+    </div>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
     <div className="purchase-filters">
       <label>Thời gian<select value={preset} onChange={e=>setPreset(e.target.value)}>{presets.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
       <label>Từ ngày<VeraDateInput value={preset === 'custom' ? start : data.start || ''} onChange={e=>{ setStart(e.target.value); if (preset !== 'custom' && data.end) setEnd(data.end); setPreset('custom') }} /></label>
       <label>Đến ngày<VeraDateInput value={preset === 'custom' ? end : data.end || ''} onChange={e=>{ setEnd(e.target.value); if (preset !== 'custom' && data.start) setStart(data.start); setPreset('custom') }} /></label>
+      <div className="purchase-filter-secondary">
       <label>Ngày mua<VeraDateInput value={filters.date} onChange={e=>filter('date',e.target.value)} /></label>
       <label>Hàng hóa<input value={filters.item} onChange={e=>filter('item',e.target.value)} placeholder="Tìm hàng hóa" /></label>
       <label>Thành tiền<input value={filters.amount} onChange={e=>filter('amount',e.target.value)} placeholder="Tìm số tiền" /></label>
       <label>Ghi chú / Người đặt<input value={filters.note} onChange={e=>filter('note',e.target.value)} /></label>
       <label>Ngày nhập<VeraDateInput value={filters.entered} onChange={e=>filter('entered',e.target.value)} /></label>
       <label>Người nhập<input value={filters.user} onChange={e=>filter('user',e.target.value)} /></label>
+      </div>
     </div>
-    <UiToolbar layoutKey="purchases:periods">{presets.slice(0,-1).map(([key,label])=><button key={key} className={preset===key?'active':''} onClick={()=>setPreset(key)}>{label}</button>)}<button onClick={()=>setFilters(filtersEmpty)}>Xóa lọc chi tiết</button></UiToolbar>
-    <UiToolbar layoutKey="purchases:actions">
-      <strong>Tổng mua: {money(rows.reduce((sum,row)=>sum+Number(row.amount),0))} · {rows.length} dòng</strong>
-      {allowed('create') && <button disabled={busy || loading} onClick={()=>open()}>Nhập mua hàng</button>}
-      {allowed('edit') && <button disabled={busy || loading || picked.length!==1 || !editable(picked[0])} onClick={()=>open(picked[0])}>Sửa dòng đã chọn</button>}
-      {allowed('delete') && <button disabled={busy || loading || !picked.length || !picked.every(editable)} onClick={remove}>Xóa dòng đã chọn</button>}
-      {admin && <><button disabled={busy} onClick={()=>chooseImport('append')}>Import thêm mới</button><button disabled={busy} onClick={()=>chooseImport('replace')}>Import thay toàn bộ</button><button disabled={busy} onClick={()=>run(async()=>setHistory((await veraApi.purchaseAudit()).rows))}>Lịch sử</button></>}
-      <button disabled={busy || loading} onClick={()=>run(()=>veraApi.exportPurchases(params))}>Xuất Excel theo thời gian</button><button disabled={busy} onClick={()=>setReload(n=>n+1)}>Làm mới</button>
-    </UiToolbar>
+    <section className="purchase-controls" data-ui-key="purchases:controls" aria-label="Bộ lọc và thao tác mua hàng">
+      <UiToolbar data-ui-key="purchases:periods" className="purchase-periods">{presets.slice(0,-1).map(([key,label])=><button data-ui-key={`purchases:period:${key}`} key={key} className={`secondary-button ${preset===key?'active':''}`} onClick={()=>setPreset(key)}>{label}</button>)}<button data-ui-key="purchases:clear-filters" className="secondary-button" onClick={()=>setFilters(filtersEmpty)}>Xóa lọc chi tiết</button></UiToolbar>
+    <div className="purchase-summary-head">
+      <article className="purchase-filter-total"><TrendingDown size={18}/><div><span>Tổng mua theo bộ lọc</span><strong>{money(rows.reduce((sum,row)=>sum+Number(row.amount),0))}</strong><small>{rows.length} dòng</small></div></article>
+      <UiToolbar data-ui-key="purchases:actions" className="purchase-actions">
+      {allowed('create') && <button data-ui-key="purchases:create" className="primary-button" disabled={busy || loading} onClick={()=>open()}><Plus size={16} /> Nhập mua hàng</button>}
+      <button data-ui-key="purchases:refresh" className="secondary-button" type="button" disabled={busy || loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={16} className={loading?'spin':''} /> Làm mới</button>
+      {admin && <button data-ui-key="purchases:history" className="secondary-button" disabled={busy} onClick={()=>run(async()=>setHistory((await veraApi.purchaseAudit()).rows))}><History size={16} /> Lịch sử sửa, xóa</button>}
+        {allowed('edit') && <button data-ui-key="purchases:edit" className="secondary-button compact" disabled={busy || loading || picked.length!==1 || !editable(picked[0])} onClick={()=>open(picked[0])}>Sửa dòng đã chọn</button>}
+        {allowed('delete') && <button data-ui-key="purchases:delete" className="secondary-button compact danger-button" disabled={busy || loading || !picked.length || !picked.every(editable)} onClick={remove}>Xóa dòng đã chọn</button>}
+        {admin && <button data-ui-key="purchases:import-append" className="secondary-button compact" disabled={busy} onClick={()=>chooseImport('append')}><Upload size={14}/> Import thêm mới</button>}
+        {admin && <button data-ui-key="purchases:import-replace" className="secondary-button compact danger-button" disabled={busy} onClick={()=>chooseImport('replace')}><Upload size={14}/> Import thay toàn bộ</button>}
+        <button data-ui-key="purchases:export" className="secondary-button compact purchase-export" title="Xuất Excel theo thời gian đang chọn" disabled={busy || loading} onClick={()=>run(()=>veraApi.exportPurchases(params))}><Download size={14}/> Xuất Excel</button>
+      </UiToolbar>
+    </div>
+    </section>
     <input ref={importInput} hidden type="file" accept=".xlsb,.xlsx" onChange={importFile} />
     {loading ? <p role="status">Đang tải…</p> : <div className="purchase-table"><table><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>
-      {rows.map(row=><tr key={row.id}><td><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selected.includes(row.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,row.id]:old.filter(id=>id!==row.id))} /></td>
+      {rows.map(row=><tr key={row.id} className={selected.includes(row.id)?'purchase-selected-row':''}><td><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selected.includes(row.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,row.id]:old.filter(id=>id!==row.id))} /></td>
         <td>{formatVeraDate(row.purchase_date)}</td><td>{row.item}</td><td>{row.quantity}</td><td>{money(row.unit_price)}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.entered_at ? new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(row.entered_at)).replaceAll('/','-') : '—'}</td><td>{row.entered_at ? new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(row.entered_at)) : '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
       {!rows.length && <tr><td colSpan={10}>Không có dữ liệu trong khoảng đang chọn.</td></tr>}
     </tbody></table></div>}
