@@ -12,7 +12,7 @@ import useDialogFocus from '../lib/useDialogFocus'
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 const dateTime = value => formatVeraDateTime(value, 'Chưa ghi nhận')
 
-export default function LiveTourReceipt({ invoice, autoPrint, onClose }) {
+export default function LiveTourReceipt({ invoice, autoPrint, onClose, paymentSettings }) {
   const prepaid = isComboRedemption(invoice)
   const bookings = [...new Set((invoice.entries || []).map(entry => `${dateTime(entry.booked_at)} · ${entry.booking_actor || 'Chưa ghi nhận người đặt'}`))]
   const printed = useRef(false)
@@ -36,6 +36,6 @@ export default function LiveTourReceipt({ invoice, autoPrint, onClose }) {
     <p>Khách hàng: <strong>{invoice.customer_name || 'Khách lẻ'}</strong>{invoice.customer_phone ? ` · ${invoice.customer_phone}` : ''}</p>
     <table data-ui-key="u-b45f88490999"><thead><tr><th data-ui-key="u-a1aa21af173a" data-ui-label-default="Dịch vụ"><UiCustomText uiKey="u-a1aa21af173a">Dịch vụ</UiCustomText></th><th data-ui-key="u-2e74f6734ae4" data-ui-label-default="SL"><UiCustomText uiKey="u-2e74f6734ae4">SL</UiCustomText></th><th data-ui-key="u-d9eaaa0f8699" data-ui-label-default="Thành tiền"><UiCustomText uiKey="u-d9eaaa0f8699">Thành tiền</UiCustomText></th></tr></thead><tbody>{(invoice.entries || []).flatMap((entry, index) => entry.service_items?.length && entry.price_source !== 'manual' ? entry.service_items.map((item) => <tr key={`${index}:${item.service_id}`}><td>{item.name}<small>{entry.employee_name} · {entry.room}</small></td><td>{item.quantity}</td><td>{money(prepaid && !invoice.combo_component_debits?.every(part => part.service_id !== item.service_id) ? 0 : prepaid && invoice.combo_extra_subtotal == null ? 0 : item.unit_price * item.quantity)}</td></tr>) : [<tr key={index}><td>{entry.service}<small>{entry.employee_name} · {entry.room}</small></td><td>1</td><td>{money(prepaid ? entry.combo_extra_subtotal || 0 : entry.price)}</td></tr>])}</tbody></table>
     <dl><dt>Tiền dịch vụ</dt><dd>{money(prepaid ? invoice.combo_extra_subtotal || 0 : invoice.subtotal)}</dd><dt>Giảm giá{invoice.discount_mode === 'percent' ? ` (${invoice.discount_percent}%)` : ''}</dt><dd>{money(invoice.discount)}</dd><dt>TIP</dt><dd>{money(invoice.tip)}</dd><dt><strong>Tổng tiền</strong></dt><dd><strong>{money(invoice.total)}</strong></dd></dl>
-    <p>Thanh toán: {invoice.payment_method}</p>{prepaid && <p>Dịch vụ thuộc combo đã trả trước. Dịch vụ mua thêm được tính riêng.</p>}{invoice.combo_units > 0 && <p>Đã trừ combo: {invoice.combo_units} lượt/vé</p>}{invoice.note && <p>Ghi chú: {invoice.note}</p>}<LiveTourPaymentQr bank={invoice.payment_bank} amount={Number(invoice.total)} reference={invoice.bill_no}/><p className="tour-receipt-thanks">Cảm ơn quý khách!</p>
+    <p>Thanh toán: {invoice.payment_method}</p>{prepaid && <p>Dịch vụ thuộc combo đã trả trước. Dịch vụ mua thêm được tính riêng.</p>}{invoice.combo_units > 0 && <p>Đã trừ combo: {invoice.combo_units} lượt/vé</p>}{invoice.note && <p>Ghi chú: {invoice.note}</p>}<LiveTourPaymentQr screenSettings={paymentSettings?.customer_screen} bank={invoice.payment_bank} amount={Number(invoice.total)} reference={invoice.bill_no}/><p className="tour-receipt-thanks">Cảm ơn quý khách!</p>
   </section></div>, document.body)
 }

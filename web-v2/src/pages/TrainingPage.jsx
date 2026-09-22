@@ -1,6 +1,8 @@
+import TrainingDailyReport from '../components/TrainingDailyReport'
+import { formatVeraDate } from '../lib/veraDate'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, BellRing, BookOpenCheck, ClipboardCheck, FileDown, History, ImageDown, Settings2, X } from 'lucide-react'
 import VeraDateInput from '../components/VeraDateInput'
 import UsernameAutocomplete from '../components/UsernameAutocomplete'
@@ -10,7 +12,7 @@ import './TrainingPage.css'
 const today = () => new Date().toISOString().slice(0, 10)
 const emptySession = { employee_username: '', training_date: today(), start_time: '09:00', end_time: '10:00', topic: '', learning_attitude: 'Tốt', skill_grade: 'C', strengths: '', improvements: '', notes: '' }
 const emptyEvaluation = { craft_score: 3, communication_score: 3, attitude_score: 3, discipline_score: 3, appearance_score: 3, hygiene_score: 3, attendance_score: 3, strengths: '', improvements: '', comments: '' }
-const formatDate = (value) => value ? String(value).slice(0, 10).split('-').reverse().join('/') : '—'
+const formatDate = value => formatVeraDate(value, '—')
 
 function Notice({ value }) { return value ? <p className={`training-notice ${value.type}`}>{value.text}</p> : null }
 
@@ -62,6 +64,7 @@ export default function TrainingPage({ user }) {
   const [session, setSession] = useState(emptySession)
   const [editingSessionId, setEditingSessionId] = useState('')
   const [reportEmployee, setReportEmployee] = useState(''); const [report, setReport] = useState(null)
+  const reportRequest = useRef(0)
   const [historyDate, setHistoryDate] = useState('')
   const [evaluatorPickerRole, setEvaluatorPickerRole] = useState('all')
   const [evaluationDrafts, setEvaluationDrafts] = useState({})
@@ -77,7 +80,26 @@ export default function TrainingPage({ user }) {
 
   const saveSession = async (event) => { event.preventDefault(); setBusy(true); try { if (editingSessionId) await veraApi.updateTrainingSession(editingSessionId, session); else await veraApi.createTrainingSession(session); setEditingSessionId(''); setSession(current => ({ ...emptySession, employee_username: current.employee_username })); setNotice({ type: 'success', text: editingSessionId ? 'Đã cập nhật nhật ký đào tạo.' : 'Đã lưu nhật ký đào tạo.' }); await load() } catch (error) { setNotice({ type: 'error', text: error.message }) } finally { setBusy(false) } }
   const saveEvaluation = async (assignment, submit) => { setBusy(true); try { await veraApi.saveTrainingEvaluation(assignment.id, { ...emptyEvaluation, ...assignment, ...(evaluationDrafts[assignment.id] || {}), submit }); setNotice({ type: 'success', text: submit ? 'Đã gửi phiếu đánh giá.' : 'Đã lưu bản nháp.' }); await load() } catch (error) { setNotice({ type: 'error', text: error.message }) } finally { setBusy(false) } }
-  const openReport = async (targetTab = 'report') => { if (!reportEmployee) { setNotice({ type:'error', text:'Hãy chọn nhân viên.' }); return } setBusy(true); try { const dateFilters = targetTab === 'history' && historyDate ? { date_from:historyDate, date_to:historyDate } : {}; setReport(await veraApi.trainingReport(reportEmployee, { q:'', rating:'all', ...dateFilters, evaluator_role:'all' })); setTab(targetTab) } catch (error) { setNotice({ type: 'error', text: error.message }) } finally { setBusy(false) } }
+  const openReport = async (targetTab = 'report', employee = reportEmployee, allDates = false) => {
+    if (!employee) { setNotice({ type:'error', text:'Hãy chọn nhân viên.' }); return }
+    const requestId = ++reportRequest.current
+    setReportEmployee(employee); setReport(null); setBusy(true)
+    if (allDates) setHistoryDate('')
+    try {
+      const filters = { q:'', rating:'all', evaluator_role:'all', page_size:100,
+        ...(targetTab === 'history' && historyDate && !allDates ? { date_from:historyDate, date_to:historyDate } : {}) }
+      const result = await veraApi.trainingReport(employee, filters)
+      const history = [...result.history]
+      for (let page=2; history.length < result.history_total; page++) {
+        if (requestId !== reportRequest.current) return
+        const next = await veraApi.trainingReport(employee, { ...filters, page })
+        if (!next.history.length) break
+        history.push(...next.history)
+      }
+      if (requestId === reportRequest.current) { setReport({ ...result, history }); setTab(targetTab) }
+    } catch (error) { if (requestId === reportRequest.current) setNotice({ type:'error', text:error.message }) }
+    finally { if (requestId === reportRequest.current) setBusy(false) }
+  }
   const exportEvaluation = async (id, format) => { setBusy(true); try { await veraApi.exportTrainingEvaluation(id, format); setNotice({ type: 'success', text: `Đã xuất kết quả ${format.toUpperCase()}.` }) } catch (error) { setNotice({ type: 'error', text: error.message }) } finally { setBusy(false) } }
   const createCycle = async (event) => { event.preventDefault(); setBusy(true); try { await veraApi.createEvaluationCycle(cycle); setNotice({ type: 'success', text: 'Đã tạo đợt đánh giá ở trạng thái nháp.' }); await load() } catch (error) { setNotice({ type: 'error', text: error.message }) } finally { setBusy(false) } }
   const toggleList = (key, value) => setCycle(current => ({ ...current, [key]: current[key].includes(value) ? current[key].filter(item => item !== value) : [...current[key], value] }))
@@ -121,6 +143,9 @@ export default function TrainingPage({ user }) {
     </section>}
 
     {tab === 'evaluate' && <section data-ui-key="u-d90e52851520" className="training-card"><h2>Phiếu đánh giá được phân công</h2>{!activeAssignments.length && <div className="training-empty">Hiện chưa có đợt đánh giá đang mở.</div>}{activeAssignments.map(item => { const draft = { ...emptyEvaluation, ...item, ...(evaluationDrafts[item.id] || {}) }; return <article className="evaluation-form" key={item.id}><h3>{item.employee_name} <small>· {item.cycle_name}</small></h3><div className="score-grid">{[['craft_score','Kỹ năng tay nghề'],['communication_score','Giao tiếp'],['attitude_score','Thái độ'],['discipline_score','Kỷ luật'],['appearance_score','Trang phục/ngoại hình'],['hygiene_score','Vệ sinh cá nhân'],['attendance_score','Chuyên cần']].map(([key,label]) => <label key={key}>{label}<select value={draft[key]} onChange={e => setEvaluationDrafts(current => ({ ...current, [item.id]: { ...(current[item.id] || {}), [key]: Number(e.target.value) } }))}>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}</select></label>)}</div>{[['strengths','Điểm mạnh'],['improvements','Điểm cần cải thiện'],['comments','Nhận xét']].map(([key,label]) => <label key={key}>{label}<textarea value={draft[key] || ''} onChange={e => setEvaluationDrafts(current => ({ ...current, [item.id]: { ...(current[item.id] || {}), [key]: e.target.value } }))}/></label>)}<div className="button-row"><button data-ui-key="u-fd2a5bd89507" data-ui-label-default="Lưu nháp" type="button" className="secondary-button" onClick={() => saveEvaluation(item, false)}><UiCustomText uiKey="u-fd2a5bd89507">Lưu nháp</UiCustomText></button><button data-ui-key="u-56879fc53c27" data-ui-label-default="Gửi đánh giá" type="button" className="primary-button" onClick={() => saveEvaluation(item, true)}><UiCustomText uiKey="u-56879fc53c27">Gửi đánh giá</UiCustomText></button></div></article>})}</section>}
+
+    {['report','history'].includes(tab) && <section data-ui-key="u-5857f9dffeb8" className="training-card training-employee-roster"><h2>Nhân viên đã được đào tạo / đánh giá</h2><table data-ui-key="u-3dd344d9037d"><thead><tr><th data-ui-key="u-a8ede66e324c"><UiCustomText uiKey="u-a8ede66e324c">Nhân viên</UiCustomText></th><th data-ui-key="u-e0b350c80f40"><UiCustomText uiKey="u-e0b350c80f40">Bộ phận</UiCustomText></th></tr></thead><tbody>{(data?.report_employees || []).map(employee => <tr key={employee.username}><td><button data-ui-key="u-46ceff2337ef" type="button" className="text-button" disabled={busy} aria-pressed={report?.employee_username === employee.username} onClick={() => openReport(tab, employee.username, true)}>{employee.full_name || employee.username}</button></td><td>{employee.department || employee.role}</td></tr>)}</tbody></table>{!data?.report_employees?.length && <p>Chưa có nhân viên có dữ liệu đào tạo.</p>}{busy && <p role="status">Đang tải thống kê…</p>}</section>}
+    {['report','history'].includes(tab) && report && <><TrainingDailyReport report={report}/>{tab === 'report' && <section data-ui-key="u-76dbaf6655b6" className="training-card"><h2>Chi tiết đánh giá theo kỳ</h2><CriteriaHistoryChart history={report.history}/>{report.evaluation_details?.map(item => <article key={item.id}><h3>{item.cycle_name} · {formatDate(item.end_date)}</h3><p>{item.evaluator_name} · {evaluationCriteria.map(([key,label]) => `${label}: ${item[key]}/5`).join(' · ')}</p><p>Điểm mạnh: {item.strengths || '—'}</p><p>Cần cải thiện: {item.improvements || '—'}</p><p>Nhận xét: {item.comments || '—'}</p></article>)}</section>}{tab === 'history' && <div className="training-grid"><section data-ui-key="u-b96d5b614afd" className="training-card"><h2>Tiến độ kỹ năng</h2><ProgressChart points={report.progress}/></section><section data-ui-key="u-5f5fe7f7eceb" className="training-card"><h2>Năng lực kỳ gần nhất</h2><Radar values={report.latest_radar}/></section></div>}</>}
 
     {tab === 'report' && <section data-ui-key="u-c2a5e3e2e268"><div className="training-report-filter compact-filter"><UsernameAutocomplete label="Nhân viên" namesOnly placeholder="Tìm tên hoặc username nhân viên…" options={data?.report_employees || []} value={reportEmployee} onChange={setReportEmployee}/><button data-ui-key="u-259f2c3f5b85" data-ui-label-default="Xem tiến độ" className="primary-button" onClick={() => openReport('report')}><UiCustomText uiKey="u-259f2c3f5b85">Xem tiến độ</UiCustomText></button></div>{report && <div className="training-grid"><div data-ui-key="u-8f924a389b76" className="training-card"><h2>Tiến độ kỹ năng</h2><ProgressChart points={report.progress}/></div><div data-ui-key="u-5e10b6e316b6" className="training-card"><h2>Năng lực kỳ gần nhất</h2><Radar values={report.latest_radar}/>{report.latest_radar && <p className="center muted">{report.latest_radar.cycle_name}</p>}</div></div>}</section>}
 

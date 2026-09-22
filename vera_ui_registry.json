@@ -9124,5 +9124,215 @@
     "group": false,
     "label": "Nội quy",
     "locked": false
+  },
+  "u-3e112a1e7a5d": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "section",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-ea49f9ad90b8": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "div",
+    "group": true,
+    "label": null,
+    "locked": false
+  },
+  "u-8e840b29d46e": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "button",
+    "group": false,
+    "label": "Làm mới",
+    "locked": false
+  },
+  "u-55ebe91a50b7": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "button",
+    "group": false,
+    "label": "Thêm sản phẩm",
+    "locked": false
+  },
+  "u-93eb6b1fc2a2": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "div",
+    "group": true,
+    "label": null,
+    "locked": false
+  },
+  "u-5f5bdc8214a0": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "button",
+    "group": false,
+    "label": "Hủy",
+    "locked": true
+  },
+  "u-ea3a0783f6b1": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "button",
+    "group": false,
+    "label": "Lưu sản phẩm",
+    "locked": true
+  },
+  "u-6ebc422c36f2": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "table",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-d7e78f1d37b8": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Mã / Tên",
+    "locked": false
+  },
+  "u-695317813227": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Nhóm",
+    "locked": false
+  },
+  "u-c9cc50401ed5": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Đơn vị",
+    "locked": false
+  },
+  "u-2c422fd7f756": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Giá bán",
+    "locked": false
+  },
+  "u-c3c78237e89f": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Trạng thái",
+    "locked": false
+  },
+  "u-f0b4be7a6a45": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Sửa",
+    "locked": false
+  },
+  "u-a9cf32424f04": {
+    "file": "pages/ProductSettings.jsx",
+    "tag": "button",
+    "group": false,
+    "label": "Sửa",
+    "locked": false
+  },
+  "u-d4a02febab9a": {
+    "file": "components/TrainingDailyReport.jsx",
+    "tag": "section",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-73702c25b78b": {
+    "file": "components/TrainingDailyReport.jsx",
+    "tag": "table",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-bec4fc20da69": {
+    "file": "components/TrainingDailyReport.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Ngày",
+    "locked": false
+  },
+  "u-3a57bc2740de": {
+    "file": "components/TrainingDailyReport.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Giờ đào tạo",
+    "locked": false
+  },
+  "u-4666c749bee9": {
+    "file": "components/TrainingDailyReport.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Nội dung và đánh giá từng buổi",
+    "locked": false
+  },
+  "u-5857f9dffeb8": {
+    "file": "pages/TrainingPage.jsx",
+    "tag": "section",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-3dd344d9037d": {
+    "file": "pages/TrainingPage.jsx",
+    "tag": "table",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-a8ede66e324c": {
+    "file": "pages/TrainingPage.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Nhân viên",
+    "locked": false
+  },
+  "u-e0b350c80f40": {
+    "file": "pages/TrainingPage.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Bộ phận",
+    "locked": false
+  },
+  "u-76dbaf6655b6": {
+    "file": "pages/TrainingPage.jsx",
+    "tag": "section",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-b96d5b614afd": {
+    "file": "pages/TrainingPage.jsx",
+    "tag": "section",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-5f5fe7f7eceb": {
+    "file": "pages/TrainingPage.jsx",
+    "tag": "section",
+    "group": false,
+    "label": null,
+    "locked": false
+  },
+  "u-7b93e5b93d67": {
+    "file": "pages/SpaManagementPage.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Lịch sử",
+    "locked": false
+  },
+  "u-e5a014143f4d": {
+    "file": "pages/SpaManagementPage.jsx",
+    "tag": "th",
+    "group": false,
+    "label": "Sửa / Xóa",
+    "locked": false
+  },
+  "u-219877e932f4": {
+    "file": "pages/WorkSchedulePage.jsx",
+    "tag": "div",
+    "group": true,
+    "label": null,
+    "locked": false
   }
 }

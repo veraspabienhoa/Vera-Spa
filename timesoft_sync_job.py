@@ -1743,6 +1743,25 @@ def run_sync() -> int:
             details.append(detail)
             _log(f"Đã đồng bộ {target_date.isoformat()}: invoice_rows={len(invoice_df)}; checkin_rows={len(checkin_df)}")
 
+        # Return-to-work must run without requiring someone to open Attendance.
+        # Run after collecting snapshots, oldest punches first, in one transaction.
+        try:
+            from vera_web_v2_hr_enhancements import sync_attendance_records
+            return_records = []
+            for work_day, frame in checkin_by_date:
+                for raw in frame.to_dict("records"):
+                    return_records.append({
+                        "date": work_day.isoformat(),
+                        "employee_name": _timesoft_row_value(raw, ["employeeInfo.Name", "EmployeeName"]),
+                        "employee_code": _timesoft_row_value(raw, ["employeeInfo.EmployeeCode", "EnrollNumber"]),
+                        "check_in": _timesoft_row_value(raw, ["MachineTimeCheckInStr", "LocalTimeCheckInStr", "CheckInTimeStr"]),
+                    })
+            with engine.begin() as return_conn:
+                return_result = sync_attendance_records(return_conn, return_records)
+            _log(f"Leave return sync: {return_result}")
+        except Exception as return_exc:
+            _log(f"Leave return sync will retry: {type(return_exc).__name__}")
+
         # PostgreSQL được tạo sau TimeSoft nên những ngày đầu kỳ lương có thể
         # chưa từng được snapshot.  Chỉ bù các ngày invoice còn thiếu; không tải
         # lại check-in lịch sử và không làm nặng luồng đồng bộ 2 ngày thường lệ.

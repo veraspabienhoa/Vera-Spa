@@ -163,6 +163,8 @@ function liveTourExportParams(kind, query = {}) {
 }
 
 export const veraApi = {
+  products: () => request('/v2/products'),
+  saveProduct: (body) => request(body.id ? `/v2/products/${encodeURIComponent(body.id)}` : '/v2/products', { method:body.id ? 'PUT' : 'POST', body:JSON.stringify(body) }),
   uiLayoutHistory: () => request('/v2/ui-layout/history'),
   restoreUiLayout: (revision, body) => request(`/v2/ui-layout/restore/${revision}`, { method: 'POST', body: JSON.stringify(body) }),
   leaveQuotaCheck: (start, end) => request(`/v2/leave/quota-check?${new URLSearchParams({ start, end })}`),

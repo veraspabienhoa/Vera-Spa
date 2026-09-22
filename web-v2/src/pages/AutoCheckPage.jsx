@@ -2,9 +2,8 @@ import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, CalendarDays, Database, Download, Pause, Play, RefreshCw, ShieldCheck } from 'lucide-react'
+import { Activity, CalendarDays, Download, Pause, Play, RefreshCw, ShieldCheck } from 'lucide-react'
 import { veraApi } from '../lib/api'
-import { tourCacheControl } from '../lib/tourCacheControl'
 import VeraDateInput from '../components/VeraDateInput'
 
 const FILTER_OPTIONS = ['Hôm qua', 'Hôm nay', 'Tuần trước', 'Tháng trước', 'Tùy chỉnh']
@@ -48,30 +47,17 @@ const displayDate = (value) => {
   return year && month && day ? `${day}-${month}-${year}` : value || '—'
 }
 
-const dateTimeText = (value) => {
-  if (!value) return '—'
-  return formatVeraDateTime(value)
-}
-
 export default function AutoCheckPage({ user }) {
   const initialRange = rangeForFilter('Hôm nay')
   const [data, setData] = useState(null)
-  const [tourControl, setTourControl] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [tourBusy, setTourBusy] = useState(false)
-  const [tourMessage, setTourMessage] = useState('')
   const [timeFilter, setTimeFilter] = useState('Hôm nay')
   const [startDate, setStartDate] = useState(initialRange[0])
   const [endDate, setEndDate] = useState(initialRange[1])
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
-
-  const loadTourControl = useCallback(async () => {
-    if (!isAdmin) return
-    try { setTourControl(await tourCacheControl.get()) } catch (err) { setError(err.message) }
-  }, [isAdmin])
 
   const load = useCallback(async () => {
     if (!startDate || !endDate || endDate < startDate) {
@@ -82,13 +68,12 @@ export default function AutoCheckPage({ user }) {
     setError('')
     try {
       setData(await veraApi.autoCheck(startDate, endDate))
-      await loadTourControl()
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
-  }, [endDate, loadTourControl, startDate])
+  }, [endDate, startDate])
 
   useEffect(() => { void load() }, [load])
 
@@ -119,20 +104,6 @@ export default function AutoCheckPage({ user }) {
   const run = async () => {
     setBusy(true); setError('')
     try { const result = await veraApi.runAutoCheck(); await load(); window.alert(result.message) } catch (err) { setError(err.message) } finally { setBusy(false) }
-  }
-
-  const toggleTourCache = async () => {
-    if (!isAdmin || !tourControl || tourBusy) return
-    setTourBusy(true); setError(''); setTourMessage('')
-    try {
-      const result = await tourCacheControl.setDisabled(!tourControl.disabled)
-      setTourControl(result)
-      setTourMessage(result.message || (result.disabled ? 'Đã tạm dừng làm mới TourVera.' : 'Đã mở lại làm mới TourVera.'))
-    } catch (err) {
-      setError(err.message || 'Không thay đổi được trạng thái làm mới TourVera.')
-    } finally {
-      setTourBusy(false)
-    }
   }
 
   const cfg = data?.config || {}
@@ -169,34 +140,7 @@ export default function AutoCheckPage({ user }) {
       </div>}
     </div>
 
-    {isAdmin && <div data-ui-key="u-36e1148d664d" className="panel auto-check-card tour-cache-control-card">
-      <div className="tour-cache-control-head">
-        <div>
-          <span className="eyebrow"><Database size={17}/> GIẢM TẢI HỆ THỐNG</span>
-          <h2>TourVera cho cảnh báo nghỉ giữa ca</h2>
-          <div className={`tour-cache-control-status ${tourControl?.disabled ? 'auto-check-paused' : 'auto-check-ok'}`}>
-            {!tourControl ? 'Đang kiểm tra…' : tourControl.disabled ? 'ĐÃ TẠM DỪNG LÀM MỚI' : 'ĐANG LÀM MỚI ĐỊNH KỲ'}
-          </div>
-        </div>
-        <button data-ui-key="u-d95d48b9117d"
-          className={tourControl?.disabled ? 'primary-button' : 'secondary-button'}
-          disabled={tourBusy || !tourControl}
-          onClick={toggleTourCache}
-        >
-          {tourControl?.disabled ? <Play size={17}/> : <Pause size={17}/>}
-          {tourBusy ? 'Đang cập nhật…' : tourControl?.disabled ? 'Mở lại làm mới TourVera' : 'Tạm dừng làm mới TourVera'}
-        </button>
-      </div>
-      <p className="tour-cache-control-note">
-        Nút này chỉ tạm dừng lượt tải TourVera.xlsm định kỳ dùng riêng để làm mới cache, không tắt cảnh báo nghỉ giữa ca. Quản lý, Lễ tân và Nhân viên vẫn nhận cảnh báo bình thường: TimeSoft là nguồn chính; cache TourVera của cùng ngày tiếp tục được dùng làm fallback. Nếu Auto Check đã cần tải TourVera cho công việc riêng thì dữ liệu đã tải có thể cập nhật cache mà không phát sinh thêm lượt tải Google Drive.
-      </p>
-      <div className="tour-cache-meta">
-        <span>Cảnh báo nghỉ giữa ca: <b className="auto-check-ok">ĐANG HOẠT ĐỘNG</b></span>
-        <span>Cache cập nhật gần nhất: <b>{dateTimeText(tourControl?.cache_updated_at)}</b></span>
-        <span>Người thay đổi: <b>{tourControl?.updated_by || '—'}</b></span>
-      </div>
-      {tourMessage && <div className="success-box tour-cache-message">{tourMessage}</div>}
-    </div>}
+
 
     <div data-ui-key="u-684cd83f1fef" className="panel auto-check-card"><div className="auto-check-history-head"><div><h2>Lịch sử ghi nhận</h2><div className="auto-check-period">{displayDate(startDate)} – {displayDate(endDate)} · {(data?.events || []).length} dòng</div></div><button data-ui-key="u-62af98cd9421" className="secondary-button" onClick={exportExcel} disabled={exporting || loading}><Download size={17}/> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div><div className="table-scroll"><table data-ui-key="u-a306913b678e" className="auto-check-table"><thead><tr><th data-ui-key="u-8d1dc7bd8da5" data-ui-label-default="Ngày"><UiCustomText uiKey="u-8d1dc7bd8da5">Ngày</UiCustomText></th><th data-ui-key="u-6165aa955561" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-6165aa955561">Nhân viên</UiCustomText></th><th data-ui-key="u-65ff9806efb0" data-ui-label-default="Lý do"><UiCustomText uiKey="u-65ff9806efb0">Lý do</UiCustomText></th><th data-ui-key="u-d4954b56dcd7" data-ui-label-default="Nguồn"><UiCustomText uiKey="u-d4954b56dcd7">Nguồn</UiCustomText></th><th data-ui-key="u-a94a1d8f8c9a" data-ui-label-default="Phút"><UiCustomText uiKey="u-a94a1d8f8c9a">Phút</UiCustomText></th></tr></thead><tbody>{(data?.events || []).map((row, i) => <tr key={`${formatVeraDateTime(row.created_at)}-${i}`}><td>{displayDate(row.work_date)}</td><td><b>{row.employee_name}</b></td><td>{row.reason}</td><td>{row.source}</td><td>{row.minutes}</td></tr>)}{!data?.events?.length && <tr><td colSpan="5">Không có vi phạm Auto Check trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></div>
   </section>

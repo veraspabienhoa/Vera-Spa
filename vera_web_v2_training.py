@@ -724,6 +724,10 @@ def install_training_routes(
                 WHERE lower(a.employee_username)=lower(:employee) AND a.status='submitted'
             """ + role_clause + " ORDER BY c.end_date DESC,ev.submitted_at DESC"),
                 {"employee": employee_username, "evaluator_role": evaluator_role}))
+            if date_from or date_to:
+                progress = [item for item in progress if (not date_from or item["training_date"] >= date_from) and (not date_to or item["training_date"] <= date_to)]
+                evaluations = [item for item in evaluations if (not date_from or item["end_date"] >= date_from) and (not date_to or item["end_date"] <= date_to)]
+                evaluation_details = [item for item in evaluation_details if (not date_from or item["end_date"] >= date_from) and (not date_to or item["end_date"] <= date_to)]
             history = [
                 {"type": "daily", "date": item["training_date"], "id": item["id"],
                  "title": item["topic"] or "Đào tạo hằng ngày", "evaluator_name": item["evaluator_name"],

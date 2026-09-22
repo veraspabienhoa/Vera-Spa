@@ -1052,13 +1052,15 @@ export default function WorkSchedulePage({ user }) {
           <CalendarDays size={17}/><input type="month" value={month} onChange={(event) => changeSelectedMonth(event.target.value)} />
           <button data-ui-key="u-5e918050e9a5" type="button" className="schedule-icon-button" onClick={() => { const next = moveMonth(month, 1); setMonth(next); setRangeMode('selected_month') }}><ChevronRight size={17}/></button>
         </div>
+        <div data-ui-key="u-219877e932f4" className="schedule-mobile-actions">
         <button data-ui-key="u-0de3d79f2187" data-ui-label-default="Sao chép ô" type="button" className="schedule-copy-button" onClick={() => selectedCell && void copyCell(selectedCell.username, selectedCell.day)} disabled={!selectedCell}><Copy size={16}/><UiCustomText uiKey="u-0de3d79f2187"> Sao chép ô</UiCustomText></button>
         <button data-ui-key="u-5540a02d9890" data-ui-label-default="Áp dụng cho ngày" type="button" className="schedule-copy-button" onClick={() => void openPastePanel()} disabled={!selectedCell || !canEdit}><ClipboardPaste size={16}/><UiCustomText uiKey="u-5540a02d9890"> Áp dụng cho ngày</UiCustomText></button>
         <button data-ui-key="u-d1e98373954c" data-ui-label-default="Xuất Excel mẫu" type="button" className="schedule-copy-button" onClick={() => void exportScheduleTemplate()} disabled={busy || loading}><Download size={16}/><UiCustomText uiKey="u-d1e98373954c"> Xuất Excel mẫu</UiCustomText></button>
         {canEdit && <><button data-ui-key="u-7050e64e49e7" data-ui-label-default="Import Excel" type="button" className="schedule-copy-button" onClick={() => scheduleFileInputRef.current?.click()} disabled={busy || loading}><Upload size={16}/><UiCustomText uiKey="u-7050e64e49e7"> Import Excel</UiCustomText></button><input ref={scheduleFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importScheduleTemplate(event.target.files?.[0])} /></>}
         <button data-ui-key="u-1210f9fcc055" type="button" className="schedule-copy-button" onClick={() => void captureFullSchedule()} disabled={loading || captureBusy}>{captureBusy ? <LoaderCircle size={16} className="spin" /> : <Camera size={16}/>} {captureBusy ? 'Đang chụp…' : 'Chụp toàn bộ bảng'}</button>
         {canEdit && <button data-ui-key="u-30109105fbfc" type="button" className="schedule-save" onClick={() => void saveChanges(false)} disabled={busy || loading || !pendingChanges.length}>{busy ? <LoaderCircle size={16} className="spin" /> : <Save size={16}/>} Lưu lịch</button>}
-        {canEdit && <span className={`schedule-autosave-state ${autoSaveState}`}>{importedAwaitingManualSaveRef.current ? 'Excel chờ Lưu lịch' : autoSaveState === 'saving' ? 'Đang tự lưu…' : autoSaveState === 'pending' ? 'Chờ tự lưu' : autoSaveState === 'error' ? 'Tự lưu lỗi' : 'Đã tự lưu'}</span>}
+        </div>
+        {canEdit && (importedAwaitingManualSaveRef.current || ['saving', 'pending', 'error'].includes(autoSaveState)) && <span className={`schedule-autosave-state ${autoSaveState}`}>{importedAwaitingManualSaveRef.current ? 'Excel chờ Lưu lịch' : autoSaveState === 'saving' ? 'Đang tự lưu…' : autoSaveState === 'pending' ? 'Chờ tự lưu' : autoSaveState === 'error' ? 'Tự lưu lỗi' : ''}</span>}
       </div>
     </div>
 

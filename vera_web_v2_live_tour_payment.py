@@ -10,7 +10,7 @@ from vera_vietqr_bank import resolve_vietqr_bank_id
 
 
 def default_settings():
-    return {'booking_available_minutes': 30, 'partial_leave_times': dict(DEFAULT_HOURS), 'shift_ready_times': {'shift2': '13:00', 'support1': '12:00', 'support2': '14:00'}, 'employee_change_enabled': True, 'employee_change_minutes': 10, 'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
+    return {'booking_available_minutes': 30, 'partial_leave_times': dict(DEFAULT_HOURS), 'shift_ready_times': {'shift2': '13:00', 'support1': '12:00', 'support2': '14:00'}, 'employee_change_enabled': True, 'employee_change_minutes': 10, 'customer_screen': {'enabled': False, 'width': 420, 'height': 600, 'qr_size': 300}, 'auto_print': False, 'open_receipt': True, 'bank': {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''}, 'tip_cards': [
         {'id': f'tip-{amount}', 'name': f'{amount:,} đ'.replace(',', '.'), 'amount': amount}
         for amount in (50000, 100000, 200000, 300000, 500000)
     ]}
@@ -43,6 +43,14 @@ def settings_update(payload, money):
             raise HTTPException(400, 'Thẻ TIP cần tên, mệnh giá dương và mã không trùng.')
         identifiers.add(identifier)
         result.append({'id': identifier, 'name': name, 'amount': amount})
+    screen = payload.get('customer_screen', default_settings()['customer_screen'])
+    if not isinstance(screen, dict) or not isinstance(screen.get('enabled', False), bool):
+        raise HTTPException(400, 'Cài đặt màn hình QR không hợp lệ.')
+    screen = {**default_settings()['customer_screen'], **screen}
+    for key, minimum, maximum in [('width', 320, 1200), ('height', 400, 1200), ('qr_size', 200, 800)]:
+        if isinstance(screen[key], bool) or not isinstance(screen[key], int) or not minimum <= screen[key] <= maximum:
+            raise HTTPException(400, 'Kích thước màn hình QR nằm ngoài giới hạn.')
+    screen = {key: screen[key] for key in ('enabled', 'width', 'height', 'qr_size')}
     open_receipt = payload.get('open_receipt', True)
     bank = payload.get('bank', {'enabled': False, 'bank_id': '', 'account_no': '', 'account_name': ''})
     if not isinstance(open_receipt, bool) or not isinstance(bank, dict) or not isinstance(bank.get('enabled', False), bool):
@@ -67,7 +75,7 @@ def settings_update(payload, money):
         raise HTTPException(400, 'Giờ đi trễ/về sớm phải có định dạng HH:MM (00:00–23:59).')
     if not isinstance(ready_times, dict) or any(not isinstance(ready_times.get(key), str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', ready_times[key]) for key in ('shift2', 'support1', 'support2')):
         raise HTTPException(400, 'Giờ hết đánh dấu ca phải có định dạng HH:MM (00:00–23:59).')
-    return {'booking_available_minutes': booking_minutes, 'partial_leave_times': dict(partial_times), 'shift_ready_times': {key: ready_times[key] for key in ('shift2', 'support1', 'support2')}, 'employee_change_enabled': employee_change_enabled, 'employee_change_minutes': minutes, 'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
+    return {'customer_screen': screen, 'booking_available_minutes': booking_minutes, 'partial_leave_times': dict(partial_times), 'shift_ready_times': {key: ready_times[key] for key in ('shift2', 'support1', 'support2')}, 'employee_change_enabled': employee_change_enabled, 'employee_change_minutes': minutes, 'auto_print': payload['auto_print'] and open_receipt, 'open_receipt': open_receipt, 'bank': bank,
             'tip_cards': sorted(result, key=lambda card: card['amount'])}
 
 
