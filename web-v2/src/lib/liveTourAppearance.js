@@ -63,7 +63,7 @@ const mergeDevice = (raw, roomHeightMax = 260) => {
     room_text: Object.fromEntries(LIVE_TOUR_ROOM_TEXT_FIELDS.map(([key]) => {
       const source = roomText[key] && typeof roomText[key] === 'object' ? roomText[key] : {}
       return [key, {
-        font_size: bounded(source.font_size, 0, 64),
+        font_size: Number.isFinite(Number(source.font_size)) && Number(source.font_size) >= 0 ? Number(source.font_size) : 0,
         font_family: FONT_FAMILIES.has(String(source.font_family || '')) ? String(source.font_family || '') : '',
         font_weight: FONT_WEIGHTS.has(String(source.font_weight || '')) ? String(source.font_weight || '') : '',
         font_style: FONT_STYLES.has(String(source.font_style || '')) ? String(source.font_style || '') : '',
@@ -77,7 +77,7 @@ const mergeDevice = (raw, roomHeightMax = 260) => {
         order: bounded(source.order, 0, 200, item.order),
         visible: typeof source.visible === 'boolean' ? source.visible : item.visible,
         width: bounded(source.width, 0, 600),
-        font_size: bounded(source.font_size, 0, 32),
+        font_size: Number.isFinite(Number(source.font_size)) && Number(source.font_size) >= 0 ? Number(source.font_size) : 0,
       }
     }).sort((a, b) => a.order - b.order),
   }

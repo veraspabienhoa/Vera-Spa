@@ -66,3 +66,15 @@ test('free translation is scoped, bounded and composes with appearance transform
  assert.match(css,/translate:-45px 90px!important/)
  assert.doesNotMatch(css,/color:red|9000px/)
 })
+
+test('font sizes retain fractional and large values while rejecting invalid CSS', () => {
+  for (const size of [0, 0.5, 8, 96, 4096]) {
+    const css = layoutCss({'l-font':{font_size:size,appearance:{font_size:size,font_style:'italic',font_weight:700,font_family:'serif'}}})
+    assert.ok(css.includes(`font-size:${size}px!important`))
+    assert.ok(css.includes('font-style:italic!important'))
+    assert.ok(css.includes('font-weight:700!important'))
+  }
+  for (const size of [-1, NaN, Infinity, '12;display:none']) {
+    assert.ok(!layoutCss({'l-font':{font_size:size,appearance:{font_size:size,font_style:'bad'}}}).includes('font-size:'))
+  }
+})

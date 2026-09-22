@@ -26,17 +26,20 @@ export function visualCss(selector, style = {}) {
     return parts.join(';')
   }
   const common = []
-  for (const [key, prop, max] of [['radius','border-radius',40],['padding_x','padding-inline',40],['padding_y','padding-block',32],['border_width','border-width',6],['font_size','font-size',32],['glass_blur','backdrop-filter',20]]) {
-    if (bounded(style[key], key === 'font_size' ? 12 : key === 'border_width' ? 1 : 0, max)) common.push(`${prop}:${key === 'glass_blur' ? `blur(${style[key]}px)` : `${style[key]}px`}!important`)
+  for (const [key, prop, max] of [['radius','border-radius',40],['padding_x','padding-inline',40],['padding_y','padding-block',32],['border_width','border-width',6],['glass_blur','backdrop-filter',20]]) {
+    if (bounded(style[key], key === 'border_width' ? 1 : 0, max)) common.push(`${prop}:${key === 'glass_blur' ? `blur(${style[key]}px)` : `${style[key]}px`}!important`)
   }
-  if ([400,500,600,700,800].includes(style.font_weight)) common.push(`font-weight:${style.font_weight}!important`)
+  const typography = []
+  if (typeof style.font_size === 'number' && Number.isFinite(style.font_size) && style.font_size >= 0) typography.push(`font-size:${style.font_size}px!important`)
+  if (['normal','italic'].includes(style.font_style)) typography.push(`font-style:${style.font_style}!important`)
+  if ([400,500,600,700,800].includes(style.font_weight)) typography.push(`font-weight:${style.font_weight}!important`)
   const fonts = { system: 'system-ui,sans-serif', segoe: '"Segoe UI",sans-serif', roboto: 'Roboto,Arial,sans-serif', serif: 'Georgia,serif' }
-  if (Object.hasOwn(fonts,style.font_family)) common.push(`font-family:${fonts[style.font_family]}!important`)
+  if (Object.hasOwn(fonts,style.font_family)) typography.push(`font-family:${fonts[style.font_family]}!important`)
   const selected = ':is(.active,.selected,[aria-selected="true"],[aria-pressed="true"],[aria-current="page"])'
   // Normal styling must not erase existing selection/disabled feedback.
   const normal = `${base}:not(:disabled,[aria-disabled="true"]):not(${selected})`
   const enabled = `${base}:not(:disabled,[aria-disabled="true"])`
-  const rules = [`${base}{${common.join(';')}}`,`${normal}{${stateCss(style.normal)}}`]
+  const rules = [`:is(${selector}){${typography.join(';')}}`,`${base}{${common.join(';')}}`,`${normal}{${stateCss(style.normal)}}`]
   rules.push(`@media(hover:hover){${enabled}:hover{${stateCss(style.hover)}}}`)
   rules.push(`${enabled}:active{${stateCss(style.pressed)}}`,`${enabled}${selected}{${stateCss(style.selected)}}`,`${enabled}:focus-visible{${stateCss(style.focus)};outline:3px solid #b88616!important;outline-offset:3px}`)
   const motion = `${enabled}:not(.date-link,.date-picker-control,.vera-date-picker-button,.schedule-icon-button,.clear-button):not(.date-toolbar *):not([aria-label*="Clear"]):not([aria-label*="Xóa"])`

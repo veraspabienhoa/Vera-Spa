@@ -5,7 +5,7 @@ import {createRequire} from 'node:module'
 import {fileURLToPath} from 'node:url'
 import React,{act} from 'react'
 import {JSDOM} from 'jsdom'
-import {removeLayoutItems} from '../src/lib/layoutSelection.js'
+import {removeLayoutItems,alignSelection,distributeSelection} from '../src/lib/layoutSelection.js'
 import {freeMovePosition} from '../src/lib/layoutFreeMove.js'
 const built=await build({entryPoints:[fileURLToPath(new URL('../src/components/LayoutCustomElements.jsx',import.meta.url))],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime'],loader:{'.css':'empty'}})
 test('nested custom controls filter only their linked table and deleting a parent restores native children',async()=>{
@@ -47,4 +47,26 @@ test('drag snaps edges and centers with an Alt bypass',()=>{
  assert.equal(freeMovePosition(start,57,80,1000,false).x,57)
  assert.equal(freeMovePosition(start,127,139,1000,true).guides.x,250,'center snaps to center')
  assert.equal(freeMovePosition(start,127,139,1000,true).guides.y,250)
+})
+
+test('align and distribute unequal objects against selection or page bounds',()=>{
+ const node=(key,x,y,w,h)=>({dataset:{layoutKey:key},getBoundingClientRect:()=>({left:x,top:y,right:x+w,bottom:y+h,width:w,height:h})})
+ const nodes=[node('a',10,20,20,10),node('b',40,50,40,20),node('c',150,120,30,30)]
+ const page={left:0,top:0,right:300,bottom:240,width:300,height:240}
+ assert.equal(alignSelection({},nodes,'left').b.offset_x,-30)
+ assert.equal(alignSelection({},nodes,'center-x',page).a.offset_x,130)
+ assert.equal(alignSelection({},nodes,'center-y',page).a.offset_y,95)
+ assert.equal(alignSelection({},nodes,'bottom',page).c.offset_y,90)
+ const horizontal=distributeSelection({},nodes,'horizontal')
+ assert.equal(horizontal.a.offset_x,0)
+ assert.equal(horizontal.b.offset_x,30)
+ assert.equal(horizontal.c.offset_x,0)
+ const vertical=distributeSelection({},nodes,'vertical')
+ assert.equal(vertical.b.offset_y,15)
+ assert.equal(vertical.c.offset_y,0)
+ const acrossPage=distributeSelection({},nodes,'horizontal',page)
+ assert.equal(acrossPage.a.offset_x,-10)
+ assert.equal(acrossPage.b.offset_x,85)
+ assert.equal(acrossPage.c.offset_x,120)
+ assert.deepEqual(distributeSelection({},nodes.slice(0,2),'horizontal'),{})
 })

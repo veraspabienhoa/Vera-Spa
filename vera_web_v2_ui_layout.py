@@ -26,9 +26,10 @@ class VisualStyle(BaseModel):
     border_width: int | None = Field(default=None, ge=1, le=6)
     padding_x: int | None = Field(default=None, ge=0, le=40)
     padding_y: int | None = Field(default=None, ge=0, le=32)
-    font_size: int | None = Field(default=None, ge=12, le=32)
+    font_size: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     font_weight: Literal[400, 500, 600, 700, 800] | None = None
     font_family: Literal['system', 'segoe', 'roboto', 'serif'] | None = None
+    font_style: Literal['normal', 'italic'] | None = None
     glass_blur: int | None = Field(default=None, ge=0, le=20)
     glass_opacity: int | None = Field(default=None, ge=20, le=100)
     depth: int | None = Field(default=None, ge=0, le=8)
@@ -61,7 +62,7 @@ class LayoutItem(BaseModel):
     label: str | None = Field(default=None, max_length=100)
     mode: Literal['fit', 'group'] | None = None
     rows: Literal[0, 1, 2, 3, 4] | None = None
-    font_size: int | None = Field(default=None, ge=12, le=24)
+    font_size: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
     @field_validator('label')
     @classmethod
