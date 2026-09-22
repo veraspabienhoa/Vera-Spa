@@ -1,8 +1,9 @@
+from ui_source import read_ui_source
 from pathlib import Path
 
 
 def test_admin_live_tour_controls_are_collapsed_until_requested():
-    source = Path("web-v2/src/pages/LiveTourPage.jsx").read_text(encoding="utf-8")
+    source = read_ui_source(Path("web-v2/src/pages/LiveTourPage.jsx"))
     css = Path("web-v2/src/pages/LiveTourControls.css").read_text(encoding="utf-8")
 
     assert "const [adminControlsVisible, setAdminControlsVisible] = useState(false)" in source

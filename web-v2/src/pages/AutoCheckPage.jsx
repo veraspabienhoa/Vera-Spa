@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, CalendarDays, Database, Download, Pause, Play, RefreshCw, ShieldCheck } from 'lucide-react'
@@ -141,25 +143,25 @@ export default function AutoCheckPage({ user }) {
   const latestRunFailed = String(latestRun?.status || '').toLowerCase() === 'error'
   const latestRunError = String(latestRun?.error || '').trim()
 
-  return <section className="page-stack auto-check-page">
+  return <section data-ui-key="u-b5d6be8f0956" className="page-stack auto-check-page">
     <style>{`.auto-check-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.auto-check-card{background:#fff;border:1px solid #dfe8e2;border-radius:22px;padding:20px}.auto-check-card strong{display:block;font-size:27px;color:#14382c;margin-top:8px}.auto-check-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.auto-check-filter{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.auto-check-filter button.active{background:#1f513f;color:#fff;border-color:#1f513f}.auto-check-custom{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px}.auto-check-custom label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#627169}.auto-check-custom input{min-width:165px}.auto-check-history-head{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:12px}.auto-check-history-head h2{margin:0}.auto-check-period{font-size:13px;color:#627169}.auto-check-table{width:100%;border-collapse:collapse}.auto-check-table th,.auto-check-table td{padding:12px 9px;text-align:left;border-bottom:1px solid #e7ece9;font-size:14px}.auto-check-table th{color:#627169}.auto-check-ok{color:#17734b}.auto-check-paused{color:#a45d1a}.tour-cache-control-card{border:2px solid #dfe8e2}.tour-cache-control-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.tour-cache-control-head h2{margin:0 0 5px}.tour-cache-control-status{font-weight:900;font-size:18px}.tour-cache-control-note{margin:12px 0;color:#52665e;line-height:1.55}.tour-cache-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:#66766f;margin-top:12px}.tour-cache-message{margin-top:12px}@media(max-width:720px){.auto-check-grid{grid-template-columns:1fr}.auto-check-table th:nth-child(4),.auto-check-table td:nth-child(4){display:none}.tour-cache-control-head,.auto-check-history-head{align-items:stretch;flex-direction:column}.auto-check-history-head button{width:100%}.auto-check-custom label{flex:1}.auto-check-custom input{min-width:0;width:100%}}`}</style>
-    <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={18}/> VẬN HÀNH</span><h1>Auto Check</h1><p>Kiểm tra tự động từ TimeSoft và Bảng tua; dữ liệu được ghi trực tiếp vào PostgreSQL.</p></div><button className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''}/> {loading ? 'Đang tải…' : 'Làm mới'}</button></div>
+    <div data-ui-key="u-ed611a1d46fd" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={18}/> VẬN HÀNH</span><h1>Auto Check</h1><p>Kiểm tra tự động từ TimeSoft và Bảng tua; dữ liệu được ghi trực tiếp vào PostgreSQL.</p></div><button data-ui-key="u-172eb5d5fb57" className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''}/> {loading ? 'Đang tải…' : 'Làm mới'}</button></div>
     {error && <div className="error-box">{error}</div>}
     {latestRunFailed && <div className="error-box">Lần chạy Auto Check gần nhất gặp lỗi{latestRunError ? `: ${latestRunError}` : '.'}</div>}
     <div className="auto-check-grid">
-      <div className="auto-check-card"><span>Trạng thái</span><strong className={connected && cfg.status !== 'PAUSED' ? 'auto-check-ok' : 'auto-check-paused'}>{!connected ? 'Chưa kết nối' : cfg.status === 'PAUSED' ? 'Tạm dừng' : 'Đang chạy'}</strong></div>
-      <div className="auto-check-card"><span>Ngưỡng ghi nhận</span><strong>{connected ? `${cfg.threshold_minutes || 5} phút` : '—'}</strong></div>
-      <div className="auto-check-card"><span>Lịch kiểm tra chuẩn</span><strong>{connected ? (cfg.schedule_hours || [15,20,21]).map(x => `${x}:00`).join(' · ') : '—'}</strong></div>
+      <div data-ui-key="u-e9f00f13cab7" className="auto-check-card"><span>Trạng thái</span><strong className={connected && cfg.status !== 'PAUSED' ? 'auto-check-ok' : 'auto-check-paused'}>{!connected ? 'Chưa kết nối' : cfg.status === 'PAUSED' ? 'Tạm dừng' : 'Đang chạy'}</strong></div>
+      <div data-ui-key="u-099084b7b354" className="auto-check-card"><span>Ngưỡng ghi nhận</span><strong>{connected ? `${cfg.threshold_minutes || 5} phút` : '—'}</strong></div>
+      <div data-ui-key="u-cf373f87b595" className="auto-check-card"><span>Lịch kiểm tra chuẩn</span><strong>{connected ? (cfg.schedule_hours || [15,20,21]).map(x => `${x}:00`).join(' · ') : '—'}</strong></div>
     </div>
-    <div className="panel auto-check-card"><h2>Điều khiển</h2><div className="auto-check-actions">
-      {canControl && <button className="secondary-button" disabled={busy || !connected} onClick={() => update({status: cfg.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'})}>{cfg.status === 'PAUSED' ? <Play size={17}/> : <Pause size={17}/>} {cfg.status === 'PAUSED' ? 'Mở Auto Check' : 'Tạm dừng'}</button>}
-      {canRun && <button className="primary-button" disabled={busy || !connected || cfg.status === 'PAUSED'} onClick={run}><Activity size={17}/> Chạy Auto Check</button>}
-    </div></div>
+    <div data-ui-key="u-f47c36a57f3d" className="panel auto-check-card"><h2>Điều khiển</h2><UiToolbar data-ui-key="u-850c3cca4f2d" className="auto-check-actions">
+      {canControl && <button data-ui-key="u-3c4394c8b3a8" className="secondary-button" disabled={busy || !connected} onClick={() => update({status: cfg.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'})}>{cfg.status === 'PAUSED' ? <Play size={17}/> : <Pause size={17}/>} {cfg.status === 'PAUSED' ? 'Mở Auto Check' : 'Tạm dừng'}</button>}
+      {canRun && <button data-ui-key="u-cfca77851d42" data-ui-label-default="Chạy Auto Check" className="primary-button" disabled={busy || !connected || cfg.status === 'PAUSED'} onClick={run}><Activity size={17}/><UiCustomText uiKey="u-cfca77851d42"> Chạy Auto Check</UiCustomText></button>}
+    </UiToolbar></div>
 
-    <div className="panel auto-check-card">
+    <div data-ui-key="u-dc7341e60db5" className="panel auto-check-card">
       <span className="eyebrow"><CalendarDays size={17}/> LỌC LỊCH SỬ</span>
       <div className="auto-check-filter">
-        {FILTER_OPTIONS.map((filter) => <button key={filter} type="button" className={`secondary-button${timeFilter === filter ? ' active' : ''}`} onClick={() => selectTimeFilter(filter)}>{filter}</button>)}
+        {FILTER_OPTIONS.map((filter) => <button data-ui-key="u-e0f5bf00a206" key={filter} type="button" className={`secondary-button${timeFilter === filter ? ' active' : ''}`} onClick={() => selectTimeFilter(filter)}>{filter}</button>)}
       </div>
       {timeFilter === 'Tùy chỉnh' && <div className="auto-check-custom">
         <label>Từ ngày<VeraDateInput aria-label="Từ ngày" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
@@ -167,7 +169,7 @@ export default function AutoCheckPage({ user }) {
       </div>}
     </div>
 
-    {isAdmin && <div className="panel auto-check-card tour-cache-control-card">
+    {isAdmin && <div data-ui-key="u-36e1148d664d" className="panel auto-check-card tour-cache-control-card">
       <div className="tour-cache-control-head">
         <div>
           <span className="eyebrow"><Database size={17}/> GIẢM TẢI HỆ THỐNG</span>
@@ -176,7 +178,7 @@ export default function AutoCheckPage({ user }) {
             {!tourControl ? 'Đang kiểm tra…' : tourControl.disabled ? 'ĐÃ TẠM DỪNG LÀM MỚI' : 'ĐANG LÀM MỚI ĐỊNH KỲ'}
           </div>
         </div>
-        <button
+        <button data-ui-key="u-d95d48b9117d"
           className={tourControl?.disabled ? 'primary-button' : 'secondary-button'}
           disabled={tourBusy || !tourControl}
           onClick={toggleTourCache}
@@ -196,6 +198,6 @@ export default function AutoCheckPage({ user }) {
       {tourMessage && <div className="success-box tour-cache-message">{tourMessage}</div>}
     </div>}
 
-    <div className="panel auto-check-card"><div className="auto-check-history-head"><div><h2>Lịch sử ghi nhận</h2><div className="auto-check-period">{displayDate(startDate)} – {displayDate(endDate)} · {(data?.events || []).length} dòng</div></div><button className="secondary-button" onClick={exportExcel} disabled={exporting || loading}><Download size={17}/> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div><div className="table-scroll"><table className="auto-check-table"><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Lý do</th><th>Nguồn</th><th>Phút</th></tr></thead><tbody>{(data?.events || []).map((row, i) => <tr key={`${formatVeraDateTime(row.created_at)}-${i}`}><td>{displayDate(row.work_date)}</td><td><b>{row.employee_name}</b></td><td>{row.reason}</td><td>{row.source}</td><td>{row.minutes}</td></tr>)}{!data?.events?.length && <tr><td colSpan="5">Không có vi phạm Auto Check trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></div>
+    <div data-ui-key="u-684cd83f1fef" className="panel auto-check-card"><div className="auto-check-history-head"><div><h2>Lịch sử ghi nhận</h2><div className="auto-check-period">{displayDate(startDate)} – {displayDate(endDate)} · {(data?.events || []).length} dòng</div></div><button data-ui-key="u-62af98cd9421" className="secondary-button" onClick={exportExcel} disabled={exporting || loading}><Download size={17}/> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div><div className="table-scroll"><table data-ui-key="u-a306913b678e" className="auto-check-table"><thead><tr><th data-ui-key="u-8d1dc7bd8da5" data-ui-label-default="Ngày"><UiCustomText uiKey="u-8d1dc7bd8da5">Ngày</UiCustomText></th><th data-ui-key="u-6165aa955561" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-6165aa955561">Nhân viên</UiCustomText></th><th data-ui-key="u-65ff9806efb0" data-ui-label-default="Lý do"><UiCustomText uiKey="u-65ff9806efb0">Lý do</UiCustomText></th><th data-ui-key="u-d4954b56dcd7" data-ui-label-default="Nguồn"><UiCustomText uiKey="u-d4954b56dcd7">Nguồn</UiCustomText></th><th data-ui-key="u-a94a1d8f8c9a" data-ui-label-default="Phút"><UiCustomText uiKey="u-a94a1d8f8c9a">Phút</UiCustomText></th></tr></thead><tbody>{(data?.events || []).map((row, i) => <tr key={`${formatVeraDateTime(row.created_at)}-${i}`}><td>{displayDate(row.work_date)}</td><td><b>{row.employee_name}</b></td><td>{row.reason}</td><td>{row.source}</td><td>{row.minutes}</td></tr>)}{!data?.events?.length && <tr><td colSpan="5">Không có vi phạm Auto Check trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></div>
   </section>
 }

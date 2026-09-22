@@ -1,3 +1,4 @@
+import UiToolbar from '../components/UiToolbar'
 import { useEffect, useState } from 'react'
 import SpaManagementPage from './SpaManagementPage'
 import KtvShiftSettingsPanel from './KtvShiftSettingsPanel'
@@ -6,7 +7,7 @@ import DepartmentShiftSettingsPanel from './DepartmentShiftSettingsPanel'
 import './SpaManagementPage.css'
 import './SettingsPage.css'
 
-export default function SettingsPage({ user, initialTab, appearance, notifications, permissionSettings }) {
+export default function SettingsPage({ user, initialTab, notifications, permissionSettings }) {
   const admin = user?.role === 'admin'
   const permissions = user?.permissions || {}
   const catalog = admin || permissions.live_tour_admin === true
@@ -16,7 +17,7 @@ export default function SettingsPage({ user, initialTab, appearance, notificatio
   const tabs = [
     ...(catalog ? [['services', 'Cài đặt dịch vụ'], ['areas', 'Cài đặt khu vực dịch vụ']] : []),
     ...(shifts ? [['shifts', 'Cài đặt ca']] : []),
-    ...(admin ? [['appearance', 'Giao diện'], ['notifications', 'Thông báo']] : []),
+    ...(admin ? [['notifications', 'Thông báo']] : []),
     ...(admin || permissions.permission_admin === true ? [['permissions', 'Phân quyền']] : []),
   ]
   const [tab, setTab] = useState(initialTab || tabs[0]?.[0])
@@ -34,12 +35,12 @@ export default function SettingsPage({ user, initialTab, appearance, notificatio
   }
   if (!tabs.length) return <p className="error-box">Tài khoản chưa được cấp quyền mở Cài đặt.</p>
   return <div className="feature-page spa-management settings-page">
-    <div className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Cài đặt</h1><p>Quản lý dịch vụ, ca làm việc, giao diện, thông báo và phân quyền.</p></div></div>
-    <div className="spa-tabs settings-tabs" onKeyDown={navigateTabs} role="tablist" aria-label="Cài đặt">
-      {tabs.map(([key, label]) => <button type="button" key={key} id={`settings-${key}-tab`} role="tab" tabIndex={activeTab === key ? 0 : -1} aria-selected={activeTab === key} aria-controls="settings-content" onClick={() => setTab(key)}>{label}</button>)}
-    </div>
+    <div data-ui-key="u-1ea533c11f97" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Cài đặt</h1><p>Quản lý dịch vụ, ca làm việc, thông báo và phân quyền.</p></div></div>
+    <UiToolbar data-ui-key="u-e9182f37b991" className="spa-tabs settings-tabs" onKeyDown={navigateTabs} role="tablist" aria-label="Cài đặt" style={{ '--settings-tab-count': tabs.length }}>
+      {tabs.map(([key, label]) => <button data-ui-key="u-71f5ef37dfd5" type="button" key={key} id={`settings-${key}-tab`} role="tab" tabIndex={activeTab === key ? 0 : -1} aria-selected={activeTab === key} aria-controls="settings-content" onClick={() => setTab(key)}>{label}</button>)}
+    </UiToolbar>
     <div id="settings-content" role="tabpanel" aria-labelledby={`settings-${activeTab}-tab`}>
-      {activeTab === 'appearance' ? appearance : activeTab === 'notifications' ? notifications : activeTab === 'permissions' ? permissionSettings : activeTab === 'shifts' ? <>
+      {activeTab === 'notifications' ? notifications : activeTab === 'permissions' ? permissionSettings : activeTab === 'shifts' ? <>
         {ktv && <KtvShiftSettingsPanel />}
         {schedule && <DepartmentShiftSettingsPanel />}
         {admin && <ShiftBreakSettingsPanel />}

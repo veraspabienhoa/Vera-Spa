@@ -231,7 +231,8 @@ export default function App() {
         {page === 'live-tour' && <LiveTourPage user={shellUser} navigationToggle={navigationToggle} />}
         {page === 'milk-tea' && <MilkTeaPage user={shellUser} />}
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
-        {['settings', 'appearance', 'notifications', 'permissions'].includes(page) && <SettingsPage user={shellUser} initialTab={page === 'settings' ? undefined : page} appearance={<AppearanceSettingsPage user={shellUser} />} notifications={<NotificationSettingsPage user={shellUser} />} permissionSettings={<PermissionsPage user={shellUser} />} />}
+        {page === 'appearance' && <p>Giao diện đã chuyển vào menu Chỉnh bố cục: chọn Bảng &amp; cột hoặc Phòng Live Tour.</p>}
+        {['settings', 'notifications', 'permissions'].includes(page) && <SettingsPage user={shellUser} initialTab={page === 'settings' ? undefined : page} notifications={<NotificationSettingsPage user={shellUser} />} permissionSettings={<PermissionsPage user={shellUser} />} />}
         {page === 'auto-check' && <AutoCheckPage user={shellUser} />}
         {['system', 'changes', 'storage'].includes(page) && <SystemTabs user={shellUser} initialTab={page === 'storage' ? 'storage' : 'changes'} changes={<AdminChangesPage user={shellUser} />} storage={<StorageAdminPage />} />}
       </Suspense>

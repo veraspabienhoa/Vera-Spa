@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { BellRing, CalendarDays, Download, Power, RefreshCw, ScanLine, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -293,13 +295,13 @@ export default function SnapshotPage({ user }) {
       @media(max-width:820px){.attendance-toolbar{display:block;padding:12px}.attendance-department-grid,.attendance-break-rule-grid{grid-template-columns:1fr}.attendance-control-actions{grid-template-columns:1fr}.attendance-filter-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:10px}.attendance-filter-buttons button{min-height:44px;padding:8px 5px;font-size:13px}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-date-custom{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}.attendance-date-custom label{font-size:12px}.attendance-date-custom input{min-width:0;padding:9px 6px}.attendance-search-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.attendance-search-grid label:first-child{grid-column:1/-1}.attendance-search-grid label{gap:4px;font-size:12px}.attendance-search-grid input{min-height:46px;padding:10px 12px;font-size:15px}.attendance-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px}.attendance-toolbar-actions button{width:100%;min-height:44px}.attendance-toolbar-actions button:only-child{grid-column:1/-1}.attendance-kpis{grid-template-columns:repeat(2,1fr)}.attendance-page .responsive-data-table{margin-left:-10px;margin-right:-10px;width:calc(100% + 20px)}.attendance-page .responsive-data-table table{font-size:9px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:5px 3px;line-height:1.15}.attendance-page .responsive-data-table th{font-size:8px;letter-spacing:-.1px}.attendance-page .responsive-data-table td strong{font-size:9px;line-height:1.15}.attendance-page .responsive-data-table td small{font-size:8px;line-height:1.15;margin-top:2px}.attendance-page .attendance-break{min-width:0}.attendance-page .attendance-status-cell{min-width:0}}
       @media(max-width:390px){.attendance-filter-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-page .responsive-data-table table{font-size:8px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:4px 2px}.attendance-page .responsive-data-table td strong{font-size:8px}.attendance-page .responsive-data-table td small{font-size:7px}}
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>FaceID lấy từ TimeSoft. Quy tắc nghỉ giữa ca của Lễ tân, Locker và Tạp vụ được điều khiển theo công tắc của Admin.</p></div><button className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
+    <div data-ui-key="u-a9281c85e098" className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>FaceID lấy từ TimeSoft. Quy tắc nghỉ giữa ca của Lễ tân, Locker và Tạp vụ được điều khiển theo công tắc của Admin.</p></div><button data-ui-key="u-274e5db19281" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-274e5db19281"> Làm mới</UiCustomText></button></div>
     {error && <div className="error-box">{error}</div>}
 
-    <section className="panel data-toolbar attendance-toolbar">
+    <section data-ui-key="u-35e8ac56af0a" className="panel data-toolbar attendance-toolbar">
       <div className="attendance-filter-content">
         <div className="attendance-filter-buttons" role="group" aria-label="Lọc thời gian chấm công">
-          {FILTERS.map((item) => <button type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}
+          {FILTERS.map((item) => <button data-ui-key="u-b391abd4f6dd" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}
         </div>
         {period === 'Tùy chỉnh' && <div className="attendance-date-custom"><label><CalendarDays size={15} /> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }} /></label><label><CalendarDays size={15} /> Đến ngày<VeraDateInput aria-label="Đến ngày" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label></div>}
         <div className="attendance-search-grid">
@@ -311,15 +313,15 @@ export default function SnapshotPage({ user }) {
           <datalist id="attendance-shifts">{(options.shifts || []).map((value) => <option key={value} value={value}/>)}</datalist>
         </div>
       </div>
-      {(Object.values(filters).some(Boolean) || user?.permissions?.snapshot_export) && <div className="attendance-toolbar-actions">
-        {Object.values(filters).some(Boolean) && <button className="secondary-button" type="button" onClick={clearFilters}><X size={16}/> Bỏ lọc</button>}
-        {user?.permissions?.snapshot_export && <button className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button>}
-      </div>}
+      {(Object.values(filters).some(Boolean) || user?.permissions?.snapshot_export) && <UiToolbar data-ui-key="u-8f0cd3e782f6" className="attendance-toolbar-actions">
+        {Object.values(filters).some(Boolean) && <button data-ui-key="u-3144d0bed172" data-ui-label-default="Bỏ lọc" className="secondary-button" type="button" onClick={clearFilters}><X size={16}/><UiCustomText uiKey="u-3144d0bed172"> Bỏ lọc</UiCustomText></button>}
+        {user?.permissions?.snapshot_export && <button data-ui-key="u-d02cd56bafe6" className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button>}
+      </UiToolbar>}
     </section>
 
-    <section className="panel"><div className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{records.length} bản ghi · {start} → {end}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div>
+    <section data-ui-key="u-ec59b89f2984" className="panel"><div data-ui-key="u-87c6926cbbf5" className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{records.length} bản ghi · {start} → {end}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div>
       <div className="attendance-kpis"><div className="attendance-kpi"><strong>{summary.employees}</strong><span>Bản ghi chấm công</span></div><div className="attendance-kpi"><strong>{summary.breaks}</strong><span>Đủ cặp nghỉ giữa ca</span></div><div className="attendance-kpi"><strong>{summary.over}</strong><span>Vi phạm nghỉ / ra ngoài</span></div><div className="attendance-kpi"><strong>{summary.incomplete}</strong><span>Đang nghỉ / thiếu FaceID vào lại</span></div></div>
-      <div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>Ca làm việc</th><th>Tình trạng đầu ca</th><th>Nghỉ giữa ca</th><th>Tình trạng vào lại sau nghỉ</th></tr></thead><tbody>{displayRecords.map((item, index) => {
+      <div className="responsive-data-table"><table data-ui-key="u-15dc5f0a107a"><thead><tr><th data-ui-key="u-395b55975eef" data-ui-label-default="Ngày"><UiCustomText uiKey="u-395b55975eef">Ngày</UiCustomText></th><th data-ui-key="u-f02f95877617" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-f02f95877617">Nhân viên</UiCustomText></th><th data-ui-key="u-af64b34f4de6" data-ui-label-default="Ca làm việc"><UiCustomText uiKey="u-af64b34f4de6">Ca làm việc</UiCustomText></th><th data-ui-key="u-d33f37089866" data-ui-label-default="Tình trạng đầu ca"><UiCustomText uiKey="u-d33f37089866">Tình trạng đầu ca</UiCustomText></th><th data-ui-key="u-46d6e45c2661" data-ui-label-default="Nghỉ giữa ca"><UiCustomText uiKey="u-46d6e45c2661">Nghỉ giữa ca</UiCustomText></th><th data-ui-key="u-a3e410889db2" data-ui-label-default="Tình trạng vào lại sau nghỉ"><UiCustomText uiKey="u-a3e410889db2">Tình trạng vào lại sau nghỉ</UiCustomText></th></tr></thead><tbody>{displayRecords.map((item, index) => {
         const startStatus = startStatusFor(item)
         const returnStatus = breakReturnStatusFor(item)
         const liveBreak = liveBreakTiming(item, clockMs)
@@ -355,14 +357,14 @@ export default function SnapshotPage({ user }) {
         </tr>
       })}</tbody></table></div>{!records.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
 
-    {isAdmin && <section className="panel attendance-department-controls">
-      <div className="panel-title-row"><div><h2>CHẤM CÔNG THEO BỘ PHẬN</h2><p>Điều khiển chấm công, thông báo và quy tắc nghỉ giữa ca theo từng bộ phận.</p></div></div>
+    {isAdmin && <section data-ui-key="u-b681748c8cbe" className="panel attendance-department-controls">
+      <div data-ui-key="u-eace497d09ab" className="panel-title-row"><div><h2>CHẤM CÔNG THEO BỘ PHẬN</h2><p>Điều khiển chấm công, thông báo và quy tắc nghỉ giữa ca theo từng bộ phận.</p></div></div>
       <div className="attendance-department-grid">{[['locker', 'Locker'], ['letan', 'Lễ tân']].map(([key, label]) => {
         const control = departmentControls[key] || {}
-        return <div className="attendance-department-card" key={key}><h3>{label}</h3><p>Ca làm lấy từ Lịch làm việc Web V2.</p><div className="attendance-control-actions">
-          <button type="button" className={control.attendance_enabled ? 'primary-button' : 'secondary-button attendance-control-off'} disabled={Boolean(controlBusy)} onClick={() => toggleDepartmentControl(key, 'attendance_enabled')}><Power size={16}/> Chấm công: {control.attendance_enabled ? 'Đang bật' : 'Đang tắt'}</button>
-          <button type="button" className={control.notifications_enabled ? 'primary-button' : 'secondary-button attendance-control-off'} disabled={Boolean(controlBusy)} onClick={() => toggleDepartmentControl(key, 'notifications_enabled')}><BellRing size={16}/> Thông báo: {control.notifications_enabled ? 'Đang bật' : 'Đang tắt'}</button>
-        </div></div>
+        return <div data-ui-key="u-f530a8eebd39" className="attendance-department-card" key={key}><h3>{label}</h3><p>Ca làm lấy từ Lịch làm việc Web V2.</p><UiToolbar data-ui-key="u-b00c1a9f4d6c" className="attendance-control-actions">
+          <button data-ui-key="u-795b2513cffd" type="button" className={control.attendance_enabled ? 'primary-button' : 'secondary-button attendance-control-off'} disabled={Boolean(controlBusy)} onClick={() => toggleDepartmentControl(key, 'attendance_enabled')}><Power size={16}/> Chấm công: {control.attendance_enabled ? 'Đang bật' : 'Đang tắt'}</button>
+          <button data-ui-key="u-3c7343c79b7f" type="button" className={control.notifications_enabled ? 'primary-button' : 'secondary-button attendance-control-off'} disabled={Boolean(controlBusy)} onClick={() => toggleDepartmentControl(key, 'notifications_enabled')}><BellRing size={16}/> Thông báo: {control.notifications_enabled ? 'Đang bật' : 'Đang tắt'}</button>
+        </UiToolbar></div>
       })}</div>
       <div className="attendance-break-rule-title">QUY TẮC NGHỈ GIỮA CA</div>
       <div className="attendance-break-rule-grid">{[['letan', 'Lễ tân'], ['locker', 'Locker'], ['tapvu', 'Tạp vụ']].map(([key, label]) => {

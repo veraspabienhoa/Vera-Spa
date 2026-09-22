@@ -1,3 +1,4 @@
+import UiCustomText from './UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
 import { AlertTriangle, CalendarRange, CheckCircle2, Clock3, RefreshCw, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
@@ -97,7 +98,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
     }
   }
 
-  return <section className="panel long-leave-admin-panel">
+  return <section data-ui-key="u-d0934921f18d" className="panel long-leave-admin-panel">
     <style>{`
       .long-leave-admin-panel{display:grid;gap:12px;margin-bottom:16px;border-color:#d8e4dd;background:#fbfdfc}
       .long-leave-admin-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -112,17 +113,17 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
       .leave-overlap-panel{display:grid;gap:10px;padding:13px;border:1px solid #d8e4dd;border-radius:14px;background:#fff}.leave-overlap-head{display:flex;align-items:center;gap:8px}.leave-overlap-head h3{margin:0;font-size:15px}.leave-overlap-controls{display:grid;grid-template-columns:1fr 1fr 1fr 120px auto;gap:8px;align-items:end}.leave-overlap-controls label{display:grid;gap:4px;color:#536159;font-size:9px;font-weight:850}.leave-overlap-controls select,.leave-overlap-controls input{min-width:0;padding:8px}.leave-heatmap{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:6px}.leave-heat-day{min-height:76px;padding:8px;border:1px solid #dfe8e2;border-radius:10px;background:#f5f8f6}.leave-heat-day.alert{border-color:#d99832;background:#fff5df}.leave-heat-day time,.leave-heat-day strong,.leave-heat-day small{display:block}.leave-heat-day time{font-size:9px;color:#6b786f}.leave-heat-day strong{margin-top:4px;font-size:13px}.leave-heat-day small{margin-top:3px;font-size:8px;color:#65746c}.leave-overlap-alert{display:flex;align-items:flex-start;gap:7px;padding:9px;border-radius:10px;background:#fff0d5;color:#7a5313;font-size:10px;font-weight:800}
       @media(max-width:820px){.long-leave-admin-panel{padding:12px 9px}.long-leave-admin-heading h2{font-size:16px}.long-leave-admin-heading p{font-size:9px}.long-leave-admin-heading button{padding:7px;font-size:9px}.long-leave-pending-card{padding:10px}.long-leave-pending-head strong{font-size:12px}.long-leave-request-type{font-size:8px}.long-leave-pending-meta{grid-template-columns:1fr 1fr;gap:5px}.long-leave-pending-copy{grid-template-columns:1fr}.long-leave-decision-row{grid-template-columns:1fr 1fr}.long-leave-decision-row label{grid-column:1/-1}.long-leave-decision-row button{width:100%;padding:8px 5px;font-size:9px}.leave-overlap-controls{grid-template-columns:1fr 1fr}.leave-overlap-controls button{grid-column:1/-1}}
     `}</style>
-    <div className="long-leave-admin-heading">
+    <div data-ui-key="u-7fd1bacfe432" className="long-leave-admin-heading">
       <div>
         <h2>ADMIN · ĐƠN CHỜ DUYỆT</h2>
         <p>Phép năm / Nghỉ làm đẹp / Nghỉ việc · hiển thị đầy đủ thông tin trước khi quyết định.</p>
       </div>
-      <button type="button" className="secondary-button compact" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Làm mới</button>
+      <button data-ui-key="u-bbacc6bc597e" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-bbacc6bc597e"> Làm mới</UiCustomText></button>
     </div>
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
-    <section className="leave-overlap-panel">
+    <section data-ui-key="u-fc2038c8cf81" className="leave-overlap-panel">
       <div className="leave-overlap-head"><CalendarRange size={18}/><h3>TỔNG QUAN & KIỂM TRA XUNG ĐỘT NGHỈ PHÉP</h3></div>
-      <div className="leave-overlap-controls"><label>Từ ngày<VeraDateInput value={overlapFilters.start} onChange={(event) => setOverlapFilters({ ...overlapFilters, start:event.target.value })}/></label><label>Đến ngày<VeraDateInput value={overlapFilters.end} min={overlapFilters.start} onChange={(event) => setOverlapFilters({ ...overlapFilters, end:event.target.value })}/></label><label>Bộ phận<select value={overlapFilters.department} onChange={(event) => setOverlapFilters({ ...overlapFilters, department:event.target.value })}><option value="">Tất cả</option><option value="nhanvien">Nhân viên</option><option value="letan">Lễ tân</option><option value="locker">Locker</option><option value="tapvu">Tạp vụ</option><option value="quanly">Quản lý</option></select></label><label>Ngưỡng cảnh báo (%)<input type="number" min="1" max="100" value={overlapFilters.threshold} onChange={(event) => setOverlapFilters({ ...overlapFilters, threshold:event.target.value })}/></label><button type="button" className="secondary-button compact" onClick={loadOverlap}>Kiểm tra</button></div>
+      <div className="leave-overlap-controls"><label>Từ ngày<VeraDateInput value={overlapFilters.start} onChange={(event) => setOverlapFilters({ ...overlapFilters, start:event.target.value })}/></label><label>Đến ngày<VeraDateInput value={overlapFilters.end} min={overlapFilters.start} onChange={(event) => setOverlapFilters({ ...overlapFilters, end:event.target.value })}/></label><label>Bộ phận<select value={overlapFilters.department} onChange={(event) => setOverlapFilters({ ...overlapFilters, department:event.target.value })}><option value="">Tất cả</option><option value="nhanvien">Nhân viên</option><option value="letan">Lễ tân</option><option value="locker">Locker</option><option value="tapvu">Tạp vụ</option><option value="quanly">Quản lý</option></select></label><label>Ngưỡng cảnh báo (%)<input type="number" min="1" max="100" value={overlapFilters.threshold} onChange={(event) => setOverlapFilters({ ...overlapFilters, threshold:event.target.value })}/></label><button data-ui-key="u-9d31be5e1f85" data-ui-label-default="Kiểm tra" type="button" className="secondary-button compact" onClick={loadOverlap}><UiCustomText uiKey="u-9d31be5e1f85">Kiểm tra</UiCustomText></button></div>
       {overlap?.has_alert && <div className="leave-overlap-alert"><AlertTriangle size={16}/> Có ngày vượt ngưỡng {overlapFilters.threshold}% nhân sự của bộ phận cùng nghỉ.</div>}
       <div className="leave-heatmap">{overlap?.days?.map((day) => <article className={`leave-heat-day ${day.has_alert ? 'alert' : ''}`} key={day.date}><time>{vnDate(day.date)}</time><strong>{day.leave_count} người nghỉ</strong><small>{day.departments.map((dept) => `${dept.department_id}: ${dept.leave_count}/${dept.headcount}${dept.exceeds_threshold ? ' ⚠' : ''}`).join(' · ') || 'Không trùng lịch'}</small></article>)}</div>
     </section>
@@ -152,8 +153,8 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
             <label>Lý do không duyệt
               <input value={rejectReasons[item.id] || ''} onChange={(event) => setRejectReasons((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Chỉ cần nhập khi không duyệt" />
             </label>
-            <button type="button" className="primary-button" onClick={() => decide(item, 'approve')} disabled={busyId === item.id}><CheckCircle2 size={15} /> Duyệt đơn</button>
-            <button type="button" className="danger-button" onClick={() => decide(item, 'reject')} disabled={busyId === item.id}><XCircle size={15} /> Không duyệt</button>
+            <button data-ui-key="u-ce40dc821d5a" data-ui-label-default="Duyệt đơn" type="button" className="primary-button" onClick={() => decide(item, 'approve')} disabled={busyId === item.id}><CheckCircle2 size={15} /><UiCustomText uiKey="u-ce40dc821d5a"> Duyệt đơn</UiCustomText></button>
+            <button data-ui-key="u-41b7049b7e71" data-ui-label-default="Không duyệt" type="button" className="danger-button" onClick={() => decide(item, 'reject')} disabled={busyId === item.id}><XCircle size={15} /><UiCustomText uiKey="u-41b7049b7e71"> Không duyệt</UiCustomText></button>
           </div>
           {busyId === item.id && <div className="setup-note"><Clock3 size={14} /> Đang cập nhật và đồng bộ hệ thống cũ…</div>}
         </article>

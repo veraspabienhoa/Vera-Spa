@@ -1,3 +1,4 @@
+from ui_source import read_ui_source
 import re
 import json
 import subprocess
@@ -13,7 +14,7 @@ LIVE_TOUR_CONTROLS = ROOT / "web-v2/src/pages/LiveTourControls.css"
 
 
 def _source(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    return read_ui_source(path) if path.suffix == ".jsx" else path.read_text(encoding="utf-8")
 
 
 def _has_quoted_literal(source: str, value: str) -> bool:
@@ -398,11 +399,11 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
 
 def test_tip_menu_reports_popups_and_mobile_controls_are_wired():
     root = Path(__file__).resolve().parents[1] / "web-v2/src"
-    app = (root / "App.jsx").read_text(encoding="utf-8")
-    shell = (root / "components/AppShell.jsx").read_text(encoding="utf-8")
-    milk_tea = (root / "pages/MilkTeaPage.jsx").read_text(encoding="utf-8")
-    reports = (root / "pages/LiveTourReportsPage.jsx").read_text(encoding="utf-8")
-    popup = (root / "components/PopupNotifications.jsx").read_text(encoding="utf-8")
+    app = read_ui_source((root / "App.jsx"))
+    shell = read_ui_source((root / "components/AppShell.jsx"))
+    milk_tea = read_ui_source((root / "pages/MilkTeaPage.jsx"))
+    reports = read_ui_source((root / "pages/LiveTourReportsPage.jsx"))
+    popup = read_ui_source((root / "components/PopupNotifications.jsx"))
     controls = (root / "pages/LiveTourControls.css").read_text(encoding="utf-8")
 
     assert "id: 'milk-tea', label: 'Trà sữa'" in shell

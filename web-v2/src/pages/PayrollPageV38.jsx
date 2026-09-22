@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { ChevronDown, ChevronRight, RefreshCw, Save, Settings2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
@@ -182,16 +184,16 @@ export default function PayrollPageV38({ user }) {
     {showPersonalTracking && payrollTab === 'calculate' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
     {isAdmin && canFullPayroll && payrollTab === 'calculate' && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
     {canFullPayroll && canEditConfig && payrollTab === 'calculate' && <div className="feature-page payroll-page payroll-v38-config">
-      <section className="panel">
-        <div className="panel-title-row">
+      <section data-ui-key="u-644a635241c1" className="panel">
+        <div data-ui-key="u-716cdc9927e0" className="panel-title-row">
           <div>
             <h2><Settings2 size={17} /> MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8</h2>
             <p>Mức riêng thay cho khấu trừ mặc định khi tính bảng lương mới. Tiền Lương = 0 vẫn tự đưa Phí sinh hoạt và Hỗ trợ Locker về 0 theo quy tắc 3.7.</p>
           </div>
-          <div className="v38-collapse-actions">
-            {overridesOpen && <button className="secondary-button" type="button" onClick={() => loadOverrides()} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /> Làm mới</button>}
-            <button className="secondary-button" type="button" onClick={() => setOverridesOpen((value) => !value)}>{overridesOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {overridesOpen ? 'Ẩn' : 'Hiện'}</button>
-          </div>
+          <UiToolbar data-ui-key="u-f1a54c4c26fa" className="v38-collapse-actions">
+            {overridesOpen && <button data-ui-key="u-3aba63e653a9" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={() => loadOverrides()} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-3aba63e653a9"> Làm mới</UiCustomText></button>}
+            <button data-ui-key="u-6d58ab3c4305" className="secondary-button" type="button" onClick={() => setOverridesOpen((value) => !value)}>{overridesOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {overridesOpen ? 'Ẩn' : 'Hiện'}</button>
+          </UiToolbar>
         </div>
 
         {!overridesOpen && <div className="v38-collapsed-note">Khu vực Mức riêng mặc định được ẩn.</div>}
@@ -211,12 +213,12 @@ export default function PayrollPageV38({ user }) {
             </label>)}
           </div>
 
-          <div className="list-actions">
-            <button className="primary-button" type="button" onClick={saveOverrides} disabled={Boolean(busy) || !selected.length}><Save size={16} /> {busy === 'save' ? 'Đang lưu…' : 'Áp dụng mức riêng'}</button>
-            <button className="secondary-button" type="button" onClick={resetOverrides} disabled={Boolean(busy) || !selected.length}><Undo2 size={16} /> {busy === 'reset' ? 'Đang đặt lại…' : 'Dùng lại mặc định'}</button>
-          </div>
+          <UiToolbar data-ui-key="u-db0209c57ce0" className="list-actions">
+            <button data-ui-key="u-adefd9ea04bd" className="primary-button" type="button" onClick={saveOverrides} disabled={Boolean(busy) || !selected.length}><Save size={16} /> {busy === 'save' ? 'Đang lưu…' : 'Áp dụng mức riêng'}</button>
+            <button data-ui-key="u-4cc8715d646b" className="secondary-button" type="button" onClick={resetOverrides} disabled={Boolean(busy) || !selected.length}><Undo2 size={16} /> {busy === 'reset' ? 'Đang đặt lại…' : 'Dùng lại mặc định'}</button>
+          </UiToolbar>
 
-          <div className="responsive-data-table" style={{ marginTop: 16 }}><table><thead><tr><th>Nhân viên</th><th>Phí sinh hoạt riêng</th><th>Hỗ trợ Locker riêng</th></tr></thead><tbody>{configured.map((item) => <tr key={item.employee_name}><td><strong>{item.employee_name}</strong></td><td>{money(item.living_expense)}</td><td>{money(item.locker_support)}</td></tr>)}</tbody></table></div>
+          <div className="responsive-data-table" style={{ marginTop: 16 }}><table data-ui-key="u-8547cf88b902"><thead><tr><th data-ui-key="u-e06e9c351279" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-e06e9c351279">Nhân viên</UiCustomText></th><th data-ui-key="u-9b0f15f36d29" data-ui-label-default="Phí sinh hoạt riêng"><UiCustomText uiKey="u-9b0f15f36d29">Phí sinh hoạt riêng</UiCustomText></th><th data-ui-key="u-cc7458cc7d40" data-ui-label-default="Hỗ trợ Locker riêng"><UiCustomText uiKey="u-cc7458cc7d40">Hỗ trợ Locker riêng</UiCustomText></th></tr></thead><tbody>{configured.map((item) => <tr key={item.employee_name}><td><strong>{item.employee_name}</strong></td><td>{money(item.living_expense)}</td><td>{money(item.locker_support)}</td></tr>)}</tbody></table></div>
           {!configured.length && <div className="setup-note">Chưa có mức riêng. Tất cả Nhân viên/Leader đang dùng mức mặc định.</div>}
         </>}
       </section>

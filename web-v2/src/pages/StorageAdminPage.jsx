@@ -1,3 +1,4 @@
+import UiCustomText from '../components/UiCustomText'
 import { CalendarRange, DatabaseBackup, Download, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -69,18 +70,18 @@ export default function StorageAdminPage() {
   }
 
   return <div className="feature-page storage-page">
-    <div className="page-heading"><div><span className="eyebrow"><DatabaseBackup size={14} /> Chỉ Admin</span><h1>BỘ NHỚ HỆ THỐNG</h1><p>Xuất bản lưu Excel và quản lý thời hạn lưu Lịch nghỉ, Bảng lương, Chấm công.</p></div><button className="secondary-button" onClick={load} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'preview' ? 'spin' : ''} /> Làm mới</button></div>
+    <div data-ui-key="u-6a8b09b301fb" className="page-heading"><div><span className="eyebrow"><DatabaseBackup size={14} /> Chỉ Admin</span><h1>BỘ NHỚ HỆ THỐNG</h1><p>Xuất bản lưu Excel và quản lý thời hạn lưu Lịch nghỉ, Bảng lương, Chấm công.</p></div><button data-ui-key="u-baadccdfc0f5" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'preview' ? 'spin' : ''} /><UiCustomText uiKey="u-baadccdfc0f5"> Làm mới</UiCustomText></button></div>
     {notice && <div className={notice.type === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
-    <section className="panel storage-range-panel">
+    <section data-ui-key="u-4e26ff629c4b" className="panel storage-range-panel">
       <div className="storage-presets">
-        {[['previous_month', 'Tháng trước'], ['current_month', 'Tháng này'], ['previous_year', 'Năm trước'], ['custom', 'Tùy chỉnh']].map(([value, label]) => <button key={value} className={preset === value ? 'active' : ''} onClick={() => choosePreset(value)}>{label}</button>)}
+        {[['previous_month', 'Tháng trước'], ['current_month', 'Tháng này'], ['previous_year', 'Năm trước'], ['custom', 'Tùy chỉnh']].map(([value, label]) => <button data-ui-key="u-9c02717ee425" key={value} className={preset === value ? 'active' : ''} onClick={() => choosePreset(value)}>{label}</button>)}
       </div>
       <div className="storage-dates"><label><CalendarRange size={15} /> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(event) => { setPreset('custom'); setStart(event.target.value) }} /></label><label><CalendarRange size={15} /> Đến ngày<VeraDateInput aria-label="Đến ngày" min={start} value={end} onChange={(event) => { setPreset('custom'); setEnd(event.target.value) }} /></label></div>
     </section>
-    <div className="metric-grid small storage-metrics">{cards.map((item) => <div className="metric-card" key={item.key}><span>{item.label}</span><strong>{item.count}</strong></div>)}</div>
-    <section className="panel storage-actions-grid">
-      <div className="storage-action-card"><h2>EXPORT EXCEL</h2><p>Nên tải bản lưu trước mọi thao tác xóa.</p><label>Nhóm dữ liệu<select value={exportDataset} onChange={(event) => setExportDataset(event.target.value)}><option value="all">Tất cả (3 sheet)</option>{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button className="primary-button" onClick={() => veraApi.exportStorageExcel(start, end, exportDataset)} disabled={Boolean(busy)}><Download size={16} /> Export dữ liệu</button></div>
-      <div className="storage-action-card danger-zone"><h2>XÓA DỮ LIỆU</h2><p>Chỉ xóa nhóm đã chọn trong khoảng thời gian đang xem. Dữ liệu đồng bộ ngoài hệ thống có thể được nạp lại ở lần đồng bộ sau.</p><label>Nhóm dữ liệu<select value={deleteDataset} onChange={(event) => { setDeleteDataset(event.target.value); setConfirmation('') }}>{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label} · {preview.counts?.[value] || 0} dòng</option>)}</select></label><label>Nhập “XÓA DỮ LIỆU” để xác nhận<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label><button className="danger-button" onClick={remove} disabled={!canDelete}><Trash2 size={16} /> {busy === 'delete' ? 'Đang xóa…' : `Xóa ${selectedCount} dòng`}</button></div>
+    <div className="metric-grid small storage-metrics">{cards.map((item) => <div data-ui-key="u-d98dc805116e" className="metric-card" key={item.key}><span>{item.label}</span><strong>{item.count}</strong></div>)}</div>
+    <section data-ui-key="u-dc4ab3a48d91" className="panel storage-actions-grid">
+      <div data-ui-key="u-1a6998c827f5" className="storage-action-card"><h2>EXPORT EXCEL</h2><p>Nên tải bản lưu trước mọi thao tác xóa.</p><label>Nhóm dữ liệu<select value={exportDataset} onChange={(event) => setExportDataset(event.target.value)}><option value="all">Tất cả (3 sheet)</option>{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button data-ui-key="u-a64be30e296c" data-ui-label-default="Export dữ liệu" className="primary-button" onClick={() => veraApi.exportStorageExcel(start, end, exportDataset)} disabled={Boolean(busy)}><Download size={16} /><UiCustomText uiKey="u-a64be30e296c"> Export dữ liệu</UiCustomText></button></div>
+      <div data-ui-key="u-2d80f02fe300" className="storage-action-card danger-zone"><h2>XÓA DỮ LIỆU</h2><p>Chỉ xóa nhóm đã chọn trong khoảng thời gian đang xem. Dữ liệu đồng bộ ngoài hệ thống có thể được nạp lại ở lần đồng bộ sau.</p><label>Nhóm dữ liệu<select value={deleteDataset} onChange={(event) => { setDeleteDataset(event.target.value); setConfirmation('') }}>{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label} · {preview.counts?.[value] || 0} dòng</option>)}</select></label><label>Nhập “XÓA DỮ LIỆU” để xác nhận<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></label><button data-ui-key="u-a2f9d3c6319b" className="danger-button" onClick={remove} disabled={!canDelete}><Trash2 size={16} /> {busy === 'delete' ? 'Đang xóa…' : `Xóa ${selectedCount} dòng`}</button></div>
     </section>
   </div>
 }

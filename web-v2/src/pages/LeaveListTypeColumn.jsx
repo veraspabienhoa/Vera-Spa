@@ -72,7 +72,7 @@ export default function LeaveListTypeColumn() {
 
       const headerRow = table.querySelector('thead tr')
       const reasonHeader = headerRow
-        ? Array.from(headerRow.children).find((cell) => normalizeReason(cell.textContent) === 'ly do')
+        ? Array.from(headerRow.children).find((cell) => normalizeReason(cell.dataset.uiLabelDefault || cell.textContent) === 'ly do')
         : null
       if (reasonHeader && !headerRow.querySelector('.leave-type-header')) {
         const typeHeader = document.createElement('th')

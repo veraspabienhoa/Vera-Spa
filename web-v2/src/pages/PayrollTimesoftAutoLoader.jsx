@@ -123,7 +123,7 @@ export default function PayrollTimesoftAutoLoader({ enabled }) {
       .payroll-timesoft-auto-notice{max-width:330px;font-size:10px;line-height:1.35;color:#5f6d66}.payroll-timesoft-auto-notice.error{color:#a12c23}.payroll-timesoft-auto-notice.success{color:#246243}
       @media(max-width:760px){.payroll-timesoft-auto-host{width:100%}.payroll-timesoft-auto-control button{width:100%}}
     `}</style>
-    <button type="button" className="secondary-button" disabled={busy} onClick={run}>
+    <button data-ui-key="u-a574dee86bda" type="button" className="secondary-button" disabled={busy} onClick={run}>
       {busy ? <LoaderCircle className="spin" size={16}/> : <CloudDownload size={16}/>} {busy ? 'Đang lấy TimeSoft…' : 'Lấy TimeSoft & tính lương'}
     </button>
     <small>Tự lấy dữ liệu TimeSoft đã đồng bộ vào PostgreSQL. Upload Excel vẫn dùng bình thường.</small>

@@ -71,7 +71,7 @@ export default function PayrollSavedAdminPanel({ user }) {
 
   return <>
     {cardTargets.map(({ batch, target }) => createPortal(
-      <button className="secondary-button compact" type="button" disabled={Boolean(busy)} onClick={() => reopenForEdit(batch)}><Edit3 size={14} /> {busy === batch ? 'Đang mở…' : 'Lấy lại & sửa'}</button>,
+      <button data-ui-key="u-f74b2fc17e1b" className="secondary-button compact" type="button" disabled={Boolean(busy)} onClick={() => reopenForEdit(batch)}><Edit3 size={14} /> {busy === batch ? 'Đang mở…' : 'Lấy lại & sửa'}</button>,
       target,
       `edit-${batch}`,
     ))}

@@ -39,7 +39,7 @@ function ensureTopClose(panel) {
   button.textContent = '✕ Đóng'
   button.addEventListener('click', () => {
     const cancel = Array.from(panel.querySelectorAll('.staff-form-actions button'))
-      .find((item) => /^Hủy$/i.test(clean(item.textContent)))
+      .find((item) => /^Hủy$/i.test(clean(item.dataset.uiLabelDefault || item.textContent)))
     cancel?.click()
   })
   header.appendChild(button)
@@ -85,7 +85,7 @@ function mediaStatus(card) {
 
 function viewButton(card) {
   return Array.from(card.querySelectorAll('.employee-id-actions button'))
-    .find((button) => /^Xem$/i.test(clean(button.textContent))) || null
+    .find((button) => /^Xem$/i.test(clean(button.dataset.uiLabelDefault || button.textContent))) || null
 }
 
 function resetCardForEmployee(card, username) {

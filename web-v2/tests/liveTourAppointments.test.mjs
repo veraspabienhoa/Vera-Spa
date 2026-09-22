@@ -23,7 +23,7 @@ const built = await build({
   plugins: [{ name: 'mock-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const veraApi = globalThis.__tourTestApi;', loader: 'js' }))
-b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(VeraDateInput|ClearableSearchInput|LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
+b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(UiToolbar|UiCustomText|VeraDateInput|ClearableSearchInput|LiveTour(AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
     b.onLoad({ filter: /.*/, namespace: 'dialog' }, () => ({ contents: 'export default function Dialog(){return null}', loader: 'js' }))
   } }],
 })

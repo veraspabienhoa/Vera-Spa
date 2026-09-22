@@ -95,7 +95,7 @@ function cardSide(card) {
 
 function findViewButton(card) {
   return Array.from(card?.querySelectorAll('.employee-id-actions button') || [])
-    .find((button) => normalizeText(button.textContent).toLowerCase() === 'xem') || null
+    .find((button) => normalizeText(button.dataset.uiLabelDefault || button.textContent).toLowerCase() === 'xem') || null
 }
 
 function waitForImage(card, timeoutMs = 5000) {

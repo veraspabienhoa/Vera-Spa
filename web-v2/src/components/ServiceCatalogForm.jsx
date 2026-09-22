@@ -1,3 +1,5 @@
+import UiToolbar from './UiToolbar'
+import UiCustomText from './UiCustomText'
 import { ArrowDown, ArrowUp, Layers, ListChecks, Plus, Trash2 } from 'lucide-react'
 import VeraDateInput from './VeraDateInput'
 import VeraMoneyInput from './VeraMoneyInput'
@@ -8,8 +10,8 @@ function Field({ label, children, wide = false }) {
 
 export function ServiceTypePicker({ onChoose }) {
   return <div className="spa-service-types">
-    <button type="button" onClick={() => onChoose('service')}><ListChecks size={30}/><strong>Dịch vụ đơn lẻ</strong><span>Thiết lập số lượt, thời lượng và lộ trình thực hiện.</span></button>
-    <button type="button" onClick={() => onChoose('combo')}><Layers size={30}/><strong>Dịch vụ combo</strong><span>Kết hợp các dịch vụ và số lượt sử dụng trong một gói.</span></button>
+    <button data-ui-key="u-5c05ff921a62" type="button" onClick={() => onChoose('service')}><ListChecks size={30}/><strong>Dịch vụ đơn lẻ</strong><span>Thiết lập số lượt, thời lượng và lộ trình thực hiện.</span></button>
+    <button data-ui-key="u-1c1f6fb2b5d8" type="button" onClick={() => onChoose('combo')}><Layers size={30}/><strong>Dịch vụ combo</strong><span>Kết hợp các dịch vụ và số lượt sử dụng trong một gói.</span></button>
   </div>
 }
 
@@ -30,22 +32,22 @@ export default function ServiceCatalogForm({ kind, form, setForm, services, grou
     {!combo && <Field label="Số lượt *"><input type="number" required min="1" max="100000" step="1" value={form.sessions} onChange={(event) => set('sessions', event.target.value)}/></Field>}
     <Field label="Ngày áp dụng"><VeraDateInput required={!existing || !form.unlimited} value={form.starts_on} onChange={(event) => set('starts_on', event.target.value)}/></Field>
     {combo ? <div className="spa-wide spa-components-editor"><h3>Dịch vụ thành phần *</h3>
-      {form.combo_mode === 'generic' ? <><p>Combo vé hiện có: dùng định mức vé của dịch vụ khi thanh toán.</p><Field label="Tổng số vé"><input type="number" min="1" max="100000" required value={form.tickets} onChange={(event) => set('tickets', event.target.value)}/></Field><button className="secondary-button" type="button" onClick={() => setForm((current) => ({ ...current, combo_mode: 'components', components: [{ service_id: '', quantity: '1' }] }))}>Chọn dịch vụ cụ thể cho combo</button></>
+      {form.combo_mode === 'generic' ? <><p>Combo vé hiện có: dùng định mức vé của dịch vụ khi thanh toán.</p><Field label="Tổng số vé"><input type="number" min="1" max="100000" required value={form.tickets} onChange={(event) => set('tickets', event.target.value)}/></Field><button data-ui-key="u-2dffeab86712" data-ui-label-default="Chọn dịch vụ cụ thể cho combo" className="secondary-button" type="button" onClick={() => setForm((current) => ({ ...current, combo_mode: 'components', components: [{ service_id: '', quantity: '1' }] }))}><UiCustomText uiKey="u-2dffeab86712">Chọn dịch vụ cụ thể cho combo</UiCustomText></button></>
         : <>
           {form.components.map((row, index) => <div className="spa-component-row" key={index}>
             <Field label={`Dịch vụ ${index + 1}`}><select required value={row.service_id} onChange={(event) => { const service = services.find((item) => item.id === event.target.value); updateRow('components', index, { service_id: event.target.value, quantity: service?.sessions || 1 }) }}><option value="">Chọn dịch vụ đơn lẻ</option>{services.map((service) => <option key={service.id} value={service.id} disabled={form.components.some((item, i) => i !== index && item.service_id === service.id)}>{service.name}{service.active === false ? ' · Ngừng sử dụng' : ''}</option>)}</select></Field>
             <Field label="Số lượt"><input type="number" min="1" max="100000" step="1" required value={row.quantity} onChange={(event) => updateRow('components', index, { quantity: event.target.value })}/></Field>
-            <button type="button" className="icon-button" disabled={form.components.length <= 1} aria-label={`Bỏ dịch vụ ${index + 1}`} onClick={() => set('components', form.components.filter((_, i) => i !== index))}><Trash2 size={16}/></button>
+            <button data-ui-key="u-07bd4e87cfb3" type="button" className="icon-button" disabled={form.components.length <= 1} aria-label={`Bỏ dịch vụ ${index + 1}`} onClick={() => set('components', form.components.filter((_, i) => i !== index))}><Trash2 size={16}/></button>
           </div>)}
-          <div className="spa-actions"><button className="secondary-button" type="button" disabled={form.components.length >= Math.min(100, services.length)} onClick={() => set('components', [...form.components, { service_id: '', quantity: '1' }])}><Plus size={15}/> Thêm dịch vụ</button><strong>Tổng: {total.toLocaleString('vi-VN')} lượt</strong></div>
+          <UiToolbar data-ui-key="u-c7a6b21f1391" className="spa-actions"><button data-ui-key="u-92be5124e01b" data-ui-label-default="Thêm dịch vụ" className="secondary-button" type="button" disabled={form.components.length >= Math.min(100, services.length)} onClick={() => set('components', [...form.components, { service_id: '', quantity: '1' }])}><Plus size={15}/><UiCustomText uiKey="u-92be5124e01b"> Thêm dịch vụ</UiCustomText></button><strong>Tổng: {total.toLocaleString('vi-VN')} lượt</strong></UiToolbar>
           {!services.length && <p>Tạo dịch vụ đơn lẻ trước khi thêm vào combo.</p>}
         </>}
     </div> : <>
       <div className="spa-wide spa-steps-editor"><h3>Lộ trình thực hiện</h3>{form.steps.map((step, index) => <div className="spa-step-row" key={index}>
         <Field label={`Bước ${index + 1}`}><input required maxLength={160} value={step.name} placeholder="Tên bước thực hiện" onChange={(event) => updateRow('steps', index, { name: event.target.value })}/></Field>
         <Field label="Phút"><input type="number" min="0" max="1440" step="1" value={step.duration} onChange={(event) => updateRow('steps', index, { duration: event.target.value })}/></Field>
-        <div className="spa-actions"><button type="button" className="icon-button" aria-label={`Đưa bước ${index + 1} lên`} disabled={index === 0} onClick={() => moveStep(index, -1)}><ArrowUp size={15}/></button><button type="button" className="icon-button" aria-label={`Đưa bước ${index + 1} xuống`} disabled={index === form.steps.length - 1} onClick={() => moveStep(index, 1)}><ArrowDown size={15}/></button><button type="button" className="icon-button" aria-label={`Xóa bước ${index + 1}`} onClick={() => set('steps', form.steps.filter((_, i) => i !== index))}><Trash2 size={15}/></button></div>
-      </div>)}<button className="secondary-button" type="button" disabled={form.steps.length >= 50} onClick={() => set('steps', [...form.steps, { name: '', duration: '0' }])}><Plus size={15}/> Thêm lộ trình</button></div>
+        <UiToolbar data-ui-key="u-d9a44ca993be" className="spa-actions"><button data-ui-key="u-d6936371adc3" type="button" className="icon-button" aria-label={`Đưa bước ${index + 1} lên`} disabled={index === 0} onClick={() => moveStep(index, -1)}><ArrowUp size={15}/></button><button data-ui-key="u-a5d050e9c4cf" type="button" className="icon-button" aria-label={`Đưa bước ${index + 1} xuống`} disabled={index === form.steps.length - 1} onClick={() => moveStep(index, 1)}><ArrowDown size={15}/></button><button data-ui-key="u-f77961502ac0" type="button" className="icon-button" aria-label={`Xóa bước ${index + 1}`} onClick={() => set('steps', form.steps.filter((_, i) => i !== index))}><Trash2 size={15}/></button></UiToolbar>
+      </div>)}<button data-ui-key="u-e34ef94a714b" data-ui-label-default="Thêm lộ trình" className="secondary-button" type="button" disabled={form.steps.length >= 50} onClick={() => set('steps', [...form.steps, { name: '', duration: '0' }])}><Plus size={15}/><UiCustomText uiKey="u-e34ef94a714b"> Thêm lộ trình</UiCustomText></button></div>
       <Field label="Thời lượng (phút)"><input type="number" min="0" max="1440" step="1" value={form.duration ?? ''} placeholder="Để trống nếu không giới hạn" onChange={(event) => set('duration', event.target.value)}/></Field>
     </>}
     <div className="spa-wide spa-checks"><strong>Loại sử dụng</strong><label><input type="checkbox" checked={form.unlimited} onChange={(event) => set('unlimited', event.target.checked)}/>Vô thời hạn</label>{combo && <label><input type="checkbox" checked={form.requires_admin_approval === true} onChange={(event) => set('requires_admin_approval', event.target.checked)}/>Admin duyệt bán khi Lễ tân hoặc Quản lý bán combo</label>}</div>

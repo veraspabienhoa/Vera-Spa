@@ -94,7 +94,7 @@ export default function VeraDateInput({
       onChange={changeText}
       onBlur={() => validateAndEmit(display, false)}
     />
-    {!readOnly && <button type="button" className="vera-date-picker-button" disabled={disabled} onClick={openPicker} tabIndex={-1} aria-hidden="true"><CalendarDays size={16} /></button>}
+    {!readOnly && <button data-ui-key="u-c2de40025e31" type="button" className="vera-date-picker-button" disabled={disabled} onClick={openPicker} tabIndex={-1} aria-hidden="true"><CalendarDays size={16} /></button>}
     {!readOnly && <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled} onChange={pickDate} aria-label={`Lịch ${ariaLabel || 'ngày'}`} />}
   </span>
 }

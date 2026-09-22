@@ -1,11 +1,11 @@
 .settings-page { min-width: 0; }
-.settings-page .settings-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; width: 100%; }
+.settings-page .settings-tabs { display: grid; grid-template-columns: repeat(var(--settings-tab-count,5), minmax(0, 1fr)); gap: 8px; width: 100%; }
 .settings-page .settings-tabs button { min-width: 0; min-height: 48px; padding: 10px 12px; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; border: 1px solid #386452; }
 .settings-page .settings-tabs button:focus-visible { outline: 3px solid #c59b3e; outline-offset: 2px; }
 .settings-page #settings-content { min-width: 0; }
 .settings-page #settings-content > .feature-page { padding: 0; min-width: 0; }
 .settings-page #settings-content > .feature-page > .page-heading { margin-top: 0; }
 @media (max-width: 600px) {
-  .settings-page .settings-tabs { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; }
+  .settings-page .settings-tabs { grid-template-columns: repeat(var(--settings-tab-count,5), minmax(0, 1fr)); gap: 3px; }
   .settings-page .settings-tabs button { padding: 8px 2px; font-size: clamp(.6rem, 2.4vw, .78rem); }
 }

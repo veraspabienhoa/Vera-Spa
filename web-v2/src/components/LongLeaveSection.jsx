@@ -1,3 +1,5 @@
+import UiToolbar from './UiToolbar'
+import UiCustomText from './UiCustomText'
 import { CalendarDays, CheckCircle2, Clock3, RefreshCw, Send, UserRoundCheck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
@@ -159,41 +161,41 @@ export default function LongLeaveSection({ user }) {
   }
 
   return (
-    <section className="long-leave-section" aria-labelledby="long-leave-heading">
-      <div className="long-leave-heading-row">
+    <section data-ui-key="u-25ce0d02cdc9" className="long-leave-section" aria-labelledby="long-leave-heading">
+      <div data-ui-key="u-2b5d8cc42548" className="long-leave-heading-row">
         <div>
           <span className="eyebrow"><CalendarDays size={14} /> Quy trình xin duyệt</span>
           <h2 id="long-leave-heading">PHÉP NĂM / NGHỈ LÀM ĐẸP / NGHỈ VIỆC</h2>
           <p>Đơn mới được chuyển vào quy trình duyệt hiện tại. Chỉ đơn Phép năm đã duyệt mới ghi vào lịch nghỉ hằng ngày.</p>
         </div>
-        <button type="button" className="secondary-button compact" onClick={load} disabled={loading}>
-          <RefreshCw size={15} className={loading ? 'spin' : ''} /> Làm mới
-        </button>
+        <button data-ui-key="u-914b7aa7a213" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading}>
+          <RefreshCw size={15} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-914b7aa7a213"> Làm mới
+        </UiCustomText></button>
       </div>
 
       {notice && (
         <div className={`long-leave-notice ${notice.status}`} role={notice.status === 'error' ? 'alert' : 'status'}>
           {notice.status === 'success' ? <CheckCircle2 size={17} /> : <Clock3 size={17} />}
           <span>{notice.message}</span>
-          <button type="button" onClick={() => setNotice(null)} aria-label="Đóng thông báo">×</button>
+          <button data-ui-key="u-611f824d1c77" data-ui-label-default="×" type="button" onClick={() => setNotice(null)} aria-label="Đóng thông báo"><UiCustomText uiKey="u-611f824d1c77">×</UiCustomText></button>
         </div>
       )}
 
       {role !== 'admin' && (canUseForm || canUseResignation) && (
-        <section className="panel long-leave-form-panel">
-          <div className="panel-title-row">
+        <section data-ui-key="u-93da09a1ad4e" className="panel long-leave-form-panel">
+          <div data-ui-key="u-277313a4cbea" className="panel-title-row">
             <div>
               <h2>FORM MẪU ĐĂNG KÝ</h2>
               <p>Nhân viên gửi đơn cho chính tài khoản đang đăng nhập.</p>
             </div>
           </div>
 
-          <div className="long-leave-type-tabs" role="group" aria-label="Chọn loại đơn">
+          <UiToolbar data-ui-key="u-ccb867101a1e" className="long-leave-type-tabs" role="group" aria-label="Chọn loại đơn">
             {[
               ...(canUseForm ? [ANNUAL, LONG] : []),
               ...(canUseResignation ? [RESIGNATION] : []),
             ].map((requestType) => (
-              <button
+              <button data-ui-key="u-c1812054792b"
                 type="button"
                 key={requestType}
                 className={form.request_type === requestType ? 'active' : ''}
@@ -204,7 +206,7 @@ export default function LongLeaveSection({ user }) {
                   : (requestType === RESIGNATION ? 'ĐƠN XIN NGHỈ VIỆC' : 'ĐƠN XIN NGHỈ LÀM ĐẸP')}
               </button>
             ))}
-          </div>
+          </UiToolbar>
 
           {!isResignation && overview?.paused && <div className="warning-box long-leave-gate"><strong>Đang tạm dừng nhận đơn.</strong> {overview.pause_message}</div>}
           {!isResignation && overview?.eligibility && (
@@ -261,7 +263,7 @@ export default function LongLeaveSection({ user }) {
             {isAnnual && <div className="long-leave-form-note">Đơn Phép năm được chọn tối đa 7 ngày liên tiếp và chỉ trừ quỹ sau khi Admin duyệt.</div>}
             {isResignation && <div className="long-leave-form-note">Ngày nghỉ việc dự kiến phải đủ ít nhất 30 ngày kể từ ngày làm đơn.</div>}
 
-            <button type="submit" className="primary-button long-leave-submit" disabled={!canSubmit}>
+            <button data-ui-key="u-e992bb3a539c" type="submit" className="primary-button long-leave-submit" disabled={!canSubmit}>
               <Send size={16} /> {saving ? 'Đang gửi đơn…' : `Gửi đơn ${form.request_type}`}
             </button>
           </form>
@@ -269,8 +271,8 @@ export default function LongLeaveSection({ user }) {
       )}
 
       {canViewApproved && (
-        <section className="panel approved-leave-panel">
-          <div className="panel-title-row">
+        <section data-ui-key="u-4b4ef7220440" className="panel approved-leave-panel">
+          <div data-ui-key="u-d06aabe803eb" className="panel-title-row">
             <div>
               <h2>DANH SÁCH NHÂN VIÊN ĐÃ ĐƯỢC DUYỆT</h2>
               <p>{approvedRequests.length} đơn Phép năm / Nghỉ làm đẹp ở trạng thái Đã duyệt.</p>
@@ -283,8 +285,8 @@ export default function LongLeaveSection({ user }) {
           ) : (
             <>
               <div className="approved-leave-desktop table-wrap">
-                <table>
-                  <thead><tr><th>Nhân viên</th><th>Loại đơn</th><th>Từ ngày</th><th>Đến ngày</th><th className="center">Số ngày</th><th>Nội dung</th><th>Chi tiết</th>{role === 'admin' && <th>Quay lại làm việc</th>}</tr></thead>
+                <table data-ui-key="u-db44f0f2b18e">
+                  <thead><tr><th data-ui-key="u-f62099c3a894" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-f62099c3a894">Nhân viên</UiCustomText></th><th data-ui-key="u-2f05f0e113c7" data-ui-label-default="Loại đơn"><UiCustomText uiKey="u-2f05f0e113c7">Loại đơn</UiCustomText></th><th data-ui-key="u-e33a506117eb" data-ui-label-default="Từ ngày"><UiCustomText uiKey="u-e33a506117eb">Từ ngày</UiCustomText></th><th data-ui-key="u-157983d3cee3" data-ui-label-default="Đến ngày"><UiCustomText uiKey="u-157983d3cee3">Đến ngày</UiCustomText></th><th data-ui-key="u-f495476df526" data-ui-label-default="Số ngày" className="center"><UiCustomText uiKey="u-f495476df526">Số ngày</UiCustomText></th><th data-ui-key="u-c01c7789779c" data-ui-label-default="Nội dung"><UiCustomText uiKey="u-c01c7789779c">Nội dung</UiCustomText></th><th data-ui-key="u-ef78c908ea7d" data-ui-label-default="Chi tiết"><UiCustomText uiKey="u-ef78c908ea7d">Chi tiết</UiCustomText></th>{role === 'admin' && <th data-ui-key="u-40ddff85708f" data-ui-label-default="Quay lại làm việc"><UiCustomText uiKey="u-40ddff85708f">Quay lại làm việc</UiCustomText></th>}</tr></thead>
                   <tbody>
                     {approvedRequests.map((item) => (
                       <tr key={item.id}>
@@ -297,7 +299,7 @@ export default function LongLeaveSection({ user }) {
                         <td className="detail-cell">{item.detail || '—'}</td>
                         {role === 'admin' && <td className="long-leave-return-cell">{item.leave_completed
                           ? <><strong>{formatDateDisplay(item.return_date)}</strong><small>{item.return_note}</small><em>Đã kết thúc kỳ nghỉ</em></>
-                          : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}>Kết thúc kỳ nghỉ</button></>}
+                          : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-560863cab625" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}><UiCustomText uiKey="u-560863cab625">Kết thúc kỳ nghỉ</UiCustomText></button></>}
                         </td>}
                       </tr>
                     ))}
@@ -321,7 +323,7 @@ export default function LongLeaveSection({ user }) {
                     <p><strong>Chi tiết:</strong> {item.detail || '—'}</p>
                     {role === 'admin' && <div className="long-leave-return-mobile">{item.leave_completed
                       ? <p><strong>Đã quay lại:</strong> {formatDateDisplay(item.return_date)} · {item.return_note}</p>
-                      : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}>Kết thúc kỳ nghỉ</button></>}
+                      : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-ad93a1e80149" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}><UiCustomText uiKey="u-ad93a1e80149">Kết thúc kỳ nghỉ</UiCustomText></button></>}
                     </div>}
                   </article>
                 ))}
@@ -332,9 +334,9 @@ export default function LongLeaveSection({ user }) {
       )}
 
       {canViewApproved && (
-        <section className="panel approved-leave-panel resignation-list-panel">
-          <div className="panel-title-row"><div><h2>NHÂN VIÊN NGHỈ VIỆC</h2><p>{resignationRequests.length} đơn nghỉ việc đã được duyệt.</p></div><div className="approved-count-chip"><UserRoundCheck size={15}/> {resignationRequests.length}</div></div>
-          {!resignationRequests.length ? <div className="setup-note">Chưa có đơn nghỉ việc đã duyệt.</div> : <div className="table-wrap"><table><thead><tr><th>Nhân viên</th><th>Ngày nghỉ việc</th><th>Lý do</th><th>Chi tiết / bàn giao</th><th>Người duyệt</th></tr></thead><tbody>{resignationRequests.map((item) => <tr key={item.id}><td><strong>{shortEmployeeName(item.employee_name)}</strong><small>{item.id}</small></td><td>{formatDateDisplay(item.start_date)}</td><td>{item.reason || '—'}</td><td>{item.detail || '—'}</td><td>{item.approved_by || '—'}<small>{item.approved_date || ''}</small></td></tr>)}</tbody></table></div>}
+        <section data-ui-key="u-b1cbd409a6a1" className="panel approved-leave-panel resignation-list-panel">
+          <div data-ui-key="u-6c50b928f0d4" className="panel-title-row"><div><h2>NHÂN VIÊN NGHỈ VIỆC</h2><p>{resignationRequests.length} đơn nghỉ việc đã được duyệt.</p></div><div className="approved-count-chip"><UserRoundCheck size={15}/> {resignationRequests.length}</div></div>
+          {!resignationRequests.length ? <div className="setup-note">Chưa có đơn nghỉ việc đã duyệt.</div> : <div className="table-wrap"><table data-ui-key="u-a15d380fcb20"><thead><tr><th data-ui-key="u-11498c16f568" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-11498c16f568">Nhân viên</UiCustomText></th><th data-ui-key="u-b06d0b51e254" data-ui-label-default="Ngày nghỉ việc"><UiCustomText uiKey="u-b06d0b51e254">Ngày nghỉ việc</UiCustomText></th><th data-ui-key="u-aac6f1d2aa93" data-ui-label-default="Lý do"><UiCustomText uiKey="u-aac6f1d2aa93">Lý do</UiCustomText></th><th data-ui-key="u-54b743ff05eb" data-ui-label-default="Chi tiết / bàn giao"><UiCustomText uiKey="u-54b743ff05eb">Chi tiết / bàn giao</UiCustomText></th><th data-ui-key="u-89854d0cdfe6" data-ui-label-default="Người duyệt"><UiCustomText uiKey="u-89854d0cdfe6">Người duyệt</UiCustomText></th></tr></thead><tbody>{resignationRequests.map((item) => <tr key={item.id}><td><strong>{shortEmployeeName(item.employee_name)}</strong><small>{item.id}</small></td><td>{formatDateDisplay(item.start_date)}</td><td>{item.reason || '—'}</td><td>{item.detail || '—'}</td><td>{item.approved_by || '—'}<small>{item.approved_date || ''}</small></td></tr>)}</tbody></table></div>}
         </section>
       )}
     </section>

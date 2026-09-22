@@ -1,3 +1,4 @@
+import UiCustomText from '../components/UiCustomText'
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -134,12 +135,12 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
   if (!isAdmin || !target) return null
 
   return createPortal(<div className="payroll-obligation-group" style={{ borderStyle: 'dashed' }}>
-    <div className="panel-title-row">
+    <div data-ui-key="u-389713a2270d" className="panel-title-row">
       <div>
         <h3>🛠️ ADMIN · THÊM / XÓA NỢ VI PHẠM</h3>
         <p>Admin có thể thêm mới hoặc xóa khoản nợ từ hệ thống cũ/Web V2. Ngày nhập thống nhất dd-mm-yyyy. Khoản đã xóa được ghi nhớ để không xuất hiện lại sau lần đồng bộ kế tiếp.</p>
       </div>
-      <button className="secondary-button compact" type="button" onClick={() => load()} disabled={Boolean(busy)}><RefreshCw size={14} className={busy === 'load' ? 'spin' : ''} /> Làm mới</button>
+      <button data-ui-key="u-845b2c94fc3e" data-ui-label-default="Làm mới" className="secondary-button compact" type="button" onClick={() => load()} disabled={Boolean(busy)}><RefreshCw size={14} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-845b2c94fc3e"> Làm mới</UiCustomText></button>
     </div>
 
     {notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}
@@ -152,11 +153,11 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
       <label>Kỳ phát sinh đến<VeraDateInput required value={form.period_end} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, period_end: event.target.value })} /></label>
       <label>Bắt đầu trừ từ<VeraDateInput required value={form.due_from} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, due_from: event.target.value })} /></label>
       <label>Nội dung<input required value={form.content} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, content: event.target.value })} /></label>
-      <button className="primary-button" type="submit" disabled={Boolean(busy)}><Plus size={16} /> {busy === 'add' ? 'Đang thêm…' : 'Thêm mới'}</button>
+      <button data-ui-key="u-e5a4662a0b5e" className="primary-button" type="submit" disabled={Boolean(busy)}><Plus size={16} /> {busy === 'add' ? 'Đang thêm…' : 'Thêm mới'}</button>
     </form>
     <datalist id="payroll-admin-debt-employees">{employeeOptions.map((name) => <option key={name}>{name}</option>)}</datalist>
 
-    <div className="responsive-data-table" style={{ marginTop: 12 }}><table><thead><tr><th>Tên nhân viên</th><th>Số tiền</th><th>Loại</th><th>Kỳ phát sinh</th><th>Bắt đầu trừ</th><th>Nguồn</th><th></th></tr></thead><tbody>{rows.map((item) => <tr key={item.debt_key}><td><strong>{item.employee_name}</strong></td><td>{money(item.amount)}</td><td>{item.type}</td><td>{item.period_start} – {item.period_end}</td><td>{item.due_from}</td><td>{item.source}</td><td><button className="danger-button compact" type="button" disabled={Boolean(busy)} onClick={() => deleteDebt(item)}><Trash2 size={14} /> Xóa</button></td></tr>)}</tbody></table></div>
+    <div className="responsive-data-table" style={{ marginTop: 12 }}><table data-ui-key="u-c9ea1b14832d"><thead><tr><th data-ui-key="u-8c8deb645d5e" data-ui-label-default="Tên nhân viên"><UiCustomText uiKey="u-8c8deb645d5e">Tên nhân viên</UiCustomText></th><th data-ui-key="u-5ebfb0f421c7" data-ui-label-default="Số tiền"><UiCustomText uiKey="u-5ebfb0f421c7">Số tiền</UiCustomText></th><th data-ui-key="u-eea90db018e4" data-ui-label-default="Loại"><UiCustomText uiKey="u-eea90db018e4">Loại</UiCustomText></th><th data-ui-key="u-6a395ddc2d28" data-ui-label-default="Kỳ phát sinh"><UiCustomText uiKey="u-6a395ddc2d28">Kỳ phát sinh</UiCustomText></th><th data-ui-key="u-ef42cbae17c9" data-ui-label-default="Bắt đầu trừ"><UiCustomText uiKey="u-ef42cbae17c9">Bắt đầu trừ</UiCustomText></th><th data-ui-key="u-87a11e3e5c38" data-ui-label-default="Nguồn"><UiCustomText uiKey="u-87a11e3e5c38">Nguồn</UiCustomText></th><th data-ui-key="u-8cd16a42443f"></th></tr></thead><tbody>{rows.map((item) => <tr key={item.debt_key}><td><strong>{item.employee_name}</strong></td><td>{money(item.amount)}</td><td>{item.type}</td><td>{item.period_start} – {item.period_end}</td><td>{item.due_from}</td><td>{item.source}</td><td><button data-ui-key="u-a2e62dd9e0ff" data-ui-label-default="Xóa" className="danger-button compact" type="button" disabled={Boolean(busy)} onClick={() => deleteDebt(item)}><Trash2 size={14} /><UiCustomText uiKey="u-a2e62dd9e0ff"> Xóa</UiCustomText></button></td></tr>)}</tbody></table></div>
     {!rows.length && <div className="setup-note">Không có Nợ vi phạm đang mở.</div>}
   </div>, target)
 }

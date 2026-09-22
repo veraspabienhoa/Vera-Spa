@@ -26,12 +26,12 @@ export default function UsernameAutocomplete({
 
   return <div className="username-autocomplete">
     {label && <strong>{label}</strong>}
-    <div className="username-autocomplete-search"><Search size={15}/><input value={query} onChange={(event) => { setQuery(event.target.value); setOpen(true); if (searchOnly || namesOnly) onChange?.('') }} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }} placeholder={placeholder}/>{query && <button type="button" aria-label="Xóa tìm kiếm" onClick={() => { setQuery(''); setOpen(false); if (searchOnly || namesOnly) onChange?.('') }}><X size={14}/></button>}</div>
+    <div className="username-autocomplete-search"><Search size={15}/><input value={query} onChange={(event) => { setQuery(event.target.value); setOpen(true); if (searchOnly || namesOnly) onChange?.('') }} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }} placeholder={placeholder}/>{query && <button data-ui-key="u-72640efa4074" type="button" aria-label="Xóa tìm kiếm" onClick={() => { setQuery(''); setOpen(false); if (searchOnly || namesOnly) onChange?.('') }}><X size={14}/></button>}</div>
     {!multiple && value && <div className="username-autocomplete-current">Đã chọn: <b>{value}</b></div>}
     {(!searchOnly || (open && normalized)) && <div className="username-autocomplete-options" role="listbox" aria-multiselectable={multiple || undefined}>
       {matches.map((item) => {
         const selected = multiple ? values.includes(item.username) : value === item.username
-        return <button type="button" role="option" aria-selected={selected} className={selected ? 'selected' : ''} key={item.username} onClick={() => choose(item.username)}><span>{item.username}</span>{item.role && <small>{item.role === 'quanly' ? 'Quản lý' : item.role}</small>}</button>
+        return <button data-ui-key="u-f843b394eb3a" type="button" role="option" aria-selected={selected} className={selected ? 'selected' : ''} key={item.username} onClick={() => choose(item.username)}><span>{item.username}</span>{item.role && <small>{item.role === 'quanly' ? 'Quản lý' : item.role}</small>}</button>
       })}
       {!matches.length && <span className="username-autocomplete-empty">Không tìm thấy username phù hợp.</span>}
     </div>}

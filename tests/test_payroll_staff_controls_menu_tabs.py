@@ -1,11 +1,12 @@
+from ui_source import read_ui_source
 from pathlib import Path
 
 
 def test_employee_flags_support_profile_exemption_and_payroll_exclusion():
     backend = Path("vera_web_v2_staff.py").read_text(encoding="utf-8")
-    page = Path("web-v2/src/pages/EmployeePage.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/EmployeePage.jsx"))
     profile = Path("vera_web_v2_profile.py").read_text(encoding="utf-8")
-    reminder = Path("web-v2/src/components/ProfileCompletionReminder.jsx").read_text(encoding="utf-8")
+    reminder = read_ui_source(Path("web-v2/src/components/ProfileCompletionReminder.jsx"))
 
     assert "profile_requirement_exempt: bool | None" in backend
     assert "payroll_excluded: bool | None" in backend
@@ -30,7 +31,7 @@ def test_payroll_exclusion_is_enforced_server_side_and_status_is_returned():
 
 
 def test_payroll_has_column_totals_and_requested_quick_filters():
-    page = Path("web-v2/src/pages/PayrollPageEnhanced.jsx").read_text(encoding="utf-8")
+    page = read_ui_source(Path("web-v2/src/pages/PayrollPageEnhanced.jsx"))
 
     for label in (
         "Lương", "Trách nhiệm / hỗ trợ", "Hoàn trả tích lũy", "Tích lũy",
@@ -46,7 +47,7 @@ def test_payroll_has_column_totals_and_requested_quick_filters():
 
 
 def test_sidebar_menu_items_are_links_for_native_right_click_open_new_tab():
-    shell = Path("web-v2/src/components/AppShell.jsx").read_text(encoding="utf-8")
+    shell = read_ui_source(Path("web-v2/src/components/AppShell.jsx"))
 
     assert "const menuPageUrl = (id) =>" in shell
     assert "url.searchParams.set('standalone', '1')" in shell

@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
 import { RefreshCw, Save, Search, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -144,32 +146,32 @@ export default function PermissionsPage() {
       .permission-view-permission{border-color:#9fc8b6!important;background:#eef8f3!important}
       .permission-view-permission strong:after{content:' · MỞ TRANG';font-size:9px;color:#2d6a50;font-weight:900}
     `}</style>
-    <div className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Admin</span><h1>PHÂN QUYỀN THEO TRANG</h1><p>Mỗi trang/menu có các tác vụ riêng. Admin có thể cấp từng tác vụ cho nhóm hoặc cho từng tài khoản.</p></div><button className="secondary-button" onClick={() => load()} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /> Làm mới</button></div>
+    <div data-ui-key="u-7f40edd7308c" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Admin</span><h1>PHÂN QUYỀN THEO TRANG</h1><p>Mỗi trang/menu có các tác vụ riêng. Admin có thể cấp từng tác vụ cho nhóm hoặc cho từng tài khoản.</p></div><button data-ui-key="u-9d2013a3b024" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load()} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-9d2013a3b024"> Làm mới</UiCustomText></button></div>
     {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
-    <section className="panel permission-target-panel">
-      <div className="permission-scope-tabs"><button className={scope === 'role' ? 'active' : ''} onClick={() => chooseScope('role')}>Theo nhóm</button><button className={scope === 'account' ? 'active' : ''} onClick={() => chooseScope('account')}>Theo tài khoản</button></div>
+    <section data-ui-key="u-651db1ae818d" className="panel permission-target-panel">
+      <UiToolbar data-ui-key="u-a0020edbc857" className="permission-scope-tabs"><button data-ui-key="u-f183ddd5f06a" data-ui-label-default="Theo nhóm" className={scope === 'role' ? 'active' : ''} onClick={() => chooseScope('role')}><UiCustomText uiKey="u-f183ddd5f06a">Theo nhóm</UiCustomText></button><button data-ui-key="u-cd99f6cb1fbe" data-ui-label-default="Theo tài khoản" className={scope === 'account' ? 'active' : ''} onClick={() => chooseScope('account')}><UiCustomText uiKey="u-cd99f6cb1fbe">Theo tài khoản</UiCustomText></button></UiToolbar>
       <label>{scope === 'role' ? 'Chọn nhóm' : 'Chọn tài khoản'}<select value={target} onChange={(e) => chooseTarget(e.target.value)}>{scope === 'role' ? data?.roles?.map((role) => <option key={role} value={role}>{roleLabel[role] || role}</option>) : data?.accounts?.map((item) => <option key={item.username} value={item.username}>{item.username} · {roleLabel[item.role] || item.role}</option>)}</select></label>
       {scope === 'account' && <>
         <label className="inherit-toggle"><input type="checkbox" checked={inherit} onChange={(e) => e.target.checked ? resetToRolePermissions() : enablePrivatePermissions()} /> Kế thừa quyền của nhóm</label>
-        <div className="permission-account-actions">
+        <UiToolbar data-ui-key="u-ee7b6fa542d8" className="permission-account-actions">
           {inherit
-            ? <button type="button" className="secondary-button" onClick={enablePrivatePermissions}>Phân quyền riêng tài khoản này</button>
-            : <button type="button" className="secondary-button" onClick={resetToRolePermissions}>Dùng lại quyền của nhóm</button>}
+            ? <button data-ui-key="u-8fac46410269" data-ui-label-default="Phân quyền riêng tài khoản này" type="button" className="secondary-button" onClick={enablePrivatePermissions}><UiCustomText uiKey="u-8fac46410269">Phân quyền riêng tài khoản này</UiCustomText></button>
+            : <button data-ui-key="u-16144bb9f395" data-ui-label-default="Dùng lại quyền của nhóm" type="button" className="secondary-button" onClick={resetToRolePermissions}><UiCustomText uiKey="u-16144bb9f395">Dùng lại quyền của nhóm</UiCustomText></button>}
           <small>Trạng thái: <span className="permission-account-state">{inherit ? 'Đang kế thừa theo nhóm' : 'Đang phân quyền riêng'}</span>. Có thể bấm trực tiếp vào bất kỳ quyền nào để tạo ghi đè riêng.</small>
-        </div>
+        </UiToolbar>
       </>}
       <label className="permission-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm quyền…" /></label>
       <p className="permission-dependency-note"><strong>Quyền phụ thuộc được tự động đồng bộ.</strong> Mỗi khối bên dưới tương ứng một trang/menu. Có thể chọn riêng từng tác vụ. Nếu một tác vụ cần quyền mở trang, hệ thống tự bật quyền nền đó; khi tắt quyền mở trang, các tác vụ phụ thuộc cũng tự tắt.</p>
     </section>
     <div className="permission-pages">
-      {pages.map((page) => <section className="permission-page-card" key={page.id}>
+      {pages.map((page) => <section data-ui-key="u-3507366ab96e" className="permission-page-card" key={page.id}>
         <div className="permission-page-head"><h2>{page.label}</h2><span>{page.items.filter(([key]) => allowed.includes(key)).length}/{page.items.length} quyền</span></div>
         <p className="permission-page-help">Chọn đúng tác vụ được phép sử dụng trên trang này.{page.view_feature ? ' Quyền MỞ TRANG là quyền nền của menu.' : ''}</p>
-        <div className="permission-check-grid permission-page-actions">
+        <UiToolbar data-ui-key="u-96946da0cd4c" className="permission-check-grid permission-page-actions">
           {page.items.map(([key, value]) => <label key={key} className={`${allowed.includes(key) ? 'checked' : ''} ${page.view_feature === key ? 'permission-view-permission' : ''}`.trim()}><input type="checkbox" checked={allowed.includes(key)} onChange={() => toggle(key)} /><span><strong>{value}</strong><small>{key}</small></span></label>)}
-        </div>
+        </UiToolbar>
       </section>)}
     </div>
-    <div className="sticky-save-bar"><button className="primary-button" onClick={save} disabled={busy || !target}><Save size={16} /> {busy ? 'Đang lưu…' : 'Lưu phân quyền'}</button></div>
+    <div className="sticky-save-bar"><button data-ui-key="u-0ec9baa2f9fd" className="primary-button" onClick={save} disabled={busy || !target}><Save size={16} /> {busy ? 'Đang lưu…' : 'Lưu phân quyền'}</button></div>
   </div>
 }

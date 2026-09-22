@@ -1,3 +1,5 @@
+import UiToolbar from '../components/UiToolbar'
+import UiCustomText from '../components/UiCustomText'
 import { Clock3, RefreshCw, Save } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { numberInputDisplayValue } from '../lib/numberInput'
@@ -91,7 +93,7 @@ export default function ShiftBreakSettingsPanel() {
 
   const activeCount = useMemo(() => shifts.filter((row) => row.enabled).length, [shifts])
 
-  return <section className="panel shift-break-settings-panel">
+  return <section data-ui-key="u-5a661406f6e8" className="panel shift-break-settings-panel">
     <style>{`
       .shift-break-settings-panel{margin:14px 0}
       .shift-break-settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -121,11 +123,11 @@ export default function ShiftBreakSettingsPanel() {
           <p>Admin cài theo từng ca. Chấm công dùng thời lượng này để so sánh với FaceID nghỉ thực tế.</p>
         </div>
       </div>
-      <div className="shift-break-actions">
-        <button type="button" className="secondary-button" onClick={() => setOpen((value) => !value)}>{open ? 'Thu gọn' : `Cài đặt (${activeCount || '...'})`}</button>
-        {open && <button type="button" className="secondary-button" onClick={load} disabled={loading || saving}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Làm mới</button>}
-        {open && <button type="button" className="primary-button" onClick={save} disabled={loading || saving}><Save size={15} /> {saving ? 'Đang lưu...' : 'Lưu nghỉ giữa ca'}</button>}
-      </div>
+      <UiToolbar data-ui-key="u-7dd8bcfbcaa6" className="shift-break-actions">
+        <button data-ui-key="u-3e348e2bdba7" type="button" className="secondary-button" onClick={() => setOpen((value) => !value)}>{open ? 'Thu gọn' : `Cài đặt (${activeCount || '...'})`}</button>
+        {open && <button data-ui-key="u-80c3fe0b7c4b" data-ui-label-default="Làm mới" type="button" className="secondary-button" onClick={load} disabled={loading || saving}><RefreshCw size={15} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-80c3fe0b7c4b"> Làm mới</UiCustomText></button>}
+        {open && <button data-ui-key="u-11f5da8c3579" type="button" className="primary-button" onClick={save} disabled={loading || saving}><Save size={15} /> {saving ? 'Đang lưu...' : 'Lưu nghỉ giữa ca'}</button>}
+      </UiToolbar>
     </div>
 
     {open && <div className="shift-break-body">
@@ -135,7 +137,7 @@ export default function ShiftBreakSettingsPanel() {
       <div>
         <div className="shift-break-subtitle">THEO TỪNG CA</div>
         {loading && !shifts.length ? <div className="setup-note">Đang tải cấu hình ca...</div> : <div className="shift-break-grid">
-          {shifts.map((row) => <div className="shift-break-card" key={row.id}>
+          {shifts.map((row) => <div data-ui-key="u-52a7b8201ece" className="shift-break-card" key={row.id}>
             <div><strong>{row.name || row.id}</strong><br /><small>{row.department}{row.start || row.end ? ` · ${row.start || '--:--'}–${row.end || '--:--'}` : ''}</small></div>
             <label className="shift-break-toggle"><input type="checkbox" checked={Boolean(row.enabled)} onChange={(event) => updateShift(row.id, 'enabled', event.target.checked)} /> Áp dụng nghỉ giữa ca</label>
             <label className="shift-break-field">Thời lượng nghỉ (phút)<input type="number" min="0" max="360" step="5" value={numberInputDisplayValue(row.duration_minutes)} onChange={(event) => updateShift(row.id, 'duration_minutes', event.target.value)} /></label>
@@ -148,7 +150,7 @@ export default function ShiftBreakSettingsPanel() {
       <details>
         <summary className="shift-break-subtitle">MẶC ĐỊNH THEO BỘ PHẬN (dùng khi TimeSoft không khớp tên ca)</summary>
         <div className="shift-break-grid" style={{ marginTop: 8 }}>
-          {departments.map((row) => <div className="shift-break-card" key={row.department}>
+          {departments.map((row) => <div data-ui-key="u-3af4191dd2f3" className="shift-break-card" key={row.department}>
             <strong>{row.department}</strong>
             <label className="shift-break-toggle"><input type="checkbox" checked={Boolean(row.enabled)} onChange={(event) => updateDepartment(row.department, 'enabled', event.target.checked)} /> Áp dụng mặc định</label>
             <label className="shift-break-field">Thời lượng nghỉ (phút)<input type="number" min="0" max="360" step="5" value={numberInputDisplayValue(row.duration_minutes)} onChange={(event) => updateDepartment(row.department, 'duration_minutes', event.target.value)} /></label>

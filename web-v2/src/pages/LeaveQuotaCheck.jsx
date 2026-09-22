@@ -26,7 +26,7 @@ export default function LeaveQuotaCheck({ start, end }) {
     }
   }
   return <div className="leave-list-personal-summary-note">
-    <button type="button" disabled={busy || !start || !end} onClick={check}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức'}</button>
+    <button data-ui-key="u-67672e9aae74" type="button" disabled={busy || !start || !end} onClick={check}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức'}</button>
     <p>Kiểm tra tất cả nhân viên, trọn từng tháng trong khoảng ngày đang chọn. Ngày nghỉ tính đúng 0,5 ngày; cuối tuần đếm ngày Thứ Bảy/Chủ Nhật thuộc Nhóm 3; phát sinh đếm số bản ghi.</p>
     {error && <p role="alert">{error}</p>}
     {result && <div aria-live="polite">

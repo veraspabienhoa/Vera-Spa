@@ -60,9 +60,9 @@ export default function LiveTourTransactionDialog({ title, children, onClose, bu
     style={{ left: view.left, top: view.top, width: view.width, height: view.height }}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <div ref={frameRef} className="tour-transaction-frame">
-      <section ref={dialogRef} tabIndex="-1" role="dialog" aria-modal="true" aria-label={title}
+      <section data-ui-key="u-28ee347d7e54" ref={dialogRef} tabIndex="-1" role="dialog" aria-modal="true" aria-label={title}
         className={`live-tour-modal tour-transaction-dialog ${className}`} style={{ width }}>
-        <div className="live-tour-modal-head"><strong>{title}</strong><button type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
+        <div className="live-tour-modal-head"><strong>{title}</strong><button data-ui-key="u-b59b73812d19" type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
         {children}
       </section>
     </div>

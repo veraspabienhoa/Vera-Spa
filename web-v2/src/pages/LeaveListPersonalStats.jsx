@@ -104,7 +104,7 @@ export default function LeaveListPersonalStats({ user }) {
       }
       ${!isAdmin ? `.leave-list-panel .penalty-chip,.daily-summary-panel .penalty-chip,.leave-list-panel .leave-records-table.with-penalty th:last-child,.leave-list-panel .leave-records-table.with-penalty td:last-child,.daily-summary-panel .daily-summary-table.with-penalty th:last-child,.daily-summary-panel .daily-summary-table.with-penalty td:last-child{display:none!important}` : ''}
     `}</style>
-    <section className={`leave-list-personal-summary ${isAdmin ? 'admin' : ''}`} aria-live="polite">
+    <section data-ui-key="u-951352fc0cc8" className={`leave-list-personal-summary ${isAdmin ? 'admin' : ''}`} aria-live="polite">
       <div className="leave-list-personal-summary-head"><strong>THỐNG KÊ TRONG DANH SÁCH</strong><span>{subtitle}</span></div>
       <div className="leave-list-personal-summary-grid">{stats.map((item) => <div className={`leave-list-personal-stat ${item.key}`} key={item.key}><div className="leave-list-personal-stat-label">{item.icon && <span aria-hidden="true">{item.icon}</span>}{item.label}</div><div className="leave-list-personal-stat-value">{busy ? '…' : item.value}</div></div>)}</div>
       <div className="leave-list-personal-summary-note">Tổng ngày nghỉ/Có phép cộng theo ngày thực tế (0,5 tính đúng 0,5); Phát sinh/Không phép đếm số bản ghi.{!isAdmin && ' Tiền vi phạm không hiển thị cho tài khoản này.'}</div>

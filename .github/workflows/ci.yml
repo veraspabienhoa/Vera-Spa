@@ -43,6 +43,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import py_compile
           import sys
 
@@ -67,12 +70,15 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
 
           security = Path('vera_web_v2_staff_security.py').read_text(encoding='utf-8')
           staff = Path('vera_web_v2_staff.py').read_text(encoding='utf-8')
           profile = Path('vera_web_v2_profile.py').read_text(encoding='utf-8')
-          identity_ui = Path('web-v2/src/pages/EmployeeIdentityPanel.jsx').read_text(encoding='utf-8')
-          employee_ui = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
+          identity_ui = read_ui_source(Path('web-v2/src/pages/EmployeeIdentityPanel.jsx'))
+          employee_ui = read_ui_source(Path('web-v2/src/pages/EmployeePage.jsx'))
           requirements = Path('requirements.txt').read_text(encoding='utf-8')
           dockerfile = Path('Dockerfile').read_text(encoding='utf-8')
 
@@ -111,13 +117,16 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
 
           backend = Path('vera_web_v2_contracts.py').read_text(encoding='utf-8')
           permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           api = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
-          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
-          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
-          ui = Path('web-v2/src/pages/ContractPage.jsx').read_text(encoding='utf-8')
+          app = read_ui_source(Path('web-v2/src/App.jsx'))
+          shell = read_ui_source(Path('web-v2/src/components/AppShell.jsx'))
+          ui = read_ui_source(Path('web-v2/src/pages/ContractPage.jsx'))
           client = Path('web-v2/src/lib/contractApi.js').read_text(encoding='utf-8')
           security = Path('vera_web_v2_staff_security.py').read_text(encoding='utf-8')
 
@@ -152,6 +161,9 @@ jobs:
           python - <<'PY'
           from datetime import date
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
 
           from vera_progressive_penalty import bonus, canonical_reason
 
@@ -197,12 +209,15 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           gateway = Path('vera_web_v2_auth_gateway.py').read_text(encoding='utf-8')
           entrypoint = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
           auth_client = Path('web-v2/src/lib/supabase.js').read_text(encoding='utf-8')
-          login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
+          login_page = read_ui_source(Path('web-v2/src/pages/LoginPage.jsx'))
           pages_workflow = Path('.github/workflows/vera-web-v2-pages.yml').read_text(encoding='utf-8')
           gateway_tree = ast.parse(gateway)
           public_session_node = next(
@@ -234,6 +249,9 @@ jobs:
           bash -n configure_vps_database.sh
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           local_auth = Path('vera_web_v2_local_auth.py').read_text(encoding='utf-8')
@@ -380,6 +398,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import importlib
           import sys
 
@@ -425,6 +446,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           shared = Path('vera_leave_registration_live_shared.py').read_text(encoding='utf-8')
@@ -472,6 +496,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
 
           from vera_leave_registration_shared import (
               count_unique_leave_people,
@@ -540,22 +567,22 @@ jobs:
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
           permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           shared_api = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
-          login_page = Path('web-v2/src/pages/LoginPage.jsx').read_text(encoding='utf-8')
-          leave_page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
-          tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
+          login_page = read_ui_source(Path('web-v2/src/pages/LoginPage.jsx'))
+          leave_page = read_ui_source(Path('web-v2/src/pages/LeaveRegistrationPage.jsx'))
+          tour_page = read_ui_source(Path('web-v2/src/pages/TourPage.jsx'))
           tour_break_counter = Path('vera_tour_break_counter.py').read_text(encoding='utf-8')
           leave_day_stats_api = Path('vera_web_v2_leave_day_stats.py').read_text(encoding='utf-8')
           api_entrypoint = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
           auto_check_api = Path('vera_web_v2_auto_check.py').read_text(encoding='utf-8')
           web_styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
-          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
+          shell = read_ui_source(Path('web-v2/src/components/AppShell.jsx'))
           hardening = Path('web-v2/supabase_web_v2_pilot_hardening.sql').read_text(encoding='utf-8')
           daily_stats_sql = Path('web-v2/supabase_web_v2_daily_stats.sql').read_text(encoding='utf-8')
           penalty_default = Path('web-v2/supabase_web_v2_penalty_permission_default.sql').read_text(encoding='utf-8')
           leave_watch_sql = Path('vera_postgres_phase18_leave_watch.sql').read_text(encoding='utf-8')
           push_sql = Path('vera_postgres_phase19_web_push.sql').read_text(encoding='utf-8')
           api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
-          leave_list_stats = Path('web-v2/src/pages/LeaveListPersonalStats.jsx').read_text(encoding='utf-8')
+          leave_list_stats = read_ui_source(Path('web-v2/src/pages/LeaveListPersonalStats.jsx'))
           leave_stats_helper = Path('web-v2/src/lib/leaveStats.js').read_text(encoding='utf-8')
           push_client = Path('web-v2/src/lib/pushNotifications.js').read_text(encoding='utf-8')
           service_worker = Path('web-v2/public/sw.js').read_text(encoding='utf-8')
@@ -654,6 +681,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
@@ -664,9 +694,9 @@ jobs:
           timesoft_job = Path('timesoft_sync_job.py').read_text(encoding='utf-8')
           auto_penalty_job = Path('auto_penalty_daily_job.py').read_text(encoding='utf-8')
           daily_ops_job = Path('vera_daily_ops_job.py').read_text(encoding='utf-8')
-          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
-          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
-          page = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
+          app = read_ui_source(Path('web-v2/src/App.jsx'))
+          shell = read_ui_source(Path('web-v2/src/components/AppShell.jsx'))
+          page = read_ui_source(Path('web-v2/src/pages/EmployeePage.jsx'))
           client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           requirements = Path('requirements.txt').read_text(encoding='utf-8')
@@ -716,15 +746,18 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
           permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           rules_api = Path('vera_web_v2_rules.py').read_text(encoding='utf-8')
           permission_patch = Path('vera_web_v2_rules_permission_patch.py').read_text(encoding='utf-8')
-          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
-          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
-          page = Path('web-v2/src/pages/RulesPage.jsx').read_text(encoding='utf-8')
+          app = read_ui_source(Path('web-v2/src/App.jsx'))
+          shell = read_ui_source(Path('web-v2/src/components/AppShell.jsx'))
+          page = read_ui_source(Path('web-v2/src/pages/RulesPage.jsx'))
           client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
 
@@ -760,6 +793,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import re
           import sys
 
@@ -814,6 +850,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           from decimal import Decimal, InvalidOperation
           from typing import Any
           import ast
@@ -856,6 +895,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
 
           rules = Path('vera_official_rules.py').read_text(encoding='utf-8')
           page = Path('vera_official_rules_page.py').read_text(encoding='utf-8')
@@ -888,15 +930,18 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
           permissions = Path('vera_web_v2_permissions.py').read_text(encoding='utf-8')
           module = Path('vera_web_v2_long_leave.py').read_text(encoding='utf-8')
-          page = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
-          section = Path('web-v2/src/components/LongLeaveSection.jsx').read_text(encoding='utf-8')
-          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
-          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
+          page = read_ui_source(Path('web-v2/src/pages/LeaveRegistrationPage.jsx'))
+          section = read_ui_source(Path('web-v2/src/components/LongLeaveSection.jsx'))
+          app = read_ui_source(Path('web-v2/src/App.jsx'))
+          shell = read_ui_source(Path('web-v2/src/components/AppShell.jsx'))
           client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
 
@@ -932,13 +977,16 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
           shared = Path('vera_web_v2_api_shared.py').read_text(encoding='utf-8')
           rules = Path('vera_web_v2_rules.py').read_text(encoding='utf-8')
           staff = Path('vera_web_v2_staff.py').read_text(encoding='utf-8')
-          page = Path('web-v2/src/pages/RulesPage.jsx').read_text(encoding='utf-8')
+          page = read_ui_source(Path('web-v2/src/pages/RulesPage.jsx'))
           client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
 
@@ -973,6 +1021,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
           import ast
 
           api = Path('vera_web_v2_api.py').read_text(encoding='utf-8')
@@ -985,18 +1036,18 @@ jobs:
           snapshot = Path('vera_web_v2_snapshot.py').read_text(encoding='utf-8')
           storage = Path('vera_web_v2_storage.py').read_text(encoding='utf-8')
           sql = Path('vera_postgres_phase20_admin_daily_push.sql').read_text(encoding='utf-8')
-          app = Path('web-v2/src/App.jsx').read_text(encoding='utf-8')
-          shell = Path('web-v2/src/components/AppShell.jsx').read_text(encoding='utf-8')
-          leave = Path('web-v2/src/pages/LeaveRegistrationPage.jsx').read_text(encoding='utf-8')
-          forms = Path('web-v2/src/components/LongLeaveSection.jsx').read_text(encoding='utf-8')
+          app = read_ui_source(Path('web-v2/src/App.jsx'))
+          shell = read_ui_source(Path('web-v2/src/components/AppShell.jsx'))
+          leave = read_ui_source(Path('web-v2/src/pages/LeaveRegistrationPage.jsx'))
+          forms = read_ui_source(Path('web-v2/src/components/LongLeaveSection.jsx'))
           sw = Path('web-v2/public/sw.js').read_text(encoding='utf-8')
           edge_login = Path('supabase/functions/vera-v2-login/index.ts').read_text(encoding='utf-8')
-          employee_page = Path('web-v2/src/pages/EmployeePage.jsx').read_text(encoding='utf-8')
-          employee_identity_panel = Path('web-v2/src/pages/EmployeeIdentityPanel.jsx').read_text(encoding='utf-8')
-          profile_page = Path('web-v2/src/pages/ProfilePage.jsx').read_text(encoding='utf-8')
-          storage_page = Path('web-v2/src/pages/StorageAdminPage.jsx').read_text(encoding='utf-8')
-          payroll_page = Path('web-v2/src/pages/PayrollPage.jsx').read_text(encoding='utf-8')
-          payroll_enhanced_page = Path('web-v2/src/pages/PayrollPageEnhanced.jsx').read_text(encoding='utf-8')
+          employee_page = read_ui_source(Path('web-v2/src/pages/EmployeePage.jsx'))
+          employee_identity_panel = read_ui_source(Path('web-v2/src/pages/EmployeeIdentityPanel.jsx'))
+          profile_page = read_ui_source(Path('web-v2/src/pages/ProfilePage.jsx'))
+          storage_page = read_ui_source(Path('web-v2/src/pages/StorageAdminPage.jsx'))
+          payroll_page = read_ui_source(Path('web-v2/src/pages/PayrollPage.jsx'))
+          payroll_enhanced_page = read_ui_source(Path('web-v2/src/pages/PayrollPageEnhanced.jsx'))
           payroll_v38 = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
           payroll_timesoft = Path('vera_web_v2_payroll_timesoft_auto.py').read_text(encoding='utf-8')
           timesoft_job = Path('timesoft_sync_job.py').read_text(encoding='utf-8')
@@ -1008,14 +1059,14 @@ jobs:
           department_payroll = Path('vera_web_v2_department_payroll.py').read_text(encoding='utf-8')
           revenue = Path('vera_web_v2_revenue_leave_list.py').read_text(encoding='utf-8')
           work_schedule = Path('vera_web_v2_work_schedule.py').read_text(encoding='utf-8')
-          work_schedule_page = Path('web-v2/src/pages/WorkSchedulePage.jsx').read_text(encoding='utf-8')
+          work_schedule_page = read_ui_source(Path('web-v2/src/pages/WorkSchedulePage.jsx'))
           build = Path('cloudbuild.yaml').read_text(encoding='utf-8')
-          payroll_v38_page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
-          snapshot_page = Path('web-v2/src/pages/SnapshotPage.jsx').read_text(encoding='utf-8')
-          department_payroll_page = Path('web-v2/src/pages/DepartmentPayrollPanel.jsx').read_text(encoding='utf-8')
-          department_payroll_settings_page = Path('web-v2/src/pages/DepartmentPayrollSettingsPage.jsx').read_text(encoding='utf-8')
+          payroll_v38_page = read_ui_source(Path('web-v2/src/pages/PayrollPageV38.jsx'))
+          snapshot_page = read_ui_source(Path('web-v2/src/pages/SnapshotPage.jsx'))
+          department_payroll_page = read_ui_source(Path('web-v2/src/pages/DepartmentPayrollPanel.jsx'))
+          department_payroll_settings_page = read_ui_source(Path('web-v2/src/pages/DepartmentPayrollSettingsPage.jsx'))
           api_client = Path('web-v2/src/lib/api.js').read_text(encoding='utf-8')
-          tour_page = Path('web-v2/src/pages/TourPage.jsx').read_text(encoding='utf-8')
+          tour_page = read_ui_source(Path('web-v2/src/pages/TourPage.jsx'))
           tour_break_counter = Path('vera_tour_break_counter.py').read_text(encoding='utf-8')
           styles = Path('web-v2/src/styles.css').read_text(encoding='utf-8')
           for source in (api, permissions, profile, payroll, payroll_v38, people, security, staff_security, snapshot, storage, revenue, work_schedule): ast.parse(source)
@@ -1060,7 +1111,7 @@ jobs:
               'Locker and Lễ tân late alerts target employee management and Admin': all(token in Path('vera_auto_penalty_notifications.py').read_text(encoding='utf-8') for token in ("IN ('admin','quanly')", '_notification_audience', 'notifications_enabled')),
               'salary departments use employee salary rows and the standard payroll email': all(token in department_payroll for token in ('"quanly": "Quản lý"', '"locker": "Locker"', '"letan": "Lễ tân"', '"tapvu": "Tạp vụ"', 'department-payroll/settings/employees', 'department_employee_salary_configs', 'department-payroll/calculate', 'department-payroll/draft', 'department-payroll/save', 'department-payroll/export.xlsx', 'department-payroll/email', 'payroll._payroll_email_subject', 'payroll._payroll_email_text', 'payroll._payroll_email_html')) and all(token in department_payroll_page for token in ('BẢNG 1 · LƯƠNG GIỜ', 'BẢNG 2 · LƯƠNG THÁNG', 'Mỗi nhân viên là một dòng', 'Tính từ chấm công', 'Lưu bảng nháp', 'Gửi email')),
               'department hourly rates match attached Locker and Lễ tân formulas': all(token in department_payroll for token in ('"locker": {', '"letan": {', '"calculation_mode": "hourly"', '"rate_ca1": 27000', '"rate_ca2_before_22": 30000', '"rate_ca2_after_22": 33000', '"full_day_allowance": 30000')),
-              'department salary configuration has an Admin-only payroll tab': all(token in Path('web-v2/src/components/PayrollTabs.jsx').read_text(encoding='utf-8') for token in ("id: 'configuration'", "label: 'Cấu hình lương'", 'allowed: admin, content: configuration')) and "page === 'payroll-config'" in app and 'settingsOnly' in department_payroll_settings_page and all(token in department_payroll for token in ('CALCULATION_MODES', '"tapvu": "monthly"', '"standard_month_days": 26')),
+              'department salary configuration has an Admin-only payroll tab': all(token in read_ui_source(Path('web-v2/src/components/PayrollTabs.jsx')) for token in ("id: 'configuration'", "label: 'Cấu hình lương'", 'allowed: admin, content: configuration')) and "page === 'payroll-config'" in app and 'settingsOnly' in department_payroll_settings_page and all(token in department_payroll for token in ('CALCULATION_MODES', '"tapvu": "monthly"', '"standard_month_days": 26')),
               'Admin can configure former employee accumulation refunds': all(token in payroll for token in ('AccumulationRefundCreate', '/v2/payroll/accumulation-refunds', '_accumulation_refund_map', 'Chỉ Admin được cài đặt hoàn trả tiền tích lũy', 'Tạm thời nghỉ việc hoặc Đã nghỉ việc')) and all(token in payroll_enhanced_page for token in ('HOÀN TRẢ TIỀN TÍCH LŨY – NHÂN VIÊN NGHỈ VIỆC', 'addAccumulationRefund', 'removeAccumulationRefund')) and all(token in api_client for token in ('payrollAccumulationRefunds', 'createPayrollAccumulationRefund', 'deletePayrollAccumulationRefund')),
               'payroll employee filtering is exact': 'needle in {norm(item.get("Tên Hệ thống")), norm(item.get("Họ và tên"))}' in payroll,
               'payroll legacy history and obligation sync are wired': all(token in payroll for token in ('/v2/payroll/history/sync-legacy', 'LEGACY_PAYROLL_WORKSHEET', 'LEGACY_OBLIGATION_WORKSHEET', '_obligation_group')) and 'syncLegacyPayroll' in api_client and 'Tải dữ liệu hệ thống cũ' in payroll_page,
@@ -1102,6 +1153,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
 
           landing = Path('vera_postlogin_default_page.py').read_text(encoding='utf-8')
           app = Path('app.py').read_text(encoding='utf-8')
@@ -1155,7 +1209,7 @@ jobs:
         run: npm ci
 
       - name: Verify inline leave editing and role policies
-        run: npm run test:leave-edit && node --test tests/autoSave.test.mjs tests/profileAutoSave.test.mjs tests/sharedLayout.test.mjs tests/layoutDesigner.test.mjs
+        run: npm run test:leave-edit && node --test tests/autoSave.test.mjs tests/profileAutoSave.test.mjs tests/sharedLayout.test.mjs tests/layoutDesigner.test.mjs tests/uiCustomization.test.mjs
 
       - name: Verify authentication transport and session recovery
         run: node --test tests/authRecovery.test.mjs tests/authSessionTransport.test.mjs
