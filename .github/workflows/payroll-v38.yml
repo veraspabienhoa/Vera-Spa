@@ -65,6 +65,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import ast
+          import sys
+          sys.path.insert(0, "tests")
+          from ui_source import read_ui_source
 
           backend = Path('vera_web_v2_payroll_v38.py').read_text(encoding='utf-8')
           debt_sync = Path('vera_web_v2_payroll_debt_sync.py').read_text(encoding='utf-8')
@@ -72,7 +75,7 @@ jobs:
           saved_edit = Path('vera_web_v2_payroll_saved_edit.py').read_text(encoding='utf-8')
           wrapper = Path('vera_web_v2_api_v38.py').read_text(encoding='utf-8')
           page = Path('web-v2/src/pages/PayrollPageV38.jsx').read_text(encoding='utf-8')
-          enhanced_page = Path('web-v2/src/pages/PayrollPageEnhanced.jsx').read_text(encoding='utf-8')
+          enhanced_page = read_ui_source(Path('web-v2/src/pages/PayrollPageEnhanced.jsx'))
           enhanced_css = Path('web-v2/src/pages/PayrollPageEnhanced.css').read_text(encoding='utf-8')
           debt_admin = Path('web-v2/src/pages/PayrollDebtAdminPanel.jsx').read_text(encoding='utf-8')
           saved_admin = Path('web-v2/src/pages/PayrollSavedAdminPanel.jsx').read_text(encoding='utf-8')
