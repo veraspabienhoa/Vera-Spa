@@ -403,3 +403,14 @@ was incompatible with the process-environment fallback already used by deploymen
 The correction reads only allowlisted settings from validated API processes,
 rejects disagreement, and persists storage mode separately from DB/Auth settings.
 This code change alone does not establish successful production activation.
+
+## 23-09-2026: activation failed before stopping writers
+
+Maintenance run 35827575962 at ed90908b selected activate. The automatic status
+check returned ok=true, mode=shadow, resource_ready=false. The next helper exited
+with the generic maintenance subprocess error before printing the stopping-writers
+marker. The code path suggests the noninteractive sudo authorization probe; the
+old log suppresses subprocess details, so the exact VPS policy cause remains
+unverified. Add safe command-specific authorization errors and read-only preflight
+results to status. No permissions are expanded and no production cutover is
+established by this diagnostic change.

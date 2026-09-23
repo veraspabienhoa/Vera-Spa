@@ -280,6 +280,7 @@ def test_status_works_without_managed_file_and_never_changes_service(tmp_path, m
     monkeypatch.setattr(maintenance, 'load_managed_runtime_environment', lambda: False)
     monkeypatch.setattr(maintenance, 'api_processes', lambda: [proc])
     monkeypatch.setattr(maintenance, 'Service', lambda sha: object())
+    monkeypatch.setattr(maintenance, 'activation_preflight', lambda service: {'ok': True})
     monkeypatch.setattr(maintenance, 'health', lambda: 'shadow')
     monkeypatch.setattr(maintenance.relational, 'resource_ready', lambda conn: False)
     conn = SimpleNamespace(rollback=lambda: None)
@@ -288,6 +289,7 @@ def test_status_works_without_managed_file_and_never_changes_service(tmp_path, m
     monkeypatch.setattr(maintenance, 'write_private', lambda *a: pytest.fail('status wrote configuration'))
     assert maintenance._run('status', 'a' * 40) == {
         'ok': True, 'mode': 'shadow', 'resource_ready': False, 'changed': False,
+        'activation_preflight': {'ok': True},
     }
 
 
@@ -300,3 +302,39 @@ def test_schema_cli_honors_separate_override(monkeypatch):
     monkeypatch.setattr(schema, 'create_engine', lambda *a, **kw: object())
     schema._runtime_engine()
     assert runtime.os.environ[maintenance.MODE_KEY] == 'active'
+
+
+def test_sudo_check_failure_identifies_exact_command_without_stderr(monkeypatch):
+    service = maintenance.Service.__new__(maintenance.Service)
+    service.scope, service.unit = 'system', 'vera-api.service'
+    service.ctl = ['/usr/bin/systemctl']
+    monkeypatch.setattr(maintenance.os, 'getuid', lambda: 1000)
+    monkeypatch.setattr(maintenance, 'command', lambda *a, **kw:
+                        (_ for _ in ()).throw(maintenance.MaintenanceError('secret stderr')))
+    with pytest.raises(maintenance.MaintenanceError) as exc:
+        service.authorize()
+    assert '/usr/bin/systemctl stop vera-api.service' in str(exc.value)
+    assert 'secret' not in str(exc.value)
+
+
+def test_preflight_reports_all_missing_requirements_without_stopping(monkeypatch):
+    service = SimpleNamespace(unit='vera-api.service', scope='system',
+        authorize=lambda: (_ for _ in ()).throw(maintenance.MaintenanceError('sudo check failed')))
+    monkeypatch.setattr(maintenance.shutil, 'which', lambda binary: None)
+    monkeypatch.setenv('DB_PORT', '6543')
+    result = maintenance.activation_preflight(service)
+    assert not result['ok']
+    assert len(result['errors']) == 4
+    assert result['service'] == 'vera-api.service'
+
+
+def test_authorization_checks_both_actions_without_running_them(monkeypatch):
+    service = maintenance.Service.__new__(maintenance.Service)
+    service.scope, service.unit = 'system', 'vera-api.service'
+    service.ctl = ['/usr/bin/systemctl']
+    calls = []
+    monkeypatch.setattr(maintenance.os, 'getuid', lambda: 1000)
+    monkeypatch.setattr(maintenance, 'command', lambda args: calls.append(args))
+    service.authorize()
+    assert calls == [ ['sudo', '-n', '-l', '/usr/bin/systemctl', action, 'vera-api.service']
+                     for action in ('stop', 'start') ]
