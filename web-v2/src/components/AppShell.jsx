@@ -374,7 +374,6 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
         @media(max-width:820px){.topbar-title.vera-script-tagline{font-size:23px;line-height:1.05;font-weight:900;color:var(--gold)}.break-alert-stack{width:calc(100vw - 12px);max-height:calc(100vh - 72px)}.break-alert-toolbar{padding:6px}.break-alert-card{padding:7px 8px}.break-alert-global-off{right:6px;top:70px}}
         .sidebar-footer{flex-shrink:0}
         .sidebar .nav-list > :is(a,button){order:0!important}
-        @media(max-width:820px){.nav-list .appearance-menu-item{display:none!important}}
         @media(max-width:430px){.topbar{flex-wrap:wrap}.topbar-actions{width:100%;justify-content:flex-end}.topbar-title.vera-script-tagline{font-size:20px;white-space:normal}.break-alert-toolbar{align-items:flex-start}.break-alert-toolbar-actions{flex-wrap:wrap;justify-content:flex-end}}
       `}</style>
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''} ${standalone && !standaloneMenuOpen ? 'standalone-hidden' : ''}`}>
