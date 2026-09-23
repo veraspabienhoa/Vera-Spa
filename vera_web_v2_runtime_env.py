@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 RUNTIME_ENV_RELATIVE_PATH = Path(".config/vera-spa/web-v2-api.env")
+LIVE_TOUR_MODE_RELATIVE_PATH = Path(".config/vera-spa/live-tour-storage.env")
 REQUIRED_RUNTIME_ENV_KEYS = frozenset({
     "VERA_DB_ENABLED",
     "VERA_DATA_BACKEND",
@@ -128,4 +129,28 @@ def load_managed_runtime_environment() -> bool:
                 os.environ[key] = value
         raise RuntimeError("Web V2 managed runtime environment could not be applied")
     print("Web V2 runtime environment: managed PostgreSQL/Auth settings loaded")
+    return True
+
+
+def load_live_tour_mode_override() -> bool:
+    """Load only storage mode, without replacing systemd DB/Auth settings."""
+    path = Path(pwd.getpwuid(os.getuid()).pw_dir) / LIVE_TOUR_MODE_RELATIVE_PATH
+    try:
+        content = _read_private_file(path)
+    except FileNotFoundError:
+        return False
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise RuntimeError("Live Tour mode override is unsafe") from exc
+    lines = [line.strip() for line in content.splitlines()
+             if line.strip() and not line.lstrip().startswith('#')]
+    key = 'VERA_LIVE_TOUR_RELATIONAL_MODE'
+    if len(lines) != 1 or lines[0].partition('=')[0].strip() != key:
+        raise RuntimeError("Live Tour mode override is invalid")
+    try:
+        mode = _decode_value(lines[0].partition('=')[2].strip())
+    except ValueError as exc:
+        raise RuntimeError("Live Tour mode override is invalid") from exc
+    if mode not in {'off', 'shadow', 'verify', 'active'}:
+        raise RuntimeError("Live Tour mode override is invalid")
+    os.environ[key] = mode
     return True
