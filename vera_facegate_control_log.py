@@ -96,6 +96,8 @@ def parse_control_log_response(body: str) -> dict[str, Any]:
         if section == "ERR":
             values[f"ERR.{key}"] = value
             continue
+        if section != "CONTROL":
+            continue
         item_match = _ITEM_KEY.fullmatch(key)
         if item_match:
             index = int(item_match.group("index"))
