@@ -1290,7 +1290,8 @@ def test_all_representative_mutation_groups_require_idempotency_keys_at_api_boun
     assert body.idempotency_key == "request-123"
 
 
-def test_optimistic_write_rejects_stale_revision():
+def test_optimistic_write_rejects_stale_revision(monkeypatch):
+    monkeypatch.setattr(live.relational_store, "resource_ready", lambda conn: False)
     class Result:
         rowcount = 0
 

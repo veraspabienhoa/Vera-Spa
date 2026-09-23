@@ -1,0 +1,91 @@
+name: Live Tour Storage Maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'status: inspect; activate: enable resource locks; rollback: export current data back'
+        required: true
+        default: status
+        type: choice
+        options:
+          - status
+          - activate
+          - rollback
+
+permissions:
+  contents: read
+
+# The same lock as deployment prevents release changes during maintenance.
+concurrency:
+  group: vera-vps-production
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Checkout requested release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Require current main and validate action
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          case "$ACTION" in status|activate|rollback) ;; *) exit 2 ;; esac
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Verify runtime and perform requested maintenance
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          RELEASE_SHA: ${{ github.sha }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=20 \
+            -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "bash -s -- '$RELEASE_SHA' '$ACTION'" <<'REMOTE'
+          set -euo pipefail
+          release_sha=$1
+          action=$2
+          pid=$(pgrep -n -f '[v]era_web_v2_api_v38:app')
+          release_dir=$(readlink -f "/proc/$pid/cwd")
+          test "$(git -C "$release_dir" rev-parse HEAD)" = "$release_sha" || {
+            echo 'Deploy this exact main commit before running Live Tour maintenance.'
+            exit 1
+          }
+          test -f "$release_dir/vera_live_tour_maintenance.py"
+          cd "$release_dir"
+          /opt/vera-spa/.venv/bin/python vera_live_tour_maintenance.py --sha "$release_sha" --action "$action"
+          REMOTE
+
+      - name: Publish safe result summary
+        if: always()
+        env:
+          ACTION: ${{ inputs.action }}
+          RESULT: ${{ job.status }}
+        run: |
+          printf 'Live Tour action: **%s**. Result: **%s**.\n\n' "$ACTION" "$RESULT" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Backups stay private on the VPS. This workflow does not measure a speed multiplier. On failure, inspect the maintenance phase file before restarting or changing storage flags.\n' >> "$GITHUB_STEP_SUMMARY"

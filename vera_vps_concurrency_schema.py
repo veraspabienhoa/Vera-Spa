@@ -70,19 +70,7 @@ def _backfill(conn) -> dict:
               value=GREATEST({concurrency.COUNTER_TABLE}.value,EXCLUDED.value), updated_at=NOW()
         """), {"key": str(row["source_sheet_id"] or ""), "value": int(row["current_value"] or 1)})
 
-    aggregate = conn.execute(text("""
-        SELECT value_json,revision FROM vera_app_setting
-        WHERE category='live_tour' AND setting_key='state'
-    """)).mappings().first()
-    mirrored = {"upserted": 0, "deleted": 0}
-    if aggregate and live_tour.mode() != "active":
-        state = aggregate["value_json"]
-        if not isinstance(state, dict):
-            state = json.loads(state)
-        previous, _ = live_tour.load_state(conn)
-        mirrored = live_tour.sync_changes(
-            conn, previous, state, int(aggregate["revision"] or 0), force=True,
-        )
+    mirrored = _backfill_live_tour(conn)
     conn.execute(text("""
         INSERT INTO vera_schema_version(component,version,updated_at)
         VALUES('system_resource_concurrency',1,NOW())
@@ -90,6 +78,25 @@ def _backfill(conn) -> dict:
           version=GREATEST(vera_schema_version.version,EXCLUDED.version), updated_at=NOW()
     """))
     return {"live_tour": mirrored, "revenue": revenue_bootstrap}
+
+
+def _backfill_live_tour(conn) -> dict:
+    # Serialize shadow snapshots against all regular writers and cutover.
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": "vera:v2:live_tour:state"})
+    aggregate = conn.execute(text("""
+        SELECT value_json,revision FROM vera_app_setting
+        WHERE category='live_tour' AND setting_key='state'
+    """)).mappings().first()
+    mirrored = {"upserted": 0, "deleted": 0}
+    if aggregate and live_tour.mode() != "active" and not live_tour.resource_ready(conn):
+        state = aggregate["value_json"]
+        if not isinstance(state, dict):
+            state = json.loads(state)
+        previous, _ = live_tour.load_state(conn)
+        mirrored = live_tour.sync_changes(
+            conn, previous, state, int(aggregate["revision"] or 0), force=True,
+        )
+    return mirrored
 
 
 def _verify(conn) -> dict:
@@ -104,7 +111,10 @@ def _verify(conn) -> dict:
         WHERE category='live_tour' AND setting_key='state'
     """)).mappings().first()
     parity = {"ok": True, "empty": True}
-    if live_tour.mode() == "active":
+    ready = live_tour.resource_ready(conn)
+    if ready != (live_tour.mode() == "active"):
+        return {"ok": False, "storage_mode_mismatch": True}
+    if ready:
         canonical, revision = live_tour.load_state(conn)
         parity = {"ok": bool((canonical or {}).get("_resource_ready")), "mode": "active", "revision": revision}
     elif aggregate:
@@ -121,10 +131,13 @@ def _verify(conn) -> dict:
 
 
 def _runtime_engine():
+    # Discard unrelated shell flags before loading the API managed override.
+    running = _running_api_environment()
+    os.environ["VERA_LIVE_TOUR_RELATIONAL_MODE"] = running.get("VERA_LIVE_TOUR_RELATIONAL_MODE", "shadow")
     loaded = load_managed_runtime_environment()
     environment = (
         {key: os.environ.get(key, "") for key in RUNTIME_ENV_KEYS}
-        if loaded else _running_api_environment()
+        if loaded else running
     )
     if not environment:
         raise RuntimeError("runtime environment unavailable")

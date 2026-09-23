@@ -3529,6 +3529,8 @@ def _write_state(
         if previous_state is None:
             raise RuntimeError("Resource writes require the original snapshot")
         return resource_store.write(conn, previous_state, state, actor)
+    # Outside the best-effort shadow savepoint: never commit a stale aggregate.
+    relational_store.assert_aggregate_writable(conn)
     if previous_state is None and relational_store.mode() != "off":
         try:
             current = conn.execute(text("""

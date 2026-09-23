@@ -315,3 +315,66 @@ def test_start_retry_counts_tour_once_and_stale_new_request_is_rejected(database
     assert state['employees'][0]['tour_count'] == 1
     assert current_revision == revision + 1
     assert not any(row['_manual_order'] for row in retry.json()['records'])
+
+
+@pytest.mark.parametrize('shell_mode', ['shadow', 'off', 'verify'])
+def test_deploy_backfill_never_overwrites_active_rows_even_with_wrong_shell_mode(database, monkeypatch, shell_mode):
+    from vera_vps_concurrency_schema import _backfill_live_tour
+    with database.begin() as conn:
+        state, _, _ = begin(conn, 'e1')
+        changed = deepcopy(state)
+        changed['employees'][0]['vip'] = True
+        store.write(conn, state, changed, 'admin')
+    monkeypatch.setenv('VERA_LIVE_TOUR_RELATIONAL_MODE', shell_mode)
+    with database.begin() as conn:
+        assert _backfill_live_tour(conn) == {'upserted': 0, 'deleted': 0}
+        canonical, revision, _ = store.read(conn)
+        assert canonical['employees'][0]['vip'] and revision == 8
+    with pytest.raises(RuntimeError, match='authoritative'):
+        with database.begin() as conn:
+            relational.sync_changes(conn, canonical, {}, 1, force=True)
+    # This guard is outside the best-effort shadow savepoint, including off mode.
+    with pytest.raises(RuntimeError, match='authoritative'):
+        with database.begin() as conn:
+            live._write_state(conn, canonical, 7, 'wrong-runtime')
+    with database.begin() as conn:
+        assert store.read(conn)[1] == 8
+        assert conn.execute(text("SELECT revision FROM vera_app_setting WHERE category='live_tour'")).scalar_one() == 7
+
+
+def test_maintenance_fences_survive_commit_and_block_both_writer_generations(database):
+    from vera_live_tour_maintenance import acquire_fences, verify_fences
+    from vera_web_v2_live_tour_lock import try_state_lock
+    with database.connect() as maintenance:
+        acquire_fences(maintenance)
+        verify_fences(maintenance)
+        with database.begin() as writer:
+            assert not try_state_lock(writer, 'vera:v2:live_tour:state')
+        with database.begin() as writer:
+            with pytest.raises(HTTPException) as error:
+                begin(writer, 'e1')
+            assert error.value.status_code == 503
+        maintenance.execute(text('SELECT pg_advisory_unlock_all()'))
+        maintenance.commit()
+    with database.begin() as writer:
+        assert try_state_lock(writer, 'vera:v2:live_tour:state')
+        assert begin(writer, 'e1')[2]
+
+
+def test_maintenance_export_back_then_activate_preserves_current_data(database):
+    from vera_live_tour_maintenance import acquire_fences, migrate
+    with database.begin() as conn:
+        state, _, _ = begin(conn, 'e1')
+        changed = deepcopy(state)
+        changed['employees'][0]['vip'] = True
+        changed['idempotency']['paid-retry'] = {'status': 'completed', 'result': {'total': 123}}
+        store.write(conn, state, changed, 'admin')
+    with database.connect() as conn:
+        acquire_fences(conn)
+        exported = migrate(conn, rollback=True)
+        activated = migrate(conn, rollback=False)
+        assert exported['revision'] == activated['revision'] == 8
+        assert activated['state']['employees'][0]['vip']
+        assert activated['state']['idempotency']['paid-retry']['result']['total'] == 123
+        conn.execute(text('SELECT pg_advisory_unlock_all()'))
+        conn.commit()

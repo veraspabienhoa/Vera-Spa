@@ -1599,16 +1599,19 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 
 @app.get("/v2/health")
 def health():
+    import vera_live_tour_relational as storage
     with _engine_instance().connect() as conn:
         conn.execute(text("SELECT 1"))
+        ready = storage.resource_ready(conn)
+    if ready != (storage.mode() == "active"):
+        raise HTTPException(503, "Live Tour storage mode does not match the database")
     return {
         "ok": True,
         "service": "vera-web-v2-api",
         "version": "3.8-payroll-export-settings",
         "resource_lock_mode": resource_concurrency.lock_mode(),
-        "live_tour_relational_mode": str(
-            os.getenv("VERA_LIVE_TOUR_RELATIONAL_MODE", "shadow") or "shadow"
-        ).strip().lower(),
+        "live_tour_relational_mode": storage.mode(),
+        "live_tour_storage_ready": ready,
     }
 
 
