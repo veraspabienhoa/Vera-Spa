@@ -325,6 +325,16 @@ export const veraApi = {
   deletePayrollObligation: (id) => request(`/v2/payroll/obligations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   attendanceSource: () => request('/v2/devices/attendance-source'),
+  facegateControlLog: (start, end) => request(`/v2/devices/control-log?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  facegateCaptureLog: (start, end) => request(`/v2/devices/capture-log?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  facegateCaptureImage: (imageRef) => {
+    const params = new URLSearchParams({
+      file_type: String(imageRef.file_type), file_index: String(imageRef.file_index),
+      file_position: String(imageRef.file_position), time: imageRef.time,
+    })
+    return binaryResponse(`/v2/devices/capture-log/image?${params}`, {}, 'Không tải được ảnh FaceGate')
+      .then(response => response.blob())
+  },
   autoCheck: (start = '', end = '') => {
     const params = new URLSearchParams()
     if (start && end) {

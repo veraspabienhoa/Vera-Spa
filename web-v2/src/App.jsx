@@ -231,7 +231,7 @@ export default function App() {
         {page === 'training' && <TrainingPage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
         {page === 'devices' && shellUser.role === 'admin' && <DevicePage />}
-        {page === 'checkin-history' && (shellUser.role === 'admin' || shellUser.permissions?.snapshot_today) && <CheckinHistoryPage />}
+        {page === 'checkin-history' && shellUser.role === 'admin' && <CheckinHistoryPage />}
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
