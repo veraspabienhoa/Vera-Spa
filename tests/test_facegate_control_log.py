@@ -178,10 +178,32 @@ root.ERR.des=ok
         "device_name": "Nhân viên A",
         "status_code": "1",
         "type_code": "0",
+        "registration_ref": None,
     }]
     assert "usimilarity" not in repr(result)
     assert "MjCardNo" not in repr(result)
     assert "dwfilepos" not in repr(result)
+
+  def test_control_registration_reference_never_uses_capture_pointer(self):
+    body = """root.CONTROL.sessionid=4 root.CONTROL.totalcount=1 root.CONTROL.rspcount=1
+root.CONTROL.ITEM0.uid=10 root.CONTROL.ITEM0.uname=Test A root.CONTROL.ITEM0.utime=2026-09-23/19:50:05
+root.CONTROL.ITEM0.dwfiletype=0 root.CONTROL.ITEM0.dwfileindex=0 root.CONTROL.ITEM0.dwfilepos=12000
+root.CONTROL.ITEM0.cfiletype=2 root.CONTROL.ITEM0.cfileindex=9 root.CONTROL.ITEM0.cfilepos=34000
+root.ERR.no=0"""
+    result = facegate.parse_control_log_response(body)['records'][0]
+    self.assertEqual(result['registration_ref'], {'file_type': 0, 'file_index': 0, 'file_position': 12000})
+    self.assertNotIn('34000', repr(result))
+    self.assertIsNone(facegate.registration_ref({'dwfiletype': 2, 'dwfileindex': 9, 'dwfilepos': 34000}))
+
+  def test_profile_requires_exact_id_success_and_valid_registration_reference(self):
+    body = 'root.LIST.uid=7 root.LIST.uname=Test A root.LIST.dwfiletype=0 root.LIST.dwfileindex=0 root.LIST.dwfilepos=12000 root.ERR.no=0'
+    with patch.dict('os.environ', {'VERA_FACEGATE_BASE_URL': 'http://127.0.0.1:18080', 'VERA_FACEGATE_USERNAME': 'test', 'VERA_FACEGATE_PASSWORD': 'test'}):
+      result = facegate.fetch_registered_profile(7, get=lambda *a, **kw: _response(body))
+      self.assertEqual(result['profile_id'], 7)
+      self.assertEqual(result['registration_ref']['file_position'], 12000)
+      for invalid in [body.replace('uid=7', 'uid=8'), body.replace('no=0', 'no=1'), body.replace('dwfiletype=0', 'dwfiletype=2'), 'root.ERR.no=0']:
+        with self.assertRaises(ValueError):
+          facegate.fetch_registered_profile(7, get=lambda *a, **kw: _response(invalid))
 
 
   def test_fetch_uses_control_group_and_device_session_pagination(self):
@@ -270,6 +292,99 @@ root.ERR.no=0 root.ERR.des=ok""")
       facegate.parse_control_log_response("root.CONTROL.totalcount=0 root.ERR.no=7")
     with self.assertRaisesRegex(ValueError, "không đúng định dạng"):
       facegate.parse_control_log_response("<html><title>login</title></html>")
+
+
+class FaceGateMappingRouteTests(unittest.TestCase):
+  def setUp(self):
+    import copy
+    import json
+    from contextlib import contextmanager
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from pydantic import BaseModel
+    from vera_web_v2_snapshot import install_snapshot_routes
+
+    class Identity(BaseModel):
+      username: str = 'admin-test'
+      role: str = 'admin'
+
+    self.ident = Identity()
+    self.rows = []
+    self.connection_open = False
+    self.sql = []
+    owner = self
+
+    class Connection:
+      def execute(self, statement, params):
+        sql = str(statement)
+        owner.sql.append(sql)
+        if sql.startswith('SELECT username'):
+          value = params['username'] if params['username'] == 'vera-test' else None
+        elif sql.startswith('SELECT value_json'):
+          value = copy.deepcopy(owner.rows)
+        else:
+          value = None
+          if sql.startswith('UPDATE vera_app_setting'):
+            owner.rows = json.loads(params['value'])
+        return SimpleNamespace(scalar_one_or_none=lambda: value)
+
+    class Engine:
+      @contextmanager
+      def connect(self):
+        owner.connection_open = True
+        try:
+          yield Connection()
+        finally:
+          owner.connection_open = False
+      begin = connect
+
+    app = FastAPI()
+    install_snapshot_routes(app, engine_instance=lambda: Engine(), current_identity=lambda: self.ident,
+                            require_feature=lambda *a: None, identity_type=Identity)
+    self.client = TestClient(app)
+    self.ref = {'file_type': 0, 'file_index': 0, 'file_position': 12000}
+    self.profile = {'profile_id': 7, 'device_name': 'Test A', 'registration_ref': self.ref}
+    self.body = {**self.profile, 'username': 'vera-test', 'employee_code': 'EMPTEST', 'confirmed': True}
+    self.env = patch.dict('os.environ', {'VERA_FACEGATE_DEVICE_ID': 'device-test'})
+    self.env.start()
+    self.addCleanup(self.env.stop)
+
+  def device_read(self, uid):
+    self.assertFalse(self.connection_open, 'Device HTTP must run outside database connections')
+    return self.profile
+
+  def test_admin_confirmation_required_before_device_or_database_access(self):
+    with patch.object(facegate, 'fetch_registered_profile') as read:
+      self.ident.role = 'nhanvien'
+      self.assertEqual(self.client.post('/v2/devices/facegate-mappings', json=self.body).status_code, 403)
+      self.assertEqual(self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref}).status_code, 403)
+      self.ident.role = 'admin'
+      self.assertEqual(self.client.post('/v2/devices/facegate-mappings', json={**self.body, 'confirmed': False}).status_code, 400)
+      read.assert_not_called()
+      self.assertEqual(self.sql, [])
+
+  def test_save_conflicts_and_check_live_profile(self):
+    with patch.object(facegate, 'fetch_registered_profile', side_effect=self.device_read):
+      response = self.client.post('/v2/devices/facegate-mappings', json=self.body)
+      self.assertEqual(response.status_code, 200, response.text)
+      self.assertTrue(any('FOR UPDATE' in sql for sql in self.sql))
+      result = self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref})
+      self.assertEqual(result.json()['status'], 'reference_match')
+      self.assertEqual(result.json()['employee_code'], 'EMPTEST')
+      # Same profile cannot silently move to a different employee code.
+      self.assertEqual(self.client.post('/v2/devices/facegate-mappings', json={**self.body, 'employee_code': 'OTHER'}).status_code, 409)
+      # A changed reference invalidates both the old preview and a log check.
+      self.profile = {**self.profile, 'registration_ref': {**self.ref, 'file_position': 13000}}
+      self.assertEqual(self.client.post('/v2/devices/facegate-mappings', json=self.body).status_code, 409)
+      self.assertEqual(self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref}).json()['status'], 'changed')
+    with patch.object(facegate, 'fetch_registered_profile', side_effect=ConnectionError('Không kết nối được thiết bị.')):
+      self.assertEqual(self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref}).status_code, 502)
+
+  def test_unmapped_reference_does_not_read_device(self):
+    with patch.object(facegate, 'fetch_registered_profile') as read:
+      result = self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref})
+      self.assertEqual(result.json()['status'], 'unmapped')
+      read.assert_not_called()
 
 
 if __name__ == "__main__":
