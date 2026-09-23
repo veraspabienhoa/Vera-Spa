@@ -182,3 +182,20 @@ current location, and no systemd permissions are changed. Failed activation
 restores the old override, or removes the newly created file if none existed.
 The private manifest records `mode_override_existed` for manual recovery.
 `activate` and `rollback` also run an explicit `status` check before maintenance.
+
+### Activation preflight diagnostics
+
+`status` reports `activation_preflight` separately from API/database health.
+Its `service`, `scope` and `errors` identify missing noninteractive service-control
+permissions, missing PostgreSQL clients, or the unsupported transaction-pool port.
+`ok=true` at the top level means storage health passed; inspect
+`activation_preflight.ok` before attempting activation. These checks do not stop
+writers, grant sudo permissions, or install software. Activation refuses the same
+missing requirements before stopping the API.
+
+If the sudo authorization check fails, the VPS administrator must inspect the
+existing policy for the exact command/service reported in `errors`. Deployment
+permission to run deploy.sh or restart a service does not necessarily authorize
+separate stop/start commands. Do not use broad NOPASSWD ALL, bypass service
+control with process signals, or disable permission checks. A successful
+preflight is not a full backup/restore rehearsal or a performance measurement.

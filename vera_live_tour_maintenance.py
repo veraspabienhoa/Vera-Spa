@@ -102,7 +102,14 @@ class Service:
     def authorize(self):
         if self.scope == 'system' and os.getuid() != 0:
             for action in ('stop', 'start'):
-                command(['sudo', '-n', '-l', *self.ctl, action, self.unit])
+                try:
+                    command(['sudo', '-n', '-l', *self.ctl, action, self.unit])
+                except MaintenanceError:
+                    raise MaintenanceError(
+                        'noninteractive sudo authorization check failed for '
+                        + shlex.join([*self.ctl, action, self.unit])
+                        + '; ask the VPS administrator to verify this exact service permission'
+                    ) from None
             self.control = ['sudo', '-n', *self.ctl]
 
     def verify_release(self):
@@ -208,6 +215,21 @@ def restore_mode_configuration(path, original):
             os.fsync(fd)
         finally:
             os.close(fd)
+
+
+def activation_preflight(service):
+    """Read-only capability checks; never stop services or change sudo policy."""
+    errors = []
+    try:
+        service.authorize()
+    except MaintenanceError as exc:
+        errors.append(str(exc))
+    for binary in ('pg_dump', 'pg_restore'):
+        if not shutil.which(binary):
+            errors.append('required PostgreSQL client not found: ' + binary)
+    if os.environ.get('DB_PORT') == '6543':
+        errors.append('use a direct or session-pooled database connection for maintenance')
+    return {'ok': not errors, 'service': service.unit, 'scope': service.scope, 'errors': errors}
 
 
 def acquire_fences(conn):
@@ -335,13 +357,14 @@ def _run(action, sha):
         if ready != (old_mode == 'active'):
             raise MaintenanceError('API mode and database authority disagree')
         conn.rollback()
-        if action == 'status' or (action == 'activate' and ready) or (action == 'rollback' and not ready):
+        if action == 'status':
+            return {'ok': True, 'mode': old_mode, 'resource_ready': ready, 'changed': False,
+                    'activation_preflight': activation_preflight(service)}
+        if (action == 'activate' and ready) or (action == 'rollback' and not ready):
             return {'ok': True, 'mode': old_mode, 'resource_ready': ready, 'changed': False}
-        if os.environ.get('DB_PORT') == '6543':
-            raise MaintenanceError('use a direct or session-pooled database connection for maintenance')
-        service.authorize()
-        if not all(shutil.which(binary) for binary in ('pg_dump', 'pg_restore')):
-            raise MaintenanceError('install compatible pg_dump and pg_restore on VPS before activation')
+        preflight = activation_preflight(service)
+        if not preflight['ok']:
+            raise MaintenanceError('activation preflight failed before stopping writers: ' + '; '.join(preflight['errors']))
         home = Path(pwd.getpwuid(os.getuid()).pw_dir)
         path = home / LIVE_TOUR_MODE_RELATIVE_PATH
         try:
