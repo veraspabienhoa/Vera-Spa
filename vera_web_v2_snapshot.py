@@ -299,6 +299,22 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
             raise HTTPException(400, "Chấm công chỉ cho xem tối đa 63 ngày mỗi lần.")
         return start, end
 
+    @app.get('/v2/devices/attendance-source')
+    def attendance_source(ident: identity_type = Depends(current_identity)):
+        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xem tình trạng nguồn chấm công.')
+        with engine_instance().connect() as conn:
+            row = conn.execute(text("""
+                SELECT row_count, updated_at, expires_at, expires_at > NOW() AS is_fresh
+                FROM vera_dataset_cache WHERE dataset_key='timesoft_employee_checkin_today'
+            """)).mappings().first()
+        return {
+            'source': 'timesoft', 'device_connection_verified': False,
+            'last_sync_at': row['updated_at'].isoformat() if row and row['updated_at'] else None,
+            'row_count': int(row['row_count']) if row else 0,
+            'cache_fresh': bool(row['is_fresh']) if row else False,
+        }
+
     @app.get("/v2/snapshot")
     def snapshot(start: date = Query(...), end: date = Query(...), ident: identity_type = Depends(current_identity)):
         dates(start, end)
