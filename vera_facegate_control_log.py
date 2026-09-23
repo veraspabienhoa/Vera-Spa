@@ -84,6 +84,7 @@ def parse_control_log_response(body: str) -> dict[str, Any]:
             "occurred_at": device_time.isoformat(),
             "device_name": display_name[:160],
             "status_code": item.get("ustatus", "")[:32],
+            "type_code": item.get("utype", "")[:32],
         })
 
     return {
