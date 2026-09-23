@@ -32,7 +32,7 @@ function profileUsername(panel) {
 
 function ensureTopClose(panel) {
   const header = panel?.querySelector('.panel-title-row')
-  if (!header || header.querySelector('.vera-profile-top-close')) return
+  if (!header || header.querySelector('.staff-profile-react-actions, .vera-profile-top-close')) return
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'secondary-button compact vera-profile-top-close'

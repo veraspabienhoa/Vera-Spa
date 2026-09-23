@@ -1,3 +1,4 @@
+import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
@@ -158,7 +159,6 @@ export default function EmployeePage({ user }) {
   const [createPasswordVisible, setCreatePasswordVisible] = useState(false)
   const [profileUser, setProfileUser] = useState('')
   const [profileDraft, setProfileDraft] = useState({})
-  const [profileScrollRequest, setProfileScrollRequest] = useState(0)
   const [bankCatalogBusy, setBankCatalogBusy] = useState(false)
   const profileSectionRef = useRef(null)
   const listRef = useRef(null)
@@ -198,13 +198,6 @@ export default function EmployeePage({ user }) {
     } finally { setBankCatalogBusy(false) }
   }
 
-  useEffect(() => {
-    if (!profileScrollRequest) return undefined
-    const frame = window.requestAnimationFrame(() => {
-      profileSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [profileScrollRequest])
 
   useEffect(() => {
     const applyExtracted = (event) => {
@@ -369,7 +362,7 @@ export default function EmployeePage({ user }) {
     ]))
     setProfileDraft(draft)
     setProfileBaseline(JSON.stringify(draft))
-    setProfileScrollRequest((request) => request + 1)
+    setNotice(null)
   }
 
   const changeEmployeeSearch = (value) => {
@@ -529,8 +522,9 @@ export default function EmployeePage({ user }) {
         </form>
       </section>}
 
-      {profileUser && <section data-ui-key="u-309a06b43235" ref={profileSectionRef} className="panel staff-form-panel" style={{ scrollMarginTop: 128 }}>
-        <div data-ui-key="u-4450e8bb6934" className="panel-title-row"><div><h2>SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div><UiToolbar data-ui-key="u-68abbff1b9e3" className="staff-profile-react-actions"><button data-ui-key="u-ca50a39b04af" data-ui-label-default="✕ Đóng" type="button" className="secondary-button" onClick={() => setProfileUser('')}><UiCustomText uiKey="u-ca50a39b04af">✕ Đóng</UiCustomText></button><button data-ui-key="u-3bbe39942c7f" data-ui-label-default="Lưu hồ sơ" type="button" className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={16}/><UiCustomText uiKey="u-3bbe39942c7f"> Lưu hồ sơ</UiCustomText></button></UiToolbar></div>
+      {profileUser && <EmployeeProfileModal onClose={() => setProfileUser('')} busy={busy === 'profile'}><section data-ui-key="u-309a06b43235" ref={profileSectionRef} className="panel staff-form-panel employee-profile-modal-panel">
+        <div data-ui-key="u-4450e8bb6934" className="panel-title-row"><div><h2 id="employee-profile-modal-title">SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div><UiToolbar data-ui-key="u-68abbff1b9e3" className="staff-profile-react-actions"><button data-ui-key="u-ca50a39b04af" data-ui-label-default="✕ Đóng" type="button" className="secondary-button" onClick={() => setProfileUser('')}><UiCustomText uiKey="u-ca50a39b04af">✕ Đóng</UiCustomText></button><button data-ui-key="u-3bbe39942c7f" data-ui-label-default="Lưu hồ sơ" type="button" className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={16}/><UiCustomText uiKey="u-3bbe39942c7f"> Lưu hồ sơ</UiCustomText></button></UiToolbar></div>
+        <Notice notice={notice} onClose={() => setNotice(null)} />
         <div className="staff-form-grid">
           {PROFILE_SECTIONS.map((section) => <div className="profile-section-fields span-2" key={section.title}>
             <div className="profile-field-section">{section.title}</div>
@@ -553,7 +547,7 @@ export default function EmployeePage({ user }) {
           }))}/>}
           <UiToolbar data-ui-key="u-ca80ca02e515" className="staff-form-actions span-2"><button data-ui-key="u-8054b4017378" data-ui-label-default="Hủy" className="secondary-button" onClick={() => setProfileUser('')}><UiCustomText uiKey="u-8054b4017378">Hủy</UiCustomText></button><button data-ui-key="u-ddf99296f67f" data-ui-label-default="Lưu hồ sơ" className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={17} /><UiCustomText uiKey="u-ddf99296f67f"> Lưu hồ sơ</UiCustomText></button></UiToolbar>
         </div>
-      </section>}
+      </section></EmployeeProfileModal>}
 
       <section data-ui-key="u-65f570ca3cb3" ref={listRef} className="panel staff-list-panel">
         <div data-ui-key="u-0d632daa26f2" className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button data-ui-key="u-1d57a0d23aa6" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-1d57a0d23aa6"> Làm mới</UiCustomText></button></div>
