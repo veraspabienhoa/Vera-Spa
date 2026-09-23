@@ -393,3 +393,13 @@ resource-performance runbook for requirements, downtime and failure recovery.
 No production activation or production performance measurement is performed by
 creating this workflow. PostgreSQL integration tests cover post-cutover backfill
 protection, both fences across commits and canonical export/reactivation.
+
+## 23-09-2026: maintenance status rejected a systemd-configured VPS
+
+Deploy run 35825197223 succeeded at e296a0f7. Maintenance run 35825402395
+selected `status` and failed with `private managed API environment is required`.
+This happened before service stop or cutover. The mandatory managed-file check
+was incompatible with the process-environment fallback already used by deployment.
+The correction reads only allowlisted settings from validated API processes,
+rejects disagreement, and persists storage mode separately from DB/Auth settings.
+This code change alone does not establish successful production activation.

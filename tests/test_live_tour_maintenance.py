@@ -181,3 +181,122 @@ def test_runtime_health_requires_mode_and_database_agreement(monkeypatch, mode, 
     else:
         with pytest.raises(maintenance.MaintenanceError):
             maintenance.health(expected)
+
+
+def process_environment(tmp_path, values, pid='100'):
+    proc = tmp_path / pid
+    proc.mkdir()
+    (proc / 'environ').write_bytes(b'\0'.join(f'{k}={v}'.encode() for k, v in values.items()))
+    return (proc, tmp_path, '')
+
+
+def test_process_settings_ignore_ssh_secrets_and_unrelated_keys(tmp_path, monkeypatch):
+    values = {**settings(), 'UNRELATED_SECRET': 'never-copy'}
+    proc = process_environment(tmp_path, values)
+    monkeypatch.setattr(maintenance, 'load_managed_runtime_environment', lambda: False)
+    monkeypatch.setattr(maintenance, 'api_processes', lambda: [proc])
+    monkeypatch.setenv('DB_HOST', 'wrong-shell-host')
+    assert maintenance.runtime_settings() == settings()
+
+
+def test_process_settings_reject_disagreeing_workers(tmp_path, monkeypatch):
+    processes = [process_environment(tmp_path, settings()),
+                 process_environment(tmp_path, {**settings(), 'DB_HOST': 'other'}, '101')]
+    monkeypatch.setattr(maintenance, 'load_managed_runtime_environment', lambda: False)
+    monkeypatch.setattr(maintenance, 'api_processes', lambda: processes)
+    with pytest.raises(maintenance.MaintenanceError, match='inconsistent'):
+        maintenance.runtime_settings()
+
+
+def test_missing_process_password_never_falls_back_to_shell(tmp_path, monkeypatch):
+    values = settings()
+    del values['DB_PASS']
+    proc = process_environment(tmp_path, values)
+    monkeypatch.setattr(maintenance, 'load_managed_runtime_environment', lambda: False)
+    monkeypatch.setattr(maintenance, 'api_processes', lambda: [proc])
+    monkeypatch.setenv('DB_PASS', 'shell-password')
+    with pytest.raises(RuntimeError, match='missing database settings'):
+        maintenance.runtime_settings()
+
+
+def test_optional_mode_override_preserves_systemd_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime.pwd, 'getpwuid', lambda uid: SimpleNamespace(pw_dir=str(tmp_path)))
+    monkeypatch.setenv('DB_HOST', 'systemd-host')
+    monkeypatch.setenv(maintenance.MODE_KEY, 'shadow')
+    assert not runtime.load_managed_runtime_environment()
+    assert not runtime.load_live_tour_mode_override()
+    path = tmp_path / runtime.LIVE_TOUR_MODE_RELATIVE_PATH
+    path.parent.mkdir(parents=True)
+    maintenance.write_private(path, maintenance.MODE_KEY + '=active\n')
+    assert runtime.load_live_tour_mode_override()
+    assert runtime.os.environ[maintenance.MODE_KEY] == 'active'
+    assert runtime.os.environ['DB_HOST'] == 'systemd-host'
+
+
+@pytest.mark.parametrize('content', [
+    'DB_HOST=other\n', 'VERA_LIVE_TOUR_RELATIONAL_MODE=wrong\n',
+    'VERA_LIVE_TOUR_RELATIONAL_MODE=active\nVERA_LIVE_TOUR_RELATIONAL_MODE=shadow\n',
+])
+def test_mode_override_rejects_invalid_content_atomically(tmp_path, monkeypatch, content):
+    monkeypatch.setattr(runtime.pwd, 'getpwuid', lambda uid: SimpleNamespace(pw_dir=str(tmp_path)))
+    monkeypatch.setenv(maintenance.MODE_KEY, 'shadow')
+    path = tmp_path / runtime.LIVE_TOUR_MODE_RELATIVE_PATH
+    path.parent.mkdir(parents=True)
+    maintenance.write_private(path, content)
+    with pytest.raises(RuntimeError, match='invalid'):
+        runtime.load_live_tour_mode_override()
+    assert runtime.os.environ[maintenance.MODE_KEY] == 'shadow'
+
+
+def test_new_override_removed_on_failed_activation(transition_context, monkeypatch):
+    conn, service, path, events = transition_context
+    path.unlink()
+    def health(mode, attempts):
+        if mode == 'active':
+            raise OSError('unhealthy')
+        assert not path.exists()
+    monkeypatch.setattr(maintenance, 'health', health)
+    with pytest.raises(maintenance.MaintenanceError, match='previous mode'):
+        maintenance.transition(conn, service, path, None, 'shadow', 'active', path.parent)
+    assert not path.exists()
+    assert ('migrate', True) in events
+
+
+def test_new_override_created_only_after_migration(transition_context, monkeypatch):
+    conn, service, path, events = transition_context
+    path.unlink()
+    def migrate(conn, rollback):
+        assert not path.exists()
+        return {'revision': 42}
+    monkeypatch.setattr(maintenance, 'migrate', migrate)
+    assert maintenance.transition(conn, service, path, None, 'shadow', 'active', path.parent)['ok']
+    assert path.read_text().strip() == maintenance.MODE_KEY + '=active'
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_status_works_without_managed_file_and_never_changes_service(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    proc = process_environment(tmp_path, settings())
+    monkeypatch.setattr(maintenance, 'load_managed_runtime_environment', lambda: False)
+    monkeypatch.setattr(maintenance, 'api_processes', lambda: [proc])
+    monkeypatch.setattr(maintenance, 'Service', lambda sha: object())
+    monkeypatch.setattr(maintenance, 'health', lambda: 'shadow')
+    monkeypatch.setattr(maintenance.relational, 'resource_ready', lambda conn: False)
+    conn = SimpleNamespace(rollback=lambda: None)
+    monkeypatch.setattr(maintenance, 'create_engine', lambda *a, **kw:
+                        SimpleNamespace(connect=lambda: nullcontext(conn)))
+    monkeypatch.setattr(maintenance, 'write_private', lambda *a: pytest.fail('status wrote configuration'))
+    assert maintenance._run('status', 'a' * 40) == {
+        'ok': True, 'mode': 'shadow', 'resource_ready': False, 'changed': False,
+    }
+
+
+def test_schema_cli_honors_separate_override(monkeypatch):
+    import vera_vps_concurrency_schema as schema
+    monkeypatch.setattr(schema, '_running_api_environment', lambda: settings())
+    monkeypatch.setattr(schema, 'load_managed_runtime_environment', lambda: False)
+    monkeypatch.setattr(schema, 'load_live_tour_mode_override',
+                        lambda: monkeypatch.setenv(maintenance.MODE_KEY, 'active'))
+    monkeypatch.setattr(schema, 'create_engine', lambda *a, **kw: object())
+    schema._runtime_engine()
+    assert runtime.os.environ[maintenance.MODE_KEY] == 'active'

@@ -7,6 +7,7 @@ import os
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
+from vera_web_v2_runtime_env import load_live_tour_mode_override
 
 import vera_live_tour_relational as live_tour
 import vera_resource_concurrency as concurrency
@@ -135,6 +136,7 @@ def _runtime_engine():
     running = _running_api_environment()
     os.environ["VERA_LIVE_TOUR_RELATIONAL_MODE"] = running.get("VERA_LIVE_TOUR_RELATIONAL_MODE", "shadow")
     loaded = load_managed_runtime_environment()
+    load_live_tour_mode_override()
     environment = (
         {key: os.environ.get(key, "") for key in RUNTIME_ENV_KEYS}
         if loaded else running

@@ -120,7 +120,7 @@ After merging and deploying this release with **Deploy VPS Production**, open
 The workflow shares deployment's concurrency group. A local file lock also
 excludes simultaneous manual invocations. It refuses a different deployed SHA,
 tracked source changes, multiple API units, a different process owner, an
-unmanaged environment, or a unit without `KillMode=control-group`. For a system
+missing/inconsistent API database environment, or a unit without `KillMode=control-group`. For a system
 unit, the deployment user needs root or noninteractive sudo permission for
 `systemctl stop/start <actual-unit>`; user units use `systemctl --user`. It does
 not install packages or widen service permissions. Install compatible `pg_dump`
@@ -132,12 +132,12 @@ this workflow supports the single VPS API unit discovered at runtime.
 Activation/rollback causes a maintenance outage while the backup, conversion and
 restart run. Choose a quiet period. The backup directory is
 `~/.local/state/vera-spa/live-tour-backups/<UTC-timestamp>-<random>/`, mode 0700;
-`database.dump`, `live-tour.json` and `runtime.env.before` are private (0600).
+`database.dump`, `live-tour.json` and optional `storage.env.before` are private (0600).
 `pg_restore --list` checks the custom archive before any cutover. Rehearse a full
 restore on a separate test database before production activation; the archive
 listing is not a complete restore test. Backups are never uploaded to Actions.
 Keep them under the existing secure VPS backup/retention policy; they contain
-business data and the private runtime configuration.
+business data. The mode override backup contains only the storage mode.
 
 A dedicated database connection holds both the legacy and resource **session**
 fences across migration commits, service restart, health verification and any
@@ -167,3 +167,18 @@ This workflow verifies canonical reads and readiness; it does not create booking
 or financial transactions on production as a test. After activation, observe real
 booking → start → completion operations, confirm their results, and measure p50/
 p95 latency and conflict rates before reporting an improvement multiplier.
+
+### VPS with systemd environment settings
+
+The maintenance helper accepts either the existing private managed DB/Auth file
+or the allowlisted initial environment of every validated API process. It rejects
+different worker settings and missing credentials; it never falls back to SSH
+shell database credentials. `status` does not stop services or write configuration.
+
+Activation persists only `VERA_LIVE_TOUR_RELATIONAL_MODE` in the private
+`~/.config/vera-spa/live-tour-storage.env` (0600). The API and schema helper load
+this after their existing settings. Database/Auth configuration stays in its
+current location, and no systemd permissions are changed. Failed activation
+restores the old override, or removes the newly created file if none existed.
+The private manifest records `mode_override_existed` for manual recovery.
+`activate` and `rollback` also run an explicit `status` check before maintenance.

@@ -78,6 +78,9 @@ jobs:
           }
           test -f "$release_dir/vera_live_tour_maintenance.py"
           cd "$release_dir"
+          if [ "$action" != status ]; then
+            /opt/vera-spa/.venv/bin/python vera_live_tour_maintenance.py --sha "$release_sha" --action status
+          fi
           /opt/vera-spa/.venv/bin/python vera_live_tour_maintenance.py --sha "$release_sha" --action "$action"
           REMOTE
 

@@ -23,15 +23,17 @@ import time
 import urllib.request
 from uuid import uuid4
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 import vera_live_tour_cutover as cutover
 import vera_live_tour_relational as relational
 import vera_live_tour_resource_store as resources
 from vera_web_v2_runtime_env import (
-    RUNTIME_ENV_RELATIVE_PATH, _read_private_file, load_managed_runtime_environment,
+    LIVE_TOUR_MODE_RELATIVE_PATH, RUNTIME_ENV_KEYS, _read_private_file,
+    load_managed_runtime_environment,
 )
-from vera_vps_concurrency_schema import _runtime_engine
+from vera_vps_data_check import _database_url
 
 MODE_KEY = 'VERA_LIVE_TOUR_RELATIONAL_MODE'
 LEGACY_FENCE = 'vera:v2:live_tour:state'
@@ -168,6 +170,46 @@ def mode_configuration(content, mode):
     return '\n'.join(lines) + '\n' + MODE_KEY + '=' + shlex.quote(mode) + '\n'
 
 
+def runtime_settings():
+    """Read exact validated API processes; never trust the invoking SSH shell."""
+    if load_managed_runtime_environment():
+        return {key: os.environ[key] for key in RUNTIME_ENV_KEYS if key in os.environ}
+    candidates = []
+    for proc, _, _ in api_processes():
+        values = {}
+        for entry in (proc / 'environ').read_bytes().split(b'\0'):
+            key, sep, value = entry.partition(b'=')
+            name = key.decode('utf-8', 'strict')
+            if sep and name in RUNTIME_ENV_KEYS:
+                values[name] = value.decode('utf-8', 'strict')
+        candidates.append(values)
+    if not candidates or any(values != candidates[0] for values in candidates):
+        raise MaintenanceError('API processes have missing or inconsistent runtime settings')
+    values = candidates[0]
+    # These are the shared API engine defaults, not the SSH environment.
+    defaults = {'DB_PORT': '5432', 'DB_NAME': 'postgres',
+                'DB_SSLMODE': 'require', 'DB_CONNECT_TIMEOUT': '10'}
+    values = {**defaults, **values}
+    _database_url(values)  # require host/user/password without logging values
+    if values['DB_SSLMODE'] not in {'require', 'verify-ca', 'verify-full'}:
+        raise MaintenanceError('API runtime requires supported verified TLS settings')
+    if not 1 <= int(values['DB_PORT']) <= 65535 or not 3 <= int(values['DB_CONNECT_TIMEOUT']) <= 120:
+        raise MaintenanceError('API database numeric settings are invalid')
+    return values
+
+
+def restore_mode_configuration(path, original):
+    if original is not None:
+        write_private(path, original)
+    else:
+        path.unlink(missing_ok=True)
+        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
 def acquire_fences(conn):
     # Session locks survive cutover commit and also exclude writers in the new
     # API while health is checked. Closing this dedicated connection releases both.
@@ -239,7 +281,7 @@ def transition(conn, service, path, original, old_mode, new_mode, directory):
         result = migrate(conn, rollback=new_mode != 'active')
         changed = True
         write_private(directory / 'phase.json', json.dumps({'phase': 'database_committed', 'mode': new_mode}))
-        write_private(path, mode_configuration(original, new_mode))
+        write_private(path, mode_configuration(original or '', new_mode))
         os.environ[MODE_KEY] = new_mode
         starting = True  # start may succeed even if systemctl's response fails
         service.start()
@@ -261,7 +303,7 @@ def transition(conn, service, path, original, old_mode, new_mode, directory):
             conn.rollback()
             if changed:
                 migrate(conn, rollback=old_mode != 'active')
-            write_private(path, original)
+            restore_mode_configuration(path, original)
             os.environ[MODE_KEY] = old_mode
             service.start()
             health(old_mode, attempts=20)
@@ -282,11 +324,11 @@ def _run(action, sha):
         raise ValueError('exact release SHA required')
     service = Service(sha)
     old_mode = health()
-    if not load_managed_runtime_environment():
-        raise MaintenanceError('private managed API environment is required')
-    # Health is the authority for the optional flag when absent from the file.
-    os.environ[MODE_KEY] = old_mode
-    engine = _runtime_engine()
+    settings = runtime_settings()
+    os.environ.update(settings)
+    engine = create_engine(_database_url(settings), poolclass=NullPool,
+                           connect_args={'sslmode': settings['DB_SSLMODE'],
+                                         'connect_timeout': int(settings['DB_CONNECT_TIMEOUT'])})
     os.environ[MODE_KEY] = old_mode
     with engine.connect() as conn:
         ready = relational.resource_ready(conn)
@@ -301,13 +343,17 @@ def _run(action, sha):
         if not all(shutil.which(binary) for binary in ('pg_dump', 'pg_restore')):
             raise MaintenanceError('install compatible pg_dump and pg_restore on VPS before activation')
         home = Path(pwd.getpwuid(os.getuid()).pw_dir)
-        path = home / RUNTIME_ENV_RELATIVE_PATH
-        original = _read_private_file(path)
+        path = home / LIVE_TOUR_MODE_RELATIVE_PATH
+        try:
+            original = _read_private_file(path)
+        except FileNotFoundError:
+            original = None
         directory = home / '.local/state/vera-spa/live-tour-backups' / (time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + uuid4().hex[:8])
         directory.mkdir(parents=True, mode=0o700)
         directory.chmod(0o700)
-        write_private(directory / 'runtime.env.before', original)
-        write_private(directory / 'manifest.json', json.dumps({'mode': old_mode, 'sha': sha, 'unit': service.unit, 'scope': service.scope}))
+        if original is not None:
+            write_private(directory / 'storage.env.before', original)
+        write_private(directory / 'manifest.json', json.dumps({'mode': old_mode, 'sha': sha, 'unit': service.unit, 'scope': service.scope, 'mode_override_existed': original is not None}))
         write_private(directory / 'phase.json', json.dumps({'phase': 'preflight', 'mode': old_mode}))
         print('LIVE TOUR MAINTENANCE: preflight passed; stopping API and embedded projection workers', flush=True)
         try:
@@ -335,6 +381,7 @@ def run(action, sha):
     # Also exclude manual SSH invocations, independently of GitHub concurrency.
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     lock_path = home / '.config/vera-spa/live-tour-maintenance.lock'
+    lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
