@@ -20,6 +20,20 @@ from fastapi.responses import Response as FastAPIResponse, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from sqlalchemy import text
+from pydantic import BaseModel, Field
+
+
+class FaceGateMappingInput(BaseModel):
+    profile_id: int = Field(gt=0, le=2147483647)
+    username: str = Field(min_length=1, max_length=200)
+    employee_code: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    registration_ref: dict[str, int]
+    device_name: str = Field(max_length=160)
+    confirmed: bool = False
+
+
+class FaceGateMappingCheck(BaseModel):
+    registration_ref: dict[str, int]
 
 
 def _day(value: Any) -> str:
@@ -292,6 +306,102 @@ def _records(conn, start: date, end: date) -> list[dict[str, Any]]:
 
 
 def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, identity_type):
+    def mapping_admin(ident):
+        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được quản lý ánh xạ FaceGate.')
+
+    def device_call(fn, *args):
+        try:
+            return fn(*args)
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except ConnectionError as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+    def mapping_key():
+        from vera_facegate_control_log import mapping_device_id
+        return 'mapping_' + device_call(mapping_device_id)
+
+    def read_mappings(conn, key, *, lock=False):
+        row = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='facegate' AND setting_key=:key" + (' FOR UPDATE' if lock else '')),
+                           {'key': key}).scalar_one_or_none()
+        return _json_value(row, [])
+
+    @app.get('/v2/devices/facegate-profiles/{profile_id}')
+    def facegate_profile(profile_id: int, ident: identity_type = Depends(current_identity)):
+        mapping_admin(ident)
+        mapping_key()
+        from vera_facegate_control_log import fetch_registered_profile
+        return device_call(fetch_registered_profile, profile_id)
+
+    @app.get('/v2/devices/facegate-mappings')
+    def facegate_mappings(ident: identity_type = Depends(current_identity)):
+        mapping_admin(ident)
+        key = mapping_key()
+        with engine_instance().connect() as conn:
+            mappings = read_mappings(conn, key)
+            staff = conn.execute(text("SELECT username, full_name FROM employees WHERE role != 'admin' ORDER BY username")).mappings().all()
+        return {'mappings': mappings, 'employees': [dict(row) for row in staff]}
+
+    @app.post('/v2/devices/facegate-mappings')
+    def save_facegate_mapping(body: FaceGateMappingInput, ident: identity_type = Depends(current_identity)):
+        mapping_admin(ident)
+        if not body.confirmed:
+            raise HTTPException(400, 'Cần xác nhận hồ sơ thiết bị và mã TimeSoft thuộc cùng nhân viên.')
+        key = mapping_key()
+        from vera_facegate_control_log import fetch_registered_profile
+        # Device I/O must finish before opening the database transaction.
+        profile = device_call(fetch_registered_profile, body.profile_id)
+        if profile['registration_ref'] != body.registration_ref or profile['device_name'] != body.device_name:
+            raise HTTPException(409, 'Hồ sơ đăng ký đã thay đổi. Hãy đọc lại hồ sơ và xác nhận.')
+        actor = str(getattr(ident, 'username', '') or '')
+        with engine_instance().begin() as conn:
+            if conn.execute(text("SELECT username FROM employees WHERE username=:username AND role != 'admin' FOR SHARE"),
+                            {'username': body.username}).scalar_one_or_none() is None:
+                raise HTTPException(400, 'Không tìm thấy nhân viên VERA đã chọn.')
+            conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json,source,updated_by,revision,created_at,updated_at)
+                VALUES ('facegate',:key,'[]'::jsonb,'web_v2',:actor,1,NOW(),NOW())
+                ON CONFLICT(category,setting_key) DO NOTHING"""), {'key': key, 'actor': actor})
+            mappings = read_mappings(conn, key, lock=True)
+            for item in mappings:
+                if item['profile_id'] == body.profile_id:
+                    if item['username'] != body.username or item['employee_code'].casefold() != body.employee_code.casefold():
+                        raise HTTPException(409, 'Hồ sơ đã gắn với nhân viên khác. Cần kiểm tra trước khi thay đổi.')
+                elif (item['username'] == body.username or item['employee_code'].casefold() == body.employee_code.casefold()
+                      or item['registration_ref'] == body.registration_ref):
+                    raise HTTPException(409, 'Nhân viên, mã TimeSoft hoặc ảnh đã có ánh xạ khác.')
+            if len(mappings) >= 200 and not any(item['profile_id'] == body.profile_id for item in mappings):
+                raise HTTPException(400, 'Đã đạt giới hạn 200 ánh xạ cho thiết bị.')
+            entry = {**profile, 'username': body.username, 'employee_code': body.employee_code,
+                     'confirmed_by': actor, 'confirmed_at': datetime.now().astimezone().isoformat()}
+            mappings = [item for item in mappings if item['profile_id'] != body.profile_id] + [entry]
+            conn.execute(text("""UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb),
+                updated_by=:actor,updated_at=NOW(),revision=revision+1
+                WHERE category='facegate' AND setting_key=:key"""),
+                {'key': key, 'value': json.dumps(mappings, ensure_ascii=False), 'actor': actor})
+        return entry
+
+    @app.post('/v2/devices/facegate-mappings/check')
+    def check_facegate_mapping(body: FaceGateMappingCheck, ident: identity_type = Depends(current_identity)):
+        mapping_admin(ident)
+        key = mapping_key()
+        with engine_instance().connect() as conn:
+            candidates = [item for item in read_mappings(conn, key) if item['registration_ref'] == body.registration_ref]
+        if len(candidates) != 1:
+            return {'status': 'unmapped', 'message': 'Chưa có ánh xạ duy nhất cho ảnh đăng ký này.'}
+        item = candidates[0]
+        from vera_facegate_control_log import fetch_registered_profile
+        profile = device_call(fetch_registered_profile, item['profile_id'])
+        with engine_instance().connect() as conn:
+            if item not in read_mappings(conn, key):
+                return {'status': 'changed', 'message': 'Ánh xạ vừa thay đổi. Hãy đối chiếu lại.'}
+        if profile['registration_ref'] != item['registration_ref'] or profile['device_name'] != item['device_name']:
+            return {'status': 'changed', 'message': 'Hồ sơ FaceGate đã thay đổi. Cần Admin xác nhận lại.'}
+        return {'status': 'reference_match', 'username': item['username'], 'employee_code': item['employee_code'],
+                'message': 'Khớp tham chiếu ảnh đã xác nhận; chỉ dùng đối chiếu, chưa tính công/lương.'}
+
     def dates(start: date, end: date) -> tuple[date, date]:
         if end < start:
             raise HTTPException(400, "Đến ngày phải bằng hoặc sau Từ ngày.")
