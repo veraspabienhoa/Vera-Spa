@@ -1333,7 +1333,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const id = stableEmployeeId(record) || recordId(record, index)
     setSelectedRoomKey('')
     setSelectedIds(new Set(id ? [id] : []))
-    setWeeklyShiftOpen(true)
+    setWeeklyShiftOpen(!appearanceMobile)
     openEmployeeBooking(record)
   }
   const toggleDisplayed = () => { setSelectedRoomKey(''); setSelectedIds((current) => {
