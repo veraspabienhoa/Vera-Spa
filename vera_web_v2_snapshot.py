@@ -16,7 +16,7 @@ import unicodedata
 from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response as FastAPIResponse, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from sqlalchemy import text
@@ -314,6 +314,71 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
             'row_count': int(row['row_count']) if row else 0,
             'cache_fresh': bool(row['is_fresh']) if row else False,
         }
+
+    @app.get('/v2/devices/control-log')
+    def facegate_control_log(
+        start: date = Query(...),
+        end: date = Query(...),
+        ident: identity_type = Depends(current_identity),
+    ):
+        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xem Control Log của thiết bị.')
+        dates(start, end)
+        from vera_facegate_control_log import fetch_control_log
+        try:
+            return fetch_control_log(start.isoformat(), end.isoformat())
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except ConnectionError as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+    @app.get('/v2/devices/capture-log')
+    def facegate_capture_log(
+        start: date = Query(...),
+        end: date = Query(...),
+        ident: identity_type = Depends(current_identity),
+    ):
+        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xem ảnh Capture Log của thiết bị.')
+        dates(start, end)
+        from vera_facegate_control_log import fetch_capture_log
+        try:
+            return fetch_capture_log(start.isoformat(), end.isoformat())
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except ConnectionError as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+    @app.get('/v2/devices/capture-log/image')
+    def facegate_capture_image(
+        file_type: int = Query(..., ge=0, le=255),
+        file_index: int = Query(..., ge=0, le=65535),
+        file_position: int = Query(..., ge=0),
+        time: str = Query(..., min_length=19, max_length=19),
+        ident: identity_type = Depends(current_identity),
+    ):
+        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xem ảnh Capture Log của thiết bị.')
+        from vera_facegate_control_log import fetch_capture_image
+        try:
+            content, media_type = fetch_capture_image({
+                'file_type': file_type, 'file_index': file_index,
+                'file_position': file_position, 'time': time,
+            })
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except ConnectionError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return FastAPIResponse(
+            content=content, media_type=media_type,
+            headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'},
+        )
 
     @app.get("/v2/snapshot")
     def snapshot(start: date = Query(...), end: date = Query(...), ident: identity_type = Depends(current_identity)):
