@@ -199,3 +199,23 @@ permission to run deploy.sh or restart a service does not necessarily authorize
 separate stop/start commands. Do not use broad NOPASSWD ALL, bypass service
 control with process signals, or disable permission checks. A successful
 preflight is not a full backup/restore rehearsal or a performance measurement.
+
+### Backup scope: privileged scheduler excluded
+
+The cutover archive uses `--exclude-schema=cron --exclude-extension=pg_cron`
+(PostgreSQL 17+ client; the reported VPS client is 17.11). The API role failed
+schema-only dumping with `permission denied for schema cron`. No application
+permission is expanded. Other schemas remain included; another permission error
+still stops backup and prevents cutover. Do not silently exclude additional schemas.
+
+The archive is a cutover backup, not a complete instance disaster-recovery backup:
+cron job definitions/history and the pg_cron extension are excluded. Keep their
+separate administrator-managed backup for full database restoration. Cutover does
+not change scheduler configuration. The repository's pg_cron watchdog invokes the
+API, which remains protected by the existing maintenance fences.
+
+Before conversion, pg_restore's archive listing must contain both TABLE and TABLE
+DATA entries in public for the aggregate, metadata, idempotency, room claims and
+all resource collection tables. A missing entry or empty archive refuses cutover.
+`backup-scope.json` privately records the exclusions and verified table names.
+This membership check does not replace a full restore rehearsal on an isolated DB.

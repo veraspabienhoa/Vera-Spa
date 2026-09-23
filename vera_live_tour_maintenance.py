@@ -273,12 +273,26 @@ def backup(directory, state):
                            'PGCONNECT_TIMEOUT': 'DB_CONNECT_TIMEOUT'}.items():
         pg_env[pg_key] = os.environ[db_key]
     archive = directory / 'database.dump'
-    command(['pg_dump', '--format=custom', '--no-owner', '--no-acl', '--file', str(archive)],
+    # Cutover never changes scheduler metadata. pg_cron is administered separately
+    # and the API role must not gain access to its privileged job definitions.
+    command(['pg_dump', '--format=custom', '--no-owner', '--no-acl', '--no-password',
+             '--exclude-schema=cron', '--exclude-extension=pg_cron', '--file', str(archive)],
             timeout=300, env=pg_env)
     archive.chmod(0o600)
-    command(['pg_restore', '--list', str(archive)], timeout=30)
+    contents = command(['pg_restore', '--list', str(archive)], timeout=30)
     if archive.stat().st_size == 0:
         raise MaintenanceError('database backup is empty')
+    required = {'vera_app_setting', relational.META_TABLE, relational.MUTATION_TABLE,
+                relational.CLAIM_TABLE, *relational.RESOURCE_TABLES.values()}
+    definitions = set(re.findall(r'\bTABLE public (\S+) ', contents))
+    data = set(re.findall(r'\bTABLE DATA public (\S+) ', contents))
+    if not required <= definitions or not required <= data:
+        raise MaintenanceError('backup lacks required Live Tour table definitions or data; no cutover allowed')
+    write_private(directory / 'backup-scope.json', json.dumps({
+        'excluded_schemas': ['cron'], 'excluded_extensions': ['pg_cron'],
+        'verified_live_tour_tables': sorted(required),
+        'full_instance_disaster_recovery_backup': False,
+    }, sort_keys=True))
     write_private(directory / 'live-tour.json', relational._json(state))
 
 

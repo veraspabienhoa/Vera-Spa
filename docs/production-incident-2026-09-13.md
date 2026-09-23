@@ -414,3 +414,14 @@ old log suppresses subprocess details, so the exact VPS policy cause remains
 unverified. Add safe command-specific authorization errors and read-only preflight
 results to status. No permissions are expanded and no production cutover is
 established by this diagnostic change.
+
+## 23-09-2026: preparation blocked by cron schema backup permissions
+
+User-provided VPS diagnostics confirm API service active, stop/start authorization
+passing, pg_dump/pg_restore 17.11, and a zero-byte database.dump in failed preparation.
+A schema-only pg_dump reproduced PERMISSION_DENIED and identified schema cron.
+The cutover does not modify scheduler objects. Exclude only cron and pg_cron from
+its archive, record that scope, and require archive definitions/data for every
+Live Tour resource table before cutover. This is not a full-instance backup or
+proof of a successful production activation. Do not grant cron access to the API
+role or suppress subsequent dump errors.

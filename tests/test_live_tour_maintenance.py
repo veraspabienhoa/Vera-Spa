@@ -338,3 +338,44 @@ def test_authorization_checks_both_actions_without_running_them(monkeypatch):
     service.authorize()
     assert calls == [ ['sudo', '-n', '-l', '/usr/bin/systemctl', action, 'vera-api.service']
                      for action in ('stop', 'start') ]
+
+
+@pytest.mark.parametrize('missing', [None, 'definition', 'data', 'empty'])
+def test_cutover_backup_excludes_scheduler_but_requires_board_data(tmp_path, monkeypatch, missing):
+    for key, value in settings().items():
+        monkeypatch.setenv(key, value)
+    required = {'vera_app_setting', maintenance.relational.META_TABLE,
+                maintenance.relational.MUTATION_TABLE, maintenance.relational.CLAIM_TABLE,
+                *maintenance.relational.RESOURCE_TABLES.values()}
+    calls = []
+    def command(args, **kwargs):
+        calls.append(args)
+        if args[0] == 'pg_dump':
+            assert '--exclude-schema=cron' in args
+            assert '--exclude-extension=pg_cron' in args
+            assert '--schema-only' not in args and '--enable-row-security' not in args
+            assert settings()['DB_PASS'] not in args
+            assert kwargs['env']['PGPASSWORD'] == settings()['DB_PASS']
+            (tmp_path / 'database.dump').write_bytes(b'' if missing == 'empty' else b'archive')
+            return ''
+        lines = []
+        for name in sorted(required):
+            if not (missing == 'definition' and name == 'vera_app_setting'):
+                lines.append(f'1; 1259 123 TABLE public {name} owner')
+            if not (missing == 'data' and name == 'vera_app_setting'):
+                lines.append(f'2; 0 123 TABLE DATA public {name} owner')
+        return '\n'.join(lines)
+    monkeypatch.setattr(maintenance, 'command', command)
+    if missing:
+        with pytest.raises(maintenance.MaintenanceError):
+            maintenance.backup(tmp_path, {'state': {}, 'revision': 1})
+        assert not (tmp_path / 'live-tour.json').exists()
+        assert not (tmp_path / 'backup-scope.json').exists()
+    else:
+        maintenance.backup(tmp_path, {'state': {}, 'revision': 1})
+        scope = json.loads((tmp_path / 'backup-scope.json').read_text())
+        assert scope['excluded_schemas'] == ['cron']
+        assert set(scope['verified_live_tour_tables']) == required
+        assert not scope['full_instance_disaster_recovery_backup']
+        assert (tmp_path / 'database.dump').stat().st_mode & 0o777 == 0o600
+        assert (tmp_path / 'backup-scope.json').stat().st_mode & 0o777 == 0o600
