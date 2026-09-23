@@ -56,6 +56,10 @@ root.ERR.des=ok
     }])
     self.assertNotIn("phone", repr(result))
 
+  def test_capture_parser_rejects_success_without_capture_metadata(self):
+    with self.assertRaisesRegex(ValueError, "không đúng định dạng Capture Log"):
+      facegate._parse_capture_log_response("<html>root.ERR.no=0 root.ERR.des=ok</html>")
+
   def test_capture_image_uses_observed_get_image_query_and_bounds_payload(self):
     calls = []
 
