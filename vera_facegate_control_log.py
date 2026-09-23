@@ -31,6 +31,56 @@ _FIELD = re.compile(
 _ITEM_KEY = re.compile(r"ITEM(?P<index>\d+)\.(?P<field>[A-Za-z0-9_]+)\Z")
 DEFAULT_CAPTURE_PATH = "/webs/getCapture"
 DEFAULT_IMAGE_PATH = "/webs/getImage"
+
+
+def registration_ref(item: dict[str, Any]) -> dict[str, int] | None:
+    try:
+        values = [int(item[name]) for name in ("dwfiletype", "dwfileindex", "dwfilepos")]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if values[0] != 0 or not 0 <= values[1] <= 65535 or not 0 < values[2] <= 2**63 - 1:
+        return None
+    return dict(zip(("file_type", "file_index", "file_position"), values))
+
+
+def mapping_device_id() -> str:
+    value = os.getenv("VERA_FACEGATE_DEVICE_ID", "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value):
+        raise RuntimeError("Cần cấu hình mã thiết bị FaceGate trước khi ánh xạ.")
+    return value
+
+
+def fetch_registered_profile(uid: int, *, get=requests.get) -> dict[str, Any]:
+    if not 0 < uid <= 2**31 - 1:
+        raise ValueError("ID hồ sơ FaceGate không hợp lệ.")
+    base_url, _, auth = _facegate_config()
+    try:
+        response = get(f"{base_url}/webs/getWhitelist", params={
+            "action": "list", "group": "LIST", "LIST.uid": str(uid),
+            "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
+        }, auth=auth, timeout=(3, 8), allow_redirects=False)
+    except requests.RequestException as exc:
+        raise ConnectionError("Không đọc được hồ sơ FaceGate.") from exc
+    try:
+        if response.status_code != 200:
+            raise ConnectionError("FaceGate không chấp nhận truy vấn hồ sơ.")
+        body = str(response.text or "")
+        if len(body.encode("utf-8")) > MAX_RESPONSE_BYTES:
+            raise ValueError("Phản hồi hồ sơ FaceGate vượt giới hạn.")
+        fields = dict(re.findall(
+            r"root\.((?:LIST|ERR)\.[A-Za-z0-9_]+)=(.*?)(?=\s+root\.|</html>|$)", body, re.DOTALL))
+        fields = {key: html.unescape(value).strip() for key, value in fields.items()}
+        if fields.get("ERR.no") != "0" or fields.get("LIST.uid") != str(uid):
+            raise ValueError("FaceGate không trả đúng hồ sơ được yêu cầu.")
+        ref = registration_ref({key.removeprefix("LIST."): value for key, value in fields.items()})
+        if ref is None:
+            raise ValueError("Hồ sơ chưa có tham chiếu ảnh đăng ký hợp lệ.")
+        return {"profile_id": uid, "device_name": fields.get("LIST.uname", "")[:160],
+                "registration_ref": ref}
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/x-ms-bmp"}
 
@@ -85,6 +135,7 @@ def parse_control_log_response(body: str) -> dict[str, Any]:
             "device_name": display_name[:160],
             "status_code": item.get("ustatus", "")[:32],
             "type_code": item.get("utype", "")[:32],
+            "registration_ref": registration_ref(item),
         })
 
     return {
