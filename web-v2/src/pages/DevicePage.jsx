@@ -1,4 +1,7 @@
 import { Server } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { veraApi } from '../lib/api'
+import { formatVeraDateTime } from '../lib/veraDate'
 
 // Configuration supplied by the administrator. Reachability has not been verified
 // from the production host; no browser request is made to a private LAN address.
@@ -14,11 +17,20 @@ const device = [
 ]
 
 export default function DevicePage() {
+  const [source, setSource] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    veraApi.attendanceSource().then(value => { if (active) setSource(value) }).catch(cause => { if (active) setError(cause.message) })
+    return () => { active = false }
+  }, [])
   return <section className="device-page">
     <div className="page-heading"><div><span className="eyebrow"><Server size={16} /> THIẾT BỊ CHẤM CÔNG</span><h1>QUẢN LÝ THIẾT BỊ</h1><p>Thông tin thiết bị FaceID do quản trị viên cung cấp.</p></div></div>
     <div className="responsive-data-table"><table><thead><tr><th>Thông tin</th><th>Giá trị</th></tr></thead><tbody>
       {device.map(([label, value]) => <tr key={label}><td data-label="Thông tin">{label}</td><td data-label="Giá trị">{value}</td></tr>)}
     </tbody></table></div>
-    <p>Trạng thái kết nối trực tiếp: chưa xác minh. Dữ liệu chấm công hiện được đồng bộ qua TimeSoft; cần đường mạng riêng từ máy chạy API tới Face Server hoặc máy chấm công để lấy log trực tiếp.</p>
+    <p>Trạng thái kết nối trực tiếp tới máy 2023044: chưa xác minh.</p>
+    <p>Nguồn TimeSoft: {source ? `${source.row_count} bản ghi trong cache hôm nay; đồng bộ lúc ${formatVeraDateTime(source.last_sync_at)}; ${source.cache_fresh ? 'cache còn hạn' : 'cache hết hạn'}.` : error ? `Không đọc được trạng thái: ${error}` : 'Đang tải…'}</p>
+    <p>TimeSoft không xác nhận các bản ghi này đến từ riêng máy 2023044. Cần đường mạng riêng từ máy chạy API tới Face Server hoặc máy chấm công để lấy log trực tiếp.</p>
   </section>
 }
