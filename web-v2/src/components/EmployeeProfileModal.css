@@ -1,0 +1,63 @@
+.employee-profile-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  background: rgb(5 28 21 / 60%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+.employee-profile-modal {
+  width: min(1100px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: white;
+  border: 2px solid #326550;
+  border-radius: 20px;
+}
+.employee-profile-modal .employee-profile-modal-panel {
+  margin: 0;
+  padding: 0 20px 20px;
+  border: 0;
+  min-width: 0;
+  overflow: visible;
+}
+.employee-profile-modal-panel > .panel-title-row {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: white;
+  padding: 16px 0;
+  border-bottom: 2px solid #326550;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.employee-profile-modal-panel h2 { overflow-wrap: anywhere; }
+.employee-profile-modal .staff-profile-react-actions { display: flex; gap: 8px; }
+.employee-profile-modal :is(input, select, textarea) { max-width: 100%; min-width: 0; }
+.employee-profile-modal :is(.staff-form-grid, .staff-form-grid > *, .vera-reference-row) { min-width: 0; }
+@media (max-width: 640px) {
+  .employee-profile-modal-backdrop { padding: 0; }
+  .employee-profile-modal {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+  .employee-profile-modal .employee-profile-modal-panel {
+    padding: 0 12px max(16px, env(safe-area-inset-bottom));
+  }
+  .employee-profile-modal-panel > .panel-title-row {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  .employee-profile-modal-panel h2 { font-size: 18px; }
+  .employee-profile-modal .staff-profile-react-actions { width: 100%; }
+  .employee-profile-modal .staff-profile-react-actions > button { flex: 1; min-height: 44px; }
+  .employee-profile-modal .staff-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .employee-profile-modal .span-2 { grid-column: 1 / -1; }
+  .employee-profile-modal :is(input, select, textarea) { font-size: 16px; }
+  .employee-profile-modal :is(.staff-bank-reference-row, .vera-reference-row) { flex-wrap: wrap; }
+  .employee-profile-modal :is(.staff-bank-reference-row, .vera-reference-row) > * { width: 100%; }
+}
