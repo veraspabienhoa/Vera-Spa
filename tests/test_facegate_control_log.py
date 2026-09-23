@@ -292,6 +292,8 @@ root.ERR.no=0 root.ERR.des=ok""")
       facegate.parse_control_log_response("root.CONTROL.totalcount=0 root.ERR.no=7")
     with self.assertRaisesRegex(ValueError, "không đúng định dạng"):
       facegate.parse_control_log_response("<html><title>login</title></html>")
+    with self.assertRaisesRegex(ValueError, "không đúng định dạng"):
+      facegate.parse_control_log_response("root.CAPTURE.totalcount=1 root.CAPTURE.sessionid=2 root.CAPTURE.rspcount=1 root.ERR.no=0")
 
 
 class FaceGateMappingRouteTests(unittest.TestCase):
