@@ -172,6 +172,18 @@ def schema_exists(conn) -> bool:
     ).scalar())
 
 
+def resource_ready(conn) -> bool:
+    """Database authority marker, independent of an operator's shell flags."""
+    if not schema_exists(conn):
+        return False
+    return conn.execute(text(f"SELECT payload->>'_resource_ready' FROM {META_TABLE} WHERE singleton=1")).scalar() == "true"
+
+
+def assert_aggregate_writable(conn):
+    if resource_ready(conn):
+        raise RuntimeError("Live Tour resource storage is authoritative; aggregate writes refused")
+
+
 def sync_changes(
     conn, before: dict[str, Any] | None, after: dict[str, Any], aggregate_revision: int,
     *, force: bool = False, actor: str = "", action: str = "update",
@@ -185,6 +197,7 @@ def sync_changes(
         # Deploy creates/backfills the tables after the new release is copied.
         # Requests in that short window keep using the proven aggregate path.
         return {"upserted": 0, "deleted": 0}
+    assert_aggregate_writable(conn)
     before_meta, old = _split(before or {})
     after_meta, new = _split(after)
     upserted = deleted = 0

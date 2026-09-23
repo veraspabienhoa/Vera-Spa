@@ -18,6 +18,7 @@ from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_envir
 
 API_MARKER = "vera_web_v2_api_v38:app"
 SAFE_ENV_KEYS = {
+    "VERA_LIVE_TOUR_RELATIONAL_MODE",
     "DB_HOST",
     "DB_PORT",
     "DB_NAME",

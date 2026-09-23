@@ -374,3 +374,22 @@ employees are written. `start_room` locks and rechecks all waiting members. The
 existing room/customer constraints and exclusive reorder/restore fence remain.
 Rollback materializes effective manual flags for old releases. This change does
 not itself activate resource storage or establish a production speed multiplier.
+
+## 23-09-2026: explicit Live Tour activation safeguard (not activated)
+
+Code inspection confirms the managed environment allowlist omitted
+`VERA_LIVE_TOUR_RELATIONAL_MODE`, and schema backfill trusted the SSH process mode.
+A ready resource database with a shadow CLI could therefore be overwritten from
+frozen aggregate data. This is a confirmed code risk, not evidence that production
+records were overwritten. A successful deployment/parity log alone does not prove
+that the API is serving resource mode.
+
+The proposed manual maintenance workflow backs up privately, stops the discovered
+API unit and embedded projection writers, holds both session fences through
+cutover/restart/verification, and recovers with current canonical data. The managed
+mode is optional but validated. Database readiness independently prevents legacy
+writes/backfill; actual API business health rejects mode mismatches. See the
+resource-performance runbook for requirements, downtime and failure recovery.
+No production activation or production performance measurement is performed by
+creating this workflow. PostgreSQL integration tests cover post-cutover backfill
+protection, both fences across commits and canonical export/reactivation.

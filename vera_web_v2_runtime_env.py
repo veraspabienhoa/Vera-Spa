@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 RUNTIME_ENV_RELATIVE_PATH = Path(".config/vera-spa/web-v2-api.env")
-RUNTIME_ENV_KEYS = frozenset({
+REQUIRED_RUNTIME_ENV_KEYS = frozenset({
     "VERA_DB_ENABLED",
     "VERA_DATA_BACKEND",
     "DB_HOST",
@@ -27,7 +27,7 @@ RUNTIME_ENV_KEYS = frozenset({
     "DB_CONNECT_TIMEOUT",
     "VERA_AUTH_PROVIDER",
 })
-REQUIRED_RUNTIME_ENV_KEYS = RUNTIME_ENV_KEYS
+RUNTIME_ENV_KEYS = REQUIRED_RUNTIME_ENV_KEYS | {"VERA_LIVE_TOUR_RELATIONAL_MODE"}
 MAX_RUNTIME_ENV_BYTES = 64 * 1024
 
 
@@ -45,8 +45,10 @@ def _decode_value(raw_value: str) -> str:
 
 
 def _validate_settings(settings: dict[str, str]) -> None:
-    if set(settings) != REQUIRED_RUNTIME_ENV_KEYS:
+    if not REQUIRED_RUNTIME_ENV_KEYS <= set(settings) or set(settings) - RUNTIME_ENV_KEYS:
         raise ValueError("managed runtime environment is incomplete")
+    if settings.get("VERA_LIVE_TOUR_RELATIONAL_MODE", "shadow") not in {"off", "shadow", "verify", "active"}:
+        raise ValueError("managed Live Tour storage mode is invalid")
     expected = {
         "VERA_DB_ENABLED": "1",
         "VERA_DATA_BACKEND": "postgres",

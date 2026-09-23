@@ -41,7 +41,10 @@ class SettingsDatabase:
         params = params or {}
         rows = []
         count = 1
-        if "SELECT full_name, bank_name, bank_account" in sql:
+        if "SELECT to_regclass" in sql:
+            # This fixture models aggregate storage before relational migration.
+            assert params["table_name"] == "vera_live_tour_meta"
+        elif "SELECT full_name, bank_name, bank_account" in sql:
             rows = [row for row in self.directory if row.get('username') == params.get('username')]
         elif "FROM employees" in sql:
             self.employee_reads += 1
@@ -69,6 +72,8 @@ class SettingsDatabase:
         class Result:
             rowcount = count
             def scalar(self):
+                if "SELECT to_regclass" in sql:
+                    return None
                 assert "pg_try_advisory_xact_lock" in sql
                 return True
             def mappings(self): return self

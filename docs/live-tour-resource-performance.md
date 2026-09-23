@@ -102,3 +102,68 @@ retain their legacy semantics. Shadow mode still uses its original global lock;
 deploying this change alone does not activate resource mode. Follow the offline
 activation procedure above. Rollback materializes cleared manual flags before
 exporting to the old aggregate, so a prior release cannot revive obsolete ordering.
+
+## Manual GitHub activation workflow (23-09-2026)
+
+After merging and deploying this release with **Deploy VPS Production**, open
+**Actions → Live Tour Storage Maintenance → Run workflow**, choose `main` and:
+
+- `status` (default): verify the exact running commit, Auth/business health,
+  actual API storage mode and the database authority marker. No service restart.
+- `activate`: stop the API systemd control group (including its embedded
+  projection scheduler/workers), back up the database, cut over, write the private
+  managed mode override, restart the same release and verify runtime health.
+- `rollback`: stop writers and export **current** canonical resource data back to
+  the aggregate, then restart in shadow mode. This never restores an old dump over
+  transactions accepted since activation.
+
+The workflow shares deployment's concurrency group. A local file lock also
+excludes simultaneous manual invocations. It refuses a different deployed SHA,
+tracked source changes, multiple API units, a different process owner, an
+unmanaged environment, or a unit without `KillMode=control-group`. For a system
+unit, the deployment user needs root or noninteractive sudo permission for
+`systemctl stop/start <actual-unit>`; user units use `systemctl --user`. It does
+not install packages or widen service permissions. Install compatible `pg_dump`
+and `pg_restore` beforehand. Maintenance requires a dedicated/direct or session
+pooled PostgreSQL connection; transaction pooling (including port 6543) is not
+supported. All direct external Live Tour writers must be stopped separately;
+this workflow supports the single VPS API unit discovered at runtime.
+
+Activation/rollback causes a maintenance outage while the backup, conversion and
+restart run. Choose a quiet period. The backup directory is
+`~/.local/state/vera-spa/live-tour-backups/<UTC-timestamp>-<random>/`, mode 0700;
+`database.dump`, `live-tour.json` and `runtime.env.before` are private (0600).
+`pg_restore --list` checks the custom archive before any cutover. Rehearse a full
+restore on a separate test database before production activation; the archive
+listing is not a complete restore test. Backups are never uploaded to Actions.
+Keep them under the existing secure VPS backup/retention policy; they contain
+business data and the private runtime configuration.
+
+A dedicated database connection holds both the legacy and resource **session**
+fences across migration commits, service restart, health verification and any
+automatic recovery. New API writes fail fast until verification finishes. If the
+new runtime fails, it is stopped before exporting data back and restoring the
+prior configuration. If database fence ownership or recovery is uncertain, the
+workflow attempts to leave the service stopped and fails visibly. Do not simply
+flip the environment flag or restart an older release.
+
+For a failed run, inspect the private `manifest.json` (release, service, original
+mode) and `phase.json` in the newest backup directory through the established VPS
+administration channel. If preparation failed, no cutover was applied; verify
+both health endpoints. `recovered` means the prior mode was restored and checked.
+For any unresolved phase, keep writers stopped, check the database ready marker
+and canonical revision using the matching release, and finish/export the
+canonical state with `vera_live_tour_cutover.py` before restoring a compatible
+mode. If the connection failed during commit, determine committed state from a
+fresh connection before taking any recovery action. Restore a dump only through
+the separate database disaster-recovery process after reviewing newer writes.
+
+The API health response now includes `live_tour_storage_ready`; a mismatch with
+its actual mode returns 503. Deployment's schema helper uses API/managed settings,
+and independently refuses to overwrite ready resource rows even when a CLI mode
+is wrong. Legacy writes also fail before the best-effort shadow savepoint.
+
+This workflow verifies canonical reads and readiness; it does not create bookings
+or financial transactions on production as a test. After activation, observe real
+booking → start → completion operations, confirm their results, and measure p50/
+p95 latency and conflict rates before reporting an improvement multiplier.

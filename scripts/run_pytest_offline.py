@@ -8,6 +8,7 @@ import pytest
 
 _original_connect = socket.socket.connect
 _original_connect_ex = socket.socket.connect_ex
+_original_getaddrinfo = socket.getaddrinfo
 
 
 def _allowed(address):
@@ -26,7 +27,14 @@ def _connect_ex(sock, address):
     return _original_connect_ex(sock, address)
 
 
+def _getaddrinfo(host, *args, **kwargs):
+    if host not in {'127.0.0.1', '::1', 'localhost', b'127.0.0.1', b'::1', b'localhost', None}:
+        raise OSError('External DNS disabled during offline tests')
+    return _original_getaddrinfo(host, *args, **kwargs)
+
+
 if __name__ == '__main__':
+    socket.getaddrinfo = _getaddrinfo
     socket.socket.connect = _connect
     socket.socket.connect_ex = _connect_ex
     raise SystemExit(pytest.main(sys.argv[1:]))
