@@ -324,6 +324,7 @@ export const veraApi = {
   createPayrollObligation: (body) => request('/v2/payroll/obligations', { method: 'POST', body: JSON.stringify(body) }),
   deletePayrollObligation: (id) => request(`/v2/payroll/obligations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  attendanceSource: () => request('/v2/devices/attendance-source'),
   autoCheck: (start = '', end = '') => {
     const params = new URLSearchParams()
     if (start && end) {
