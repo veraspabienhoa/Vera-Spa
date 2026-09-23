@@ -160,6 +160,7 @@ root.CONTROL.rspcount=1
 root.CONTROL.ITEM0.uid=16331
 root.CONTROL.ITEM0.utime=2026-09-23/17:17:07
 root.CONTROL.ITEM0.ustatus=1
+root.CONTROL.ITEM0.utype=0
 root.CONTROL.ITEM0.uname=Nhân viên A
 root.CONTROL.ITEM0.usimilarity=91.2
 root.CONTROL.ITEM0.MjCardNo=12345678
@@ -176,6 +177,7 @@ root.ERR.des=ok
         "occurred_at": "2026-09-23T17:17:07+07:00",
         "device_name": "Nhân viên A",
         "status_code": "1",
+        "type_code": "0",
     }]
     assert "usimilarity" not in repr(result)
     assert "MjCardNo" not in repr(result)
