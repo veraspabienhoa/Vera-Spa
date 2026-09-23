@@ -11,6 +11,57 @@ const today = () => {
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
+function MappingCheck({ record }) {
+  const [result, setResult] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const check = async () => {
+    setBusy(true); setResult(null)
+    try { setResult(await veraApi.checkFacegateMapping(record.registration_ref)) }
+    catch (error) { setResult({ message: error.message || 'Không xác minh được hồ sơ thiết bị.' }) }
+    finally { setBusy(false) }
+  }
+  return <div><button type="button" className="secondary-button" disabled={busy || !record.registration_ref} onClick={check}>{busy ? 'Đang kiểm tra…' : 'Đối chiếu'}</button>
+    {result && <p role="status">{result.status === 'reference_match' && <strong>{result.username} · {result.employee_code}<br /></strong>}{result.message}</p>}</div>
+}
+
+function FacegateMappings() {
+  const [data, setData] = useState(null)
+  const [profileId, setProfileId] = useState('')
+  const [profile, setProfile] = useState(null)
+  const [username, setUsername] = useState('')
+  const [code, setCode] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const run = async (action) => {
+    setBusy(true); setMessage('')
+    try { await action() } catch (error) { setMessage(error.message || 'Không thực hiện được yêu cầu.') }
+    finally { setBusy(false) }
+  }
+  return <details><summary>Ánh xạ hồ sơ FaceGate với nhân viên</summary>
+    <p>Admin chọn nhân viên VERA và nhập mã TimeSoft đã kiểm tra. Kết quả đối chiếu ảnh chỉ dùng tra cứu; ảnh đăng ký thay đổi cần xác nhận lại.</p>
+    <button type="button" className="secondary-button" disabled={busy} onClick={() => run(async () => setData(await veraApi.facegateMappings()))}>Tải danh sách ánh xạ</button>
+    {data && <>
+      <form onSubmit={event => { event.preventDefault(); if (!profile) return; run(async () => {
+        await veraApi.saveFacegateMapping({ profile_id: profile.profile_id, device_name: profile.device_name, registration_ref: profile.registration_ref, username, employee_code: code.trim(), confirmed })
+        setData(await veraApi.facegateMappings()); setConfirmed(false); setMessage('Đã lưu ánh xạ để đối chiếu.')
+      }) }}>
+        <fieldset disabled={busy}>
+          <label>ID hồ sơ FaceGate<input type="number" min="1" max="2147483647" required value={profileId} onChange={event => { setProfileId(event.target.value); setProfile(null); setConfirmed(false) }} /></label>
+          <button type="button" className="secondary-button" disabled={!/^[1-9][0-9]*$/.test(profileId)} onClick={() => run(async () => { setProfile(null); setConfirmed(false); setProfile(await veraApi.facegateProfile(profileId)) })}>Đọc hồ sơ thiết bị</button>
+          {profile && <p>Hồ sơ {profile.profile_id}: <strong>{profile.device_name || 'Chưa có tên'}</strong></p>}
+          <label>Nhân viên VERA<select required value={username} onChange={event => { setUsername(event.target.value); setConfirmed(false) }}><option value="">Chọn nhân viên</option>{data.employees.map(item => <option key={item.username} value={item.username}>{item.username}{item.full_name ? ` · ${item.full_name}` : ''}</option>)}</select></label>
+          <label>Mã nhân viên TimeSoft<input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={code} onChange={event => { setCode(event.target.value); setConfirmed(false) }} /></label>
+          <label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Tôi đã kiểm tra hồ sơ thiết bị và mã TimeSoft thuộc nhân viên đã chọn.</label>
+          <button className="secondary-button" type="submit" disabled={!profile || !confirmed || !username || !code.trim()}>Lưu / xác nhận lại ánh xạ</button>
+        </fieldset>
+      </form>
+      <div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên trên máy</th><th>Nhân viên VERA</th><th>Mã TimeSoft</th><th>Xác nhận lúc</th></tr></thead><tbody>{data.mappings.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.username}</td><td>{item.employee_code}</td><td>{formatVeraDateTime(item.confirmed_at, '—')}</td></tr>)}</tbody></table></div>
+    </>}
+    {message && <p role="status">{message}</p>}
+  </details>
+}
+
 function CaptureImageButton({ record }) {
   const [imageUrl, setImageUrl] = useState('')
   const [open, setOpen] = useState(false)
@@ -72,6 +123,7 @@ export default function CheckinHistoryPage() {
 
   return <section className="checkin-history-page">
     <div className="page-heading"><div><span className="eyebrow"><History size={16} /> FACE ID · CHẤM CÔNG</span><h1>LỊCH SỬ CHECKIN</h1><p>Tra cứu nhật ký thiết bị hoặc dữ liệu chấm công đã đồng bộ vào VERA.</p></div></div>
+    <FacegateMappings />
     <form className="attendance-date-custom" onSubmit={load}>
       <label>Nguồn dữ liệu<select value={source} onChange={event => { setSource(event.target.value); setRecords(null); setError('') }}><option value="facegate">FaceGate · Control Log</option><option value="capture">FaceGate · Capture Log</option><option value="timesoft">TimeSoft · Đã đồng bộ VERA</option></select></label>
       <label>Từ ngày<VeraDateInput value={start} onChange={event => setStart(event.target.value)} required /></label>
@@ -82,12 +134,13 @@ export default function CheckinHistoryPage() {
     {records && <>
       <label>Tìm nhân viên<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={source === 'facegate' ? 'Tên trên máy hoặc mã sự kiện' : 'Tên hoặc mã nhân viên'} /></label>
       {source === 'facegate' ? <>
-        <p>{visible.length} sự kiện FaceGate trong kỳ đã chọn. Trạng thái trên máy chưa được diễn giải; dữ liệu này chỉ để tra cứu, chưa ghép mã nhân viên và không dùng tính công/lương.</p>
+        <p>{visible.length} sự kiện FaceGate trong kỳ đã chọn. Bấm Đối chiếu để kiểm tra tham chiếu ảnh với hồ sơ đã được Admin ánh xạ. Kết quả chỉ dùng tra cứu, không dùng tính công/lương.</p>
         {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn; hãy thu hẹp khoảng ngày.</p>}
-        <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th><th>Mã loại trên máy</th></tr></thead><tbody>
+        <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th><th>Mã loại trên máy</th><th>Đối chiếu nhân viên</th></tr></thead><tbody>
           {visible.map(item => <tr key={item.event_id}>
             <td data-label="Mã sự kiện">{item.event_id}</td><td data-label="Thời điểm">{formatVeraDateTime(item.occurred_at, '—')}</td>
             <td data-label="Tên hiển thị trên máy">{item.device_name || '—'}</td><td data-label="Mã trạng thái">{item.status_code || '—'}</td><td data-label="Mã loại trên máy">{item.type_code || '—'}</td>
+            <td data-label="Đối chiếu nhân viên"><MappingCheck key={`${item.event_id}-${JSON.stringify(item.registration_ref)}`} record={item} /></td>
           </tr>)}
         </tbody></table></div>
       </> : source === 'capture' ? <>
