@@ -84,10 +84,10 @@ export default function CheckinHistoryPage() {
       {source === 'facegate' ? <>
         <p>{visible.length} sự kiện FaceGate trong kỳ đã chọn. Trạng thái trên máy chưa được diễn giải; dữ liệu này chỉ để tra cứu, chưa ghép mã nhân viên và không dùng tính công/lương.</p>
         {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn; hãy thu hẹp khoảng ngày.</p>}
-        <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th></tr></thead><tbody>
+        <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th><th>Mã loại trên máy</th></tr></thead><tbody>
           {visible.map(item => <tr key={item.event_id}>
             <td data-label="Mã sự kiện">{item.event_id}</td><td data-label="Thời điểm">{formatVeraDateTime(item.occurred_at, '—')}</td>
-            <td data-label="Tên hiển thị trên máy">{item.device_name || '—'}</td><td data-label="Mã trạng thái">{item.status_code || '—'}</td>
+            <td data-label="Tên hiển thị trên máy">{item.device_name || '—'}</td><td data-label="Mã trạng thái">{item.status_code || '—'}</td><td data-label="Mã loại trên máy">{item.type_code || '—'}</td>
           </tr>)}
         </tbody></table></div>
       </> : source === 'capture' ? <>
