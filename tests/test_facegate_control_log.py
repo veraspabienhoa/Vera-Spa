@@ -9,7 +9,7 @@ try:
     import requests  # noqa: F401
 except ModuleNotFoundError:
     # The scratch image omits app requirements; tests inject their own HTTP fake.
-    sys.modules["requests"] = SimpleNamespace(get=None, RequestException=OSError)
+    sys.modules["requests"] = SimpleNamespace(get=None, post=None, RequestException=OSError)
 
 import vera_facegate_control_log as facegate
 
@@ -59,6 +59,27 @@ root.ERR.des=ok
   def test_capture_parser_rejects_success_without_capture_metadata(self):
     with self.assertRaisesRegex(ValueError, "không đúng định dạng Capture Log"):
       facegate._parse_capture_log_response("<html>root.ERR.no=0 root.ERR.des=ok</html>")
+
+  def test_capture_closes_session_when_later_page_is_invalid(self):
+    pages = iter([
+      "root.CAPTURE.sessionid=33 root.CAPTURE.totalcount=21 root.CAPTURE.rspcount=20 root.ERR.no=0",
+      "root.ERR.no=0 root.ERR.des=loginTimeout",
+    ])
+    closed = []
+    with patch.dict("os.environ", {
+      "VERA_FACEGATE_BASE_URL": "http://127.0.0.1:18080",
+      "VERA_FACEGATE_USERNAME": "test-user", "VERA_FACEGATE_PASSWORD": "test-password",
+    }):
+      with self.assertRaisesRegex(ValueError, "không đúng định dạng Capture Log"):
+        facegate.fetch_capture_log(
+          "2026-09-23", "2026-09-23",
+          get=lambda *args, **kwargs: _response(next(pages)),
+          post=lambda url, *, params, **kwargs: closed.append(dict(params)) or _response("root.ERR.no=0"),
+        )
+    self.assertEqual(len(closed), 1)
+    self.assertEqual(closed[0]["action"], "msg")
+    self.assertEqual(closed[0]["group"], "CAPTURE")
+    self.assertEqual(closed[0]["sessionid"], "33")
 
   def test_capture_image_uses_observed_get_image_query_and_bounds_payload(self):
     calls = []
@@ -171,13 +192,18 @@ root.CONTROL.ITEM0.uid=99 root.CONTROL.ITEM0.utime=2026-09-23/09:00:00 root.CONT
 root.ERR.no=0 root.ERR.des=ok""",
     ])
     calls = []
+    closes = []
 
     def fake_get(url, *, params, **kwargs):
         calls.append((url, dict(params), kwargs))
         return _response(next(responses))
 
+    def fake_post(url, *, params, **kwargs):
+        closes.append((url, params, kwargs))
+        return _response("root.ERR.no=0")
+
     with patch.dict("os.environ", {"VERA_FACEGATE_BASE_URL": "http://127.0.0.1:18080", "VERA_FACEGATE_USERNAME": "test-user", "VERA_FACEGATE_PASSWORD": "test-password"}):
-      result = facegate.fetch_control_log("2026-09-23", "2026-09-23", get=fake_get)
+      result = facegate.fetch_control_log("2026-09-23", "2026-09-23", get=fake_get, post=fake_post)
 
     assert result["count"] == 2
     assert result["attendance_calculation_enabled"] is False
@@ -188,6 +214,12 @@ root.ERR.no=0 root.ERR.des=ok""",
     assert calls[1][1]["beginno"] == "20"
     assert all(call[2]["allow_redirects"] is False for call in calls)
     assert all(call[2]["auth"] == ("test-user", "test-password") for call in calls)
+    assert len(closes) == 1
+    assert closes[0][1]["action"] == "msg"
+    assert closes[0][1]["group"] == "CONTROL"
+    assert closes[0][1]["sessionid"] == "19"
+    assert closes[0][1]["RanId"] != calls[-1][1]["RanId"]
+    assert closes[0][2]["auth"] == ("test-user", "test-password")
 
 
   def test_fetch_rejects_invalid_or_unbounded_date_ranges(self):
@@ -214,7 +246,7 @@ root.CONTROL.ITEM0.uid=7 root.CONTROL.ITEM0.utime=2026-09-23/11:00:00 root.CONTR
 root.ERR.no=0 root.ERR.des=ok""")
 
     with patch.dict("os.environ", {"VERA_FACEGATE_BASE_URL": "http://127.0.0.1:18080", "VERA_FACEGATE_USERNAME": "test-user", "VERA_FACEGATE_PASSWORD": "test-password"}):
-      response = facegate.fetch_control_log("2026-09-23", "2026-09-23", get=fake_get)
+      response = facegate.fetch_control_log("2026-09-23", "2026-09-23", get=fake_get, post=lambda *args, **kwargs: _response("root.ERR.no=0"))
 
     assert captured["url"] == "http://127.0.0.1:18080/webs/getControl"
     assert captured["params"]["action"] == "list"
