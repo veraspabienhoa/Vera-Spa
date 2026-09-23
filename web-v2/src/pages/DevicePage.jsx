@@ -9,9 +9,9 @@ const device = [
   ['Mã máy chấm công', '2023044'],
   ['Tên máy chấm công', 'máy nhận diện chấm công'],
   ['Loại thiết bị', 'FaceId'],
-  ['IP FaceGate hiện tại', '192.168.1.27'],
+  ['IP FaceGate hiện tại', '192.168.1.52'],
   ['Cổng web FaceGate', '80'],
-  ['Cổng TimeSoft đang lưu', '4370 (chưa kết nối TCP tại IP mới)'],
+  ['Cổng TimeSoft đang lưu', '4370 (chưa xác minh tại IP mới)'],
   ['Kiểu kết nối', 'TCP/IP'],
   ['ID máy', '2023044'],
   ['Face Server cũ', '192.168.1.150 (không phản hồi trên cổng 80)'],
@@ -30,7 +30,7 @@ export default function DevicePage() {
     <div className="responsive-data-table"><table><thead><tr><th>Thông tin</th><th>Giá trị</th></tr></thead><tbody>
       {device.map(([label, value]) => <tr key={label}><td data-label="Thông tin">{label}</td><td data-label="Giá trị">{value}</td></tr>)}
     </tbody></table></div>
-    <p>Windows đã mở trang FaceGate/4.0.0-1.0 tại 192.168.1.27:80. Đường kết nối từ VPS và giao thức lấy log: chưa xác minh.</p>
+    <p>Windows đã nhận HTTP 200 từ FaceGate/4.0.0-1.0 tại 192.168.1.52:80. Đường kết nối từ VPS và giao thức lấy log: chưa xác minh.</p>
     <p>Nguồn TimeSoft: {source ? `${source.row_count} bản ghi trong cache hôm nay; đồng bộ lúc ${formatVeraDateTime(source.last_sync_at)}; ${source.cache_fresh ? 'cache còn hạn' : 'cache hết hạn'}.` : error ? `Không đọc được trạng thái: ${error}` : 'Đang tải…'}</p>
     <p>TimeSoft không xác nhận các bản ghi này đến từ riêng máy 2023044. Cần đường mạng riêng từ máy chạy API tới Face Server hoặc máy chấm công để lấy log trực tiếp.</p>
   </section>
