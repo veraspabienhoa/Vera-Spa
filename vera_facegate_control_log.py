@@ -32,7 +32,7 @@ _ITEM_KEY = re.compile(r"ITEM(?P<index>\d+)\.(?P<field>[A-Za-z0-9_]+)\Z")
 DEFAULT_CAPTURE_PATH = "/webs/getCapture"
 DEFAULT_IMAGE_PATH = "/webs/getImage"
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/x-ms-bmp"}
 
 
 def parse_control_log_response(body: str) -> dict[str, Any]:
@@ -242,6 +242,7 @@ def fetch_capture_image(ref: dict[str, Any], *, get=requests.get) -> tuple[bytes
         "action": "list", "group": "IMAGE", "dwfiletype": str(file_type),
         "dwfileindex": str(file_index), "dwfilepos": str(file_position),
         "time": occurred.strftime("%Y-%m-%d/%H:%M:%S"),
+        "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
     }
     try:
         response = get(f"{base_url}{path}", params=params, timeout=(3, 8), allow_redirects=False, auth=auth, stream=True)
