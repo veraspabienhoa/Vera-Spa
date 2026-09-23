@@ -131,6 +131,8 @@ def _parse_capture_log_response(body: str) -> dict[str, Any]:
         raise ValueError("Phản hồi FaceGate không đúng định dạng Capture Log.")
     if values["ERR.no"] != "0":
         raise ValueError("FaceGate trả lỗi khi đọc Capture Log.")
+    if "totalcount" not in values:
+        raise ValueError("Phản hồi FaceGate không đúng định dạng Capture Log.")
     try:
         total_count = max(0, int(values.get("totalcount", "0")))
         session_id = max(0, int(values.get("sessionid", "0")))
