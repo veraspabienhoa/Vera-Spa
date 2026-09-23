@@ -172,7 +172,26 @@ def _parse_capture_log_response(body: str) -> dict[str, Any]:
     }
 
 
-def fetch_capture_log(start: str, end: str, *, get=requests.get) -> dict[str, Any]:
+def _close_query_session(base_url: str, path: str, auth: tuple[str, str],
+                         group: str, session_id: int, post) -> None:
+    """Release a device query session without masking the original read result."""
+    if session_id <= 0:
+        return
+    try:
+        response = post(
+            f"{base_url}{path}",
+            params={"action": "msg", "group": group, "sessionid": str(session_id),
+                    "RanId": str(secrets.randbelow(90_000_000) + 10_000_000)},
+            timeout=(3, 8), allow_redirects=False, auth=auth,
+        )
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+    except requests.RequestException:
+        pass
+
+
+def fetch_capture_log(start: str, end: str, *, get=requests.get, post=requests.post) -> dict[str, Any]:
     """Fetch bounded Capture Log metadata. This endpoint does not fetch images."""
     base_url, path, auth = _facegate_config("VERA_FACEGATE_CAPTURE_LOG_PATH", DEFAULT_CAPTURE_PATH)
     begin_date = datetime.strptime(start, "%Y-%m-%d").date()
@@ -186,7 +205,8 @@ def fetch_capture_log(start: str, end: str, *, get=requests.get) -> dict[str, An
     session_id = 0
     total_count = None
     truncated = False
-    while begin_no < MAX_RECORDS:
+    try:
+      while begin_no < MAX_RECORDS:
         params = {
             "action": "list", "group": "CAPTURE", "begintime": f"{begin_date.isoformat()}/00:00:00",
             "endtime": f"{end_date.isoformat()}/23:59:59", "utype": "0", "sequence": "1",
@@ -217,8 +237,10 @@ def fetch_capture_log(start: str, end: str, *, get=requests.get) -> dict[str, An
         begin_no += received
         if begin_no >= total_count:
             break
-    else:
+      else:
         truncated = total_count is not None and total_count > MAX_RECORDS
+    finally:
+      _close_query_session(base_url, path, auth, "CAPTURE", session_id, post)
     return {
         "source": "facegate_capture_log", "records": records, "count": len(records),
         "total_count": int(total_count or 0), "truncated": truncated,
@@ -280,7 +302,7 @@ def fetch_capture_image(ref: dict[str, Any], *, get=requests.get) -> tuple[bytes
             close()
 
 
-def fetch_control_log(start: str, end: str, *, get=requests.get) -> dict[str, Any]:
+def fetch_control_log(start: str, end: str, *, get=requests.get, post=requests.post) -> dict[str, Any]:
     """Fetch a bounded range of Control Log pages through a configured relay."""
     base_url, path, auth = _facegate_config()
     begin_date = datetime.strptime(start, "%Y-%m-%d").date()
@@ -294,7 +316,8 @@ def fetch_control_log(start: str, end: str, *, get=requests.get) -> dict[str, An
     session_id = 0
     total_count = None
     truncated = False
-    while begin_no < MAX_RECORDS:
+    try:
+      while begin_no < MAX_RECORDS:
         params = {
             "action": "list",
             "group": "CONTROL",
@@ -338,8 +361,10 @@ def fetch_control_log(start: str, end: str, *, get=requests.get) -> dict[str, An
         begin_no += received
         if begin_no >= total_count:
             break
-    else:
+      else:
         truncated = total_count is not None and total_count > MAX_RECORDS
+    finally:
+      _close_query_session(base_url, path, auth, "CONTROL", session_id, post)
 
     return {
         "source": "facegate_control_log",
