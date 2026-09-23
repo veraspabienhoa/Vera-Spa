@@ -9,7 +9,7 @@ const device = [
   ['Mã máy chấm công', '2023044'],
   ['Tên máy chấm công', 'máy nhận diện chấm công'],
   ['Loại thiết bị', 'FaceId'],
-  ['Địa chỉ IP', '192.168.1.6'],
+  ['Địa chỉ IP', '192.168.1.27'],
   ['Cổng', '4370'],
   ['Kiểu kết nối', 'TCP/IP'],
   ['ID máy', '2023044'],
