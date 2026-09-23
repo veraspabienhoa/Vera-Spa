@@ -65,11 +65,11 @@ root.ERR.des=ok
 
     class ImageResponse:
       status_code = 200
-      headers = {"Content-Type": "image/jpeg; charset=binary"}
+      headers = {"Content-Type": "image/bmp; charset=binary"}
 
       def iter_content(self, *, chunk_size):
         self.chunk_size = chunk_size
-        yield b"jpeg-data"
+        yield b"BMtest-data"
 
       def close(self):
         self.closed = True
@@ -91,13 +91,15 @@ root.ERR.des=ok
     }):
       content, media_type = facegate.fetch_capture_image(ref, get=fake_get)
 
-    self.assertEqual((content, media_type), (b"jpeg-data", "image/jpeg"))
+    self.assertEqual((content, media_type), (b"BMtest-data", "image/bmp"))
     self.assertEqual(calls[0][0], "http://127.0.0.1:18080/webs/getImage")
     self.assertEqual(calls[0][1], {
       "action": "list", "group": "IMAGE", "dwfiletype": "2",
       "dwfileindex": "9", "dwfilepos": "32571392",
       "time": "2026-09-23/18:16:43",
+      "RanId": calls[0][1]["RanId"],
     })
+    self.assertRegex(calls[0][1]["RanId"], r"^[1-9][0-9]{7}$")
     self.assertEqual(calls[0][2]["auth"], ("test-user", "test-password"))
     self.assertTrue(calls[0][2]["stream"])
     self.assertFalse(calls[0][2]["allow_redirects"])
