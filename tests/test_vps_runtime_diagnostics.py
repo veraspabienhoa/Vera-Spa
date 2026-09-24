@@ -20,3 +20,21 @@ psycopg.OperationalError: connection to postgresql://secret-user:secret-pass@pri
 
 def test_arbitrary_log_bodies_are_not_echoed():
     assert safe_log_summary('Authorization: Bearer private-token\nCustomer: private-name') == []
+
+
+def test_auth_single_line_failure_keeps_safe_cause_only():
+    message = 'Web V2 local auth: identity lookup unavailable: OperationalError; cause=OperationalError; sqlstate=08006; pool=private-values'
+    assert safe_log_summary(message) == ['auth_lookup_error type=OperationalError cause=OperationalError sqlstate=08006']
+    assert safe_log_summary('Web V2 local auth: identity lookup unavailable: private/value; cause=x; sqlstate=oops') == []
+
+
+def test_activity_query_returns_only_categories_and_ages_with_bound():
+    from vera_vps_runtime_diagnostics import ACTIVITY_DETAIL_SQL
+    selection = ACTIVITY_DETAIL_SQL.split('FROM pg_stat_activity')[0]
+    assert 'LIMIT 20' in ACTIVITY_DETAIL_SQL
+    assert 'usename=current_user' in ACTIVITY_DETAIL_SQL
+    assert 'same_client_as_diagnostic' in selection
+    for unsafe in ['query AS', 'application_name AS', 'client_addr AS', 'usename AS']:
+        assert unsafe not in selection
+    for field in ['statement_kind', 'transaction_seconds', 'state_seconds', 'query_seconds', 'operation']:
+        assert f'AS {field}' in selection
