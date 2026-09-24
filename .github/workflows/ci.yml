@@ -91,6 +91,7 @@ jobs:
           staff = Path('vera_web_v2_staff.py').read_text(encoding='utf-8')
           profile = Path('vera_web_v2_profile.py').read_text(encoding='utf-8')
           identity_ui = read_ui_source(Path('web-v2/src/pages/EmployeeIdentityPanel.jsx'))
+          identity_styles = Path('web-v2/src/pages/EmployeeIdentityMedia.css').read_text(encoding='utf-8')
           employee_ui = read_ui_source(Path('web-v2/src/pages/EmployeePage.jsx'))
           requirements = Path('requirements.txt').read_text(encoding='utf-8')
           dockerfile = Path('Dockerfile').read_text(encoding='utf-8')
@@ -108,7 +109,7 @@ jobs:
               'manual CCCD profile fields exist': all(key in profile for key in ('cccd_number', 'cccd_issue_date', 'cccd_issue_place')),
               'camera crop and rotation UI exists': all(key in identity_ui for key in ('IdentityCamera', 'IdentityImageEditor', 'PORTRAIT_ASPECT_RATIO')),
               'crop supports all four independently movable edges': all(key in identity_ui for key in ("setCropInset('left'", "setCropInset('right'", "setCropInset('top'", "setCropInset('bottom'")),
-              'mobile crop supports pointer drag and free selection': all(key in identity_ui for key in ('onPointerDown={beginCropGesture}', 'Vẽ vùng crop tự do', 'Di chuyển ảnh/vùng chọn', 'touch-action:none')),
+              'mobile crop supports pointer drag and free selection': all(key in identity_ui for key in ('onPointerDown={beginCropGesture}', 'Vẽ vùng crop tự do', 'Di chuyển ảnh/vùng chọn')) and 'touch-action:none' in identity_styles,
               'admin can hide and show employees': all(key in employee_ui for key in ('staff-list-selection-actions', 'Chọn tất cả', 'Bỏ chọn', 'Ẩn đã chọn', 'Hiện nhân viên đã ẩn', 'showHiddenEmployees', 'profile_hidden')) and 'Hiện đã chọn' not in employee_ui and 'employees_visibility_manage' in staff,
               'removed employee media helper copy stays hidden': all(key not in identity_ui for key in ('Hệ thống tự crop đúng tỷ lệ 3:4', 'Ảnh CCCD được bảo vệ')),
               'camera can switch front and rear': all(key in identity_ui for key in ('Camera trước', 'Camera sau', 'facingMode: { ideal: facingMode }')),
