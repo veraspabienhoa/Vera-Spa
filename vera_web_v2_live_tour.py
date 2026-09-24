@@ -4917,8 +4917,8 @@ def install_live_tour_routes(
     @app.get("/v2/live-tour/recovery")
     def live_tour_recovery(ident: identity_type = Depends(current_identity)):
         role = str(getattr(ident, "role", "") or "").strip().lower()
-        if role not in {"admin", "quanly", "letan"}:
-            raise HTTPException(403, "Không có quyền xem khôi phục Live Tour.")
+        if role != "admin":
+            raise HTTPException(403, "Chỉ Admin được xem khôi phục Live Tour.")
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_view")
         # Each query closes its connection before the next one starts.

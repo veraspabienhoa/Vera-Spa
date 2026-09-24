@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { formatVeraDateTime } from '../lib/veraDate'
 import { veraApi } from '../lib/api'
 
 export default function LiveTourRecoveryPanel({ isAdmin, onReload, actionBusy }) {
@@ -33,7 +34,7 @@ export default function LiveTourRecoveryPanel({ isAdmin, onReload, actionBusy })
   const counts = status?.counts || {}
   const metrics = status?.metrics || {}
   const recoverable = Number(metrics.stale_processing || 0) + Number(counts.failed || 0)
-  return <details className="panel live-tour-recovery">
+  return <details open className="panel live-tour-recovery">
     <summary>Khôi phục Live Tour {recoverable > 0 ? `· ${recoverable} tác vụ cần kiểm tra` : ''}</summary>
     <p>Dữ liệu hiển thị được tải từ bản đã lưu. Tác vụ đang ghi sẽ không bị ngắt.</p>
     <div className="live-tour-recovery-metrics" aria-live="polite">
@@ -52,7 +53,7 @@ export default function LiveTourRecoveryPanel({ isAdmin, onReload, actionBusy })
     {status?.history?.length > 0 && <div className="live-tour-recovery-history">
       <strong>Lịch sử khôi phục</strong>
       <ul>{status.history.map((entry, index) => <li key={`${entry.job_id}-${index}`}>
-        Tác vụ #{entry.job_id} · {entry.actor} · {new Date(entry.created_at).toLocaleString('vi-VN')}
+        Tác vụ #{entry.job_id} · {entry.actor} · {formatVeraDateTime(entry.created_at)}
       </li>)}</ul>
     </div>}
     <style>{`.live-tour-recovery{margin:12px 0;padding:16px}.live-tour-recovery summary{cursor:pointer;font-size:16px;font-weight:700}.live-tour-recovery p,.live-tour-recovery li{font-size:14px}.live-tour-recovery-metrics,.live-tour-recovery-actions{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}.live-tour-recovery-metrics span{padding:8px;border:1px solid #d8dee5;border-radius:8px}.live-tour-recovery-history ul{margin:8px 0;padding-left:22px}`}</style>

@@ -217,7 +217,7 @@ def test_live_tour_reuses_an_idempotency_key_until_the_same_request_succeeds():
     release = execute_action.index(
         "releaseIdempotencyEntry(requestEntriesRef.current, requestEntry)"
     )
-    catch = execute_action.index("} catch (err) {")
+    catch = execute_action.index("} catch (err) {\n      const message = liveTourErrorDetail(err)")
     assert api_call < release < catch
     assert "releaseIdempotencyEntry" not in execute_action[catch:]
 

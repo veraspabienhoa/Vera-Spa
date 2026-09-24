@@ -12,6 +12,7 @@ import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttend
 
 const items = [
   { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true },
+  { id: 'live-tour-recovery', label: 'Khôi phục Live Tour', icon: RefreshCw, ready: true, adminOnly: true },
   { id: 'milk-tea', label: 'Trà sữa', icon: CircleDollarSign, ready: true, roles: ['leader', 'nhanvien'] },
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker'] },
@@ -431,7 +432,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           {navigationToggle}
           <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
           <UiToolbar data-ui-key="u-d08e23e02899" className="topbar-actions">
-            {isAdmin && !user?.must_change_password && <NotificationInbox/>}
+            {!user?.must_change_password && <NotificationInbox key={user.id} showTrigger={isAdmin}/>}
             {currentPage !== 'tour' && currentPage !== 'live-tour' && <button data-ui-key="u-f10aa9b76c0d" data-ui-label-default="Mở tab mới" type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /><UiCustomText uiKey="u-f10aa9b76c0d"> Mở tab mới</UiCustomText></button>}
             <button data-ui-key="u-ae117d0698c3" data-ui-label-default="Làm mới" type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /><UiCustomText uiKey="u-ae117d0698c3"> Làm mới</UiCustomText></button>
           </UiToolbar>

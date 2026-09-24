@@ -146,7 +146,7 @@ def dispatch_pending(engine, send, vault, limit=30):
                         sid = subscription['subscription_id']
                         if sid in sent_ids:
                             continue
-                        ok, status, _ = send({**subscription, 'payload': row['payload']}, private_key, subject)
+                        ok, status, _ = send({**subscription, 'payload': {**row['payload'], 'notification_id': str(row['id']), 'url': APP_URL + '?notification=' + str(row['id'])}}, private_key, subject)
                         if status in (404, 410): dead_ids.add(sid)
                         if ok or status in (404, 410):
                             sent_ids.add(sid)

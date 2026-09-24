@@ -60,6 +60,7 @@ self.addEventListener('push', (event) => {
       watchedDate: payload.watched_date || '',
       kind: payload.kind || '',
       changeId: payload.change_id || null,
+      notificationId: payload.notification_id || null,
       employee: payload.employee || '',
       deadline: payload.deadline || '',
     },
@@ -91,11 +92,23 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   if (action === 'dismiss') return
 
-  const targetUrl = new URL(event.notification.data?.url || APP_URL, self.location.origin).href
+  const data = event.notification.data || {}
+  let target = new URL(APP_URL, self.location.origin)
+  try {
+    const candidate = new URL(data.url || APP_URL, self.location.origin)
+    if (candidate.origin === self.location.origin) target = candidate
+  } catch { /* fall back to app root */ }
+  if (/^[1-9][0-9]*$/.test(String(data.notificationId || ''))) {
+    target = new URL(APP_URL, self.location.origin)
+    target.searchParams.set('notification', String(data.notificationId))
+  } else if (data.kind === 'admin-system-change') {
+    target.searchParams.set('page', 'changes')
+  }
+  const targetUrl = target.href
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const client of windows) {
-      if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+      if (new URL(client.url).origin === self.location.origin && 'focus' in client) {
         if ('navigate' in client) await client.navigate(targetUrl)
         return client.focus()
       }
