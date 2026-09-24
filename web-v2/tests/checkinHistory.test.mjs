@@ -19,5 +19,5 @@ test('all option is explicitly bounded to 63 inclusive days', () => {
 })
 test('query includes exact applied detailed filters and does not send preset to API', () => {
   const filters = { ...initialCheckinFilters(new Date('2026-09-24T10:00:00Z')), employee: ' Ánh ', event_id: '12', status: '0', event_type: 'A', event_date: '2026-09-23' }
-  assert.deepEqual(checkinQuery(filters), { source: 'facegate', start: '2026-09-01', end: '2026-09-30', employee: 'Ánh', event_id: '12', status: '0', event_type: 'A', event_date: '2026-09-23' })
+  assert.deepEqual(checkinQuery(filters), { source: 'facegate_saved', start: '2026-09-01', end: '2026-09-30', employee: 'Ánh', event_id: '12', status: '0', event_type: 'A', event_date: '2026-09-23' })
 })

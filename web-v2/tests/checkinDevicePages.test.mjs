@@ -25,7 +25,7 @@ test('history exports applied filters, blocks stale export, and survives query f
   button(dom, 'Xem lịch sử').click(); await tick()
   assert.equal(button(dom, 'Xuất Excel').disabled, false)
   button(dom, 'Xuất Excel').click(); await tick()
-  assert.equal(exported.source, 'facegate')
+  assert.equal(exported.source, 'facegate_saved')
   button(dom, 'Hôm qua').click(); await tick()
   assert.equal(button(dom, 'Xuất Excel').disabled, true)
   fail = true; button(dom, 'Xem lịch sử').click(); await tick()
