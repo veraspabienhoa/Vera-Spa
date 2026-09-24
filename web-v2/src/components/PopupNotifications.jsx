@@ -1,3 +1,4 @@
+import TrainingNoticeDetail from './TrainingNoticeDetail'
 import UiCustomText from './UiCustomText'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
@@ -91,11 +92,10 @@ export default function PopupNotifications() {
     } catch { /* notification may have been removed */ }
   }
   if (!items.length && !trainingDetail) return null
-  const detail = trainingDetail?.detail
   return <>
     {!!items.length && <div className="popup-notification-stack" aria-label="Thông báo trên màn hình">{items.map(item => <div key={item.id} className={`popup-notification ${item.type}`} role="status">
       {item.notificationId ? <BellRing size={19}/> : item.type === 'success' ? <CheckCircle2 size={19}/> : item.type === 'error' ? <CircleAlert size={19}/> : <Info size={19}/>} {item.notificationId ? <button data-ui-key="u-0455df928cb2" type="button" className="popup-notification-open" onClick={() => openTrainingDetail(item)}>{item.message}<small>Bấm để xem chi tiết</small></button> : <span>{item.message}</span>}<button data-ui-key="u-733434ac2d70" type="button" aria-label="Đóng thông báo" onClick={() => setItems(current => current.filter(row => row.id !== item.id))}><X size={16}/></button>
     </div>)}</div>}
-    {trainingDetail && <div className="training-notification-modal" role="dialog" aria-modal="true" aria-label="Chi tiết đánh giá"><div className="training-notification-dialog"><header><div><small>ĐÀO TẠO & ĐÁNH GIÁ</small><h2>{trainingDetail.notification?.title}</h2></div><button data-ui-key="u-39db7522c296" type="button" aria-label="Đóng" onClick={() => setTrainingDetail(null)}><X size={20}/></button></header><p>{trainingDetail.notification?.body}</p><dl><div><dt>Nhân viên</dt><dd>{detail?.employee_name}</dd></div><div><dt>Người thực hiện</dt><dd>{detail?.evaluator_name}</dd></div>{detail?.topic && <div><dt>Nội dung</dt><dd>{detail.topic}</dd></div>}{detail?.skill_grade && <div><dt>Điểm kỹ năng</dt><dd>{detail.skill_grade}</dd></div>}{detail?.cycle_name && <div><dt>Đợt đánh giá</dt><dd>{detail.cycle_name}</dd></div>}{detail?.craft_score && <div><dt>Tay nghề / Giao tiếp / Thái độ</dt><dd>{detail.craft_score}/5 · {detail.communication_score}/5 · {detail.attitude_score}/5</dd></div>}{(detail?.comments || detail?.notes) && <div><dt>Nhận xét</dt><dd>{detail.comments || detail.notes}</dd></div>}</dl><button data-ui-key="u-713f515f8271" data-ui-label-default="Đóng" type="button" className="primary-button" onClick={() => setTrainingDetail(null)}><UiCustomText uiKey="u-713f515f8271">Đóng</UiCustomText></button></div></div>}
+    {trainingDetail && <TrainingNoticeDetail notice={trainingDetail} onClose={() => setTrainingDetail(null)} />}
   </>
 }

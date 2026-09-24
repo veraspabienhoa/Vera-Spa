@@ -20,7 +20,9 @@ export default function DevicePage() {
   const [source, setSource] = useState(null)
   const [sourceError, setSourceError] = useState('')
   const [sourceBusy, setSourceBusy] = useState(false)
+  const [detected, setDetected] = useState(null)
   const sequence = useRef(0)
+  const registerUsbRef = useRef(null)
   const formRef = useRef(null)
   const reload = async () => {
     const id = ++sequence.current
@@ -32,6 +34,36 @@ export default function DevicePage() {
     finally { if (sequence.current === id) setBusy(false) }
   }
   useEffect(() => { reload(); return () => { sequence.current += 1 } }, [])
+  const registerUsb = async device => {
+    if (!device || !data || data.devices.length >= 100) return
+    const serial = String(device.serialNumber || '').slice(0, 100)
+    const vendor = device.vendorId.toString(16).padStart(4, '0')
+    const product = device.productId.toString(16).padStart(4, '0')
+    const identity = serial || `USB ${vendor}:${product}`
+    setDetected({ manufacturer: device.manufacturerName || '', model: device.productName || '', vendor, product })
+    if (data.devices.some(item => item.connection === 'usb' && item.serial === identity)) return
+    const record = { ...newDevice(), name: (device.productName || `Thiết bị USB ${vendor}:${product}`).slice(0, 160),
+      kind: 'other', connection: 'usb', manufacturer: (device.manufacturerName || '').slice(0, 100),
+      model: (device.productName || '').slice(0, 100), serial: identity, notes: `USB VID ${vendor} · PID ${product}` }
+    try {
+      setData(await veraApi.saveDeviceRegistry({ expected_revision: data.revision, devices: [...data.devices, record] }))
+      setMessage('Đã thêm hồ sơ thiết bị USB. Kết nối nghiệp vụ cần bộ điều khiển tương thích.')
+    } catch (cause) { setError(cause.message || 'Không lưu được hồ sơ thiết bị.'); await reload() }
+  }
+  registerUsbRef.current = registerUsb
+  const discoverUsb = async () => {
+    if (!navigator.usb?.requestDevice) { setError('Trình duyệt này không hỗ trợ nhận diện USB. Hãy dùng Chrome hoặc Edge trên máy tính.'); return }
+    try { await registerUsb(await navigator.usb.requestDevice({ filters: [] })) }
+    catch (cause) { if (cause?.name !== 'NotFoundError') setError(cause.message || 'Không nhận diện được USB.') }
+  }
+  const hasRegistry = Boolean(data)
+  useEffect(() => {
+    if (!hasRegistry || !navigator.usb) return undefined
+    const onConnect = event => { void registerUsbRef.current?.(event.device) }
+    navigator.usb.addEventListener('connect', onConnect)
+    navigator.usb.getDevices().then(devices => devices.forEach(onDevice => { void registerUsbRef.current?.(onDevice) })).catch(() => {})
+    return () => navigator.usb.removeEventListener('connect', onConnect)
+  }, [hasRegistry])
   const save = async event => {
     event.preventDefault()
     if (!event.currentTarget.reportValidity() || !data) return
@@ -64,7 +96,9 @@ export default function DevicePage() {
     <div className="device-actions">
       <button type="button" className="secondary-button" disabled={busy || !data || Boolean(editing) || data.devices.length >= 100} onClick={() => edit(newDevice())}><Plus size={16} />Thêm thiết bị</button>
       <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={reload}><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang xử lý…' : 'Tải lại danh sách'}</button>
+      <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverUsb()}><ScanLine size={16}/>Nhận diện USB</button>
     </div>
+    {detected && <p className="device-detected">Đã nhận diện: {detected.manufacturer || 'USB'} {detected.model || `${detected.vendor}:${detected.product}`}. <a href={`https://www.google.com/search?q=${encodeURIComponent(`${detected.manufacturer} ${detected.model} ${detected.vendor}:${detected.product} driver official`)}`} target="_blank" rel="noopener noreferrer">Tìm driver từ hãng</a></p>}
     {error && <p className="device-error" role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}
     {editing && <form ref={formRef} className="device-editor" onSubmit={save}>

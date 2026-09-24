@@ -6,7 +6,6 @@ function LiveTourBoard({
   appearanceTableColumns,
   appointmentColumn,
   appointmentEditor,
-  busy,
   actionBusy,
   allowStartOutsideShift,
   canBook,
@@ -43,7 +42,6 @@ function LiveTourBoard({
             const id = recordId(item, index);
             return <EmployeeRow key={id} item={item} index={index} id={id} appearanceTableColumns={appearanceTableColumns} appointmentColumn={appointmentColumn} canBook={canBook} canEditAppointment={canEditAppointment} canOperate={canOperate} canPayment={canPayment} cellValue={cellValue} clockMs={clockMs} columnClass={columnClass} columns={columns} employeeColumn={employeeColumn} hasGroup={hasGroup} rowClass={rowClass} statusColumn={statusColumn} sttColumn={sttColumn} selected={selectedIds.has(id)} shiftReadyTimes={data.payment_settings?.shift_ready_times} appointmentEditor={renderAppointment} employeeServiceActions={renderActions} openEmployeeAndShift={openEmployee} toggleRow={selectRow} renderVersion={renderVersion}/>;
           })}</tbody></table></div>
-      {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>;
 }
 export default LiveTourBoard;

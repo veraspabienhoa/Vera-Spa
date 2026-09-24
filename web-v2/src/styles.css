@@ -880,9 +880,10 @@ tr:last-child td { border-bottom: 0; }
   .leave-list-panel .panel-title-row { display: flex; align-items: flex-start; gap: 8px; }
   .leave-list-panel .panel-title-row > div { min-width: 0; flex: 1; }
   .leave-list-panel .panel-title-row > button { flex: 0 0 auto; padding: 8px 10px; white-space: nowrap; }
-  .leave-list-panel .list-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; margin-top: 9px; }
-  .leave-list-panel .list-actions button { width: 100%; min-width: 0; padding: 8px 5px; font-size: 9px; white-space: nowrap; }
-  .leave-list-panel .penalty-chip { grid-column: 1 / -1; text-align: center; }
+  .leave-list-panel .list-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; width: 100%; margin-top: 9px; }
+  .leave-list-panel .list-actions button { width: 100%; min-width: 0; padding: 7px 1px; font-size: clamp(7px, 2vw, 9px); white-space: nowrap; gap: 2px; }
+  .leave-list-panel .list-actions button svg { width: 11px; height: 11px; flex: none; }
+  .leave-list-panel .penalty-chip { grid-column: auto; display: grid; align-items: center; padding: 4px 1px; font-size: clamp(7px, 1.9vw, 9px); text-align: center; }
   .list-action-notice { gap: 8px; margin-top: -2px; padding: 9px; }
   .list-action-notice-icon { width: 27px; height: 27px; flex-basis: 27px; }
   .list-action-notice-copy strong, .list-action-notice-copy span { font-size: 9px; }
@@ -1164,3 +1165,18 @@ tr:last-child td { border-bottom: 0; }
 }
 .popup-notification-stack{position:fixed;z-index:20000;right:18px;top:18px;width:min(430px,calc(100vw - 24px));display:grid;gap:9px;pointer-events:none}.popup-notification{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:9px;padding:12px 13px;border:1px solid #d1ddd6;border-left:5px solid #b17b13;border-radius:12px;background:#fff;color:#263c33;box-shadow:0 12px 35px rgba(22,50,40,.24);pointer-events:auto}.popup-notification.success{border-left-color:#16824d}.popup-notification.error{border-left-color:#c3382c}.popup-notification svg{margin-top:1px}.popup-notification.success>svg{color:#16824d}.popup-notification.error>svg{color:#c3382c}.popup-notification.warning>svg{color:#9a690d}.popup-notification span{font-size:13px;font-weight:750;line-height:1.4;overflow-wrap:anywhere}.popup-notification button{display:grid;place-items:center;border:0;padding:1px;color:#54675f;background:transparent;cursor:pointer}@media(max-width:700px){.popup-notification-stack{right:6px;top:6px;width:calc(100vw - 12px)}.popup-notification{padding:10px}}
 .popup-notification .popup-notification-open{display:grid;justify-items:start;gap:3px;text-align:left;font-size:13px;font-weight:750;line-height:1.4}.popup-notification-open small{color:#75847d;font-size:10px}.training-notification-modal{position:fixed;inset:0;z-index:21000;display:grid;place-items:center;padding:16px;background:rgba(8,24,18,.68)}.training-notification-dialog{width:min(620px,100%);max-height:90vh;overflow:auto;padding:20px;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(0,0,0,.3)}.training-notification-dialog header{display:flex;align-items:start;justify-content:space-between;gap:12px;border-bottom:1px solid #dce5df}.training-notification-dialog h2{margin:4px 0 14px;color:#183d31}.training-notification-dialog header small{color:#9a7625;font-weight:900;letter-spacing:.08em}.training-notification-dialog header button{border:0;background:transparent;color:#476156}.training-notification-dialog dl{display:grid;gap:0;margin:15px 0}.training-notification-dialog dl>div{display:grid;grid-template-columns:150px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid #e6ece8}.training-notification-dialog dt{font-weight:850;color:#597067}.training-notification-dialog dd{margin:0;color:#183d31}@media(max-width:560px){.training-notification-dialog dl>div{grid-template-columns:1fr;gap:3px}}
+
+/* Keep mobile dialogs inside the screen and give their actions clear targets. */
+.training-notification-actions{display:flex;flex-wrap:wrap;gap:9px}
+.training-notification-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:12px;padding:10px 14px;background:#194b38;color:#fff}
+.training-notification-actions .secondary-button{background:#e9f2e9;color:#214c38}
+.training-notification-dialog header button{border-radius:10px;background:#e9f2e9;color:#214c38}
+@media(max-width:600px){
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog){box-sizing:border-box;max-width:calc(100vw - 20px);min-width:0;overflow-x:hidden}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) :is(.table-wrap,.table-container,table){max-width:100%;min-width:0}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) :is(button,[role="button"]){border-radius:10px;background-color:#e9f2e9;color:#214c38}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) :is(.primary-button,.training-notification-actions .primary-button){background-color:#194b38;color:#fff}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) .danger-button{background-color:#fff0ef;color:#922b34}
+  .training-notification-dialog{width:100%;padding:16px;overflow-y:auto}
+  .training-notification-actions button{flex:1 1 auto}
+}

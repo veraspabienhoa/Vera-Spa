@@ -90,7 +90,7 @@ def enqueue(conn, source_key, payload, event_key=None):
     if title.upper().startswith('VERA SPA'):
         title = title[8:].lstrip(' ·:-–') or 'Thông báo'
     safe = {'title': title[:160], 'body': str(payload.get('body') or '')[:2000],
-            'url': APP_URL, 'tag': event_key, 'kind': source_key}
+            'url': APP_URL, 'tag': event_key, 'kind': str(payload.get('kind') or source_key)[:80]}
     if source_key == 'leave_watch' and payload.get('watched_date'):
         from datetime import date
         try: safe['watched_date'] = date.fromisoformat(str(payload['watched_date'])).isoformat()
@@ -102,6 +102,14 @@ def enqueue(conn, source_key, payload, event_key=None):
             FROM vera_v2_notification_channel_setting WHERE notification_key=:key AND enabled=FALSE'''),
             {'key':rule['key']}).mappings()}
         for recipient in resolve_recipients(conn, rule['recipients'], source_key, safe):
+            # Mid-shift reminders belong to the employee. Admins only receive
+            # the overdue event, even when a broad rule targets all accounts.
+            if source_key == 'attendance_break' and payload.get('kind') == 'attendance-break-reminder':
+                admin = conn.execute(text('''SELECT 1 FROM vera_v2_user_profile
+                    WHERE auth_user_id::text=:recipient AND lower(role)='admin' '''),
+                    {'recipient': recipient}).scalar_one_or_none()
+                if admin:
+                    continue
             for channel in set(rule['channels']):
                 if channel in disabled_channels: continue
                 conn.execute(text('''INSERT INTO vera_notification_delivery(event_key,rule_key,recipient,channel,payload)
@@ -138,7 +146,9 @@ def dispatch_pending(engine, send, vault, limit=30):
                     LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
                     LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='push'
                     WHERE r.key=:key AND {recipient_membership_sql()} AND r.channels ? 'push'
-                    AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date')}).scalar_one_or_none()
+                    AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
+                    AND NOT (r.source_key='attendance_break' AND p.role='admin'
+                        AND :kind='attendance-break-reminder')'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date'), 'kind':row['payload'].get('kind')}).scalar_one_or_none()
                 subscriptions = [dict(r) for r in conn.execute(text('''SELECT subscription_id::text AS subscription_id,
                     endpoint,p256dh,auth_secret FROM vera_v2_push_subscription
                     WHERE auth_user_id::text=:recipient AND is_active'''), {'recipient': row['recipient']}).mappings()] if allowed else []

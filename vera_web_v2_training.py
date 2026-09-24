@@ -251,6 +251,14 @@ def _dispatch_completed_notifications(conn, *, reference_type: str, reference_id
     label = "Đào tạo hằng ngày" if reference_type == "daily_training" else "Đánh giá tổng hợp"
     title = f"{label} đã hoàn thành"
     body = f"{evaluatee['full_name']} · Người thực hiện: {evaluator['full_name']}"
+    if reference_type == 'daily_training':
+        session = conn.execute(text('''SELECT training_date,start_time,end_time
+            FROM vera_training_session WHERE id=:id'''), {'id':reference_id}).mappings().first()
+        if session:
+            start, end = session['start_time'], session['end_time']
+            duration = (end.hour * 60 + end.minute - start.hour * 60 - start.minute) / 60
+            training_date = session['training_date'].strftime('%d-%m-%Y')
+            body += f" · Ngày đào tạo: {training_date}, {start.strftime('%H:%M')}–{end.strftime('%H:%M')} ({duration:g} giờ)"
     if enqueue_notification(conn, 'training_completed', {'title':title,'body':body,'tag':f'{reference_type}:{reference_id}'}): return 1
     for recipient in {item.strip() for item in recipients if item and item.strip()}:
         conn.execute(text("""

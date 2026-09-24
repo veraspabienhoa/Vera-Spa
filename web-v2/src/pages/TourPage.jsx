@@ -524,7 +524,6 @@ export default function TourPage({ user }) {
     </div>
     <section data-ui-key="u-132bfc3eac6c" className="panel tour-table-panel tour-records-panel">
       <div className="responsive-data-table tour-table" tabIndex="0" aria-label="Danh sách Bảng tua"><table data-ui-key="u-2d2b3ec3e5b5"><thead><tr>{columns.map((column) => <th data-ui-key="u-12a0fc75c68a" className={columnClass(column)} key={column}>{column}</th>)}</tr></thead><tbody>{displayedRecords.map((item, index) => <tr className={rowClass(item)} key={`${sttValue(item, columns)}:${index}`}>{columns.map((column) => <td className={columnClass(column)} key={column}>{String(item[column] ?? '')}</td>)}</tr>)}</tbody></table></div>
-      {!busy && !displayedRecords.length && <div className="setup-note">Không có nhân viên phù hợp với ca/bộ lọc đang chọn.</div>}
     </section>
     {isAdmin && showAdminTools && <>
     <section data-ui-key="u-d37dc07d703a" className="panel tour-source-panel">

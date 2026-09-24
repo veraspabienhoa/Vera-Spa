@@ -1,5 +1,18 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 24-09-2026: lọc nhắc nghỉ giữa ca và nội dung đào tạo, chưa triển khai
+
+Rà soát mã xác nhận quy tắc gửi `attendance_break` có thể bao gồm Admin khi
+nhắm nhóm rộng. Bản sửa bỏ Admin khỏi sự kiện `attendance-break-reminder` ở lúc
+ghi hàng đợi; kiểm tra lại trước khi gửi push và khi đọc hộp thư/chi tiết để
+chặn cả thông báo còn chờ. Cảnh báo vào lại trễ vẫn theo quy tắc hiện hành.
+Không thay đổi phép tính chấm công, hạn nghỉ, hình phạt hay giao dịch nguồn.
+
+Thông báo hoàn tất buổi đào tạo nay lấy ngày và giờ của bản ghi đào tạo trong
+cùng kết nối để tạo nội dung giờ bắt đầu/kết thúc và số giờ; chi tiết giao diện
+dùng các trường có sẵn. Chưa xác minh dữ liệu PostgreSQL hoặc thiết bị thật trên
+production; cần kiểm tra luồng gửi và hai health endpoint sau triển khai.
+
 ## 25-09-2026: điều khiển thông báo theo kênh, chưa triển khai
 
 Thông báo trong ứng dụng trước đây vẫn xuất hiện sau khi đánh dấu đã đọc và
