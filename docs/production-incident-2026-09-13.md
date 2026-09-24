@@ -442,3 +442,17 @@ attendance cutover. Do not invent historical actors or weaken readiness checks.
 After backend deployment, an authenticated Admin must read and reconfirm the
 existing profile, then verify readiness and both health endpoints. This entry
 records diagnosis and tested code, not completed production verification.
+
+
+## 24-09-2026: FaceGate log pagination dropped subsequent pages
+
+Production read-only diagnostics report total=129 and pages beginning at
+0,20,40,60,80,100,120, with ITEM indices matching these absolute offsets.
+Only the first 20 records parsed because both log parsers capped the numeric
+ITEM index at 19. The full-day sync correctly refused incomplete_day and did
+not write an incomplete archive. Replace the numeric-index cap with a maximum
+of 20 distinct items per response; report truncation when parsed count is below
+the device total. Regression fixtures cover 129 records over seven pages,
+page-local indices, oversized pages and short responses. Local tests pass;
+production full-day preview and archive writes still require verification
+after deployment. No attendance source cutover has occurred.
