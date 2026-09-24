@@ -61,6 +61,10 @@ class NotificationOrder(BaseModel):
     keys: list[str] = Field(max_length=1000)
     revision: int = Field(ge=0)
 
+class NotificationChannelUpdate(BaseModel):
+    enabled: bool
+    revision: int = Field(ge=0)
+
 
 def ensure_schema(conn) -> None:
     conn.execute(text("""
@@ -71,6 +75,21 @@ def ensure_schema(conn) -> None:
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     """))
+    conn.execute(text("""CREATE TABLE IF NOT EXISTS vera_v2_notification_channel_setting (
+        notification_key TEXT NOT NULL, channel TEXT NOT NULL CHECK(channel IN ('in_app','push')),
+        enabled BOOLEAN NOT NULL, updated_by TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY(notification_key,channel))"""))
+    conn.execute(text('ALTER TABLE vera_v2_notification_channel_setting ENABLE ROW LEVEL SECURITY'))
+    conn.execute(text('REVOKE ALL ON vera_v2_notification_channel_setting FROM PUBLIC'))
+    conn.execute(text("""DO $$ BEGIN
+      IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
+        REVOKE ALL ON vera_v2_notification_channel_setting FROM anon;
+      END IF;
+      IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
+        REVOKE ALL ON vera_v2_notification_channel_setting FROM authenticated;
+      END IF;
+    END $$"""))
 
 
 def is_enabled(conn, notification_key: str) -> bool:
@@ -82,6 +101,12 @@ def is_enabled(conn, notification_key: str) -> bool:
         SELECT enabled FROM vera_v2_notification_setting
         WHERE notification_key=:notification_key
     """), {"notification_key": notification_key}).scalar_one_or_none()
+    return True if value is None else bool(value)
+
+def is_channel_enabled(conn, notification_key: str, channel: str) -> bool:
+    ensure_schema(conn)
+    value = conn.execute(text('''SELECT enabled FROM vera_v2_notification_channel_setting
+        WHERE notification_key=:key AND channel=:channel'''), {'key':notification_key,'channel':channel}).scalar_one_or_none()
     return True if value is None else bool(value)
 
 
@@ -150,6 +175,8 @@ def _response(conn, admin=False):
     routes = {row['key']: dict(row) for row in conn.execute(text('SELECT * FROM vera_notification_route ORDER BY updated_at,key')).mappings()}
     items = _settings(conn)
     states = {row['notification_key']: row['enabled'] for row in conn.execute(text('SELECT notification_key,enabled FROM vera_v2_notification_setting')).mappings()}
+    channel_states = {(row['notification_key'],row['channel']):row['enabled'] for row in conn.execute(text(
+        'SELECT notification_key,channel,enabled FROM vera_v2_notification_channel_setting')).mappings()}
     for route in routes.values():
         if route['custom']:
             items.append({'key':route['key'],'label':route['label'],'description':'Thông báo theo tác vụ đã chọn.',
@@ -160,6 +187,7 @@ def _response(conn, admin=False):
         route = routes.get(item['key'])
         item['routed'] = bool(route)
         item['has_rules'] = any(row['source_key']==item['key'] for row in routes.values())
+        item['channel_enabled'] = {channel: bool(channel_states.get((item['key'],channel),True)) for channel in ('in_app','push')}
         if admin:
             item.update(recipients=route['recipients'] if route else [], channels=route['channels'] if route else [], source_key=route['source_key'] if route else item['key'])
     items.sort(key=lambda item: order.get(item['key'],10000))
@@ -231,6 +259,21 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
             result=_response(conn,True)
             return {**result,'ok':True,'setting':next(i for i in result['settings'] if i['key']==notification_key)}
 
+    @app.put('/v2/notification-settings/{notification_key}/channels/{channel}')
+    def update_channel(notification_key: str, channel: Literal['in_app','push'], body: NotificationChannelUpdate,
+                       ident: identity_type = Depends(current_identity)):
+        _admin(ident)
+        with engine_instance().begin() as conn:
+            _lock_config(conn, body.revision)
+            if not any(item['key']==notification_key for item in _response(conn)['settings']):
+                raise HTTPException(404,'Không tìm thấy loại thông báo.')
+            conn.execute(text("""INSERT INTO vera_v2_notification_channel_setting(notification_key,channel,enabled,updated_by)
+                VALUES(:key,:channel,:enabled,:actor) ON CONFLICT(notification_key,channel) DO UPDATE SET
+                enabled=EXCLUDED.enabled,updated_by=EXCLUDED.updated_by,updated_at=NOW()"""),
+                {'key':notification_key,'channel':channel,'enabled':body.enabled,'actor':ident.employee_username})
+            conn.execute(text('UPDATE vera_notification_config SET revision=revision+1 WHERE id=1'))
+            return _response(conn,True)
+
     @app.post('/v2/notification-local/{notification_key}')
     def local_event(notification_key: str, ident: identity_type = Depends(current_identity)):
         # Browser-origin notices use fixed server text, never accept arbitrary alert content.
@@ -245,7 +288,7 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
         with engine_instance().begin() as conn:
             ensure_schema(conn)
             if is_enabled(conn,notification_key):
-                enqueue(conn,notification_key,{'title':f'VERA SPA · {label}',
+                enqueue(conn,notification_key,{'title':label,
                     'body':f"{ident.full_name or ident.employee_username} nhận thông báo {label.lower()} trên ứng dụng."},event)
         return {'ok':True}
 
@@ -253,12 +296,19 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
     def inbox(ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             ensure_schema(conn); ensure_routing_schema(conn)
+            # Inbox items expire at midnight in the Vietnam business timezone.
+            conn.execute(text("""DELETE FROM vera_notification_delivery
+                WHERE recipient=:recipient AND (channel='in_app' OR (channel='push' AND sent_at IS NOT NULL))
+                AND created_at < date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'"""),
+                {'recipient':str(ident.auth_user_id)})
             rows=conn.execute(text(f"""SELECT d.id,d.payload,d.created_at,d.read_at FROM vera_notification_delivery d
                 JOIN vera_notification_route r ON r.key=d.rule_key
                 JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
                 LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-                WHERE d.recipient=:recipient AND d.channel='in_app' AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
-                AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE)
+                LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='in_app'
+                WHERE d.recipient=:recipient AND d.channel='in_app' AND d.read_at IS NULL
+                AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
+                AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
                 ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
             return {'notifications':[dict(row) for row in rows]}
 
@@ -271,10 +321,12 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 JOIN vera_notification_route r ON r.key=d.rule_key
                 JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
                 LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
+                LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel=d.channel
                 WHERE d.id=:id AND d.recipient=:recipient
+                AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
                 AND d.channel IN ('push','in_app') AND r.channels ? d.channel
                 AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
-                AND COALESCE(s.enabled,TRUE)"""),
+                AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)"""),
                 {'id':notification_id,'recipient':str(ident.auth_user_id)}).mappings().first()
             if row is None:
                 raise HTTPException(404, 'Thông báo không tồn tại hoặc bạn không còn quyền xem.')

@@ -1,5 +1,24 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 25-09-2026: điều khiển thông báo theo kênh, chưa triển khai
+
+Thông báo trong ứng dụng trước đây vẫn xuất hiện sau khi đánh dấu đã đọc và
+danh sách lưu cả các ngày cũ. Bản sửa chỉ trả về bản ghi chưa xem của ngày hiện
+tại theo `Asia/Ho_Chi_Minh`; khi mở hộp thư, bản ghi trong ứng dụng của ngày cũ
+và push đã gửi của ngày cũ được dọn khỏi bảng giao nhận. Push còn chờ gửi không
+bị xóa để giữ cơ chế thử lại. Chi tiết qua liên kết cũ hết hiệu lực sau nửa đêm.
+Nút Đã xem của Admin ghi `read_at` theo đúng người nhận; xem chi tiết không tự
+đánh dấu. Tiêu đề mới và giao diện gỡ tiền tố VERA SPA; service worker cũng gỡ
+tiền tố cho thông báo đẩy cũ.
+
+Admin chỉnh riêng kênh trong ứng dụng và thông báo thiết bị cho từng loại trên
+trang Cài đặt / Thông báo. Trạng thái kênh lưu trong bảng riêng, kiểm tra trước
+khi tạo bản giao nhận, khi đọc và ngay trước khi gửi push; API cập nhật yêu cầu
+quyền Admin và revision hiện hành. Công tắc thiết bị của Admin chuyển khỏi trang
+Thay đổi hệ thống và Hồ sơ sang trang này. Chưa xác minh dữ liệu PostgreSQL và
+thông báo trên thiết bị production; cần triển khai backend trước frontend và
+kiểm tra hai health endpoint cùng hoạt động thật sau triển khai.
+
 ## Chuẩn hóa địa chỉ Web production — 17/09/2026, chưa deploy
 
 Người dùng xác nhận địa chỉ duy nhất còn sử dụng là

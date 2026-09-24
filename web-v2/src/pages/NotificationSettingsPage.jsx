@@ -1,8 +1,9 @@
-import { BellRing, GripVertical, Search } from 'lucide-react'
+import { BellRing, GripVertical, Search, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import './NotificationSettingsPage.css'
 import NotificationEditorDialog from '../components/NotificationEditorDialog'
+import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
 
 const normalized = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g,'d').toLowerCase()
 const recipientGroups = [
@@ -26,10 +27,13 @@ export default function NotificationSettingsPage({ user }) {
   const [tasks,setTasks]=useState([]), [query,setQuery]=useState(''), [taskQuery,setTaskQuery]=useState('')
   const [editor,setEditor]=useState(null),[draft,setDraft]=useState(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
+  const [push,setPush]=useState({loading:true,supported:false,subscribed:false}),[pushBusy,setPushBusy]=useState(false)
   const dragged=useRef(null)
   const admin=String(user?.role || '').toLowerCase()==='admin'
   const reload=async()=>{setData(await veraApi.notificationSettings())}
   useEffect(()=>{let active=true;Promise.all([veraApi.notificationSettings(),admin?veraApi.notificationTasks():Promise.resolve({tasks:[]})]).then(([settings,result])=>{if(active){setData(settings);setTasks(result.tasks || [])}}).catch(err=>{if(active)setError(err.message)});return()=>{active=false}},[admin])
+  useEffect(()=>{let active=true;syncExistingPushSubscription().catch(()=>readPushState()).then(state=>{if(active)setPush({...state,loading:false})}).catch(err=>{if(active)setPush({loading:false,supported:false,subscribed:false,reason:err.message})});return()=>{active=false}},[])
+  const toggleDevice=async()=>{setPushBusy(true);setError('');try{const state=push.subscribed?await disablePushNotifications():await enablePushNotifications();setPush({...state,loading:false})}catch(err){setError(err.message || 'Không cập nhật được thiết bị.')}finally{setPushBusy(false)}}
   const perform=async action=>{
     if(busy)return
     setBusy(true);setError('');setNotice('')
@@ -47,6 +51,7 @@ export default function NotificationSettingsPage({ user }) {
   const visible=data.settings.filter(item=>normalized(`${item.label} ${item.description}`).includes(normalized(query)))
   return <div className="notification-settings-page">
     <header className="panel notification-settings-head"><BellRing/><div><h2>THÔNG BÁO</h2><p>Chọn người nhận, kênh gửi và sắp xếp các thông báo của hệ thống.</p></div></header>
+    <section className="panel notification-device-panel"><Smartphone size={26}/><div><h3>Thông báo màn hình khóa</h3><p>Bật thông báo trên từng thiết bị. Admin có thể bật hoặc tắt từng loại thông báo thiết bị ở danh sách bên dưới. Trên iPhone/iPad, mở ứng dụng từ biểu tượng Màn hình chính.</p>{!push.loading && !push.supported && <small>{push.reason || 'Thiết bị không hỗ trợ Web Push.'}</small>}</div><button type="button" disabled={push.loading || pushBusy || !push.supported} onClick={toggleDevice}>{pushBusy?'Đang xử lý…':push.subscribed?'Tắt trên thiết bị này':'Bật trên thiết bị này'}</button></section>
     {error && !editor && <div className="error-box" role="alert">{error} <button disabled={busy} onClick={()=>{void reload().then(()=>{setError('');setEditor(null)}).catch(err=>setError(err.message))}}>Tải lại cấu hình</button></div>}
     {notice && <p role="status">{notice}</p>}
     <div className="notification-settings-toolbar"><label><Search size={16}/><input aria-label="Tìm thông báo" placeholder="Tìm thông báo…" value={query} onChange={event=>setQuery(event.target.value)}/></label>{admin && <button type="button" disabled={busy} onClick={()=>open(null)}>+ Tạo thông báo</button>}</div>
@@ -63,7 +68,7 @@ export default function NotificationSettingsPage({ user }) {
     <section className="notification-settings-grid">{visible.map(item=>{const index=data.settings.findIndex(row=>row.key===item.key);return <article className="notification-setting-card" key={item.key} onDragOver={event=>{if(admin && !busy){event.preventDefault();event.currentTarget.classList.add('drag-over')}}} onDragLeave={event=>event.currentTarget.classList.remove('drag-over')} onDrop={event=>{event.preventDefault();event.currentTarget.classList.remove('drag-over');reorder(dragged.current,item.key);dragged.current=null}}>
       <div className="notification-card-order"><button type="button" aria-label={`Kéo ${item.label}`} draggable={admin && !busy && !editor} disabled={!admin || busy || Boolean(editor)} onDragStart={event=>{dragged.current=item.key;event.dataTransfer.setData('text/plain',item.key);event.dataTransfer.effectAllowed='move'}} onDragEnd={()=>{dragged.current=null;document.querySelectorAll('.notification-setting-card.drag-over').forEach(node=>node.classList.remove('drag-over'))}}><GripVertical size={18}/></button><span>{index+1}</span><button type="button" aria-label={`Đưa ${item.label} lên`} disabled={!admin || busy || Boolean(editor) || index===0} onClick={()=>reorder(item.key,data.settings[index-1].key)}>↑</button><button type="button" aria-label={`Đưa ${item.label} xuống`} disabled={!admin || busy || Boolean(editor) || index===data.settings.length-1} onClick={()=>reorder(item.key,data.settings[index+1].key)}>↓</button></div>
       <div><h3>{item.label}</h3><p>{item.description}</p><small>Người nhận: {item.routed?item.recipients?.map(id=>recipientLabel(id,data.recipients || [])).join(', '):item.audience}</small><small>Kênh: {item.routed?item.channels?.map(key=>data.channels.find(channel=>channel.key===key)?.label).join(', '):item.channel}</small></div>
-      <div className="notification-card-actions"><button type="button" aria-pressed={item.enabled} disabled={!admin || busy || Boolean(editor)} onClick={()=>perform(()=>veraApi.updateNotificationSetting(item.key,{enabled:!item.enabled,revision:data.revision}))}>{item.enabled?'Đang bật':'Đã tắt'}</button>{admin && <button type="button" disabled={busy} onClick={()=>open(item)}>Người nhận / Kênh</button>}</div>
+      <div className="notification-card-actions">{!item.enabled && <button type="button" disabled={!admin || busy || Boolean(editor)} onClick={()=>perform(()=>veraApi.updateNotificationSetting(item.key,{enabled:true,revision:data.revision}))}>Loại đang tắt · Bật lại</button>}<div className="notification-channel-switches"><button type="button" role="switch" aria-checked={item.enabled && item.channel_enabled?.in_app !== false} aria-label={`Thông báo hệ thống: ${item.label}`} disabled={!admin || busy || Boolean(editor) || !item.enabled} onClick={()=>perform(()=>veraApi.updateNotificationChannel(item.key,'in_app',{enabled:item.channel_enabled?.in_app===false,revision:data.revision}))}>Hệ thống <b>{!item.enabled || item.channel_enabled?.in_app===false?'Tắt':'Bật'}</b></button><button type="button" role="switch" aria-checked={item.enabled && item.channel_enabled?.push !== false} aria-label={`Màn hình khóa: ${item.label}`} disabled={!admin || busy || Boolean(editor) || !item.enabled} onClick={()=>perform(()=>veraApi.updateNotificationChannel(item.key,'push',{enabled:item.channel_enabled?.push===false,revision:data.revision}))}>Màn hình khóa <b>{!item.enabled || item.channel_enabled?.push===false?'Tắt':'Bật'}</b></button></div>{admin && <button type="button" disabled={busy} onClick={()=>open(item)}>Người nhận / Kênh</button>}</div>
     </article>})}</section>
     {!visible.length && <p>Chưa có thông báo phù hợp.</p>}
   </div>

@@ -9,11 +9,11 @@ APP_URL = 'https://app.veraspa.vn/'
 
 
 def ensure_schema(conn):
+    from vera_web_v2_notification_settings import ensure_schema as ensure_settings
+    ensure_settings(conn)
     if conn.execute(text("SELECT to_regclass('public.vera_notification_route')")).scalar_one_or_none():
         return
     conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera.notification.schema'))"))
-    from vera_web_v2_notification_settings import ensure_schema as ensure_settings
-    ensure_settings(conn)
     conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_notification_route (
         key TEXT PRIMARY KEY, source_key TEXT NOT NULL, label TEXT NOT NULL,
         recipients JSONB NOT NULL DEFAULT '[]', channels JSONB NOT NULL DEFAULT '[]',
@@ -86,7 +86,10 @@ def enqueue(conn, source_key, payload, event_key=None):
     handled = any(not row['custom'] for row in rules)
     event_key = event_key or fingerprint(source_key, payload)
     # Store plain text and a fixed application URL, never arbitrary HTML or external links.
-    safe = {'title': str(payload.get('title') or 'VERA SPA')[:160], 'body': str(payload.get('body') or '')[:2000],
+    title = str(payload.get('title') or 'Thông báo').strip()
+    if title.upper().startswith('VERA SPA'):
+        title = title[8:].lstrip(' ·:-–') or 'Thông báo'
+    safe = {'title': title[:160], 'body': str(payload.get('body') or '')[:2000],
             'url': APP_URL, 'tag': event_key, 'kind': source_key}
     if source_key == 'leave_watch' and payload.get('watched_date'):
         from datetime import date
@@ -95,8 +98,12 @@ def enqueue(conn, source_key, payload, event_key=None):
     for rule in rules:
         if not rule['enabled']:
             continue
+        disabled_channels = {row['channel'] for row in conn.execute(text('''SELECT channel
+            FROM vera_v2_notification_channel_setting WHERE notification_key=:key AND enabled=FALSE'''),
+            {'key':rule['key']}).mappings()}
         for recipient in resolve_recipients(conn, rule['recipients'], source_key, safe):
             for channel in set(rule['channels']):
+                if channel in disabled_channels: continue
                 conn.execute(text('''INSERT INTO vera_notification_delivery(event_key,rule_key,recipient,channel,payload)
                     SELECT :event,:rule,:recipient,:channel,CAST(:payload AS jsonb)
                     WHERE EXISTS(SELECT 1 FROM vera_v2_user_profile WHERE auth_user_id::text=:recipient AND is_active)
@@ -129,8 +136,9 @@ def dispatch_pending(engine, send, vault, limit=30):
                 allowed = conn.execute(text(f'''SELECT 1 FROM vera_notification_route r
                     JOIN vera_v2_user_profile p ON p.auth_user_id::text=:recipient AND p.is_active
                     LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
+                    LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='push'
                     WHERE r.key=:key AND {recipient_membership_sql()} AND r.channels ? 'push'
-                    AND COALESCE(s.enabled,TRUE)'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date')}).scalar_one_or_none()
+                    AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date')}).scalar_one_or_none()
                 subscriptions = [dict(r) for r in conn.execute(text('''SELECT subscription_id::text AS subscription_id,
                     endpoint,p256dh,auth_secret FROM vera_v2_push_subscription
                     WHERE auth_user_id::text=:recipient AND is_active'''), {'recipient': row['recipient']}).mappings()] if allowed else []

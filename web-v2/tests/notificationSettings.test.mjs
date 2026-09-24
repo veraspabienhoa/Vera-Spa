@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
-const built=await build({entryPoints:[fileURLToPath(new URL('../src/pages/NotificationSettingsPage.jsx',import.meta.url))],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime'],loader:{'.css':'empty'},plugins:[{name:'fixture',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const veraApi=globalThis.__notificationApi',loader:'js'}))}}]})
+const built=await build({entryPoints:[fileURLToPath(new URL('../src/pages/NotificationSettingsPage.jsx',import.meta.url))],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime'],loader:{'.css':'empty'},plugins:[{name:'fixture',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'fixture'}));b.onResolve({filter:/\/lib\/pushNotifications$/},()=>({path:'push',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='push'?'export const syncExistingPushSubscription=async()=>({supported:false,subscribed:false});export const readPushState=syncExistingPushSubscription;export const enablePushNotifications=syncExistingPushSubscription;export const disablePushNotifications=syncExistingPushSubscription':'export const veraApi=globalThis.__notificationApi',loader:'js'}))}}]})
 test('Admin searches tasks, selects multiple recipients/channels and persists global ordering',async()=>{
  const dom=new JSDOM('<body><div id="root"></div></body>',{url:'https://test.invalid',pretendToBeVisual:true})
  const names=['window','document','navigator','CustomEvent','IS_REACT_ACT_ENVIRONMENT','__notificationApi']
@@ -15,13 +15,19 @@ test('Admin searches tasks, selects multiple recipients/channels and persists gl
  let server={revision:0,settings:[{key:'birthday',label:'Sinh nhật',description:'Nhắc sinh nhật',enabled:true},{key:'leave',label:'Nghỉ phép',description:'Nghỉ phép',enabled:true}],recipients:[{id:'a',name:'An',username:'an',role:'nhanvien'},{id:'b',name:'Bình',username:'binh',role:'letan'}],channels:[{key:'in_app',label:'Trong ứng dụng'},{key:'push',label:'Thông báo đẩy'}]}
  const writes=[]
  let failSave=false
- globalThis.__notificationApi={notificationSettings:async()=>structuredClone(server),notificationTasks:async()=>({tasks:[{key:'task-1',label:'Live Tour · Thanh toán',group:'Live Tour',description:'checkout'},{key:'task-2',label:'Đào tạo',group:'Đào tạo',description:'training'}]}),createNotification:async body=>{writes.push(body);server={...server,revision:1,settings:[...server.settings,{...body,key:'custom',custom:true,routed:true}]};return structuredClone(server)},updateNotificationSetting:async(key,body)=>{if(failSave)throw Error('Thử lại khi mạng ổn định');writes.push(body);server={...server,revision:server.revision+1,settings:server.settings.map(item=>item.key===key?{...item,...body,routed:true}:item)};return structuredClone(server)},orderNotifications:async body=>{writes.push(body);server={...server,revision:2,settings:body.keys.map(key=>server.settings.find(item=>item.key===key))};return structuredClone(server)}}
+ globalThis.__notificationApi={notificationSettings:async()=>structuredClone(server),notificationTasks:async()=>({tasks:[{key:'task-1',label:'Live Tour · Thanh toán',group:'Live Tour',description:'checkout'},{key:'task-2',label:'Đào tạo',group:'Đào tạo',description:'training'}]}),createNotification:async body=>{writes.push(body);server={...server,revision:1,settings:[...server.settings,{...body,key:'custom',custom:true,routed:true}]};return structuredClone(server)},updateNotificationSetting:async(key,body)=>{if(failSave)throw Error('Thử lại khi mạng ổn định');writes.push(body);server={...server,revision:server.revision+1,settings:server.settings.map(item=>item.key===key?{...item,...body,routed:true}:item)};return structuredClone(server)},updateNotificationChannel:async(key,channel,body)=>{writes.push({key,channel,...body});server={...server,revision:server.revision+1,settings:server.settings.map(item=>item.key===key?{...item,channel_enabled:{...item.channel_enabled,[channel]:body.enabled}}:item)};return structuredClone(server)},orderNotifications:async body=>{writes.push(body);server={...server,revision:2,settings:body.keys.map(key=>server.settings.find(item=>item.key===key))};return structuredClone(server)}}
  const module={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports)
  const {createRoot}=await import('react-dom/client');const root=createRoot(document.querySelector('#root'))
  const click=async label=>act(async()=>[...document.querySelectorAll('button')].find(node=>node.textContent.includes(label)).click())
  const set=async(node,value)=>act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new window.Event('input',{bubbles:true}))})
  try{
   await act(async()=>root.render(React.createElement(module.exports.default,{user:{role:'admin'}})))
+  const pushSwitch=document.querySelector('[aria-label="Màn hình khóa: Sinh nhật"]')
+  await act(async()=>pushSwitch.click())
+  assert.equal(pushSwitch.getAttribute('aria-checked'),'false')
+  assert.equal(document.querySelector('[aria-label="Thông báo hệ thống: Sinh nhật"]').getAttribute('aria-checked'),'true')
+  assert.equal(writes[0].channel,'push')
+  writes.length=0
   await click('Tạo thông báo')
   assert.ok(document.querySelector('dialog[aria-modal="true"][open]'))
   assert.equal(document.body.style.overflow,'hidden')
@@ -35,7 +41,7 @@ test('Admin searches tasks, selects multiple recipients/channels and persists gl
   assert.deepEqual(writes[0].recipients,['a','b']);assert.deepEqual(writes[0].channels,['in_app','push']);assert.equal(writes[0].source_key,'task-1')
   await act(async()=>document.querySelector('[aria-label="Đưa Live Tour · Thanh toán lên"]').click())
   assert.deepEqual(writes[1].keys,['birthday','custom','leave']);assert.equal(writes[1].revision,1)
-  const editButton=document.querySelector('.notification-card-actions button:last-child')
+  const editButton=document.querySelector('.notification-card-actions > button:last-child')
   await act(async()=>{editButton.focus();editButton.click()})
   const groups=()=>[...document.querySelectorAll('.notification-recipient-groups label')]
   assert.deepEqual(groups().map(el=>el.textContent),['Nhân viên','Lễ tân','Người theo dõi','Quản lý','Giám đốc','Tất cả tài khoản','Admin'])

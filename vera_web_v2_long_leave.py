@@ -414,7 +414,7 @@ def _send_admin_push(engine_instance, api_module, payload: dict[str, Any]) -> di
     result = {"sent": 0, "failed": 0}
     try:
         with engine_instance().connect() as conn:
-            if not notification_settings.is_enabled(conn, "long_leave_requests"):
+            if (not notification_settings.is_enabled(conn, "long_leave_requests") or not notification_settings.is_channel_enabled(conn, "long_leave_requests", "push")):
                 return result
             private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
             subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"

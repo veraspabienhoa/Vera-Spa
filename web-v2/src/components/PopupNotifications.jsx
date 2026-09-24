@@ -51,7 +51,7 @@ export default function PopupNotifications() {
       const type = element.classList.contains('success-box') ? 'success'
         : element.classList.contains('warning-box') || element.classList.contains('setup-note') ? 'warning' : 'error'
       const category = categoryFor(type, message)
-      if (settings.current[category]?.enabled === false) return
+      if (settings.current[category]?.enabled === false || settings.current[category]?.channel_enabled?.in_app === false) return
       if (settings.current[category]?.has_rules) void veraApi.routeLocalNotification(category).catch(()=>{})
       if (settings.current[category]?.routed) return
       const duplicateKey = `${category}:${message.toLocaleLowerCase('vi-VN')}`

@@ -44,7 +44,7 @@ self.addEventListener('push', (event) => {
   const isBreakOverdue = payload.kind === 'attendance-break-overdue'
   const isBreakReminder = payload.kind === 'attendance-break-reminder'
   const isBreakPenalty = payload.kind === 'attendance-break-penalty'
-  const title = payload.title || 'VERA SPA · Lịch nghỉ thay đổi'
+  const title = (payload.title || 'Lịch nghỉ thay đổi').replace(/^VERA SPA(?:\s*[·:–-]\s*|\s+)/i, '') || 'Thông báo'
   const options = {
     body: payload.body || 'Một ngày bạn quan tâm vừa thay đổi số lịch nghỉ CÓ phép.',
     icon: payload.icon || ICON_URL,
@@ -81,7 +81,7 @@ self.addEventListener('push', (event) => {
     // while Admin can globally disable the break-alert channel for all accounts
     // or permanently delete one specific event from the in-app alert card.
     options.requireInteraction = true
-    options.actions = [{ action: 'open', title: 'Mở VERA SPA' }]
+    options.actions = [{ action: 'open', title: 'Mở thông báo' }]
   }
 
   event.waitUntil(self.registration.showNotification(title, options))

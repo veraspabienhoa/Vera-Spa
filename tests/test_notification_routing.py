@@ -30,6 +30,7 @@ class Result:
 
 @pytest.mark.parametrize('method,path,body', [
     ('put','/v2/notification-settings/birthday', {'enabled':True}),
+    ('put','/v2/notification-settings/birthday/channels/push', {'enabled':False,'revision':0}),
     ('put','/v2/notification-settings/order', {'keys':[],'revision':0}),
     ('post','/v2/notification-settings', {'label':'Test','source_key':'birthday','recipients':['x'],'channels':['in_app'],'revision':0}),
     ('get','/v2/notification-settings/tasks',None),
@@ -47,6 +48,39 @@ def test_route_creation_rejects_unconnected_task_before_database():
     settings.install_notification_settings_routes(app,engine_instance=lambda:None,current_identity=Identity,identity_type=Identity)
     response=TestClient(app).post('/v2/notification-settings',json={'label':'Test','source_key':'fake_task','recipients':['x'],'channels':['push'],'revision':0})
     assert response.status_code==400
+
+
+def test_admin_channel_switch_persists_separately_and_checks_revision(monkeypatch):
+    queries=[]
+    class Engine:
+        @contextmanager
+        def begin(self): yield self
+        def execute(self,q,p=None): queries.append((str(q),p)); return Result()
+    monkeypatch.setattr(settings,'_lock_config',lambda conn,revision:queries.append(('revision',revision)))
+    monkeypatch.setattr(settings,'_response',lambda conn,admin=False:{'settings':[{'key':'birthday'}],'revision':1})
+    app=FastAPI()
+    settings.install_notification_settings_routes(app,engine_instance=Engine,current_identity=Identity,identity_type=Identity)
+    client=TestClient(app)
+    assert client.put('/v2/notification-settings/birthday/channels/push',json={'enabled':False,'revision':0}).status_code==200
+    assert ('revision',0) in queries
+    assert any('INSERT INTO vera_v2_notification_channel_setting' in q and p['channel']=='push' and p['enabled'] is False for q,p in queries if p)
+    assert client.put('/v2/notification-settings/birthday/channels/sms',json={'enabled':False,'revision':1}).status_code==422
+
+
+def test_inbox_expires_previous_day_and_hides_viewed_rows(monkeypatch):
+    monkeypatch.setattr(settings,'ensure_schema',lambda conn:None)
+    monkeypatch.setattr(settings,'ensure_routing_schema',lambda conn:None)
+    queries=[]
+    class Engine:
+        @contextmanager
+        def begin(self): yield self
+        def execute(self,q,p=None): queries.append((str(q),p)); return Result()
+    app=FastAPI()
+    settings.install_notification_settings_routes(app,engine_instance=Engine,current_identity=Identity,identity_type=Identity)
+    assert TestClient(app).get('/v2/notification-inbox').status_code==200
+    assert 'DELETE FROM vera_notification_delivery' in queries[0][0]
+    assert "Asia/Ho_Chi_Minh" in queries[0][0]
+    assert "d.read_at IS NULL" in queries[1][0]
 
 
 def test_catalog_is_installed_mutations_only_and_emits_only_success(monkeypatch):
@@ -85,6 +119,7 @@ def test_enqueue_fans_out_exact_recipients_and_channels_and_keeps_plain_text(mon
             if 'SELECT r.*' in str(statement): return Result(rules)
             writes.append((str(statement),params));return Result()
     assert delivery.enqueue(Conn(),'birthday',{'title':'<script>raw text</script>','body':'Body','url':'https://evil.invalid','tag':'birthday-1'})
+    writes=[(q,p) for q,p in writes if 'INSERT INTO vera_notification_delivery' in q]
     assert {(p['recipient'],p['channel']) for _,p in writes}=={('a','push'),('a','in_app'),('b','push'),('b','in_app')}
     assert len(writes)==4
     for query,params in writes:
