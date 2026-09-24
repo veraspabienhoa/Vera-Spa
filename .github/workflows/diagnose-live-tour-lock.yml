@@ -60,15 +60,14 @@ jobs:
                       COALESCE(EXTRACT(EPOCH FROM clock_timestamp()-a.xact_start)::int,0) AS age_seconds,
                       pg_blocking_pids(a.pid) AS blocked_by,
                       EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid=a.pid AND l.locktype='advisory'
-                        AND l.granted AND l.classid=((hashtextextended(:fence,0)>>32)&4294967295)::oid
-                        AND l.objid=(hashtextextended(:fence,0)&4294967295)::oid) AS holds_fence
+                        AND l.granted) AS holds_advisory
                     FROM pg_stat_activity a WHERE a.datname=current_database()
                       AND a.usename=current_user() AND a.pid<>pg_backend_pid()
                       AND a.state IS DISTINCT FROM 'idle'
                     ORDER BY a.xact_start NULLS LAST LIMIT 40'''),
-                    {'fence': 'vera:live-tour:resource-fence:v1'}).mappings().all()
+                    ).mappings().all()
               for row in rows:
-                  if row['holds_fence'] or row['blocked_by'] or row['age_seconds'] > 120:
+                  if row['holds_advisory'] or row['blocked_by'] or row['age_seconds'] > 120:
                       print('FENCE_DETAIL: ' + json.dumps(dict(row), sort_keys=True))
           except Exception as exc:
               print('FENCE_DETAIL: failed type=' + type(exc).__name__)
