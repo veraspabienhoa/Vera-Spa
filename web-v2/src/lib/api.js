@@ -446,7 +446,17 @@ export const veraApi = {
     return request(`/v2/live-tour?${params}`)
   },
   liveTourCollection: (panel, query = {}) => request(`/v2/live-tour/collections/${encodeURIComponent(panel)}?${new URLSearchParams(Object.entries(query).filter(([,value])=>value !== '' && value != null))}`),
-  liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
+  liveTourAction: async (body) => {
+    // Release the operator UI if the network or a database connection stalls.
+    // The caller retains body.idempotency_key for a safe retry after a reload.
+    const signal = AbortSignal.timeout(30000)
+    try {
+      return await request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body), signal })
+    } catch (error) {
+      if (signal.aborted) throw new Error('Chưa xác nhận được thao tác sau 30 giây. Hãy tải bản đã lưu để kiểm tra kết quả trước khi thử lại.')
+      throw error
+    }
+  },
   liveTourRecovery: () => request('/v2/live-tour/recovery'),
   retryLiveTourRecovery: () => request('/v2/live-tour/recovery/retry', { method: 'POST' }),
   uiLayout: () => request('/v2/ui-layout'),

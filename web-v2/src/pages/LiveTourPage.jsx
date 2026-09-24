@@ -574,6 +574,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const initiallyCached = useRef(Boolean(boardData.records.length))
   const [busy, setBusy] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
+  const [actionFeedback, setActionFeedback] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [pendingReminder, setPendingReminder] = useState(null)
@@ -742,6 +743,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       return null
     }
     setActionBusy(action)
+    setActionFeedback('Đang lưu thao tác Live Tour…')
     setError('')
     setNotice('')
     const rowIds = ids.filter(Boolean)
@@ -756,7 +758,19 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       if (data.revision !== null && data.revision !== undefined) body.expected_revision = options.expectedRevision ?? data.revision
       if (rowIds.length) body.row_ids = rowIds
       if (rowIds.length === 1) body.row_id = rowIds[0]
-      const result = await veraApi.liveTourAction(body)
+      let result
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          result = await veraApi.liveTourAction(body)
+          break
+        } catch (err) {
+          // A rejected maintenance fence cannot commit the action. Keep the
+          // same idempotency key in case the response arrived after a commit.
+          if (err.status !== 503 || !/Tài nguyên đang được cập nhật/i.test(liveTourErrorDetail(err)) || attempt === 2) throw err
+          setActionFeedback('Live Tour đang bận. Đang thử lại thao tác với cùng mã chống ghi trùng…')
+          await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 1000))
+        }
+      }
       releaseIdempotencyEntry(requestEntriesRef.current, requestEntry)
       if (Array.isArray(result?.records) && Array.isArray(result?.columns)) {
         const next = { ...EMPTY_LIVE_TOUR, ...result }
@@ -768,6 +782,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       }
       setSelectedIds(new Set())
       setNotice(result?.message === 'Đã cập nhật Live Tour.' ? '' : result?.message || '')
+      setActionFeedback('Đã lưu thao tác Live Tour.')
       return result
     } catch (err) {
       const message = liveTourErrorDetail(err)
@@ -779,6 +794,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       } else {
         setError(message)
       }
+      setActionFeedback(`Chưa xác nhận được thao tác: ${message}`)
       return null
     } finally {
       setActionBusy('')
@@ -1109,7 +1125,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const counts = roomActionCounts.get(areaKey(room)) || {}
     return canOperate && <LiveTourServiceActions room target={areaLabel(room)} waiting={counts.waiting} doing={counts.doing} busy={Boolean(actionBusy)} onStart={() => runRoomAction(room, 'start_room')} onFinish={() => runRoomAction(room, 'finish_room')}/>
   }
-  const employeeServiceActions = (record) => canOperate && <LiveTourServiceActions target={cellValue(record, employeeColumn)} canStart={allowStartOutsideShift || (!hasGroup(record, 'leave') && ['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA'])))))} waiting={hasGroup(record, 'waiting') && !hasGroup(record, 'doing') ? 1 : 0} doing={hasGroup(record, 'doing') ? 1 : 0} busy={Boolean(actionBusy) || !stableEmployeeId(record)} onStart={() => executeAction('start', {}, [stableEmployeeId(record)])} onFinish={() => executeAction('finish_to_pending', {}, [stableEmployeeId(record)])}/>
+  const employeeServiceActions = (record) => canOperate && <LiveTourServiceActions target={cellValue(record, employeeColumn)} canStart={allowStartOutsideShift || (!hasGroup(record, 'leave') && ['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA'])))))} waiting={hasGroup(record, 'waiting') && !hasGroup(record, 'doing') ? 1 : 0} doing={hasGroup(record, 'doing') ? 1 : 0} busy={Boolean(actionBusy) || !stableEmployeeId(record)} disabledReason={!stableEmployeeId(record) ? 'Thiếu mã nhân viên trong bản Live Tour này. Hãy tải lại bản đã lưu.' : ''} onStart={() => executeAction('start', {}, [stableEmployeeId(record)])} onFinish={() => executeAction('finish_to_pending', {}, [stableEmployeeId(record)])}/>
   const searchedRoomKeys = useMemo(() => {
     const needle = normalizedColumn(employeeSearch)
     return new Set(needle ? shiftRecords.flatMap((record) => searchTextMatches(cellValue(record, employeeColumn), needle) ? [assignmentAreaKey(cellValue(record, roomColumn))] : []).filter(Boolean) : [])
@@ -1550,6 +1566,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         </UiToolbar>
       </div>
       {error && <div className="error-box">{error}</div>}
+      {actionFeedback && <div className="live-tour-action-feedback" role="status" aria-live="polite"><span>{actionFeedback}</span><button type="button" aria-label="Đóng thông báo thao tác" onClick={() => setActionFeedback('')}>×</button></div>}
       {privilegedLiveTourRole && <LiveTourRecoveryPanel isAdmin={isAdmin} onReload={() => load(false)} actionBusy={Boolean(actionBusy) || busy}/>}
       {notice && notice !== 'Đã cập nhật Live Tour.' && <div className="setup-note">{notice}</div>}
       <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">

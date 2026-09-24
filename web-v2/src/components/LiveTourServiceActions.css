@@ -3,6 +3,8 @@
 .live-tour-page .live-tour-start-button{background:#175a3e;color:#fff}
 .live-tour-page .live-tour-finish-button{background:#fff4d8;color:#654500}
 .live-tour-page .live-tour-service-actions button:disabled{cursor:not-allowed;opacity:.4}
+.live-tour-page .live-tour-action-feedback{position:fixed;z-index:21000;right:20px;bottom:20px;display:flex;align-items:start;gap:14px;width:min(430px,calc(100vw - 40px));padding:14px 16px;border:2px solid #276044;border-radius:10px;background:#fff;color:#163b2a;box-shadow:0 8px 28px #15392744;font-size:15px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}
+.live-tour-page .live-tour-action-feedback button{margin-left:auto;border:0;background:transparent;color:inherit;font-size:22px;cursor:pointer}
 .live-tour-page .live-tour-service-actions button:focus-visible,.live-tour-page .tour-room-booking-button:focus-visible{outline:2px solid #123e8c;outline-offset:2px}
 .live-tour-page .live-tour-service-actions small{font:inherit;opacity:.85}
 .live-tour-page .room-actions{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:4px}
