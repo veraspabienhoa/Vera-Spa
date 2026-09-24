@@ -31,6 +31,72 @@ _FIELD = re.compile(
 _ITEM_KEY = re.compile(r"ITEM(?P<index>\d+)\.(?P<field>[A-Za-z0-9_]+)\Z")
 DEFAULT_CAPTURE_PATH = "/webs/getCapture"
 DEFAULT_IMAGE_PATH = "/webs/getImage"
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/x-ms-bmp"}
+
+
+def _close_response(response):
+    close = getattr(response, "close", None)
+    if callable(close):
+        close()
+
+
+def _auth_fields(response, *, streamed=False):
+    if streamed:
+        chunks, size = [], 0
+        for chunk in response.iter_content(chunk_size=8192):
+            size += len(chunk)
+            if size > MAX_RESPONSE_BYTES:
+                _close_response(response)
+                raise ValueError("Phản hồi FaceGate vượt giới hạn an toàn.")
+            chunks.append(chunk)
+        body = b"".join(chunks).decode("utf-8", errors="replace")
+    else:
+        body = str(getattr(response, "text", "") or "")
+    if len(body.encode("utf-8")) > MAX_RESPONSE_BYTES:
+        _close_response(response)
+        raise ValueError("Phản hồi FaceGate vượt giới hạn an toàn.")
+    return {key: html.unescape(value).strip() for key, value in re.findall(
+        r"root\.((?:ERR|LOGIN)\.[A-Za-z0-9_]+)=(.*?)(?=\s+root\.|</html>|$)", body, re.DOTALL)}
+
+
+def _device_get(get, base_url, path, *, params, auth, **kwargs):
+    """Renew an expired device login once; never replay an old query session."""
+    options = {"timeout": (3, 8), "allow_redirects": False, **kwargs}
+    response = get(f"{base_url}{path}", params=params, auth=auth, **options)
+    if int(getattr(response, "status_code", 0)) != 200:
+        return response
+    media = str((getattr(response, "headers", {}) or {}).get("Content-Type", "")).split(";", 1)[0].lower().strip()
+    if options.get("stream") and media in ALLOWED_IMAGE_TYPES:
+        return response
+    fields = _auth_fields(response, streamed=bool(options.get("stream") and callable(getattr(response, "iter_content", None))))
+    if fields.get("ERR.des", "").casefold() != "logintimeout":
+        return response
+    _close_response(response)
+    login = get(f"{base_url}/webs/login", params={
+        "action": "list", "group": "LOGIN",
+        "UserID": str(secrets.randbelow(90_000_000) + 10_000_000),
+    }, auth=auth, timeout=(3, 8), allow_redirects=False,
+        headers={"Content-Type": "text/html; charset=UTF-8"})
+    try:
+        fields = _auth_fields(login)
+        if (int(getattr(login, "status_code", 0)) != 200 or fields.get("ERR.no") != "0"
+                or not re.fullmatch(r"[0-9]+", fields.get("LOGIN.ulevel", ""))
+                or fields.get("ERR.des", "").casefold() == "logintimeout"):
+            raise ConnectionError("Không đăng nhập được FaceGate; hãy kiểm tra cấu hình xác thực máy chủ.")
+    finally:
+        _close_response(login)
+    if str(params.get("sessionid", "0")) != "0":
+        raise ConnectionError("Phiên truy vấn FaceGate đã hết hạn. Đã đăng nhập lại; hãy tải lại lịch sử từ đầu.")
+    retry_params = {**params, "RanId": str(secrets.randbelow(90_000_000) + 10_000_000)}
+    response = get(f"{base_url}{path}", params=retry_params, auth=auth, **options)
+    media = str((getattr(response, "headers", {}) or {}).get("Content-Type", "")).split(";", 1)[0].lower().strip()
+    if not (options.get("stream") and media in ALLOWED_IMAGE_TYPES):
+        fields = _auth_fields(response, streamed=bool(options.get("stream") and callable(getattr(response, "iter_content", None))))
+        if fields.get("ERR.des", "").casefold() == "logintimeout":
+            _close_response(response)
+            raise ConnectionError("FaceGate vẫn báo hết phiên sau khi đăng nhập lại.")
+    return response
 
 
 def registration_ref(item: dict[str, Any]) -> dict[str, int] | None:
@@ -55,7 +121,7 @@ def fetch_registered_profile(uid: int, *, get=requests.get) -> dict[str, Any]:
         raise ValueError("ID hồ sơ FaceGate không hợp lệ.")
     base_url, _, auth = _facegate_config()
     try:
-        response = get(f"{base_url}/webs/getWhitelist", params={
+        response = _device_get(get, base_url, "/webs/getWhitelist", params={
             "action": "list", "group": "LIST", "LIST.uid": str(uid),
             "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
         }, auth=auth, timeout=(3, 8), allow_redirects=False)
@@ -81,8 +147,6 @@ def fetch_registered_profile(uid: int, *, get=requests.get) -> dict[str, Any]:
         close = getattr(response, "close", None)
         if callable(close):
             close()
-MAX_IMAGE_BYTES = 4 * 1024 * 1024
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/x-ms-bmp"}
 
 
 def parse_control_log_response(body: str) -> dict[str, Any]:
@@ -268,7 +332,7 @@ def fetch_capture_log(start: str, end: str, *, get=requests.get, post=requests.p
             "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
         }
         try:
-            response = get(f"{base_url}{path}", params=params, timeout=(3, 8), allow_redirects=False, auth=auth)
+            response = _device_get(get, base_url, path, params=params, auth=auth)
         except requests.RequestException as exc:
             raise ConnectionError("Không kết nối được FaceGate Capture Log qua relay VPS.") from exc
         if int(getattr(response, "status_code", 0)) != 200:
@@ -321,7 +385,7 @@ def fetch_capture_image(ref: dict[str, Any], *, get=requests.get) -> tuple[bytes
         "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
     }
     try:
-        response = get(f"{base_url}{path}", params=params, timeout=(3, 8), allow_redirects=False, auth=auth, stream=True)
+        response = _device_get(get, base_url, path, params=params, auth=auth, stream=True)
     except requests.RequestException as exc:
         raise ConnectionError("Không tải được ảnh capture từ FaceGate qua relay VPS.") from exc
     try:
@@ -389,8 +453,8 @@ def fetch_control_log(start: str, end: str, *, get=requests.get, post=requests.p
             "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
         }
         try:
-            response = get(
-                f"{base_url}{path}", params=params, timeout=(3, 8), allow_redirects=False,
+            response = _device_get(
+                get, base_url, path, params=params,
                 auth=auth,
             )
         except requests.RequestException as exc:
