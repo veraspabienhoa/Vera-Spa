@@ -23,7 +23,7 @@ function fixture({ initial = session(), env = { VITE_VERA_API_BASE_URL: 'https:/
   const storage = new Map(initial ? [[SESSION_KEY, JSON.stringify(initial)]] : [])
   const events = []
   const context = vm.createContext({
-    module: { exports: {} }, fixtureEnv: env, fetch, Headers, AbortController,
+    module: { exports: {} }, fixtureEnv: env, fetch, Headers, AbortController, URLSearchParams,
     setTimeout: fastTimers ? (callback) => setTimeout(callback, 1) : setTimeout, clearTimeout,
     window: { localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }, addEventListener() {} },
   })
@@ -168,5 +168,25 @@ test('timeout also bounds a stalled response body', async () => {
     }),
   }) })
   await assert.rejects(f.refreshCurrentSession(), error => error.code === 'VERA_API_TIMEOUT')
+  assert.ok(f.storage.has(SESSION_KEY))
+})
+
+test('image download refreshes rejected access once and uses the new token', async () => {
+  const tokens = []
+  const f = fixture({ fetch: async (url, options) => {
+    if (url.endsWith('/refresh')) return json(200, session(3600, 'new'))
+    tokens.push(options.headers.get('Authorization'))
+    return tokens.length === 1 ? json(401, { detail: 'expired' }) : new Response('bitmap', { headers: { 'Content-Type': 'image/bmp' } })
+  } })
+  const blob = await f.veraApi.facegateCaptureImage({ file_type: 2, file_index: 1, file_position: 1, time: '2026-09-23/18:16:43' })
+  assert.equal(blob.type, 'image/bmp')
+  assert.deepEqual(tokens, ['Bearer access-old', 'Bearer access-new'])
+})
+
+test('binary refresh 503 preserves session and is not hidden by original 401', async () => {
+  let calls = 0
+  const f = fixture({ fetch: async url => { calls++; return url.endsWith('/refresh') ? json(503, { detail: 'temporary' }) : json(401, {}) } })
+  await assert.rejects(f.veraApi.facegateCaptureImage({}), error => error.status === 503)
+  assert.equal(calls, 2)
   assert.ok(f.storage.has(SESSION_KEY))
 })

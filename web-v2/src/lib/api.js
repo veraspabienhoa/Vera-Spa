@@ -59,7 +59,7 @@ async function request(path, options = {}) {
 
 async function binaryResponse(path, options = {}, failureMessage = 'Không tải được dữ liệu sau 2 lần thử') {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const session = await getCurrentSession()
+  let session = await getCurrentSession()
   const headers = new Headers(options.headers || {})
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
@@ -75,9 +75,18 @@ async function binaryResponse(path, options = {}, failureMessage = 'Không tải
     }
   }
   if (!response) throw new Error(`${failureMessage}. (${lastError?.message || 'Lỗi mạng'})`)
+  if (response.status === 401 && session?.refresh_token) {
+    session = await refreshCurrentSession(session)
+    if (session?.access_token) {
+      headers.set('Authorization', `Bearer ${session.access_token}`)
+      response = await fetch(`${apiBase}${path}`, { ...options, headers })
+    }
+  }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new Error(apiErrorMessage(payload, response.status))
+    const error = new Error(apiErrorMessage(payload, response.status))
+    error.status = response.status
+    throw error
   }
   return response
 }
@@ -324,6 +333,10 @@ export const veraApi = {
   createPayrollObligation: (body) => request('/v2/payroll/obligations', { method: 'POST', body: JSON.stringify(body) }),
   deletePayrollObligation: (id) => request(`/v2/payroll/obligations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  deviceRegistry: () => request('/v2/devices/registry'),
+  saveDeviceRegistry: body => request('/v2/devices/registry', { method: 'PUT', body: JSON.stringify(body) }),
+  checkinHistory: query => request(`/v2/devices/checkin-history?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== ''))}`),
+  exportCheckinHistory: query => download(`/v2/devices/checkin-history/export.xlsx?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== ''))}`, 'VERA_LichSu_Checkin.xlsx'),
   attendanceSource: () => request('/v2/devices/attendance-source'),
   facegateMappings: () => request('/v2/devices/facegate-mappings'),
   facegateProfile: (id) => request(`/v2/devices/facegate-profiles/${encodeURIComponent(id)}`),
