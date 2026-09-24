@@ -1,15 +1,11 @@
-import { useEffect, useState } from 'react'
-import { History, RefreshCw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Download, History, RefreshCw } from 'lucide-react'
 import VeraDateInput from '../components/VeraDateInput'
 import { veraApi } from '../lib/api'
 import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
 
-const today = () => {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric',
-  }).formatToParts(new Date()).map(part => [part.type, part.value]))
-  return `${parts.year}-${parts.month}-${parts.day}`
-}
+import { CHECKIN_PRESETS, EMPTY_CHECKIN_DETAILS, checkinDateRange, checkinQuery, checkinRangeError, initialCheckinFilters } from '../lib/checkinHistory'
+import './DevicesAndCheckin.css'
 
 function MappingCheck({ record }) {
   const [result, setResult] = useState(null)
@@ -89,63 +85,92 @@ function CaptureImageButton({ record }) {
 }
 
 export default function CheckinHistoryPage() {
-  const [start, setStart] = useState(today)
-  const [end, setEnd] = useState(today)
-  const [search, setSearch] = useState('')
-  const [source, setSource] = useState('facegate')
+  const [filters, setFilters] = useState(initialCheckinFilters)
   const [records, setRecords] = useState(null)
+  const [loadedQuery, setLoadedQuery] = useState(null)
+  const [options, setOptions] = useState({ statuses: [], types: [] })
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-
-  const load = async (event) => {
+  const [exporting, setExporting] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const formRef = useRef(null)
+  const requestId = useRef(0)
+  useEffect(() => () => { requestId.current += 1 }, [])
+  const source = filters.source
+  const change = patch => { setFilters(value => ({ ...value, ...patch })); setDirty(true); setError('') }
+  const preset = value => change({ preset: value, ...checkinDateRange(value), event_date: '' })
+  const load = async event => {
     event.preventDefault()
-    if (!event.currentTarget.checkValidity() || !start || !end || start > end) return
-    setBusy(true)
-    setError('')
-    setTruncated(false)
+    if (!event.currentTarget.reportValidity()) return
+    const invalid = checkinRangeError(filters)
+    if (invalid) { setError(invalid); return }
+    const id = ++requestId.current
+    const query = checkinQuery(filters)
+    setBusy(true); setError(''); setRecords(null)
     try {
-      const response = source === 'facegate'
-        ? await veraApi.facegateControlLog(start, end)
-        : source === 'capture'
-          ? await veraApi.facegateCaptureLog(start, end)
-          : await veraApi.snapshot(start, end)
+      const response = await veraApi.checkinHistory(query)
+      if (requestId.current !== id) return
       setRecords(response.records || [])
       setTruncated(Boolean(response.truncated))
+      setOptions(response.options || { statuses: [], types: [] })
+      setLoadedQuery(query); setDirty(false)
     } catch (cause) {
-      setError(cause.message || 'Không tải được lịch sử chấm công.')
-      setRecords(null)
-    } finally { setBusy(false) }
+      if (requestId.current === id) setError(cause.message || 'Không tải được lịch sử checkin.')
+    } finally { if (requestId.current === id) setBusy(false) }
   }
-
-  const visible = (records || []).filter(item =>
-    `${item.employee_name || item.device_name || item.event_text || ''} ${item.employee_code || ''} ${item.event_id || ''}`.toLocaleLowerCase('vi-VN').includes(search.trim().toLocaleLowerCase('vi-VN')))
+  const exportExcel = async () => {
+    if (!formRef.current?.reportValidity() || dirty || !loadedQuery) return
+    setExporting(true); setError('')
+    try { await veraApi.exportCheckinHistory(loadedQuery) }
+    catch (cause) { setError(cause.message || 'Không xuất được Excel.') }
+    finally { setExporting(false) }
+  }
+  const visible = records || []
 
   return <section className="checkin-history-page">
     <div className="page-heading"><div><span className="eyebrow"><History size={16} /> FACE ID · CHẤM CÔNG</span><h1>LỊCH SỬ CHECKIN</h1><p>Tra cứu nhật ký thiết bị hoặc dữ liệu chấm công đã đồng bộ vào VERA.</p></div></div>
-    <FacegateMappings />
-    <form className="attendance-date-custom" onSubmit={load}>
-      <label>Nguồn dữ liệu<select value={source} onChange={event => { setSource(event.target.value); setRecords(null); setError('') }}><option value="facegate">FaceGate · Control Log</option><option value="capture">FaceGate · Capture Log</option><option value="timesoft">TimeSoft · Đã đồng bộ VERA</option></select></label>
-      <label>Từ ngày<VeraDateInput value={start} onChange={event => setStart(event.target.value)} required /></label>
-      <label>Đến ngày<VeraDateInput value={end} min={start} onChange={event => setEnd(event.target.value)} required /></label>
-      <button className="secondary-button" type="submit" disabled={busy || !start || !end || start > end}><RefreshCw size={16} className={busy ? 'spin' : ''} /> {busy ? 'Đang tải…' : 'Xem lịch sử'}</button>
+    <form ref={formRef} className="checkin-filters" onSubmit={load} onInput={() => setDirty(true)}>
+      <fieldset disabled={busy || exporting}>
+        <div className="checkin-filter-dates">
+          <label>Thời gian<select value={filters.preset} onChange={event => preset(event.target.value)}>{CHECKIN_PRESETS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></label>
+          <label>Từ ngày<VeraDateInput value={filters.date_from} max={filters.date_to} onChange={event => change({ date_from: event.target.value, preset: 'custom' })} required /></label>
+          <label>Đến ngày<VeraDateInput value={filters.date_to} min={filters.date_from} onChange={event => change({ date_to: event.target.value, preset: 'custom' })} required /></label>
+        </div>
+        <div className="checkin-filter-details">
+          <label>Nguồn dữ liệu<select value={source} onChange={event => { change({ source: event.target.value, ...EMPTY_CHECKIN_DETAILS }); setRecords(null); setOptions({ statuses: [], types: [] }) }}><option value="facegate">FaceGate · Control Log</option><option value="capture">FaceGate · Capture Log</option><option value="timesoft">TimeSoft · Đã đồng bộ VERA</option></select></label>
+          <label>Ngày cụ thể<VeraDateInput value={filters.event_date} min={filters.date_from} max={filters.date_to} onChange={event => change({ event_date: event.target.value })} /></label>
+          <label>{source === 'facegate' ? 'Tên trên máy' : 'Tên / mã nhân viên'}<input type="search" disabled={source === 'capture'} maxLength={200} value={filters.employee} onChange={event => change({ employee: event.target.value })} placeholder={source === 'capture' ? 'Capture không có mã nhân viên' : 'Tìm tên hoặc mã'} /></label>
+          <label>Mã sự kiện<input type="search" disabled={source === 'timesoft'} maxLength={64} value={filters.event_id} onChange={event => change({ event_id: event.target.value })} placeholder="Tìm mã sự kiện" /></label>
+          <label>{source === 'timesoft' ? 'Trạng thái vào' : 'Trạng thái'}<select value={filters.status} onChange={event => change({ status: event.target.value })}><option value="">Tất cả</option>{options.statuses.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label>{source === 'timesoft' ? 'Trạng thái ra' : 'Loại sự kiện'}<select value={filters.event_type} onChange={event => change({ event_type: event.target.value })}><option value="">Tất cả</option>{options.types.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+        </div>
+        <div className="checkin-quick-dates">{CHECKIN_PRESETS.filter(([id]) => id !== 'custom').map(([id, label]) => <button key={id} type="button" className="secondary-button" aria-pressed={filters.preset === id} onClick={() => preset(id)}>{label}</button>)}<button type="button" className="secondary-button" onClick={() => change(EMPTY_CHECKIN_DETAILS)}>Xóa lọc chi tiết</button></div>
+        <div className="device-actions">
+          <button className="secondary-button" type="submit"><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang tải…' : 'Xem lịch sử'}</button>
+          <button className="secondary-button" type="button" disabled={!records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất Excel'}</button>
+        </div>
+      </fieldset>
+      <small>Tra cứu tối đa 63 ngày/lượt. “Tất cả” lấy 63 ngày gần nhất. Danh sách trạng thái và loại sự kiện được cập nhật sau khi tải. Excel lấy dữ liệu mới nhất theo bộ lọc đã áp dụng.</small>
     </form>
+    {dirty && records && <p role="status">Bộ lọc đã thay đổi. Bấm Xem lịch sử để cập nhật bảng và xuất Excel.</p>}
     {error && <p role="alert">{error}</p>}
     {records && <>
-      <label>Tìm nhân viên<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={source === 'facegate' ? 'Tên trên máy hoặc mã sự kiện' : 'Tên hoặc mã nhân viên'} /></label>
+      <p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p>
+      {visible.length === 0 && <p role="status">Không có bản ghi phù hợp bộ lọc.</p>}
       {source === 'facegate' ? <>
         <p>{visible.length} sự kiện FaceGate trong kỳ đã chọn. Bấm Đối chiếu để kiểm tra tham chiếu ảnh với hồ sơ đã được Admin ánh xạ. Kết quả chỉ dùng tra cứu, không dùng tính công/lương.</p>
-        {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn; hãy thu hẹp khoảng ngày.</p>}
+        {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn. Hãy thu hẹp khoảng ngày để xem và xuất đầy đủ dữ liệu.</p>}
         <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th><th>Mã loại trên máy</th><th>Đối chiếu nhân viên</th></tr></thead><tbody>
           {visible.map(item => <tr key={item.event_id}>
             <td data-label="Mã sự kiện">{item.event_id}</td><td data-label="Thời điểm">{formatVeraDateTime(item.occurred_at, '—')}</td>
-            <td data-label="Tên hiển thị trên máy">{item.device_name || '—'}</td><td data-label="Mã trạng thái">{item.status_code || '—'}</td><td data-label="Mã loại trên máy">{item.type_code || '—'}</td>
+            <td data-label="Tên hiển thị trên máy">{item.device_name || '—'}</td><td data-label="Mã trạng thái">{item.status_code ?? '—'}</td><td data-label="Mã loại trên máy">{item.type_code ?? '—'}</td>
             <td data-label="Đối chiếu nhân viên"><MappingCheck key={`${item.event_id}-${JSON.stringify(item.registration_ref)}`} record={item} /></td>
           </tr>)}
         </tbody></table></div>
       </> : source === 'capture' ? <>
         <p>{visible.length} ảnh/sự kiện Capture Log trong kỳ. Máy không gửi mã nhân viên trong danh sách này; ảnh chỉ để Admin tra cứu, không ghép hồ sơ và không dùng tính công/lương. Ảnh chỉ tải khi bấm Xem ảnh và không lưu vào VERA.</p>
-        {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn; hãy thu hẹp khoảng ngày.</p>}
+        {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn. Hãy thu hẹp khoảng ngày để xem và xuất đầy đủ dữ liệu.</p>}
         <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Loại sự kiện</th><th>Trạng thái trên máy</th><th>Ảnh capture</th></tr></thead><tbody>
           {visible.map(item => <tr key={item.event_id}>
             <td data-label="Mã sự kiện">{item.event_id}</td><td data-label="Thời điểm">{formatVeraDateTime(item.occurred_at, '—')}</td>
@@ -164,5 +189,6 @@ export default function CheckinHistoryPage() {
         </tbody></table></div>
       </>}
     </>}
+    <FacegateMappings />
   </section>
 }

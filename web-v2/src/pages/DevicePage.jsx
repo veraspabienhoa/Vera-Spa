@@ -1,34 +1,117 @@
-import { Server } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Monitor, Plus, Printer, RefreshCw, ScanLine, Server, Settings2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDateTime } from '../lib/veraDate'
+import { searchTextMatches } from '../lib/searchText'
+import './DevicesAndCheckin.css'
 
-// Configuration supplied by the administrator; no browser request is made to a private LAN address.
-const device = [
-  ['Mã máy chấm công', '2023044'],
-  ['Tên máy chấm công', 'máy nhận diện chấm công'],
-  ['Loại thiết bị', 'FaceId'],
-  ['Cổng web FaceGate', '80'],
-  ['Cổng TimeSoft đang lưu', '4370 (chưa xác minh kết nối)'],
-  ['Kiểu kết nối', 'TCP/IP'],
-  ['ID máy', '2023044'],
-]
+const kindIcons = { faceid: ScanLine, printer: Printer, scanner: ScanLine, screen: Monitor, other: Server }
+const newDevice = () => ({ id: crypto.randomUUID(), name: '', kind: 'faceid', connection: 'network', manufacturer: '', model: '', serial: '', location: '', address: '', port: '', notes: '', enabled: true, adapter: 'pending' })
 
 export default function DevicePage() {
-  const [source, setSource] = useState(null)
+  const [data, setData] = useState(null)
   const [error, setError] = useState('')
-  useEffect(() => {
-    let active = true
-    veraApi.attendanceSource().then(value => { if (active) setSource(value) }).catch(cause => { if (active) setError(cause.message) })
-    return () => { active = false }
-  }, [])
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [search, setSearch] = useState('')
+  const [kind, setKind] = useState('')
+  const [state, setState] = useState('')
+  const [source, setSource] = useState(null)
+  const [sourceError, setSourceError] = useState('')
+  const [sourceBusy, setSourceBusy] = useState(false)
+  const sequence = useRef(0)
+  const formRef = useRef(null)
+  const reload = async () => {
+    const id = ++sequence.current
+    setBusy(true); setError('')
+    try {
+      const response = await veraApi.deviceRegistry()
+      if (sequence.current === id) setData(response)
+    } catch (cause) { if (sequence.current === id) setError(cause.message || 'Không tải được danh sách thiết bị.') }
+    finally { if (sequence.current === id) setBusy(false) }
+  }
+  useEffect(() => { reload(); return () => { sequence.current += 1 } }, [])
+  const save = async event => {
+    event.preventDefault()
+    if (!event.currentTarget.reportValidity() || !data) return
+    setBusy(true); setError(''); setMessage('')
+    const device = { ...editing, name: editing.name.trim(), port: editing.port === '' || editing.port == null ? null : Number(editing.port) }
+    const devices = data.devices.some(item => item.id === device.id)
+      ? data.devices.map(item => item.id === device.id ? device : item) : [...data.devices, device]
+    try {
+      setData(await veraApi.saveDeviceRegistry({ expected_revision: data.revision, devices }))
+      setEditing(null); setMessage('Đã lưu hồ sơ thiết bị.')
+    } catch (cause) { setError(cause.message || 'Không lưu được thiết bị.') }
+    finally { setBusy(false) }
+  }
+  const inspectSource = async () => {
+    setSourceBusy(true); setSourceError('')
+    try { setSource(await veraApi.attendanceSource()) }
+    catch (cause) { setSource(null); setSourceError(cause.message || 'Không tải được trạng thái nguồn.') }
+    finally { setSourceBusy(false) }
+  }
+  const edit = device => {
+    setEditing({ ...device, port: device.port ?? '' }); setError(''); setMessage('')
+    window.setTimeout(() => { formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); formRef.current?.querySelector('input')?.focus() }, 0)
+  }
+  const change = patch => setEditing(value => ({ ...value, ...patch }))
+  const visible = (data?.devices || []).filter(item => (!kind || item.kind === kind)
+    && (!state || String(item.enabled) === state)
+    && searchTextMatches([item.name, item.serial, item.location, item.manufacturer, item.model].join(' '), search))
   return <section className="device-page">
-    <div className="page-heading"><div><span className="eyebrow"><Server size={16} /> THIẾT BỊ CHẤM CÔNG</span><h1>QUẢN LÝ THIẾT BỊ</h1><p>Thông tin thiết bị FaceID do quản trị viên cung cấp.</p></div></div>
-    <div className="responsive-data-table"><table><thead><tr><th>Thông tin</th><th>Giá trị</th></tr></thead><tbody>
-      {device.map(([label, value]) => <tr key={label}><td data-label="Thông tin">{label}</td><td data-label="Giá trị">{value}</td></tr>)}
-    </tbody></table></div>
-    <p>VPS đã đọc 56 bản ghi Capture ngày 23-09-2026 qua tunnel SSH tạm thời. Endpoint ảnh đã trả ảnh BMP; kết nối chỉ hoạt động khi Windows và phiên SSH còn chạy.</p>
-    <p>Nguồn TimeSoft: {source ? `${source.row_count} bản ghi trong cache hôm nay; đồng bộ lúc ${formatVeraDateTime(source.last_sync_at)}; ${source.cache_fresh ? 'cache còn hạn' : 'cache hết hạn'}.` : error ? `Không đọc được trạng thái: ${error}` : 'Đang tải…'}</p>
-    <p>TimeSoft không xác nhận các bản ghi này đến từ riêng máy 2023044. Cần thiết lập đường kết nối thường trực và xác minh mã nhân viên trước khi sử dụng log cho nghiệp vụ.</p>
+    <div className="page-heading"><div><span className="eyebrow"><Server size={16} /> TRUNG TÂM THIẾT BỊ</span><h1>QUẢN LÝ THIẾT BỊ</h1><p>Quản lý FaceID, máy in, máy quét, màn hình và các thiết bị ngoại vi của spa.</p></div></div>
+    <div className="device-actions">
+      <button type="button" className="secondary-button" disabled={busy || !data || Boolean(editing) || data.devices.length >= 100} onClick={() => edit(newDevice())}><Plus size={16} />Thêm thiết bị</button>
+      <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={reload}><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang xử lý…' : 'Tải lại danh sách'}</button>
+    </div>
+    {error && <p className="device-error" role="alert">{error}</p>}
+    {message && <p role="status">{message}</p>}
+    {editing && <form ref={formRef} className="device-editor" onSubmit={save}>
+      <h2>{data.devices.some(item => item.id === editing.id) ? 'Chỉnh sửa thiết bị' : 'Thêm thiết bị'}</h2>
+      <fieldset disabled={busy}>
+        <div className="device-form-grid">
+          <label>Tên thiết bị<input required maxLength={160} value={editing.name} onChange={event => change({ name: event.target.value })} placeholder="Ví dụ: Máy in lễ tân" /></label>
+          <label>Loại thiết bị<select disabled={editing.adapter === 'facegate_server'} value={editing.kind} onChange={event => change({ kind: event.target.value })}>{Object.entries(data.kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>Vị trí<input maxLength={160} value={editing.location} onChange={event => change({ location: event.target.value })} placeholder="Lễ tân, phòng, tầng…" /></label>
+          <label>Hãng sản xuất<input maxLength={100} value={editing.manufacturer} onChange={event => change({ manufacturer: event.target.value })} /></label>
+          <label>Model<input maxLength={100} value={editing.model} onChange={event => change({ model: event.target.value })} /></label>
+          <label>Serial / ID máy<input maxLength={100} value={editing.serial} onChange={event => change({ serial: event.target.value })} /></label>
+          <label>Kiểu kết nối<select value={editing.connection} onChange={event => change({ connection: event.target.value })}>{Object.entries(data.connections).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>Địa chỉ IP / tên máy<input maxLength={253} value={editing.address} onChange={event => change({ address: event.target.value })} placeholder="Chỉ địa chỉ, không nhập mật khẩu" /></label>
+          <label>Cổng<input type="number" min="1" max="65535" value={editing.port} onChange={event => change({ port: event.target.value })} placeholder="Nếu thiết bị dùng cổng mạng" /></label>
+        </div>
+        <label>Ghi chú<textarea rows={3} maxLength={1000} value={editing.notes} onChange={event => change({ notes: event.target.value })} placeholder="Mục đích sử dụng, máy trạm phụ trách…" /></label>
+        <label className="device-checkbox"><input type="checkbox" checked={editing.enabled} onChange={event => change({ enabled: event.target.checked })} />Đang sử dụng trong danh sách quản lý</label>
+        <p>{editing.adapter === 'facegate_server' ? 'Hồ sơ này dùng kết nối FaceGate đã cấu hình trên máy chủ. Thay đổi địa chỉ trong hồ sơ không tự đổi đường kết nối đang chạy.' : 'Lưu hồ sơ để chuẩn bị kết nối. Thiết bị mới cần tích hợp bộ kết nối phù hợp với hãng/model và máy trạm sử dụng.'} Trạng thái sử dụng quản lý hồ sơ, không bật/tắt phần cứng.</p>
+        <div className="device-actions"><button type="submit" className="secondary-button">Lưu thiết bị</button><button type="button" className="secondary-button" onClick={() => setEditing(null)}>Hủy</button></div>
+      </fieldset>
+    </form>}
+    {data && <>
+      <div className="device-list-filters">
+        <label>Tìm thiết bị<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Tên, serial, hãng, vị trí" /></label>
+        <label>Loại thiết bị<select value={kind} onChange={event => setKind(event.target.value)}><option value="">Tất cả</option>{Object.entries(data.kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>Trạng thái sử dụng<select value={state} onChange={event => setState(event.target.value)}><option value="">Tất cả</option><option value="true">Đang sử dụng</option><option value="false">Ngừng sử dụng</option></select></label>
+      </div>
+      <p>{visible.length} / {data.devices.length} thiết bị</p>
+      <div className="device-grid">{visible.map(item => {
+        const Icon = kindIcons[item.kind] || Server
+        const adapter = data.adapters[item.adapter]
+        return <article className="device-card" key={item.id}>
+          <div className="device-card-title"><Icon size={24} /><div><h2>{item.name}</h2><span>{data.kinds[item.kind]}</span></div></div>
+          <span className={`device-badge ${item.enabled ? '' : 'device-badge-muted'}`}>{item.enabled ? 'Đang sử dụng' : 'Ngừng sử dụng'}</span>
+          <dl><dt>Vị trí</dt><dd>{item.location || 'Chưa đặt'}</dd><dt>Hãng / model</dt><dd>{[item.manufacturer, item.model].filter(Boolean).join(' · ') || 'Chưa nhập'}</dd><dt>Serial / ID</dt><dd>{item.serial || 'Chưa nhập'}</dd><dt>Kết nối</dt><dd>{data.connections[item.connection]}</dd><dt>Bộ kết nối</dt><dd>{adapter?.label || 'Chờ tích hợp'}</dd></dl>
+          <p>{item.adapter === 'pending' ? 'Chưa có kết nối vận hành.' : adapter?.configured ? 'Đã có cấu hình máy chủ. Trạng thái online chưa được kiểm tra.' : 'Chưa đủ cấu hình máy chủ.'}</p>
+          <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={() => edit(item)}><Settings2 size={16} />Chỉnh sửa</button>
+        </article>
+      })}</div>
+      {!visible.length && <p role="status">Không có thiết bị phù hợp bộ lọc.</p>}
+    </>}
+    <details className="device-source"><summary>Nguồn chấm công TimeSoft</summary>
+      <p>Dữ liệu đồng bộ là nguồn riêng; không xác nhận trạng thái online của từng thiết bị.</p>
+      <button type="button" className="secondary-button" disabled={sourceBusy} onClick={inspectSource}>{sourceBusy ? 'Đang kiểm tra…' : 'Kiểm tra nguồn'}</button>
+      {sourceError && <p role="alert">{sourceError}</p>}
+      {source && <p>{source.row_count} bản ghi; đồng bộ lúc {formatVeraDateTime(source.last_sync_at)}; {source.cache_fresh ? 'cache còn hạn' : 'cache hết hạn'}.</p>}
+    </details>
   </section>
 }

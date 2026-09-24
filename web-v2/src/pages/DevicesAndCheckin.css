@@ -1,0 +1,33 @@
+.checkin-filters, .device-editor, .device-list-filters {
+  background: #f6faf7; border: 1px solid #cbded2; border-radius: 18px; padding: 18px; margin: 18px 0;
+}
+.checkin-filters fieldset, .device-editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.checkin-filter-dates, .device-list-filters, .device-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.checkin-filter-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+.checkin-filters label, .device-editor label, .device-list-filters label { display: grid; gap: 6px; font-size: .875rem; font-weight: 650; min-width: 0; }
+.checkin-filters input, .checkin-filters select, .device-editor input, .device-editor select, .device-editor textarea, .device-list-filters input, .device-list-filters select { width: 100%; min-width: 0; box-sizing: border-box; background: #fff; border: 2px solid #3c6955; border-radius: 12px; min-height: 48px; padding: 10px 12px; color: #183e2f; font: inherit; }
+.checkin-filters .vera-date-input input { padding-right: 44px; }
+.checkin-quick-dates, .device-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+.checkin-quick-dates { justify-content: flex-end; }
+.checkin-quick-dates button, .device-actions button, .device-card button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 2px solid #3c6955; min-height: 44px; }
+.checkin-quick-dates button:hover { transform: none; }
+.checkin-quick-dates button[aria-pressed="true"] { color: #fff; background: #23543f; }
+.checkin-filters small { display: block; color: #52685b; line-height: 1.6; }
+.device-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.device-card { border: 2px solid #3c6955; border-radius: 16px; background: #fff; padding: 20px; min-width: 0; overflow-wrap: anywhere; }
+.device-card-title { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.device-card h2 { font-size: 1.15rem; margin: 0 0 4px; }
+.device-card-title span { color: #607168; font-size: .9rem; }
+.device-card dl { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 1.5fr); gap: 10px; margin: 18px 0; }
+.device-card dt { color: #607168; } .device-card dd { margin: 0; font-weight: 600; }
+.device-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; border: 1px solid #3c6955; color: #23543f; background: #eaf4ed; font-size: .85rem; }
+.device-badge-muted { color: #666; border-color: #999; background: #eee; }
+.device-editor .device-checkbox { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+.device-editor .device-checkbox input { width: 18px; min-height: 18px; }
+.device-editor textarea { margin-top: 6px; resize: vertical; }
+.device-editor h2 { margin-top: 0; }
+.device-error { border-left: 4px solid #c43a2c; padding: 12px; background: #fff4f1; }
+.device-source { margin-top: 24px; padding: 16px; border: 1px solid #b9ccbf; border-radius: 12px; }
+.device-source summary { cursor: pointer; font-weight: 650; }
+@media (max-width: 1000px) { .device-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .device-form-grid, .checkin-filter-details { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .device-grid, .device-form-grid, .device-list-filters, .checkin-filter-dates, .checkin-filter-details { grid-template-columns: minmax(0, 1fr); } .checkin-quick-dates { justify-content: flex-start; } .checkin-quick-dates button { flex: 1 1 42%; } .checkin-filters, .device-editor { padding: 12px; } }
