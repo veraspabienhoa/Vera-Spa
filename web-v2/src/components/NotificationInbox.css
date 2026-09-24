@@ -3,15 +3,17 @@
 .notification-inbox-trigger { position: relative; }
 .topbar-actions .topbar-open-tab-button { width: 148px; min-height: 32px; }
 .notification-unread-dot { position: absolute; top: 2px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #bd2736; }
-dialog.notification-dialog { box-sizing: border-box; width: max-content; min-width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: 85dvh; margin: auto; padding: 0; overflow: hidden; border: 2px solid #406f59; border-radius: 20px; background: #eff7f1; color: #153d2d; box-shadow: 0 16px 50px #12372b40; }
+dialog.notification-dialog { box-sizing: border-box; width: max-content; min-width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: 85dvh; margin: auto; padding: 0; overflow: hidden; border: 2px solid #476b59; border-radius: 20px; background: #d2ded6; color: #203a30; box-shadow: 0 16px 50px #12372b40; }
 .notification-dialog::backdrop { background: #102b2266; }
-.notification-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; background: #dbece0; border-bottom: 1px solid #8cad98; }
+.notification-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; background: #b9cec1; border-bottom: 1px solid #799787; }
 .notification-dialog h2 { margin: 0; font-size: 20px; }
 .notification-dialog button { cursor: pointer; }
-.notification-dialog header button { flex: 0 0 auto; padding: 6px; border: 1px solid #406f59; border-radius: 8px; background: #fff; }
+.notification-dialog header button { flex: 0 0 auto; padding: 6px; border: 1px solid #476b59; border-radius: 8px; background: #e6eee8; color: #203a30; }
 .notification-dialog-content { max-height: 65dvh; overflow-y: auto; overflow-x: hidden; padding: 8px 16px; }
-.notification-dialog .notification-row { display: flex; align-items: center; gap: 16px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; text-align: left; padding: 14px 8px; background: transparent; color: inherit; border: 0; border-bottom: 1px solid #b5cfc0; border-radius: 0; }
-.notification-row.unread { background: #e0efe5; }
+.notification-dialog .notification-row { display: flex; align-items: center; gap: 16px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; text-align: left; padding: 14px 8px; background: #d8e3db; color: inherit; border: 0; border-bottom: 1px solid #8da99a; border-radius: 0; }
+.notification-dialog .notification-row.unread { background: #bfd5c7; }
+.notification-dialog .notification-row:hover { background: #adcbba; }
+.notification-dialog .notification-row:focus-visible { outline: 3px solid #315c45; outline-offset: -3px; }
 .notification-row-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notification-row small { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
 .notification-dialog .notification-detail { width: min(760px, calc(100vw - 72px)); max-width: 100%; overflow-wrap: anywhere; }
