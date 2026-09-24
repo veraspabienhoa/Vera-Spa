@@ -855,5 +855,8 @@ def install_staff_security_routes(
             },
         )
 
+    from vera_web_v2_face_id import install_face_id_routes
+    install_face_id_routes(app, engine_instance=engine_instance, current_identity=current_identity,
+                           require_feature=require_feature, identity_type=identity_type)
     app.state.staff_security_routes_installed = True
     app.state.staff_security_release = STAFF_SECURITY_RELEASE

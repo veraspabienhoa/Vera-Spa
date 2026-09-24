@@ -129,3 +129,25 @@ export const staffSecurityApi = {
     await downloadPdf(response, `Ho_So_Nhan_Vien_Da_Chon_${usernames.length}.pdf`)
   },
 }
+
+
+async function faceRequest(username, suffix = '', options = {}, binary = false) {
+  const response = await authorizedFetch(`/v2/staff/${encodeURIComponent(username)}/face-id${suffix}`, options)
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    const error = new Error(payload.detail || `HTTP ${response.status}`)
+    error.status = response.status
+    throw error
+  }
+  return binary ? response.blob() : response.json()
+}
+
+export const faceIdApi = {
+  metadata: (username) => faceRequest(username),
+  identityBlob: (username) => faceRequest(username, '/image', {}, true),
+  uploadIdentity: (username, _side, blob) => faceRequest(username, '/image', {method: 'PUT', headers: {'Content-Type': blob.type}, body: blob}),
+  deleteIdentity: (username) => faceRequest(username, '/image', {method: 'DELETE'}),
+  portrait: (username) => faceRequest(username, '/portrait-source', {}, true),
+  captures: (username, day) => faceRequest(username, `/captures?day=${encodeURIComponent(day)}`),
+  capture: (username, day, eventId) => faceRequest(username, `/capture-image?day=${encodeURIComponent(day)}&event_id=${encodeURIComponent(eventId)}`, {}, true),
+}
