@@ -12,7 +12,7 @@ def test_postlogin_defaults_to_live_tour_but_preserves_page_on_reverification():
     assert "const readActivePage = () => 'live-tour'" in source
     assert "verifiedUser.current !== nextSession.user.id" in source
     assert "window.localStorage.setItem(activePageStorageKey(user), page)" in source
-    assert "standaloneRequest.enabled ? standaloneRequest.page : readActivePage(nextSession.user)" in source
+    assert "standaloneRequest.enabled ? standaloneRequest.page : readNotificationPage() || readActivePage(nextSession.user)" in source
     assert "rememberActivePage(user, nextPage)" in source
 
 
@@ -20,3 +20,8 @@ def test_first_login_still_forces_profile_page():
     source = (ROOT / "web-v2/src/App.jsx").read_text(encoding="utf-8")
 
     assert "me.must_change_password ? 'profile'" in source
+
+
+def test_notification_link_only_overrides_default_for_changes():
+    source = (ROOT / "web-v2/src/App.jsx").read_text(encoding="utf-8")
+    assert "const readNotificationPage = () => new URLSearchParams(window.location.search).get('page') === 'changes' ? 'changes' : ''" in source
