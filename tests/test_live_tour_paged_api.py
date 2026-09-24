@@ -61,3 +61,33 @@ def test_name_search_preserves_phrase_and_formatted_phone_semantics():
     assert customer_matches({'name':'An An','phone':'0901234567'},'an an 090 123')
     assert not customer_matches({'name':'Vân Anh'},'An An')
     assert customer_matches({'name':'Ngọc Anh','phone':'+84901234567'},'ngoc a 090123')
+
+
+def test_relational_panels_match_legacy_without_reading_unrelated_ledgers(monkeypatch):
+    state = sample()
+    state['idempotency'] = {'private-response': {'large': 'cached action'}}
+    state['audit'] = [{'id': 'audit1', 'created_at': NOW.isoformat()}]
+    state['backups'] = [{'id': 'backup1', 'created_at': NOW.isoformat()}]
+    _, client = app_client(SettingsDatabase(state))
+    panels = ('customers', 'pending', 'invoices', 'reports', 'history')
+    expected = {panel: client.get(f'/v2/live-tour/collections/{panel}?page_size=10').json() for panel in panels}
+    reads = []
+    def scoped_read(conn, collections=None):
+        assert collections is not None
+        reads.append(set(collections))
+        value = deepcopy(state)
+        value.pop('idempotency')
+        for key in live.relational_store.RESOURCE_COLLECTIONS:
+            if key not in collections:
+                value[key] = []
+        return value, 7, {}
+    monkeypatch.setattr(live.resource_store, 'enabled', lambda: True)
+    monkeypatch.setattr(live.resource_store, 'read', scoped_read)
+    for panel in panels:
+        response = client.get(f'/v2/live-tour/collections/{panel}?page_size=10')
+        assert response.status_code == 200, response.text
+        assert response.json() == expected[panel]
+    assert 'pending' in reads[0]
+    assert {'reports', 'invoices'} <= reads[3]
+    assert all('backups' not in scope and 'audit' not in scope for scope in reads[:4])
+    assert all('customers' not in scope for scope in reads[1:])
