@@ -360,7 +360,9 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         profile = device_call(fetch_registered_profile, body.profile_id)
         if profile['registration_ref'] != body.registration_ref or profile['device_name'] != body.device_name:
             raise HTTPException(409, 'Hồ sơ đăng ký đã thay đổi. Hãy đọc lại hồ sơ và xác nhận.')
-        actor = str(getattr(ident, 'username', '') or '')
+        actor = str(getattr(ident, 'employee_username', '') or '').strip()
+        if not actor:
+            raise HTTPException(403, 'Không xác định được người xác nhận ánh xạ.')
         with engine_instance().begin() as conn:
             if conn.execute(text("SELECT username FROM employees WHERE username=:username AND role != 'admin' FOR SHARE"),
                             {'username': body.username}).scalar_one_or_none() is None:

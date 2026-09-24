@@ -425,3 +425,20 @@ its archive, record that scope, and require archive definitions/data for every
 Live Tour resource table before cutover. This is not a full-instance backup or
 proof of a successful production activation. Do not grant cron access to the API
 role or suppress subsequent dump errors.
+
+
+## 24-09-2026: FaceGate mapping confirmation actor missing
+
+User evidence shows profile 142 mapped successfully and an exact reference match,
+but the read-only readiness probe reports one stored mapping and zero confirmed
+mappings. Code inspection confirms save_facegate_mapping reads Identity.username,
+which does not exist: the authenticated field is employee_username. Consequently
+confirmed_by is empty and readiness correctly excludes the row.
+
+Use employee_username and reject an empty actor before any database write.
+Regression tests use the production identity field and cover reconfirming a legacy
+row, recording the actor, and readiness counting its reference without enabling
+attendance cutover. Do not invent historical actors or weaken readiness checks.
+After backend deployment, an authenticated Admin must read and reconfirm the
+existing profile, then verify readiness and both health endpoints. This entry
+records diagnosis and tested code, not completed production verification.
