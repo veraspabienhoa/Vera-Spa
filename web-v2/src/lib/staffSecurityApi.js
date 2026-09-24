@@ -143,6 +143,10 @@ async function faceRequest(username, suffix = '', options = {}, binary = false) 
 }
 
 export const faceIdApi = {
+  batchPlan: (filenames) => jsonRequest('/v2/face-id/batch-plan', {method: 'POST', body: JSON.stringify({filenames})}),
+  uploadBatchPhoto: (row) => faceRequest(row.username, `/image?filename=${encodeURIComponent(row.filename)}`, {
+    method: 'PUT', headers: {'Content-Type': row.blob.type, ...(row.existing_sha256 ? {'If-Match': `"${row.existing_sha256}"`} : {'If-None-Match': '*'})}, body: row.blob,
+  }),
   metadata: (username) => faceRequest(username),
   identityBlob: (username) => faceRequest(username, '/image', {}, true),
   uploadIdentity: (username, _side, blob) => faceRequest(username, '/image', {method: 'PUT', headers: {'Content-Type': blob.type}, body: blob}),

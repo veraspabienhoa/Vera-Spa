@@ -1,4 +1,5 @@
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
+import FaceIdBulkUpload from './FaceIdBulkUpload'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
@@ -251,6 +252,8 @@ export default function EmployeePage({ user }) {
 
   const permissions = data?.permissions || {}
   const [faceUser, setFaceUser] = useState('')
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
   const isAdmin = user?.role === 'admin'
   const manageableRoles = new Set(data?.role_options || [])
   const canManage = (employee) => isAdmin || manageableRoles.has(employee.role)
@@ -470,6 +473,7 @@ export default function EmployeePage({ user }) {
 
       <section data-ui-key="u-ff418fa84752" className="panel staff-control-panel">
         <UiToolbar data-ui-key="u-2bec85ee8f1f" className="staff-toolbar">
+          {permissions.employee_face_id_manage && <button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh FACE ID hàng loạt</button>}
           <LiveTourSearchSelect
             className="staff-employee-name-filter"
             hideLabel
@@ -523,6 +527,7 @@ export default function EmployeePage({ user }) {
         </form>
       </section>}
 
+      {bulkOpen && <EmployeeProfileModal busy={bulkBusy} onClose={() => { if (!bulkBusy) setBulkOpen(false) }}><FaceIdBulkUpload onBusyChange={setBulkBusy}/><button type="button" className="secondary-button" disabled={bulkBusy} onClick={() => setBulkOpen(false)}>Đóng</button></EmployeeProfileModal>}
       {faceUser && <EmployeeProfileModal onClose={() => setFaceUser('')}><h2 id="employee-profile-modal-title">ẢNH FACE ID · {faceUser}</h2><FaceIdCard key={faceUser} username={faceUser}/><button type="button" className="secondary-button" onClick={() => setFaceUser('')}>Đóng</button></EmployeeProfileModal>}
       {profileUser && <EmployeeProfileModal onClose={() => setProfileUser('')} busy={busy === 'profile'}><section data-ui-key="u-309a06b43235" ref={profileSectionRef} className="panel staff-form-panel employee-profile-modal-panel">
         <div data-ui-key="u-4450e8bb6934" className="panel-title-row"><div><h2 id="employee-profile-modal-title">SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div><UiToolbar data-ui-key="u-68abbff1b9e3" className="staff-profile-react-actions"><button data-ui-key="u-ca50a39b04af" data-ui-label-default="✕ Đóng" type="button" className="secondary-button" onClick={() => setProfileUser('')}><UiCustomText uiKey="u-ca50a39b04af">✕ Đóng</UiCustomText></button><button data-ui-key="u-3bbe39942c7f" data-ui-label-default="Lưu hồ sơ" type="button" className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={16}/><UiCustomText uiKey="u-3bbe39942c7f"> Lưu hồ sơ</UiCustomText></button></UiToolbar></div>

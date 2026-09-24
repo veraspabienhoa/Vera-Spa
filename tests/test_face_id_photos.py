@@ -10,9 +10,9 @@ from PIL import Image
 import vera_web_v2_face_id as face
 
 
-def png(width=300, height=400):
+def png(width=300, height=400, color='blue'):
     out = BytesIO()
-    Image.new('RGB', (width, height), 'blue').save(out, format='PNG')
+    Image.new('RGB', (width, height), color).save(out, format='PNG')
     return out.getvalue()
 
 
@@ -32,19 +32,23 @@ class Database:
     def execute(self, sql, params=None):
         sql, params = str(sql), params or {}
         rows = []
-        if 'SELECT username FROM employees' in sql:
-            rows = [{'username': 'worker'}] if params['username'] == 'worker' else []
+        if 'SELECT e.username' in sql:
+            rows = [{'username': 'worker', 'sha256': self.photo.get('sha256') if self.photo else None}]
+        elif 'SELECT username FROM employees' in sql:
+            rows = [{'username': 'worker'}] if params.get('username', 'worker') == 'worker' else []
         elif 'INSERT INTO vera_employee_face_id' in sql:
             self.photo = {'content': params['content'], 'content_type': params['type'], 'size_bytes': params['size'], 'sha256': params['sha']}
         elif 'DELETE FROM vera_employee_face_id' in sql:
             self.photo = None
+        elif 'SELECT sha256' in sql:
+            rows = [{'sha256': self.photo['sha256']}] if self.photo else []
         elif 'FROM vera_employee_face_id' in sql:
             rows = [({k: self.photo.get(k) for k in ('size_bytes', 'sha256', 'updated_at')} if 'SELECT size_bytes' in sql else self.photo)] if self.photo else []
         elif 'FROM vera_employee_identity_document' in sql:
             rows = [{'content': png(), 'content_type': 'image/png'}]
         elif not any(word in sql for word in ('CREATE TABLE', 'ALTER TABLE', 'DO $$')):
             raise AssertionError(sql)
-        return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: rows[0] if rows else None))
+        return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: rows[0] if rows else None, all=lambda: rows), scalar=lambda: next(iter(rows[0].values())) if rows else None)
 
 
 def client(grants):
@@ -114,3 +118,33 @@ def test_permission_defaults_are_admin_only_and_pdf_has_no_face_photo():
     # The PDF renderer only reads its explicit portrait/front/back keys.
     import inspect
     assert 'face_id' not in inspect.getsource(staff._build_employee_profile_pdf)
+
+
+def test_batch_plan_uses_username_never_full_name_and_keeps_accents():
+    rows = [{'username': 'Tuyết Nhi', 'full_name': 'Nguyễn Thị Nhi', 'sha256': 'saved'}, {'username': 'An', 'full_name': 'Khác'}]
+    result = face.batch_plan(['Tuyết Nhi.jpg', 'Nguyễn Thị Nhi.jpg', 'Tuyet Nhi.jpg', '../An.png', 'An.jpg', 'an.png'], rows)
+    assert result[0]['username'] == 'Tuyết Nhi' and result[0]['existing_sha256'] == 'saved'
+    assert [row['status'] for row in result[1:]] == ['not_found','not_found','invalid_filename','duplicate_filename','duplicate_filename']
+    import unicodedata
+    assert face.batch_plan([unicodedata.normalize('NFD', 'Tuyết Nhi')+'.PNG'], rows)[0]['status'] == 'ready'
+    assert face.batch_plan(['An.jpg'], [{'username':'An'}, {'username':'AN'}])[0]['status'] == 'ambiguous'
+
+
+def test_batch_api_permissions_limit_and_existing_photo_guard():
+    grants = {'employee_face_id_view','employee_face_id_manage'}
+    db, api = client(grants)
+    assert api.post('/v2/face-id/batch-plan', json={'filenames':['worker.jpg']}).json()['records'][0]['username'] == 'worker'
+    assert api.post('/v2/face-id/batch-plan', json={'filenames':['worker.jpg']*51}).status_code == 422
+    path = '/v2/staff/worker/face-id/image?filename=worker.jpg'
+    headers = {'Content-Type':'image/png','If-None-Match':'*'}
+    assert api.put(path,content=png(),headers=headers).status_code == 200
+    old = db.photo['sha256']
+    assert api.put(path,content=png(),headers=headers).status_code == 200  # retry lost response
+    assert api.put(path,content=png(color='red'),headers=headers).status_code == 409
+    assert db.photo['sha256'] == old
+    assert api.put(path,content=png(color='red'),headers={'Content-Type':'image/png','If-Match':f'"{old}"'}).status_code == 200
+    assert api.put(path,content=png(color='green'),headers={'Content-Type':'image/png','If-Match':f'"{old}"'}).status_code == 409
+    assert api.put(path,content=png(),headers={'Content-Type':'image/png'}).status_code == 400
+    assert api.put(path.replace('worker.jpg','someone.jpg'),content=png(),headers=headers).status_code == 409
+    grants.remove('employee_face_id_manage')
+    assert api.post('/v2/face-id/batch-plan',json={'filenames':['worker.jpg']}).status_code == 403

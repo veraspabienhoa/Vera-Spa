@@ -1,5 +1,27 @@
 # Face ID photo and attendance migration — implementation status
 
+## Current user workflow: manual photos, bulk upload by username
+
+The user chose to photograph staff manually instead of importing TimeSoft photos.
+Use Nhân viên → Tải ảnh FACE ID hàng loạt. Select up to 50 JPG/PNG/WebP photos,
+100 MB total (20 MB per original image). Each filename stem must equal the VERA
+username / Tên nhân viên, not full_name. Matching trims outer whitespace,
+normalizes Unicode and ignores case, but preserves Vietnamese accents and
+internal spaces. Ambiguous account names and duplicate filenames are blocked.
+
+Preview shows the exact username and resulting image. Images are compressed
+locally and padded to 3:4 without automatically cropping the face. The shared
+Crop / Rotate / Compress editor can adjust each before saving. Existing photos
+are unselected by default; the operator must select them to replace them.
+Uploads run sequentially, retain per-file success/failure and skip successes on
+retry. The API rechecks filename mapping and compares the current photo hash
+under the employee lock before replacing; a concurrent change returns 409.
+
+This tool stores photos in VERA; it does not enroll them in hardware or switch
+the attendance source. The optional TimeSoft manifest importer below is retained
+for legacy exports but is not required for the user's chosen workflow.
+
+
 The proposed staff Face ID photo feature stores photos in the separate
 `vera_employee_face_id` table. Existing portrait/CCCD storage and PDF queries do
 not include this table. Permission keys `employee_face_id_view` and
@@ -77,3 +99,19 @@ enforced in the audit table. Changed mappings or image bytes invalidate the
 reviewed hash. Logs do not expose images, employee identifiers or credentials.
 No real import has been executed. Device enrollment and direct attendance
 collection remain outstanding.
+
+## Read-only device probe for the next step
+
+After deploying the code, `vera_facegate_readiness.py --date YYYY-MM-DD` can run
+on the VPS to read one Control Log page (at most 20 events) through the configured
+FaceGate connection and summarize stored reference mappings. A 30-second deadline
+bounds the probe. It prints only counts and numeric raw status/type codes; it
+never prints names, photos, connection settings or credentials. PostgreSQL is
+read-only and released before device I/O. It does not prove that a stored mapping
+is still current on the device, infer status meanings, or change attendance.
+
+The next integration step requires a known real device scan and its corresponding
+Control Log status/type, plus a confirmed enrollment API for the actual device.
+The probe deliberately reports attendance_cutover_ready=false until those are
+implemented and verified. Manual upload replaces the TimeSoft photo import step,
+not the device enrollment or checkin ingestion step.
