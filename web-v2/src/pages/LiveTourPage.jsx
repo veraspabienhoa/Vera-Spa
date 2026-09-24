@@ -759,16 +759,17 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       if (rowIds.length) body.row_ids = rowIds
       if (rowIds.length === 1) body.row_id = rowIds[0]
       let result
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      const fenceAttempts = ['booking', 'multi_booking', 'finish_to_pending', 'finish_room'].includes(action) ? 6 : 3
+      for (let attempt = 0; attempt < fenceAttempts; attempt += 1) {
         try {
           result = await veraApi.liveTourAction(body)
           break
         } catch (err) {
           // A rejected maintenance fence cannot commit the action. Keep the
           // same idempotency key in case the response arrived after a commit.
-          if (err.status !== 503 || !/Tài nguyên đang được cập nhật/i.test(liveTourErrorDetail(err)) || attempt === 2) throw err
+          if (err.status !== 503 || !/(?:Tài nguyên|Đối tượng) đang được cập nhật/i.test(liveTourErrorDetail(err)) || attempt === fenceAttempts - 1) throw err
           setActionFeedback('Live Tour đang bận. Đang thử lại thao tác với cùng mã chống ghi trùng…')
-          await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 1000))
+          await new Promise((resolve) => setTimeout(resolve, Math.min(2, attempt + 1) * 1000))
         }
       }
       releaseIdempotencyEntry(requestEntriesRef.current, requestEntry)

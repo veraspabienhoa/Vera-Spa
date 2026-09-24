@@ -14,4 +14,6 @@
 .tour-multi-booking-form>.tour-multi-add{grid-column:1/-1}
 .tour-multi-booking-form>.tour-booking-total{grid-column:1;align-self:start;padding:6px 10px;font-size:12px}
 .tour-multi-booking-form>.live-tour-modal-actions{margin-top:0}
+.tour-booking-dialog .tour-booking-form button[value="book"],.tour-multi-booking-dialog .tour-booking-submit-actions button[value="book"]{width:330px;max-width:100%;min-height:42px}
 @media(max-width:900px){.tour-multi-booking-dialog .tour-multi-booking-form{grid-template-columns:minmax(0,1fr)}.tour-multi-booking-form>.tour-multi-booking-rows{grid-column:1;grid-row:auto}}
+@media(max-width:650px){.tour-booking-dialog .tour-booking-form button[value="book"],.tour-multi-booking-dialog .tour-booking-submit-actions button[value="book"]{width:100%}}
