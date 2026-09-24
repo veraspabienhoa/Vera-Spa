@@ -8,12 +8,10 @@ const device = [
   ['Mã máy chấm công', '2023044'],
   ['Tên máy chấm công', 'máy nhận diện chấm công'],
   ['Loại thiết bị', 'FaceId'],
-  ['IP FaceGate hiện tại', '192.168.1.52'],
   ['Cổng web FaceGate', '80'],
-  ['Cổng TimeSoft đang lưu', '4370 (chưa xác minh tại IP mới)'],
+  ['Cổng TimeSoft đang lưu', '4370 (chưa xác minh kết nối)'],
   ['Kiểu kết nối', 'TCP/IP'],
   ['ID máy', '2023044'],
-  ['Face Server cũ', '192.168.1.150 (không phản hồi trên cổng 80)'],
 ]
 
 export default function DevicePage() {
