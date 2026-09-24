@@ -70,7 +70,8 @@ jobs:
                   if row['holds_advisory'] or row['blocked_by'] or row['age_seconds'] > 120:
                       print('FENCE_DETAIL: ' + json.dumps(dict(row), sort_keys=True))
           except Exception as exc:
-              print('FENCE_DETAIL: failed type=' + type(exc).__name__)
+              print('FENCE_DETAIL: failed type=' + type(exc).__name__ +
+                    ' sqlstate=' + str(getattr(getattr(exc, 'orig', None), 'sqlstate', 'unknown')))
               raise SystemExit(1)
           finally:
               engine.dispose()
