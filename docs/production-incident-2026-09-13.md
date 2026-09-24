@@ -456,3 +456,21 @@ the device total. Regression fixtures cover 129 records over seven pages,
 page-local indices, oversized pages and short responses. Local tests pass;
 production full-day preview and archive writes still require verification
 after deployment. No attendance source cutover has occurred.
+
+## 24-09-2026: notification click destination and recovery access
+
+Code inspection found notification clicks defaulting to the app root, where
+login opens Live Tour without selecting a notification. Routed push deliveries
+now carry their persisted delivery ID and an app-local detail URL. The detail
+API checks recipient ownership, active profile and current notification routing
+and channel grants. Detail UI mounts only after session verification and password
+change gates. Legacy admin-system-change clicks route to the changes page.
+Recovery status and retry are Admin-only; controls move to a separate menu.
+Notification list rows are single-line with ellipsis and a full-detail view;
+the rounded dialog has a viewport width cap and a tinted background.
+These code/test results do not prove OS lock-screen interaction on a physical
+phone. Verify a newly delivered notification after backend/frontend deployment.
+Old notifications without a delivery ID cannot retroactively gain that ID.
+The prior CI static idempotency test matched the inner retry catch; it now
+checks release ordering against the outer action-failure handler, preserving
+the requirement to retain the request key on failure.

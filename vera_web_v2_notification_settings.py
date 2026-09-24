@@ -262,6 +262,24 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
             return {'notifications':[dict(row) for row in rows]}
 
+    @app.get('/v2/notification-inbox/{notification_id}')
+    def notification_detail(notification_id: int, ident: identity_type = Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            ensure_schema(conn); ensure_routing_schema(conn)
+            row = conn.execute(text(f"""SELECT d.id,d.payload,d.created_at,d.read_at
+                FROM vera_notification_delivery d
+                JOIN vera_notification_route r ON r.key=d.rule_key
+                JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
+                LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
+                WHERE d.id=:id AND d.recipient=:recipient
+                AND d.channel IN ('push','in_app') AND r.channels ? d.channel
+                AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
+                AND COALESCE(s.enabled,TRUE)"""),
+                {'id':notification_id,'recipient':str(ident.auth_user_id)}).mappings().first()
+            if row is None:
+                raise HTTPException(404, 'Thông báo không tồn tại hoặc bạn không còn quyền xem.')
+            return dict(row)
+
     @app.post('/v2/notification-inbox/{notification_id}/read')
     def mark_read(notification_id: int, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:

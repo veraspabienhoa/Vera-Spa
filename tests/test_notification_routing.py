@@ -129,6 +129,8 @@ def test_push_network_outside_connections_and_partial_success_checkpointed(monke
     engine=Engine();sent=[]
     def send(sub,*_):
         assert engine.active==0
+        assert sub['payload']['notification_id']=='7'
+        assert sub['payload']['url']=='https://app.veraspa.vn/?notification=7'
         sent.append(sub['subscription_id'])
         return (sub['subscription_id']=='new',503,'error')
     delivery.dispatch_pending(engine,send,lambda *_:'configured')

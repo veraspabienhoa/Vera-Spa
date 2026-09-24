@@ -3,5 +3,18 @@
 .notification-inbox-trigger { position: relative; }
 .topbar-actions .topbar-open-tab-button { width: 148px; min-height: 32px; }
 .notification-unread-dot { position: absolute; top: 2px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: #bd2736; }
-.notification-inbox > .panel { position: absolute; top: calc(100% + 8px); right: 0; width: min(420px, calc(100vw - 32px)); max-height: 65dvh; overflow: auto; z-index: 50; background: white; border: 1px solid #406f59; box-shadow: 0 8px 24px #12372b26; text-align: left; }
-@media(max-width:600px) { .topbar-actions .topbar-open-tab-button { width: 128px; min-height: 30px; } .notification-inbox > .panel { position: fixed; top: 100px; left: 16px; right: 16px; width: auto; } }
+dialog.notification-dialog { box-sizing: border-box; width: max-content; min-width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: 85dvh; margin: auto; padding: 0; overflow: hidden; border: 2px solid #406f59; border-radius: 20px; background: #eff7f1; color: #153d2d; box-shadow: 0 16px 50px #12372b40; }
+.notification-dialog::backdrop { background: #102b2266; }
+.notification-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; background: #dbece0; border-bottom: 1px solid #8cad98; }
+.notification-dialog h2 { margin: 0; font-size: 20px; }
+.notification-dialog button { cursor: pointer; }
+.notification-dialog header button { flex: 0 0 auto; padding: 6px; border: 1px solid #406f59; border-radius: 8px; background: #fff; }
+.notification-dialog-content { max-height: 65dvh; overflow-y: auto; overflow-x: hidden; padding: 8px 16px; }
+.notification-dialog .notification-row { display: flex; align-items: center; gap: 16px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; text-align: left; padding: 14px 8px; background: transparent; color: inherit; border: 0; border-bottom: 1px solid #b5cfc0; border-radius: 0; }
+.notification-row.unread { background: #e0efe5; }
+.notification-row-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notification-row small { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
+.notification-dialog .notification-detail { width: min(760px, calc(100vw - 72px)); max-width: 100%; overflow-wrap: anywhere; }
+.notification-detail p { white-space: pre-wrap; }
+.notification-dialog footer { padding: 12px 20px; }
+@media(max-width:600px) { .topbar-actions .topbar-open-tab-button { width: 128px; min-height: 30px; } .notification-row small { display: none; } .notification-dialog > header { padding: 12px; } }

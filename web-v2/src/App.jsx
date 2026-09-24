@@ -15,12 +15,15 @@ import { veraApi } from './lib/api'
 import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
+import LiveTourRecoveryPanel from './components/LiveTourRecoveryPanel'
+
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'live-tour-recovery', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
 const readActivePage = () => 'live-tour'
+const readNotificationPage = () => new URLSearchParams(window.location.search).get('page') === 'changes' ? 'changes' : ''
 
 const rememberActivePage = (user, page) => {
   if (!user?.id || !VALID_PAGES.has(page)) return
@@ -119,7 +122,7 @@ export default function App() {
         if (mounted && attempt === verification) {
           setProfile(me)
           if (me.must_change_password || verifiedUser.current !== nextSession.user.id) {
-            setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readActivePage(nextSession.user))
+            setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readNotificationPage() || readActivePage(nextSession.user))
           }
           verifiedUser.current = nextSession.user.id
         }
@@ -235,6 +238,7 @@ export default function App() {
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
+        {page === 'live-tour-recovery' && (shellUser.role === 'admin' ? <LiveTourRecoveryPanel isAdmin onReload={() => changePage('live-tour')} /> : <p role="alert">Chỉ Admin được sử dụng chức năng này.</p>)}
         {page === 'live-tour' && <LiveTourPage user={shellUser} navigationToggle={navigationToggle} />}
         {page === 'milk-tea' && <MilkTeaPage user={shellUser} />}
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}

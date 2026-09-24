@@ -375,6 +375,7 @@ export const veraApi = {
   createNotification: body => request('/v2/notification-settings', { method:'POST', body:JSON.stringify(body) }),
   orderNotifications: body => request('/v2/notification-settings/order', { method:'PUT', body:JSON.stringify(body) }),
   notificationInbox: () => request('/v2/notification-inbox'),
+  notificationDetail: id => request(`/v2/notification-inbox/${encodeURIComponent(id)}`),
   readNotification: id => request(`/v2/notification-inbox/${id}/read`, { method:'POST' }),
   routeLocalNotification: key => request(`/v2/notification-local/${encodeURIComponent(key)}`, { method:'POST' }),
   updateNotificationSetting: (key, changes) => request(`/v2/notification-settings/${encodeURIComponent(key)}`, {
