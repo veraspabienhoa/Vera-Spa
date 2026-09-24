@@ -2,6 +2,7 @@ import UiCustomText from './UiCustomText'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
 import { veraApi } from '../lib/api'
+import { createVisiblePoller } from '../lib/visiblePoller'
 
 const SELECTOR = '[role="alert"],.error-box,.success-box,.warning-box,.setup-note'
 const GUIDANCE_PATTERN = /(?:hãy|vui lòng|chưa chọn|chọn .*nhân viên|bộ lọc|lọc|tìm kiếm|không tìm thấy .*phù hợp)/i
@@ -25,8 +26,7 @@ export default function PopupNotifications() {
     const loadSettings = () => veraApi.notificationSettings().then((result) => {
       if (active) settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item]))
     }).catch(() => {})
-    void loadSettings()
-    const settingsTimer = window.setInterval(loadSettings,60000)
+    const settingsPoller = createVisiblePoller(loadSettings, { interval: 60000 })
     const loadTrainingNotifications = () => veraApi.trainingNotifications().then((result) => {
       if (!active) return
       const fresh = (result.notifications || []).filter(item => !item.is_read && !seenTraining.current.has(item.id))
@@ -36,12 +36,11 @@ export default function PopupNotifications() {
         type: 'info', category: 'training_completed', persistent: true,
       }))].slice(-5))
     }).catch(() => {})
-    void loadTrainingNotifications()
-    const trainingTimer = window.setInterval(loadTrainingNotifications, 30000)
+    const trainingPoller = createVisiblePoller(loadTrainingNotifications, { interval: 30000 })
     const onSettingsChanged = (event) => {
       const item = event?.detail
       if (item?.key) settings.current = { ...settings.current, [item.key]: item }
-      else void loadSettings()
+      else void settingsPoller.refresh()
     }
     window.addEventListener('vera-notification-settings-changed', onSettingsChanged)
     const add = element => {
@@ -78,8 +77,8 @@ export default function PopupNotifications() {
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
     return () => {
       active = false
-      window.clearInterval(trainingTimer)
-      window.clearInterval(settingsTimer)
+      trainingPoller.stop()
+      settingsPoller.stop()
       observer.disconnect()
       window.removeEventListener('vera-notification-settings-changed', onSettingsChanged)
     }

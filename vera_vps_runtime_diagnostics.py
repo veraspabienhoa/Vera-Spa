@@ -20,6 +20,11 @@ def safe_log_summary(message: str) -> list[str]:
         exception = re.match(r'\s*((?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Timeout)):', line)
         if exception:
             output.append(f"exception={exception[1]}")
+        auth = re.search(
+            r'Web V2 local auth: identity lookup unavailable: ([A-Za-z_][A-Za-z0-9_]*); '
+            r'cause=([A-Za-z_][A-Za-z0-9_]*); sqlstate=([A-Z0-9]{5}|unknown)(?:;|$)', line)
+        if auth:
+            output.append(f'auth_lookup_error type={auth[1]} cause={auth[2]} sqlstate={auth[3]}')
         pool = re.search(r'QueuePool limit of size ([0-9]+) overflow ([0-9]+) reached, connection timed out, timeout ([0-9.]+)', line)
         if pool:
             output.append(f"pool_exhausted size={pool[1]} overflow={pool[2]} timeout={pool[3]}")
@@ -68,6 +73,39 @@ def report_journal() -> None:
         print(f'RUNTIME: count={count} last_utc={last_seen.get(summary, "unknown")} {summary}')
 
 
+ACTIVITY_DETAIL_SQL = """
+    SELECT pid AS backend_pid, state, wait_event_type, wait_event,
+           client_addr IS NOT DISTINCT FROM inet_client_addr() AS same_client_as_diagnostic,
+           CASE WHEN application_name='vera-web-v2-auth' THEN 'auth' ELSE 'other' END AS pool,
+           CASE WHEN query ~* '^\\s*BEGIN' THEN 'begin'
+                WHEN query ~* '^\\s*COMMIT' THEN 'commit'
+                WHEN query ~* '^\\s*ROLLBACK' THEN 'rollback'
+                WHEN query ~* '^\\s*SELECT' THEN 'select'
+                WHEN query ~* '^\\s*(INSERT|UPDATE|DELETE)' THEN 'write'
+                WHEN query ~* '^\\s*(CREATE|ALTER|DROP)' THEN 'ddl'
+                WHEN query ~* '^\\s*(SET|SHOW)' THEN 'session_setting'
+                ELSE 'other' END AS statement_kind,
+           CASE WHEN query ILIKE '%pg_advisory%' THEN 'advisory_lock'
+                WHEN query ILIKE '%vera_training%' OR query ILIKE '%vera_evaluation%'
+                     OR query ILIKE '%vera_employee_evaluation%' THEN 'training'
+                WHEN query ILIKE '%vera_live_tour%' THEN 'live_tour'
+                WHEN query ILIKE '%vera_auto_check%' THEN 'auto_check'
+                WHEN query ILIKE '%leave_records%' THEN 'leave'
+                WHEN query ILIKE '%vera_app_setting%' THEN 'app_setting'
+                WHEN query ILIKE '%vera_dataset_cache%' THEN 'dataset_cache'
+                WHEN query ILIKE '%employees%' THEN 'employees'
+                ELSE 'other' END AS operation,
+           COALESCE(EXTRACT(EPOCH FROM clock_timestamp()-xact_start)::int,0) AS transaction_seconds,
+           COALESCE(EXTRACT(EPOCH FROM clock_timestamp()-query_start)::int,0) AS query_seconds,
+           COALESCE(EXTRACT(EPOCH FROM clock_timestamp()-state_change)::int,0) AS state_seconds,
+           cardinality(pg_blocking_pids(pid)) AS blockers
+    FROM pg_stat_activity
+    WHERE datname=current_database() AND usename=current_user AND pid<>pg_backend_pid()
+      AND state IS DISTINCT FROM 'idle'
+    ORDER BY xact_start NULLS LAST, pid LIMIT 20
+"""
+
+
 def report_database() -> None:
     from sqlalchemy import create_engine, text
     from sqlalchemy.pool import NullPool
@@ -103,9 +141,14 @@ def report_database() -> None:
                 WHERE datname=current_database() AND usename=current_user AND pid<>pg_backend_pid()
                 GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5
             """)).mappings().all()
+            # Only fixed categories and numeric ages leave PostgreSQL. Do not fetch
+            # query text, usernames, addresses, parameters or arbitrary application names.
+            details = conn.execute(text(ACTIVITY_DETAIL_SQL)).mappings().all()
         print('RUNTIME: database_read_only_check=OK')
         for row in rows:
             print('RUNTIME: ' + json.dumps(dict(row), sort_keys=True))
+        for row in details:
+            print('RUNTIME_DETAIL: ' + json.dumps(dict(row), sort_keys=True))
     finally:
         engine.dispose()
 
