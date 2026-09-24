@@ -191,7 +191,7 @@ def _dispatch_revenue_admin_push(*, engine_instance, api_module, event: str, det
     try:
         import vera_web_v2_notification_settings as notification_settings
         with engine_instance().connect() as conn:
-            if not notification_settings.is_enabled(conn, "revenue_manual_changes"):
+            if (not notification_settings.is_enabled(conn, "revenue_manual_changes") or not notification_settings.is_channel_enabled(conn, "revenue_manual_changes", "push")):
                 return
             private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
             subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"

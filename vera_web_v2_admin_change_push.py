@@ -72,7 +72,7 @@ def _dispatch_admin_change_pushes(
         if not uids:
             return
         with engine_instance().connect() as conn:
-            if not notification_settings.is_enabled(conn, "admin_leave_changes"):
+            if not notification_settings.is_enabled(conn, "admin_leave_changes") or not notification_settings.is_channel_enabled(conn, "admin_leave_changes", "push"):
                 return
             private_key = api_module._vault_secret(conn, "vera_v2_vapid_private_key")
             subject = api_module._vault_secret(conn, "vera_v2_vapid_subject") or APP_URL

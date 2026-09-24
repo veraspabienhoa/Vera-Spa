@@ -114,7 +114,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   useEffect(() => {
     let active = true
     const loadSettings=()=>veraApi.notificationSettings().then((result) => {
-      if (active) setNotificationSettings(Object.fromEntries((result.settings || []).flatMap((item) => [[item.key, item.enabled],[`${item.key}_routed`,item.routed],[`${item.key}_has_rules`,item.has_rules]])))
+      if (active) setNotificationSettings(Object.fromEntries((result.settings || []).flatMap((item) => [[item.key, item.enabled && item.channel_enabled?.in_app !== false],[`${item.key}_routed`,item.routed],[`${item.key}_has_rules`,item.has_rules]])))
     }).catch(() => { if (active) setNotificationSettings({}) })
     void loadSettings()
     const timer=window.setInterval(loadSettings,60000)

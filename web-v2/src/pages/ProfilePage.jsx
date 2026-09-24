@@ -215,10 +215,10 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <Save size={16} /> {renamingUsername ? 'Đang đổi…' : 'Đổi tên đăng nhập'}
       </button>
     </section>}
-    <section data-ui-key="u-3a2f78fdca27" className="panel android-push-panel">
+    {user?.role !== 'admin' && <section data-ui-key="u-3a2f78fdca27" className="panel android-push-panel">
       <div><span className="eyebrow"><Smartphone size={14} /> iPhone · Android</span><h2>THÔNG BÁO MÀN HÌNH KHÓA</h2><p>Mỗi điện thoại đăng nhập có thể bật Web Push riêng. Trên iPhone/iPad, hãy thêm VERA SPA vào Màn hình chính rồi mở từ biểu tượng; trên Android, dùng Chrome. Chế độ Không làm phiền vẫn có thể chặn âm thanh.</p></div>
       <button data-ui-key="u-8d2b4d049425" className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo thiết bị này')}</button>
       {!push.supported && !push.loading && <div className="warning-box">{push.reason || 'Trình duyệt hoặc thiết bị này chưa hỗ trợ Web Push.'}</div>}
-    </section>
+    </section>}
   </div>
 }

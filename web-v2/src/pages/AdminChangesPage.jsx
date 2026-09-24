@@ -2,10 +2,9 @@ import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import ClearableSearchInput from '../components/ClearableSearchInput'
-import { Activity, Archive, BellRing, CalendarDays, Download, RefreshCw } from 'lucide-react'
+import { Activity, Archive, CalendarDays, Download, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
-import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
 import VeraDateInput from '../components/VeraDateInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -101,9 +100,6 @@ export default function AdminChangesPage() {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
-  const [push, setPush] = useState({ loading: true, supported: false, subscribed: false })
-  const [pushBusy, setPushBusy] = useState(false)
-  const [pushNotice, setPushNotice] = useState('')
 
   const params = useCallback(() => {
     const query = new URLSearchParams({ start, end })
@@ -123,13 +119,6 @@ export default function AdminChangesPage() {
     const timer = window.setTimeout(() => setActor(actorSearch.trim()), 250)
     return () => window.clearTimeout(timer)
   }, [actorSearch])
-  useEffect(() => {
-    let active = true
-    syncExistingPushSubscription().then((state) => { if (active) setPush({ ...state, loading: false }) })
-      .catch(() => readPushState().then((state) => { if (active) setPush({ ...state, loading: false }) })
-        .catch((pushError) => { if (active) setPush({ loading: false, supported: false, subscribed: false, reason: pushError.message }) }))
-    return () => { active = false }
-  }, [])
 
   const choosePeriod = (next) => {
     setPeriod(next)
@@ -150,21 +139,6 @@ export default function AdminChangesPage() {
     finally { setExporting(false) }
   }
 
-  const togglePush = async () => {
-    setPushBusy(true); setPushNotice(''); setError('')
-    try {
-      const state = push.subscribed ? await disablePushNotifications() : await enablePushNotifications()
-      setPush({ ...state, loading: false })
-      setPushNotice(state.subscribed
-        ? 'Đã bật thông báo cập nhật tức thời cho Admin trên thiết bị này.'
-        : 'Đã tắt thông báo cập nhật trên thiết bị này.')
-    } catch (pushError) {
-      setError(pushError.message || 'Không thay đổi được trạng thái thông báo.')
-    } finally {
-      setPushBusy(false)
-    }
-  }
-
   return <div className="feature-page">
     <style>{`
       .audit-detailed article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start}
@@ -182,11 +156,6 @@ export default function AdminChangesPage() {
     `}</style>
     <div data-ui-key="u-e5982f729629" className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1><p>Tự động lọc theo người thực hiện khi gõ tên, lọc thời gian, xem chi tiết trước/sau và export Excel.</p></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button data-ui-key="u-1dff9f5b8620" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-1dff9f5b8620"> Làm mới</UiCustomText></button><button data-ui-key="u-9b7c0983c926" className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div></div>
     {error && <div className="error-box">{error}</div>}
-
-    <section data-ui-key="u-56621a5618d6" className="panel admin-change-push">
-      <div><span className="eyebrow"><BellRing size={14} /> Màn hình khóa</span><h3>THÔNG BÁO CẬP NHẬT TỨC THỜI</h3><p>Mỗi Đăng ký mới, Sửa hoặc Xóa trong Thay đổi hệ thống sẽ gửi chi tiết tới thiết bị Admin đã bật thông báo. Trên điện thoại có thể vuốt để xóa; nếu hệ điều hành hiển thị action, có nút Xóa ngay trên thông báo.</p>{pushNotice && <small>{pushNotice}</small>}{!push.loading && !push.supported && <small>{push.reason || 'Thiết bị này chưa hỗ trợ Web Push.'}</small>}</div>
-      <button data-ui-key="u-ef8ac09eda2d" type="button" className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo Admin')}</button>
-    </section>
 
     <section data-ui-key="u-6d7ee12b26b7" className="panel data-toolbar"><UiToolbar data-ui-key="u-3175e389120b" className="audit-toolbar-content">
       <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button data-ui-key="u-afa1823cde30" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>

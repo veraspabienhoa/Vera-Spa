@@ -186,7 +186,7 @@ def _dispatch_mismatch_alerts(
         subject = APP_URL
 
         with engine_instance().begin() as conn:
-            if not notification_settings.is_enabled(conn, "purchase_reconcile"):
+            if (not notification_settings.is_enabled(conn, "purchase_reconcile") or not notification_settings.is_channel_enabled(conn, "purchase_reconcile", "push")):
                 return
             _ensure_alert_table(conn)
             for row in comparison_rows:
