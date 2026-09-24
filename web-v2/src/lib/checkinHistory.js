@@ -10,7 +10,7 @@ export function checkinDateRange(preset, now = new Date()) {
   return { date_from: start.toISOString().slice(0, 10), date_to: end }
 }
 export function initialCheckinFilters(now = new Date()) {
-  return { ...EMPTY_CHECKIN_DETAILS, source: 'facegate', preset: 'month', ...checkinDateRange('month', now) }
+  return { ...EMPTY_CHECKIN_DETAILS, source: 'facegate_saved', preset: 'month', ...checkinDateRange('month', now) }
 }
 export function checkinQuery(filters) {
   return { source: filters.source, start: filters.date_from, end: filters.date_to,

@@ -21,6 +21,16 @@ The first command is read-only and creates no tables. The second creates the arc
 - Unknown/unmapped events are retained, without being assigned to an employee by name. Only metadata is saved; no photos or credentials.
 - Network requests run before the write transaction, using no held DB connection. A per-device transaction advisory lock rejects concurrent writers. A decreasing daily device count aborts without deleting retained evidence.
 - Archive tables: vera_facegate_event and vera_facegate_sync_day. Deleting old device logs does not delete archived events. This release intentionally provides no destructive purge command.
+
+The Checkin History page now defaults to “FaceGate · Đã lưu trong VERA”. It reads
+the archived events without contacting the device and displays confirmed mapping
+matches; unmatched events remain visible. Admin confirms each remaining mapping
+using the device profile and TimeSoft employee code. The hourly GitHub workflow
+`facegate-archive.yml` invokes `vera_facegate_auto_sync.py` on the current VPS
+release to archive today and yesterday (Vietnam dates). It requires the deployed
+release to contain the script and the existing VPS SSH secrets. Failures are
+reported by the workflow, without printing employee names or device credentials.
+This evidence does not feed attendance, payroll, or penalties; TimeSoft remains active.
 - Deadline 180 seconds, DB connect timeout 5 seconds, statement timeout 5 seconds, lock timeout 2 seconds. A day too large/slow fails; no incomplete checkpoint is marked complete.
 - The CLI is operator-only on VPS, not a public unauthenticated endpoint. No unattended schedule is installed yet. The temporary SSH tunnel remains a connection dependency.
 

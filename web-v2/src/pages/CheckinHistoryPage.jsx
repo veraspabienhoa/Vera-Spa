@@ -138,7 +138,7 @@ export default function CheckinHistoryPage() {
           <label>Đến ngày<VeraDateInput value={filters.date_to} min={filters.date_from} onChange={event => change({ date_to: event.target.value, preset: 'custom' })} required /></label>
         </div>
         <div className="checkin-filter-details">
-          <label>Nguồn dữ liệu<select value={source} onChange={event => { change({ source: event.target.value, ...EMPTY_CHECKIN_DETAILS }); setRecords(null); setOptions({ statuses: [], types: [] }) }}><option value="facegate">FaceGate · Control Log</option><option value="capture">FaceGate · Capture Log</option><option value="timesoft">TimeSoft · Đã đồng bộ VERA</option></select></label>
+          <label>Nguồn dữ liệu<select value={source} onChange={event => { change({ source: event.target.value, ...EMPTY_CHECKIN_DETAILS }); setRecords(null); setOptions({ statuses: [], types: [] }) }}><option value="facegate_saved">FaceGate · Đã lưu trong VERA</option><option value="facegate">FaceGate · Trực tiếp từ máy</option><option value="capture">FaceGate · Capture Log</option><option value="timesoft">TimeSoft · Đã đồng bộ VERA</option></select></label>
           <label>Ngày cụ thể<VeraDateInput value={filters.event_date} min={filters.date_from} max={filters.date_to} onChange={event => change({ event_date: event.target.value })} /></label>
           <label>{source === 'facegate' ? 'Tên trên máy' : 'Tên / mã nhân viên'}<input type="search" disabled={source === 'capture'} maxLength={200} value={filters.employee} onChange={event => change({ employee: event.target.value })} placeholder={source === 'capture' ? 'Capture không có mã nhân viên' : 'Tìm tên hoặc mã'} /></label>
           <label>Mã sự kiện<input type="search" disabled={source === 'timesoft'} maxLength={64} value={filters.event_id} onChange={event => change({ event_id: event.target.value })} placeholder="Tìm mã sự kiện" /></label>
@@ -158,14 +158,15 @@ export default function CheckinHistoryPage() {
     {records && <>
       <p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p>
       {visible.length === 0 && <p role="status">Không có bản ghi phù hợp bộ lọc.</p>}
-      {source === 'facegate' ? <>
-        <p>{visible.length} sự kiện FaceGate trong kỳ đã chọn. Bấm Đối chiếu để kiểm tra tham chiếu ảnh với hồ sơ đã được Admin ánh xạ. Kết quả chỉ dùng tra cứu, không dùng tính công/lương.</p>
+      {(source === 'facegate' || source === 'facegate_saved') ? <>
+        <p>{visible.length} sự kiện FaceGate {source === 'facegate_saved' ? 'đã lưu trong VERA' : 'đọc trực tiếp từ máy'} trong kỳ. {source === 'facegate_saved' ? 'Ánh xạ hiển thị theo hồ sơ Admin đã xác nhận.' : 'Bấm Đối chiếu để kiểm tra hồ sơ đã ánh xạ.'} Chỉ dùng tra cứu, chưa dùng tính công/lương.</p>
+        {source === 'facegate_saved' && <p role="status">Đã khớp: {visible.filter(item => item.mapping_status === 'reference_match').length} · Chưa ánh xạ: {visible.filter(item => item.mapping_status !== 'reference_match').length}. Mở “Ánh xạ hồ sơ FaceGate với nhân viên” bên dưới để xác nhận từng hồ sơ còn thiếu.</p>}
         {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn. Hãy thu hẹp khoảng ngày để xem và xuất đầy đủ dữ liệu.</p>}
         <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th><th>Mã loại trên máy</th><th>Đối chiếu nhân viên</th></tr></thead><tbody>
-          {visible.map(item => <tr key={item.event_id}>
+          {visible.map(item => <tr key={`${item.event_id}-${item.occurred_at}`}>
             <td data-label="Mã sự kiện">{item.event_id}</td><td data-label="Thời điểm">{formatVeraDateTime(item.occurred_at, '—')}</td>
             <td data-label="Tên hiển thị trên máy">{item.device_name || '—'}</td><td data-label="Mã trạng thái">{item.status_code ?? '—'}</td><td data-label="Mã loại trên máy">{item.type_code ?? '—'}</td>
-            <td data-label="Đối chiếu nhân viên"><MappingCheck key={`${item.event_id}-${JSON.stringify(item.registration_ref)}`} record={item} /></td>
+            <td data-label="Đối chiếu nhân viên">{source === 'facegate_saved' ? (item.mapping_status === 'reference_match' ? `${item.employee_name} · ${item.employee_code}` : 'Chưa ánh xạ') : <MappingCheck key={`${item.event_id}-${JSON.stringify(item.registration_ref)}`} record={item} />}</td>
           </tr>)}
         </tbody></table></div>
       </> : source === 'capture' ? <>

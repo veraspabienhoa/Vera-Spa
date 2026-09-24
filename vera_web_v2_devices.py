@@ -23,7 +23,7 @@ from sqlalchemy import text
 VN = timezone(timedelta(hours=7))
 KINDS = {'faceid': 'FaceID / Chấm công', 'printer': 'Máy in', 'scanner': 'Máy quét', 'screen': 'Màn hình', 'other': 'Thiết bị khác'}
 CONNECTIONS = {'network': 'Mạng LAN / TCP/IP', 'usb': 'USB', 'bluetooth': 'Bluetooth', 'serial': 'Cổng nối tiếp', 'agent': 'Qua máy trạm', 'other': 'Khác'}
-SOURCES = {'facegate': 'FaceGate · Control Log', 'capture': 'FaceGate · Capture Log', 'timesoft': 'TimeSoft · Đã đồng bộ VERA'}
+SOURCES = {'facegate_saved': 'FaceGate · Đã lưu trong VERA', 'facegate': 'FaceGate · Control Log', 'capture': 'FaceGate · Capture Log', 'timesoft': 'TimeSoft · Đã đồng bộ VERA'}
 
 
 class Device(BaseModel):
@@ -111,12 +111,12 @@ def record_day(item):
 
 
 def record_status(item, source):
-    value = item.get({'facegate': 'status_code', 'capture': 'event_status', 'timesoft': 'arrival_status'}[source])
+    value = item.get({'facegate_saved': 'status_code', 'facegate': 'status_code', 'capture': 'event_status', 'timesoft': 'arrival_status'}[source])
     return str(value if value is not None else '')
 
 
 def record_type(item, source):
-    value = item.get({'facegate': 'type_code', 'capture': 'event_text', 'timesoft': 'departure_status'}[source])
+    value = item.get({'facegate_saved': 'type_code', 'facegate': 'type_code', 'capture': 'event_text', 'timesoft': 'departure_status'}[source])
     return str(value if value is not None else '')
 
 
@@ -139,8 +139,10 @@ def display_time(value):
 
 def history_workbook(payload):
     source = payload['source']
-    if source == 'facegate':
+    if source in ('facegate', 'facegate_saved'):
         columns = [('event_id', 'Mã sự kiện'), ('occurred_at', 'Thời điểm'), ('device_name', 'Tên trên máy'), ('status_code', 'Mã trạng thái'), ('type_code', 'Mã loại trên máy')]
+        if source == 'facegate_saved':
+            columns += [('employee_name', 'Nhân viên đã đối chiếu'), ('employee_code', 'Mã TimeSoft'), ('mapping_status', 'Trạng thái ánh xạ')]
     elif source == 'capture':
         columns = [('event_id', 'Mã sự kiện'), ('occurred_at', 'Thời điểm'), ('event_text', 'Loại sự kiện'), ('event_status', 'Trạng thái trên máy'), ('image_available', 'Có ảnh')]
     else:
@@ -193,6 +195,44 @@ def history_workbook(payload):
     return stream.getvalue()
 
 
+def saved_facegate_history(conn, start, end):
+    """Read archived evidence without probing the device or changing attendance."""
+    from vera_facegate_control_log import mapping_device_id
+    from vera_facegate_readiness import reference
+    device_id = mapping_device_id()
+    rows = conn.execute(text('''SELECT event_id, occurred_at, payload_json FROM vera_facegate_event
+        WHERE device_id=:device_id AND work_date BETWEEN :start AND :end
+        ORDER BY occurred_at, event_id LIMIT 10001'''),
+        {'device_id': device_id, 'start': start.isoformat(), 'end': end.isoformat()}).mappings().all()
+    raw = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='facegate' AND setting_key=:key"),
+                       {'key': 'mapping_' + device_id}).scalar()
+    mappings = json.loads(raw) if isinstance(raw, str) else (raw or [])
+    by_ref = {}
+    for mapping in mappings if isinstance(mappings, list) else []:
+        if not isinstance(mapping, dict) or not mapping.get('confirmed_by'):
+            continue
+        key = reference(mapping.get('registration_ref'))
+        if key:
+            by_ref.setdefault(key, []).append(mapping)
+    records = []
+    for row in rows[:10000]:
+        payload = row['payload_json']
+        payload = json.loads(payload) if isinstance(payload, str) else payload
+        if not isinstance(payload, dict):
+            continue
+        key = reference(payload.get('registration_ref'))
+        matched = by_ref.get(key, []) if key else []
+        records.append({'event_id': row['event_id'], 'occurred_at': row['occurred_at'],
+                        'device_name': payload.get('device_name', ''),
+                        'status_code': payload.get('status_code', ''),
+                        'type_code': payload.get('type_code', ''),
+                        'registration_ref': payload.get('registration_ref'),
+                        'mapping_status': 'reference_match' if len(matched) == 1 else 'unmapped',
+                        'employee_name': matched[0].get('username', '') if len(matched) == 1 else '',
+                        'employee_code': matched[0].get('employee_code', '') if len(matched) == 1 else ''})
+    return {'records': records, 'truncated': len(rows) > 10000, 'total_count': len(rows)}
+
+
 def install_device_routes(app, *, engine_instance, current_identity, require_feature, identity_type, read_timesoft):
     def admin(ident):
         if str(getattr(ident, 'role', '')).strip().lower() != 'admin':
@@ -230,7 +270,10 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
             raise HTTPException(400, 'Ngày cụ thể phải nằm trong khoảng tra cứu.')
         if (source == 'capture' and employee) or (source == 'timesoft' and event_id):
             raise HTTPException(400, 'Bộ lọc không phù hợp nguồn dữ liệu đã chọn.')
-        if source == 'timesoft':
+        if source == 'facegate_saved':
+            with engine_instance().connect() as conn:
+                data = saved_facegate_history(conn, start, end)
+        elif source == 'timesoft':
             with engine_instance().begin() as conn:
                 require_feature(conn, ident, 'snapshot_export' if exporting else 'snapshot_today')
                 records = read_timesoft(conn, start, end)
@@ -256,7 +299,7 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
     @app.get('/v2/devices/checkin-history/export.xlsx')
     def history(request: Request,
                 start: date = Query(...), end: date = Query(...),
-                source: Literal['facegate', 'capture', 'timesoft'] = 'facegate',
+                source: Literal['facegate_saved', 'facegate', 'capture', 'timesoft'] = 'facegate',
                 employee: str = Query('', max_length=200), event_id: str = Query('', max_length=64),
                 event_date: date | None = None, status: str = Query('', max_length=160), event_type: str = Query('', max_length=160),
                 ident: identity_type = Depends(current_identity)):
