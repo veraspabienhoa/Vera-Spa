@@ -1,0 +1,35 @@
+name: Diagnose Live Tour lock
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-live-tour-lock.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read bounded production health and diagnostics
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 \
+            "${VPS_USER}@${VPS_HOST}" \
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); git -C "$release_dir" rev-parse HEAD; curl -fsS --max-time 8 http://127.0.0.1:8000/v2/live-tour/projection-queue/health | /opt/vera-spa/.venv/bin/python -c "import json,sys; p=json.load(sys.stdin); print(json.dumps({**{k:p.get(k) for k in (\"ok\",\"release\",\"counts\",\"oldest_pending\",\"last_success_age\")},\"alert_active\":p.get(\"alerting\",{}).get(\"active\"),\"conditions\":p.get(\"alerting\",{}).get(\"conditions\")},sort_keys=True))"; /opt/vera-spa/.venv/bin/python "$release_dir/vera_vps_runtime_diagnostics.py"'
