@@ -23,6 +23,64 @@ def _response(body: str):
 
 
 class FaceGateControlLogTests(unittest.TestCase):
+  def test_login_timeout_renews_then_retries_once_with_fresh_random_values(self):
+    replies = iter([_response('root.ERR.no=0 root.ERR.des=loginTimeout'),
+                    _response('root.LOGIN.ulevel=1 root.ERR.no=0'), _response('root.LIST.uid=7 root.ERR.no=0')])
+    calls = []
+    def get(url, **kwargs):
+      calls.append((url, kwargs))
+      return next(replies)
+    with patch.object(facegate.secrets, 'randbelow', side_effect=[123, 456]):
+      result = facegate._device_get(get, 'http://device', '/webs/getWhitelist',
+          params={'action': 'list', 'group': 'LIST', 'LIST.uid': '7', 'RanId': 'old'}, auth=('test', 'test'))
+    self.assertIn('root.LIST.uid=7', result.text)
+    self.assertEqual(len(calls), 3)
+    self.assertEqual(calls[1][0], 'http://device/webs/login')
+    self.assertEqual(calls[1][1]['params'], {'action': 'list', 'group': 'LOGIN', 'UserID': '10000123'})
+    self.assertEqual(calls[2][1]['params']['RanId'], '10000456')
+    self.assertTrue(all(call[1]['allow_redirects'] is False for call in calls))
+
+  def test_login_does_not_accept_bare_success_or_loop_on_repeated_timeout(self):
+    for login_body in ['root.ERR.no=0', 'root.LOGIN.ulevel=1 root.ERR.no=7']:
+      replies = iter([_response('root.ERR.no=0 root.ERR.des=loginTimeout'), _response(login_body)])
+      with self.assertRaises(ConnectionError):
+        facegate._device_get(lambda *a, **kw: next(replies), 'http://device', '/webs/getWhitelist', params={}, auth=('test','test'))
+    replies = iter([_response('root.ERR.no=0 root.ERR.des=loginTimeout'),
+                    _response('root.LOGIN.ulevel=1 root.ERR.no=0'), _response('root.ERR.no=0 root.ERR.des=loginTimeout')])
+    with self.assertRaisesRegex(ConnectionError, 'vẫn báo hết phiên'):
+      facegate._device_get(lambda *a, **kw: next(replies), 'http://device', '/webs/getWhitelist', params={}, auth=('test','test'))
+
+  def test_expired_pagination_session_is_not_replayed_after_login(self):
+    replies = iter([_response('root.ERR.no=0 root.ERR.des=loginTimeout'), _response('root.LOGIN.ulevel=1 root.ERR.no=0')])
+    with self.assertRaisesRegex(ConnectionError, 'tải lại lịch sử từ đầu'):
+      facegate._device_get(lambda *a, **kw: next(replies), 'http://device', '/webs/getControl',
+          params={'sessionid': '60', 'beginno': '20'}, auth=('test','test'))
+
+  def test_image_login_timeout_is_bounded_and_does_not_consume_retried_image(self):
+    closed = []
+    class StreamResponse:
+      status_code = 200
+      def __init__(self, media, body):
+        self.headers = {'Content-Type': media}
+        self.body = body
+        self.reads = 0
+      def iter_content(self, **kwargs):
+        self.reads += 1
+        yield self.body
+      def close(self):
+        closed.append(self)
+    expired = StreamResponse('text/html', b'root.ERR.no=0 root.ERR.des=loginTimeout')
+    picture = StreamResponse('image/bmp', b'BMtest')
+    replies = iter([expired, _response('root.LOGIN.ulevel=1 root.ERR.no=0'), picture])
+    result = facegate._device_get(lambda *a, **kw: next(replies), 'http://device', '/webs/getImage', params={}, auth=('test','test'), stream=True)
+    self.assertIs(result, picture)
+    self.assertEqual(picture.reads, 0)
+    self.assertIn(expired, closed)
+    oversized = StreamResponse('text/html', b'x' * (facegate.MAX_RESPONSE_BYTES + 1))
+    with self.assertRaises(ValueError):
+      facegate._device_get(lambda *a, **kw: oversized, 'http://device', '/webs/getImage', params={}, auth=('test','test'), stream=True)
+    self.assertIn(oversized, closed)
+
   def test_capture_parser_keeps_event_pointer_and_no_profile_fields(self):
     body = """<html>
 root.CAPTURE.sessionid=15
@@ -63,7 +121,7 @@ root.ERR.des=ok
   def test_capture_closes_session_when_later_page_is_invalid(self):
     pages = iter([
       "root.CAPTURE.sessionid=33 root.CAPTURE.totalcount=21 root.CAPTURE.rspcount=20 root.ERR.no=0",
-      "root.ERR.no=0 root.ERR.des=loginTimeout",
+      "root.ERR.no=0 root.ERR.des=ok",
     ])
     closed = []
     with patch.dict("os.environ", {
