@@ -165,8 +165,9 @@ def parse_control_log_response(body: str) -> dict[str, Any]:
         item_match = _ITEM_KEY.fullmatch(key)
         if item_match:
             index = int(item_match.group("index"))
-            if index < MAX_PAGE_SIZE:
-                items.setdefault(index, {})[item_match.group("field")] = value
+            if index not in items and len(items) >= MAX_PAGE_SIZE:
+                raise ValueError("FaceGate trả số bản ghi vượt giới hạn mỗi trang.")
+            items.setdefault(index, {})[item_match.group("field")] = value
         else:
             values[key] = value
 
@@ -240,8 +241,9 @@ def _parse_capture_log_response(body: str) -> dict[str, Any]:
             item_match = _ITEM_KEY.fullmatch(key)
             if item_match:
                 index = int(item_match.group("index"))
-                if index < MAX_PAGE_SIZE:
-                    items.setdefault(index, {})[item_match.group("field")] = value
+                if index not in items and len(items) >= MAX_PAGE_SIZE:
+                    raise ValueError("FaceGate trả số bản ghi vượt giới hạn mỗi trang.")
+                items.setdefault(index, {})[item_match.group("field")] = value
             else:
                 values[key] = value
 
@@ -361,7 +363,7 @@ def fetch_capture_log(start: str, end: str, *, get=requests.get, post=requests.p
       _close_query_session(base_url, path, auth, "CAPTURE", session_id, post)
     return {
         "source": "facegate_capture_log", "records": records, "count": len(records),
-        "total_count": int(total_count or 0), "truncated": truncated,
+        "total_count": int(total_count or 0), "truncated": truncated or len(records) < int(total_count or 0),
         "employee_mapping_verified": False,
     }
 
@@ -489,7 +491,7 @@ def fetch_control_log(start: str, end: str, *, get=requests.get, post=requests.p
         "records": records,
         "count": len(records),
         "total_count": int(total_count or 0),
-        "truncated": truncated,
+        "truncated": truncated or len(records) < int(total_count or 0),
         "status_semantics_verified": False,
         "attendance_calculation_enabled": False,
     }
