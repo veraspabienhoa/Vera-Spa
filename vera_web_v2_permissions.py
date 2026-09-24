@@ -75,6 +75,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "long_leave_export": "Export đơn",
     },
     "Nhân viên": {
+        "employee_face_id_view": "Xem ẢNH FACE ID", "employee_face_id_manage": "Quản lý ẢNH FACE ID",
         "staff_list": "Xem danh sách nhân viên", "staff_export": "Export danh sách",
         "staff_import": "Import danh sách", "employee_add": "Mở form thêm nhân viên",
         "employee_add_save": "Lưu nhân viên mới", "employee_edit": "Mở chỉnh sửa nhân viên",
@@ -175,6 +176,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         "long_leave_delete", "long_leave_export",
     ]},
     {"id": "employees", "label": "Nhân viên", "view_feature": "staff_list", "features": [
+        "employee_face_id_view", "employee_face_id_manage",
         "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save",
         "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
         "employee_delete", "employee_delete_confirm", "account_lock", "account_lock_edit",
@@ -343,6 +345,8 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "staff_import": {"staff_list"},
     "employee_add": {"staff_list"},
     "employee_add_save": {"staff_list", "employee_add"},
+    "employee_face_id_view": {"staff_list"},
+    "employee_face_id_manage": {"employee_face_id_view"},
     "employee_edit": {"staff_list"},
     "employee_edit_save": {"staff_list", "employee_edit"},
     "employment_status": {"staff_list"},

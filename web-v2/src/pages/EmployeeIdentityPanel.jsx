@@ -1,8 +1,13 @@
 import UiToolbar from '../components/UiToolbar'
+import './FaceIdCard.css'
+import './EmployeeIdentityMedia.css'
 import UiCustomText from '../components/UiCustomText'
 import { Camera, Crop, Download, Eye, FileDown, Image as ImageIcon, KeyRound, LoaderCircle, RotateCcw, RotateCw, ShieldCheck, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { staffSecurityApi } from '../lib/staffSecurityApi'
+import { staffSecurityApi, faceIdApi } from '../lib/staffSecurityApi'
+
+import VeraDateInput from '../components/VeraDateInput'
+import { formatVeraDateTime } from '../lib/veraDate'
 
 const TARGET_BYTES = 450 * 1024
 const MAX_SOURCE_BYTES = 20 * 1024 * 1024
@@ -232,7 +237,7 @@ function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_
   </div>
 }
 
-function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = CCCD_ASPECT_RATIO, mediaLabel = 'CCCD' }) {
+export function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = CCCD_ASPECT_RATIO, mediaLabel = 'CCCD', confirmLabel = 'Xử lý & tải lên' }) {
   const [source, setSource] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 })
@@ -362,7 +367,7 @@ function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRatio = C
         </div>
       </div>
       {error && <div className="employee-identity-notice error">{error}</div>}
-      <div className="identity-editor-footer"><button data-ui-key="u-0c9e77892f3e" data-ui-label-default="Hủy" type="button" className="secondary-button" onClick={onCancel} disabled={busy}><UiCustomText uiKey="u-0c9e77892f3e">Hủy</UiCustomText></button><button data-ui-key="u-2606b646551f" type="button" className="primary-button" onClick={process} disabled={busy || !source}>{busy ? <LoaderCircle className="spin" size={16}/> : <Upload size={16}/>} {busy ? 'Đang Crop · Rotate · Nén…' : 'Xử lý & tải lên'}</button></div>
+      <div className="identity-editor-footer"><button data-ui-key="u-0c9e77892f3e" data-ui-label-default="Hủy" type="button" className="secondary-button" onClick={onCancel} disabled={busy}><UiCustomText uiKey="u-0c9e77892f3e">Hủy</UiCustomText></button><button data-ui-key="u-2606b646551f" type="button" className="primary-button" onClick={process} disabled={busy || !source}>{busy ? <LoaderCircle className="spin" size={16}/> : <Upload size={16}/>} {busy ? 'Đang Crop · Rotate · Nén…' : confirmLabel}</button></div>
     </div>
   </div>
 }
@@ -473,7 +478,7 @@ function IdentitySide({ username, side, title, metadata, busy, onChanged, setNot
   </div>
 }
 
-function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit }) {
+function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit, mediaApi = staffSecurityApi, side = 'portrait', title = 'Ảnh nhân viên', canEdit = true, sources }) {
   const inputRef = useRef(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [pendingFile, setPendingFile] = useState(null)
@@ -486,7 +491,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
       setPreviewUrl('')
       return undefined
     }
-    staffSecurityApi.identityBlob(username, 'portrait').then((blob) => {
+    mediaApi.identityBlob(username, side).then((blob) => {
       if (cancelled) return
       loadedUrl = URL.createObjectURL(blob)
       setPreviewUrl(loadedUrl)
@@ -495,7 +500,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
       cancelled = true
       if (loadedUrl) URL.revokeObjectURL(loadedUrl)
     }
-  }, [metadata, username])
+  }, [metadata, username, mediaApi, side])
 
   const acceptFile = (file) => {
     if (!file) return
@@ -506,7 +511,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
   const uploadProcessed = async (blob) => new Promise((resolve, reject) => {
     onChanged('upload-portrait', async () => {
       try {
-        const result = await staffSecurityApi.uploadIdentity(username, 'portrait', blob)
+        const result = await mediaApi.uploadIdentity(username, side, blob)
         if (previewUrl) URL.revokeObjectURL(previewUrl)
         setPreviewUrl(URL.createObjectURL(blob))
         setPendingFile(null)
@@ -518,19 +523,19 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
     })
   })
   const view = () => onChanged('view-portrait', async () => {
-    const blob = await staffSecurityApi.identityBlob(username, 'portrait')
+    const blob = await mediaApi.identityBlob(username, side)
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setPreviewUrl(URL.createObjectURL(blob))
     return false
   })
   const editSaved = () => onChanged('edit-portrait', async () => {
-    const blob = await staffSecurityApi.identityBlob(username, 'portrait')
+    const blob = await mediaApi.identityBlob(username, side)
     setPendingFile(new File([blob], `${username}_Anh_Nhan_Vien.webp`, { type: blob.type || 'image/webp' }))
     return false
   })
   const remove = () => onChanged('delete-portrait', async () => {
-    if (!window.confirm(`Xóa ảnh nhân viên của ${username}?`)) return false
-    const result = await staffSecurityApi.deleteIdentity(username, 'portrait')
+    if (!window.confirm(`Xóa ${title} của ${username}?`)) return false
+    const result = await mediaApi.deleteIdentity(username, side)
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setPreviewUrl('')
     setNotice({ type: 'success', message: result.message })
@@ -538,18 +543,63 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
   })
 
   return <div className="employee-portrait-side">
-    <div className="employee-id-side-head"><div><strong>Ảnh nhân viên</strong><span>{metadata ? `Đã lưu · ${formatBytes(metadata.size_bytes)}` : 'Chưa có ảnh · tỷ lệ 3:4'}</span></div>{busy && <LoaderCircle className="spin" size={16}/>}</div>
-    <div className="employee-portrait-preview">{previewUrl ? <img src={previewUrl} alt="Ảnh nhân viên"/> : <div className="employee-id-placeholder"><ImageIcon size={28}/><span>ẢNH 3:4</span></div>}</div>
+    <div className="employee-id-side-head"><div><strong>{title}</strong><span>{metadata ? `Đã lưu · ${formatBytes(metadata.size_bytes)}` : 'Chưa có ảnh · tỷ lệ 3:4'}</span></div>{busy && <LoaderCircle className="spin" size={16}/>}</div>
+    <div className="employee-portrait-preview">{previewUrl ? <img src={previewUrl} alt={title}/> : <div className="employee-id-placeholder"><ImageIcon size={28}/><span>ẢNH 3:4</span></div>}</div>
+    {canEdit && sources?.(acceptFile)}
     <UiToolbar data-ui-key="u-e846d87f96c5" className="employee-id-actions">
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/*" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; acceptFile(file) }} hidden/>
-      <button data-ui-key="u-a4ae33de7ed9" data-ui-label-default="Chụp ảnh" type="button" className="secondary-button compact" onClick={() => setCameraOpen(true)} disabled={Boolean(busy)}><Camera size={14}/><UiCustomText uiKey="u-a4ae33de7ed9"> Chụp ảnh</UiCustomText></button>
-      <button data-ui-key="u-5825e51c59e7" type="button" className="secondary-button compact" onClick={() => inputRef.current?.click()} disabled={Boolean(busy)}><Upload size={14}/> {metadata ? 'Thay ảnh' : 'Tải ảnh'}</button>
+      <button data-ui-key="u-a4ae33de7ed9" data-ui-label-default="Chụp ảnh" type="button" className="secondary-button compact" onClick={() => setCameraOpen(true)} disabled={Boolean(busy) || !canEdit}><Camera size={14}/><UiCustomText uiKey="u-a4ae33de7ed9"> Chụp ảnh</UiCustomText></button>
+      <button data-ui-key="u-5825e51c59e7" type="button" className="secondary-button compact" onClick={() => inputRef.current?.click()} disabled={Boolean(busy) || !canEdit}><Upload size={14}/> {metadata ? 'Thay ảnh' : 'Tải ảnh'}</button>
       {metadata && <button data-ui-key="u-1e33c261ec19" data-ui-label-default="Xem" type="button" className="secondary-button compact" onClick={view} disabled={Boolean(busy)}><Eye size={14}/><UiCustomText uiKey="u-1e33c261ec19"> Xem</UiCustomText></button>}
-      {metadata && allowAdminEdit && <button data-ui-key="u-636be8616e35" data-ui-label-default="Crop / Xoay" type="button" className="secondary-button compact" onClick={editSaved} disabled={Boolean(busy)}><Crop size={14}/><UiCustomText uiKey="u-636be8616e35"> Crop / Xoay</UiCustomText></button>}
-      {metadata && <button data-ui-key="u-5e617d4cab9b" data-ui-label-default="Xóa" type="button" className="danger-button compact" onClick={remove} disabled={Boolean(busy)}><Trash2 size={14}/><UiCustomText uiKey="u-5e617d4cab9b"> Xóa</UiCustomText></button>}
+      {metadata && allowAdminEdit && <button data-ui-key="u-636be8616e35" data-ui-label-default="Crop / Xoay" type="button" className="secondary-button compact" onClick={editSaved} disabled={Boolean(busy) || !canEdit}><Crop size={14}/><UiCustomText uiKey="u-636be8616e35"> Crop / Xoay</UiCustomText></button>}
+      {metadata && <button data-ui-key="u-5e617d4cab9b" data-ui-label-default="Xóa" type="button" className="danger-button compact" onClick={remove} disabled={Boolean(busy) || !canEdit}><Trash2 size={14}/><UiCustomText uiKey="u-5e617d4cab9b"> Xóa</UiCustomText></button>}
     </UiToolbar>
-    {cameraOpen && <IdentityCamera title="Ảnh nhân viên" mediaLabel="Hồ sơ" aspectRatio={PORTRAIT_ASPECT_RATIO} onCancel={() => setCameraOpen(false)} onCapture={(file) => { setCameraOpen(false); acceptFile(file) }}/>}
-    {pendingFile && <IdentityImageEditor file={pendingFile} title="Ảnh nhân viên" mediaLabel="Hồ sơ" aspectRatio={PORTRAIT_ASPECT_RATIO} onCancel={() => setPendingFile(null)} onConfirm={uploadProcessed}/>}
+    {cameraOpen && <IdentityCamera title={title} mediaLabel="Hồ sơ" aspectRatio={PORTRAIT_ASPECT_RATIO} onCancel={() => setCameraOpen(false)} onCapture={(file) => { setCameraOpen(false); acceptFile(file) }}/>}
+    {pendingFile && <IdentityImageEditor file={pendingFile} title={title} mediaLabel="Hồ sơ" aspectRatio={PORTRAIT_ASPECT_RATIO} onCancel={() => setPendingFile(null)} onConfirm={uploadProcessed}/>}
+  </div>
+}
+
+
+export function FaceIdCard({ username }) {
+  const [data, setData] = useState(null)
+  const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState(null)
+  const [day, setDay] = useState(() => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Ho_Chi_Minh'}).format(new Date()))
+  const [captures, setCaptures] = useState(null)
+  const load = async () => setData(await faceIdApi.metadata(username))
+  useEffect(() => {
+    let active = true
+    setData(null); setNotice(null); setCaptures(null)
+    faceIdApi.metadata(username).then((value) => { if (active) setData(value) }).catch((error) => {
+      if (active && error.status !== 403) setNotice({type: 'error', message: error.message})
+    })
+    return () => { active = false }
+  }, [username])
+  const run = async (key, callback) => {
+    setBusy(key); setNotice(null)
+    try { if (await callback()) await load() }
+    catch (error) { setNotice({type: 'error', message: error.message}) }
+    finally { setBusy('') }
+  }
+  if (!data) return notice ? <p role="alert">{notice.message}</p> : null
+  const asFile = (blob) => new File([blob], 'FaceID.jpg', {type: blob.type})
+  return <div className="face-id-card" style={{border: '1px solid #315d4b', padding: 12, minWidth: 0}}>
+    <PortraitSide key={username} username={username} metadata={data.photo} busy={busy}
+      onChanged={run} setNotice={setNotice} allowAdminEdit canEdit={data.can_manage}
+      mediaApi={faceIdApi} side="face_id" title="ẢNH FACE ID"
+      sources={(acceptFile) => <div className="employee-id-actions">
+        <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>
+        <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => {setDay(event.target.value); setCaptures(null)}}/>
+        <button type="button" className="secondary-button compact" disabled={Boolean(busy) || !day} onClick={() => run('captures', async () => {setCaptures(await faceIdApi.captures(username, day)); return false})}>Từ ảnh chụp trên FaceID</button>
+        {captures && <div><p>Danh sách ảnh của thiết bị trong ngày. Hãy kiểm tra đúng nhân viên trước khi lưu; hệ thống chưa xác minh danh tính trong ảnh.</p>
+          {captures.truncated && <p>Danh sách chưa đầy đủ do giới hạn đọc từ thiết bị.</p>}
+          {!captures.records.length && <p>Không có ảnh chụp trong ngày đã chọn.</p>}
+          {captures.records.map((record) => <button type="button" className="secondary-button compact" disabled={Boolean(busy)} key={record.event_id}
+            onClick={() => run('capture', async () => { acceptFile(asFile(await faceIdApi.capture(username, day, record.event_id))); return false })}>{formatVeraDateTime(record.occurred_at)} · #{record.event_id}</button>)}
+        </div>}
+      </div>}/>
+    <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ. Chưa xác minh đăng ký ảnh trên thiết bị chấm công.</p>
+    {notice && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}
   </div>
 }
 
@@ -648,18 +698,9 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
   if (!username) return null
 
   return <div className={`employee-identity-panel ${className}`}>
-    <style>{`
-      .employee-identity-panel{display:grid;gap:14px;padding:16px;border:1px solid #dfe7e3;border-radius:16px;background:#f9fbfa}.employee-identity-title{display:flex;gap:10px;align-items:flex-start}.employee-identity-title h3{margin:0;font-size:15px}.employee-identity-title p{margin:3px 0 0;color:#6c7873;font-size:12px;line-height:1.45}
-      .employee-portrait-section{display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:14px;align-items:start}.employee-portrait-side,.employee-id-side{border:1px solid #e2e8e5;border-radius:14px;background:#fff;padding:12px;min-width:0}.employee-portrait-preview{width:min(100%,180px);aspect-ratio:3/4;margin:10px auto;border-radius:12px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-portrait-preview img{width:100%;height:100%;object-fit:cover}.employee-portrait-help{padding:13px;border-radius:14px;background:#edf5f1;color:#38564a;font-size:12px;line-height:1.55}.employee-portrait-help strong{display:block;margin-bottom:5px;color:#173d2f}.employee-identity-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.employee-id-side-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.employee-id-side-head div{display:grid;gap:2px}.employee-id-side-head strong{font-size:13px}.employee-id-side-head span{font-size:11px;color:#74807b}.employee-id-preview{height:132px;margin:10px 0;border-radius:10px;overflow:hidden;background:#eef3f1;display:flex;align-items:center;justify-content:center}.employee-id-preview img{width:100%;height:100%;object-fit:contain;background:#111}.employee-id-placeholder{font-weight:900;color:#9aa6a1;letter-spacing:.12em;display:grid;place-items:center;gap:6px}.employee-id-actions{display:flex;flex-wrap:wrap;gap:7px}.employee-id-actions button{min-height:34px}
-      .employee-password-reset{display:grid;gap:10px;padding:13px;border:1px solid #eadfcf;border-radius:14px;background:#fffaf2}.employee-password-reset-head{display:flex;gap:8px;align-items:flex-start}.employee-password-reset-head h4{margin:0;font-size:13px}.employee-password-reset-head p{margin:3px 0 0;font-size:11px;color:#776d60;line-height:1.45}.employee-password-reset-grid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}.employee-password-default{display:grid;gap:4px;min-width:0}.employee-password-default span{font-size:11px;color:#776d60}.employee-password-default strong{font-size:15px;letter-spacing:.02em;color:#173d2f}.employee-identity-notice{padding:9px 11px;border-radius:10px;font-size:12px}.employee-identity-notice.success{background:#edf8f2;color:#17603b}.employee-identity-notice.error{background:#fff1f0;color:#a62a20}
-      .identity-editor-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(9,25,20,.72);display:flex;align-items:center;justify-content:center;padding:18px}.identity-editor-card,.identity-camera-card{width:min(980px,100%);max-height:94vh;overflow:auto;background:#fff;border-radius:20px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.3)}.identity-camera-card{width:min(760px,100%)}.identity-editor-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.identity-editor-head h3{margin:3px 0}.identity-editor-head p{margin:0;color:#6c7873;font-size:12px}.identity-editor-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:16px;margin-top:14px}.identity-editor-preview{min-height:320px;border-radius:14px;background:#17201d;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:8px}.identity-editor-preview canvas{max-width:100%;max-height:58vh;object-fit:contain;background:#fff;touch-action:none;cursor:crosshair;user-select:none;-webkit-user-select:none}.identity-editor-preview small{color:#d4dfda}.identity-editor-controls{display:grid;gap:10px;align-content:start}.identity-editor-section{display:grid;gap:8px;border:1px solid #e0e7e3;border-radius:12px;padding:11px}.identity-editor-section>strong{display:flex;align-items:center;gap:7px;font-size:12px}.identity-editor-section label{display:grid;gap:4px;font-size:11px;font-weight:800}.identity-editor-section input[type=range]{width:100%}.identity-editor-section select{width:100%}.identity-editor-buttons{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.identity-editor-buttons span{font-size:12px;font-weight:900}.identity-editor-size{font-size:11px;color:#68736f;line-height:1.5}.identity-editor-footer{position:sticky;bottom:-18px;z-index:3;display:flex;justify-content:flex-end;gap:9px;margin-top:14px;padding:12px 0 0;background:#fff}
-      .identity-camera-facing{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0}.identity-camera-facing>span{color:#5f6e67;font-size:11px;font-weight:900}.identity-camera-facing button{min-width:132px}
-      .identity-camera-landscape{position:relative;width:min(90vw,680px);max-width:100%;aspect-ratio:85.6/53.98;margin:16px auto 0;overflow:hidden;border-radius:18px;background:#101815}.identity-camera-landscape.portrait{width:min(72vw,360px)}.identity-camera-landscape video{width:100%;height:100%;object-fit:cover}.identity-camera-card-guide{position:absolute;inset:4%;border:3px solid rgba(255,255,255,.98);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.20),inset 0 0 0 1px rgba(0,0,0,.25);display:flex;align-items:flex-end;justify-content:center;padding:10px;pointer-events:none}.identity-camera-card-guide span{padding:5px 9px;border-radius:999px;background:rgba(0,0,0,.58);color:#fff;font-size:10px;font-weight:900;letter-spacing:.05em}.identity-camera-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,0,0,.35);color:#fff;font-weight:800}.identity-camera-help{margin:10px auto 0;max-width:680px;color:#68736f;font-size:11px;line-height:1.45;text-align:center}
-      .employee-profile-export{display:flex;justify-content:flex-end}.employee-profile-export button{min-height:38px}
-      @media(max-width:700px){.employee-identity-panel{padding:12px;gap:11px}.employee-portrait-section,.employee-identity-grid{grid-template-columns:1fr}.employee-id-preview{height:118px}.employee-password-reset-grid{grid-template-columns:1fr}.employee-password-reset-grid>.employee-password-submit{width:100%}.identity-editor-backdrop{padding:7px}.identity-editor-card,.identity-camera-card{padding:12px;border-radius:14px}.identity-editor-layout{grid-template-columns:1fr}.identity-editor-preview{min-height:220px}.identity-editor-preview canvas{max-height:34vh}.identity-editor-footer{display:grid;grid-template-columns:1fr 1fr}.identity-editor-footer button{width:100%}.identity-camera-facing{display:grid;grid-template-columns:1fr 1fr}.identity-camera-facing>span{grid-column:1/-1;text-align:center}.identity-camera-facing button{min-width:0;width:100%}.identity-camera-landscape{width:min(95vw,680px)}.identity-camera-landscape.portrait{width:min(78vw,330px)}}
-    `}</style>
+
     <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3><p>Ảnh hiển thị theo tỷ lệ dọc 3:4. Nhân viên có thể upload hoặc chụp trực tiếp với khung căn hình.</p></div></div>
-    <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowAdminEdit || allowPasswordReset}/></div>
+    <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowAdminEdit || allowPasswordReset}/><FaceIdCard key={username} username={username}/></div>
     <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3></div></div>
     <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.includes('front')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.includes('back')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/></div>
     <div className="employee-profile-export"><button data-ui-key="u-3d346c6c0daf" type="button" className="secondary-button" onClick={exportPdf} disabled={busy === 'profile-pdf'}>{busy === 'profile-pdf' ? <LoaderCircle className="spin" size={16}/> : <FileDown size={16}/>} Xuất PDF hồ sơ nhân viên</button></div>

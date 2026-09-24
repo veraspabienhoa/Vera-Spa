@@ -524,6 +524,7 @@ def install_staff_routes(
     def permissions(conn, ident) -> dict[str, bool]:
         keys = (
             "staff_list", "staff_export", "staff_import", "employee_add", "employee_add_save",
+            "employee_face_id_view", "employee_face_id_manage",
             "employee_edit", "employee_edit_save", "employment_status", "employment_status_edit",
             "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
             "employees_visibility_manage", "ktv_shift_view", "ktv_shift_create", "ktv_shift_edit", "ktv_shift_delete",

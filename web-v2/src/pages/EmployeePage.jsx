@@ -1,4 +1,5 @@
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
+import FaceIdBulkUpload from './FaceIdBulkUpload'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
@@ -10,7 +11,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
-import EmployeeIdentityPanel from './EmployeeIdentityPanel'
+import EmployeeIdentityPanel, { FaceIdCard } from './EmployeeIdentityPanel'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import VeraDateInput from '../components/VeraDateInput'
 import { staffSecurityApi } from '../lib/staffSecurityApi'
@@ -250,6 +251,9 @@ export default function EmployeePage({ user }) {
   ), [data])
 
   const permissions = data?.permissions || {}
+  const [faceUser, setFaceUser] = useState('')
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
   const isAdmin = user?.role === 'admin'
   const manageableRoles = new Set(data?.role_options || [])
   const canManage = (employee) => isAdmin || manageableRoles.has(employee.role)
@@ -469,6 +473,7 @@ export default function EmployeePage({ user }) {
 
       <section data-ui-key="u-ff418fa84752" className="panel staff-control-panel">
         <UiToolbar data-ui-key="u-2bec85ee8f1f" className="staff-toolbar">
+          {permissions.employee_face_id_manage && <button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh FACE ID hàng loạt</button>}
           <LiveTourSearchSelect
             className="staff-employee-name-filter"
             hideLabel
@@ -522,6 +527,8 @@ export default function EmployeePage({ user }) {
         </form>
       </section>}
 
+      {bulkOpen && <EmployeeProfileModal busy={bulkBusy} onClose={() => { if (!bulkBusy) setBulkOpen(false) }}><FaceIdBulkUpload onBusyChange={setBulkBusy}/><button type="button" className="secondary-button" disabled={bulkBusy} onClick={() => setBulkOpen(false)}>Đóng</button></EmployeeProfileModal>}
+      {faceUser && <EmployeeProfileModal onClose={() => setFaceUser('')}><h2 id="employee-profile-modal-title">ẢNH FACE ID · {faceUser}</h2><FaceIdCard key={faceUser} username={faceUser}/><button type="button" className="secondary-button" onClick={() => setFaceUser('')}>Đóng</button></EmployeeProfileModal>}
       {profileUser && <EmployeeProfileModal onClose={() => setProfileUser('')} busy={busy === 'profile'}><section data-ui-key="u-309a06b43235" ref={profileSectionRef} className="panel staff-form-panel employee-profile-modal-panel">
         <div data-ui-key="u-4450e8bb6934" className="panel-title-row"><div><h2 id="employee-profile-modal-title">SỬA HỒ SƠ · {profileUser}</h2><p>Cập nhật thông tin cá nhân.</p></div><UiToolbar data-ui-key="u-68abbff1b9e3" className="staff-profile-react-actions"><button data-ui-key="u-ca50a39b04af" data-ui-label-default="✕ Đóng" type="button" className="secondary-button" onClick={() => setProfileUser('')}><UiCustomText uiKey="u-ca50a39b04af">✕ Đóng</UiCustomText></button><button data-ui-key="u-3bbe39942c7f" data-ui-label-default="Lưu hồ sơ" type="button" className="primary-button" disabled={busy === 'profile'} onClick={saveProfile}><Save size={16}/><UiCustomText uiKey="u-3bbe39942c7f"> Lưu hồ sơ</UiCustomText></button></UiToolbar></div>
         <Notice notice={notice} onClose={() => setNotice(null)} />
@@ -583,7 +590,7 @@ export default function EmployeePage({ user }) {
                   <td><select value={draft.work_shift} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'work_shift', event.target.value)}><option value="">Chưa chia ca</option>{shiftsFor(employee).map((shift) => <option key={shift}>{shift}</option>)}</select></td>
                   <td><VeraDateInput aria-label={`Ngày bắt đầu ca ${employee.full_name || employee.username}`} value={draft.shift_start_date} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'shift_start_date', event.target.value)} /></td>
                   <td><select value={draft.rotation_cycle} disabled={!editable || !permissions.shift_assignment_edit} onChange={(event) => setDraft(employee.username, 'rotation_cycle', event.target.value)}><option value="">Chưa chọn</option>{(data?.cycle_options || []).map((cycle) => <option key={cycle}>{cycle}</option>)}</select></td>
-                  <td><button data-ui-key="u-6aee37a71d28" data-ui-label-default="Sửa" className="text-button staff-edit-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /><UiCustomText uiKey="u-6aee37a71d28"> Sửa</UiCustomText></button></td>
+                  <td>{permissions.employee_face_id_view && <button type="button" className="text-button" onClick={() => setFaceUser(employee.username)}>ẢNH FACE ID</button>}<button data-ui-key="u-6aee37a71d28" data-ui-label-default="Sửa" className="text-button staff-edit-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /><UiCustomText uiKey="u-6aee37a71d28"> Sửa</UiCustomText></button></td>
                   <td className="center"><input type="checkbox" checked={draft.login_locked} disabled={!editable || !permissions.account_lock_edit} onChange={(event) => setDraft(employee.username, 'login_locked', event.target.checked)} aria-label={`Khóa ${employee.username}`} /></td>
                   <td className="center"><input type="checkbox" checked={draft.profile_requirement_exempt} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'profile_requirement_exempt', event.target.checked)} aria-label={`Miễn yêu cầu đủ hồ sơ ${employee.username}`} /></td>
                   <td className="center"><input type="checkbox" checked={draft.payroll_excluded} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'payroll_excluded', event.target.checked)} aria-label={`Không tính lương ${employee.username}`} /></td>
@@ -598,7 +605,7 @@ export default function EmployeePage({ user }) {
             const editable = canManage(employee)
             const missingFields = employee.profile_requirement_exempt ? [] : missingEmployeeProfileFields(employee)
             return <article className={`staff-mobile-card ${employee.employment_status === 'Đã nghỉ việc' ? 'left' : ''} ${missingFields.length ? 'incomplete' : ''} ${employee.profile_hidden ? 'hidden' : ''}`} key={employee.username} title={missingFields.length ? `Hồ sơ còn thiếu: ${missingFields.join(', ')}` : undefined}>
-              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !canSelectRows} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{employee.profile_hidden && <span className="staff-hidden-badge">Đang ẩn</span>}{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><UiToolbar data-ui-key="u-a0539e134d09" className="list-actions">{isAdmin && <button data-ui-key="u-a314b6fabeb3" data-ui-label-default="Đổi tên" className="text-button" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={15} /><UiCustomText uiKey="u-a314b6fabeb3"> Đổi tên</UiCustomText></button>}<button data-ui-key="u-0b7df8bf85a4" data-ui-label-default="Hồ sơ" className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /><UiCustomText uiKey="u-0b7df8bf85a4"> Hồ sơ</UiCustomText></button>{isAdmin && permissions.employees_visibility_manage && <button data-ui-key="u-4b8a3fe113dc" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => setEmployeeHidden(employee, !employee.profile_hidden)}>{employee.profile_hidden ? <Eye size={14}/> : <EyeOff size={14}/>} {employee.profile_hidden ? 'Hiện' : 'Ẩn'}</button>}{isAdmin && permissions.employee_delete && <button data-ui-key="u-ebf440251fd5" data-ui-label-default="Xóa" className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /><UiCustomText uiKey="u-ebf440251fd5"> Xóa</UiCustomText></button>}</UiToolbar></div>
+              <div className="staff-mobile-head"><label><input type="checkbox" checked={selected.includes(employee.username)} disabled={!editable || !canSelectRows} onChange={() => toggleSelected(employee.username)} /> <span><strong>{employee.username}</strong><small>{employee.full_name || '—'}</small>{employee.profile_hidden && <span className="staff-hidden-badge">Đang ẩn</span>}{missingFields.length > 0 && <span className="staff-incomplete-badge">Thiếu {missingFields.length} mục</span>}</span></label><UiToolbar data-ui-key="u-a0539e134d09" className="list-actions">{isAdmin && <button data-ui-key="u-a314b6fabeb3" data-ui-label-default="Đổi tên" className="text-button" disabled={Boolean(busy)} onClick={() => renameSystemName(employee)}><PencilLine size={15} /><UiCustomText uiKey="u-a314b6fabeb3"> Đổi tên</UiCustomText></button>}{permissions.employee_face_id_view && <button type="button" className="text-button" onClick={() => setFaceUser(employee.username)}>ẢNH FACE ID</button>}<button data-ui-key="u-0b7df8bf85a4" data-ui-label-default="Hồ sơ" className="text-button" disabled={!editable || !permissions.employee_edit_save} onClick={() => openProfile(employee)}><FilePenLine size={15} /><UiCustomText uiKey="u-0b7df8bf85a4"> Hồ sơ</UiCustomText></button>{isAdmin && permissions.employees_visibility_manage && <button data-ui-key="u-4b8a3fe113dc" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => setEmployeeHidden(employee, !employee.profile_hidden)}>{employee.profile_hidden ? <Eye size={14}/> : <EyeOff size={14}/>} {employee.profile_hidden ? 'Hiện' : 'Ẩn'}</button>}{isAdmin && permissions.employee_delete && <button data-ui-key="u-ebf440251fd5" data-ui-label-default="Xóa" className="danger-button compact" disabled={Boolean(busy)} onClick={() => deleteOne(employee)}><Trash2 size={14} /><UiCustomText uiKey="u-ebf440251fd5"> Xóa</UiCustomText></button>}</UiToolbar></div>
               <div className="staff-mobile-fields">
                 <label>Phân quyền<select value={draft.role} disabled={!editable || !permissions.employee_edit_save} onChange={(event) => setDraft(employee.username, 'role', event.target.value)}>{Array.from(new Set([employee.role, ...(data?.role_options || [])])).map((role) => <option key={role} value={role}>{ROLE_LABELS[role] || role}</option>)}</select></label>
                 <label>Trạng thái<select value={draft.employment_status} disabled={!editable || !permissions.employment_status_edit} onChange={(event) => setDraft(employee.username, 'employment_status', event.target.value)}>{(data?.status_options || []).map((status) => <option key={status}>{status}</option>)}</select></label>

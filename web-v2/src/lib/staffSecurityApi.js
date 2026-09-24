@@ -129,3 +129,29 @@ export const staffSecurityApi = {
     await downloadPdf(response, `Ho_So_Nhan_Vien_Da_Chon_${usernames.length}.pdf`)
   },
 }
+
+
+async function faceRequest(username, suffix = '', options = {}, binary = false) {
+  const response = await authorizedFetch(`/v2/staff/${encodeURIComponent(username)}/face-id${suffix}`, options)
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    const error = new Error(payload.detail || `HTTP ${response.status}`)
+    error.status = response.status
+    throw error
+  }
+  return binary ? response.blob() : response.json()
+}
+
+export const faceIdApi = {
+  batchPlan: (filenames) => jsonRequest('/v2/face-id/batch-plan', {method: 'POST', body: JSON.stringify({filenames})}),
+  uploadBatchPhoto: (row) => faceRequest(row.username, `/image?filename=${encodeURIComponent(row.filename)}`, {
+    method: 'PUT', headers: {'Content-Type': row.blob.type, ...(row.existing_sha256 ? {'If-Match': `"${row.existing_sha256}"`} : {'If-None-Match': '*'})}, body: row.blob,
+  }),
+  metadata: (username) => faceRequest(username),
+  identityBlob: (username) => faceRequest(username, '/image', {}, true),
+  uploadIdentity: (username, _side, blob) => faceRequest(username, '/image', {method: 'PUT', headers: {'Content-Type': blob.type}, body: blob}),
+  deleteIdentity: (username) => faceRequest(username, '/image', {method: 'DELETE'}),
+  portrait: (username) => faceRequest(username, '/portrait-source', {}, true),
+  captures: (username, day) => faceRequest(username, `/captures?day=${encodeURIComponent(day)}`),
+  capture: (username, day, eventId) => faceRequest(username, `/capture-image?day=${encodeURIComponent(day)}&event_id=${encodeURIComponent(eventId)}`, {}, true),
+}
