@@ -1172,11 +1172,11 @@ tr:last-child td { border-bottom: 0; }
 .training-notification-actions .secondary-button{background:#e9f2e9;color:#214c38}
 .training-notification-dialog header button{border-radius:10px;background:#e9f2e9;color:#214c38}
 @media(max-width:600px){
-  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog,[role="dialog"]){box-sizing:border-box;max-width:calc(100vw - 20px);min-width:0;overflow-x:hidden}
-  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog,[role="dialog"]) :is(.table-wrap,.table-container,table){max-width:100%;min-width:0}
-  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog,[role="dialog"]) :is(button,[role="button"]){border-radius:10px;background-color:#e9f2e9;color:#214c38}
-  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog,[role="dialog"]) :is(.primary-button,.training-notification-actions .primary-button){background-color:#194b38;color:#fff}
-  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog,[role="dialog"]) .danger-button{background-color:#fff0ef;color:#922b34}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog){box-sizing:border-box;max-width:calc(100vw - 20px);min-width:0;overflow-x:hidden}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) :is(.table-wrap,.table-container,table){max-width:100%;min-width:0}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) :is(button,[role="button"]){border-radius:10px;background-color:#e9f2e9;color:#214c38}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) :is(.primary-button,.training-notification-actions .primary-button){background-color:#194b38;color:#fff}
+  body :is(dialog,.modal-card,.modal-content,.live-tour-modal,.training-notification-dialog) .danger-button{background-color:#fff0ef;color:#922b34}
   .training-notification-dialog{width:100%;padding:16px;overflow-y:auto}
   .training-notification-actions button{flex:1 1 auto}
 }
