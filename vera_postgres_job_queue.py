@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 
 TABLE = "vera_background_job"
-RELEASE = "postgres-job-queue-2026-09-16.2-health"
+RELEASE = "postgres-job-queue-2026-09-24.1-fenced-recovery"
 MAX_ATTEMPTS = 12
 
 
@@ -38,6 +38,16 @@ def ensure_schema_conn(conn) -> None:
         f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_ready "
         f"ON {TABLE}(queue_name,status,available_at,id)"
     ))
+    conn.execute(text(f"""
+        CREATE TABLE IF NOT EXISTS vera_background_job_recovery (
+            id BIGSERIAL PRIMARY KEY,
+            job_id BIGINT NOT NULL,
+            queue_name TEXT NOT NULL,
+            previous_status TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
 
 
 def ensure_schema(engine_instance) -> None:
@@ -84,13 +94,17 @@ def _payload(value: Any) -> dict[str, Any]:
 def claim_one(engine_instance, queue_name: str) -> dict[str, Any] | None:
     with engine_instance().begin() as conn:
         conn.execute(text(f"""
-            UPDATE {TABLE}
+            WITH expired AS (
+                SELECT id FROM {TABLE}
+                WHERE queue_name=:queue_name AND status='processing'
+                  AND locked_at < NOW() - INTERVAL '10 minutes'
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE {TABLE} AS job
             SET status='retry', available_at=NOW(), locked_at=NULL,
                 last_error=COALESCE(last_error,'worker lease expired'),
                 updated_at=NOW()
-            WHERE queue_name=:queue_name
-              AND status='processing'
-              AND locked_at < NOW() - INTERVAL '10 minutes'
+            FROM expired WHERE job.id=expired.id
         """), {"queue_name": queue_name})
         row = conn.execute(text(f"""
             SELECT id,queue_name,job_key,payload,attempts
@@ -104,36 +118,52 @@ def claim_one(engine_instance, queue_name: str) -> dict[str, Any] | None:
         """), {"queue_name": queue_name}).mappings().first()
         if not row:
             return None
-        conn.execute(text(f"""
+        lease = conn.execute(text(f"""
             UPDATE {TABLE}
-            SET status='processing',locked_at=NOW(),updated_at=NOW()
+            SET status='processing',locked_at=clock_timestamp(),updated_at=NOW()
             WHERE id=:id
-        """), {"id": row["id"]})
+            RETURNING locked_at
+        """), {"id": row["id"]}).scalar_one()
         item = dict(row)
         item["payload"] = _payload(item.get("payload"))
+        item["locked_at"] = lease
         return item
 
 
-def mark_done(engine_instance, item_id: int) -> None:
+def lease_current(conn, item: dict[str, Any]) -> bool:
+    """Hold a row share lock until the board transaction commits.
+
+    Recovery and automatic lease expiry skip this row while its worker writes.
+    """
+    return bool(conn.execute(text(f"""
+        SELECT 1 FROM {TABLE}
+        WHERE id=:id AND queue_name=:queue_name
+          AND status='processing' AND locked_at=:locked_at
+        FOR SHARE
+    """), {"id": int(item["id"]), "queue_name": item["queue_name"],
+           "locked_at": item["locked_at"]}).scalar_one_or_none())
+
+
+def mark_done(engine_instance, item: dict[str, Any]) -> None:
     with engine_instance().begin() as conn:
         conn.execute(text(f"""
             UPDATE {TABLE}
             SET status='done',completed_at=NOW(),locked_at=NULL,
                 last_error=NULL,updated_at=NOW()
-            WHERE id=:id
-        """), {"id": int(item_id)})
+            WHERE id=:id AND status='processing' AND locked_at=:locked_at
+        """), {"id": int(item["id"]), "locked_at": item["locked_at"]})
 
 
-def reschedule(engine_instance, item_id: int, *, delay_seconds: int = 5) -> None:
+def reschedule(engine_instance, item: dict[str, Any], *, delay_seconds: int = 5) -> None:
     with engine_instance().begin() as conn:
         conn.execute(text(f"""
             UPDATE {TABLE}
             SET status='retry',
                 available_at=NOW()+(:delay*INTERVAL '1 second'),
                 locked_at=NULL,updated_at=NOW()
-            WHERE id=:id
+            WHERE id=:id AND status='processing' AND locked_at=:locked_at
         """), {
-            "id": int(item_id),
+            "id": int(item["id"]), "locked_at": item["locked_at"],
             "delay": max(1, int(delay_seconds)),
         })
 
@@ -148,14 +178,53 @@ def mark_retry(engine_instance, item: dict[str, Any], exc: Exception) -> None:
             SET status=:status,attempts=:attempts,
                 available_at=NOW()+(:delay*INTERVAL '1 second'),
                 locked_at=NULL,last_error=:error,updated_at=NOW()
-            WHERE id=:id
+            WHERE id=:id AND status='processing' AND locked_at=:locked_at
         """), {
             "id": int(item["id"]),
+            "locked_at": item["locked_at"],
             "status": status,
             "attempts": attempts,
             "delay": delay,
             "error": f"{type(exc).__name__}: {exc}"[:2000],
         })
+
+
+def recover_expired(engine_instance, queue_name: str, actor: str) -> dict[str, int]:
+    """Requeue one expired or failed job without interrupting a live transaction."""
+    with engine_instance().begin() as conn:
+        row = conn.execute(text(f"""
+            SELECT id,status FROM {TABLE}
+            WHERE queue_name=:queue_name AND (
+                status='failed' OR
+                (status='processing' AND locked_at < NOW() - INTERVAL '10 minutes')
+            )
+            ORDER BY CASE WHEN status='failed' THEN 1 ELSE 0 END, id
+            FOR UPDATE SKIP LOCKED LIMIT 1
+        """), {"queue_name": queue_name}).mappings().first()
+        if not row:
+            return {"requeued": 0}
+        conn.execute(text(f"""
+            UPDATE {TABLE} SET status='retry', attempts=0, locked_at=NULL,
+                available_at=NOW(), last_error=NULL, updated_at=NOW()
+            WHERE id=:id
+        """), {"id": row["id"]})
+        conn.execute(text("""
+            INSERT INTO vera_background_job_recovery
+                (job_id,queue_name,previous_status,actor)
+            VALUES (:job_id,:queue_name,:status,:actor)
+        """), {"job_id": row["id"], "queue_name": queue_name,
+                "status": row["status"], "actor": actor[:160]})
+        return {"requeued": 1}
+
+
+def recovery_history(engine_instance, queue_name: str) -> list[dict[str, Any]]:
+    with engine_instance().connect() as conn:
+        rows = conn.execute(text("""
+            SELECT job_id,previous_status,actor,created_at
+            FROM vera_background_job_recovery
+            WHERE queue_name=:queue_name ORDER BY id DESC LIMIT 10
+        """), {"queue_name": queue_name}).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def counts(engine_instance, queue_name: str) -> dict[str, int]:

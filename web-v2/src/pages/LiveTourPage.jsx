@@ -1,4 +1,5 @@
 import LiveTourBoard from '../components/LiveTourBoard'
+import LiveTourRecoveryPanel from '../components/LiveTourRecoveryPanel'
 import LiveTourPendingPanel from '../components/LiveTourPendingPanel'
 import LiveTourInvoicesPanel from '../components/LiveTourInvoicesPanel'
 import LiveTourCustomersPanel from '../components/LiveTourCustomersPanel'
@@ -1549,6 +1550,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         </UiToolbar>
       </div>
       {error && <div className="error-box">{error}</div>}
+      {privilegedLiveTourRole && <LiveTourRecoveryPanel isAdmin={isAdmin} onReload={() => load(false)} actionBusy={Boolean(actionBusy) || busy}/>}
       {notice && notice !== 'Đã cập nhật Live Tour.' && <div className="setup-note">{notice}</div>}
       <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}

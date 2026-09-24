@@ -447,6 +447,8 @@ export const veraApi = {
   },
   liveTourCollection: (panel, query = {}) => request(`/v2/live-tour/collections/${encodeURIComponent(panel)}?${new URLSearchParams(Object.entries(query).filter(([,value])=>value !== '' && value != null))}`),
   liveTourAction: (body) => request('/v2/live-tour/action', { method: 'POST', body: JSON.stringify(body) }),
+  liveTourRecovery: () => request('/v2/live-tour/recovery'),
+  retryLiveTourRecovery: () => request('/v2/live-tour/recovery/retry', { method: 'POST' }),
   uiLayout: () => request('/v2/ui-layout'),
   saveUiLayout: (body) => request('/v2/ui-layout', { method: 'PUT', body: JSON.stringify(body) }),
   previewBoardHistoryCleanup: (body) => request('/v2/live-tour/board-history/cleanup-preview', { method: 'POST', body: JSON.stringify(body) }),

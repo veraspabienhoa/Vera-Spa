@@ -4311,9 +4311,11 @@ def install_live_tour_routes(
             ), {"day": leave_day}).mappings().all()]
         return records, directory, leaves
 
-    def apply_projection(now, records, directory, leaves):
+    def apply_projection(now, records, directory, leaves, item):
         # The critical section contains only canonical state read/merge/write.
         with engine_instance().begin() as conn:
+            if not job_queue.lease_current(conn, item):
+                return None  # Another worker now owns this job; discard prepared inputs.
             if resource_store.enabled():
                 try:
                     resource_store.lock(conn)
@@ -4350,10 +4352,13 @@ def install_live_tour_routes(
                     continue
                 now = datetime.now(timezone)
                 records, directory, leaves = projection_inputs(now)
-                if not apply_projection(now, records, directory, leaves):
-                    job_queue.reschedule(engine_instance, int(item["id"]), delay_seconds=5)
+                applied = apply_projection(now, records, directory, leaves, item)
+                if applied is None:
                     continue
-                job_queue.mark_done(engine_instance, int(item["id"]))
+                if not applied:
+                    job_queue.reschedule(engine_instance, item, delay_seconds=5)
+                    continue
+                job_queue.mark_done(engine_instance, item)
             except Exception as exc:
                 if item is not None:
                     try:
@@ -4908,6 +4913,30 @@ def install_live_tour_routes(
             **metrics,
             "alerting": alerting,
         }
+
+    @app.get("/v2/live-tour/recovery")
+    def live_tour_recovery(ident: identity_type = Depends(current_identity)):
+        role = str(getattr(ident, "role", "") or "").strip().lower()
+        if role not in {"admin", "quanly", "letan"}:
+            raise HTTPException(403, "Không có quyền xem khôi phục Live Tour.")
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_view")
+        # Each query closes its connection before the next one starts.
+        return {
+            "counts": job_queue.counts(engine_instance, PROJECTION_QUEUE),
+            "metrics": job_queue.health_metrics(engine_instance, PROJECTION_QUEUE),
+            "history": job_queue.recovery_history(engine_instance, PROJECTION_QUEUE),
+            "can_recover": role == "admin",
+        }
+
+    @app.post("/v2/live-tour/recovery/retry")
+    def live_tour_recovery_retry(ident: identity_type = Depends(current_identity)):
+        if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được thử lại tác vụ quá hạn.")
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_admin")
+        actor = str(ident.employee_username or ident.full_name or "admin")
+        return job_queue.recover_expired(engine_instance, PROJECTION_QUEUE, actor)
 
     @app.get("/v2/live-tour/export.xlsx")
     def live_tour_export_excel(
