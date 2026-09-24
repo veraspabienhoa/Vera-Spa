@@ -16,7 +16,7 @@ import { ensureGrantedPushSubscription } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -59,6 +59,8 @@ const PermissionsPage = lazyPage(() => import('./pages/PermissionsPage'))
 const PayrollPage = lazyPage(() => import('./pages/PayrollPageV38'))
 const RevenuePage = lazyPage(() => import('./pages/RevenuePage'))
 const SnapshotPage = lazyPage(() => import('./pages/SnapshotPage'))
+const DevicePage = lazyPage(() => import('./pages/DevicePage'))
+const CheckinHistoryPage = lazyPage(() => import('./pages/CheckinHistoryPage'))
 const AdminChangesPage = lazyPage(() => import('./pages/AdminChangesPage'))
 const StorageAdminPage = lazyPage(() => import('./pages/StorageAdminPage'))
 const BirthdayPage = lazyPage(() => import('./pages/BirthdayPage'))
@@ -228,6 +230,8 @@ export default function App() {
         {page === 'purchases' && <PurchasePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
+        {page === 'devices' && shellUser.role === 'admin' && <DevicePage />}
+        {page === 'checkin-history' && shellUser.role === 'admin' && <CheckinHistoryPage />}
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
