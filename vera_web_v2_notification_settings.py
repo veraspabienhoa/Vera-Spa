@@ -309,6 +309,8 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 WHERE d.recipient=:recipient AND d.channel='in_app' AND d.read_at IS NULL
                 AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
                 AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
+                AND NOT (r.source_key='attendance_break' AND p.role='admin'
+                    AND d.payload->>'kind'='attendance-break-reminder')
                 ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
             return {'notifications':[dict(row) for row in rows]}
 
@@ -326,6 +328,8 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
                 AND d.channel IN ('push','in_app') AND r.channels ? d.channel
                 AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
+                AND NOT (r.source_key='attendance_break' AND p.role='admin'
+                    AND d.payload->>'kind'='attendance-break-reminder')
                 AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)"""),
                 {'id':notification_id,'recipient':str(ident.auth_user_id)}).mappings().first()
             if row is None:

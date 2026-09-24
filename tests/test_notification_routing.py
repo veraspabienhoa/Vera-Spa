@@ -129,6 +129,27 @@ def test_enqueue_fans_out_exact_recipients_and_channels_and_keeps_plain_text(mon
     assert delivery.fingerprint('birthday',{'tag':'same','body':'1'})==delivery.fingerprint('birthday',{'tag':'same','body':'2'})
 
 
+def test_break_reminder_excludes_admin_from_in_app_and_push(monkeypatch):
+    monkeypatch.setattr(delivery, 'ensure_schema', lambda conn: None)
+    monkeypatch.setattr(delivery, 'resolve_recipients', lambda *_: {'admin', 'employee'})
+    writes = []
+    class Conn:
+        def execute(self, statement, params=None):
+            query = str(statement)
+            if 'SELECT r.*' in query:
+                return Result([{'key':'attendance_break', 'custom':False, 'enabled':True,
+                    'recipients':['group:all'], 'channels':['in_app','push']}])
+            if query.lstrip().startswith('SELECT 1 FROM vera_v2_user_profile'):
+                return Result(scalar=1 if params['recipient']=='admin' else None)
+            if 'INSERT INTO vera_notification_delivery' in query: writes.append(params)
+            return Result()
+    assert delivery.enqueue(Conn(), 'attendance_break',
+        {'kind':'attendance-break-reminder', 'title':'Sắp hết giờ nghỉ giữa ca', 'tag':'break-1'})
+    assert {row['recipient'] for row in writes} == {'employee'}
+    assert {row['channel'] for row in writes} == {'in_app', 'push'}
+    assert all(json.loads(row['payload'])['kind']=='attendance-break-reminder' for row in writes)
+
+
 def test_stale_revision_and_inactive_recipient_rejected(monkeypatch):
     monkeypatch.setattr(settings,'ensure_schema',lambda conn:None)
     monkeypatch.setattr(settings,'ensure_routing_schema',lambda conn:None)

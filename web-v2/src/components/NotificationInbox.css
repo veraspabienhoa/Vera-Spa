@@ -18,7 +18,8 @@ dialog.notification-dialog { box-sizing: border-box; width: min(960px, calc(100v
 .notification-dialog .notification-row.unread { background: transparent; }
 .notification-dialog .notification-row:hover { background: #c2d9c9; }
 .notification-dialog .notification-row:focus-visible { outline: 3px solid #315c45; outline-offset: -3px; }
-.notification-row-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notification-row-text { min-width: 0; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; touch-action: pan-x; }
+.notification-row-text > span { white-space: nowrap; }
 .notification-row small { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
 .notification-dialog .notification-viewed { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; padding: 8px 10px; border: 1px solid #4b765d; border-radius: 10px; background: #f1f5e9; color: #205038; font-weight: 700; white-space: nowrap; }
 .notification-dialog .notification-viewed:hover { background: #d1e7cb; }
@@ -28,4 +29,4 @@ dialog.notification-dialog { box-sizing: border-box; width: min(960px, calc(100v
 .notification-detail p { white-space: pre-wrap; }
 .notification-detail .notification-viewed { margin-top: 18px; }
 .notification-dialog footer { padding: 12px 20px; }
-@media(max-width:600px) { .topbar-actions .topbar-open-tab-button { width: 128px; min-height: 30px; } .notification-row small { display: none; } .notification-dialog > header { padding: 12px; } .notification-dialog-content { padding: 10px; } .notification-entry { gap: 2px; } .notification-entry .notification-viewed span { display: none; } }
+@media(max-width:600px) { .topbar-actions .topbar-open-tab-button { width: 128px; min-height: 30px; } .notification-row small { display: none; } .notification-dialog > header { padding: 12px; } .notification-dialog-content { padding: 10px; } .notification-entry { gap: 2px; min-width: 0; } .notification-dialog .notification-row { overflow: hidden; padding: 9px 5px; font-size: 12px; } .notification-entry .notification-viewed span { display: none; } }
