@@ -11,6 +11,17 @@ APP_URL = 'https://app.veraspa.vn/'
 def ensure_schema(conn):
     from vera_web_v2_notification_settings import ensure_schema as ensure_settings
     ensure_settings(conn)
+    if not conn.execute(text("SELECT to_regclass('public.vera_notification_group')")).scalar_one_or_none():
+        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera.notification.schema'))"))
+        conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_notification_group (
+            key TEXT PRIMARY KEY, label TEXT NOT NULL, members JSONB NOT NULL DEFAULT '[]',
+            updated_by TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+            ALTER TABLE vera_notification_group ENABLE ROW LEVEL SECURITY;
+            REVOKE ALL ON vera_notification_group FROM PUBLIC;
+            DO $$ BEGIN
+              IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN REVOKE ALL ON vera_notification_group FROM anon; END IF;
+              IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN REVOKE ALL ON vera_notification_group FROM authenticated; END IF;
+            END $$;'''))
     if conn.execute(text("SELECT to_regclass('public.vera_notification_route')")).scalar_one_or_none():
         return
     conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera.notification.schema'))"))
@@ -20,6 +31,9 @@ def ensure_schema(conn):
         custom BOOLEAN NOT NULL DEFAULT FALSE, updated_by TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
         CREATE TABLE IF NOT EXISTS vera_notification_config (
         id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL DEFAULT 0, ordering JSONB NOT NULL DEFAULT '[]');
+        CREATE TABLE IF NOT EXISTS vera_notification_group (
+        key TEXT PRIMARY KEY, label TEXT NOT NULL, members JSONB NOT NULL DEFAULT '[]',
+        updated_by TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
         INSERT INTO vera_notification_config(id) VALUES(1) ON CONFLICT DO NOTHING;
         CREATE TABLE IF NOT EXISTS vera_notification_delivery (
         id BIGSERIAL PRIMARY KEY, event_key TEXT NOT NULL, rule_key TEXT NOT NULL,
@@ -31,14 +45,15 @@ def ensure_schema(conn):
         CREATE INDEX IF NOT EXISTS vera_notification_pending ON vera_notification_delivery(next_attempt_at) WHERE sent_at IS NULL AND channel='push';
         ALTER TABLE vera_notification_route ENABLE ROW LEVEL SECURITY;
         ALTER TABLE vera_notification_config ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE vera_notification_group ENABLE ROW LEVEL SECURITY;
         ALTER TABLE vera_notification_delivery ENABLE ROW LEVEL SECURITY;
-        REVOKE ALL ON vera_notification_route,vera_notification_config,vera_notification_delivery FROM PUBLIC;
+        REVOKE ALL ON vera_notification_route,vera_notification_config,vera_notification_delivery,vera_notification_group FROM PUBLIC;
         DO $$ BEGIN
           IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
-            REVOKE ALL ON vera_notification_route,vera_notification_config,vera_notification_delivery FROM anon;
+            REVOKE ALL ON vera_notification_route,vera_notification_config,vera_notification_delivery,vera_notification_group FROM anon;
           END IF;
           IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
-            REVOKE ALL ON vera_notification_route,vera_notification_config,vera_notification_delivery FROM authenticated;
+            REVOKE ALL ON vera_notification_route,vera_notification_config,vera_notification_delivery,vera_notification_group FROM authenticated;
           END IF;
         END $$;
     '''))
@@ -53,7 +68,7 @@ def fingerprint(source, payload):
 RECIPIENT_GROUPS = {
     'group:nhanvien': 'Nhân viên', 'group:letan': 'Lễ tân',
     'group:watchers': 'Người theo dõi', 'group:quanly': 'Quản lý',
-    'group:giamdoc': 'Giám đốc', 'group:all': 'Tất cả tài khoản', 'group:admin': 'Admin',
+    'group:giamdoc': 'Giám đốc', 'group:all': 'Tất cả tài khoản', 'group:admin': 'Admin', 'group:leader':'Leader',
 }
 
 
@@ -61,11 +76,13 @@ def recipient_membership_sql(recipients='r.recipients', source='r.source_key', w
     """Trusted SQL fragments only; the account alias p must be joined and active."""
     return f"""({recipients} ? p.auth_user_id::text
         OR {recipients} ? 'group:all'
-        OR (p.role IN ('nhanvien','letan','quanly','giamdoc','admin')
+        OR (p.role IN ('nhanvien','leader','letan','quanly','giamdoc','admin')
             AND {recipients} ? ('group:' || p.role))
         OR ({recipients} ? 'group:watchers' AND {source}='leave_watch'
             AND EXISTS(SELECT 1 FROM vera_v2_leave_watch w
-                WHERE w.auth_user_id=p.auth_user_id AND w.watched_date::text={watched_date})))"""
+                WHERE w.auth_user_id=p.auth_user_id AND w.watched_date::text={watched_date}))
+        OR EXISTS(SELECT 1 FROM vera_notification_group g
+            WHERE {recipients} ? g.key AND g.members ? p.auth_user_id::text))"""
 
 
 def resolve_recipients(conn, values, source, payload):

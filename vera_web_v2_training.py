@@ -826,9 +826,11 @@ def install_training_routes(
             return {"ok": True}
 
     @app.get("/v2/training/notifications")
-    def training_notifications(ident: identity_type = Depends(current_identity)):
+    def training_notifications(channel: Literal['in_app','popup'] = 'in_app', ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             _schema(conn)
+            if not notification_settings.is_enabled(conn,'training_completed') or not notification_settings.is_channel_enabled(conn,'training_completed',channel):
+                return {'notifications':[], 'unread':0}
             items = _rows(conn.execute(text("""
                 SELECT id,title,body,reference_type,reference_id,is_read,created_at
                 FROM vera_training_notification WHERE lower(recipient_username)=lower(:viewer)

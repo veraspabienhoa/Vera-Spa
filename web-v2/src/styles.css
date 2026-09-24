@@ -1180,3 +1180,5 @@ tr:last-child td { border-bottom: 0; }
   .training-notification-dialog{width:100%;padding:16px;overflow-y:auto}
   .training-notification-actions button{flex:1 1 auto}
 }
+.staff-heading-search{display:grid;gap:4px;margin-top:7px;max-width:340px;font-size:12px;font-weight:700;color:#244a38}
+.staff-heading-search input{width:100%;min-height:36px;padding:7px 10px;border-radius:9px;background:#fff}

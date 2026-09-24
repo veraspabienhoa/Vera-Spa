@@ -371,6 +371,9 @@ export const veraApi = {
   importComboSalesExcel: (file, department) => upload('/v2/work-schedule/combo-sales/import.xlsx', file, { department }),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   notificationSettings: () => request('/v2/notification-settings'),
+  notificationPopup: () => request('/v2/notification-popup'),
+  createNotificationGroup: body => request('/v2/notification-settings/groups', { method:'POST', body:JSON.stringify(body) }),
+  deleteNotificationGroup: (key, revision) => request(`/v2/notification-settings/groups/${encodeURIComponent(key)}?revision=${revision}`, { method:'DELETE' }),
   notificationTasks: () => request('/v2/notification-settings/tasks'),
   createNotification: body => request('/v2/notification-settings', { method:'POST', body:JSON.stringify(body) }),
   orderNotifications: body => request('/v2/notification-settings/order', { method:'PUT', body:JSON.stringify(body) }),
@@ -413,7 +416,7 @@ export const veraApi = {
     return request(`/v2/hr/leaves/overlap?${params}`)
   },
   saveTrainingNotificationRecipients: (usernames) => request('/v2/training/notification-recipients', { method: 'PUT', body: JSON.stringify({ usernames }) }),
-  trainingNotifications: () => request('/v2/training/notifications'),
+  trainingNotifications: (channel = 'in_app') => request(`/v2/training/notifications?channel=${channel === 'popup' ? 'popup' : 'in_app'}`),
   readTrainingNotification: (id) => request(`/v2/training/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }),
   trainingNotificationDetail: (id) => request(`/v2/training/notifications/${encodeURIComponent(id)}/detail`),
   createLeave: (body) => request('/v2/leave/records', { method: 'POST', body: JSON.stringify(body) }).then(notifyLeaveChange),

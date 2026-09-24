@@ -12,7 +12,7 @@ test('Admin searches tasks, selects multiple recipients/channels and persists gl
  const previous=Object.fromEntries(names.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]))
  for(const key of ['window','document','navigator','CustomEvent'])Object.defineProperty(globalThis,key,{value:key==='window'?dom.window:dom.window[key],configurable:true})
  globalThis.IS_REACT_ACT_ENVIRONMENT=true
- let server={revision:0,settings:[{key:'birthday',label:'Sinh nhật',description:'Nhắc sinh nhật',enabled:true},{key:'leave',label:'Nghỉ phép',description:'Nghỉ phép',enabled:true}],recipients:[{id:'a',name:'An',username:'an',role:'nhanvien'},{id:'b',name:'Bình',username:'binh',role:'letan'}],channels:[{key:'in_app',label:'Trong ứng dụng'},{key:'push',label:'Thông báo đẩy'}]}
+ let server={revision:0,settings:[{key:'birthday',label:'Sinh nhật',description:'Nhắc sinh nhật',enabled:true},{key:'leave',label:'Nghỉ phép',description:'Nghỉ phép',enabled:true}],recipients:[{id:'a',name:'An',username:'an',role:'nhanvien'},{id:'b',name:'Bình',username:'binh',role:'letan'}],channels:[{key:'in_app',label:'Trong ứng dụng'},{key:'popup',label:'Popup trong ứng dụng'},{key:'push',label:'Thông báo đẩy'}]}
  const writes=[]
  let failSave=false
  globalThis.__notificationApi={notificationSettings:async()=>structuredClone(server),notificationTasks:async()=>({tasks:[{key:'task-1',label:'Live Tour · Thanh toán',group:'Live Tour',description:'checkout'},{key:'task-2',label:'Đào tạo',group:'Đào tạo',description:'training'}]}),createNotification:async body=>{writes.push(body);server={...server,revision:1,settings:[...server.settings,{...body,key:'custom',custom:true,routed:true}]};return structuredClone(server)},updateNotificationSetting:async(key,body)=>{if(failSave)throw Error('Thử lại khi mạng ổn định');writes.push(body);server={...server,revision:server.revision+1,settings:server.settings.map(item=>item.key===key?{...item,...body,routed:true}:item)};return structuredClone(server)},updateNotificationChannel:async(key,channel,body)=>{writes.push({key,channel,...body});server={...server,revision:server.revision+1,settings:server.settings.map(item=>item.key===key?{...item,channel_enabled:{...item.channel_enabled,[channel]:body.enabled}}:item)};return structuredClone(server)},orderNotifications:async body=>{writes.push(body);server={...server,revision:2,settings:body.keys.map(key=>server.settings.find(item=>item.key===key))};return structuredClone(server)}}
@@ -22,10 +22,10 @@ test('Admin searches tasks, selects multiple recipients/channels and persists gl
  const set=async(node,value)=>act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new window.Event('input',{bubbles:true}))})
  try{
   await act(async()=>root.render(React.createElement(module.exports.default,{user:{role:'admin'}})))
-  const pushSwitch=document.querySelector('[aria-label="Màn hình khóa: Sinh nhật"]')
+  const pushSwitch=document.querySelector('.notification-setting-card .notification-channel-check:last-child input')
   await act(async()=>pushSwitch.click())
-  assert.equal(pushSwitch.getAttribute('aria-checked'),'false')
-  assert.equal(document.querySelector('[aria-label="Thông báo hệ thống: Sinh nhật"]').getAttribute('aria-checked'),'true')
+  assert.equal(pushSwitch.checked,false)
+  assert.equal(document.querySelector('.notification-setting-card .notification-channel-check:first-child input').checked,true)
   assert.equal(writes[0].channel,'push')
   writes.length=0
   await click('Tạo thông báo')
@@ -36,7 +36,7 @@ test('Admin searches tasks, selects multiple recipients/channels and persists gl
   await act(async()=>{select.value='task-1';select.dispatchEvent(new window.Event('change',{bubbles:true}))})
   const people=[...document.querySelectorAll('.notification-recipient-list input')]
   for(const person of people)await act(async()=>person.click())
-  await act(async()=>document.querySelectorAll('.notification-channel input')[1].click())
+  await act(async()=>document.querySelectorAll('.notification-channel input')[2].click())
   await click('Lưu thông báo')
   assert.deepEqual(writes[0].recipients,['a','b']);assert.deepEqual(writes[0].channels,['in_app','push']);assert.equal(writes[0].source_key,'task-1')
   await act(async()=>document.querySelector('[aria-label="Đưa Live Tour · Thanh toán lên"]').click())
@@ -44,7 +44,7 @@ test('Admin searches tasks, selects multiple recipients/channels and persists gl
   const editButton=document.querySelector('.notification-card-actions > button:last-child')
   await act(async()=>{editButton.focus();editButton.click()})
   const groups=()=>[...document.querySelectorAll('.notification-recipient-groups label')]
-  assert.deepEqual(groups().map(el=>el.textContent),['Nhân viên','Lễ tân','Người theo dõi','Quản lý','Giám đốc','Tất cả tài khoản','Admin'])
+  assert.deepEqual(groups().map(el=>el.textContent),['Nhân viên','Lễ tân','Người theo dõi','Leader','Quản lý','Giám đốc','Tất cả tài khoản','Admin'])
   assert.equal(groups()[2].querySelector('input').disabled,true)
   await act(async()=>groups()[0].querySelector('input').click())
   assert.equal(document.querySelector('.notification-recipient-list input').checked,true)

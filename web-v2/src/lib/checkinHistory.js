@@ -1,6 +1,6 @@
 import { tourDateRange, TOUR_DATE_PRESETS } from './liveTourFilters.js'
 
-export const CHECKIN_PRESETS = TOUR_DATE_PRESETS.map(([id, label]) => [id, id === 'all' ? 'Tất cả (63 ngày gần nhất)' : label])
+export const CHECKIN_PRESETS = TOUR_DATE_PRESETS.map(([id, label]) => [id, id === 'all' ? 'Tất cả' : label])
 export const EMPTY_CHECKIN_DETAILS = { employee: '', event_id: '', event_date: '', status: '', event_type: '' }
 export function checkinDateRange(preset, now = new Date()) {
   if (preset !== 'all') return tourDateRange(preset, now)
@@ -10,7 +10,7 @@ export function checkinDateRange(preset, now = new Date()) {
   return { date_from: start.toISOString().slice(0, 10), date_to: end }
 }
 export function initialCheckinFilters(now = new Date()) {
-  return { ...EMPTY_CHECKIN_DETAILS, source: 'facegate_saved', preset: 'month', ...checkinDateRange('month', now) }
+  return { ...EMPTY_CHECKIN_DETAILS, source: 'facegate_saved', preset: 'today', ...checkinDateRange('today', now) }
 }
 export function checkinQuery(filters) {
   return { source: filters.source, start: filters.date_from, end: filters.date_to,

@@ -36,13 +36,15 @@ CATALOG = (
     ("ui_error", "Lỗi hệ thống và kết nối", "Lỗi tải dữ liệu, lỗi máy chủ và mã HTTP như 500/502/503.", "Tất cả tài khoản", "Popup trong ứng dụng"),
 )
 VALID_KEYS = frozenset(row[0] for row in CATALOG)
+TASK_ITEMS: tuple[tuple[str,str,str,str,str], ...] = ()
+TASK_APP = None
 
 
 class NotificationSettingUpdate(BaseModel):
     enabled: bool
     revision: int | None = Field(default=None, ge=0)
     recipients: list[str] | None = Field(default=None, max_length=200)
-    channels: list[Literal['in_app', 'push']] | None = None
+    channels: list[Literal['in_app', 'popup', 'push']] | None = None
     reset_routing: bool = False
 
 class NotificationCreate(BaseModel):
@@ -54,7 +56,7 @@ class NotificationCreate(BaseModel):
         return value.strip()
     source_key: str = Field(min_length=1, max_length=160)
     recipients: list[str] = Field(min_length=1, max_length=200)
-    channels: list[Literal['in_app','push']] = Field(min_length=1, max_length=2)
+    channels: list[Literal['in_app','popup','push']] = Field(min_length=1, max_length=3)
     revision: int = Field(ge=0)
 
 class NotificationOrder(BaseModel):
@@ -64,6 +66,16 @@ class NotificationOrder(BaseModel):
 class NotificationChannelUpdate(BaseModel):
     enabled: bool
     revision: int = Field(ge=0)
+
+class NotificationGroupEdit(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    members: list[str] = Field(min_length=1, max_length=200)
+    revision: int = Field(ge=0)
+    @field_validator('label')
+    @classmethod
+    def group_label(cls, value):
+        if not value.strip(): raise ValueError('Nhập tên nhóm.')
+        return value.strip()
 
 
 def ensure_schema(conn) -> None:
@@ -76,10 +88,22 @@ def ensure_schema(conn) -> None:
         )
     """))
     conn.execute(text("""CREATE TABLE IF NOT EXISTS vera_v2_notification_channel_setting (
-        notification_key TEXT NOT NULL, channel TEXT NOT NULL CHECK(channel IN ('in_app','push')),
+        notification_key TEXT NOT NULL, channel TEXT NOT NULL CHECK(channel IN ('in_app','popup','push')),
         enabled BOOLEAN NOT NULL, updated_by TEXT NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY(notification_key,channel))"""))
+    # Existing installations retain their switches; extend the old CHECK in place.
+    conn.execute(text('''DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='vera_v2_notification_channel_setting'::regclass
+            AND conname='vera_v2_notification_channel_setting_channel_check'
+            AND pg_get_constraintdef(oid) NOT LIKE '%popup%') THEN
+          ALTER TABLE vera_v2_notification_channel_setting
+            DROP CONSTRAINT vera_v2_notification_channel_setting_channel_check;
+          ALTER TABLE vera_v2_notification_channel_setting
+            ADD CONSTRAINT vera_v2_notification_channel_setting_channel_check
+            CHECK(channel IN ('in_app','popup','push'));
+        END IF;
+    END $$'''))
     conn.execute(text('ALTER TABLE vera_v2_notification_channel_setting ENABLE ROW LEVEL SECURITY'))
     conn.execute(text('REVOKE ALL ON vera_v2_notification_channel_setting FROM PUBLIC'))
     conn.execute(text("""DO $$ BEGIN
@@ -120,12 +144,13 @@ def _settings(conn) -> list[dict[str, Any]]:
         """)).mappings()
     }
     output = []
-    for key, label, description, audience, channel in CATALOG:
+    task_items = tuple((item['key'],item['label'],item['description'],'Admin (chọn người nhận để mở rộng)','Trong ứng dụng') for item in task_catalog(TASK_APP)) if TASK_APP is not None else TASK_ITEMS
+    for key, label, description, audience, channel in CATALOG + task_items:
         row = saved.get(key, {})
         output.append({
             "key": key, "label": label, "description": description,
             "audience": audience, "channel": channel,
-            "enabled": bool(row.get("enabled", True)),
+            "enabled": bool(row.get("enabled", not key.startswith('task-'))),
             "updated_by": row.get("updated_by", ""),
             "updated_at": row.get("updated_at"),
         })
@@ -152,7 +177,8 @@ def _recipients(conn, values):
         raise HTTPException(400, 'Chọn ít nhất một người nhận.')
     wanted = sorted(set(values))
     active = {str(row['id']) for row in conn.execute(text('SELECT auth_user_id::text AS id FROM vera_v2_user_profile WHERE is_active')).mappings()}
-    if any(value not in active and value not in RECIPIENT_GROUPS for value in wanted):
+    groups = {str(row['key']) for row in conn.execute(text('SELECT key FROM vera_notification_group')).mappings() if row.get('key')}
+    if any(value not in active and value not in RECIPIENT_GROUPS and value not in groups for value in wanted):
         raise HTTPException(400, 'Người nhận không tồn tại hoặc tài khoản đã bị khóa.')
     return wanted
 
@@ -187,7 +213,7 @@ def _response(conn, admin=False):
         route = routes.get(item['key'])
         item['routed'] = bool(route)
         item['has_rules'] = any(row['source_key']==item['key'] for row in routes.values())
-        item['channel_enabled'] = {channel: bool(channel_states.get((item['key'],channel),True)) for channel in ('in_app','push')}
+        item['channel_enabled'] = {channel: bool(channel_states.get((item['key'],channel),True)) for channel in ('in_app','popup','push')}
         if admin:
             item.update(recipients=route['recipients'] if route else [], channels=route['channels'] if route else [], source_key=route['source_key'] if route else item['key'])
     items.sort(key=lambda item: order.get(item['key'],10000))
@@ -197,13 +223,15 @@ def _response(conn, admin=False):
             p.employee_username AS username,COALESCE(e.full_name,p.employee_username) AS name,p.role
             FROM vera_v2_user_profile p LEFT JOIN employees e ON e.username=p.employee_username
             WHERE p.is_active ORDER BY e.full_name,p.employee_username""")).mappings()]
-        response['channels'] = [{'key':'in_app','label':'Trong ứng dụng'},{'key':'push','label':'Thông báo đẩy trên thiết bị'}]
+        response['channels'] = [{'key':'in_app','label':'Trong ứng dụng'},{'key':'popup','label':'Popup trong ứng dụng'},{'key':'push','label':'Thông báo đẩy trên thiết bị'}]
+        response['groups'] = [dict(row) for row in conn.execute(text('SELECT key,label,members FROM vera_notification_group ORDER BY label')).mappings()]
     return response
 
 
 def install_notification_settings_routes(app, *, engine_instance, current_identity, identity_type, api_module=None):
     if getattr(app.state, 'notification_settings_installed', False): return
     globals()['identity_type'] = identity_type
+    globals()['TASK_APP'] = app
 
     @app.get('/v2/notification-settings')
     def get_settings(ident: identity_type = Depends(current_identity)):
@@ -214,6 +242,33 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
     def get_tasks(ident: identity_type = Depends(current_identity)):
         _admin(ident)
         return {'tasks': [{'key':r[0],'label':r[1],'description':r[2],'group':'Thông báo hiện có'} for r in CATALOG] + task_catalog(app)}
+
+    @app.post('/v2/notification-settings/groups')
+    def create_group(body: NotificationGroupEdit, ident: identity_type = Depends(current_identity)):
+        _admin(ident)
+        with engine_instance().begin() as conn:
+            _lock_config(conn,body.revision)
+            active={str(row['id']) for row in conn.execute(text('SELECT auth_user_id::text AS id FROM vera_v2_user_profile WHERE is_active')).mappings()}
+            if not set(body.members).issubset(active): raise HTTPException(400,'Nhóm chỉ gồm tài khoản đang hoạt động.')
+            if conn.execute(text('SELECT count(*) FROM vera_notification_group')).scalar_one() >= 100: raise HTTPException(400,'Đã đạt giới hạn 100 nhóm.')
+            conn.execute(text('''INSERT INTO vera_notification_group(key,label,members,updated_by)
+                VALUES(:key,:label,CAST(:members AS jsonb),:actor)'''),
+                {'key':'group:custom-'+uuid.uuid4().hex,'label':body.label.strip(),'members':json.dumps(sorted(set(body.members))),'actor':ident.employee_username})
+            conn.execute(text('UPDATE vera_notification_config SET revision=revision+1 WHERE id=1'))
+            return _response(conn,True)
+
+    @app.delete('/v2/notification-settings/groups/{group_key}')
+    def delete_group(group_key: str, revision: int, ident: identity_type = Depends(current_identity)):
+        _admin(ident)
+        with engine_instance().begin() as conn:
+            _lock_config(conn,revision)
+            if not group_key.startswith('group:custom-'): raise HTTPException(400,'Chỉ xóa được nhóm tùy chỉnh.')
+            if conn.execute(text('SELECT 1 FROM vera_notification_route WHERE recipients ? :key LIMIT 1'),{'key':group_key}).scalar_one_or_none():
+                raise HTTPException(409,'Nhóm đang được dùng. Bỏ nhóm khỏi các thông báo trước khi xóa.')
+            if not conn.execute(text('DELETE FROM vera_notification_group WHERE key=:key RETURNING key'),{'key':group_key}).scalar_one_or_none():
+                raise HTTPException(404,'Không tìm thấy nhóm.')
+            conn.execute(text('UPDATE vera_notification_config SET revision=revision+1 WHERE id=1'))
+            return _response(conn,True)
 
     @app.put('/v2/notification-settings/order')
     def save_order(body: NotificationOrder, ident: identity_type = Depends(current_identity)):
@@ -251,6 +306,8 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 conn.execute(text('DELETE FROM vera_notification_route WHERE key=:key'),{'key':notification_key})
             elif body.recipients is not None or body.channels is not None:
                 _write_route(conn,notification_key,item['source_key'],item['label'],body.recipients,body.channels,item.get('custom',False),ident.employee_username)
+            elif notification_key.startswith('task-') and body.enabled and not item['routed']:
+                _write_route(conn,notification_key,notification_key,item['label'],['group:admin'],['in_app'],False,ident.employee_username)
             conn.execute(text("""INSERT INTO vera_v2_notification_setting(notification_key,enabled,updated_by)
                 VALUES(:key,:enabled,:actor) ON CONFLICT(notification_key) DO UPDATE SET
                 enabled=EXCLUDED.enabled,updated_by=EXCLUDED.updated_by,updated_at=NOW()"""),
@@ -260,7 +317,7 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
             return {**result,'ok':True,'setting':next(i for i in result['settings'] if i['key']==notification_key)}
 
     @app.put('/v2/notification-settings/{notification_key}/channels/{channel}')
-    def update_channel(notification_key: str, channel: Literal['in_app','push'], body: NotificationChannelUpdate,
+    def update_channel(notification_key: str, channel: Literal['in_app','popup','push'], body: NotificationChannelUpdate,
                        ident: identity_type = Depends(current_identity)):
         _admin(ident)
         with engine_instance().begin() as conn:
@@ -314,6 +371,22 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
             return {'notifications':[dict(row) for row in rows]}
 
+    @app.get('/v2/notification-popup')
+    def popup_inbox(ident: identity_type = Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            ensure_schema(conn); ensure_routing_schema(conn)
+            rows=conn.execute(text(f'''SELECT d.id,d.payload,d.created_at FROM vera_notification_delivery d
+                JOIN vera_notification_route r ON r.key=d.rule_key
+                JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
+                LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
+                LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='popup'
+                WHERE d.recipient=:recipient AND d.channel='popup' AND d.read_at IS NULL
+                AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
+                AND r.channels ? 'popup' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
+                ORDER BY d.id DESC LIMIT 10'''), {'recipient':str(ident.auth_user_id)}).mappings()
+            return {'notifications':[dict(row) for row in rows]}
+
     @app.get('/v2/notification-inbox/{notification_id}')
     def notification_detail(notification_id: int, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
@@ -326,7 +399,7 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel=d.channel
                 WHERE d.id=:id AND d.recipient=:recipient
                 AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
-                AND d.channel IN ('push','in_app') AND r.channels ? d.channel
+                AND d.channel IN ('push','in_app','popup') AND r.channels ? d.channel
                 AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
                 AND NOT (r.source_key='attendance_break' AND p.role='admin'
                     AND d.payload->>'kind'='attendance-break-reminder')
