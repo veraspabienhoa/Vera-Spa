@@ -365,7 +365,7 @@ class FaceGateMappingRouteTests(unittest.TestCase):
     from vera_web_v2_snapshot import install_snapshot_routes
 
     class Identity(BaseModel):
-      username: str = 'admin-test'
+      employee_username: str = 'admin-test'
       role: str = 'admin'
 
     self.ident = Identity()
@@ -427,6 +427,7 @@ class FaceGateMappingRouteTests(unittest.TestCase):
     with patch.object(facegate, 'fetch_registered_profile', side_effect=self.device_read):
       response = self.client.post('/v2/devices/facegate-mappings', json=self.body)
       self.assertEqual(response.status_code, 200, response.text)
+      self.assertEqual(self.rows[0]['confirmed_by'], 'admin-test')
       self.assertTrue(any('FOR UPDATE' in sql for sql in self.sql))
       result = self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref})
       self.assertEqual(result.json()['status'], 'reference_match')
@@ -439,6 +440,26 @@ class FaceGateMappingRouteTests(unittest.TestCase):
       self.assertEqual(self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref}).json()['status'], 'changed')
     with patch.object(facegate, 'fetch_registered_profile', side_effect=ConnectionError('Không kết nối được thiết bị.')):
       self.assertEqual(self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref}).status_code, 502)
+
+  def test_reconfirm_legacy_mapping_restores_actor_and_readiness(self):
+    from vera_facegate_readiness import summarize
+    self.rows = [{**self.body, 'confirmed_by': '', 'confirmed_at': '2026-09-24T14:11:00+00:00'}]
+    with patch.object(facegate, 'fetch_registered_profile', side_effect=self.device_read):
+      response = self.client.post('/v2/devices/facegate-mappings', json=self.body)
+    self.assertEqual(response.status_code, 200, response.text)
+    self.assertEqual(len(self.rows), 1)
+    self.assertEqual(self.rows[0]['confirmed_by'], 'admin-test')
+    result = summarize({'records': [{'registration_ref': self.ref}]}, self.rows)
+    self.assertEqual(result['confirmed_mapping_count'], 1)
+    self.assertEqual(result['sample_reference_matches'], 1)
+    self.assertFalse(result['attendance_cutover_ready'])
+
+  def test_missing_actor_does_not_write_mapping(self):
+    self.ident.employee_username = ' '
+    with patch.object(facegate, 'fetch_registered_profile', side_effect=self.device_read):
+      response = self.client.post('/v2/devices/facegate-mappings', json=self.body)
+    self.assertEqual(response.status_code, 403)
+    self.assertEqual(self.sql, [])
 
   def test_unmapped_reference_does_not_read_device(self):
     with patch.object(facegate, 'fetch_registered_profile') as read:
