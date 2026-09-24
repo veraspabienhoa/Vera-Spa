@@ -4585,8 +4585,22 @@ def install_live_tour_routes(
                 require_feature(conn, ident, features[panel])
             if panel == "pending":
                 require_feature(conn, ident, "live_tour_invoice_view")
-            state, revision = read_board(conn, now, project=False)
+            if resource_store.enabled():
+                # Read only this panel and its response dependencies in one MVCC
+                # snapshot. In particular, ordinary lists must not fetch backups,
+                # unrelated ledgers or the private idempotency response cache.
+                collections = set(relational_store.RESOURCE_COLLECTIONS) - _DETAIL_COLLECTIONS
+                collections.update(groups[panel])
+                if panel == "customers":
+                    collections.add("pending")  # All outstanding combo reservations.
+                if panel == "reports":
+                    collections.add("invoices")  # Receipt and combo-kind lookup.
+                state, revision, _ = resource_store.read(conn, collections=collections)
+            else:
+                state, revision = read_board(conn, now, project=False)
             grants = permissions(conn, ident)
+        # Normalize/copy the fetched panel after returning the DB connection.
+        state = _normalize_state(state, now)
         selected = {**state, **{key: [] for key in _DETAIL_COLLECTIONS}, "idempotency": {}}
         totals = {}
         report_totals = None
