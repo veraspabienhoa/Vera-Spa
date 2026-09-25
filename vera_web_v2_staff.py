@@ -1082,7 +1082,11 @@ def install_staff_routes(
                     # a damaged image cannot fail the later workbook save.
                     with PillowImage.open(BytesIO(portrait)) as source:
                         source.load()
-                        normalized = ImageOps.exif_transpose(source).convert("RGBA")
+                        normalized = ImageOps.exif_transpose(source)
+                        # Three pixels per displayed pixel keeps printed portraits
+                        # clear without embedding full camera-resolution images.
+                        normalized.thumbnail((216, 288), PillowImage.Resampling.LANCZOS)
+                        normalized = normalized.convert("RGBA")
                         image_bytes = BytesIO()
                         normalized.save(image_bytes, format="PNG")
                     image_bytes.seek(0)

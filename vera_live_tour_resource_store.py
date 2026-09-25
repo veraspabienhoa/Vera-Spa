@@ -15,6 +15,7 @@ import vera_resource_concurrency as concurrency
 FENCE = 'vera:live-tour:resource-fence:v1'
 INDEPENDENT = frozenset({'start', 'start_room', 'update_appointment', 'set_vip', 'add_minutes', 'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'complete', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'move_pending', 'finish_to_pending', 'checkout', 'quick_checkout', 'pending_update', 'pending_delete', 'paid_invoice_update', 'paid_invoice_delete', 'combo_purchase', 'combo_import'})
 FINANCIAL = frozenset({'checkout','quick_checkout','paid_invoice_update','paid_invoice_delete','combo_purchase','combo_import'})
+LOCK_DISCOVERY_COLLECTIONS = frozenset({'employees', 'rooms', 'customers', 'pending', 'invoices'})
 
 
 def enabled():
@@ -101,7 +102,11 @@ def begin_action(conn, action, payload, expected_revision, idempotency_key, coun
     independent = action in INDEPENDENT and not payload.get('start_now') and not any(row.get('start_now') for row in payload.get('bookings', []))
     lock(conn, shared=independent)
     conn.info['live_tour_exclusive'] = not independent
-    state, _, _ = read(conn)
+    # Lock discovery reads only collections inspected by action_resources.
+    # In particular, do not decode/copy audit history and every idempotency
+    # receipt twice while holding the shared fence. The authoritative full
+    # read below still runs after resource locking and revalidates this set.
+    state, _, _ = read(conn, collections=LOCK_DISCOVERY_COLLECTIONS)
     resources = action_resources(state, action, payload, idempotency_key)
     try:
         concurrency.lock_resources(conn, resources, wait=False)

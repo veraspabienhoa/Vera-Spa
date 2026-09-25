@@ -18,6 +18,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter, range_boundaries
 from starlette.responses import Response
+from starlette.concurrency import run_in_threadpool
 
 
 RELEASE = "excel-export-style-2026-08-29"
@@ -107,7 +108,9 @@ def install_excel_export_style(app) -> None:
         body = b""
         async for chunk in response.body_iterator:
             body += bytes(chunk)
-        styled = style_workbook_bytes(body)
+        # Workbook/image processing must not block the API event loop, which
+        # also serves payment responses and authentication requests.
+        styled = await run_in_threadpool(style_workbook_bytes, body)
         headers = dict(response.headers)
         headers["content-length"] = str(len(styled))
         return Response(
