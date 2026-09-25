@@ -302,17 +302,3 @@
 .live-tour-admin-controls-toggle{display:flex;justify-content:flex-end;margin:0 0 0 auto;flex:0 0 auto}
 .live-tour-admin-controls-toggle .secondary-button{min-height:34px;padding:6px 12px;font-size:12px;font-weight:800}
 @media(max-width:820px){.live-tour-admin-controls-toggle{width:100%;margin:0}.live-tour-admin-controls-toggle .secondary-button{width:100%;justify-content:center}}
-/* Thời gian phòng: vòng màu và hai hàng dễ đọc trên màn hình hẹp. */
-.live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown-timed{width:fit-content;max-width:100%;min-width:58px;min-height:58px;margin-inline:auto;padding:5px;border:3px solid #369963;border-radius:50%;background:#ecf8ee;color:#174d35;display:flex;justify-content:center;align-items:center;box-shadow:0 2px 8px #173d2d20}
-.live-tour-page .state-yellow .tour-room-countdown-timed{border-color:#d69c2b;background:#fff8de;color:#795107}
-.live-tour-page .state-red .tour-room-countdown-timed{border-color:#d8584b;background:#fff0ea;color:#8e2b22}
-.live-tour-page .tour-room-countdown-timed svg{display:none}
-.live-tour-page .tour-room-countdown-timed .tour-room-countdown-label{font-size:12px!important;white-space:nowrap;display:flex;align-items:center;justify-content:center}
-.live-tour-page .tour-room-countdown-timed small{font-size:9px;font-weight:700;margin-left:2px}
-@media(max-width:768px){
- .live-tour-page .tour-room-panel .tour-room-grid .tour-room-countdown-timed{width:min(64px,72cqw);height:min(64px,72cqw);min-width:0;min-height:0;padding:3px}
- .live-tour-page .tour-room-countdown-timed .tour-room-countdown-label{flex-direction:column;font-size:12px!important;line-height:1.08;text-align:center}
- .live-tour-page .tour-room-countdown-timed .countdown-prefix,.live-tour-page .tour-room-countdown-timed .countdown-colon{display:none}
- .live-tour-page .tour-room-countdown-timed .countdown-hours,.live-tour-page .tour-room-countdown-timed .countdown-minutes{display:block}
- .live-tour-page .tour-room-countdown-timed small{display:block;margin:0;font-size:8px}
-}

@@ -1,6 +1,11 @@
 name: Deploy VERA SPA Web V2
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'web-v2/src/pages/LiveTourPage.jsx'
+      - 'web-v2/src/pages/LiveTourControls.css'
   workflow_dispatch:
 
 permissions:

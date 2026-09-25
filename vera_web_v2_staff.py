@@ -23,6 +23,7 @@ from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
+from PIL import Image as PillowImage, ImageOps
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -1076,7 +1077,16 @@ def install_staff_routes(
             portrait = portraits.get(str(row["username"]))
             if portrait:
                 try:
-                    image = ExcelImage(BytesIO(portrait))
+                    # Excel/openpyxl cannot package WebP directly. Fully decode
+                    # and normalize while still inside the per-photo guard so
+                    # a damaged image cannot fail the later workbook save.
+                    with PillowImage.open(BytesIO(portrait)) as source:
+                        source.load()
+                        normalized = ImageOps.exif_transpose(source).convert("RGBA")
+                        image_bytes = BytesIO()
+                        normalized.save(image_bytes, format="PNG")
+                    image_bytes.seek(0)
+                    image = ExcelImage(image_bytes)
                     image.width = 72
                     image.height = 96
                     ws.add_image(image, f"A{ws.max_row}")

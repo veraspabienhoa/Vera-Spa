@@ -33,7 +33,14 @@ def summarize(rows):
     histories = defaultdict(list)
     for (employee, _), records in groups.items():
         histories[employee].extend(records)
-    allowances = {employee: advance_balances(records, max(r['leave_date'] for r in records)) for employee, records in histories.items()}
+    # Include months with only zero-day/generated/annual-leave records.
+    allowances = {
+        employee: advance_balances(
+            records, max(r['leave_date'] for r in records),
+            since=min(r['leave_date'] for r in records),
+        )
+        for employee, records in histories.items()
+    }
     for (employee, month), records in sorted(groups.items()):
         summary = summarize_leave_days(records)
         weekends = {r['leave_date'] for r in records if r['leave_date'].weekday() >= 5

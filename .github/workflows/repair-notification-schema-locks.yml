@@ -1,4 +1,4 @@
-name: Repair notification schema locks
+name: Repair staff export and leave quota
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - name: Test concurrent notification reads and required regressions
         env:
           VERA_TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/vera_test
-        run: python scripts/run_pytest_offline.py -q tests/test_notification_schema_locking.py tests/test_notification_routing.py tests/test_auth_pool.py tests/test_vps_runtime_diagnostics.py tests/test_auto_penalty_employee_notifications.py tests/test_attendance_connection_reuse.py
+        run: python scripts/run_pytest_offline.py -q tests/test_notification_schema_locking.py tests/test_notification_routing.py tests/test_auth_pool.py tests/test_vps_runtime_diagnostics.py tests/test_auto_penalty_employee_notifications.py tests/test_attendance_connection_reuse.py tests/test_staff_export_and_quota_regressions.py tests/test_leave_quota_alerts.py tests/test_annual_leave_quota_isolation.py tests/test_leave_quota_shared_classification.py
 
   deploy:
     needs: test
