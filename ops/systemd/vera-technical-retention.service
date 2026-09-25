@@ -1,0 +1,10 @@
+[Unit]
+Description=Clean completed Live Tour technical jobs when due
+After=network-online.target vera-api.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/vera-spa/current/ops/systemd/vera-technical-retention.sh
+TimeoutStartSec=40
+Nice=10
+UMask=0077

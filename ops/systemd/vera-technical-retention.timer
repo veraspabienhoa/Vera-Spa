@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the Admin Live Tour cleanup schedule every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=15s
+Unit=vera-technical-retention.service
+
+[Install]
+WantedBy=timers.target

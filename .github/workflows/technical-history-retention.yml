@@ -1,8 +1,8 @@
-name: Retain completed technical jobs for configured days
+name: Check configured Live Tour cleanup schedule
 
 on:
-  schedule:
-    - cron: '17 * * * *'
+  # The VPS timer checks the Admin interval without depending on GitHub scheduling.
+  # This manual fallback uses the same database due check and cleanup lock.
   workflow_dispatch:
 
 permissions:
@@ -34,4 +34,4 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; test -f vera_leave_month_schema.py; timeout 15 /opt/vera-spa/.venv/bin/python vera_leave_month_schema.py; timeout 15 /opt/vera-spa/.venv/bin/python vera_technical_retention.py; flock -n /opt/vera-spa/technical-retention.lock timeout 30 /opt/vera-spa/.venv/bin/python vera_technical_retention.py --apply'
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; timeout 30 /opt/vera-spa/.venv/bin/python vera_technical_retention.py --apply --scheduled'
