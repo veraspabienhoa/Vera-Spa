@@ -359,7 +359,7 @@ class FaceGateMappingRouteTests(unittest.TestCase):
     import copy
     import json
     from contextlib import contextmanager
-    from fastapi import FastAPI
+    from fastapi import FastAPI, HTTPException
     from fastapi.testclient import TestClient
     from pydantic import BaseModel
     from vera_web_v2_snapshot import install_snapshot_routes
@@ -375,18 +375,18 @@ class FaceGateMappingRouteTests(unittest.TestCase):
     owner = self
 
     class Connection:
-      def execute(self, statement, params):
+      def execute(self, statement, params=None):
         sql = str(statement)
         owner.sql.append(sql)
         if sql.startswith('SELECT username'):
           value = params['username'] if params['username'] == 'vera-test' else None
         elif sql.startswith('SELECT value_json'):
-          value = copy.deepcopy(owner.rows)
+          value = None if "category='devices'" in sql else copy.deepcopy(owner.rows)
         else:
           value = None
           if sql.startswith('UPDATE vera_app_setting'):
             owner.rows = json.loads(params['value'])
-        return SimpleNamespace(scalar_one_or_none=lambda: value)
+        return SimpleNamespace(scalar_one_or_none=lambda: value, scalar=lambda: value)
 
     class Engine:
       @contextmanager
@@ -400,7 +400,8 @@ class FaceGateMappingRouteTests(unittest.TestCase):
 
     app = FastAPI()
     install_snapshot_routes(app, engine_instance=lambda: Engine(), current_identity=lambda: self.ident,
-                            require_feature=lambda *a: None, identity_type=Identity)
+                            require_feature=lambda conn, ident, feature: None if ident.role == 'admin' else (_ for _ in ()).throw(HTTPException(403, 'denied')),
+                            identity_type=Identity)
     self.client = TestClient(app)
     self.ref = {'file_type': 0, 'file_index': 0, 'file_position': 12000}
     self.profile = {'profile_id': 7, 'device_name': 'Test A', 'registration_ref': self.ref}

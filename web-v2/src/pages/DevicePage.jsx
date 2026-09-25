@@ -9,7 +9,7 @@ import './DevicesAndCheckin.css'
 const kindIcons = { faceid: ScanLine, printer: Printer, scanner: ScanLine, camera: Camera, screen: Monitor, other: Server }
 const newDevice = () => ({ id: crypto.randomUUID(), name: '', kind: 'faceid', connection: 'network', manufacturer: '', model: '', serial: '', location: '', address: '', port: '', notes: '', enabled: true, adapter: 'pending' })
 
-export default function DevicePage() {
+export default function DevicePage({ user }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -22,6 +22,7 @@ export default function DevicePage() {
   const [sourceError, setSourceError] = useState('')
   const [sourceBusy, setSourceBusy] = useState(false)
   const [detected, setDetected] = useState(null)
+  const [facegateStatus, setFacegateStatus] = useState('')
   const sequence = useRef(0)
   const registerUsbRef = useRef(null)
   const formRef = useRef(null)
@@ -104,10 +105,10 @@ export default function DevicePage() {
   return <section className="device-page">
     <div className="page-heading"><div><span className="eyebrow"><Server size={16} /> TRUNG TÂM THIẾT BỊ</span><h1>QUẢN LÝ THIẾT BỊ</h1><p>Quản lý FaceID, máy in, máy quét, màn hình và các thiết bị ngoại vi của spa.</p></div></div>
     <div className="device-actions">
-      <button type="button" className="secondary-button" disabled={busy || !data || Boolean(editing) || data.devices.length >= 100} onClick={() => edit(newDevice())}><Plus size={16} />Thêm thiết bị</button>
+      {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || Boolean(editing) || data.devices.length >= 100} onClick={() => edit(newDevice())}><Plus size={16} />Thêm thiết bị</button>}
       <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={reload}><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang xử lý…' : 'Tải lại danh sách'}</button>
-      <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverUsb()}><ScanLine size={16}/>Nhận diện USB</button>
-      <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverBluetooth()}><ScanLine size={16}/>Nhận diện Bluetooth</button>
+      {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverUsb()}><ScanLine size={16}/>Nhận diện USB</button>}
+      {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverBluetooth()}><ScanLine size={16}/>Nhận diện Bluetooth</button>}
     </div>
     <p>Điện thoại Android/iPhone có thể chụp ảnh, quét mã và gửi sự kiện chấm công qua tài khoản Admin trên HTTPS. Wi-Fi Direct trực tiếp cần ứng dụng hệ điều hành hỗ trợ.</p>
     {detected && <p className="device-detected">Đã nhận diện: {detected.manufacturer || 'USB'} {detected.model || `${detected.vendor}:${detected.product}`}. <a href={`https://www.google.com/search?q=${encodeURIComponent(`${detected.manufacturer} ${detected.model} ${detected.vendor}:${detected.product} driver official`)}`} target="_blank" rel="noopener noreferrer">Tìm driver từ hãng</a></p>}
@@ -124,7 +125,7 @@ export default function DevicePage() {
           <label>Model<input maxLength={100} value={editing.model} onChange={event => change({ model: event.target.value })} /></label>
           <label>Serial / ID máy<input maxLength={100} value={editing.serial} onChange={event => change({ serial: event.target.value })} /></label>
           <label>Kiểu kết nối<select value={editing.connection} onChange={event => change({ connection: event.target.value })}>{Object.entries(data.connections).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label>Địa chỉ IP / tên máy<input maxLength={253} value={editing.address} onChange={event => change({ address: event.target.value })} placeholder="Chỉ địa chỉ, không nhập mật khẩu" /></label>
+          <label>{editing.id === 'facegate-current' ? 'IP FaceGate nội bộ' : 'Địa chỉ IP / tên máy'}<input maxLength={253} value={editing.address} onChange={event => change({ address: event.target.value.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') })} placeholder={editing.id === 'facegate-current' ? '192.168.1.26 (chỉ IP, không nhập mật khẩu)' : 'Chỉ địa chỉ, không nhập mật khẩu'} /></label>
           <label>Cổng<input type="number" min="1" max="65535" value={editing.port} onChange={event => change({ port: event.target.value })} placeholder="Nếu thiết bị dùng cổng mạng" /></label>
         </div>
         <label>Ghi chú<textarea rows={3} maxLength={1000} value={editing.notes} onChange={event => change({ notes: event.target.value })} placeholder="Mục đích sử dụng, máy trạm phụ trách…" /></label>
@@ -134,13 +135,14 @@ export default function DevicePage() {
       </fieldset>
     </form>}
     {data && <>
-      <MobileStationPanel registry={data} onRegistryChange={setData}/>
+      {user?.permissions?.device_station_operate && <MobileStationPanel registry={data} onRegistryChange={setData} canRegister={Boolean(user?.permissions?.device_manage)} canConfirm={Boolean(user?.permissions?.device_checkin_confirm)}/>}
       <div className="device-list-filters">
         <label>Tìm thiết bị<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Tên, serial, hãng, vị trí" /></label>
         <label>Loại thiết bị<select value={kind} onChange={event => setKind(event.target.value)}><option value="">Tất cả</option>{Object.entries(data.kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>Trạng thái sử dụng<select value={state} onChange={event => setState(event.target.value)}><option value="">Tất cả</option><option value="true">Đang sử dụng</option><option value="false">Ngừng sử dụng</option></select></label>
       </div>
       <p>{visible.length} / {data.devices.length} thiết bị</p>
+      {user?.permissions?.device_facegate_ip_manage && <div className="device-facegate-ip"><strong>IP FaceGate đang lưu: {data.devices.find(item => item.id === 'facegate-current')?.address || 'Theo cấu hình máy chủ'}</strong><button type="button" className="secondary-button compact" disabled={busy} onClick={async () => { setFacegateStatus('Đang kiểm tra kết nối...'); try { const result = await veraApi.checkFacegateConnection(); setFacegateStatus(result.message) } catch (cause) { setFacegateStatus(cause.message || 'Không kiểm tra được FaceGate.') } }}>Kiểm tra kết nối</button>{facegateStatus && <span role="status">{facegateStatus}</span>}<small>Chọn Chỉnh sửa tại máy FaceGate để cập nhật IP. Tài khoản thiết bị được quản lý trong cấu hình bảo mật máy chủ.</small></div>}
       <div className="device-grid">{visible.map(item => {
         const Icon = kindIcons[item.kind] || Server
         const adapter = data.adapters[item.adapter]
@@ -149,16 +151,16 @@ export default function DevicePage() {
           <span className={`device-badge ${item.enabled ? '' : 'device-badge-muted'}`}>{item.enabled ? 'Đang sử dụng' : 'Ngừng sử dụng'}</span>
           <dl><dt>Vị trí</dt><dd>{item.location || 'Chưa đặt'}</dd><dt>Hãng / model</dt><dd>{[item.manufacturer, item.model].filter(Boolean).join(' · ') || 'Chưa nhập'}</dd><dt>Serial / ID</dt><dd>{item.serial || 'Chưa nhập'}</dd><dt>Kết nối</dt><dd>{data.connections[item.connection]}</dd><dt>Bộ kết nối</dt><dd>{adapter?.label || 'Chờ tích hợp'}</dd></dl>
           <p>{item.adapter === 'pending' ? 'Chưa có kết nối vận hành.' : adapter?.configured ? 'Đã có cấu hình máy chủ. Trạng thái online chưa được kiểm tra.' : 'Chưa đủ cấu hình máy chủ.'}</p>
-          <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={() => edit(item)}><Settings2 size={16} />Chỉnh sửa</button>
+          {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || Boolean(editing) || (item.id === 'facegate-current' && !user?.permissions?.device_facegate_ip_manage)} onClick={() => edit(item)}><Settings2 size={16} />Chỉnh sửa</button>}
         </article>
       })}</div>
       {!visible.length && <p role="status">Không có thiết bị phù hợp bộ lọc.</p>}
     </>}
-    <details className="device-source"><summary>Nguồn chấm công TimeSoft</summary>
+    {user?.role === 'admin' && <details className="device-source"><summary>Nguồn chấm công TimeSoft</summary>
       <p>Dữ liệu đồng bộ là nguồn riêng; không xác nhận trạng thái online của từng thiết bị.</p>
       <button type="button" className="secondary-button" disabled={sourceBusy} onClick={inspectSource}>{sourceBusy ? 'Đang kiểm tra…' : 'Kiểm tra nguồn'}</button>
       {sourceError && <p role="alert">{sourceError}</p>}
       {source && <p>{source.row_count} bản ghi; đồng bộ lúc {formatVeraDateTime(source.last_sync_at)}; {source.cache_fresh ? 'cache còn hạn' : 'cache hết hạn'}.</p>}
-    </details>
+    </details>}
   </section>
 }

@@ -88,9 +88,13 @@ def main():
         with engine.connect() as conn:
             mappings = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='facegate' AND setting_key=:key"),
                                     {'key':'mapping_'+device.mapping_device_id()}).scalar() or []
+            from vera_web_v2_devices import active_facegate_mappings
+            mappings = active_facegate_mappings(conn, mappings if isinstance(mappings, list) else json.loads(mappings))
         # One page only. DB connection has been returned before device I/O.
         device.MAX_RECORDS = device.MAX_PAGE_SIZE
-        log = device.fetch_control_log(day, day)
+        from vera_web_v2_devices import use_registered_facegate
+        with use_registered_facegate(engine):
+            log = device.fetch_control_log(day, day)
         print(json.dumps({'ok':True, **summarize(log, mappings)}, ensure_ascii=False))
     except Exception as exc:
         print(json.dumps({'ok':False, 'error_type':type(exc).__name__, 'attendance_cutover_ready':False}))

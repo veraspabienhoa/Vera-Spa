@@ -6,7 +6,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 import pytest
@@ -40,7 +40,8 @@ class Store:
             self.row = {'value_json': json.loads(params['initial']), 'revision': 0}
         if sql.startswith('UPDATE'):
             self.row = {'value_json': json.loads(params['value']), 'revision': self.row['revision'] + 1}
-        return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: deepcopy(self.row)))
+        return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: deepcopy(self.row)),
+                               scalar=lambda: (self.row or {}).get('value_json'))
 
 
 def fixture(role='admin', rows=None):
@@ -48,7 +49,8 @@ def fixture(role='admin', rows=None):
     app = FastAPI()
     identity = SimpleNamespace(role=role, employee_username='admin-test')
     devices.install_device_routes(app, engine_instance=lambda: store, current_identity=lambda: identity,
-        require_feature=lambda *a: None, identity_type=SimpleNamespace, read_timesoft=lambda *a: rows or [])
+        require_feature=lambda conn, ident, feature: None if ident.role == 'admin' else (_ for _ in ()).throw(HTTPException(403, 'denied')),
+        identity_type=SimpleNamespace, read_timesoft=lambda *a: rows or [])
     return TestClient(app), store
 
 

@@ -1,5 +1,27 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 25-09-2026: quyền trạm điện thoại, IP FaceGate và độ phủ ánh xạ, chưa triển khai
+
+Mục Quản lý thiết bị trước đây chỉ cho Admin dù trạm điện thoại cần người vận
+hành được phân quyền. Bản sửa thêm các quyền tách biệt để xem/sửa hồ sơ, dùng
+trạm điện thoại, xác nhận chấm công, xem lịch sử, ánh xạ FaceGate và đổi IP máy.
+Kiểm tra quyền thực hiện ở API; điều hướng và nút thao tác chỉ hiển thị theo
+quyền. Admin có thể cấp riêng từng quyền trong mục Phân quyền.
+
+Hồ sơ FaceGate hiện chỉ lưu IP nhưng truy vấn vẫn đọc endpoint tĩnh của máy chủ.
+Bản sửa giới hạn IP thiết bị hiện tại trong mạng nội bộ 192.168.1.0/24, lấy
+địa chỉ đã lưu trước khi thực hiện I/O và dùng riêng trong phạm vi một lệnh;
+không giữ kết nối DB khi truy cập máy. Mật khẩu không lưu trong hồ sơ hoặc mã,
+vẫn lấy từ biến môi trường bí mật của máy chủ. Có phép thử đăng nhập chỉ trả
+trạng thái, không trả chi tiết tài khoản. Khi IP thay đổi, ánh xạ ở IP cũ không
+được tính là đã xác nhận cho máy hiện tại; Admin cần kiểm tra lại từng hồ sơ và
+mã TimeSoft. Trang Lịch sử checkin hiển thị số nhân viên chưa có ánh xạ hợp lệ.
+
+Không tự gán nhân viên theo tên hiển thị trên máy, không tự đưa FaceGate vào
+tính công/lương khi chưa xác minh đầy đủ danh tính, ngữ nghĩa trạng thái máy
+và sự tương ứng với mã TimeSoft. Chưa truy cập được LAN và dữ liệu production để
+kiểm tra IP mới, xác nhận danh sách toàn bộ hồ sơ hay bật nguồn tính công.
+
 ## 25-09-2026: trạm điện thoại chụp ảnh / quét mã / chấm công, chưa triển khai
 
 Trang Quản lý thiết bị đã lưu hồ sơ điện thoại nhưng không có đường truyền dữ liệu.

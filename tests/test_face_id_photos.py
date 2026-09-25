@@ -29,6 +29,8 @@ class Database:
         finally:
             self.active = False
 
+    connect = begin
+
     def execute(self, sql, params=None):
         sql, params = str(sql), params or {}
         rows = []
@@ -46,6 +48,8 @@ class Database:
             rows = [({k: self.photo.get(k) for k in ('size_bytes', 'sha256', 'updated_at')} if 'SELECT size_bytes' in sql else self.photo)] if self.photo else []
         elif 'FROM vera_employee_identity_document' in sql:
             rows = [{'content': png(), 'content_type': 'image/png'}]
+        elif "category='devices'" in sql:
+            rows = []
         elif not any(word in sql for word in ('CREATE TABLE', 'ALTER TABLE', 'DO $$')):
             raise AssertionError(sql)
         return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: rows[0] if rows else None, all=lambda: rows), scalar=lambda: next(iter(rows[0].values())) if rows else None)

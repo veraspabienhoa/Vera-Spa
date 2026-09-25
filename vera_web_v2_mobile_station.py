@@ -32,10 +32,10 @@ def ensure_station_table(conn):
         ON vera_mobile_station_event (occurred_at DESC)'''))
 
 
-def install_mobile_station_routes(app, *, engine_instance, current_identity, identity_type):
-    def admin(ident):
-        if str(getattr(ident, 'role', '')).strip().lower() != 'admin':
-            raise HTTPException(403, 'Chỉ Admin được điều khiển trạm điện thoại.')
+def install_mobile_station_routes(app, *, engine_instance, current_identity, identity_type, require_feature):
+    def access(ident, feature):
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, feature)
 
     def station(conn, device_id):
         device = next((item for item in read_registry(conn)['devices'] if item['id'] == device_id), None)
@@ -48,7 +48,7 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
                       event_type: str = Query(..., pattern='^(photo|scan|checkin)$'),
                       employee_username: str = Query('', max_length=200), barcode: str = Query('', max_length=256),
                       ident: identity_type = Depends(current_identity)):
-        admin(ident)
+        access(ident, 'device_station_operate')
         if event_type == 'checkin' and not employee_username.strip():
             raise HTTPException(400, 'Chọn nhân viên trước khi chấm công.')
         if event_type == 'scan' and not barcode.strip():
@@ -99,7 +99,7 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
 
     @app.get('/v2/devices/mobile-station/events')
     def events(ident: identity_type = Depends(current_identity)):
-        admin(ident)
+        access(ident, 'device_station_operate')
         with engine_instance().begin() as conn:
             ensure_station_table(conn)
             conn.execute(text("DELETE FROM vera_mobile_station_event WHERE occurred_at < NOW() - INTERVAL '7 days'"))
@@ -110,7 +110,7 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
 
     @app.post('/v2/devices/mobile-station/events/{event_id}/confirm')
     def confirm_checkin(event_id: UUID, ident: identity_type = Depends(current_identity)):
-        admin(ident)
+        access(ident, 'device_checkin_confirm')
         with engine_instance().begin() as conn:
             ensure_station_table(conn)
             row = conn.execute(text('''SELECT device_id,event_type,employee_username,occurred_at,confirmed_at
@@ -131,7 +131,7 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
 
     @app.get('/v2/devices/mobile-station/events/{event_id}/image')
     def event_image(event_id: UUID, ident: identity_type = Depends(current_identity)):
-        admin(ident)
+        access(ident, 'device_station_operate')
         with engine_instance().begin() as conn:
             ensure_station_table(conn)
             photo = conn.execute(text('SELECT image FROM vera_mobile_station_event WHERE id=:id AND occurred_at >= NOW() - INTERVAL \'7 days\''), {'id': str(event_id)}).scalar()

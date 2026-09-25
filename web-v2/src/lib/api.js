@@ -334,6 +334,7 @@ export const veraApi = {
   deletePayrollObligation: (id) => request(`/v2/payroll/obligations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   deviceRegistry: () => request('/v2/devices/registry'),
+  checkFacegateConnection: () => request('/v2/devices/facegate-connection/check'),
   mobileStationEvents: () => request('/v2/devices/mobile-station/events'),
   confirmMobileCheckin: id => request(`/v2/devices/mobile-station/events/${encodeURIComponent(id)}/confirm`, { method: 'POST' }),
   mobileStationImage: id => binaryResponse(`/v2/devices/mobile-station/events/${encodeURIComponent(id)}/image`, {}, 'Không tải được ảnh từ điện thoại'),
