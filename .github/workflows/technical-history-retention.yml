@@ -1,4 +1,4 @@
-name: Retain completed technical jobs for 72 hours
+name: Retain completed technical jobs for configured days
 
 on:
   schedule:

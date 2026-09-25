@@ -51,7 +51,7 @@ def test_retail_allows_same_content_but_all_requests_protect_replay():
 
 def test_retention_is_limited_to_completed_technical_jobs():
     sql=str(PRUNE)
-    assert "status='done'" in sql and "INTERVAL '3 days'" in sql
+    assert "status='done'" in sql and 'make_interval(days=>:days)' in sql
     assert 'FOR UPDATE SKIP LOCKED' in sql and 'LIMIT :batch' in sql
     assert all(name not in sql for name in ('vera_live_tour_invoice','vera_live_tour_meta','leave_records'))
 
