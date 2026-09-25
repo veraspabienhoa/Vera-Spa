@@ -3471,7 +3471,7 @@ def _auto_start_waiting(state, now):
 
 def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_records=None, directory_records=None, leave_records=None) -> tuple[dict[str, Any], int]:
     if resource_store.enabled():
-        resource_state, resource_revision, _ = resource_store.read(conn)
+        resource_state, resource_revision, _ = resource_store.read(conn, profile='operational')
         row = {"value_json": resource_state, "revision": resource_revision}
     else:
         suffix = " FOR UPDATE" if for_update else ""
@@ -4463,6 +4463,12 @@ def install_live_tour_routes(
             return _normalize_state(row["value_json"], now), int(row["revision"])
         return read_board(conn, now)
 
+    def read_collections_view(conn, now, collections):
+        if resource_store.enabled():
+            state, revision, _ = resource_store.read(conn, collections=collections)
+            return _normalize_state(state, now), revision
+        return read_board(conn, now, project=False)
+
     def read_board(conn, now, *, project=True):
         if resource_store.enabled():
             # This helper is for views, exports and post-commit responses. All
@@ -4703,7 +4709,7 @@ def install_live_tour_routes(
             raise HTTPException(403, "Chỉ tài khoản Leader và Nhân viên được xem Trà sữa của chính mình.")
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
-            state, revision = read_board(conn, now, project=False)
+            state, revision = read_collections_view(conn, now, {'reports'})
         rows = _personal_tip_rows(state, str(ident.employee_username or ""))
         return {"revision": revision, "employee_username": ident.employee_username,
                 "rows": rows, "total_tip": sum(int(row.get("tip") or 0) for row in rows)}
@@ -4713,7 +4719,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
-            state, revision = read_board(conn, now, project=False)
+            state, revision = read_collections_view(conn, now, {'customers', 'combos'})
             can_export = bool(feature_allowed(conn, ident, "live_tour_export"))
         is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         return {"revision": revision, "customers": [dict(deepcopy(c), combo_purchases=[deepcopy(p) for p in c.get("combo_purchases", []) if not p.get("deleted_at")]) for c in state["customers"] if not c.get("deleted_at")], "combo_catalog": deepcopy(state["combos"]) if is_admin else [], "can_export": can_export}
@@ -4723,7 +4729,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_admin")
-            state, revision = read_board(conn, now)
+            state, revision = read_collections_view(conn, now, {'rooms', 'services', 'combos'})
         return {"revision": revision, "services": deepcopy(state["services"]), "combos": deepcopy(state["combos"]), "service_areas": _service_areas(state)}
 
     @app.get("/v2/live-tour/customers/{customer_id}/history")
@@ -4852,7 +4858,7 @@ def install_live_tour_routes(
                 state, revision, resource_fresh = resource_store.begin_action(
                     conn, action, payload, body.expected_revision, idempotency_key,
                     _counter_business_date(now).isoformat(),
-                    compact=body.response_view == "receipt",
+                    compact=body.response_view in {"receipt", "board"},
                 )
                 state = _normalize_state(state, now)
             else:
@@ -4906,7 +4912,10 @@ def install_live_tour_routes(
             )
         if resource_store.enabled() and body.response_view != "receipt":
             with engine_instance().begin() as response_conn:
-                working, next_revision = read_board(response_conn, now, project=False)
+                if body.response_view == "board" and action in resource_store.OPERATIONAL_ACTIONS:
+                    working, next_revision = read_board_view(response_conn, now)
+                else:
+                    working, next_revision = read_board(response_conn, now, project=False)
         return action_response(
             state=working, revision=next_revision, now=now, action=action,
             result=result, grants=grants, response_view=body.response_view,

@@ -105,7 +105,7 @@ jobs:
               'printable PDF route exists': '@app.get("/v2/staff/{username}/profile.pdf")' in security,
               'selected profiles export as one PDF': '@app.post("/v2/staff/profiles.pdf")' in security and '_merge_profile_pdfs' in security and 'exportProfilesPdf' in employee_ui,
               'business identity is on PDF': 'HỘ KINH DOANH VERA' in security and '193 Trương Định' in security,
-              'Excel embeds employee portraits': 'ws.add_image(image' in staff and '"Ảnh nhân viên"' in staff,
+              'Excel staff list contains no embedded portraits': 'ws.add_image' not in staff and '"Ảnh nhân viên"' not in staff,
               'manual CCCD profile fields exist': all(key in profile for key in ('cccd_number', 'cccd_issue_date', 'cccd_issue_place')),
               'camera crop and rotation UI exists': all(key in identity_ui for key in ('IdentityCamera', 'IdentityImageEditor', 'PORTRAIT_ASPECT_RATIO')),
               'crop supports all four independently movable edges': all(key in identity_ui for key in ("setCropInset('left'", "setCropInset('right'", "setCropInset('top'", "setCropInset('bottom'")),

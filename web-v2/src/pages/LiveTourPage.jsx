@@ -576,6 +576,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [actionBusy, setActionBusy] = useState('')
   const [actionFeedback, setActionFeedback] = useState('')
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [notice, setNotice] = useState('')
   const [pendingReminder, setPendingReminder] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -661,17 +662,17 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     // Explicit reloads wait for the previous read, then fetch fresh state.
     while (loadPending.current) await new Promise((resolve) => setTimeout(resolve, 100))
     loadPending.current = true
-    if (!quiet) { setBusy(true); setError('') }
+    if (!quiet) { setBusy(true); setLoadError('') }
     try {
       const response = await veraApi.liveTour(refresh, false, conditional ? latestRevisionRef.current : null, 'board')
       if (response?.unchanged) {
-        setError('')
+        setLoadError('')
         return
       }
       const next = { ...EMPTY_LIVE_TOUR, ...response }
       latestRevisionRef.current = next.revision
       setData(next)
-      setError('')
+      setLoadError('')
       saveCachedLiveTour(cacheKey, next)
       setSelectedIds((current) => {
         const valid = new Set(asArray(next.records).map((record, index) => recordId(record, index)))
@@ -680,7 +681,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     } catch (err) {
       setData((current) => cacheSafeLiveTour(current))
       if (err.status === 403) { setModal(null); setBookingContext(null); setPendingContext(null); setReceipt(null); setCustomerHistoryModal(null) }
-      setError(err.message || 'Không tải được Live Tour.')
+      setLoadError(err.message || 'Không tải được Live Tour.')
     } finally {
       loadPending.current = false
       if (!quiet) setBusy(false)
@@ -754,7 +755,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
     const requestEntry = requestIdempotencyEntry(requestEntriesRef.current, cacheKey, action, actionPayload, options.idempotencyKey)
     try {
-      const receiptOnly = ['checkout', 'quick_checkout', 'combo_purchase', 'combo_sale_decide'].includes(action)
+      const receiptOnly = ['checkout', 'quick_checkout', 'combo_purchase', 'combo_sale_decide', 'paid_invoice_update', 'paid_invoice_delete'].includes(action)
       const body = { action, payload: actionPayload, idempotency_key: requestEntry.key, response_view: receiptOnly ? 'receipt' : 'board' }
       if (data.revision !== null && data.revision !== undefined) body.expected_revision = options.expectedRevision ?? data.revision
       if (rowIds.length) body.row_ids = rowIds
@@ -782,7 +783,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       })
       setSelectedIds(new Set())
       setNotice(result?.message === 'Đã cập nhật Live Tour.' ? '' : result?.message || '')
-      setActionFeedback('Đã lưu thao tác Live Tour.')
+      setActionFeedback('')
       return result
     } catch (err) {
       const message = liveTourErrorDetail(err)
@@ -794,7 +795,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       } else {
         setError(message)
       }
-      setActionFeedback(`Chưa xác nhận được thao tác: ${message}`)
+      setActionFeedback('')
       return null
     } finally {
       setActionBusy('')
@@ -1565,8 +1566,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           <button data-ui-key="u-7859407699f6" data-ui-label-default="Làm mới" type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/><UiCustomText uiKey="u-7859407699f6"> Làm mới</UiCustomText></button>
         </UiToolbar>
       </div>
-      {error && <div className="error-box">{error}</div>}
-      {actionFeedback && <div className="live-tour-action-feedback" role="status" aria-live="polite"><span>{actionFeedback}</span><button type="button" aria-label="Đóng thông báo thao tác" onClick={() => setActionFeedback('')}>×</button></div>}
+      {(error || loadError) && <div className="error-box">{error || loadError}</div>}
+      {actionFeedback && <div className="live-tour-action-progress" role="status" aria-live="polite">{actionFeedback}</div>}
       {notice && notice !== 'Đã cập nhật Live Tour.' && <div className="setup-note">{notice}</div>}
       <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}
@@ -1758,7 +1759,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       combo_purchase: 'Mua combo cho khách hàng', combo_import: 'Nhập combo', room_upsert: modal.item ? 'Sửa phòng' : 'Thêm phòng',
       service_upsert: modal.item ? 'Sửa dịch vụ' : 'Thêm dịch vụ', combo_upsert: modal.item ? 'Sửa combo' : 'Thêm combo',
     }[modal.kind] || 'Live Tour'} onClose={closeModal} fitViewport={['checkout', 'quick_checkout'].includes(modal.kind)} busy={Boolean(actionBusy)}>
-      {['checkout', 'quick_checkout', 'change_employee'].includes(modal.kind) && error && <p className="error-box" role="alert">{error}</p>}
+      {error && <p className="error-box" role="alert">{error}</p>}
       <form onSubmit={submitModal}>
         <div className="live-tour-form-grid">
           {modal.kind === 'change_employee' && <>

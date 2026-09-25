@@ -11,22 +11,18 @@ except ImportError:
     import httpx
 from fastapi import FastAPI
 from starlette.responses import Response
-from PIL import Image
 
 import vera_web_v2_excel_export_style as styling
 import vera_live_tour_resource_store as store
-from test_staff_export_and_quota_regressions import workbook_builder
+from test_staff_export_and_quota_regressions import workbook_builder, staff_app
 import vera_web_v2_staff as staff
 
 
-def test_camera_portraits_are_resampled_to_excel_display_size(workbook_builder):
-    photo = BytesIO()
-    Image.new('RGB', (1800, 2400), 'green').save(photo, format='WEBP')
+def test_staff_export_needs_no_image_payload(workbook_builder):
     row = staff._public_employee({'username': 'Test', 'role': 'nhanvien'}, 'Đang làm việc')
-    output = workbook_builder([row], {}, {'Test': photo.getvalue()})
+    output = workbook_builder([row], {})
     with ZipFile(BytesIO(output)) as archive:
-        image = Image.open(BytesIO(archive.read('xl/media/image1.png')))
-        assert image.size == (216, 288)
+        assert not any(path.startswith('xl/media/') for path in archive.namelist())
 
 
 def test_excel_styling_does_not_block_other_requests(monkeypatch):
