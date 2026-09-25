@@ -79,7 +79,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           DEPLOY_SHA: ${{ github.sha }}
         run: |
-          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 420 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
       - name: Verify running commit and both health endpoints
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}

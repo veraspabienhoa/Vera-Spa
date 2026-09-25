@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
-            "timeout 180 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
+            "timeout 420 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
 
       - name: Verify active release and production schemas
         env:
