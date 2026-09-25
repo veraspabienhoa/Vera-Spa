@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
+import { subscribeNotificationFeed } from '../lib/notificationFeed'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { Bell, Check, X } from 'lucide-react'
 import './NotificationInbox.css'
@@ -14,17 +15,7 @@ export default function NotificationInbox({ showTrigger = true }) {
   const dialog = useRef(null)
   useEffect(() => {
     if (!showTrigger) return undefined
-    let active = true, running = false
-    const load = async () => {
-      if (document.hidden || running) return
-      running = true
-      try { const data = await veraApi.notificationInbox(); if (active) setItems(data.notifications || []) }
-      catch { /* background failure does not interrupt current work */ }
-      finally { running = false }
-    }
-    void load(); const timer = setInterval(load, 30000)
-    document.addEventListener('visibilitychange', load)
-    return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', load) }
+    return subscribeNotificationFeed(data => setItems(data.inbox || []))
   }, [showTrigger])
   useEffect(() => { if (open && dialog.current && !dialog.current.open) dialog.current.showModal() }, [open])
   useEffect(() => {

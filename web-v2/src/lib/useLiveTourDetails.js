@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
 
-export default function useLiveTourDetails({ board, panel, filters, customerSearch, lookupOpen, lookupSearch, selectedCustomerId }) {
+export default function useLiveTourDetails({ board, panel, filters, customerSearch, lookupOpen, lookupSearch, selectedCustomerId, enabled = true }) {
   const [page, setPage] = useState(1)
   const [result, setResult] = useState(null)
   const [lookupState, setLookup] = useState({revision:null,rows:[]})
@@ -10,7 +10,7 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
   const queryKey = JSON.stringify(panel === 'customers' ? {search:customerSearch} : filters)
   useEffect(() => { setPage(1) }, [panel, queryKey])
   useEffect(() => {
-    if (!['customers','pending','invoices','reports','history'].includes(panel) || board.revision == null) return
+    if (!enabled || !['customers','pending','invoices','reports','history'].includes(panel) || board.revision == null) {setLoading(false);return}
     let cancelled = false
     setLoading(true); setError('')
     const timer = setTimeout(() => {
@@ -20,8 +20,9 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
         .finally(() => { if (!cancelled) setLoading(false) })
     }, 180)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [panel, queryKey, page, board.revision])
+  }, [enabled, panel, queryKey, page, board.revision])
   useEffect(() => {
+    if (!enabled) return
     if (!lookupOpen) {setLookup({revision:null,rows:[]});return}
     let cancelled = false
     const timer = setTimeout(() => {
@@ -30,7 +31,7 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
       }).catch(err => {if(!cancelled)setError(err.message)})
     },180)
     return () => {cancelled=true;clearTimeout(timer)}
-  }, [lookupOpen, lookupSearch, selectedCustomerId, board.revision])
+  }, [enabled, lookupOpen, lookupSearch, selectedCustomerId, board.revision])
   const lookup=useMemo(()=>lookupState.revision===board.revision ? lookupState.rows : [],[lookupState,board.revision])
   const value = result?.requestRevision === board.revision && result?.panel === panel && result.queryKey === queryKey && result.page === page ? result.value : null
   const data = useMemo(() => {

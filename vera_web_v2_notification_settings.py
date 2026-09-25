@@ -261,6 +261,40 @@ def _response(conn, admin=False):
     return response
 
 
+def _inbox_rows(conn, ident):
+    # Inbox items expire at midnight in the Vietnam business timezone.
+    conn.execute(text("""DELETE FROM vera_notification_delivery
+        WHERE recipient=:recipient AND (channel='in_app' OR (channel='push' AND sent_at IS NOT NULL))
+        AND created_at < date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'"""),
+        {'recipient':str(ident.auth_user_id)})
+    rows=conn.execute(text(f"""SELECT d.id,d.payload,d.created_at,d.read_at FROM vera_notification_delivery d
+        JOIN vera_notification_route r ON r.key=d.rule_key
+        JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
+        LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
+        LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='in_app'
+        WHERE d.recipient=:recipient AND d.channel='in_app' AND d.read_at IS NULL
+        AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
+        AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
+        AND NOT (r.source_key='attendance_break' AND p.role='admin'
+            AND d.payload->>'kind'='attendance-break-reminder')
+        ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
+    return [dict(row) for row in rows]
+
+
+def _popup_rows(conn, ident):
+    rows=conn.execute(text(f'''SELECT d.id,d.payload,d.created_at FROM vera_notification_delivery d
+        JOIN vera_notification_route r ON r.key=d.rule_key
+        JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
+        LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
+        LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='popup'
+        WHERE d.recipient=:recipient AND d.channel='popup' AND d.read_at IS NULL
+        AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
+        AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
+        AND r.channels ? 'popup' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
+        ORDER BY d.id DESC LIMIT 10'''), {'recipient':str(ident.auth_user_id)}).mappings()
+    return [dict(row) for row in rows]
+
+
 def install_notification_settings_routes(app, *, engine_instance, current_identity, identity_type, api_module=None):
     if getattr(app.state, 'notification_settings_installed', False): return
     globals()['identity_type'] = identity_type
@@ -382,43 +416,25 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                     'body':f"{ident.full_name or ident.employee_username} nhận thông báo {label.lower()} trên ứng dụng."},event)
         return {'ok':True}
 
+    @app.get('/v2/notification-feed')
+    def notification_feed(ident: identity_type = Depends(current_identity)):
+        # One short transaction and one authenticated request per visible tab.
+        # Never include administrator recipient configuration in this feed.
+        with engine_instance().begin() as conn:
+            settings = _response(conn, admin=False)
+            return {**settings, 'inbox': _inbox_rows(conn, ident), 'popup': _popup_rows(conn, ident)}
+
     @app.get('/v2/notification-inbox')
     def inbox(ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             ensure_schema(conn); ensure_routing_schema(conn)
-            # Inbox items expire at midnight in the Vietnam business timezone.
-            conn.execute(text("""DELETE FROM vera_notification_delivery
-                WHERE recipient=:recipient AND (channel='in_app' OR (channel='push' AND sent_at IS NOT NULL))
-                AND created_at < date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'"""),
-                {'recipient':str(ident.auth_user_id)})
-            rows=conn.execute(text(f"""SELECT d.id,d.payload,d.created_at,d.read_at FROM vera_notification_delivery d
-                JOIN vera_notification_route r ON r.key=d.rule_key
-                JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
-                LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-                LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='in_app'
-                WHERE d.recipient=:recipient AND d.channel='in_app' AND d.read_at IS NULL
-                AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
-                AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
-                AND NOT (r.source_key='attendance_break' AND p.role='admin'
-                    AND d.payload->>'kind'='attendance-break-reminder')
-                ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
-            return {'notifications':[dict(row) for row in rows]}
+            return {'notifications': _inbox_rows(conn, ident)}
 
     @app.get('/v2/notification-popup')
     def popup_inbox(ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             ensure_schema(conn); ensure_routing_schema(conn)
-            rows=conn.execute(text(f'''SELECT d.id,d.payload,d.created_at FROM vera_notification_delivery d
-                JOIN vera_notification_route r ON r.key=d.rule_key
-                JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
-                LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-                LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='popup'
-                WHERE d.recipient=:recipient AND d.channel='popup' AND d.read_at IS NULL
-                AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
-                AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
-                AND r.channels ? 'popup' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
-                ORDER BY d.id DESC LIMIT 10'''), {'recipient':str(ident.auth_user_id)}).mappings()
-            return {'notifications':[dict(row) for row in rows]}
+            return {'notifications': _popup_rows(conn, ident)}
 
     @app.get('/v2/notification-inbox/{notification_id}')
     def notification_detail(notification_id: int, ident: identity_type = Depends(current_identity)):

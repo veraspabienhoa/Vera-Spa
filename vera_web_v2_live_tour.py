@@ -4528,6 +4528,12 @@ def install_live_tour_routes(
         public_result = readable_result(result)
         if not (grants.get("can_customers_view") or grants.get("can_invoice_view") or grants.get("can_paid_invoice_view")):
             public_result = _redact_customer_pii(public_result)
+        if response_view == "receipt":
+            # The payment transaction has committed before this response is
+            # sent. Board/list reads are independent client requests.
+            return {"ok": True, "duplicate": duplicate, "action": action,
+                    "revision": revision, "result": public_result, "refresh_board": True,
+                    **({"message": str(result["message"])} if result.get("message") else {})}
         return {
             "ok": True, "duplicate": duplicate, "action": action,
             "revision": revision, "result": public_result,
@@ -4846,6 +4852,7 @@ def install_live_tour_routes(
                 state, revision, resource_fresh = resource_store.begin_action(
                     conn, action, payload, body.expected_revision, idempotency_key,
                     _counter_business_date(now).isoformat(),
+                    compact=body.response_view == "receipt",
                 )
                 state = _normalize_state(state, now)
             else:
@@ -4897,7 +4904,7 @@ def install_live_tour_routes(
             next_revision = _write_state_compat(
                 conn, working, revision, actor, previous_state=state,
             )
-        if resource_store.enabled():
+        if resource_store.enabled() and body.response_view != "receipt":
             with engine_instance().begin() as response_conn:
                 working, next_revision = read_board(response_conn, now, project=False)
         return action_response(

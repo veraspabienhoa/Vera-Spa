@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BellRing, CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
 import { veraApi } from '../lib/api'
 import { createVisiblePoller } from '../lib/visiblePoller'
+import { subscribeNotificationFeed, refreshNotificationFeed } from '../lib/notificationFeed'
 
 const SELECTOR = '[role="alert"],.error-box,.success-box,.warning-box,.setup-note'
 const GUIDANCE_PATTERN = /(?:hãy|vui lòng|chưa chọn|chọn .*nhân viên|bộ lọc|lọc|tìm kiếm|không tìm thấy .*phù hợp)/i
@@ -25,10 +26,6 @@ export default function PopupNotifications() {
   const seenRouted = useRef(new Set())
   useEffect(() => {
     let active = true
-    const loadSettings = () => veraApi.notificationSettings().then((result) => {
-      if (active) settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item]))
-    }).catch(() => {})
-    const settingsPoller = createVisiblePoller(loadSettings, { interval: 60000 })
     const loadTrainingNotifications = () => veraApi.trainingNotifications('popup').then((result) => {
       if (!active) return
       if (settings.current.training_completed?.enabled === false || settings.current.training_completed?.channel_enabled?.popup === false) return
@@ -39,21 +36,21 @@ export default function PopupNotifications() {
         type: 'info', category: 'training_completed', persistent: true,
       }))].slice(-5))
     }).catch(() => {})
-    const trainingPoller = createVisiblePoller(loadTrainingNotifications, { interval: 30000 })
-    const loadRoutedPopups = () => veraApi.notificationPopup().then(result => {
+    const trainingPoller = createVisiblePoller(loadTrainingNotifications, { interval: 60000 })
+    const unsubscribeFeed = subscribeNotificationFeed(result => {
       if (!active) return
-      const fresh = (result.notifications || []).filter(item => !seenRouted.current.has(item.id))
+      settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item]))
+      const fresh = (result.popup || []).filter(item => !seenRouted.current.has(item.id))
       fresh.forEach(item => seenRouted.current.add(item.id))
       if (fresh.length) setItems(current => [...current, ...fresh.map(item => ({
         id: `route-${item.id}`, routeId: item.id, message: `${item.payload?.title || 'Thông báo'} · ${item.payload?.body || ''}`,
         type:'info', category:'routed_popup', persistent:true,
       }))].slice(-10))
-    }).catch(() => {})
-    const routedPoller = createVisiblePoller(loadRoutedPopups, { interval: 30000 })
+    })
     const onSettingsChanged = (event) => {
       const item = event?.detail
       if (item?.key) settings.current = { ...settings.current, [item.key]: item }
-      else void settingsPoller.refresh()
+      else void refreshNotificationFeed()
     }
     window.addEventListener('vera-notification-settings-changed', onSettingsChanged)
     const add = element => {
@@ -65,8 +62,6 @@ export default function PopupNotifications() {
         : element.classList.contains('warning-box') || element.classList.contains('setup-note') ? 'warning' : 'error'
       const category = categoryFor(type, message)
       if (settings.current[category]?.enabled === false || settings.current[category]?.channel_enabled?.popup === false) return
-      if (settings.current[category]?.has_rules) void veraApi.routeLocalNotification(category).catch(()=>{})
-      if (settings.current[category]?.routed) return
       const duplicateKey = `${category}:${message.toLocaleLowerCase('vi-VN')}`
       const now = Date.now()
       if (now - Number(recentMessages.current.get(duplicateKey) || 0) < 15000) return
@@ -74,6 +69,8 @@ export default function PopupNotifications() {
       for (const [key, timestamp] of recentMessages.current) {
         if (now - timestamp > 60000) recentMessages.current.delete(key)
       }
+      if (settings.current[category]?.has_rules) void veraApi.routeLocalNotification(category).catch(()=>{})
+      if (settings.current[category]?.routed) return
       const id = `${Date.now()}-${Math.random()}`
       setItems(current => [...current.slice(-2), { id, message, type, category }])
       window.setTimeout(() => setItems(current => current.filter(item => item.id !== id)), type === 'error' ? 10000 : 6500)
@@ -91,8 +88,7 @@ export default function PopupNotifications() {
     return () => {
       active = false
       trainingPoller.stop()
-      routedPoller.stop()
-      settingsPoller.stop()
+      unsubscribeFeed()
       observer.disconnect()
       window.removeEventListener('vera-notification-settings-changed', onSettingsChanged)
     }

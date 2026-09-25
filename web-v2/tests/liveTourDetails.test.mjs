@@ -20,7 +20,8 @@ test('loads only active panel, discards superseded requests and hides stale deta
  const render=async()=>{await act(async()=>root.render(React.createElement(Screen,props)));await act(async()=>new Promise(resolve=>setTimeout(resolve,210)))}
  try{
   await render();assert.equal(requests.length,0)
-  props={...props,panel:'customers'};await render();assert.equal(requests[0].panel,'customers')
+  props={...props,panel:'customers',enabled:false};await render();assert.equal(requests.length,0)
+  props={...props,enabled:true};await render();assert.equal(requests[0].panel,'customers')
   props={...props,panel:'invoices'};await render();assert.equal(requests[1].panel,'invoices')
   await act(async()=>requests[0].resolve({revision:1,data:{customers:[{id:'old'}]},pages:1,total:1}))
   assert.deepEqual(latest.data.customers,[])

@@ -387,6 +387,17 @@ export const veraApi = {
   importComboSalesExcel: (file, department) => upload('/v2/work-schedule/combo-sales/import.xlsx', file, { department }),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   notificationSettings: () => request('/v2/notification-settings'),
+  notificationFeed: async () => {
+    try { return await request('/v2/notification-feed') }
+    catch (error) {
+      if (error.status !== 404) throw error
+      // Compatibility while the frontend/backend releases roll out separately.
+      const [settings,inbox,popup] = await Promise.all([
+        request('/v2/notification-settings'), request('/v2/notification-inbox'), request('/v2/notification-popup'),
+      ])
+      return {settings:settings.settings || [],inbox:inbox.notifications || [],popup:popup.notifications || []}
+    }
+  },
   notificationPopup: () => request('/v2/notification-popup'),
   createNotificationGroup: body => request('/v2/notification-settings/groups', { method:'POST', body:JSON.stringify(body) }),
   deleteNotificationGroup: (key, revision) => request(`/v2/notification-settings/groups/${encodeURIComponent(key)}?revision=${revision}`, { method:'DELETE' }),
