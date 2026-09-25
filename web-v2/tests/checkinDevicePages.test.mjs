@@ -4,7 +4,7 @@ import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
 import { MessageChannel } from 'node:worker_threads'
 
-const built = await build({ stdin: { contents: "import React, { act } from 'react'; import { createRoot } from 'react-dom/client'; import History from './src/pages/CheckinHistoryPage'; import Devices from './src/pages/DevicePage'; window.testAct = act; window.mountPage = kind => { window.pageRoot = createRoot(document.getElementById('root')); window.pageRoot.render(kind === 'history' ? <History /> : <Devices />); };", resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' }, plugins: [{ name: 'mock-api', setup(b) {
+const built = await build({ stdin: { contents: "import React, { act } from 'react'; import { createRoot } from 'react-dom/client'; import History from './src/pages/CheckinHistoryPage'; import Devices from './src/pages/DevicePage'; window.testAct = act; window.mountPage = kind => { window.pageRoot = createRoot(document.getElementById('root')); window.pageRoot.render(kind === 'history' ? <History user={{ permissions: { device_facegate_mapping_manage: true } }} /> : <Devices user={{ permissions: { device_view: true, device_manage: true, device_station_operate: true, device_checkin_confirm: true, device_facegate_ip_manage: true } }} />); };", resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' }, plugins: [{ name: 'mock-api', setup(b) {
   b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'mock' }))
   b.onLoad({ filter: /.*/, namespace: 'mock' }, () => ({ contents: 'export const veraApi = window.testApi;', loader: 'js' }))
 } }] })
