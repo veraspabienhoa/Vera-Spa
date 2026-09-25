@@ -1690,7 +1690,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       />}
       {!activePanel && <div className="live-tour-empty">Chọn mục để xem hóa đơn, khách hàng hoặc báo cáo.</div>}
 
-      {activePanel === 'pending' && !details.initialLoading && canPending && <LiveTourPendingPanel actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canInvoiceDelete={canInvoiceDelete} canInvoiceEdit={canInvoiceEdit} canInvoiceView={canInvoiceView} canPayment={canPayment} data={data} exportData={panelActions.exportData} itemId={itemId} openModal={panelActions.openModal} pendingPayments={pendingPayments} setError={setError} setPendingContext={setPendingContext}/>}
+      {activePanel === 'pending' && canPending && <LiveTourPendingPanel actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canInvoiceDelete={canInvoiceDelete} canInvoiceEdit={canInvoiceEdit} canInvoiceView={canInvoiceView} canPayment={canPayment} data={data} exportData={panelActions.exportData} itemId={itemId} openModal={panelActions.openModal} pendingPayments={pendingPayments} setError={setError} setPendingContext={setPendingContext}/>}
 
       {activePanel === 'invoices' && !details.initialLoading && canPaidInvoiceView && <LiveTourInvoicesPanel actionBusy={actionBusy} asArray={asArray} canPaidInvoiceDelete={canPaidInvoiceDelete} canPaidInvoiceEdit={canPaidInvoiceEdit} data={data} formatMoney={formatMoney} setError={setError} setPendingContext={setPendingContext} setReceipt={setReceipt} visibleInvoices={visibleInvoices}/>}
 
