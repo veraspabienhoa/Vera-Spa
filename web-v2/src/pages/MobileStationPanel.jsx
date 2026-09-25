@@ -33,6 +33,7 @@ export default function MobileStationPanel({ registry, onRegistryChange }) {
   const pendingRef = useRef(null)
 
   useEffect(() => {
+    if (typeof veraApi.mobileStationEvents !== 'function') return undefined
     let active = true
     const refresh = () => veraApi.mobileStationEvents().then(value => { if (active) setRecords(value.records) }).catch(() => {})
     void refresh()
