@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom'
 import LeaveQuotaCheck from './LeaveQuotaCheck'
 import { veraApi } from '../lib/api'
 import { emptyLeaveDaySummary, formatLeaveDays } from '../lib/leaveStats'
+import { formatVeraDate } from '../lib/veraDate'
 
-const parseDisplayDate = (value) => { const match = String(value || '').trim().match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/); return match ? `${match[3]}-${match[2]}-${match[1]}` : '' }
 const sameContext = (a, b) => a.start === b.start && a.end === b.end && a.employee === b.employee && a.displayStart === b.displayStart && a.displayEnd === b.displayEnd
 
 export default function LeaveListPersonalStats({ user }) {
@@ -27,11 +27,10 @@ export default function LeaveListPersonalStats({ user }) {
       let host = panel.querySelector('[data-leave-list-personal-stats="true"]')
       if (!host) { host = document.createElement('div'); host.dataset.leaveListPersonalStats = 'true'; panel.insertBefore(host, tableWrap); ownedHost = host }
       setTarget((current) => current === host ? current : host)
-      const description = String(panel.querySelector('.panel-title-row p')?.textContent || '')
-      const rangeMatch = description.match(/Bộ lọc\s+(\d{2}[/-]\d{2}[/-]\d{4})\s+[–-]\s+(\d{2}[/-]\d{2}[/-]\d{4})/)
-      if (!rangeMatch) return
-      const searchValue = String(panel.querySelector('.employee-search-field input[type="search"]')?.value || '').trim()
-      const next = { start: parseDisplayDate(rangeMatch[1]), end: parseDisplayDate(rangeMatch[2]), employee: searchValue, displayStart: rangeMatch[1], displayEnd: rangeMatch[2] }
+      const start = panel.dataset.leaveStart || ''
+      const end = panel.dataset.leaveEnd || ''
+      const next = { start, end, employee: String(panel.dataset.leaveEmployee || '').trim(),
+        displayStart: formatVeraDate(start), displayEnd: formatVeraDate(end) }
       if (!next.start || !next.end) return
       if (sameContext(contextRef.current, next)) return
       contextRef.current = next
@@ -50,7 +49,10 @@ export default function LeaveListPersonalStats({ user }) {
       timer = window.setTimeout(syncFromList, 30)
     }
     syncFromList()
-    const observer = new MutationObserver(scheduleSync); observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    const observer = new MutationObserver(scheduleSync); observer.observe(document.body, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ['data-leave-start', 'data-leave-end', 'data-leave-employee'],
+    })
     document.addEventListener('input', scheduleSync, true); document.addEventListener('change', scheduleSync, true); document.addEventListener('click', scheduleSync, true)
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); observer.disconnect(); document.removeEventListener('input', scheduleSync, true); document.removeEventListener('change', scheduleSync, true); document.removeEventListener('click', scheduleSync, true); if (ownedHost?.isConnected) ownedHost.remove() }
   }, [])

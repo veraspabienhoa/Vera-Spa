@@ -424,7 +424,6 @@ export default function LeaveRegistrationEnhancements({ user }) {
           <option value="">-- Chọn lỗi vi phạm --</option>
           {reasonGroups.violations.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
         </select>
-        <small className="violation-reason-note">Danh sách Lỗi vi phạm tự động lấy từ BẢNG NỘI QUY · Loại nghỉ = Vi phạm.</small>
       </div>,
       reasonHost,
     )}

@@ -59,6 +59,7 @@ def test_admin_api_whole_months_validation_and_no_db_for_forbidden():
 
 
 def test_delivery_retries_failed_device_without_holding_connection(monkeypatch):
+    monkeypatch.setattr(alerts, 'current_month', lambda: '2026-09')
     state = {'open':False,'sent':set(),'attempts':[]}
     item = {'employee':'Vy','month':'2026-09','days':6.0,'weekends':0,'generated':0,'exceeded':['days']}
     class Result:

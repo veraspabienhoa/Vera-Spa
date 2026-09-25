@@ -33,24 +33,24 @@ due check; production timers and the manual GitHub fallback always use
 ## Deployment and verification
 
 Deploy VPS Production now migrates the existing settings table, previews eligible
-jobs, installs `vera-technical-retention.timer`, and starts one due-checked pass.
-The timer runs on the VPS even when no browser is open. This replaces the hourly
+jobs, starts one due-checked pass, and retains the existing API service lifecycle.
+The API background worker runs on the VPS even when no browser is open. This replaces the hourly
 GitHub cron; that workflow remains a manual, due-checked fallback. Changes to the
 interval require no timer rewrite, service restart or redeployment.
 
 The additive migration preserves the configured retention days and records no
 invented historical success. A first run with no success timestamp is due.
-Before enabling the timer, deployment must reach the schema and active-release
-checks. The installer verifies the enabled/active timer and the service result;
-the final deployment gate still verifies the exact commit and both health APIs.
+The worker starts with the API, waits 30 seconds before its first check, then
+checks every five minutes. Deployment verifies the active release and schema
+before its explicit due-checked pass. The final gate still verifies the exact
+commit and both health APIs. No new root/sudo permission or cron installation is required.
 After deployment, open the Admin panel and reload its status to confirm the first
 successful pass. Code and CI success alone do not establish production activity.
 
-Rollback: disable/stop `vera-technical-retention.timer` before rolling back to a
-release without the runner. Keep the additive columns; old clients ignore them.
-The wrapper follows the running API release and never falls back to ungated
-cleanup if that release lacks `--scheduled`. Cleanup deletes cannot be undone
-without a database backup.
+Rollback stops this worker when the API service restarts into the old release.
+Keep the additive columns; old clients ignore them. An optional pre-existing
+systemd timer shares the same due check and lock, so it cannot double-clean.
+Cleanup deletes cannot be undone without a database backup.
 
 ## Regression coverage
 
@@ -59,3 +59,10 @@ simultaneous runners, failure recovery, bounded-run retry, and unchanged deletio
 scope. API tests enforce Admin-only access and reject non-integer/out-of-range
 hours. Browser component tests cover loading/saving both controls, Vietnam date
 display, invalid values, failed loads and preserved drafts after failed saves.
+
+## Deployment #543 follow-up (26-09-2026)
+
+The active-release and schema checks passed, then timer installation failed with
+`sudo: a password is required`. The new scheduler uses the existing API service
+and database permissions. It does not alter sudoers or rely on a privileged shell
+installer. The checked-in optional systemd units are not installed by deployment.

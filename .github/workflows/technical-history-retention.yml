@@ -1,7 +1,7 @@
 name: Check configured Live Tour cleanup schedule
 
 on:
-  # The VPS timer checks the Admin interval without depending on GitHub scheduling.
+  # The API background worker checks the Admin interval without depending on GitHub scheduling.
   # This manual fallback uses the same database due check and cleanup lock.
   workflow_dispatch:
 

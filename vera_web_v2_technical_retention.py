@@ -12,6 +12,8 @@ class RetentionUpdate(BaseModel):
 
 
 def install_technical_retention_routes(app, *, engine_instance, current_identity):
+    from vera_technical_retention_scheduler import install
+    install(app, engine_instance)
     def admin(ident):
         if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
             raise HTTPException(403, 'Chỉ Admin được cài đặt thời gian lưu nhật ký kỹ thuật.')
