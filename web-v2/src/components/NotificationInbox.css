@@ -30,3 +30,4 @@ dialog.notification-dialog { box-sizing: border-box; width: min(960px, calc(100v
 .notification-detail .notification-viewed { margin-top: 18px; }
 .notification-dialog footer { padding: 12px 20px; }
 @media(max-width:600px) { .topbar-actions .topbar-open-tab-button { width: 128px; min-height: 30px; } .notification-row small { display: none; } .notification-dialog > header { padding: 12px; } .notification-dialog-content { padding: 10px; } .notification-entry { gap: 2px; min-width: 0; } .notification-dialog .notification-row { overflow: hidden; padding: 9px 5px; font-size: 12px; } .notification-entry .notification-viewed span { display: none; } }
+@media(max-width:600px){.topbar-actions .topbar-open-tab-button{width:32px;min-width:32px;height:32px;min-height:32px;padding:0}.topbar-actions .topbar-open-tab-button span:not(.notification-unread-dot){display:none}}

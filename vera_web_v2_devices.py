@@ -21,8 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
 VN = timezone(timedelta(hours=7))
-KINDS = {'faceid': 'FaceID / Chấm công', 'printer': 'Máy in', 'scanner': 'Máy quét', 'screen': 'Màn hình', 'other': 'Thiết bị khác'}
-CONNECTIONS = {'network': 'Mạng LAN / TCP/IP', 'usb': 'USB', 'bluetooth': 'Bluetooth', 'serial': 'Cổng nối tiếp', 'agent': 'Qua máy trạm', 'other': 'Khác'}
+KINDS = {'faceid': 'FaceID / Chấm công', 'printer': 'Máy in', 'scanner': 'Máy quét', 'camera': 'Máy ảnh / điện thoại', 'screen': 'Màn hình', 'other': 'Thiết bị khác'}
+CONNECTIONS = {'network': 'Mạng LAN / TCP/IP', 'usb': 'USB', 'bluetooth': 'Bluetooth', 'wifi_direct': 'Wi-Fi Direct (cần ứng dụng hỗ trợ)', 'serial': 'Cổng nối tiếp', 'agent': 'Qua máy trạm', 'other': 'Khác'}
 SOURCES = {'facegate_saved': 'FaceGate · Đã lưu trong VERA', 'facegate': 'FaceGate · Control Log', 'capture': 'FaceGate · Capture Log', 'timesoft': 'TimeSoft · Đã đồng bộ VERA'}
 
 
@@ -30,8 +30,8 @@ class Device(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     id: str = Field(pattern=r'^[A-Za-z0-9_-]{1,64}$')
     name: str = Field(min_length=1, max_length=160)
-    kind: Literal['faceid', 'printer', 'scanner', 'screen', 'other']
-    connection: Literal['network', 'usb', 'bluetooth', 'serial', 'agent', 'other'] = 'network'
+    kind: Literal['faceid', 'printer', 'scanner', 'camera', 'screen', 'other']
+    connection: Literal['network', 'usb', 'bluetooth', 'wifi_direct', 'serial', 'agent', 'other'] = 'network'
     manufacturer: str = Field(default='', max_length=100)
     model: str = Field(default='', max_length=100)
     serial: str = Field(default='', max_length=100)

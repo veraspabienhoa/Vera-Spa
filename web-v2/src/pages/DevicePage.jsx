@@ -1,11 +1,11 @@
-import { Monitor, Plus, Printer, RefreshCw, ScanLine, Server, Settings2 } from 'lucide-react'
+import { Camera, Monitor, Plus, Printer, RefreshCw, ScanLine, Server, Settings2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 import './DevicesAndCheckin.css'
 
-const kindIcons = { faceid: ScanLine, printer: Printer, scanner: ScanLine, screen: Monitor, other: Server }
+const kindIcons = { faceid: ScanLine, printer: Printer, scanner: ScanLine, camera: Camera, screen: Monitor, other: Server }
 const newDevice = () => ({ id: crypto.randomUUID(), name: '', kind: 'faceid', connection: 'network', manufacturer: '', model: '', serial: '', location: '', address: '', port: '', notes: '', enabled: true, adapter: 'pending' })
 
 export default function DevicePage() {
@@ -56,6 +56,15 @@ export default function DevicePage() {
     try { await registerUsb(await navigator.usb.requestDevice({ filters: [] })) }
     catch (cause) { if (cause?.name !== 'NotFoundError') setError(cause.message || 'Không nhận diện được USB.') }
   }
+  const discoverBluetooth = async () => {
+    if (!navigator.bluetooth?.requestDevice) { setError('Trình duyệt hoặc thiết bị này chưa hỗ trợ Web Bluetooth. iPhone không thể ghép nối qua tính năng này.'); return }
+    try {
+      const found = await navigator.bluetooth.requestDevice({ acceptAllDevices: true })
+      if (!found) return
+      setDetected({ manufacturer: 'Bluetooth', model: found.name || 'Thiết bị chưa đặt tên' })
+      edit({ ...newDevice(), name: found.name || 'Thiết bị Bluetooth', kind: 'other', connection: 'bluetooth', serial: found.id, notes: 'Đã chọn qua Web Bluetooth; cần tích hợp giao thức của thiết bị để dùng dữ liệu.' })
+    } catch (cause) { if (cause?.name !== 'NotFoundError') setError(cause.message || 'Không nhận diện được Bluetooth.') }
+  }
   const hasRegistry = Boolean(data)
   useEffect(() => {
     if (!hasRegistry || !navigator.usb) return undefined
@@ -97,7 +106,9 @@ export default function DevicePage() {
       <button type="button" className="secondary-button" disabled={busy || !data || Boolean(editing) || data.devices.length >= 100} onClick={() => edit(newDevice())}><Plus size={16} />Thêm thiết bị</button>
       <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={reload}><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang xử lý…' : 'Tải lại danh sách'}</button>
       <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverUsb()}><ScanLine size={16}/>Nhận diện USB</button>
+      <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverBluetooth()}><ScanLine size={16}/>Nhận diện Bluetooth</button>
     </div>
+    <p>Điện thoại Android/iPhone có thể đăng ký làm thiết bị chụp ảnh hoặc quét mã khi mở ứng dụng trên chính điện thoại. Wi-Fi Direct cần ứng dụng hệ điều hành hoặc máy trạm hỗ trợ; lưu hồ sơ chưa kết nối luồng ảnh hay chấm công.</p>
     {detected && <p className="device-detected">Đã nhận diện: {detected.manufacturer || 'USB'} {detected.model || `${detected.vendor}:${detected.product}`}. <a href={`https://www.google.com/search?q=${encodeURIComponent(`${detected.manufacturer} ${detected.model} ${detected.vendor}:${detected.product} driver official`)}`} target="_blank" rel="noopener noreferrer">Tìm driver từ hãng</a></p>}
     {error && <p className="device-error" role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}
