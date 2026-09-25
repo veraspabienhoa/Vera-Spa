@@ -84,8 +84,8 @@ def test_employee_media_security_and_exports_are_wired():
     assert "Nhân viên không được xóa ảnh CCCD sau khi đã lưu" in security_source
     assert "side IN ('front','back','portrait')" in security_source
     assert 'abs((width / max(height, 1)) - 0.75)' in security_source
-    assert '"Ảnh nhân viên"' in staff_source
-    assert "ws.add_image" in staff_source
+    assert '"Ảnh nhân viên"' not in staff_source
+    assert "ws.add_image" not in staff_source
     assert "Xuất PDF hồ sơ nhân viên" in identity_ui
     assert "Crop / Xoay ảnh đã lưu" in identity_ui
     assert "Camera trước" in identity_ui
