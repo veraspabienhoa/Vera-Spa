@@ -1,0 +1,77 @@
+name: Diagnose Live Tour Python stacks
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-live-tour-stacks.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare pinned read-only profiler on runner
+        run: |
+          python -m pip install --only-binary=:all: --no-deps --target "$RUNNER_TEMP/vera-profiler" py-spy==0.4.1
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read two nonblocking stack samples with no local variables
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          remote_dir=$(ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'test "$(uname -m)" = x86_64 && mktemp -d /tmp/vera-cpu.XXXXXX')
+          [[ "$remote_dir" =~ ^/tmp/vera-cpu\.[A-Za-z0-9]+$ ]]
+          trap 'ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "rm -f -- \"$remote_dir/py-spy\"; rmdir -- \"$remote_dir\""' EXIT
+          scp -q -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "$RUNNER_TEMP/vera-profiler/bin/py-spy" "${VPS_USER}@${VPS_HOST}:$remote_dir/py-spy"
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "python3 - '$remote_dir/py-spy'" <<'PY'
+          import json, re, subprocess, sys, time
+          from pathlib import Path
+          profiler = Path(sys.argv[1])
+          profiler.chmod(0o700)
+          pid = subprocess.run(['pgrep','-n','-f','[v]era_web_v2_api_v38:app'], capture_output=True, text=True, timeout=5).stdout.strip()
+          if not pid.isdigit():
+              print('STACK_SAMPLE_ERROR=NoApiProcess')
+              raise SystemExit(1)
+          release = Path('/proc',pid,'cwd').resolve()
+          sha = subprocess.run(['git','-C',str(release),'rev-parse','HEAD'], capture_output=True, text=True, timeout=5).stdout.strip()
+          if re.fullmatch('[0-9a-f]{40}',sha):
+              print('STACK_SAMPLE_COMMIT='+sha)
+          for sample in range(2):
+              try:
+                  result = subprocess.run([str(profiler),'dump','--pid',pid,'--nonblocking','--json'], capture_output=True, text=True, timeout=10)
+                  if result.returncode:
+                      print('STACK_SAMPLE_ERROR='+str(result.returncode))
+                      raise SystemExit(1)
+                  traces = json.loads(result.stdout)
+                  print('STACK_SAMPLE '+json.dumps({'sample':sample,'threads':len(traces)}))
+                  for trace in sorted(traces, key=lambda t:not t.get('owns_gil',False))[:40]:
+                      frames = []
+                      for frame in trace.get('frames',[]):
+                          filename = Path(str(frame.get('filename',''))).name
+                          function = str(frame.get('name',''))
+                          if re.fullmatch(r'[A-Za-z0-9_.-]+[.]py',filename) and re.fullmatch(r'[A-Za-z0-9_<>.]+',function):
+                              frames.append({'file':filename,'function':function,'line':int(frame.get('line',0))})
+                      if trace.get('owns_gil') or any(f['file'].startswith('vera_') for f in frames):
+                          print('PYTHON_STACK '+json.dumps({'sample':sample,'gil':bool(trace.get('owns_gil')),'active':bool(trace.get('active')),'frames':frames[:24]}))
+              except Exception as exc:
+                  print('STACK_SAMPLE_ERROR='+type(exc).__name__)
+                  raise SystemExit(1)
+              if sample==0: time.sleep(2)
+          PY
