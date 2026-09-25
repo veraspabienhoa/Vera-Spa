@@ -3273,7 +3273,9 @@ def _state_response(
     can_backup = can_admin if can_backup is None else can_backup
     pending_access = can_pending_view and can_invoice_view
     customer_pii = can_customers_view or can_invoice_view or can_paid_invoice_view
-    state = deepcopy(state)
+    # Private replay receipts never form part of a public response. Exclude them
+    # before copying; copying their entire history serves no response purpose.
+    state = deepcopy({key: value for key, value in state.items() if key != "idempotency"})
     if state.get("manual_order_active") is False:
         for row in state["employees"]:
             row.pop("manual_order", None)
@@ -4463,7 +4465,10 @@ def install_live_tour_routes(
 
     def read_board(conn, now, *, project=True):
         if resource_store.enabled():
-            state, revision, _ = resource_store.read(conn)
+            # This helper is for views, exports and post-commit responses. All
+            # business collections remain present; private replay receipts are
+            # only needed by the separate locked mutation/projection readers.
+            state, revision, _ = resource_store.read(conn, collections=relational_store.RESOURCE_COLLECTIONS)
             return _normalize_state(state, now), revision
         # Request threads only read the last committed board snapshot. Projection is
         # owned by the PostgreSQL queue worker, so GET traffic cannot extend STATE_LOCK.

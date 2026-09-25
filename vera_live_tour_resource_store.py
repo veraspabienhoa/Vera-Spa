@@ -6,6 +6,7 @@ Cross-resource business operations take the exclusive fence until their complete
 read sets have been certified. All writes are row diffs, never aggregate rewrites.
 """
 from copy import deepcopy
+import json
 from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -16,6 +17,28 @@ FENCE = 'vera:live-tour:resource-fence:v1'
 INDEPENDENT = frozenset({'start', 'start_room', 'update_appointment', 'set_vip', 'add_minutes', 'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'complete', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'move_pending', 'finish_to_pending', 'checkout', 'quick_checkout', 'pending_update', 'pending_delete', 'paid_invoice_update', 'paid_invoice_delete', 'combo_purchase', 'combo_import'})
 FINANCIAL = frozenset({'checkout','quick_checkout','paid_invoice_update','paid_invoice_delete','combo_purchase','combo_import'})
 LOCK_DISCOVERY_COLLECTIONS = frozenset({'employees', 'rooms', 'customers', 'pending', 'invoices'})
+
+
+class _ReceiptSnapshot(dict):
+    """Detached persisted JSON receipts with a C-backed independent copy.
+
+    Receipt results are already JSON values read from PostgreSQL. Walking every
+    nested value through Python's generic deepcopy dominates mutation/projection
+    CPU as this durable history grows. A JSON round trip keeps every receipt and
+    nested result independent without sharing mutable data between transactions.
+    No bytes from outside this method are deserialized here.
+    """
+
+    def __deepcopy__(self, memo):
+        copied = type(self)()
+        memo[id(self)] = copied
+        try:
+            copied.update(json.loads(json.dumps(self, ensure_ascii=False)))
+        except (TypeError, ValueError):
+            # Defensive compatibility for an in-memory, non-JSON result. The
+            # PostgreSQL reader itself always supplies JSON-compatible values.
+            copied.update(deepcopy(dict(self), memo))
+        return copied
 
 
 def enabled():
@@ -38,7 +61,10 @@ def read(conn, collections=None):
     meta = next((row for row in rows if row['kind'] == '_meta'), None)
     if meta is None or not meta['payload'].get('_resource_ready'):
         raise HTTPException(503, 'Chưa hoàn tất chuyển đổi dữ liệu Live Tour.')
-    state = deepcopy(meta['payload'])
+    owned_meta = dict(meta['payload'])
+    if isinstance(owned_meta.get('idempotency'), dict):
+        owned_meta['idempotency'] = _ReceiptSnapshot(owned_meta['idempotency'])
+    state = deepcopy(owned_meta)
     versions = {}
     for kind in relational.RESOURCE_COLLECTIONS:
         state[kind] = []
