@@ -133,6 +133,22 @@ jobs:
               print('READ_ONLY_METADATA_ERROR='+type(exc).__name__)
           finally:
               engine.dispose()
+          pid=subprocess.run(['pgrep','-n','-f','[v]era_web_v2_api_v38:app'],capture_output=True,text=True,timeout=5).stdout.strip()
+          if pid.isdigit():
+              metrics=subprocess.run(['ps','-p',pid,'-o','pcpu=,pmem=,rss=,nlwp=,etimes='],capture_output=True,text=True,timeout=5).stdout.split()
+              if len(metrics)==5 and all(re.fullmatch(r'[0-9.]+',v) for v in metrics):
+                  print('PROCESS_METRICS '+json.dumps(dict(zip(['cpu_percent','memory_percent','rss_kb','threads','uptime_seconds'],metrics))))
+          engine=create_engine(_database_url(env),poolclass=NullPool,connect_args={'connect_timeout':5,'sslmode':env.get('DB_SSLMODE','require'),'options':'-c default_transaction_read_only=on -c statement_timeout=3000 -c lock_timeout=1000'})
+          try:
+              with engine.connect() as conn:
+                  for table in ['vera_live_tour_audit','vera_live_tour_meta','vera_live_tour_invoice','vera_live_tour_report']:
+                      where='' if table.endswith('_meta') else ' WHERE deleted_at IS NULL'
+                      row=conn.execute(text('SELECT count(*) AS records,coalesce(sum(pg_column_size(payload)),0) AS stored_payload_bytes FROM '+table+where)).mappings().one()
+                      print('PAYLOAD_METRICS '+json.dumps({'table':table,**dict(row)},default=str))
+          except Exception as exc:
+              print('PAYLOAD_METRICS_ERROR='+type(exc).__name__)
+          finally:
+              engine.dispose()
           for path in [Path('/var/log/nginx/access.log'),Path('/var/log/nginx/error.log')]:
               if not path.is_file(): continue
               result=subprocess.run(['tail','-n','10000',str(path)],capture_output=True,text=True,timeout=5)
