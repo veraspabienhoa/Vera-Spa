@@ -33,3 +33,39 @@ jobs:
           ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 \
             "${VPS_USER}@${VPS_HOST}" \
             'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); git -C "$release_dir" rev-parse HEAD; curl -fsS --max-time 8 http://127.0.0.1:8000/v2/live-tour/projection-queue/health | /opt/vera-spa/.venv/bin/python -c "import json,sys; p=json.load(sys.stdin); print(json.dumps({**{k:p.get(k) for k in (\"ok\",\"release\",\"counts\",\"oldest_pending\",\"last_success_age\")},\"alert_active\":p.get(\"alerting\",{}).get(\"active\"),\"conditions\":p.get(\"alerting\",{}).get(\"conditions\")},sort_keys=True))"; /opt/vera-spa/.venv/bin/python "$release_dir/vera_vps_runtime_diagnostics.py"'
+
+      - name: Identify contended relations without query text
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'cd /opt/vera-spa/current && /opt/vera-spa/.venv/bin/python -' <<'PY'
+          import os, json
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.pool import NullPool
+          from vera_vps_data_check import _database_url, _running_api_environment
+          from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_environment
+          env = {k: os.environ.get(k, '') for k in RUNTIME_ENV_KEYS} if load_managed_runtime_environment() else _running_api_environment()
+          engine = create_engine(_database_url(env), poolclass=NullPool, connect_args={'connect_timeout':5, 'sslmode':env.get('DB_SSLMODE','require'), 'options':'-c default_transaction_read_only=on -c statement_timeout=3000 -c lock_timeout=1000'})
+          try:
+              with engine.connect() as conn:
+                  rows = conn.execute(text("""
+                      SELECT a.pid, a.state, l.mode, l.granted, c.relname,
+                             pg_blocking_pids(a.pid) AS blockers,
+                             EXTRACT(EPOCH FROM clock_timestamp()-a.xact_start)::int AS age
+                      FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+                      JOIN pg_class c ON c.oid=l.relation
+                      WHERE a.datname=current_database() AND a.usename=current_user
+                        AND a.pid<>pg_backend_pid() AND l.locktype='relation'
+                        AND (c.relname LIKE 'vera_%' OR c.relname='employees')
+                        AND l.relation IN (SELECT relation FROM pg_locks WHERE NOT granted AND locktype='relation')
+                      ORDER BY c.relname, l.granted, a.pid LIMIT 100
+                  """)).mappings().all()
+              for row in rows:
+                  print('RELATION_LOCK: '+json.dumps(dict(row), default=str, sort_keys=True))
+              print('RELATION_CHECK_OK')
+          except Exception as exc:
+              print('RELATION_CHECK_ERROR='+type(exc).__name__)
+          finally:
+              engine.dispose()
+          PY
