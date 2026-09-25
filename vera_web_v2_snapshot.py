@@ -364,15 +364,15 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         mapping_admin(ident)
         if not body.confirmed:
             raise HTTPException(400, 'Cần xác nhận hồ sơ thiết bị và mã TimeSoft thuộc cùng nhân viên.')
+        actor = str(getattr(ident, 'employee_username', '') or '').strip()
+        if not actor:
+            raise HTTPException(403, 'Không xác định được người xác nhận ánh xạ.')
         key = mapping_key()
         from vera_facegate_control_log import fetch_registered_profile
         # Device I/O must finish before opening the database transaction.
         observed_address, profile = device_call(fetch_registered_profile, body.profile_id, return_address=True)
         if profile['registration_ref'] != body.registration_ref or profile['device_name'] != body.device_name:
             raise HTTPException(409, 'Hồ sơ đăng ký đã thay đổi. Hãy đọc lại hồ sơ và xác nhận.')
-        actor = str(getattr(ident, 'employee_username', '') or '').strip()
-        if not actor:
-            raise HTTPException(403, 'Không xác định được người xác nhận ánh xạ.')
         with engine_instance().begin() as conn:
             from vera_web_v2_devices import facegate_address
             address = facegate_address(conn)

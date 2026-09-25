@@ -95,7 +95,8 @@ def read_registry(conn, *, lock=False):
 @contextmanager
 def use_registered_facegate(engine_instance):
     """Resolve the allowlisted IP before network I/O, releasing the DB connection."""
-    with engine_instance().connect() as conn:
+    engine = engine_instance() if callable(engine_instance) else engine_instance
+    with engine.connect() as conn:
         address = facegate_address(conn)
     if address:
         try:

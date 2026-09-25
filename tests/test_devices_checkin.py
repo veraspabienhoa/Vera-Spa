@@ -40,7 +40,8 @@ class Store:
             self.row = {'value_json': json.loads(params['initial']), 'revision': 0}
         if sql.startswith('UPDATE'):
             self.row = {'value_json': json.loads(params['value']), 'revision': self.row['revision'] + 1}
-        return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: deepcopy(self.row)))
+        return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: deepcopy(self.row)),
+                               scalar=lambda: (self.row or {}).get('value_json'))
 
 
 def fixture(role='admin', rows=None):
