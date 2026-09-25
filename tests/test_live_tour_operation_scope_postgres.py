@@ -61,7 +61,9 @@ def test_operations_do_not_read_financial_history_or_other_receipts(database, pa
     for key in ('invoices','reports','combo_usage','invoice_changes'):
         assert actual[key] == prepared[key]
     assert all(actual['idempotency'][k] == v for k,v in prepared['idempotency'].items())
-    assert actual['audit'][:-1] == prepared['audit'][1:]
+    actions = ['complete', 'move_pending', 'finish_to_pending'] if action == 'finish_to_pending' else [action]
+    assert actual['audit'][:-len(actions)] == prepared['audit'][len(actions):]
+    assert [row['action'] for row in actual['audit'][-len(actions):]] == actions
     if action == 'start':
         assert actual['employees'][0]['tour_count'] == 1
     if action == 'end_break':
@@ -158,7 +160,14 @@ def test_projection_updates_roster_without_touching_history_or_receipts(database
 
 
 def test_compact_disjoint_writes_append_history_without_lost_updates(database, payments):
-    before, version = saved(database)
+    # Shared customer reservations deliberately serialize even distinct rooms.
+    # Use idle employees without the fixture's shared customer for this test.
+    with database.begin() as conn:
+        store.lock(conn)
+        prior, _, _ = store.read(conn)
+        before = deepcopy(prior)
+        before['employees'] = [employee('e1', 'Test 1'), employee('e2', 'Test 2')]
+        version = store.write(conn, prior, before, 'fixture')
     barrier = Barrier(2)
     def edit(identifier):
         with database.begin() as conn:
