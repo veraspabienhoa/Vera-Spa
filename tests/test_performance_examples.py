@@ -86,3 +86,9 @@ def test_month_api_reads_only_requested_month_and_rechecks_permissions():
         allowed[0]=False
         assert client.get('/v2/leave/month-records?month=2026-09').status_code==403
     engine.dispose()
+
+
+def test_cache_serializes_postgres_numeric_like_fastapi():
+    from decimal import Decimal
+    cache=ReadCache()
+    assert cache.get_or_load('penalty',lambda:{'penalty':Decimal('100000.00'),'part':Decimal('0.5')})=={'penalty':100000,'part':0.5}

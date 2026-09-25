@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from concurrent.futures import Future
 from datetime import date, datetime
+from decimal import Decimal
 import json
 from threading import RLock
 from time import monotonic
@@ -10,6 +11,8 @@ from time import monotonic
 def json_default(value):
     if isinstance(value, (date, datetime)):
         return value.isoformat()
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
     raise TypeError(type(value).__name__)
 
 

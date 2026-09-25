@@ -189,13 +189,15 @@ jobs:
                   start = time.perf_counter()
                   state, revision, versions = resource_store.read(conn, collections={'employees','rooms','services','combos','invoices'})
                   print('SNAPSHOT_STAGE ' + json.dumps({'stage': 'read', 'seconds': round(time.perf_counter()-start, 3)}))
+              print('READ_INVOICE_COUNT=' + str(len(state['invoices'])))
+              state['invoices'] = state['invoices'][-50:]
               now = datetime.now(live_tour.VN_TZ)
               start = time.perf_counter()
               normalized = live_tour._normalize_state(state, now)
               print('SNAPSHOT_STAGE ' + json.dumps({'stage': 'normalize', 'seconds': round(time.perf_counter()-start, 3)}))
               start = time.perf_counter()
-              working = live_tour._state_response({**normalized, 'invoices': normalized['invoices'][-50:]}, revision, now)
-              print('SNAPSHOT_STAGE ' + json.dumps({'stage': 'copy', 'seconds': round(time.perf_counter()-start, 3)}))
+              working = live_tour._state_response(normalized, revision, now, can_payment=True)
+              print('SNAPSHOT_STAGE ' + json.dumps({'stage': 'render_page', 'seconds': round(time.perf_counter()-start, 3)}))
               profiler.disable()
               print('SNAPSHOT_COUNTS ' + json.dumps({'receipts': len(state.get('idempotency', {})), 'collections': {k: len(state.get(k, [])) for k in resource_store.relational.RESOURCE_COLLECTIONS}}))
               stats = pstats.Stats(profiler).stats
