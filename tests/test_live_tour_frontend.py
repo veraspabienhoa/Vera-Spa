@@ -322,7 +322,7 @@ def test_invoice_action_permissions_are_independent_in_frontend():
     assert json.loads(result.stdout) == [case[1] for case in cases]
 
 
-def test_invoice_editors_use_opening_revision_and_require_a_reason():
+def test_invoice_editors_use_opening_revision_and_require_non_admin_reason():
     source = _source(LIVE_TOUR)
     assert "options.expectedRevision ?? data.revision" in source
     assert "['invoices', 'Hóa đơn đã thanh toán']" in source
@@ -330,7 +330,8 @@ def test_invoice_editors_use_opening_revision_and_require_a_reason():
         dialog = _source(LIVE_TOUR.parent.parent / "components" / component)
         assert "expectedRevision: revision" in dialog
         assert "reason: reason.trim()" in dialog
-        assert "disabled={!reason.trim()}" in dialog
+        assert "disabled={!isAdmin && !reason.trim()}" in dialog
+        assert "required={!isAdmin}" in dialog
         assert 'role="dialog" aria-modal="true"' in dialog
 
 

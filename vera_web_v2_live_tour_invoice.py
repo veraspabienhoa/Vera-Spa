@@ -6,19 +6,21 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 
-def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None, allowed_delete_date=None):
+def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None, allowed_delete_date=None, admin_override=False):
     deleting = action == "paid_invoice_delete"
     allowed = {"invoice_id", "reason"} if deleting else {"invoice_id", "reason", "note", "entries", "discount", "tip", "payment_method", "invoice_at"}
     if set(payload) - allowed:
         raise HTTPException(400, "Không được đổi khách hàng, dịch vụ, ngày hoặc mã hóa đơn đã thanh toán; hãy hủy và lập lại nếu cần.")
     reason = payload.get("reason")
+    if admin_override and (reason is None or isinstance(reason, str) and not reason.strip()):
+        reason = "Admin điều chỉnh hóa đơn"
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
         raise HTTPException(400, "Nhập lý do sửa/hủy hóa đơn (tối đa 1000 ký tự).")
     working = deepcopy(state)
     invoice = next((row for row in working["invoices"] if row.get("id") == payload.get("invoice_id")), None)
     if invoice is None:
         raise HTTPException(404, "Không tìm thấy hóa đơn đã thanh toán còn hiệu lực.")
-    if deleting and allowed_delete_date is not None:
+    if deleting and not admin_override and allowed_delete_date is not None:
         try:
             paid_date = date.fromisoformat(str(invoice.get("business_date") or invoice.get("effective_at") or invoice.get("created_at"))[:10])
         except (TypeError, ValueError):
@@ -44,9 +46,17 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
             open_entries = working["employees"] + [entry for row in working["pending"] for entry in row.get("entries", [])]
             bound_booking = any(row.get("combo_purchase_id") == purchase_id for row in open_entries)
             if int(purchase.get("used") or 0) or reserved or has_usage or bound_booking:
-                raise HTTPException(409, "Combo đã sử dụng hoặc đang giữ chỗ. Hãy xử lý các lượt dùng/booking liên quan trước khi hủy hóa đơn bán combo.")
-            customer["combo_purchases"].remove(purchase)
-            purchase = None
+                if not admin_override:
+                    raise HTTPException(409, "Combo đã sử dụng hoặc đang giữ chỗ. Hãy xử lý các lượt dùng/booking liên quan trước khi hủy hóa đơn bán combo.")
+                # Voiding the sale must not orphan completed redemptions or
+                # interrupt an in-flight booking. Retain the entitlement ledger;
+                # only the sale's revenue is reversed. Its original value and
+                # balances remain in the append-only correction below.
+                purchase.update(price=0, sale_invoice_voided_at=iso(now),
+                                sale_invoice_voided_by=actor, updated_at=iso(now))
+            else:
+                customer["combo_purchases"].remove(purchase)
+                purchase = None
         elif purchase_id:
             units = invoice.get("combo_units")
             if (type(units) is not int or units <= 0 or len(usage) != 1
@@ -125,6 +135,7 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
         after = deepcopy(invoice)
     change = {"id": str(uuid4()), "invoice_id": before["id"], "action": action, "actor": actor,
               "at": iso(now), "reason": reason.strip(), "before": before, "after": after,
+              "admin_override": admin_override,
               "reports_before": reports_before, "usage_before": usage_before,
               "purchase_before": purchase_before, "purchase_after": deepcopy(purchase)}
     working.setdefault("invoice_changes", []).append(change)

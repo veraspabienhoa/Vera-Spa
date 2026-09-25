@@ -1790,7 +1790,7 @@ def _snapshot_for_backup(state: dict[str, Any]) -> dict[str, Any]:
     return snapshot
 
 
-def _change_pending(state, action, payload, actor, now):
+def _change_pending(state, action, payload, actor, now, *, admin_override=False):
     """Edit/void only an unpaid draft; preserve a complete, append-only snapshot.
 
     Customer/staff identity and completion counters are historical facts here.
@@ -1801,6 +1801,8 @@ def _change_pending(state, action, payload, actor, now):
     if set(payload) - allowed:
         raise HTTPException(400, "Chỉ được sửa dịch vụ, giá và ghi chú của hóa đơn chờ thanh toán.")
     reason = payload.get("reason")
+    if admin_override and (reason is None or isinstance(reason, str) and not reason.strip()):
+        reason = "Admin điều chỉnh hóa đơn"
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
         raise HTTPException(400, "Nhập lý do sửa/xóa hóa đơn (tối đa 1000 ký tự).")
     working = deepcopy(state)
@@ -1812,7 +1814,7 @@ def _change_pending(state, action, payload, actor, now):
         parsed_at = _parse_datetime(pending.get("effective_at") or pending.get("created_at"))
         pending_date = parsed_at.astimezone(VN_TZ).date() if parsed_at else None
     today = now.astimezone(VN_TZ).date()
-    if pending_date not in {today, today - timedelta(days=1)}:
+    if not admin_override and pending_date not in {today, today - timedelta(days=1)}:
         raise HTTPException(403, "Chỉ được sửa hoặc xóa hóa đơn chờ của hôm nay và hôm qua.")
     before = deepcopy(pending)
     if action == "pending_delete":
@@ -1863,7 +1865,8 @@ def _change_pending(state, action, payload, actor, now):
         pending.update(updated_at=_iso(now), updated_by=actor)
         after = deepcopy(pending)
     change = {"id": str(uuid4()), "pending_id": before["id"], "action": action,
-              "actor": actor, "at": _iso(now), "reason": reason.strip(), "before": before, "after": after}
+              "actor": actor, "at": _iso(now), "reason": reason.strip(), "before": before, "after": after,
+              "admin_override": admin_override}
     working.setdefault("pending_changes", []).append(change)
     state.clear()
     state.update(working)
@@ -1933,12 +1936,12 @@ def _appearance_settings_update(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, "Cấu hình giao diện vượt giới hạn 100 KB.")
     return deepcopy(payload)
 
-def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime) -> dict[str, Any]:
+def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime, *, admin_invoice_override: bool = False) -> dict[str, Any]:
     action = str(action or "").strip().lower()
     # Preserve legacy display values when an action replaces booking/backup data.
     # Only start and reorder explicitly write the persistent board fields.
     previous = {row["id"]: _board_starts(row) for row in state["employees"]}
-    result = _apply_action_impl(state, action, payload, actor, now)
+    result = _apply_action_impl(state, action, payload, actor, now, admin_invoice_override=admin_invoice_override)
     for row in state["employees"]:
         for field, value in previous.get(row["id"], {}).items():
             if action == "restore":
@@ -1948,7 +1951,7 @@ def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], a
     return result
 
 
-def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime) -> dict[str, Any]:
+def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime, *, admin_invoice_override: bool = False) -> dict[str, Any]:
     action = str(action or "").strip().lower()
     _reject_external_action(action)
     requested_action = action
@@ -2292,12 +2295,13 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             employee["last_assignment_display"]["pending_id"] = pending["id"]
         result["pending"] = pending
     elif action in {"pending_update", "pending_delete"}:
-        result = _change_pending(state, action, payload, actor, now)
+        result = _change_pending(state, action, payload, actor, now, admin_override=admin_invoice_override)
     elif action in {"paid_invoice_update", "paid_invoice_delete"}:
         result = change_paid_invoice(state, action, payload, actor, now, money=_bounded_money,
                                      payment_values=_payment_values, canonical_method=_canonical_payment_method,
                                      available_combo=_available_combo, iso=_iso, max_money=MAX_MONEY,
-                                     invoice_date=_invoice_date, allowed_delete_date=now.astimezone(VN_TZ).date())
+                                     invoice_date=_invoice_date, allowed_delete_date=now.astimezone(VN_TZ).date(),
+                                     admin_override=admin_invoice_override)
     elif action in {"checkout", "quick_checkout"}:
         result["invoice"] = _checkout(
             state, payload, actor, now, action == "quick_checkout", financial_timing,
@@ -2484,7 +2488,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         result = change_customer(state, action, payload, actor, now, iso=_iso,
                                  bounded_number=_bounded_number)
     elif action in {"report_invoice_update", "report_invoice_delete"}:
-        result = _apply_action(state, action.replace("report_invoice_", "paid_invoice_"), payload, actor, now)
+        result = _apply_action(state, action.replace("report_invoice_", "paid_invoice_"), payload, actor, now,
+                               admin_invoice_override=admin_invoice_override)
     elif action == "customer_upsert":
         name = str(payload.get("customer_name") or "").strip()
         phone = str(payload.get("customer_phone") or "").strip()
@@ -4892,7 +4897,10 @@ def install_live_tour_routes(
                 payload["_manual_break_allowed"] = True
             if action == "combo_purchase":
                 payload["_actor_role"] = str(getattr(ident, "role", "") or "").strip().lower()
-            result = _apply_action(working, action, payload, actor, now)
+            # Authority comes exclusively from the authenticated identity, never
+            # from a payload flag, an account name or a delegated feature grant.
+            result = _apply_action(working, action, payload, actor, now,
+                                   admin_invoice_override=str(getattr(ident, "role", "") or "").strip().lower() == "admin")
             if action in {"checkout", "quick_checkout", "combo_purchase", "combo_sale_decide"} and result.get("invoice"):
                 bank = _selected_bank(working.get("payment_settings") or {}, grants.get("viewer_bank"), payload.get("bank_selection", "auto"))
                 result["invoice"]["payment_bank"] = bank

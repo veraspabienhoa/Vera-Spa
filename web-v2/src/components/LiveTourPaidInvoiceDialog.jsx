@@ -12,7 +12,7 @@ import './LiveTourBookingDialog.css'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
 
-export default function LiveTourPaidInvoiceDialog({ context, busy, error, onAction, onClose, canEditDate = false }) {
+export default function LiveTourPaidInvoiceDialog({ context, busy, error, onAction, onClose, canEditDate = false, isAdmin = false }) {
   const { item, mode, revision } = context
   const deleting = mode === 'delete'
   const dialog = useDialogFocus(() => { if (!busy) onClose() })
@@ -42,7 +42,9 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
       <p><strong>{item.bill_no} · {item.customer_name || 'Khách lẻ'}</strong><br/>{formatVeraDate(item.business_date)} · {item.payment_method} · {money(item.total)}</p>
       {error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất.</p>}
       <p className={deleting ? 'error-box' : 'setup-note'}>{deleting
-        ? 'Hủy hóa đơn sẽ loại tiền và TIP khỏi báo cáo, hoàn vé đã dùng theo lịch sử gốc. Hóa đơn bán combo chỉ được hủy khi combo chưa dùng và không còn booking giữ chỗ. Bản gốc được giữ trong lịch sử.'
+        ? isAdmin
+          ? 'Admin có thể hủy hóa đơn ở mọi ngày. Tiền và TIP của hóa đơn được loại khỏi báo cáo. Lượt combo được hoàn theo lịch sử gốc. Nếu hủy hóa đơn bán combo đã dùng hoặc đang giữ chỗ, số dư và booking combo được giữ nguyên; admin có thể điều chỉnh combo riêng. Bản gốc được giữ trong lịch sử.'
+          : 'Hủy hóa đơn sẽ loại tiền và TIP khỏi báo cáo, hoàn vé đã dùng theo lịch sử gốc. Hóa đơn bán combo chỉ được hủy khi combo chưa dùng và không còn booking giữ chỗ. Bản gốc được giữ trong lịch sử.'
         : 'Sửa giá, giảm giá, TIP, ghi chú hoặc phương thức thu tiền. Khách hàng, dịch vụ, nhân viên, số bill được giữ nguyên. Muốn đổi dịch vụ hoặc đổi qua lại COMBO: hủy rồi lập lại để đối soát vé.'}</p>
       <p>Đây là điều chỉnh sổ hệ thống; không tự hoàn tiền qua ngân hàng hoặc thẻ. Cần đối soát thu/hoàn tiền thực tế riêng.</p>
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
@@ -57,8 +59,8 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
           <label className="live-tour-field wide"><span>Ghi chú</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label>
           <div className="wide tour-booking-total"><span>Tổng tiền sau sửa{covered ? ' (combo đã trả trước)' : ''}</span><strong>{money(total)}</strong></div>
         </>}
-        <label className="live-tour-field wide"><span>Lý do {deleting ? 'hủy' : 'sửa'} *</span><textarea required maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>
-        <UiToolbar data-ui-key="u-04c00bbd323b" className="live-tour-modal-actions wide"><button data-ui-key="u-ad34181f38ce" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-ad34181f38ce">Đóng</UiCustomText></button><button data-ui-key="u-03d2b0024e0c" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!reason.trim()}>{deleting ? 'Xác nhận hủy hóa đơn' : 'Lưu điều chỉnh hóa đơn'}</button></UiToolbar>
+        <label className="live-tour-field wide"><span>Lý do {deleting ? 'hủy' : 'sửa'}{isAdmin ? ' (không bắt buộc)' : ' *'}</span><textarea required={!isAdmin} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>
+        <UiToolbar data-ui-key="u-04c00bbd323b" className="live-tour-modal-actions wide"><button data-ui-key="u-ad34181f38ce" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-ad34181f38ce">Đóng</UiCustomText></button><button data-ui-key="u-03d2b0024e0c" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!isAdmin && !reason.trim()}>{deleting ? 'Xác nhận hủy hóa đơn' : 'Lưu điều chỉnh hóa đơn'}</button></UiToolbar>
       </fieldset></form>
     </section>
   </div>

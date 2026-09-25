@@ -117,7 +117,7 @@ export default function LiveTourReportsPage({ user }) {
       })}</tbody></table></div>)}
       {!rows.length && <p>Không có dữ liệu phù hợp bộ lọc.</p>}
     </section>
-    {context && <LiveTourPaidInvoiceDialog key={`${context.item.id}:${context.mode}`} context={context} busy={busy} error={error} onAction={act} canEditDate={grants.invoice_date_edit} onClose={() => setContext(null)}/>}
+    {context && <LiveTourPaidInvoiceDialog key={`${context.item.id}:${context.mode}`} context={context} busy={busy} error={error} onAction={act} isAdmin={isAdmin} canEditDate={isAdmin || grants.invoice_date_edit} onClose={() => setContext(null)}/>}
     {receipt && <LiveTourReceipt invoice={receipt} paymentSettings={data.payment_settings} onClose={() => setReceipt(null)}/>}
   </div>
 }
