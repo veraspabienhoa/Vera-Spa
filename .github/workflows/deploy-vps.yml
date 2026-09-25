@@ -76,13 +76,13 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             "set -euo pipefail; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f \"/proc/\$pid/cwd\"); test \"\$(git -C \"\$release_dir\" rev-parse HEAD)\" = '$DEPLOY_SHA'; test -f \"\${release_dir}/configure_vps_database.sh\"; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_concurrency_schema.py\" --apply --verify; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_data_check.py\""
 
-      - name: Install and verify configured Live Tour cleanup timer
+      - name: Verify configured Live Tour background cleanup
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; timeout 15 /opt/vera-spa/.venv/bin/python vera_technical_retention.py; bash ops/systemd/install-technical-retention.sh'
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; timeout 15 /opt/vera-spa/.venv/bin/python vera_technical_retention.py; timeout 30 /opt/vera-spa/.venv/bin/python vera_technical_retention.py --apply --scheduled'
 
       - name: Verify production Auth through browser edge policy
         shell: bash

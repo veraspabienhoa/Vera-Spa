@@ -11,6 +11,7 @@ from vera_notification_tasks import task_catalog, TaskNotificationMiddleware
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
+from vera_notification_periods import current_quota_sql
 
 
 RELEASE = "notification-routing-2026-09-22-v2"
@@ -273,6 +274,7 @@ def _inbox_rows(conn, ident):
         LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
         LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='in_app'
         WHERE d.recipient=:recipient AND d.channel='in_app' AND d.read_at IS NULL
+        AND {current_quota_sql()}
         AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
         AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
         AND NOT (r.source_key='attendance_break' AND p.role='admin'
@@ -288,6 +290,7 @@ def _popup_rows(conn, ident):
         LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
         LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='popup'
         WHERE d.recipient=:recipient AND d.channel='popup' AND d.read_at IS NULL
+        AND {current_quota_sql()}
         AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
         AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
         AND r.channels ? 'popup' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
@@ -447,6 +450,7 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
                 LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel=d.channel
                 WHERE d.id=:id AND d.recipient=:recipient
+                AND {current_quota_sql()}
                 AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
                 AND d.channel IN ('push','in_app','popup') AND r.channels ? d.channel
                 AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}

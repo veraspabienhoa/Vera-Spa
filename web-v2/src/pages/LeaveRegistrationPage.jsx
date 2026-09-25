@@ -819,7 +819,6 @@ export default function LeaveRegistrationPage({ user }) {
             </div>
           )}
           <form ref={leaveFormRef} className="leave-form" onSubmit={submit}>
-            <p role="status">Lịch nghỉ tự lưu khi nhập đủ và rời khung đăng ký. Có thể bấm Ghi để lưu ngay.</p>
             <fieldset disabled={saving || managing} className="autosave-fields">
             <label>Tên nhân viên</label>
             <select
@@ -890,10 +889,6 @@ export default function LeaveRegistrationPage({ user }) {
           <div data-ui-key="u-18eec50740be" className="panel-title-row">
             <div>
               <h2>THỐNG KÊ</h2>
-              <p>
-                Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(rangeStart)} – {formatDateDisplay(rangeEnd)}
-                {statsEmployeeFilter ? ` · Nhân viên: ${statsEmployeeFilter}` : ''}.
-              </p>
             </div>
             <UiToolbar data-ui-key="u-e85272e9d623" className="list-actions statistics-title-actions">
               {canViewPenalty && <div className="penalty-chip">Tổng tiền phạt: {loadState.daily === 'ready' ? `${statsTotalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}
@@ -1021,17 +1016,11 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
         </section>
 
-        <section data-ui-key="u-6a4d9baaa43d" className="panel leave-list-panel">
+        <section data-ui-key="u-6a4d9baaa43d" className="panel leave-list-panel"
+          data-leave-start={listRangeStart} data-leave-end={listRangeEnd} data-leave-employee={employeeSearch}>
           <div data-ui-key="u-8b2d8ad1d8f1" className="panel-title-row">
             <div>
               <h2>DANH SÁCH</h2>
-              <p>Tháng đang xem: {activeMonth.slice(5)}-{activeMonth.slice(0, 4)}. Bộ lọc chỉ áp dụng trong tháng này.</p>
-              <p>
-                Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {' '}
-                {loadState.records === 'loading' ? 'Đang tải lịch nghỉ…' : loadState.records === 'error' ? 'Chưa tải được lịch nghỉ.' : listRangeStart === listRangeEnd
-                  ? `${weekdayForDate(listRangeStart)} có ${filteredRecords.length} lịch nghỉ.`
-                  : `Có ${filteredRecords.length} lịch nghỉ.`}
-              </p>
             </div>
             <button data-ui-key="u-4c4154cfd167" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={busy}>
               <RefreshCw size={15} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-4c4154cfd167"> Làm mới

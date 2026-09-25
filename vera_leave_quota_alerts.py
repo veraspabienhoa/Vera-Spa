@@ -16,6 +16,7 @@ from vera_leave_advance import balances as advance_balances
 from vera_web_v2_policy_v40 import GROUP3_WEEKEND_REASON_KEYS, _reason_key
 import vera_web_v2_notification_settings as settings
 from vera_auto_penalty_notifications import _send, _vault_secret, APP_URL
+from vera_notification_periods import current_month
 
 LIMITS = {'days': 5, 'weekends': 2, 'generated': 2}
 
@@ -88,7 +89,10 @@ def scan(engine):
         if not conn.execute(text("SELECT pg_try_advisory_xact_lock(hashtext('vera:leave-quota-alerts'))")).scalar():
             return
         ensure_schema(conn)
-        items = read_report(conn)
+        month_start = date.fromisoformat(current_month() + '-01')
+        # Historical rows may determine borrowed leave, but alerts concern only
+        # the current Vietnam month, never past or future report months.
+        items = read_report(conn, month_start, month_start)
         conn.execute(text('UPDATE vera_leave_quota_alert SET active=FALSE WHERE active=TRUE'))
         for item in items:
             conn.execute(text('''INSERT INTO vera_leave_quota_alert(fingerprint,payload)
@@ -105,16 +109,19 @@ def scan(engine):
 
 
 def deliver(engine):
+    month_key = current_month()
     with engine.begin() as conn:
         ensure_schema(conn)
         if not settings.is_enabled(conn, 'leave_quota_exceeded'):
             return
         routed = False
-        for alert in conn.execute(text('SELECT fingerprint,payload FROM vera_leave_quota_alert WHERE active')).mappings():
+        for alert in conn.execute(text("SELECT fingerprint,payload FROM vera_leave_quota_alert WHERE active AND payload->>'month'=:month"),
+                {'month': month_key}).mappings():
             item = alert['payload']
             routed = enqueue_notification(conn, 'leave_quota_exceeded', {
                 'title':'VERA SPA · Đăng ký nghỉ vượt hạn mức',
-                'body':f"{item['employee']} · {item['month']}: vượt hạn mức đăng ký nghỉ.",
+                'body':f"{item['employee']} · {'-'.join(reversed(item['month'].split('-')))}: vượt hạn mức đăng ký nghỉ.",
+                'quota_month': item['month'],
                 'tag':alert['fingerprint']}) or routed
         if routed: return
         private_key = _vault_secret(conn, 'vera_v2_vapid_private_key')
@@ -126,7 +133,7 @@ def deliver(engine):
             JOIN vera_leave_quota_alert a USING(fingerprint)
             JOIN vera_v2_push_subscription s USING(subscription_id)
             JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id
-            WHERE a.active AND s.is_active AND p.is_active AND lower(btrim(p.role))='admin'
+            WHERE a.active AND a.payload->>'month'=:month AND s.is_active AND p.is_active AND lower(btrim(p.role))='admin'
               AND d.sent_at IS NULL AND (d.claimed_at IS NULL OR d.claimed_at < NOW()-INTERVAL '5 minutes')
               AND (d.attempted_at IS NULL OR d.attempted_at < NOW()-INTERVAL '1 minute')
             ORDER BY a.created_at LIMIT 10 FOR UPDATE OF d SKIP LOCKED
@@ -134,9 +141,11 @@ def deliver(engine):
           FROM candidates c,vera_leave_quota_alert a,vera_v2_push_subscription s
           WHERE d.fingerprint=c.fingerprint AND d.subscription_id=c.subscription_id
             AND a.fingerprint=d.fingerprint AND s.subscription_id=d.subscription_id
-          RETURNING d.fingerprint,d.subscription_id,s.endpoint,s.p256dh,s.auth_secret,a.payload''')).mappings()]
+          RETURNING d.fingerprint,d.subscription_id,s.endpoint,s.p256dh,s.auth_secret,a.payload'''), {'month': month_key}).mappings()]
     for delivery in deliveries:
         item = delivery['payload']
+        if item['month'] != current_month():
+            continue
         month = '/'.join(reversed(item['month'].split('-')))
         labels = {'days': 'ngày nghỉ', 'weekends': 'lần cuối tuần Nhóm 3', 'generated': 'lần phát sinh'}
         detail = '; '.join(f"{item[k]:g}/{item.get('day_limit', 5) if k == 'days' else LIMITS[k]} {labels[k]}" for k in item['exceeded'])

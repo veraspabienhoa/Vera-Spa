@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 from sqlalchemy import text
+from vera_notification_periods import current_month, quota_month, current_quota_sql
 
 APP_URL = 'https://app.veraspa.vn/'
 
@@ -96,6 +97,8 @@ def resolve_recipients(conn, values, source, payload):
 
 
 def enqueue(conn, source_key, payload, event_key=None):
+    if source_key == 'leave_quota_exceeded' and quota_month(payload) != current_month():
+        return True  # Handled: do not fall back to sending an expired quota notice.
     ensure_schema(conn)
     rules = [dict(row) for row in conn.execute(text('''SELECT r.*, COALESCE(s.enabled,TRUE) AS enabled
         FROM vera_notification_route r LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
@@ -108,6 +111,8 @@ def enqueue(conn, source_key, payload, event_key=None):
         title = title[8:].lstrip(' ·:-–') or 'Thông báo'
     safe = {'title': title[:160], 'body': str(payload.get('body') or '')[:2000],
             'url': APP_URL, 'tag': event_key, 'kind': str(payload.get('kind') or source_key)[:80]}
+    if source_key == 'leave_quota_exceeded':
+        safe['quota_month'] = quota_month(payload)
     if source_key == 'leave_watch' and payload.get('watched_date'):
         from datetime import date
         try: safe['watched_date'] = date.fromisoformat(str(payload['watched_date'])).isoformat()
@@ -163,9 +168,10 @@ def dispatch_pending(engine, send, vault, limit=30):
                     LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
                     LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='push'
                     WHERE r.key=:key AND {recipient_membership_sql()} AND r.channels ? 'push'
+                    AND {current_quota_sql(payload='CAST(:payload AS jsonb)')}
                     AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
                     AND NOT (r.source_key='attendance_break' AND p.role='admin'
-                        AND :kind='attendance-break-reminder')'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date'), 'kind':row['payload'].get('kind')}).scalar_one_or_none()
+                        AND :kind='attendance-break-reminder')'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date'), 'kind':row['payload'].get('kind'), 'payload': json.dumps(row['payload'])}).scalar_one_or_none()
                 subscriptions = [dict(r) for r in conn.execute(text('''SELECT subscription_id::text AS subscription_id,
                     endpoint,p256dh,auth_secret FROM vera_v2_push_subscription
                     WHERE auth_user_id::text=:recipient AND is_active'''), {'recipient': row['recipient']}).mappings()] if allowed else []
