@@ -185,6 +185,7 @@ def write(conn, before, after, actor):
     """), {'patch': relational._json(changes), 'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
     if conn.info.get('live_tour_exclusive', True):
         conn.execute(text(f"UPDATE {relational.META_TABLE} SET payload=jsonb_set(payload,'{{_configuration_revision}}',to_jsonb(CAST(:revision AS bigint))) WHERE singleton=1"), {'revision':revision})
+    ordinal_updates = {}
     for key in sorted(set(old) | set(new)):
         previous = old.get(key)
         current = new.get(key)
@@ -195,7 +196,7 @@ def write(conn, before, after, actor):
         if current is None:
             conn.execute(text(f'UPDATE {table} SET deleted_at=NOW(),aggregate_revision=:revision,resource_revision=resource_revision+1 WHERE resource_id=:id'), {'id': identifier, 'revision': revision})
         elif previous is not None and previous[1] == current[1]:
-            conn.execute(text(f'UPDATE {table} SET ordinal=:ordinal WHERE resource_id=:id'), {'id':identifier,'ordinal':current[0]})
+            ordinal_updates.setdefault(table, []).append({'resource_id': identifier, 'ordinal': current[0]})
         else:
             ordinal, payload = current
             conn.execute(text(f"""INSERT INTO {table}(resource_id,ordinal,payload,payload_hash,aggregate_revision)
@@ -210,4 +211,15 @@ def write(conn, before, after, actor):
                 {'revision':revision,'id':identifier,'name':(current or previous)[1].get('name',''),'actor':actor,
                  'bo':previous[0] if previous else None,'ao':current[0] if current else None,
                  'before':relational._json(previous[1] if previous else None),'after':relational._json(current[1] if current else None)})
+    # Evicting one item from a full audit ring shifts every retained ordinal.
+    # Preserve the exact ordering in one statement per collection instead of
+    # thousands of network round trips while holding the transaction locks.
+    # The metadata update above already serializes publication through commit.
+    for table, updates in sorted(ordinal_updates.items()):
+        conn.execute(text(f"""
+            UPDATE {table} AS target SET ordinal=source.ordinal
+            FROM jsonb_to_recordset(CAST(:updates AS jsonb))
+                 AS source(resource_id text, ordinal integer)
+            WHERE target.resource_id=source.resource_id
+        """), {'updates': relational._json(updates)})
     return revision
