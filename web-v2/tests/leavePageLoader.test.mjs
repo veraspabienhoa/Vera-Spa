@@ -101,3 +101,18 @@ test('switching away and back before a queued read starts still completes the vi
   assert.deepEqual(view.started.at(-1), ['records'])
   assert.deepEqual(view.data.at(-1), ['records', 'today'])
 })
+
+test('obsolete HTTP request is aborted so the latest month can load immediately', async () => {
+  const loader = createLeavePageLoader(), view = observer()
+  let oldSignal
+  const old = loader.run([{ id: 'records', key: 'september', read: ({ signal }) => {
+    oldSignal = signal
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Aborted')), { once: true }))
+  } }], view.handlers)
+  await tick()
+  const next = loader.run([{ id: 'records', key: 'october', read: async () => 'october' }], view.handlers)
+  assert.equal(oldSignal.aborted, true)
+  assert.deepEqual(await Promise.all([old, next]), [false, true])
+  assert.deepEqual(view.data, [['records', 'october']])
+  assert.deepEqual(view.errors, [])
+})

@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from vera_postgres_job_queue import ensure_schema_conn
-from examples.performance.technical_retention import run
+from vera_technical_retention import run
 from test_live_tour_resource_postgres import database
 
 
@@ -24,3 +24,13 @@ def test_only_completed_old_projection_jobs_are_deleted(database):
         names=set(conn.execute(text('SELECT job_key FROM vera_background_job')).scalars())
         assert names=={'recent','processing','retry','failed','financial'}
         assert conn.execute(text('SELECT count(*) FROM vera_live_tour_meta')).scalar_one()==1
+
+
+def test_cleanup_skips_locked_completed_job(database):
+    with database.begin() as conn:
+        ensure_schema_conn(conn)
+        conn.execute(text("INSERT INTO vera_background_job(queue_name,job_key,status,completed_at) VALUES('live_tour_projection','locked-done','done',NOW()-INTERVAL '4 days')"))
+    with database.begin() as writer:
+        writer.execute(text("SELECT id FROM vera_background_job WHERE job_key='locked-done' FOR UPDATE"))
+        assert run(database, apply=True)['removed'] == 0
+    assert run(database, apply=True)['removed'] == 1

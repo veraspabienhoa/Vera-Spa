@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test:dropdowns": "node --test tests/searchableDropdowns.test.mjs",
-    "test:leave-edit": "node --test tests/leaveRecordPermissions.test.mjs tests/leaveInlineEditor.test.mjs tests/leavePageLoader.test.mjs"
+    "test:leave-edit": "node --test tests/leaveRecordPermissions.test.mjs tests/leaveInlineEditor.test.mjs tests/leavePageLoader.test.mjs tests/leaveMonthRange.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.3",

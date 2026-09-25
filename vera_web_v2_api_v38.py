@@ -242,3 +242,6 @@ install_leave_quota_alerts(_shared.app, engine_instance=_api._engine_instance, c
 
 from vera_web_v2_products import install_product_routes
 install_product_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
+
+from vera_web_v2_leave_month import install_month_api
+install_month_api(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed)

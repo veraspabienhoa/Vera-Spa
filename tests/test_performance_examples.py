@@ -2,10 +2,10 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from datetime import date
 import pytest
-from examples.performance.read_cache import ReadCache
+from vera_read_cache import ReadCache
 from examples.performance.month_api import month_bounds, MONTH_ROWS
 from examples.performance.invoice_policy import invoice_policy
-from examples.performance.technical_retention import PRUNE
+from vera_technical_retention import PRUNE
 
 
 def test_month_window_never_reads_previous_month_and_handles_leap_year():
