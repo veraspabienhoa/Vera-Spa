@@ -6,11 +6,15 @@ export function createLeavePageLoader() {
   let revision = 0
   let tail = Promise.resolve()
   let loading = false
+  let controller = null
 
   return {
-    invalidate() { revision += 1; loading = false },
+    invalidate() { revision += 1; controller?.abort(); loading = false },
     isLoading() { return loading },
     run(jobs, { onlyChanged = false, onStart, onData, onError, onFinish }) {
+      controller?.abort()
+      controller = new AbortController()
+      const signal = controller.signal
       const currentRevision = ++revision
       const current = () => currentRevision === revision
       const needed = jobs.filter((job) => !onlyChanged || completedKeys.get(job.id) !== job.key)
@@ -26,7 +30,7 @@ export function createLeavePageLoader() {
           for (const job of needed) {
             if (!current()) return false
             try {
-              const data = await job.read()
+              const data = await job.read({ signal })
               if (!current()) return false
               onData(job.id, data)
               completedKeys.set(job.id, job.key)

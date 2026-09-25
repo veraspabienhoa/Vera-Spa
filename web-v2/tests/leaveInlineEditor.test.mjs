@@ -203,10 +203,10 @@ test('a delayed save refreshes the current filters instead of reopening the earl
     await act(async () => [...f.dom.window.document.querySelectorAll('button')].find((button) => button.textContent.includes('Lưu sửa')).click())
     f.calls.length = 0
     await act(async () => [...f.dom.window.document.querySelectorAll('.statistics-filter-toolbar button')].find((button) => button.textContent === 'Tuần sau').click())
-    const currentRange = f.calls.find(([name]) => name === 'leaveDailyStats').slice(1)
+    const currentRange = f.calls.find(([name]) => name === 'leaveDailyStats').slice(1, 4)
     f.calls.length = 0
     await act(async () => completeSave({}))
-    assert.deepEqual(f.calls.find(([name]) => name === 'leaveDailyStats').slice(1), currentRange)
+    assert.deepEqual(f.calls.find(([name]) => name === 'leaveDailyStats').slice(1, 4), currentRange)
     assert.match(f.dom.window.document.body.textContent, /LƯU SỬA THÀNH CÔNG/)
   } finally { completeSave({}); await f.dispose() }
 })
@@ -232,5 +232,23 @@ test('completed leave automatically saves on leaving the form and does not creat
     assert.equal(employee.value, '')
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1000)) })
     assert.equal(creates, 1, 'successful reset must not create again')
+  } finally { await f.dispose() }
+})
+
+test('changing the list month also confines statistics to that month', async () => {
+  const f = await fixture({ records: [], catalog: {} })
+  try {
+    f.calls.length = 0
+    const button = [...f.dom.window.document.querySelectorAll('.leave-list-panel button')].find((b) => b.textContent === 'Tháng sau')
+    await act(async () => button.click())
+    const records = f.calls.find(([name]) => name === 'leaveRecords')
+    const statistics = f.calls.find(([name]) => name === 'leaveDailyStats')
+    assert.ok(records && statistics)
+    const month = records[1].slice(0, 7)
+    assert.notEqual(month, iso(0).slice(0, 7))
+    for (const call of [records, statistics]) {
+      assert.equal(call[1].slice(0, 7), month)
+      assert.equal(call[2].slice(0, 7), month)
+    }
   } finally { await f.dispose() }
 })

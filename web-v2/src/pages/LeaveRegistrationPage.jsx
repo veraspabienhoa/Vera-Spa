@@ -6,6 +6,7 @@ import VeraDateInput from '../components/VeraDateInput'
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLeavePageLoader } from '../lib/leavePageLoader'
+import { leaveMonthRange } from '../lib/leaveMonthRange'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { numberInputDisplayValue } from '../lib/numberInput'
 import { playWatchBellSound, unlockWatchBellAudio } from '../lib/watchBell'
@@ -104,11 +105,14 @@ export default function LeaveRegistrationPage({ user }) {
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
   const [date, setDate] = useState(today())
   const [rangeFilter, setRangeFilter] = useState('Hôm nay')
-  const [rangeStart, setRangeStart] = useState(initialRange[0])
-  const [rangeEnd, setRangeEnd] = useState(initialRange[1])
+  const [requestedRangeStart, setRangeStart] = useState(initialRange[0])
+  const [requestedRangeEnd, setRangeEnd] = useState(initialRange[1])
   const [listRangeFilter, setListRangeFilter] = useState('Hôm nay')
-  const [listRangeStart, setListRangeStart] = useState(initialRange[0])
-  const [listRangeEnd, setListRangeEnd] = useState(initialRange[1])
+  const [requestedListRangeStart, setListRangeStart] = useState(initialRange[0])
+  const [requestedListRangeEnd, setListRangeEnd] = useState(initialRange[1])
+  const activeMonth = date.slice(0, 7)
+  const [rangeStart, rangeEnd] = leaveMonthRange(activeMonth, requestedRangeStart, requestedRangeEnd)
+  const [listRangeStart, listRangeEnd] = leaveMonthRange(activeMonth, requestedListRangeStart, requestedListRangeEnd)
   const [statsEmployeeSearch, setStatsEmployeeSearch] = useState('')
   const [statsEmployeeFilter, setStatsEmployeeFilter] = useState('')
   const [employeeSearch, setEmployeeSearch] = useState('')
@@ -216,17 +220,17 @@ export default function LeaveRegistrationPage({ user }) {
     const sources = { daily: 'thống kê lịch nghỉ', records: 'danh sách lịch nghỉ', reasons: 'danh sách lý do nghỉ', employees: 'danh sách nhân viên' }
     const key = (...parts) => JSON.stringify([identityKey, ...parts])
     const jobs = [
-      { id: 'records', key: key(listRangeStart, listRangeEnd), read: () => isApiConfigured
-        ? veraApi.leaveRecords(listRangeStart, listRangeEnd)
+      { id: 'records', key: key(listRangeStart, listRangeEnd), read: (options) => isApiConfigured
+        ? veraApi.leaveRecords(listRangeStart, listRangeEnd, options)
         : loadLeaveRecords(listRangeStart, listRangeEnd).then((records) => ({ records })) },
-      { id: 'daily', key: key(rangeStart, rangeEnd, statsEmployeeFilter), read: () => isApiConfigured
-        ? veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter)
+      { id: 'daily', key: key(rangeStart, rangeEnd, statsEmployeeFilter), read: (options) => isApiConfigured
+        ? veraApi.leaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter, options)
         : loadLeaveDailyStats(rangeStart, rangeEnd, statsEmployeeFilter).then((days) => ({ days })) },
-      { id: 'reasons', key: key(date), read: () => isApiConfigured
-        ? veraApi.leaveReasons(date)
+      { id: 'reasons', key: key(date), read: (options) => isApiConfigured
+        ? veraApi.leaveReasons(date, options)
         : loadLeaveReasons(date).then((names) => ({ reasons: names.map((name) => ({ name, requires_manual_penalty: false })) })) },
-      { id: 'employees', key: key('employees'), read: () => isApiConfigured
-        ? veraApi.employees()
+      { id: 'employees', key: key('employees'), read: (options) => isApiConfigured
+        ? veraApi.employees(options)
         : loadEmployees().then((employees) => ({ employees })) },
     ]
     return pageLoader.current.run(jobs, {
@@ -608,12 +612,15 @@ export default function LeaveRegistrationPage({ user }) {
   }
 
   const changeCustomStart = (value) => {
+    if (!value) return
     setRangeStart(value)
     if (value > rangeEnd) setRangeEnd(value)
     setDate(value)
   }
 
   const changeCustomEnd = (value) => {
+    if (!value) return
+    if (value.slice(0, 7) !== activeMonth) setDate(value)
     setRangeEnd(value)
     if (value < rangeStart) {
       setRangeStart(value)
@@ -631,23 +638,29 @@ export default function LeaveRegistrationPage({ user }) {
     }
     if (filter === 'Tùy chỉnh') return
     const [start, end] = rangeForFilter(filter)
+    if (start.slice(0, 7) !== activeMonth) setDate(start)
     setListRangeStart(start)
     setListRangeEnd(end)
   }
 
   const changeListCustomStart = (value) => {
+    if (!value) return
     setSelectedUids([])
+    if (value.slice(0, 7) !== activeMonth) setDate(value)
     setListRangeStart(value)
     if (value > listRangeEnd) setListRangeEnd(value)
   }
 
   const changeListCustomEnd = (value) => {
+    if (!value) return
     setSelectedUids([])
+    if (value.slice(0, 7) !== activeMonth) setDate(value)
     setListRangeEnd(value)
     if (value < listRangeStart) setListRangeStart(value)
   }
 
   const selectViewedDate = (value) => {
+    if (!value) return
     setDate(value)
     setRangeFilter(VIEWED_DATE_FILTER)
     setRangeStart(value)
@@ -1012,6 +1025,7 @@ export default function LeaveRegistrationPage({ user }) {
           <div data-ui-key="u-8b2d8ad1d8f1" className="panel-title-row">
             <div>
               <h2>DANH SÁCH</h2>
+              <p>Tháng đang xem: {activeMonth.slice(5)}-{activeMonth.slice(0, 4)}. Bộ lọc chỉ áp dụng trong tháng này.</p>
               <p>
                 Ngày đang xem: {formatDateDisplay(date)} · Bộ lọc {formatDateDisplay(listRangeStart)} – {formatDateDisplay(listRangeEnd)} · {' '}
                 {loadState.records === 'loading' ? 'Đang tải lịch nghỉ…' : loadState.records === 'error' ? 'Chưa tải được lịch nghỉ.' : listRangeStart === listRangeEnd

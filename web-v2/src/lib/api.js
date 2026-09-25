@@ -202,11 +202,11 @@ export const veraApi = {
     const row = Array.isArray(rows) ? rows[0] : rows
     return row || { working: 0, leave: 0, paid: 0, unpaid: 0 }
   },
-  leaveDailyStats: async (start, end, employee = '') => {
+  leaveDailyStats: async (start, end, employee = '', options = {}) => {
     if (isApiConfigured) {
       const params = new URLSearchParams({ start, end })
       if (employee.trim()) params.set('employee', employee.trim())
-      return request(`/v2/leave/daily-stats?${params}`)
+      return request(`/v2/leave/daily-stats?${params}`, options)
     }
     const rows = await rpc('vera_v2_leave_daily_stats', { p_start: start, p_end: end })
     return {
@@ -225,16 +225,27 @@ export const veraApi = {
     }))
     return { summary: summarizeLeaveRecordDays(batches.flat(), employee) }
   },
-  leaveRecords: async (start, end = start) => {
-    if (isApiConfigured) return request(`/v2/leave/records?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+  leaveRecords: async (start, end = start, options = {}) => {
+    if (isApiConfigured) {
+      const month = start.slice(0, 7)
+      if (end.slice(0, 7) !== month) throw new Error('Bộ lọc phải nằm trong tháng đang xem.')
+      try {
+        return await request(`/v2/leave/month-records?${new URLSearchParams({ month, start, end })}`, options)
+      } catch (error) {
+        // Frontend and VPS releases can switch at different times. Keep the
+        // same bounded month filter while the older API is still serving.
+        if (error.status !== 404 || options.signal?.aborted) throw error
+        return request(`/v2/leave/records?${new URLSearchParams({ start, end })}`, options)
+      }
+    }
     const batches = await Promise.all(datesBetween(start, end).map(async (date) => {
       const rows = await rpc('vera_v2_leave_records', { p_date: date })
       return (Array.isArray(rows) ? rows : []).map((row) => ({ ...row, leave_date: row.leave_date || date }))
     }))
     return { records: batches.flat() }
   },
-  leaveReasons: async (date) => {
-    if (isApiConfigured) return request(`/v2/leave/reasons?date=${encodeURIComponent(date)}`)
+  leaveReasons: async (date, options = {}) => {
+    if (isApiConfigured) return request(`/v2/leave/reasons?date=${encodeURIComponent(date)}`, options)
     const rows = await rpc('vera_v2_leave_reasons')
     return {
       reasons: (rows || []).map((row) => ({
@@ -245,8 +256,8 @@ export const veraApi = {
       })).filter((row) => row.name),
     }
   },
-  employees: async () => {
-    if (isApiConfigured) return request('/v2/employees')
+  employees: async (options = {}) => {
+    if (isApiConfigured) return request('/v2/employees', options)
     const rows = await rpc('vera_v2_employees')
     return { employees: Array.isArray(rows) ? rows : [] }
   },

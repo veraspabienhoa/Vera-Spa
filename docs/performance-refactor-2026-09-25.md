@@ -1,3 +1,5 @@
+> Integration follow-up: see [monthly-leave-cache-retention.md](monthly-leave-cache-retention.md) for the production modules, migration, automated schedule and tests. The examples below remain reference implementations.
+
 # Tăng tốc VERA SPA — 25-09-2026
 
 Stack xác nhận từ repository: React 18/Vite 6; Python/FastAPI, SQLAlchemy/psycopg;

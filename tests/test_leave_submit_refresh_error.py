@@ -22,6 +22,7 @@ function harness(failedRead = '', failedCreate = false) {
   const calls = []
   let reading = false
   const context = {
+    AbortController,
     isApiConfigured: true, canCreate: true, canChooseEmployee: true,
     useAutoSave: () => {}, busy: false, saving: false, managing: false,
     mutationRef: { current: false }, leaveFormRef: { current: { checkValidity: () => true } },
