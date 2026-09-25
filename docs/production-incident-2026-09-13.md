@@ -1,5 +1,25 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 25-09-2026: trạm điện thoại chụp ảnh / quét mã / chấm công, chưa triển khai
+
+Trang Quản lý thiết bị đã lưu hồ sơ điện thoại nhưng không có đường truyền dữ liệu.
+Bản sửa bổ sung trạm camera trong ứng dụng qua HTTPS: Admin đăng nhập trên điện
+thoại, chọn hồ sơ thiết bị đang bật, chụp JPEG tối đa 2 MB hoặc quét/nhập mã rồi
+gửi sự kiện có mã UUID tới PostgreSQL; Admin ở máy khác xem ảnh và sự kiện theo
+quyền. Ảnh chỉ trả về cho Admin và không cache; sự kiện cũ được xóa khi có sự
+kiện mới sau 7 ngày. Sự kiện chấm công chỉ vào nguồn chấm công khi Admin xem
+ảnh và xác nhận cụ thể. Lệnh xác nhận ghi nguồn `mobile_admin_confirmed` qua
+`record_checkin`, giữ cùng giao dịch với dấu đã xác nhận và khóa hàng để chống
+ghi hai lần. Điện thoại không tự động xác minh khuôn mặt; xác nhận chấm công có
+thể kết thúc kỳ nghỉ theo quy tắc HR hiện có. Luồng này không tự phát sinh
+FaceGate / TimeSoft event hoặc đổi công thức lương.
+
+Web Bluetooth chỉ nhận diện ngoại vi BLE mà trình duyệt hỗ trợ; ứng dụng web
+không thể điều khiển Wi-Fi Direct Android hoặc Multipeer Connectivity iOS trực
+tiếp. Trạm điện thoại mới truyền qua API HTTPS khi hai máy có mạng và không
+khẳng định ghép nối Wi-Fi Direct cấp hệ điều hành. Chưa xác minh thiết bị,
+PostgreSQL hoặc một lần xác nhận thực tế trên production.
+
 ## 24-09-2026: kênh Popup và nhóm nhận thông báo, chưa triển khai
 
 Rà soát mã xác nhận Popup trước đây dùng chung trạng thái `in_app`, còn
