@@ -12,6 +12,7 @@ Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
   navigator: { value: dom.window.navigator, configurable: true }, IS_REACT_ACT_ENVIRONMENT: { value: true, configurable: true },
 })
+dom.window.HTMLElement.prototype.scrollIntoView = function () {}
 const { createRoot } = await import('react-dom/client')
 const require = createRequire(import.meta.url)
 const TODAY_VN = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
@@ -401,6 +402,8 @@ test('pending invoice uses standard payment and has no quick-payment button', as
       entries: [{ employee_id: 'e1', employee_name: 'An An', room: '3.1', service: 'Body 90', price: 100, price_source: 'catalog', booked_at: `${TODAY_VN}T13:00:00+07:00`, started_at: `${TODAY_VN}T13:05:00+07:00` }] }]
   } })
   try {
+    assert.equal(document.querySelector('#live-tour-pending-panel'), null)
+    await act(() => [...document.querySelectorAll('.live-tour-panel-tabs [role="tab"]')].find(button => button.textContent.startsWith('Hóa đơn chờ thanh toán')).click())
     assert.equal(document.querySelector('#live-tour-pending-panel .live-tour-card-actions').textContent.includes('Thanh toán nhanh'), false)
     await act(() => document.querySelector('#live-tour-pending-panel .live-tour-card-actions .primary-button').click())
     assert.match(document.querySelector('.tour-checkout-context').textContent, /An An.*3\.1/)
@@ -419,6 +422,7 @@ test('pending cards display staff-service-room and both booking and execution ti
       booked_at: `${TODAY_VN}T13:00:00+07:00`, started_at: `${TODAY_VN}T13:05:00+07:00` }] }]
   } })
   try {
+    await act(() => [...document.querySelectorAll('.live-tour-panel-tabs [role="tab"]')].find(button => button.textContent.startsWith('Hóa đơn chờ thanh toán')).click())
     const card = document.querySelector('#live-tour-pending-panel .live-tour-data-card')
     assert.match(card.textContent, /An An – Body 90 – 1\.1/)
     assert.match(card.textContent, /Khách lẻ/)
