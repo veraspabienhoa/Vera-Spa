@@ -334,6 +334,21 @@ export const veraApi = {
   deletePayrollObligation: (id) => request(`/v2/payroll/obligations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   snapshot: (start, end) => request(`/v2/snapshot?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   deviceRegistry: () => request('/v2/devices/registry'),
+  mobileStationEvents: () => request('/v2/devices/mobile-station/events'),
+  confirmMobileCheckin: id => request(`/v2/devices/mobile-station/events/${encodeURIComponent(id)}/confirm`, { method: 'POST' }),
+  mobileStationImage: id => binaryResponse(`/v2/devices/mobile-station/events/${encodeURIComponent(id)}/image`, {}, 'Không tải được ảnh từ điện thoại'),
+  saveMobileStationEvent: async ({ deviceId, id, type, employee, barcode, image }) => {
+    if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
+    const session = await getCurrentSession()
+    const query = new URLSearchParams({ event_type: type, employee_username: employee || '', barcode: barcode || '' })
+    const response = await fetch(`${apiBase}/v2/devices/mobile-station/${encodeURIComponent(deviceId)}/events/${encodeURIComponent(id)}?${query}`, {
+      method: 'POST', headers: { 'Content-Type': 'image/jpeg', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      body: image || new Blob([], { type: 'image/jpeg' }),
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(apiErrorMessage(payload, response.status))
+    return payload
+  },
   saveDeviceRegistry: body => request('/v2/devices/registry', { method: 'PUT', body: JSON.stringify(body) }),
   checkinHistory: query => request(`/v2/devices/checkin-history?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== ''))}`),
   exportCheckinHistory: query => download(`/v2/devices/checkin-history/export.xlsx?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== ''))}`, 'VERA_LichSu_Checkin.xlsx'),

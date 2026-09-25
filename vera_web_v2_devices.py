@@ -234,6 +234,9 @@ def saved_facegate_history(conn, start, end):
 
 
 def install_device_routes(app, *, engine_instance, current_identity, require_feature, identity_type, read_timesoft):
+    from vera_web_v2_mobile_station import install_mobile_station_routes
+    install_mobile_station_routes(app, engine_instance=engine_instance,
+                                  current_identity=current_identity, identity_type=identity_type)
     def admin(ident):
         if str(getattr(ident, 'role', '')).strip().lower() != 'admin':
             raise HTTPException(403, 'Chỉ Admin được quản lý thiết bị và lịch sử checkin.')

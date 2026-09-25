@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
+import MobileStationPanel from './MobileStationPanel'
 import './DevicesAndCheckin.css'
 
 const kindIcons = { faceid: ScanLine, printer: Printer, scanner: ScanLine, camera: Camera, screen: Monitor, other: Server }
@@ -108,7 +109,7 @@ export default function DevicePage() {
       <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverUsb()}><ScanLine size={16}/>Nhận diện USB</button>
       <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverBluetooth()}><ScanLine size={16}/>Nhận diện Bluetooth</button>
     </div>
-    <p>Điện thoại Android/iPhone có thể đăng ký làm thiết bị chụp ảnh hoặc quét mã khi mở ứng dụng trên chính điện thoại. Wi-Fi Direct cần ứng dụng hệ điều hành hoặc máy trạm hỗ trợ; lưu hồ sơ chưa kết nối luồng ảnh hay chấm công.</p>
+    <p>Điện thoại Android/iPhone có thể chụp ảnh, quét mã và gửi sự kiện chấm công qua tài khoản Admin trên HTTPS. Wi-Fi Direct trực tiếp cần ứng dụng hệ điều hành hỗ trợ.</p>
     {detected && <p className="device-detected">Đã nhận diện: {detected.manufacturer || 'USB'} {detected.model || `${detected.vendor}:${detected.product}`}. <a href={`https://www.google.com/search?q=${encodeURIComponent(`${detected.manufacturer} ${detected.model} ${detected.vendor}:${detected.product} driver official`)}`} target="_blank" rel="noopener noreferrer">Tìm driver từ hãng</a></p>}
     {error && <p className="device-error" role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}
@@ -133,6 +134,7 @@ export default function DevicePage() {
       </fieldset>
     </form>}
     {data && <>
+      <MobileStationPanel registry={data} onRegistryChange={setData}/>
       <div className="device-list-filters">
         <label>Tìm thiết bị<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Tên, serial, hãng, vị trí" /></label>
         <label>Loại thiết bị<select value={kind} onChange={event => setKind(event.target.value)}><option value="">Tất cả</option>{Object.entries(data.kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
