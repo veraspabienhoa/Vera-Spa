@@ -4626,8 +4626,7 @@ def install_live_tour_routes(
             else:
                 state, revision = read_board(conn, now, project=False)
             grants = permissions(conn, ident)
-        # Normalize/copy the fetched panel after returning the DB connection.
-        state = _normalize_state(state, now)
+        # Filter/slice detached rows first; normalize only the requested page.
         selected = {**state, **{key: [] for key in _DETAIL_COLLECTIONS}, "idempotency": {}}
         totals = {}
         report_totals = None
@@ -4656,6 +4655,7 @@ def install_live_tour_routes(
         if panel == "reports":
             invoice_ids = {row.get("invoice_id") for row in selected["reports"]}
             selected["invoices"] = [row for row in state["invoices"] if row.get("id") in invoice_ids]
+        selected = _normalize_state(selected, now)
         public = _state_response(selected, revision, now, **grants)
         fields = {"customers":["customers"], "pending":["pending_payments","pending"], "invoices":[],
                   "reports":["report_rows","reports"], "history":["audit","history","break_events","pending_changes","invoice_changes","customer_changes","backups"]}[panel]
@@ -4672,7 +4672,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_reports_view")
-            state, revision = read_board(conn, now, project=False)
+            state, revision = read_collections_view(conn, now, {"employees", "rooms", "services", "combos", "pending", "invoices", "reports"})
             grants = permissions(conn, ident)
         public = _state_response(state, revision, now, **grants)
         is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"

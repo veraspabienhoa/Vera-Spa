@@ -1,0 +1,4 @@
+# EXAMPLE ONLY: not installed by deploy. Run as the existing service account.
+# Uses current release, runtime-managed credentials and a local non-overlap lock.
+# Dry-run first (omit --apply); cron output contains counts only.
+17 * * * * cd /opt/vera-spa/current && /usr/bin/flock -n /opt/vera-spa/technical-retention.lock /usr/bin/timeout 30 /opt/vera-spa/.venv/bin/python -m examples.performance.technical_retention --apply

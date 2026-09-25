@@ -8,7 +8,7 @@ import { customerMatches } from '../lib/customerSearch'
 import { customerTicketLabel } from '../lib/liveTourComboBooking'
 import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
-export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [] }) {
+export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [], employees = [] }) {
   const options = useMemo(() => {
     const result = tourFilterOptions(rows)
     const merge = (key, labels) => {
@@ -21,9 +21,10 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
       const customer = customers.find(item => [item.name, item.phone].filter(Boolean).join(' - ') === option.label)
       return { ...option, badge: customer ? customerTicketLabel(customer) || 'Còn 0 vé combo' : undefined }
     })
+    merge('employee', employees.map(employee => employee?.name || employee?.employee_name || employee?.username))
     merge('service', services.map((service) => service?.name || service?.service))
     return result
-  }, [customers, rows, services])
+  }, [customers, rows, services, employees])
   const change = patch => onChange({ ...value, ...patch })
   return <UiToolbar data-ui-key="u-aee0d456f8e9" className="live-tour-filters" role="group" aria-label="Bộ lọc danh sách">
     <UiToolbar data-ui-key="u-6cab38b8ea72" className="live-tour-filters-row live-tour-filters-dates">

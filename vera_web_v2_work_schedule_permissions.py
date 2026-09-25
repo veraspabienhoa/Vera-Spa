@@ -163,32 +163,26 @@ def _install_directory_visibility_middleware() -> None:
                 chunks.append(str(chunk).encode("utf-8"))
         raw = b"".join(chunks)
 
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-            filtered = payload
-
-            # Only resolve identity when the payload actually contains one of the
-            # specially hidden directory accounts. This avoids an extra auth/DB
-            # lookup on ordinary API responses.
-            if _payload_contains_hidden_directory_account(payload):
+        def filter_body():
+            # JSON decoding and recursive visibility checks must not monopolize
+            # the ASGI event loop while unrelated pages await responses.
+            try:
+                payload = json.loads(raw)
+            except (ValueError, UnicodeError):
+                return raw
+            if not _payload_contains_hidden_directory_account(payload):
+                return raw
+            try:
+                ident = shared._api.current_identity(authorization=request.headers.get("authorization"))
+                is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
+            except Exception:
                 is_admin = False
-                try:
-                    ident = await run_in_threadpool(
-                        shared._api.current_identity,
-                        authorization=request.headers.get("authorization"),
-                    )
-                    is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
-                except Exception:
-                    # Fail closed for visibility: unauthenticated/unknown callers
-                    # never gain access to the specially hidden directory entries.
-                    is_admin = False
+            if is_admin:
+                return raw
+            return json.dumps(_sanitize_directory_payload(payload), ensure_ascii=False,
+                              separators=(",", ":")).encode("utf-8")
 
-                if not is_admin:
-                    filtered = _sanitize_directory_payload(payload)
-
-            body = json.dumps(filtered, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        except Exception:
-            body = raw
+        body = await run_in_threadpool(filter_body)
 
         headers = dict(response.headers)
         headers.pop("content-length", None)

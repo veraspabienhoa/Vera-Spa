@@ -33,10 +33,10 @@ def _row_date(row: dict[str, Any]) -> date | None:
 
 def _live_tour_tip_rows(conn, start: date, end: date) -> list[dict[str, Any]]:
     if resource_store.enabled():
-        payload, _, _ = resource_store.read(conn)
+        payload, _, _ = resource_store.read(conn, collections={"reports"})
     else:
         payload = conn.execute(text("""
-            SELECT value_json FROM vera_app_setting
+            SELECT jsonb_build_object('reports',value_json->'reports') FROM vera_app_setting
             WHERE category='live_tour' AND setting_key='state'
             LIMIT 1
         """)).scalar_one_or_none()
