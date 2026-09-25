@@ -159,3 +159,52 @@ jobs:
               for (route,status),count in counts.items():
                   print('REQUEST_OUTCOME '+json.dumps({'route':route,'status':status,'count':count}))
           PY
+
+      - name: Profile one bounded read-only Live Tour snapshot
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'cd /opt/vera-spa/current && timeout 40 /opt/vera-spa/.venv/bin/python -' <<'PY'
+          import cProfile, copy, json, os, pstats, time
+          from datetime import datetime
+          from pathlib import Path
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.pool import NullPool
+          from vera_vps_data_check import _database_url, _running_api_environment
+          from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_environment
+          env = {k: os.environ.get(k, '') for k in RUNTIME_ENV_KEYS} if load_managed_runtime_environment() else _running_api_environment()
+          engine = create_engine(_database_url(env), poolclass=NullPool, connect_args={'connect_timeout': 5, 'sslmode': env.get('DB_SSLMODE', 'require'), 'options': '-c default_transaction_read_only=on -c statement_timeout=3000 -c lock_timeout=1000'})
+          profiler = cProfile.Profile()
+          try:
+              import vera_live_tour_resource_store as resource_store
+              import vera_web_v2_live_tour as live_tour
+              with engine.connect() as conn:
+                  row = conn.execute(text("""SELECT octet_length(payload::text) AS text_bytes,
+                    octet_length((payload->'idempotency')::text) AS receipt_text_bytes
+                    FROM vera_live_tour_meta WHERE singleton=1""")).mappings().one()
+                  print('META_SIZE ' + json.dumps(dict(row), default=str))
+                  profiler.enable()
+                  start = time.perf_counter()
+                  state, revision, versions = resource_store.read(conn)
+                  print('SNAPSHOT_STAGE ' + json.dumps({'stage': 'read', 'seconds': round(time.perf_counter()-start, 3)}))
+              now = datetime.now(live_tour.VN_TZ)
+              start = time.perf_counter()
+              normalized = live_tour._normalize_state(state, now)
+              print('SNAPSHOT_STAGE ' + json.dumps({'stage': 'normalize', 'seconds': round(time.perf_counter()-start, 3)}))
+              start = time.perf_counter()
+              working = copy.deepcopy(normalized)
+              print('SNAPSHOT_STAGE ' + json.dumps({'stage': 'copy', 'seconds': round(time.perf_counter()-start, 3)}))
+              profiler.disable()
+              print('SNAPSHOT_COUNTS ' + json.dumps({'receipts': len(state.get('idempotency', {})), 'collections': {k: len(state.get(k, [])) for k in resource_store.relational.RESOURCE_COLLECTIONS}}))
+              stats = pstats.Stats(profiler).stats
+              relevant = [(key, value) for key, value in stats.items() if Path(key[0]).name.endswith('.py')]
+              for (filename, line, function), (primitive, calls, own, cumulative, callers) in sorted(relevant, key=lambda row: row[1][3], reverse=True)[:15]:
+                  print('CPU_PROFILE ' + json.dumps({'file': Path(filename).name, 'line': line, 'function': function, 'calls': calls, 'own_seconds': round(own, 3), 'cumulative_seconds': round(cumulative, 3)}))
+          except Exception as exc:
+              print('SNAPSHOT_PROFILE_ERROR=' + type(exc).__name__)
+          finally:
+              profiler.disable()
+              engine.dispose()
+          PY
