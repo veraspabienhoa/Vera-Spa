@@ -111,7 +111,7 @@ def test_invoice_corrections_keep_other_ledger_rows_and_retry_once(database, pay
         assert after['invoices'][-1]['tip'] == after['reports'][-1]['tip'] == 22
 
 
-def test_correction_rollback_and_prior_day_rule_remain_enforced(database, payments, monkeypatch):
+def test_correction_rollback_and_admin_prior_day_override(database, payments, monkeypatch):
     client, body, _ = payments
     paid = client.post('/v2/live-tour/action', json=body).json()
     before, revision = saved(database)
@@ -132,8 +132,46 @@ def test_correction_rollback_and_prior_day_rule_remain_enforced(database, paymen
         correction['expected_revision'] = store.write(conn, before, prepared, 'fixture')
     prior = saved(database)
     response = client.post('/v2/live-tour/action', json=correction)
-    assert response.status_code == 403, response.text
-    assert saved(database) == prior
+    assert response.status_code == 200, response.text
+    after, revision = saved(database)
+    assert revision == prior[1] + 1
+    assert after['invoice_changes'][-1]['admin_override'] is True
+    assert after['invoice_changes'][-1]['before']['business_date'] == '2026-09-04'
+    replay = client.post('/v2/live-tour/action', json=correction)
+    assert replay.status_code == 200 and replay.json()['duplicate']
+    assert saved(database) == (after, revision)
+
+
+@pytest.mark.parametrize('redeemed', [False, True])
+def test_admin_combo_sale_void_persists_entitlements_in_adjustment_scope(database, payments, redeemed):
+    from test_live_tour_invoice_permissions import combo_pending
+    from test_service_catalog import action
+    client, _, _ = payments
+    fixture, _, _, _, owned, pending = combo_pending()
+    sale_id = fixture['invoices'][0]['id']
+    if redeemed:
+        action(fixture, 'checkout', {'pending_id':pending['id'], 'combo_purchase_id':owned['id'], 'payment_method':'COMBO'})
+    with database.begin() as conn:
+        store.lock(conn)
+        old, _, _ = store.read(conn)
+        revision = store.write(conn, old, fixture, 'fixture')
+    before, _ = saved(database)
+    body = {'action':'paid_invoice_delete', 'payload':{'invoice_id':sale_id},
+            'expected_revision':revision, 'idempotency_key':'admin-combo-void', 'response_view':'receipt'}
+    response = client.post('/v2/live-tour/action', json=body)
+    assert response.status_code == 200, response.text
+    after, next_revision = saved(database)
+    assert next_revision == revision + 1
+    purchase = after['customers'][0]['combo_purchases'][0]
+    assert purchase['price'] == 0 and purchase['sale_invoice_voided_by'] == 'admin'
+    assert purchase['component_balances'] == before['customers'][0]['combo_purchases'][0]['component_balances']
+    for collection in ('employees', 'pending', 'combo_usage'):
+        assert after[collection] == before[collection]
+    assert all(row['id'] != sale_id for row in after['invoices'])
+    assert all(row['invoice_id'] != sale_id for row in after['reports'])
+    assert after['invoice_changes'][-1]['admin_override'] is True
+    assert client.post('/v2/live-tour/action', json=body).json()['duplicate']
+    assert saved(database) == (after, next_revision)
 
 
 def test_projection_updates_roster_without_touching_history_or_receipts(database, payments, monkeypatch):

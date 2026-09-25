@@ -14,7 +14,7 @@ import './LiveTourBookingDialog.css'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
 
-export default function LiveTourPendingDialog({ context, catalog, busy, error, onAction, onClose, canEditDate = false }) {
+export default function LiveTourPendingDialog({ context, catalog, busy, error, onAction, onClose, canEditDate = false, isAdmin = false }) {
   const { item, mode, revision } = context
   const editing = mode === 'edit'
   const deleting = mode === 'delete'
@@ -63,8 +63,8 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
         </div>)}
         <div className="wide tour-booking-total"><span>Tổng tiền dịch vụ</span><strong>{money(rows.reduce((sum, row) => sum + Number(row.price || 0), 0))}</strong></div>
         {editing ? <label className="live-tour-field wide"><span>Ghi chú</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label> : <p className="wide">Ghi chú: {item.note || '—'}</p>}
-        {(editing || deleting) && <label className="live-tour-field wide"><span>Lý do {deleting ? 'xóa' : 'sửa'} *</span><textarea required maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>}
-        <UiToolbar data-ui-key="u-d0011b71d66a" className="live-tour-modal-actions wide"><button data-ui-key="u-dd40d0ed9435" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-dd40d0ed9435">Đóng</UiCustomText></button>{(editing || deleting) && <button data-ui-key="u-5412073eb050" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!reason.trim()}>{deleting ? 'Xác nhận xóa hóa đơn chờ' : 'Lưu sửa hóa đơn'}</button>}</UiToolbar>
+        {(editing || deleting) && <label className="live-tour-field wide"><span>Lý do {deleting ? 'xóa' : 'sửa'}{isAdmin ? ' (không bắt buộc)' : ' *'}</span><textarea required={!isAdmin} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>}
+        <UiToolbar data-ui-key="u-d0011b71d66a" className="live-tour-modal-actions wide"><button data-ui-key="u-dd40d0ed9435" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-dd40d0ed9435">Đóng</UiCustomText></button>{(editing || deleting) && <button data-ui-key="u-5412073eb050" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!isAdmin && !reason.trim()}>{deleting ? 'Xác nhận xóa hóa đơn chờ' : 'Lưu sửa hóa đơn'}</button>}</UiToolbar>
       </fieldset></form>
     </section>
   </div>
