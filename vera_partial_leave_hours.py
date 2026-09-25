@@ -30,10 +30,13 @@ def clock_for(shift, kind, settings=None):
 def daily_clock(conn, day, employee, kind):
     # Use the same weekly rotation and named-shift definitions as the tour.
     from vera_web_v2_live_tour_checkin import scheduled_shift
-    rows = conn.execute(text("""
+    settings_sql = ("SELECT payload->'payment_settings'->'partial_leave_times' FROM vera_live_tour_meta WHERE singleton=1"
+                    if resource_store.enabled() else
+                    "SELECT value_json->'payment_settings'->'partial_leave_times' FROM vera_app_setting WHERE category='live_tour' AND setting_key='state'")
+    rows = conn.execute(text(f"""
         SELECT username, full_name, role, work_shift, rotation_cycle, shift_start_date,
           (SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='shift_definitions') AS shift_definitions,
-          (SELECT value_json->'payment_settings'->'partial_leave_times' FROM vera_app_setting WHERE category='live_tour' AND setting_key='state') AS partial_leave_times
+          ({settings_sql}) AS partial_leave_times
         FROM employees WHERE lower(btrim(role)) IN ('leader', 'nhanvien')
     """), {}).mappings().all()
     matches = [row for row in rows if key(row.get('username')) == key(employee)]
@@ -43,7 +46,4 @@ def daily_clock(conn, day, employee, kind):
         return None
     row = matches[0]
     settings = row.get('partial_leave_times')
-    if resource_store.enabled():
-        state, _, _ = resource_store.read(conn)
-        settings = state.get('payment_settings', {}).get('partial_leave_times')
     return clock_for(scheduled_shift(row, day), kind, settings)

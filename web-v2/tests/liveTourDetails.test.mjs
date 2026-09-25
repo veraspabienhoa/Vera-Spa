@@ -7,7 +7,7 @@ import React,{act} from 'react'
 
 const built=await build({entryPoints:['src/lib/useLiveTourDetails.js'],bundle:true,write:false,platform:'node',format:'cjs',external:['react'],plugins:[{name:'api',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const veraApi=globalThis.__detailsApi'}))}}]})
 
-test('loads only active panel, discards superseded requests and hides stale detail after board revision changes',async()=>{
+test('loads only active panel, discards superseded requests and retains displayed detail with its original edit revision while the board changes',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://test.invalid'})
  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true}))Object.defineProperty(globalThis,key,{value,configurable:true})
  const requests=[]
@@ -31,6 +31,8 @@ test('loads only active panel, discards superseded requests and hides stale deta
   assert.equal(requests[2].query.page,2)
   props={...props,board:{...props.board,revision:2}};await render()
   await act(async()=>requests[2].resolve({revision:1,data:{state:{invoices:[{id:'stale'}]}},pages:3,total:120}))
-  assert.equal(latest.data.state.invoices,undefined)
+  assert.equal(latest.data.state.invoices[0].id,'stale')
+  assert.equal(latest.data.revision,1)
+  assert.equal(requests.length,3)
  }finally{await act(async()=>root.unmount());dom.window.close();delete globalThis.__detailsApi}
 })

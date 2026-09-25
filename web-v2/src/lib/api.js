@@ -4,6 +4,7 @@ import { apiErrorMessage } from './apiError'
 import { summarizeLeaveRecordDays } from './leaveStats'
 import { apiBase } from './apiConfig'
 import { authJsonRequest } from './authTransport'
+import { readJsonRequest } from './readTransport'
 
 export const isApiConfigured = Boolean(apiBase)
 export const isReadConfigured = Boolean(apiBase || isSupabaseConfigured)
@@ -24,6 +25,7 @@ async function request(path, options = {}) {
     ? 3
     : path === '/v2/payroll/save' ? 2 : 1
   const send = async () => {
+    if (method === 'GET' && path !== '/v2/me') return readJsonRequest(`${apiBase}${path}`, { ...options, headers })
     let lastError
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
@@ -477,7 +479,7 @@ export const veraApi = {
     if (Number.isInteger(knownRevision) && knownRevision >= 0) params.set('known_revision', String(knownRevision))
     return request(`/v2/live-tour?${params}`)
   },
-  liveTourCollection: (panel, query = {}) => request(`/v2/live-tour/collections/${encodeURIComponent(panel)}?${new URLSearchParams(Object.entries(query).filter(([,value])=>value !== '' && value != null))}`),
+  liveTourCollection: (panel, query = {}, options = {}) => request(`/v2/live-tour/collections/${encodeURIComponent(panel)}?${new URLSearchParams(Object.entries(query).filter(([,value])=>value !== '' && value != null))}`, options),
   liveTourAction: async (body) => {
     // Release the operator UI if the network or a database connection stalls.
     // The caller retains body.idempotency_key for a safe retry after a reload.
