@@ -63,6 +63,7 @@ for (const description of ['', 'Tháng đang xem: 09-2026. Bộ lọc chỉ áp 
     const f = await fixture({ description })
     try {
       assert.equal(f.button().disabled, false)
+      assert.match(f.doc.querySelector('.leave-list-personal-summary-head').textContent, /26-09-2026 – 26-09-2026/)
       await act(async () => f.button().click())
       assert.deepEqual(f.calls.find(row => row[0] === 'quota'), ['quota', '2026-09-26', '2026-09-26'])
       assert.match(f.doc.body.textContent, /Không phát hiện trường hợp vượt hạn mức/)
