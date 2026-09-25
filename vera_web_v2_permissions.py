@@ -123,6 +123,12 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
     },
     "Chấm công / hệ thống": {
         "snapshot_today": "Xem Chấm công", "snapshot_export": "Export Chấm công",
+        "device_view": "Xem Quản lý thiết bị", "device_manage": "Thêm, sửa thiết bị",
+        "device_station_operate": "Dùng điện thoại chụp ảnh, quét mã và gửi chấm công",
+        "device_checkin_confirm": "Đối chiếu ảnh và xác nhận chấm công điện thoại",
+        "device_history_view": "Xem lịch sử checkin và ảnh thiết bị",
+        "device_facegate_mapping_manage": "Xem và xác nhận ánh xạ FaceGate với nhân viên",
+        "device_facegate_ip_manage": "Cập nhật IP nội bộ máy FaceGate",
         "auto_penalty": "Xem Auto Check", "auto_penalty_control": "Tạm dừng / mở Auto Check",
         "auto_penalty_run": "Chạy Auto Check thủ công", "sync": "Xem Đồng bộ dữ liệu",
         "sync_timesoft_fetch": "Lấy dữ liệu TimeSoft", "sync_timesoft_api": "Cấu hình API TimeSoft",
@@ -208,6 +214,10 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
     ]},
     {"id": "snapshot", "label": "Chấm công", "view_feature": "snapshot_today", "features": [
         "snapshot_today", "snapshot_export",
+    ]},
+    {"id": "devices", "label": "Quản lý thiết bị", "view_feature": "device_view", "features": [
+        "device_view", "device_manage", "device_station_operate", "device_checkin_confirm",
+        "device_history_view", "device_facegate_mapping_manage", "device_facegate_ip_manage",
     ]},
     {"id": "auto-check", "label": "Auto Check", "view_feature": "auto_penalty", "features": [
         "auto_penalty", "auto_penalty_control", "auto_penalty_run",
@@ -349,6 +359,12 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "employee_face_id_view": {"staff_list"},
     "employee_face_id_manage": {"employee_face_id_view"},
     "employee_face_id_all_users_edit": {"employee_face_id_view"},
+    "device_manage": {"device_view"},
+    "device_station_operate": {"device_view"},
+    "device_checkin_confirm": {"device_station_operate"},
+    "device_history_view": {"device_view"},
+    "device_facegate_mapping_manage": {"device_view"},
+    "device_facegate_ip_manage": {"device_manage"},
     "employee_edit": {"staff_list"},
     "employee_edit_save": {"staff_list", "employee_edit"},
     "employment_status": {"staff_list"},

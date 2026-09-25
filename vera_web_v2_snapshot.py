@@ -311,12 +311,15 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
                           require_feature=require_feature, identity_type=identity_type, read_timesoft=_records)
 
     def mapping_admin(ident):
-        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
-            raise HTTPException(403, 'Chỉ Admin được quản lý ánh xạ FaceGate.')
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'device_facegate_mapping_manage')
 
-    def device_call(fn, *args):
+    def device_call(fn, *args, return_address=False):
         try:
-            return fn(*args)
+            from vera_web_v2_devices import use_registered_facegate
+            with use_registered_facegate(engine_instance) as address:
+                result = fn(*args)
+                return (address, result) if return_address else result
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except ValueError as exc:
@@ -346,8 +349,15 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         key = mapping_key()
         with engine_instance().connect() as conn:
             mappings = read_mappings(conn, key)
-            staff = conn.execute(text("SELECT username, full_name FROM employees WHERE role != 'admin' ORDER BY username")).mappings().all()
-        return {'mappings': mappings, 'employees': [dict(row) for row in staff]}
+            from vera_web_v2_devices import facegate_address
+            address = facegate_address(conn)
+            staff = conn.execute(text("""SELECT username, full_name FROM employees WHERE role != 'admin'
+                AND COALESCE(payload->>'__deleted','false') <> 'true' ORDER BY username""")).mappings().all()
+        active = {item['username'] for item in mappings if item.get('confirmed_by') and item.get('device_address', '') == address}
+        return {'mappings': [{**item, 'valid_for_current_ip': item.get('device_address', '') == address} for item in mappings],
+                'employees': [dict(row) for row in staff], 'unmapped_employees': [dict(row) for row in staff if row['username'] not in active],
+                'current_ip': address, 'confirmed_count': len(active), 'total_count': len(staff),
+                'attendance_calculation_enabled': False}
 
     @app.post('/v2/devices/facegate-mappings')
     def save_facegate_mapping(body: FaceGateMappingInput, ident: identity_type = Depends(current_identity)):
@@ -357,13 +367,17 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         key = mapping_key()
         from vera_facegate_control_log import fetch_registered_profile
         # Device I/O must finish before opening the database transaction.
-        profile = device_call(fetch_registered_profile, body.profile_id)
+        observed_address, profile = device_call(fetch_registered_profile, body.profile_id, return_address=True)
         if profile['registration_ref'] != body.registration_ref or profile['device_name'] != body.device_name:
             raise HTTPException(409, 'Hồ sơ đăng ký đã thay đổi. Hãy đọc lại hồ sơ và xác nhận.')
         actor = str(getattr(ident, 'employee_username', '') or '').strip()
         if not actor:
             raise HTTPException(403, 'Không xác định được người xác nhận ánh xạ.')
         with engine_instance().begin() as conn:
+            from vera_web_v2_devices import facegate_address
+            address = facegate_address(conn)
+            if address != observed_address:
+                raise HTTPException(409, 'IP FaceGate đã đổi trong lúc đối chiếu; hãy đọc lại hồ sơ.')
             if conn.execute(text("SELECT username FROM employees WHERE username=:username AND role != 'admin' FOR SHARE"),
                             {'username': body.username}).scalar_one_or_none() is None:
                 raise HTTPException(400, 'Không tìm thấy nhân viên VERA đã chọn.')
@@ -381,6 +395,7 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
             if len(mappings) >= 200 and not any(item['profile_id'] == body.profile_id for item in mappings):
                 raise HTTPException(400, 'Đã đạt giới hạn 200 ánh xạ cho thiết bị.')
             entry = {**profile, 'username': body.username, 'employee_code': body.employee_code,
+                     'device_address': address,
                      'confirmed_by': actor, 'confirmed_at': datetime.now().astimezone().isoformat()}
             mappings = [item for item in mappings if item['profile_id'] != body.profile_id] + [entry]
             conn.execute(text("""UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb),
@@ -394,14 +409,16 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         mapping_admin(ident)
         key = mapping_key()
         with engine_instance().connect() as conn:
-            candidates = [item for item in read_mappings(conn, key) if item['registration_ref'] == body.registration_ref]
+            from vera_web_v2_devices import active_facegate_mappings
+            candidates = [item for item in active_facegate_mappings(conn, read_mappings(conn, key)) if item['registration_ref'] == body.registration_ref]
         if len(candidates) != 1:
             return {'status': 'unmapped', 'message': 'Chưa có ánh xạ duy nhất cho ảnh đăng ký này.'}
         item = candidates[0]
         from vera_facegate_control_log import fetch_registered_profile
         profile = device_call(fetch_registered_profile, item['profile_id'])
         with engine_instance().connect() as conn:
-            if item not in read_mappings(conn, key):
+            from vera_web_v2_devices import active_facegate_mappings
+            if item not in active_facegate_mappings(conn, read_mappings(conn, key)):
                 return {'status': 'changed', 'message': 'Ánh xạ vừa thay đổi. Hãy đối chiếu lại.'}
         if profile['registration_ref'] != item['registration_ref'] or profile['device_name'] != item['device_name']:
             return {'status': 'changed', 'message': 'Hồ sơ FaceGate đã thay đổi. Cần Admin xác nhận lại.'}
@@ -437,12 +454,12 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         end: date = Query(...),
         ident: identity_type = Depends(current_identity),
     ):
-        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
-            raise HTTPException(403, 'Chỉ Admin được xem Control Log của thiết bị.')
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'device_history_view')
         dates(start, end)
         from vera_facegate_control_log import fetch_control_log
         try:
-            return fetch_control_log(start.isoformat(), end.isoformat())
+            return device_call(fetch_control_log, start.isoformat(), end.isoformat())
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except ValueError as exc:
@@ -456,12 +473,12 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         end: date = Query(...),
         ident: identity_type = Depends(current_identity),
     ):
-        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
-            raise HTTPException(403, 'Chỉ Admin được xem ảnh Capture Log của thiết bị.')
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'device_history_view')
         dates(start, end)
         from vera_facegate_control_log import fetch_capture_log
         try:
-            return fetch_capture_log(start.isoformat(), end.isoformat())
+            return device_call(fetch_capture_log, start.isoformat(), end.isoformat())
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         except ValueError as exc:
@@ -477,11 +494,11 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         time: str = Query(..., min_length=19, max_length=19),
         ident: identity_type = Depends(current_identity),
     ):
-        if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
-            raise HTTPException(403, 'Chỉ Admin được xem ảnh Capture Log của thiết bị.')
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'device_history_view')
         from vera_facegate_control_log import fetch_capture_image
         try:
-            content, media_type = fetch_capture_image({
+            content, media_type = device_call(fetch_capture_image, {
                 'file_type': file_type, 'file_index': file_index,
                 'file_position': file_position, 'time': time,
             })

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
+from contextlib import contextmanager
+from ipaddress import IPv4Address, IPv4Network
 import json
 import os
 import re
@@ -48,6 +50,12 @@ class Device(BaseModel):
             raise ValueError('Bộ kết nối FaceGate hiện tại chỉ dành cho hồ sơ FaceGate đang sử dụng.')
         if self.id == 'facegate-current' and self.adapter != 'facegate_server':
             raise ValueError('Giữ bộ kết nối của hồ sơ FaceGate đang sử dụng.')
+        if self.id == 'facegate-current' and self.address:
+            try:
+                if IPv4Address(self.address) not in IPv4Network('192.168.1.0/24'):
+                    raise ValueError('IP FaceGate phải thuộc mạng thiết bị nội bộ 192.168.1.0/24.')
+            except ValueError as exc:
+                raise ValueError('Chỉ nhập địa chỉ IP FaceGate nội bộ, không nhập URL hoặc đường dẫn.') from exc
         return self
 
 
@@ -82,6 +90,37 @@ def read_registry(conn, *, lock=False):
     if isinstance(value, str):
         value = json.loads(value)
     return {'devices': value['devices'], 'revision': int(row['revision'])}
+
+
+@contextmanager
+def use_registered_facegate(engine_instance):
+    """Resolve the allowlisted IP before network I/O, releasing the DB connection."""
+    with engine_instance().connect() as conn:
+        address = facegate_address(conn)
+    if address:
+        try:
+            if IPv4Address(address) not in IPv4Network('192.168.1.0/24'):
+                raise ValueError('IP FaceGate không thuộc mạng được phép.')
+        except ValueError as exc:
+            raise RuntimeError('Địa chỉ IP máy FaceGate không hợp lệ.') from exc
+    from vera_facegate_control_log import facegate_endpoint
+    with facegate_endpoint(f'http://{address}' if address else ''):
+        yield address
+
+
+def facegate_address(conn) -> str:
+    raw = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='devices' AND setting_key='registry'")).scalar()
+    value = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(value, dict):
+        return ''
+    return next((str(row.get('address') or '') for row in value.get('devices', [])
+                 if isinstance(row, dict) and row.get('id') == 'facegate-current'), '')
+
+
+def active_facegate_mappings(conn, mappings):
+    """An IP change requires the Admin to re-confirm each profile on the new endpoint."""
+    address = facegate_address(conn)
+    return [row for row in mappings if isinstance(row, dict) and row.get('device_address', '') == address]
 
 
 def registry_result(data):
@@ -208,7 +247,7 @@ def saved_facegate_history(conn, start, end):
                        {'key': 'mapping_' + device_id}).scalar()
     mappings = json.loads(raw) if isinstance(raw, str) else (raw or [])
     by_ref = {}
-    for mapping in mappings if isinstance(mappings, list) else []:
+    for mapping in active_facegate_mappings(conn, mappings if isinstance(mappings, list) else []):
         if not isinstance(mapping, dict) or not mapping.get('confirmed_by'):
             continue
         key = reference(mapping.get('registration_ref'))
@@ -221,7 +260,7 @@ def saved_facegate_history(conn, start, end):
         if not isinstance(payload, dict):
             continue
         key = reference(payload.get('registration_ref'))
-        matched = by_ref.get(key, []) if key else []
+        matched = [entry for entry in by_ref.get(key, []) if entry.get('device_address', '') == payload.get('device_address', '')] if key else []
         records.append({'event_id': row['event_id'], 'occurred_at': row['occurred_at'],
                         'device_name': payload.get('device_name', ''),
                         'status_code': payload.get('status_code', ''),
@@ -236,27 +275,33 @@ def saved_facegate_history(conn, start, end):
 def install_device_routes(app, *, engine_instance, current_identity, require_feature, identity_type, read_timesoft):
     from vera_web_v2_mobile_station import install_mobile_station_routes
     install_mobile_station_routes(app, engine_instance=engine_instance,
-                                  current_identity=current_identity, identity_type=identity_type)
-    def admin(ident):
-        if str(getattr(ident, 'role', '')).strip().lower() != 'admin':
-            raise HTTPException(403, 'Chỉ Admin được quản lý thiết bị và lịch sử checkin.')
+                                  current_identity=current_identity, identity_type=identity_type,
+                                  require_feature=require_feature)
+
+    def access(ident, feature):
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, feature)
 
     @app.get('/v2/devices/registry')
     def registry(ident: identity_type = Depends(current_identity)):
-        admin(ident)
+        access(ident, 'device_view')
         with engine_instance().connect() as conn:
             data = read_registry(conn)
         return registry_result(data)
 
     @app.put('/v2/devices/registry')
     def save_registry(body: RegistryInput, ident: identity_type = Depends(current_identity)):
-        admin(ident)
+        access(ident, 'device_manage')
         actor = str(getattr(ident, 'employee_username', '') or getattr(ident, 'username', ''))
         with engine_instance().begin() as conn:
             conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json,source,updated_by,revision,created_at,updated_at)
                 VALUES ('devices','registry',CAST(:initial AS jsonb),'web_v2',:actor,0,NOW(),NOW())
                 ON CONFLICT(category,setting_key) DO NOTHING"""), {'initial': json.dumps({'devices': default_devices()}), 'actor': actor})
             current = read_registry(conn, lock=True)
+            previous_ip = next((d.get('address') or '' for d in current['devices'] if d.get('id') == 'facegate-current'), '')
+            next_ip = next((d.address for d in body.devices if d.id == 'facegate-current'), '')
+            if previous_ip != next_ip:
+                require_feature(conn, ident, 'device_facegate_ip_manage')
             if current['revision'] != body.expected_revision:
                 raise HTTPException(409, 'Danh sách thiết bị vừa được sửa ở phiên khác. Hủy chỉnh sửa và tải lại danh sách trước khi lưu.')
             devices = [d.model_dump() for d in body.devices]
@@ -265,8 +310,19 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
                 {'value': json.dumps({'devices': devices}, ensure_ascii=False), 'actor': actor})
         return registry_result({'devices': devices, 'revision': current['revision'] + 1})
 
+    @app.get('/v2/devices/facegate-connection/check')
+    def check_facegate_connection(ident: identity_type = Depends(current_identity)):
+        access(ident, 'device_facegate_ip_manage')
+        from vera_facegate_control_log import probe_facegate
+        try:
+            with use_registered_facegate(engine_instance):
+                connected = probe_facegate()
+        except (RuntimeError, ConnectionError) as exc:
+            raise HTTPException(503, str(exc)) from exc
+        return {'connected': connected, 'message': 'FaceGate đã phản hồi xác thực.' if connected else 'IP có phản hồi nhưng FaceGate từ chối xác thực; kiểm tra tài khoản máy chủ.'}
+
     def query_history(start, end, source, employee, event_id, event_date, status, event_type, ident, *, exporting=False):
-        admin(ident)
+        access(ident, 'device_history_view')
         if end < start or end - start > timedelta(days=62):
             raise HTTPException(400, 'Chọn khoảng ngày hợp lệ, tối đa 63 ngày mỗi lần.')
         if event_date and not start <= event_date <= end:
@@ -284,7 +340,8 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
         else:
             from vera_facegate_control_log import fetch_control_log, fetch_capture_log
             try:
-                data = (fetch_control_log if source == 'facegate' else fetch_capture_log)(start.isoformat(), end.isoformat())
+                with use_registered_facegate(engine_instance):
+                    data = (fetch_control_log if source == 'facegate' else fetch_capture_log)(start.isoformat(), end.isoformat())
             except RuntimeError as exc:
                 raise HTTPException(503, str(exc)) from exc
             except ValueError as exc:

@@ -261,8 +261,10 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
         with engine_instance().begin() as conn:
             access(conn, ident, username, write=True)
         from vera_facegate_control_log import fetch_capture_log
+        from vera_web_v2_devices import use_registered_facegate
         try:
-            result = fetch_capture_log(day.isoformat(), day.isoformat())
+            with use_registered_facegate(engine_instance):
+                result = fetch_capture_log(day.isoformat(), day.isoformat())
         except (RuntimeError, ValueError, ConnectionError) as exc:
             raise HTTPException(503, 'Không đọc được ảnh chụp từ thiết bị FaceID.') from exc
         return {'records': [{'event_id': r['event_id'], 'occurred_at': r['occurred_at']} for r in result['records'] if r.get('image_available')],
@@ -273,12 +275,14 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
         with engine_instance().begin() as conn:
             access(conn, ident, username, write=True)
         from vera_facegate_control_log import fetch_capture_log, fetch_capture_image
+        from vera_web_v2_devices import use_registered_facegate
         try:
-            records = fetch_capture_log(day.isoformat(), day.isoformat())['records']
-            matches = [r for r in records if r['event_id'] == event_id and r.get('image_available')]
-            if len(matches) != 1:
-                raise HTTPException(409, 'Ảnh không còn duy nhất trong danh sách. Hãy tải lại.')
-            content, _ = fetch_capture_image(matches[0]['image_ref'])
+            with use_registered_facegate(engine_instance):
+                records = fetch_capture_log(day.isoformat(), day.isoformat())['records']
+                matches = [r for r in records if r['event_id'] == event_id and r.get('image_available')]
+                if len(matches) != 1:
+                    raise HTTPException(409, 'Ảnh không còn duy nhất trong danh sách. Hãy tải lại.')
+                content, _ = fetch_capture_image(matches[0]['image_ref'])
             with Image.open(BytesIO(content)) as image:
                 if image.width * image.height > 24_000_000:
                     raise ValueError('image too large')

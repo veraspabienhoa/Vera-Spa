@@ -38,6 +38,8 @@ function FacegateMappings() {
     <p>Admin chọn nhân viên VERA và nhập mã TimeSoft đã kiểm tra. Kết quả đối chiếu ảnh chỉ dùng tra cứu; ảnh đăng ký thay đổi cần xác nhận lại.</p>
     <button type="button" className="secondary-button" disabled={busy} onClick={() => run(async () => setData(await veraApi.facegateMappings()))}>Tải danh sách ánh xạ</button>
     {data && <>
+      <p role="status">Đã xác nhận trên IP hiện tại: <strong>{data.confirmed_count} / {data.total_count}</strong> nhân viên. {data.unmapped_employees?.length ? `Còn ${data.unmapped_employees.length} nhân viên cần đối chiếu từng hồ sơ thiết bị và mã TimeSoft.` : 'Tất cả nhân viên đã có ánh xạ xác nhận.'} Ánh xạ chưa tự bật tính công.</p>
+      {!!data.unmapped_employees?.length && <details><summary>Nhân viên chưa được xác nhận trên IP hiện tại</summary><div className="device-unmapped-list">{data.unmapped_employees.map(item => <button type="button" className="secondary-button compact" key={item.username} onClick={() => { setUsername(item.username); setConfirmed(false) }}>{item.username}{item.full_name ? ` · ${item.full_name}` : ''}</button>)}</div></details>}
       <form onSubmit={event => { event.preventDefault(); if (!profile) return; run(async () => {
         await veraApi.saveFacegateMapping({ profile_id: profile.profile_id, device_name: profile.device_name, registration_ref: profile.registration_ref, username, employee_code: code.trim(), confirmed })
         setData(await veraApi.facegateMappings()); setConfirmed(false); setMessage('Đã lưu ánh xạ để đối chiếu.')
@@ -52,7 +54,7 @@ function FacegateMappings() {
           <button className="secondary-button" type="submit" disabled={!profile || !confirmed || !username || !code.trim()}>Lưu / xác nhận lại ánh xạ</button>
         </fieldset>
       </form>
-      <div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên trên máy</th><th>Nhân viên VERA</th><th>Mã TimeSoft</th><th>Xác nhận lúc</th></tr></thead><tbody>{data.mappings.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.username}</td><td>{item.employee_code}</td><td>{formatVeraDateTime(item.confirmed_at, '—')}</td></tr>)}</tbody></table></div>
+      <div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên trên máy</th><th>Nhân viên VERA</th><th>Mã TimeSoft</th><th>Xác nhận lúc</th><th>IP hiện tại</th><th>Thao tác</th></tr></thead><tbody>{data.mappings.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.username}</td><td>{item.employee_code}</td><td>{formatVeraDateTime(item.confirmed_at, '—')}</td><td>{item.valid_for_current_ip ? 'Đã xác nhận' : 'Cần xác nhận lại'}</td><td>{!item.valid_for_current_ip && <button type="button" className="secondary-button compact" onClick={() => { setProfileId(String(item.profile_id)); setUsername(item.username); setCode(item.employee_code); setProfile(null); setConfirmed(false) }}>Đối chiếu lại</button>}</td></tr>)}</tbody></table></div>
     </>}
     {message && <p role="status">{message}</p>}
   </details>
@@ -84,7 +86,7 @@ function CaptureImageButton({ record }) {
   </div>
 }
 
-export default function CheckinHistoryPage() {
+export default function CheckinHistoryPage({ user }) {
   const [filters, setFilters] = useState(initialCheckinFilters)
   const [records, setRecords] = useState(null)
   const [loadedQuery, setLoadedQuery] = useState(null)
@@ -190,6 +192,6 @@ export default function CheckinHistoryPage() {
         </tbody></table></div>
       </>}
     </>}
-    <FacegateMappings />
+    {user?.permissions?.device_facegate_mapping_manage && <FacegateMappings />}
   </section>
 }

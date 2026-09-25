@@ -17,7 +17,7 @@ function StationImage({ id, onViewed }) {
   return <span>{!url && <button type="button" className="secondary-button compact" onClick={load}>Xem ảnh</button>}{url && <img src={url} alt="Ảnh ghi từ điện thoại" width="90" loading="lazy"/>}{error && <small role="alert">{error}</small>}</span>
 }
 
-export default function MobileStationPanel({ registry, onRegistryChange }) {
+export default function MobileStationPanel({ registry, onRegistryChange, canRegister, canConfirm }) {
   const devices = registry.devices
   const stations = devices.filter(device => device.enabled && ['camera', 'scanner', 'faceid'].includes(device.kind))
   const [stationId, setStationId] = useState(() => localStorage.getItem('vera-mobile-station-id') || '')
@@ -131,7 +131,7 @@ export default function MobileStationPanel({ registry, onRegistryChange }) {
       <label>Tên đăng nhập nhân viên<input value={employee} onChange={event => setEmployee(event.target.value)} maxLength={200} placeholder="Nhập chính xác tên đăng nhập"/></label>
       <label>Mã cần quét<input value={barcode} onChange={event => setBarcode(event.target.value)} maxLength={256} placeholder="Mã QR hoặc barcode"/></label>
     </div>
-    <div className="device-actions"><button type="button" className="secondary-button" disabled={busy} onClick={registerPhone}><Smartphone size={16}/>Đăng ký điện thoại này</button><button type="button" className="secondary-button" onClick={() => setCamera(value => !value)}><Camera size={16}/>{camera ? 'Tắt camera' : 'Bật camera'}</button></div>
+    <div className="device-actions">{canRegister && <button type="button" className="secondary-button" disabled={busy} onClick={registerPhone}><Smartphone size={16}/>Đăng ký điện thoại này</button>}<button type="button" className="secondary-button" onClick={() => setCamera(value => !value)}><Camera size={16}/>{camera ? 'Tắt camera' : 'Bật camera'}</button></div>
     {camera && <video ref={videoRef} playsInline muted className="device-mobile-preview"/>}
     <div className="device-actions">
       <button type="button" className="secondary-button" disabled={busy || !camera} onClick={() => submit('photo')}>Chụp & gửi ảnh</button>
@@ -140,6 +140,6 @@ export default function MobileStationPanel({ registry, onRegistryChange }) {
     </div>
     {message && <p role="status">{message}</p>}
     <div className="device-actions"><h3>Sự kiện từ điện thoại</h3><button type="button" className="secondary-button" disabled={busy} onClick={async () => { try { setRecords((await veraApi.mobileStationEvents()).records) } catch (cause) { setMessage(cause.message) } }}><RefreshCw size={16}/>Làm mới</button></div>
-    {records && <div className="device-mobile-records">{records.map(record => <article key={record.id}><strong>{record.event_type === 'checkin' ? 'Chấm công' : record.event_type === 'scan' ? 'Quét mã' : 'Ảnh'}</strong><span>{record.employee_username || record.barcode || '—'}</span><small>{formatVeraDateTime(record.occurred_at)} · {record.operator}</small>{record.has_image && <StationImage id={record.id} onViewed={() => setViewed(current => ({ ...current, [record.id]: true }))}/ >}{record.event_type === 'checkin' && <button type="button" className="secondary-button compact" disabled={busy || Boolean(record.confirmed_at) || !viewed[record.id]} onClick={() => confirm(record.id)}>{record.confirmed_at ? 'Đã xác nhận' : 'Xem ảnh rồi xác nhận'}</button>}</article>)}</div>}
+    {records && <div className="device-mobile-records">{records.map(record => <article key={record.id}><strong>{record.event_type === 'checkin' ? 'Chấm công' : record.event_type === 'scan' ? 'Quét mã' : 'Ảnh'}</strong><span>{record.employee_username || record.barcode || '—'}</span><small>{formatVeraDateTime(record.occurred_at)} · {record.operator}</small>{record.has_image && <StationImage id={record.id} onViewed={() => setViewed(current => ({ ...current, [record.id]: true }))}/ >}{record.event_type === 'checkin' && canConfirm && <button type="button" className="secondary-button compact" disabled={busy || Boolean(record.confirmed_at) || !viewed[record.id]} onClick={() => confirm(record.id)}>{record.confirmed_at ? 'Đã xác nhận' : 'Xem ảnh rồi xác nhận'}</button>}</article>)}</div>}
   </section>
 }

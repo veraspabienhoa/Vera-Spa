@@ -21,7 +21,7 @@ class SyncError(ValueError):
     """Safe machine-readable reason, without device or employee data."""
 
 
-def prepare_batch(log, day):
+def prepare_batch(log, day, device_address=''):
     day = date.fromisoformat(day)
     records = log.get('records')
     if log.get('source') != 'facegate_control_log' or not isinstance(records, list):
@@ -47,6 +47,8 @@ def prepare_batch(log, day):
             raise SyncError('event_outside_requested_day') from None
         payload = {key: event.get(key) for key in (
             'device_name', 'status_code', 'type_code', 'registration_ref')}
+        if device_address:
+            payload['device_address'] = device_address
         encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
         if len(encoded.encode('utf-8')) > 4096:
             raise SyncError('event_too_large')
@@ -107,8 +109,13 @@ def sync_day(engine, day, *, apply=False, fetch=None):
         mappings = json.loads(mappings)
     if not isinstance(mappings, list):
         raise SyncError('invalid_mapping_data')
-    log = (fetch or device.fetch_control_log)(day, day)
-    batch = prepare_batch(log, day)
+    from vera_web_v2_devices import active_facegate_mappings
+    with engine.connect() as conn:
+        mappings = active_facegate_mappings(conn, mappings)
+    from vera_web_v2_devices import use_registered_facegate
+    with use_registered_facegate(engine) as address:
+        log = (fetch or device.fetch_control_log)(day, day)
+    batch = prepare_batch(log, day, address)
     stats = summarize(log, mappings)
     result = {'ok': True, 'date': day, 'applied': apply, 'fetched_count': len(batch),
               'device_total_count': log['total_count'], 'complete_fetch': True,

@@ -9,6 +9,8 @@ Images are returned on demand and are never persisted by this module.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
+from contextvars import ContextVar
 import html
 import os
 import re
@@ -31,6 +33,17 @@ _FIELD = re.compile(
 _ITEM_KEY = re.compile(r"ITEM(?P<index>\d+)\.(?P<field>[A-Za-z0-9_]+)\Z")
 DEFAULT_CAPTURE_PATH = "/webs/getCapture"
 DEFAULT_IMAGE_PATH = "/webs/getImage"
+_endpoint_override = ContextVar('vera_facegate_endpoint_override', default='')
+
+
+@contextmanager
+def facegate_endpoint(base_url: str):
+    """Scope one validated backend request to the registered device endpoint."""
+    token = _endpoint_override.set(base_url)
+    try:
+        yield
+    finally:
+        _endpoint_override.reset(token)
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/x-ms-bmp"}
 
@@ -114,6 +127,24 @@ def mapping_device_id() -> str:
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value):
         raise RuntimeError("Cần cấu hình mã thiết bị FaceGate trước khi ánh xạ.")
     return value
+
+
+def probe_facegate(*, get=requests.get) -> bool:
+    """Bounded read-only login probe; never returns credentials or device data."""
+    base_url, _, auth = _facegate_config()
+    try:
+        response = get(f'{base_url}/webs/login', params={
+            'action': 'list', 'group': 'LOGIN',
+            'UserID': str(secrets.randbelow(90_000_000) + 10_000_000),
+        }, auth=auth, timeout=(3, 8), allow_redirects=False)
+    except requests.RequestException as exc:
+        raise ConnectionError('Không kết nối được IP FaceGate từ máy chủ.') from exc
+    try:
+        fields = _auth_fields(response)
+        return (response.status_code == 200 and fields.get('ERR.no') == '0'
+                and re.fullmatch('[0-9]+', fields.get('LOGIN.ulevel', '')) is not None)
+    finally:
+        _close_response(response)
 
 
 def fetch_registered_profile(uid: int, *, get=requests.get) -> dict[str, Any]:
@@ -215,7 +246,7 @@ def parse_control_log_response(body: str) -> dict[str, Any]:
 
 
 def _facegate_config(path_env: str = "VERA_FACEGATE_CONTROL_LOG_PATH", default_path: str = DEFAULT_PATH) -> tuple[str, str, tuple[str, str]]:
-    base_url = str(os.getenv("VERA_FACEGATE_BASE_URL", "") or "").strip().rstrip("/")
+    base_url = str(_endpoint_override.get() or os.getenv("VERA_FACEGATE_BASE_URL", "") or "").strip().rstrip("/")
     path = str(os.getenv(path_env, default_path) or default_path).strip()
     username = str(os.getenv("VERA_FACEGATE_USERNAME", "") or "")
     password = str(os.getenv("VERA_FACEGATE_PASSWORD", "") or "")

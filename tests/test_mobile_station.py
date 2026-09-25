@@ -5,7 +5,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -25,6 +25,8 @@ class FakeDB:
     @contextmanager
     def begin(self):
         yield self
+
+    connect = begin
 
     def execute(self, sql, params=None):
         statement = str(sql)
@@ -57,7 +59,8 @@ def client(monkeypatch, role='admin'):
     monkeypatch.setattr(station, 'read_registry', lambda conn: {'devices': [{'id': 'phone', 'enabled': True, 'kind': 'camera'}]})
     app = FastAPI()
     station.install_mobile_station_routes(app, engine_instance=lambda: db,
-        current_identity=lambda: SimpleNamespace(role=role, employee_username='admin'), identity_type=SimpleNamespace)
+        current_identity=lambda: SimpleNamespace(role=role, employee_username='admin'), identity_type=SimpleNamespace,
+        require_feature=lambda conn, ident, feature: None if ident.role == 'admin' else (_ for _ in ()).throw(HTTPException(403, 'denied')))
     return TestClient(app), db
 
 

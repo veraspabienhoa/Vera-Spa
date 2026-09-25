@@ -233,8 +233,8 @@ export default function App() {
         {page === 'purchases' && <PurchasePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}
         {page === 'snapshot' && <SnapshotPage user={shellUser} />}
-        {page === 'devices' && shellUser.role === 'admin' && <DevicePage />}
-        {page === 'checkin-history' && shellUser.role === 'admin' && <CheckinHistoryPage />}
+        {page === 'devices' && shellUser.permissions?.device_view && <DevicePage user={shellUser} />}
+        {page === 'checkin-history' && shellUser.permissions?.device_history_view && <CheckinHistoryPage user={shellUser} />}
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
