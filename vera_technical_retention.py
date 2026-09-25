@@ -34,7 +34,8 @@ def ensure_setting(conn):
             CHECK (cleanup_interval_hours BETWEEN 1 AND {MAX_INTERVAL_HOURS}),
         ADD COLUMN IF NOT EXISTS last_cleanup_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS last_cleanup_removed INTEGER NOT NULL DEFAULT 0'''))
-    conn.execute(text(f"INSERT INTO {SETTING_TABLE}(singleton) VALUES(1) ON CONFLICT DO NOTHING"))
+    conn.execute(text(f"INSERT INTO {SETTING_TABLE}(singleton,retention_days) VALUES(1,:days) ON CONFLICT DO NOTHING"),
+        {'days': DEFAULT_DAYS})
 
 
 def ensure_cleanup_index(conn):
