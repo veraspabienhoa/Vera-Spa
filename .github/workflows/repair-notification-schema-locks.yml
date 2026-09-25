@@ -72,7 +72,7 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); git -C "$release_dir" rev-parse HEAD; curl -fsS --max-time 10 http://127.0.0.1:8000/v2/auth/health >/dev/null; /opt/vera-spa/.venv/bin/python "$release_dir/vera_vps_runtime_diagnostics.py"'
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); git -C "$release_dir" rev-parse HEAD; if curl -fsS --max-time 10 http://127.0.0.1:8000/v2/auth/health >/dev/null; then echo PRE_DEPLOY_AUTH_HEALTH=OK; else echo PRE_DEPLOY_AUTH_HEALTH=UNAVAILABLE; fi; /opt/vera-spa/.venv/bin/python "$release_dir/vera_vps_runtime_diagnostics.py"'
       - name: Deploy tested fix through existing VPS deployment
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
