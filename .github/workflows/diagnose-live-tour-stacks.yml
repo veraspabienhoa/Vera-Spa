@@ -56,8 +56,14 @@ jobs:
           for sample in range(2):
               try:
                   result = subprocess.run([str(profiler),'dump','--pid',pid,'--nonblocking','--json'], capture_output=True, text=True, timeout=10)
+                  if result.returncode and any(word in result.stderr.lower() for word in ('permission denied','operation not permitted')):
+                      # Use only an already-configured noninteractive sudo grant.
+                      # Never change ptrace settings, sudoers or process ownership.
+                      result = subprocess.run(['sudo','-n','--',str(profiler),'dump','--pid',pid,'--nonblocking','--json'], capture_output=True, text=True, timeout=10)
                   if result.returncode:
-                      print('STACK_SAMPLE_ERROR='+str(result.returncode))
+                      error = result.stderr.lower()
+                      category = 'permission' if any(word in error for word in ('permission denied','operation not permitted','password is required','not allowed')) else 'python_version' if 'version' in error and ('unsupported' in error or 'not supported' in error) else 'library' if 'glibc' in error or 'shared librar' in error else 'process_read' if 'memory' in error or 'process' in error else 'unknown'
+                      print('STACK_SAMPLE_ERROR='+category)
                       raise SystemExit(1)
                   traces = json.loads(result.stdout)
                   print('STACK_SAMPLE '+json.dumps({'sample':sample,'threads':len(traces)}))
