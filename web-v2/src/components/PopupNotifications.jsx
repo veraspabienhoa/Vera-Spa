@@ -22,14 +22,16 @@ export default function PopupNotifications() {
   const seen = useRef(new WeakMap())
   const recentMessages = useRef(new Map())
   const seenTraining = useRef(new Set())
+  const seenRouted = useRef(new Set())
   useEffect(() => {
     let active = true
     const loadSettings = () => veraApi.notificationSettings().then((result) => {
       if (active) settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item]))
     }).catch(() => {})
     const settingsPoller = createVisiblePoller(loadSettings, { interval: 60000 })
-    const loadTrainingNotifications = () => veraApi.trainingNotifications().then((result) => {
+    const loadTrainingNotifications = () => veraApi.trainingNotifications('popup').then((result) => {
       if (!active) return
+      if (settings.current.training_completed?.enabled === false || settings.current.training_completed?.channel_enabled?.popup === false) return
       const fresh = (result.notifications || []).filter(item => !item.is_read && !seenTraining.current.has(item.id))
       fresh.forEach(item => seenTraining.current.add(item.id))
       if (fresh.length) setItems(current => [...current, ...fresh.map(item => ({
@@ -38,6 +40,16 @@ export default function PopupNotifications() {
       }))].slice(-5))
     }).catch(() => {})
     const trainingPoller = createVisiblePoller(loadTrainingNotifications, { interval: 30000 })
+    const loadRoutedPopups = () => veraApi.notificationPopup().then(result => {
+      if (!active) return
+      const fresh = (result.notifications || []).filter(item => !seenRouted.current.has(item.id))
+      fresh.forEach(item => seenRouted.current.add(item.id))
+      if (fresh.length) setItems(current => [...current, ...fresh.map(item => ({
+        id: `route-${item.id}`, routeId: item.id, message: `${item.payload?.title || 'Thông báo'} · ${item.payload?.body || ''}`,
+        type:'info', category:'routed_popup', persistent:true,
+      }))].slice(-10))
+    }).catch(() => {})
+    const routedPoller = createVisiblePoller(loadRoutedPopups, { interval: 30000 })
     const onSettingsChanged = (event) => {
       const item = event?.detail
       if (item?.key) settings.current = { ...settings.current, [item.key]: item }
@@ -52,7 +64,7 @@ export default function PopupNotifications() {
       const type = element.classList.contains('success-box') ? 'success'
         : element.classList.contains('warning-box') || element.classList.contains('setup-note') ? 'warning' : 'error'
       const category = categoryFor(type, message)
-      if (settings.current[category]?.enabled === false || settings.current[category]?.channel_enabled?.in_app === false) return
+      if (settings.current[category]?.enabled === false || settings.current[category]?.channel_enabled?.popup === false) return
       if (settings.current[category]?.has_rules) void veraApi.routeLocalNotification(category).catch(()=>{})
       if (settings.current[category]?.routed) return
       const duplicateKey = `${category}:${message.toLocaleLowerCase('vi-VN')}`
@@ -79,6 +91,7 @@ export default function PopupNotifications() {
     return () => {
       active = false
       trainingPoller.stop()
+      routedPoller.stop()
       settingsPoller.stop()
       observer.disconnect()
       window.removeEventListener('vera-notification-settings-changed', onSettingsChanged)
@@ -91,10 +104,14 @@ export default function PopupNotifications() {
       setItems(current => current.filter(row => row.id !== item.id))
     } catch { /* notification may have been removed */ }
   }
+  const dismiss = item => {
+    setItems(current => current.filter(row => row.id !== item.id))
+    if (item.routeId) void veraApi.readNotification(item.routeId).catch(() => {})
+  }
   if (!items.length && !trainingDetail) return null
   return <>
     {!!items.length && <div className="popup-notification-stack" aria-label="Thông báo trên màn hình">{items.map(item => <div key={item.id} className={`popup-notification ${item.type}`} role="status">
-      {item.notificationId ? <BellRing size={19}/> : item.type === 'success' ? <CheckCircle2 size={19}/> : item.type === 'error' ? <CircleAlert size={19}/> : <Info size={19}/>} {item.notificationId ? <button data-ui-key="u-0455df928cb2" type="button" className="popup-notification-open" onClick={() => openTrainingDetail(item)}>{item.message}<small>Bấm để xem chi tiết</small></button> : <span>{item.message}</span>}<button data-ui-key="u-733434ac2d70" type="button" aria-label="Đóng thông báo" onClick={() => setItems(current => current.filter(row => row.id !== item.id))}><X size={16}/></button>
+      {item.notificationId ? <BellRing size={19}/> : item.type === 'success' ? <CheckCircle2 size={19}/> : item.type === 'error' ? <CircleAlert size={19}/> : <Info size={19}/>} {item.notificationId ? <button data-ui-key="u-0455df928cb2" type="button" className="popup-notification-open" onClick={() => openTrainingDetail(item)}>{item.message}<small>Bấm để xem chi tiết</small></button> : <span>{item.message}</span>}<button data-ui-key="u-733434ac2d70" type="button" aria-label="Đóng thông báo" onClick={() => dismiss(item)}><X size={16}/></button>
     </div>)}</div>}
     {trainingDetail && <TrainingNoticeDetail notice={trainingDetail} onClose={() => setTrainingDetail(null)} />}
   </>

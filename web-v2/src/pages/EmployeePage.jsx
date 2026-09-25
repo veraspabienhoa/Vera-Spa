@@ -447,6 +447,7 @@ export default function EmployeePage({ user }) {
         <div>
           <div className="eyebrow"><UserRoundCog size={14} /> VẬN HÀNH NHÂN SỰ</div>
           <h1 className="page-title">Nhân viên</h1>
+          <label className="staff-heading-search">Tìm tên nhân viên<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Nhập tên hoặc mã nhân viên…" /></label>
           <p className="page-subtitle">Danh sách, hồ sơ, trạng thái làm việc và phân ca trong một màn hình.</p>
         </div>
       </div>

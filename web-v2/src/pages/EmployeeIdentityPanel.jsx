@@ -342,6 +342,13 @@ export function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRa
       setBusy(false)
     }
   }
+  const uploadOriginal = async () => {
+    if (busy || !file) return
+    setBusy(true); setError('')
+    try { await onConfirm(file) }
+    catch (uploadError) { setError(uploadError.message || 'Không tải được ảnh gốc.') }
+    finally { setBusy(false) }
+  }
 
   return <div className="identity-editor-backdrop" role="dialog" aria-modal="true" aria-label={`Chỉnh ảnh ${title} ${mediaLabel}`}>
     <div data-ui-key="u-2b13b01e0a2c" className="identity-editor-card">
@@ -367,7 +374,7 @@ export function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRa
         </div>
       </div>
       {error && <div className="employee-identity-notice error">{error}</div>}
-      <div className="identity-editor-footer"><button data-ui-key="u-0c9e77892f3e" data-ui-label-default="Hủy" type="button" className="secondary-button" onClick={onCancel} disabled={busy}><UiCustomText uiKey="u-0c9e77892f3e">Hủy</UiCustomText></button><button data-ui-key="u-2606b646551f" type="button" className="primary-button" onClick={process} disabled={busy || !source}>{busy ? <LoaderCircle className="spin" size={16}/> : <Upload size={16}/>} {busy ? 'Đang Crop · Rotate · Nén…' : confirmLabel}</button></div>
+      <div className="identity-editor-footer"><button data-ui-key="u-0c9e77892f3e" data-ui-label-default="Hủy" type="button" className="secondary-button" onClick={onCancel} disabled={busy}><UiCustomText uiKey="u-0c9e77892f3e">Hủy</UiCustomText></button><button data-ui-key="u-2606b646551f" type="button" className="primary-button" onClick={process} disabled={busy || !source}>{busy ? <LoaderCircle className="spin" size={16}/> : <Upload size={16}/>} {busy ? 'Đang Crop · Rotate · Nén…' : confirmLabel}</button><button type="button" className="secondary-button" onClick={uploadOriginal} disabled={busy || !source} title="Tải ảnh gốc lên, không crop, xoay hoặc nén">Lưu ảnh gốc</button></div>
     </div>
   </div>
 }

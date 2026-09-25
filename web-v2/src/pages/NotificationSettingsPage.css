@@ -15,3 +15,13 @@
 .notification-channel-switches{display:grid;gap:6px}.notification-channel-switches button{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:185px;text-align:left}.notification-channel-switches button[aria-checked=true]{background:#195f43;color:#fff}.notification-channel-switches button[aria-checked=false]{background:#ece5dc;color:#643e32}
 @media(max-width:600px){.notification-modal{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);border-radius:12px}.notification-modal-head{padding:12px}.notification-modal .notification-editor{padding:0 12px 12px}.notification-modal .notification-recipient-groups{gap:10px}.notification-modal .notification-settings-toolbar button{flex:1 1 auto}}
 @media(max-width:600px){.notification-device-panel{align-items:flex-start;flex-wrap:wrap}.notification-device-panel>button{width:100%}.notification-channel-switches{grid-template-columns:repeat(2,minmax(0,1fr))}.notification-channel-switches button{min-width:0}}
+.notification-channel-switches{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+.notification-channel-check{display:flex;align-items:center;gap:6px;padding:7px;border:1px solid #8bad9b;border-radius:10px;background:#eff7f1;font-size:12px;line-height:1.25;min-width:0;cursor:pointer}
+.notification-channel-check input{width:17px;height:17px;flex:none}
+.notification-custom-groups{padding:14px;border:1px solid #89ab98;border-radius:14px;background:#f6faf6}
+.notification-custom-groups summary{cursor:pointer;font-weight:800;color:#1b4a36}
+.notification-custom-groups .notification-settings-toolbar{margin:12px 0}
+.notification-group-member-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-height:165px;overflow:auto}
+.notification-group-member-list label{display:flex;align-items:center;gap:6px;font-size:12px}
+.notification-custom-group{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid #d2e1d6}
+@media(max-width:600px){.notification-channel-switches{grid-template-columns:1fr}.notification-group-member-list{grid-template-columns:1fr 1fr}}

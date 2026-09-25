@@ -1,5 +1,21 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 24-09-2026: kênh Popup và nhóm nhận thông báo, chưa triển khai
+
+Rà soát mã xác nhận Popup trước đây dùng chung trạng thái `in_app`, còn
+`vera_v2_notification_channel_setting` chỉ cho phép hai kênh. Bản sửa mở rộng
+CHECK constraint cho `popup` mà giữ nguyên các hàng cũ; hàng gửi Popup được
+lọc theo người nhận, nhóm, trạng thái kênh và ngày hiện tại trước khi trả về.
+Nhóm tùy chỉnh lưu tài khoản đang hoạt động trong bảng riêng có RLS và thu hồi
+quyền trực tiếp, chỉ Admin quản lý; xóa nhóm đang được tuyến gửi sử dụng sẽ bị
+từ chối. Danh sách loại thông báo bổ sung từng thao tác API đã đăng ký; mỗi
+loại mới chỉ gửi sau khi Admin bật hoặc cấu hình tuyến nhận. Không đổi xác
+thực, dữ liệu chấm công, penalty hay doanh thu.
+
+Chưa kiểm tra migration PostgreSQL và popup trên production; sau triển khai
+cần đối chiếu commit backend và frontend, hai health endpoint, một lượt tạo
+nhóm/gửi popup thử với tài khoản đúng quyền và từ chối tài khoản khác.
+
 ## 24-09-2026: lọc nhắc nghỉ giữa ca và nội dung đào tạo, chưa triển khai
 
 Rà soát mã xác nhận quy tắc gửi `attendance_break` có thể bao gồm Admin khi

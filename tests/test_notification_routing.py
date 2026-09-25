@@ -43,6 +43,15 @@ def test_non_admin_cannot_manage_notifications_or_list_accounts(method,path,body
     assert response.status_code==403,response.text
 
 
+def test_custom_group_mutations_require_admin_before_database():
+    app=FastAPI()
+    def forbidden(): raise AssertionError('must deny before opening database')
+    settings.install_notification_settings_routes(app,engine_instance=forbidden,current_identity=lambda:Identity(role='letan'),identity_type=Identity)
+    client=TestClient(app)
+    assert client.post('/v2/notification-settings/groups',json={'label':'Trưởng ca','members':['a'],'revision':0}).status_code==403
+    assert client.delete('/v2/notification-settings/groups/group:custom-abc?revision=0').status_code==403
+
+
 def test_route_creation_rejects_unconnected_task_before_database():
     app=FastAPI()
     settings.install_notification_settings_routes(app,engine_instance=lambda:None,current_identity=Identity,identity_type=Identity)
@@ -62,8 +71,9 @@ def test_admin_channel_switch_persists_separately_and_checks_revision(monkeypatc
     settings.install_notification_settings_routes(app,engine_instance=Engine,current_identity=Identity,identity_type=Identity)
     client=TestClient(app)
     assert client.put('/v2/notification-settings/birthday/channels/push',json={'enabled':False,'revision':0}).status_code==200
+    assert client.put('/v2/notification-settings/birthday/channels/popup',json={'enabled':False,'revision':0}).status_code==200
     assert ('revision',0) in queries
-    assert any('INSERT INTO vera_v2_notification_channel_setting' in q and p['channel']=='push' and p['enabled'] is False for q,p in queries if p)
+    assert {p['channel'] for q,p in queries if p and 'INSERT INTO vera_v2_notification_channel_setting' in q} == {'push','popup'}
     assert client.put('/v2/notification-settings/birthday/channels/sms',json={'enabled':False,'revision':1}).status_code==422
 
 
@@ -81,6 +91,23 @@ def test_inbox_expires_previous_day_and_hides_viewed_rows(monkeypatch):
     assert 'DELETE FROM vera_notification_delivery' in queries[0][0]
     assert "Asia/Ho_Chi_Minh" in queries[0][0]
     assert "d.read_at IS NULL" in queries[1][0]
+
+
+def test_popup_inbox_scopes_account_channel_and_membership(monkeypatch):
+    monkeypatch.setattr(settings,'ensure_schema',lambda conn:None)
+    monkeypatch.setattr(settings,'ensure_routing_schema',lambda conn:None)
+    queries=[]
+    class Engine:
+        @contextmanager
+        def begin(self): yield self
+        def execute(self,q,p=None): queries.append((str(q),p));return Result()
+    app=FastAPI()
+    settings.install_notification_settings_routes(app,engine_instance=Engine,current_identity=Identity,identity_type=Identity)
+    assert TestClient(app).get('/v2/notification-popup').json()=={'notifications':[]}
+    sql,params=queries[-1]
+    assert "d.channel='popup'" in sql and "r.channels ? 'popup'" in sql
+    assert 'p.is_active' in sql and 'g.members ? p.auth_user_id::text' in sql
+    assert params['recipient']==Identity().auth_user_id
 
 
 def test_catalog_is_installed_mutations_only_and_emits_only_success(monkeypatch):
