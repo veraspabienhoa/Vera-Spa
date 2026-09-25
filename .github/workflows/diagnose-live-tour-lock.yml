@@ -69,3 +69,36 @@ jobs:
           finally:
               engine.dispose()
           PY
+
+      - name: Read approved bounded export error summaries
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'cd /opt/vera-spa/current && /opt/vera-spa/.venv/bin/python -' <<'PY'
+          import json, re, subprocess
+          from pathlib import Path
+          from collections import Counter
+          from vera_vps_runtime_diagnostics import safe_log_summary
+          pid = subprocess.run(['pgrep','-n','-f','[v]era_web_v2_api_v38:app'],capture_output=True,text=True,timeout=5).stdout.strip()
+          unit = re.search(r'/system\.slice/([A-Za-z0-9_.@-]+\.service)',Path('/proc/'+pid+'/cgroup').read_text())[1]
+          result = subprocess.run(['journalctl','-q','-u',unit,'--since','60 minutes ago','--no-pager','--reverse','-o','json','-n','12000'],capture_output=True,text=True,timeout=15)
+          counts = Counter()
+          last = {}
+          for line in result.stdout.splitlines():
+              try:
+                  entry=json.loads(line)
+              except ValueError:
+                  continue
+              message=str(entry.get('MESSAGE',''))
+              summaries=safe_log_summary(message)
+              status=re.search(r'"GET /v2/staff/export\.xlsx(?:\?[^"]*)? HTTP/[0-9.]+" ([0-9]{3})',message)
+              if status:
+                  summaries.append('STAFF_EXPORT_HTTP='+status[1])
+              for summary in summaries:
+                  counts[summary]+=1
+                  last[summary]=max(last.get(summary,''),str(entry.get('__REALTIME_TIMESTAMP','')))
+          for summary,count in counts.items():
+              print('EXPORT_DIAGNOSTIC: count='+str(count)+' last_us='+last[summary]+' '+summary)
+          PY
