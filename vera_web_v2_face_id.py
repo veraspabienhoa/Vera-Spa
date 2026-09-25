@@ -25,6 +25,16 @@ def ensure_table(conn):
         size_bytes integer NOT NULL, sha256 text NOT NULL,
         updated_by text NOT NULL, updated_at timestamptz NOT NULL DEFAULT NOW()
     )'''))
+    conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_face_id_self_update (
+        employee_username text PRIMARY KEY, enabled boolean NOT NULL DEFAULT false
+    )'''))
+    conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_face_id_self_update_config (
+        id integer PRIMARY KEY CHECK (id=1), enabled boolean NOT NULL DEFAULT false
+    )'''))
+
+
+class SelfUpdateSetting(BaseModel):
+    enabled: bool
 
 
 def validate_photo(content, content_type):
@@ -72,13 +82,34 @@ def batch_plan(filenames, employees):
 
 def install_face_id_routes(app, *, engine_instance, current_identity, require_feature, identity_type):
     def access(conn, ident, username, *, write=False):
-        require_feature(conn, ident, 'employee_face_id_manage' if write else 'employee_face_id_view')
         row = conn.execute(text('''SELECT username FROM employees
             WHERE lower(btrim(username))=lower(btrim(:username))
             AND COALESCE(payload->>'__deleted','false') <> 'true'
             LIMIT 1''' + (' FOR UPDATE' if write else '')), {'username': username}).mappings().first()
         if not row:
             raise HTTPException(404, 'Không tìm thấy nhân viên.')
+        own = row['username'].casefold() == str(getattr(ident, 'employee_username', '')).casefold()
+        if write:
+            if not own:
+                try:
+                    require_feature(conn, ident, 'employee_face_id_all_users_edit')
+                except HTTPException as exc:
+                    if exc.status_code != 403:
+                        raise
+                    require_feature(conn, ident, 'employee_face_id_manage')
+            else:
+                try:
+                    require_feature(conn, ident, 'employee_face_id_all_users_edit')
+                except HTTPException as exc:
+                    if exc.status_code != 403:
+                        raise
+                    ensure_table(conn)
+                    global_enabled = conn.execute(text('SELECT enabled FROM vera_face_id_self_update_config WHERE id=1')).scalar()
+                    individual = conn.execute(text('SELECT enabled FROM vera_face_id_self_update WHERE employee_username=:username'), {'username': row['username']}).scalar()
+                    if not (global_enabled and individual is not False):
+                        raise HTTPException(403, 'Admin chưa cho phép cập nhật ảnh Face ID cá nhân.')
+        elif not own:
+            require_feature(conn, ident, 'employee_face_id_view')
         return row['username']
 
     def can_manage(conn, ident):
@@ -88,7 +119,41 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
         except HTTPException as exc:
             if exc.status_code != 403:
                 raise
-            return False
+        return False
+
+    @app.get('/v2/face-id/self-update-settings')
+    def self_update_settings(ident: identity_type = Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, 'employee_face_id_manage')
+            ensure_table(conn)
+            global_enabled = bool(conn.execute(text('SELECT enabled FROM vera_face_id_self_update_config WHERE id=1')).scalar())
+            rows = conn.execute(text('SELECT employee_username, enabled FROM vera_face_id_self_update')).mappings().all()
+            missing = conn.execute(text('''SELECT e.username FROM employees e LEFT JOIN vera_employee_face_id f ON f.employee_username=e.username
+                WHERE f.employee_username IS NULL AND COALESCE(e.payload->>'__deleted','false') <> 'true' ''')).scalars().all()
+        return {'enabled': global_enabled, 'individual': {r['employee_username']: r['enabled'] for r in rows}, 'missing': missing}
+
+    @app.put('/v2/face-id/self-update-settings')
+    def set_global_setting(body: SelfUpdateSetting, ident: identity_type = Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            if getattr(ident, 'role', '') != 'admin':
+                raise HTTPException(403, 'Chỉ Admin được thay đổi công tắc này.')
+            ensure_table(conn)
+            conn.execute(text('''INSERT INTO vera_face_id_self_update_config (id, enabled) VALUES (1,:enabled)
+                ON CONFLICT (id) DO UPDATE SET enabled=EXCLUDED.enabled'''), {'enabled': body.enabled})
+        return {'enabled': body.enabled}
+
+    @app.put('/v2/staff/{username}/face-id/self-update')
+    def set_individual_setting(username: str, body: SelfUpdateSetting, ident: identity_type = Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            if getattr(ident, 'role', '') != 'admin':
+                raise HTTPException(403, 'Chỉ Admin được thay đổi công tắc này.')
+            ensure_table(conn)
+            row = conn.execute(text("SELECT username FROM employees WHERE lower(username)=lower(:username) AND COALESCE(payload->>'__deleted','false') <> 'true'"), {'username': username}).scalar()
+            if not row:
+                raise HTTPException(404, 'Không tìm thấy nhân viên.')
+            conn.execute(text('''INSERT INTO vera_face_id_self_update (employee_username, enabled) VALUES (:username,:enabled)
+                ON CONFLICT (employee_username) DO UPDATE SET enabled=EXCLUDED.enabled'''), {'username': row, 'enabled': body.enabled})
+        return {'enabled': body.enabled}
 
     @app.post('/v2/face-id/batch-plan')
     def preview_batch(body: BatchPlanRequest, ident: identity_type = Depends(current_identity)):
@@ -106,8 +171,14 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
     def metadata(username: str, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             username = access(conn, ident, username)
-            editable = can_manage(conn, ident)
             ensure_table(conn)
+            try:
+                access(conn, ident, username, write=True)
+                editable = True
+            except HTTPException as exc:
+                if exc.status_code != 403:
+                    raise
+                editable = False
             row = conn.execute(text('''SELECT size_bytes, sha256, updated_at
                 FROM vera_employee_face_id WHERE employee_username=:username'''), {'username': username}).mappings().first()
         return {'photo': dict(row) if row else None, 'can_manage': editable,
