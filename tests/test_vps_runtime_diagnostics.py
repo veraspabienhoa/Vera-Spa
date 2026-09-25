@@ -22,6 +22,14 @@ def test_arbitrary_log_bodies_are_not_echoed():
     assert safe_log_summary('Authorization: Bearer private-token\nCustomer: private-name') == []
 
 
+def test_live_tour_timings_export_only_known_actions_and_numeric_phases():
+    message = ("LIVE_TOUR_TIMING action=booking outcome=ok total_ms=5012.34 sql_count=12 sql_ms=4222.10 "
+               "phases_ms={'authorize': 12.0, 'write': 4000.0, 'customer': 'private-name'} token=private-token")
+    assert safe_log_summary(message) == [
+        'live_tour_timing action=booking outcome=ok total_ms=5012.34 sql_count=12 sql_ms=4222.10 authorize_ms=12.0 write_ms=4000.0']
+    assert safe_log_summary(message.replace('action=booking', 'action=private-name')) == []
+
+
 def test_auth_single_line_failure_keeps_safe_cause_only():
     message = 'Web V2 local auth: identity lookup unavailable: OperationalError; cause=OperationalError; sqlstate=08006; pool=private-values'
     assert safe_log_summary(message) == ['auth_lookup_error type=OperationalError cause=OperationalError sqlstate=08006']
