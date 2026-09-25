@@ -6,6 +6,7 @@ import LiveTourReportsPanel from '../components/LiveTourReportsPanel'
 import LiveTourHistoryPanel from '../components/LiveTourHistoryPanel'
 import LiveTourCatalogPanel from '../components/LiveTourCatalogPanel'
 import useLiveTourDetails from '../lib/useLiveTourDetails'
+import { refreshAfterLiveTourAction } from '../lib/liveTourActionResult'
 import usePanelActions from '../lib/usePanelActions'
 import { canStartOutsideShift } from '../lib/liveTourStartPermission'
 import UiToolbar from '../components/UiToolbar'
@@ -588,7 +589,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [selectedRoomKey, setSelectedRoomKey] = useState('')
   const [roomFilterIds, setRoomFilterIds] = useState(() => new Set())
   const [clockMs, setClockMs] = useState(Date.now())
-  const [activePanel, setActivePanel] = useState('pending')
+  const [activePanel, setActivePanel] = useState('')
   const [weeklyShiftOpen, setWeeklyShiftOpen] = useState(false)
   const [reorderSteps, setReorderSteps] = useState('1')
   const [targetPosition, setTargetPosition] = useState('')
@@ -610,7 +611,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [customScope, setCustomScope] = useState('displayed')
   const [appearanceMobile, setAppearanceMobile] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 820px)').matches)
   const [lookupSearch, setLookupSearch] = useState('')
-  const details = useLiveTourDetails({board:boardData,panel:activePanel,filters:listFilters,customerSearch,
+  const details = useLiveTourDetails({board:boardData,panel:activePanel,filters:listFilters,customerSearch,enabled:!actionBusy,
     lookupOpen:Boolean(modal || bookingContext || comboLookupOpen) && boardData.capabilities?.customers_view === true,
     lookupSearch:comboLookupOpen ? comboLookupSearch : lookupSearch,
     selectedCustomerId:form.customer_id || (boardData.state?.employees || []).find(row=>row.id===bookingContext?.employeeId)?.customer_id || ''})
@@ -726,7 +727,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       history: canHistory || canBackup,
       catalog: canAdmin,
     }
-    if (allowed[activePanel]) return
+    if (!activePanel || allowed[activePanel]) return
     const fallback = PANEL_TABS.map(([key]) => key).find((panel) => allowed[panel]) || ''
     setActivePanel(fallback)
   }, [activePanel, canAdmin, canPending, canPaidInvoiceView, canCustomers, canReports, canHistory, canBackup])
@@ -753,7 +754,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
     const requestEntry = requestIdempotencyEntry(requestEntriesRef.current, cacheKey, action, actionPayload, options.idempotencyKey)
     try {
-      const body = { action, payload: actionPayload, idempotency_key: requestEntry.key, response_view: 'board' }
+      const receiptOnly = ['checkout', 'quick_checkout', 'combo_purchase', 'combo_sale_decide'].includes(action)
+      const body = { action, payload: actionPayload, idempotency_key: requestEntry.key, response_view: receiptOnly ? 'receipt' : 'board' }
       if (data.revision !== null && data.revision !== undefined) body.expected_revision = options.expectedRevision ?? data.revision
       if (rowIds.length) body.row_ids = rowIds
       if (rowIds.length === 1) body.row_id = rowIds[0]
@@ -772,14 +774,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         }
       }
       releaseIdempotencyEntry(requestEntriesRef.current, requestEntry)
-      if (Array.isArray(result?.records) && Array.isArray(result?.columns)) {
-        const next = { ...EMPTY_LIVE_TOUR, ...result }
+      await refreshAfterLiveTourAction(result, load, board => {
+        const next = { ...EMPTY_LIVE_TOUR, ...board }
         latestRevisionRef.current = next.revision
         setData(next)
         saveCachedLiveTour(cacheKey, next)
-      } else {
-        await load(true, true)
-      }
+      })
       setSelectedIds(new Set())
       setNotice(result?.message === 'Đã cập nhật Live Tour.' ? '' : result?.message || '')
       setActionFeedback('Đã lưu thao tác Live Tour.')
@@ -1673,7 +1673,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           return <button data-ui-key="u-55cddf9f06ee" type="button" role="tab" disabled={disabled} aria-selected={activePanel === key} className={activePanel === key ? 'primary-button' : 'secondary-button'} onClick={() => openWorkspacePanel(key)} key={key}>{label}{key === 'pending' && allPendingPayments.length ? ` (${allPendingPayments.length})` : ''}</button>
         })}
       </UiToolbar>
-      {activePanel !== 'catalog' && <div className="live-tour-pagination" aria-label="Phân trang Live Tour">
+      {activePanel && activePanel !== 'catalog' && <div className="live-tour-pagination" aria-label="Phân trang Live Tour">
         <button type="button" disabled={details.loading || details.page <= 1} onClick={()=>details.setPage(page=>page-1)}>Trang trước</button>
         <span>Trang {details.page}/{details.pages} · {details.total} mục</span>
         <button type="button" disabled={details.loading || details.page >= details.pages} onClick={()=>details.setPage(page=>page+1)}>Trang sau</button>
@@ -1686,7 +1686,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         customers={customers}
         services={services}
       />}
-      {!activePanel && <div className="live-tour-empty">Tài khoản đang ở chế độ chỉ xem Bảng tua. Liên hệ Admin nếu cần quyền thanh toán, báo cáo hoặc quản trị.</div>}
+      {!activePanel && <div className="live-tour-empty">Chọn mục để xem hóa đơn, khách hàng hoặc báo cáo.</div>}
 
       {activePanel === 'pending' && canPending && <LiveTourPendingPanel actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canInvoiceDelete={canInvoiceDelete} canInvoiceEdit={canInvoiceEdit} canInvoiceView={canInvoiceView} canPayment={canPayment} data={data} exportData={panelActions.exportData} itemId={itemId} openModal={panelActions.openModal} pendingPayments={pendingPayments} setError={setError} setPendingContext={setPendingContext}/>}
 
