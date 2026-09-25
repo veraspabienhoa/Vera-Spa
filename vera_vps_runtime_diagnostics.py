@@ -28,6 +28,17 @@ def safe_log_summary(message: str) -> list[str]:
         pool = re.search(r'QueuePool limit of size ([0-9]+) overflow ([0-9]+) reached, connection timed out, timeout ([0-9.]+)', line)
         if pool:
             output.append(f"pool_exhausted size={pool[1]} overflow={pool[2]} timeout={pool[3]}")
+        timing = re.search(
+            r'LIVE_TOUR_TIMING action=(booking|multi_booking|start|start_room|finish_to_pending|finish_room|complete|checkout|quick_checkout) '
+            r'outcome=(ok|error) total_ms=([0-9.]{1,20}) sql_count=([0-9]{1,10}) sql_ms=([0-9.]{1,20}) phases_ms=', line)
+        if timing:
+            phases = re.findall(
+                r"'(authorize|lock_read|apply|write|commit|response_read|render)': ([0-9.]{1,20})(?=[,}])",
+                line[timing.end():timing.end()+1000])
+            output.append(
+                f'live_tour_timing action={timing[1]} outcome={timing[2]} total_ms={timing[3]} '
+                f'sql_count={timing[4]} sql_ms={timing[5]}'
+                + ''.join(f' {name}_ms={value}' for name, value in phases))
     return output
 
 
