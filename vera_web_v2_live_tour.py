@@ -13,6 +13,7 @@ import vera_live_tour_resource_store as resource_store
 import vera_live_tour_lists as list_queries
 import vera_postgres_job_queue as job_queue
 import vera_live_tour_queue_alerts as queue_alerts
+from vera_live_tour_timing import ActionTiming
 
 import hashlib
 import json
@@ -24,6 +25,7 @@ import unicodedata
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from copy import deepcopy
+from functools import lru_cache
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
 from typing import Any
@@ -134,10 +136,31 @@ class LiveTourAction(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
-def _norm(value: Any) -> str:
-    raw = unicodedata.normalize("NFD", str(value or "").strip().lower())
+def _normalize_text(value: str) -> str:
+    raw = unicodedata.normalize("NFD", value.strip().lower())
     raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn").replace("đ", "d")
     return " ".join(raw.replace("_", " ").split())
+
+
+_cached_normalize_text = lru_cache(maxsize=4096)(_normalize_text)
+
+
+def _norm(value: Any) -> str:
+    value = str(value or "")
+    # Pure text only: no permissions, state or business results are cached.
+    # Bound both entry count and input length, including operator-supplied text.
+    return _cached_normalize_text(value) if len(value) <= 256 else _normalize_text(value)
+
+
+class _ResponseState(dict):
+    """Indexes owned by one immutable response projection, never persisted."""
+
+    def __init__(self, state):
+        super().__init__(state)
+        self.room_index = {}
+        for room in self["rooms"]:
+            self.room_index.setdefault(_norm(room.get("name")), room)
+        self.private_services = {}
 
 
 def _canonical_shift(value: Any, *, allow_blank: bool = False) -> str:
@@ -555,7 +578,9 @@ def _room_group(value: Any) -> str:
 
 
 def _catalog_room_group(state: dict[str, Any], name: Any) -> str:
-    item = next((row for row in state["rooms"] if _norm(row.get("name")) == _norm(name)), {})
+    token = _norm(name)
+    index = getattr(state, 'room_index', None)
+    item = index.get(token, {}) if index is not None else next((row for row in state["rooms"] if _norm(row.get("name")) == token), {})
     return str(item.get("area_name") or _room_group(name))
 
 
@@ -970,10 +995,16 @@ def _has_unsettled_work(employee: dict[str, Any]) -> bool:
 
 def _catalog_private_service(state: dict[str, Any], service: Any) -> bool:
     name = _norm(service)
-    return _is_private_service(service) or any(
+    cache = getattr(state, 'private_services', None)
+    if cache is not None and name in cache:
+        return cache[name]
+    result = _is_private_service(service) or any(
         item.get("private") and re.search(r"(?:^|\s*&\s*)" + re.escape(_norm(item.get("name"))) + r"(?:\s*&\s*|$)", name)
         for item in state["services"]
     )
+    if cache is not None:
+        cache[name] = result
+    return result
 
 
 def _catalog_referenced(state: dict[str, Any], kind: str, item: dict[str, Any]) -> bool:
@@ -3280,7 +3311,7 @@ def _state_response(
     customer_pii = can_customers_view or can_invoice_view or can_paid_invoice_view
     # Private replay receipts never form part of a public response. Exclude them
     # before copying; copying their entire history serves no response purpose.
-    state = deepcopy({key: value for key, value in state.items() if key != "idempotency"})
+    state = _ResponseState(deepcopy({key: value for key, value in state.items() if key != "idempotency"}))
     if state.get("manual_order_active") is False:
         for row in state["employees"]:
             row.pop("manual_order", None)
@@ -3296,7 +3327,12 @@ def _state_response(
         record["_private_service"] = _catalog_private_service(state, record.get("Dịch vụ"))
     occupied = sorted({str(item.get("room")) for item in state["employees"] if _active_booking(item) and item.get("room")})
     all_rooms = [str(item.get("name")) for item in state["rooms"] if item.get("active", True)]
-    available = [room for room in all_rooms if _room_available(state, room)]
+    occupied_names = {_norm(row.get("room")) for row in state["employees"] if _active_booking(row)}
+    private_groups = {_norm(_catalog_room_group(state, row.get("room")))
+                      for row in state["employees"] if _active_booking(row)
+                      and _catalog_private_service(state, row.get("service"))}
+    available = [room for room in all_rooms if _norm(room) not in occupied_names
+                 and _norm(_catalog_room_group(state, room)) not in private_groups]
     physical_rooms = sorted(set(state.get("physical_rooms", [])) | {_catalog_room_group(state, room) for room in all_rooms})
     occupied_groups = sorted({_catalog_room_group(state, room) for room in occupied})
     available_groups = sorted({_catalog_room_group(state, room) for room in available})
@@ -4768,6 +4804,7 @@ def install_live_tour_routes(
     def live_tour_action(body: LiveTourAction, ident: identity_type = Depends(current_identity)):
         now = datetime.now(timezone)
         action = body.action.strip().lower()
+        timing = ActionTiming(action)
         _reject_external_action(action)
         if action == "set_shift" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được xếp Ca 1/Ca 2 thủ công.")
@@ -4791,7 +4828,7 @@ def install_live_tour_routes(
         if action in IDEMPOTENCY_REQUIRED_ACTIONS and not idempotency_key:
             raise HTTPException(400, "Mọi thao tác thay đổi Live Tour cần idempotency_key để chống ghi trùng.")
         payload_hash = _canonical_payload_hash(action, payload)
-        with engine_instance().begin() as conn:
+        with timing.transaction(engine_instance()) as conn:
             manual_break_allowed = action == "end_break" and str(getattr(ident, "role", "") or "").strip().lower() in {"admin", "letan", "quanly"}
             if not manual_break_allowed:
                 require_feature(conn, ident, "live_tour_customers_edit" if action == "customer_upsert" and payload.get("customer_id") else _required_action_feature(action))
@@ -4844,6 +4881,7 @@ def install_live_tour_routes(
             # Build response capabilities before entering the global state
             # critical section. Some grants read employee/payment metadata.
             grants = permissions(conn, ident)
+            timing.mark('authorize')
             if action == "sync_daily_status":
                 state, revision = read_board(conn, now, project=False)
                 if body.expected_revision is None:
@@ -4869,6 +4907,7 @@ def install_live_tour_routes(
             else:
                 acquire_state_lock(conn, STATE_LOCK)
                 state, revision = read_state_without_projection(conn, now, for_update=True)
+            timing.mark('lock_read')
             previous = _idempotency_replay(
                 state, idempotency_key, action=action, actor=actor, payload_hash=payload_hash,
             )
@@ -4901,6 +4940,7 @@ def install_live_tour_routes(
             # from a payload flag, an account name or a delegated feature grant.
             result = _apply_action(working, action, payload, actor, now,
                                    admin_invoice_override=str(getattr(ident, "role", "") or "").strip().lower() == "admin")
+            timing.mark('apply')
             if action in {"checkout", "quick_checkout", "combo_purchase", "combo_sale_decide"} and result.get("invoice"):
                 bank = _selected_bank(working.get("payment_settings") or {}, grants.get("viewer_bank"), payload.get("bank_selection", "auto"))
                 result["invoice"]["payment_bank"] = bank
@@ -4918,16 +4958,22 @@ def install_live_tour_routes(
             next_revision = _write_state_compat(
                 conn, working, revision, actor, previous_state=state,
             )
+            timing.mark('write')
+        timing.mark('commit')
         if resource_store.enabled() and body.response_view != "receipt":
-            with engine_instance().begin() as response_conn:
+            with timing.transaction(engine_instance()) as response_conn:
                 if body.response_view == "board" and action in resource_store.OPERATIONAL_ACTIONS:
                     working, next_revision = read_board_view(response_conn, now)
                 else:
                     working, next_revision = read_board(response_conn, now, project=False)
-        return action_response(
+        timing.mark('response_read')
+        response = action_response(
             state=working, revision=next_revision, now=now, action=action,
             result=result, grants=grants, response_view=body.response_view,
         )
+        timing.mark('render')
+        timing.emit()
+        return response
 
     @app.get("/v2/live-tour/projection-queue/health")
     def live_tour_projection_queue_health():

@@ -200,6 +200,10 @@ def begin_action(conn, action, payload, expected_revision, idempotency_key, coun
     # receipt twice while holding the shared fence. The authoritative full
     # read below still runs after resource locking and revalidates this set.
     discovery = LOCK_DISCOVERY_COLLECTIONS - {'invoices'} if compact and not payload.get('invoice_id') else LOCK_DISCOVERY_COLLECTIONS
+    if compact and not payload.get('pending_id'):
+        # action_resources only inspects pending/invoice rows for explicit IDs.
+        # Booking/start/finish discover their resources from employee rows.
+        discovery = discovery - {'pending'}
     state, _, _ = read(conn, collections=discovery)
     resources = action_resources(state, action, payload, idempotency_key)
     try:
@@ -276,6 +280,9 @@ def write(conn, before, after, actor):
         WHERE singleton=1 RETURNING aggregate_revision
     """), {'patch': relational._json(changes), 'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
     ordinal_updates = {}
+    deleted = {}
+    upserts = {}
+    employee_history = []
     append_ordinals = {}
     if scoped:
         # The metadata row above serializes publication, including other
@@ -295,7 +302,7 @@ def write(conn, before, after, actor):
         kind, identifier = key
         table = relational.RESOURCE_TABLES[kind]
         if current is None:
-            conn.execute(text(f'UPDATE {table} SET deleted_at=NOW(),aggregate_revision=:revision,resource_revision=resource_revision+1 WHERE resource_id=:id'), {'id': identifier, 'revision': revision})
+            deleted.setdefault(table, []).append(identifier)
         elif previous is not None and previous[1] == current[1]:
             ordinal_updates.setdefault(table, []).append({'resource_id': identifier, 'ordinal': current[0]})
         else:
@@ -304,18 +311,37 @@ def write(conn, before, after, actor):
                 if previous is not None:
                     raise RuntimeError('Checkout ledger writes must append')
                 ordinal = append_ordinals[key]
-            conn.execute(text(f"""INSERT INTO {table}(resource_id,ordinal,payload,payload_hash,aggregate_revision)
-                VALUES(:id,:ordinal,CAST(:payload AS jsonb),:hash,:revision)
-                ON CONFLICT(resource_id) DO UPDATE SET ordinal=EXCLUDED.ordinal,payload=EXCLUDED.payload,
-                payload_hash=EXCLUDED.payload_hash,aggregate_revision=EXCLUDED.aggregate_revision,
-                resource_revision={table}.resource_revision+1,deleted_at=NULL,updated_at=NOW()"""),
-                {'id': identifier, 'ordinal': ordinal, 'payload': relational._json(payload), 'hash': relational._digest(payload), 'revision': revision})
+            upserts.setdefault(table, []).append({'resource_id': identifier, 'ordinal': ordinal,
+                'payload': payload, 'payload_hash': relational._digest(payload)})
         if kind == 'employees':
-            conn.execute(text(f"""INSERT INTO {relational.BOARD_HISTORY_TABLE}(aggregate_revision,employee_id,employee_name,actor,action,before_ordinal,after_ordinal,before_payload,after_payload)
-                VALUES(:revision,:id,:name,:actor,'update',:bo,:ao,CAST(:before AS jsonb),CAST(:after AS jsonb))"""),
-                {'revision':revision,'id':identifier,'name':(current or previous)[1].get('name',''),'actor':actor,
+            employee_history.append({'position':len(employee_history),'id':identifier,'name':(current or previous)[1].get('name',''),
                  'bo':previous[0] if previous else None,'ao':current[0] if current else None,
-                 'before':relational._json(previous[1] if previous else None),'after':relational._json(current[1] if current else None)})
+                 'before_payload':previous[1] if previous else None,'after_payload':current[1] if current else None})
+    # A single business action can update several workers and append several
+    # audit events (finish emits three). Send one statement per collection;
+    # all rows and their history still commit in the caller's transaction.
+    for table, ids in sorted(deleted.items()):
+        conn.execute(text(f'''UPDATE {table} SET deleted_at=NOW(),aggregate_revision=:revision,
+            resource_revision=resource_revision+1 WHERE resource_id=ANY(CAST(:ids AS text[]))'''),
+            {'ids': ids, 'revision': revision})
+    for table, entries in sorted(upserts.items()):
+        conn.execute(text(f'''INSERT INTO {table}(resource_id,ordinal,payload,payload_hash,aggregate_revision)
+            SELECT resource_id,ordinal,payload,payload_hash,:revision
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb))
+                AS batch(resource_id text,ordinal integer,payload jsonb,payload_hash text)
+            WHERE true
+            ON CONFLICT(resource_id) DO UPDATE SET ordinal=EXCLUDED.ordinal,payload=EXCLUDED.payload,
+                payload_hash=EXCLUDED.payload_hash,aggregate_revision=EXCLUDED.aggregate_revision,
+                resource_revision={table}.resource_revision+1,deleted_at=NULL,updated_at=NOW()'''),
+            {'rows': relational._json(entries), 'revision': revision})
+    if employee_history:
+        conn.execute(text(f'''INSERT INTO {relational.BOARD_HISTORY_TABLE}
+            (aggregate_revision,employee_id,employee_name,actor,action,before_ordinal,after_ordinal,before_payload,after_payload)
+            SELECT :revision,id,name,:actor,'update',bo,ao,
+                COALESCE(before_payload,'null'::jsonb),COALESCE(after_payload,'null'::jsonb)
+            FROM jsonb_to_recordset(CAST(:rows AS jsonb))
+                AS batch(position integer,id text,name text,bo integer,ao integer,before_payload jsonb,after_payload jsonb)
+            ORDER BY position'''), {'revision':revision,'actor':actor,'rows':relational._json(employee_history)})
     # Evicting one item from a full audit ring shifts every retained ordinal.
     # Preserve the exact ordering in one statement per collection instead of
     # thousands of network round trips while holding the transaction locks.
