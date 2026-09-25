@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from vera_postgres_job_queue import ensure_schema_conn
-from vera_technical_retention import run
+from vera_technical_retention import run, SETTING_TABLE
 from test_live_tour_resource_postgres import database
 
 
@@ -34,3 +34,22 @@ def test_cleanup_skips_locked_completed_job(database):
         writer.execute(text("SELECT id FROM vera_background_job WHERE job_key='locked-done' FOR UPDATE"))
         assert run(database, apply=True)['removed'] == 0
     assert run(database, apply=True)['removed'] == 1
+
+
+def test_admin_retention_changes_only_completed_projection_jobs(database):
+    with database.begin() as conn:
+        ensure_schema_conn(conn)
+    assert run(database)['retention_hours'] == 72
+    with database.begin() as conn:
+        conn.execute(text(f'UPDATE {SETTING_TABLE} SET retention_days=1 WHERE singleton=1'))
+        for key, queue, age in [('old-projection', 'live_tour_projection', 2),
+                                ('recent-projection', 'live_tour_projection', 0),
+                                ('old-other', 'payment_queue', 2)]:
+            conn.execute(text("""INSERT INTO vera_background_job(queue_name,job_key,status,completed_at)
+                VALUES(:queue,:key,'done',NOW()-make_interval(days=>:age))"""), locals())
+    result = run(database, apply=True)
+    assert result['retention_hours'] == 24
+    assert result['removed'] == 1
+    with database.connect() as conn:
+        keys = set(conn.execute(text('SELECT job_key FROM vera_background_job')).scalars())
+    assert keys == {'recent-projection', 'old-other'}
