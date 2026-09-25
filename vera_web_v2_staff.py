@@ -18,12 +18,10 @@ from urllib.parse import quote
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
-from openpyxl.drawing.image import Image as ExcelImage
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
-from PIL import Image as PillowImage, ImageOps
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -36,7 +34,7 @@ from vera_vietqr_bank import normalize_bank_for_storage, resolve_vietqr_bank_id,
 
 
 STAFF_EXPORT_COLUMNS = [
-    "Ảnh nhân viên", "Tên nhân viên", "Họ và tên đầy đủ", "Ngày sinh", "Giới tính", "Dân tộc",
+    "Tên nhân viên", "Họ và tên đầy đủ", "Ngày sinh", "Giới tính", "Dân tộc",
     "Số CCCD", "Ngày cấp CCCD", "Nơi cấp CCCD", "Điện thoại", "Email",
     "Tỉnh/Thành phố", "Quận/Huyện", "Xã/Phường", "Địa chỉ cụ thể", "Địa chỉ",
     "Tên ngân hàng", "Số tài khoản ngân hàng", "Ngày bắt đầu làm",
@@ -1005,8 +1003,8 @@ def install_staff_routes(
             "message": message,
         }
 
-    def filtered_staff(conn, ident, search: str, role: str, status: str, shift: str) -> list[dict[str, Any]]:
-        data = staff_result(conn, ident)["employees"]
+    def filtered_staff(conn, ident, search: str, role: str, status: str, shift: str, *, result=None) -> list[dict[str, Any]]:
+        data = (staff_result(conn, ident) if result is None else result)["employees"]
         if search.strip():
             needle = norm(search)
             exact = [row for row in data if needle in {norm(row["username"]), norm(row["full_name"])}]
@@ -1023,9 +1021,7 @@ def install_staff_routes(
     def build_staff_workbook(
         rows: list[dict[str, Any]],
         shifts: dict[str, list[str]],
-        portraits: dict[str, bytes] | None = None,
     ) -> bytes:
-        portraits = portraits or {}
         wb = Workbook()
         ws = wb.active
         ws.title = "DanhSachNhanSu"
@@ -1046,7 +1042,6 @@ def install_staff_routes(
         number_columns = {"Phát sinh tháng", "Có phép tháng", "Phép năm"}
         for row in rows:
             values = {
-                "Ảnh nhân viên": "",
                 "Tên nhân viên": row["username"], "Họ và tên đầy đủ": row["full_name"],
                 "Ngày sinh": row["birth_date"], "Giới tính": row.get("gender", ""),
                 "Dân tộc": row.get("ethnicity", ""),
@@ -1074,41 +1069,16 @@ def install_staff_routes(
                         pass
                 excel_values.append(value)
             ws.append(excel_values)
-            portrait = portraits.get(str(row["username"]))
-            if portrait:
-                try:
-                    # Excel/openpyxl cannot package WebP directly. Fully decode
-                    # and normalize while still inside the per-photo guard so
-                    # a damaged image cannot fail the later workbook save.
-                    with PillowImage.open(BytesIO(portrait)) as source:
-                        source.load()
-                        normalized = ImageOps.exif_transpose(source)
-                        # Three pixels per displayed pixel keeps printed portraits
-                        # clear without embedding full camera-resolution images.
-                        normalized.thumbnail((216, 288), PillowImage.Resampling.LANCZOS)
-                        normalized = normalized.convert("RGBA")
-                        image_bytes = BytesIO()
-                        normalized.save(image_bytes, format="PNG")
-                    image_bytes.seek(0)
-                    image = ExcelImage(image_bytes)
-                    image.width = 72
-                    image.height = 96
-                    ws.add_image(image, f"A{ws.max_row}")
-                    ws.row_dimensions[ws.max_row].height = 76
-                except Exception:
-                    ws.cell(ws.max_row, 1, "Ảnh không đọc được")
         for row_index, row_cells in enumerate(ws.iter_rows(min_row=2), start=2):
             for cell in row_cells:
                 cell.border = Border(bottom=thin)
                 cell.alignment = Alignment(vertical="center")
-            employee_index = row_index - 2
-            if employee_index >= len(rows) or not portraits.get(str(rows[employee_index]["username"])):
-                ws.row_dimensions[row_index].height = 22
+            ws.row_dimensions[row_index].height = 22
         for column in date_columns:
             index = STAFF_EXPORT_COLUMNS.index(column) + 1
             for cell in ws.iter_cols(min_col=index, max_col=index, min_row=2, max_row=max(2, ws.max_row)):
                 for item in cell:
-                    item.number_format = "dd/mm/yyyy"
+                    item.number_format = "dd-mm-yyyy"
         for column in number_columns:
             index = STAFF_EXPORT_COLUMNS.index(column) + 1
             for cell in ws.iter_cols(min_col=index, max_col=index, min_row=2, max_row=max(2, ws.max_row)):
@@ -1122,7 +1092,6 @@ def install_staff_routes(
                     item.number_format = "@"
 
         widths = {
-            "Ảnh nhân viên": 13,
             "Tên nhân viên": 24, "Họ và tên đầy đủ": 28, "Ngày bắt đầu làm": 18, "Ngày sinh": 16,
             "Giới tính": 13, "Dân tộc": 16,
             "Phân quyền": 14, "Trạng thái làm việc": 22, "Điện thoại": 16, "Email": 30,
@@ -1193,21 +1162,10 @@ def install_staff_routes(
     ):
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "staff_export")
-            rows = filtered_staff(conn, ident, search, role, status, shift)
-            shifts = staff_result(conn, ident)["shifts_by_department"]
-            portraits = {}
-            if conn.execute(text("SELECT to_regclass('vera_employee_identity_document')")).scalar_one_or_none():
-                names = [row["username"] for row in rows]
-                if names:
-                    portraits = {
-                        str(item["employee_username"]): bytes(item["content"])
-                        for item in conn.execute(text("""
-                            SELECT employee_username, content
-                            FROM vera_employee_identity_document
-                            WHERE side='portrait' AND employee_username = ANY(:names)
-                        """), {"names": names}).mappings().all()
-                    }
-        content = build_staff_workbook(rows, shifts, portraits)
+            result = staff_result(conn, ident)
+            rows = filtered_staff(conn, ident, search, role, status, shift, result=result)
+            shifts = result["shifts_by_department"]
+        content = build_staff_workbook(rows, shifts)
         filename = f"VeraSpa_DanhSachNhanSu_{datetime.now(vn_tz).strftime('%d%m%Y')}.xlsx"
         return StreamingResponse(
             BytesIO(content),

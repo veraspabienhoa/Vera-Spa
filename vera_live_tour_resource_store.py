@@ -20,15 +20,36 @@ LOCK_DISCOVERY_COLLECTIONS = frozenset({'employees', 'rooms', 'customers', 'pend
 PAYMENT_ACTIONS = frozenset({'checkout', 'quick_checkout'})
 PAYMENT_COLLECTIONS = frozenset({'employees', 'rooms', 'services', 'combos', 'customers', 'pending', 'invoices', 'invoice_changes'})
 PAYMENT_APPENDS = frozenset({'invoices', 'reports', 'combo_usage', 'audit'})
+OPERATIONAL_ACTIONS = frozenset({'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'start', 'start_room', 'finish_room', 'complete', 'finish_to_pending', 'move_pending', 'update_appointment', 'set_vip', 'add_minutes', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'pending_update', 'pending_delete'})
+ADJUSTMENT_ACTIONS = frozenset({'paid_invoice_update', 'paid_invoice_delete'})
+OPERATIONAL_COLLECTIONS = frozenset({'employees', 'rooms', 'services', 'combos', 'customers', 'pending', 'break_events', 'combo_sale_requests'})
 
 
-class _PaymentSnapshot(dict):
+class _ScopedSnapshot(dict):
+    """Certified partial read: omitted history is untouched, new history appends."""
+    appends = frozenset()
+    writable = frozenset()
+
+
+class _OperationalSnapshot(_ScopedSnapshot):
+    appends = frozenset({'audit', 'pending_changes'})
+    writable = frozenset({'employees', 'customers', 'pending', 'break_events'}) | appends
+
+
+class _AdjustmentSnapshot(_ScopedSnapshot):
+    appends = frozenset({'audit', 'invoice_changes'})
+    writable = frozenset({'employees', 'customers', 'invoices', 'reports', 'combo_usage'}) | appends
+
+
+class _PaymentSnapshot(_ScopedSnapshot):
     """Internal checkout read set, never a full board or export snapshot.
 
     Existing invoices/change history contain numbering headers only, except
     the current replay's canonical invoice. Missing collections are untouched;
     new ledger rows are appended by write() under the publication row lock.
     """
+    appends = PAYMENT_APPENDS
+    writable = frozenset({'employees', 'customers', 'pending'}) | appends
 
 
 class _ReceiptSnapshot(dict):
@@ -64,13 +85,24 @@ def lock(conn, *, shared=False):
         raise HTTPException(503, 'Tài nguyên đang được cập nhật. Vui lòng thử lại.', headers={'Retry-After': '1'})
 
 
-def read(conn, collections=None, *, payment_key=None):
+def read(conn, collections=None, *, payment_key=None, receipt_key=None, profile=None):
     # One statement = one MVCC snapshot across all collections and the revision.
     params = {}
     arms = []
+    snapshot_type = dict
+    if profile == 'operational':
+        collections = OPERATIONAL_COLLECTIONS
+        snapshot_type = _OperationalSnapshot
+    elif profile == 'adjustment':
+        collections = OPERATIONAL_COLLECTIONS | {'invoices', 'reports', 'combo_usage'}
+        snapshot_type = _AdjustmentSnapshot
+    elif profile is not None:
+        raise ValueError('Unknown Live Tour read profile')
     if payment_key is not None:
         collections = PAYMENT_COLLECTIONS
         params['payment_key'] = payment_key
+        receipt_key = payment_key
+        snapshot_type = _PaymentSnapshot
     for name, table in relational.RESOURCE_TABLES.items():
         if collections is not None and name not in collections:
             continue
@@ -83,10 +115,11 @@ def read(conn, collections=None, *, payment_key=None):
             projection = "jsonb_build_object('id',resource_id,'before',jsonb_build_object('bill_no',payload->'before'->'bill_no'))"
         arms.append(f"SELECT '{name}' AS kind,resource_id,ordinal,{projection} AS payload,aggregate_revision FROM {table} WHERE deleted_at IS NULL")
     meta_payload = "payload" if collections is None else "payload - 'idempotency'"
-    if payment_key is not None:
+    if receipt_key is not None:
+        params['receipt_key'] = receipt_key
         meta_payload = """(payload - 'idempotency') || jsonb_build_object('idempotency',
-            CASE WHEN (payload->'idempotency') ? :payment_key
-            THEN jsonb_build_object(:payment_key,payload->'idempotency'->:payment_key)
+            CASE WHEN (payload->'idempotency') ? :receipt_key
+            THEN jsonb_build_object(:receipt_key,payload->'idempotency'->:receipt_key)
             ELSE '{}'::jsonb END)"""
     arms.append(f"SELECT '_meta','',0,{meta_payload},aggregate_revision FROM {relational.META_TABLE} WHERE singleton=1")
     statement = text(' UNION ALL '.join(arms))
@@ -98,8 +131,7 @@ def read(conn, collections=None, *, payment_key=None):
     if isinstance(owned_meta.get('idempotency'), dict):
         owned_meta['idempotency'] = _ReceiptSnapshot(owned_meta['idempotency'])
     state = deepcopy(owned_meta)
-    if payment_key is not None:
-        state = _PaymentSnapshot(state)
+    state = snapshot_type(state)
     versions = {}
     for kind in relational.RESOURCE_COLLECTIONS:
         state[kind] = []
@@ -167,14 +199,20 @@ def begin_action(conn, action, payload, expected_revision, idempotency_key, coun
     # In particular, do not decode/copy audit history and every idempotency
     # receipt twice while holding the shared fence. The authoritative full
     # read below still runs after resource locking and revalidates this set.
-    discovery = LOCK_DISCOVERY_COLLECTIONS - {'invoices'} if compact and action in PAYMENT_ACTIONS and not payload.get('invoice_id') else LOCK_DISCOVERY_COLLECTIONS
+    discovery = LOCK_DISCOVERY_COLLECTIONS - {'invoices'} if compact and not payload.get('invoice_id') else LOCK_DISCOVERY_COLLECTIONS
     state, _, _ = read(conn, collections=discovery)
     resources = action_resources(state, action, payload, idempotency_key)
     try:
         concurrency.lock_resources(conn, resources, wait=False)
     except TimeoutError:
         raise HTTPException(503, 'Đối tượng đang được cập nhật. Vui lòng thử lại.', headers={'Retry-After': '1'}) from None
-    state, revision, versions = read(conn, payment_key=idempotency_key) if compact and action in PAYMENT_ACTIONS else read(conn)
+    if compact and action in PAYMENT_ACTIONS:
+        state, revision, versions = read(conn, payment_key=idempotency_key)
+    elif compact and action not in {'backup', 'restore'}:
+        profile = 'operational' if action in OPERATIONAL_ACTIONS else 'adjustment' if action in ADJUSTMENT_ACTIONS else None
+        state, revision, versions = read(conn, receipt_key=idempotency_key, profile=profile)
+    else:
+        state, revision, versions = read(conn)
     if action_resources(state, action, payload, idempotency_key) != resources:
         raise HTTPException(409, 'Đối tượng đã đổi. Hãy làm mới rồi thao tác lại.')
     if independent and state.get('counter_business_date') != counter_day:
@@ -195,6 +233,8 @@ def write(conn, before, after, actor):
     before_meta, old = relational._split(before)
     after_meta, new = relational._split(after)
     payment = isinstance(before, _PaymentSnapshot)
+    scoped = isinstance(before, _ScopedSnapshot)
+    appends = before.appends if scoped else frozenset()
     if payment:
         # Projected headers must never replace canonical invoice/history rows.
         for key, prior in list(old.items()):
@@ -203,9 +243,11 @@ def write(conn, before, after, actor):
                     raise RuntimeError('Checkout attempted to edit a historical invoice')
                 del old[key]
                 del new[key]
-        allowed = {'employees', 'customers', 'pending'} | PAYMENT_APPENDS
-        if any(old.get(key) != new.get(key) and key[0] not in allowed for key in set(old) | set(new)):
-            raise RuntimeError('Checkout exceeded its certified write set')
+    if scoped:
+        if any(old.get(key) != new.get(key) and key[0] not in before.writable for key in set(old) | set(new)):
+            raise RuntimeError('Live Tour exceeded its certified write set')
+        if any(key[0] in appends for key in old):
+            raise RuntimeError('Append-only history must not load historical rows')
     if not conn.info.get('live_tour_exclusive', True):
         locked = set(conn.info.get('live_tour_resources', []))
         domains = {'employees':'live_tour_employee','customers':'live_tour_customer','pending':'live_tour_pending','invoices':'live_tour_invoices'}
@@ -225,20 +267,20 @@ def write(conn, before, after, actor):
     changes = {key: value for key, value in after_meta.items() if before_meta.get(key) != value and key != 'idempotency'}
     receipts = {key: value for key, value in after_meta.get('idempotency', {}).items() if before_meta.get('idempotency', {}).get(key) != value}
     removed_receipts = sorted(set(before_meta.get('idempotency', {})) - set(after_meta.get('idempotency', {})))
+    receipt_patch = " || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb))" if receipts or removed_receipts else ''
+    configuration_patch = " || jsonb_build_object('_configuration_revision',aggregate_revision+1)" if conn.info.get('live_tour_exclusive', True) else ''
     revision = int(conn.execute(text(f"""
         UPDATE {relational.META_TABLE}
-        SET payload=payload || CAST(:patch AS jsonb) || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{{}}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb)),
+        SET payload=payload || CAST(:patch AS jsonb){receipt_patch}{configuration_patch},
             aggregate_revision=aggregate_revision+1, updated_at=NOW(), payload_hash='active'
         WHERE singleton=1 RETURNING aggregate_revision
     """), {'patch': relational._json(changes), 'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
-    if conn.info.get('live_tour_exclusive', True):
-        conn.execute(text(f"UPDATE {relational.META_TABLE} SET payload=jsonb_set(payload,'{{_configuration_revision}}',to_jsonb(CAST(:revision AS bigint))) WHERE singleton=1"), {'revision':revision})
     ordinal_updates = {}
     append_ordinals = {}
-    if payment:
+    if scoped:
         # The metadata row above serializes publication, including other
         # writers of the audit log. Allocate positions after taking that lock.
-        for kind in sorted(PAYMENT_APPENDS):
+        for kind in sorted(appends):
             entries = sorted(((key, value) for key, value in new.items() if key[0] == kind), key=lambda item: item[1][0])
             if entries:
                 first_ordinal = int(conn.execute(text(
@@ -258,7 +300,7 @@ def write(conn, before, after, actor):
             ordinal_updates.setdefault(table, []).append({'resource_id': identifier, 'ordinal': current[0]})
         else:
             ordinal, payload = current
-            if payment and kind in PAYMENT_APPENDS:
+            if scoped and kind in appends:
                 if previous is not None:
                     raise RuntimeError('Checkout ledger writes must append')
                 ordinal = append_ordinals[key]
@@ -285,7 +327,7 @@ def write(conn, before, after, actor):
                  AS source(resource_id text, ordinal integer)
             WHERE target.resource_id=source.resource_id
         """), {'updates': relational._json(updates)})
-    if payment and after.get('audit'):
+    if scoped and after.get('audit'):
         from vera_web_v2_live_tour import MAX_AUDIT
         table = relational.RESOURCE_TABLES['audit']
         conn.execute(text(f"""UPDATE {table} SET deleted_at=NOW(),aggregate_revision=:revision,

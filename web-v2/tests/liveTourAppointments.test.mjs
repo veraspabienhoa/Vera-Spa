@@ -748,6 +748,10 @@ test('a failed pending transfer preserves the old assignment and does not open p
     assert.deepEqual(f.data.state.employees, before)
     assert.match(document.querySelector('.tour-booking-dialog').textContent, /Không lưu được hóa đơn chờ/)
     assert.equal(document.querySelector('.tour-transaction-dialog[aria-label="Thanh toán"]'), null)
+    globalThis.__tourTestApi.liveTour = async () => ({ unchanged: true })
+    await act(async () => document.dispatchEvent(new dom.window.Event('visibilitychange')))
+    assert.match(document.querySelector('.tour-booking-dialog').textContent, /Không lưu được hóa đơn chờ/)
+    assert.equal(document.querySelector('.live-tour-action-feedback'), null)
   } finally { await f.dispose() }
 })
 

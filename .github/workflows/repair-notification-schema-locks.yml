@@ -1,4 +1,4 @@
-name: Repair Live Tour payment read scope
+name: Repair Live Tour operation read scope
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - name: Test concurrent notification reads and required regressions
         env:
           VERA_TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/vera_test
-        run: python scripts/run_pytest_offline.py -q tests/test_notification_schema_locking.py tests/test_notification_routing.py tests/test_auth_pool.py tests/test_vps_runtime_diagnostics.py tests/test_auto_penalty_employee_notifications.py tests/test_attendance_connection_reuse.py tests/test_staff_export_and_quota_regressions.py tests/test_leave_quota_alerts.py tests/test_annual_leave_quota_isolation.py tests/test_leave_quota_shared_classification.py tests/test_export_payment_load.py tests/test_live_tour_resource_postgres.py tests/test_live_tour_backend.py tests/test_live_tour_safety.py tests/test_live_tour_lock_backpressure.py tests/test_live_tour_receipt_copy.py tests/test_live_tour_receipt_postgres.py tests/test_live_tour_audit_batch.py tests/test_live_tour_payment_scope_postgres.py tests/test_notification_feed.py
+        run: python scripts/run_pytest_offline.py -q tests/test_notification_schema_locking.py tests/test_notification_routing.py tests/test_auth_pool.py tests/test_vps_runtime_diagnostics.py tests/test_auto_penalty_employee_notifications.py tests/test_attendance_connection_reuse.py tests/test_staff_export_and_quota_regressions.py tests/test_leave_quota_alerts.py tests/test_annual_leave_quota_isolation.py tests/test_leave_quota_shared_classification.py tests/test_export_payment_load.py tests/test_live_tour_resource_postgres.py tests/test_live_tour_backend.py tests/test_live_tour_safety.py tests/test_live_tour_lock_backpressure.py tests/test_live_tour_receipt_copy.py tests/test_live_tour_receipt_postgres.py tests/test_live_tour_audit_batch.py tests/test_live_tour_payment_scope_postgres.py tests/test_notification_feed.py tests/test_live_tour_operation_scope_postgres.py
 
   deploy:
     needs: test
@@ -94,3 +94,4 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python "$release_dir/vera_vps_runtime_diagnostics.py"'
+
