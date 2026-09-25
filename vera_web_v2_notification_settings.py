@@ -78,7 +78,40 @@ class NotificationGroupEdit(BaseModel):
         return value.strip()
 
 
+def _schema_ready(conn) -> bool:
+    """Check committed schema state without taking locks on notification tables.
+
+    Do not cache this across connections: a caller may roll back first-time setup.
+    """
+    return conn.execute(text("""
+        SELECT to_regclass('public.vera_v2_notification_setting') IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname='public' AND c.relname='vera_v2_notification_channel_setting'
+              AND c.relrowsecurity
+              AND EXISTS (
+                SELECT 1 FROM pg_constraint k WHERE k.conrelid=c.oid
+                  AND k.conname='vera_v2_notification_channel_setting_channel_check'
+                  AND pg_get_constraintdef(k.oid) LIKE '%popup%'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) a
+                LEFT JOIN pg_roles r ON r.oid=a.grantee
+                WHERE a.grantee=0 OR r.rolname IN ('anon','authenticated')
+              )
+          )
+    """)).scalar_one_or_none() is True
+
+
 def ensure_schema(conn) -> None:
+    # ALTER TABLE ... ENABLE ROW LEVEL SECURITY takes AccessExclusiveLock even
+    # when already enabled. Notification checks run inside business transactions;
+    # repeating that DDL blocks all readers and exhausts the shared API pool.
+    if _schema_ready(conn):
+        return
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera.notification.schema'))"))
+    if _schema_ready(conn):
+        return
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS vera_v2_notification_setting (
           notification_key TEXT PRIMARY KEY,

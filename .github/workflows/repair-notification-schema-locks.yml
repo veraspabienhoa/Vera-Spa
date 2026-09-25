@@ -1,0 +1,96 @@
+name: Repair notification schema locks
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/repair-notification-schema-locks.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vera-vps-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vera_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vera_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install regression dependencies
+        run: python -m pip install "pytest==8.4.2" "httpx2>=2,<3" -r requirements.txt
+      - name: Test concurrent notification reads and required regressions
+        env:
+          VERA_TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/vera_test
+        run: python scripts/run_pytest_offline.py -q tests/test_notification_schema_locking.py tests/test_notification_routing.py tests/test_auth_pool.py tests/test_vps_runtime_diagnostics.py tests/test_auto_penalty_employee_notifications.py tests/test_attendance_connection_reuse.py
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require exact current main
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$DEPLOY_SHA"
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Capture bounded pre-deployment diagnostics
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); git -C "$release_dir" rev-parse HEAD; curl -fsS --max-time 10 http://127.0.0.1:8000/v2/auth/health >/dev/null; /opt/vera-spa/.venv/bin/python "$release_dir/vera_vps_runtime_diagnostics.py"'
+      - name: Deploy tested fix through existing VPS deployment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "timeout 180 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
+      - name: Verify running commit and both health endpoints
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); release_dir=\$(readlink -f /proc/\$pid/cwd); test \"\$(git -C \"\$release_dir\" rev-parse HEAD)\" = '$DEPLOY_SHA'; curl -fsS --max-time 10 http://127.0.0.1:8000/v2/auth/health >/dev/null; curl -fsS --max-time 10 http://127.0.0.1:8000/v2/health >/dev/null; echo PRODUCTION_COMMIT=$DEPLOY_SHA; echo AUTH_AND_BUSINESS_HEALTH=OK"
+      - name: Report sanitized diagnostics
+        if: always()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); /opt/vera-spa/.venv/bin/python "$release_dir/vera_vps_runtime_diagnostics.py"'
