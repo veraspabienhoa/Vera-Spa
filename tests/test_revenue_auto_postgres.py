@@ -370,8 +370,8 @@ def test_manual_register_and_export_remain_visible_after_saved_summary_cutoff(da
         assert sheet.max_row == 4
         assert sorted(sheet.cell(row, 3).value for row in range(2, 5)) == [202000, 49250000, 54000000]
     current = http.get('/v2/revenue/period-report').json()
-    assert current['end_date'] == '2026-09-21'
-    assert current['total_income'] == current['total_expense'] == 0
+    assert current['end_date'] == '2026-09-24'
+    assert current['total_income'] == 49250000 and current['total_expense'] == 54202000
     ident.allowed = False
     assert http.get('/v2/revenue/purchase-reconcile?preset=all&canonical=true').status_code == 403
 
@@ -509,7 +509,7 @@ def test_tip_period_matches_reports_calendar_filter_not_operational_day(database
         assert response.json()['period_tip'] == expected
     saved = http.put('/v2/revenue/report-period', json={'start_date': '2026-09-16', 'end_date': '2026-09-24'})
     assert saved.status_code == 200 and saved.json()['period_tip'] == expected
-    assert http.get('/v2/revenue/period-report').json()['period_tip'] == expected
+    assert http.get('/v2/revenue/period-report?start=2026-09-16&end=2026-09-24').json()['period_tip'] == expected
     next_day = http.get('/v2/revenue/period-report?start=2026-09-25&end=2026-09-25').json()
     assert next_day['period_tip'] == 85410000
     assert next_day['total_income'] == (315720000 if source=='auto' else 0), 'Auto cash cutoff uses the same calendar date'
@@ -613,7 +613,7 @@ def test_live_ledger_has_no_implicit_dates_and_export_keeps_explicit_filters(dat
     latest = http.get(path + query).json()
     assert latest['end_date'] == '2026-09-27'
     assert latest['ledger_income'] == (1000 if source == 'auto' else 2000)
-    assert http.get('/v2/revenue/period-report').json()['end_date'] == '2026-09-21'
+    assert http.get('/v2/revenue/period-report').json()['end_date'] == ('2026-09-21' if source == 'auto' else '2026-09-26')
     assert http.get(path + '?live_ledger=invalid').status_code == 422
     ident.allowed = False
     assert http.get(path + query).status_code == 403
@@ -637,3 +637,25 @@ def test_live_empty_ledger_and_revision_advance_on_vietnam_midnight(database, cl
     assert http.get(path).json()['end_date'] == '2026-09-27'
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 0
+
+
+@pytest.mark.parametrize('today_day,expected_start,last_day', [(1,1,1),(15,1,14),(16,16,15),(27,16,24)])
+def test_manual_defaults_current_half_month_and_latest_actual_report_not_legacy_year(database, client, monkeypatch, today_day, expected_start, last_day):
+    class Today(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            return datetime(2026,9,today_day,12,tzinfo=auto.VN_TZ)
+    monkeypatch.setattr(auto,'datetime',Today)
+    with database.begin() as conn:
+        conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',100,:day,'Report'),('Chi',10,:day,'Report'),('Thu',999,'2026-10-01','Future')"),{'day':date(2026,9,last_day)})
+        conn.execute(text("INSERT INTO vera_app_setting(category,setting_key,value_json,revision) VALUES ('revenue','report_period_manual',CAST(:value AS jsonb),1)"), {'value':json.dumps({'period_start':'2025-09-16','period_end':'2026-09-21'})})
+    http,_=client
+    result=http.get('/v2/revenue/period-report')
+    assert result.status_code==200,result.text
+    data=result.json()
+    assert data['period_tip_start']==f'2026-09-{expected_start:02d}'
+    assert data['end_date']==f'2026-09-{last_day:02d}'
+    assert data['total_income']==100 and data['total_expense']==10 and data['default_period']
+    assert data['period_tip']==0
+    explicit=http.get('/v2/revenue/period-report?start=2026-09-01&end=2026-09-01').json()
+    assert explicit['period_tip_start']=='2026-09-01' and not explicit['default_period']

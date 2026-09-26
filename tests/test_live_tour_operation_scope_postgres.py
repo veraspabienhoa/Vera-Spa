@@ -238,3 +238,38 @@ def test_partial_snapshot_rejects_uncertified_writes(database, payments):
         with pytest.raises(RuntimeError, match='certified write set'):
             store.write(conn, snapshot, changed, 'test')
     assert saved(database) == before
+
+
+def test_pending_customer_change_uses_operational_snapshot_and_keeps_financial_history(database, payments, monkeypatch):
+    from test_pending_customer_change import cash_pending
+    client, _, _ = payments
+    sample,pending,customer,owned=cash_pending()
+    with database.begin() as conn:
+        store.lock(conn)
+        before,_,_=store.read(conn)
+        prepared=deepcopy(before)
+        for key in ('employees','customers','services','combos','pending','rooms','service_areas'):
+            if key in sample:
+                prepared[key]=deepcopy(sample[key])
+        revision=store.write(conn,before,prepared,'fixture')
+    body={'action':'pending_update','expected_revision':revision,'idempotency_key':'retarget-pg-once',
+          'response_view':'board','payload':{'pending_id':pending['id'],'customer_id':customer['id'],
+          'combo_purchase_id':owned['id'],'reason':'Correct customer'}}
+    original=store.read
+    def bounded(conn,collections=None,**kwargs):
+        assert collections is not None or kwargs.get('profile')=='operational'
+        result=original(conn,collections,**kwargs)
+        assert not result[0]['invoices'] and not result[0]['reports']
+        return result
+    monkeypatch.setattr(store,'read',bounded)
+    response=client.post('/v2/live-tour/action',json=body)
+    assert response.status_code==200,response.text
+    assert client.post('/v2/live-tour/action',json=body).json()['duplicate']
+    monkeypatch.setattr(store,'read',original)
+    actual,current=saved(database)
+    assert current==revision+1
+    assert actual['pending'][0]['combo_purchase_id']==owned['id']
+    assert actual['pending'][0]['entries'][0]['combo_reserved_units']==1
+    for key in ('employees','customers','invoices','reports','combo_usage','invoice_changes'):
+        assert actual[key]==prepared[key]
+    assert all(actual['idempotency'][key]==value for key,value in prepared['idempotency'].items())

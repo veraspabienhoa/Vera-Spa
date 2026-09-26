@@ -289,3 +289,13 @@ def test_customer_export_omits_deleted_profiles_and_purchases():
     live._apply_action(state, 'customer_delete', {'customer_id':'c1', 'reason':'Gỡ hồ sơ'}, 'admin', NOW)
     assert live._export_rows(state, 'customers', NOW)[2] == []
     assert len(state['customer_changes']) == 2
+
+
+def test_revenue_export_total_filter_matches_visible_amount(monkeypatch):
+    state,invoice=paid_state()
+    client,_=scoped_client(monkeypatch,state,ALL)
+    for amount,expected in [(invoice['total'],3),(invoice['total']+1,2),(0,2)]:
+        response=client.get('/v2/live-tour/export.xlsx',params={'kind':'revenue','total_amount':amount})
+        assert response.status_code==200,response.text
+        assert load_workbook(BytesIO(response.content)).active.max_row==expected
+    assert client.get('/v2/live-tour/export.xlsx',params={'total_amount':-1}).status_code==422

@@ -1,3 +1,5 @@
+import { availableBookingPurchase, customerPurchases, customerTicketLabel } from '../lib/liveTourComboBooking'
+import { customerOptionMatches } from '../lib/customerSearch'
 import StableFeedback from './StableFeedback'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
@@ -15,13 +17,17 @@ import './LiveTourBookingDialog.css'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
 
-export default function LiveTourPendingDialog({ context, catalog, busy, error, onAction, onClose, canEditDate = false, isAdmin = false }) {
+export default function LiveTourPendingDialog({ context, catalog, busy, error, onAction, onClose, canEditDate = false, isAdmin = false, customers = [], canChangeCustomer = false, onCustomerSearch, onCustomerSelect }) {
   const { item, mode, revision } = context
   const editing = mode === 'edit'
   const deleting = mode === 'delete'
   const dialog = useDialogFocus(() => { if (!busy) onClose() })
   const [initial] = useState(() => item.entries.map((entry) => ({ items: bookingServiceItems(entry, catalog), price: entry.price || 0 })))
   const [rows, setRows] = useState(initial)
+  const [customerId, setCustomerId] = useState(item.customer_id || '')
+  const [comboId, setComboId] = useState(item.combo_purchase_id || '')
+  const customer = customers.find(row => row.id === customerId)
+  const purchases = customerPurchases(customer).filter(row => !row.deleted_at).map(row => availableBookingPurchase(row, customerId === item.customer_id ? item.entries : []))
   const [note, setNote] = useState(item.note || '')
   const [reason, setReason] = useState('')
   const [invoiceAt, setInvoiceAt] = useState(() => invoiceLocalTime(item))
@@ -36,6 +42,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
     const result = await onAction(deleting ? 'pending_delete' : 'pending_update', {
       pending_id: item.id, reason: reason.trim(),
       ...(!deleting && canEditDate && invoiceAt !== invoiceLocalTime(item) ? { invoice_at: `${invoiceAt}:00+07:00` } : {}), ...(editing ? { note, entries } : {}),
+      ...(editing && canChangeCustomer && (customerId !== (item.customer_id || '') || comboId !== (item.combo_purchase_id || '')) ? { customer_id: customerId, combo_purchase_id: comboId } : {}),
     }, [], { expectedRevision: revision })
     if (result) onClose()
   }
@@ -45,9 +52,20 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
       <p><strong>{item.customer_name || 'Khách lẻ'}</strong>{item.customer_phone && ` · ${item.customer_phone}`}<br/><small>Mã: {item.id} · {formatVeraDateTime(item.effective_at || item.booked_at || item.created_at)}</small></p>
       <StableFeedback>{error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất trước khi sửa.</p>}
       {deleting && <p className="error-box">Xóa phiếu khỏi Chờ thanh toán và giải phóng vé combo đang giữ chỗ. Không trừ vé, không đổi doanh thu đã thu. Bản cũ và lý do được lưu trong lịch sử để đối chiếu.</p>}</StableFeedback>
-      {editing && <p>Giữ nguyên khách hàng, nhân viên và kết quả hoàn thành. Dịch vụ không đổi giữ giá đã ghi nhận; khi đổi dịch vụ, hệ thống kiểm tra lại vé combo.</p>}
+      {editing && <p>Giữ nguyên nhân viên và kết quả hoàn thành. Đổi khách hàng, combo hoặc dịch vụ sẽ kiểm tra lại vé giữ chỗ; chỉ trừ vé khi thanh toán.</p>}
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {!deleting && canEditDate && editing && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><VeraDateTimeInput required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
+        {editing && canChangeCustomer && <div className="wide">
+          <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" onSearch={onCustomerSearch} filterOption={customerOptionMatches}
+            options={customers.map(row => ({value:row.id,label:row.name,detail:row.phone,badge:customerTicketLabel(row)}))} value={customerId}
+            onChange={value => {setCustomerId(value);setComboId('');onCustomerSelect?.(value)}}/>
+          <button type="button" className="secondary-button" onClick={() => {setCustomerId('');setComboId('');onCustomerSelect?.('')}}>Chuyển thành khách lẻ</button>
+          {customerId && <label className="live-tour-field"><span>Combo của khách</span><select aria-label="Combo của khách" value={comboId} onChange={event => setComboId(event.target.value)}>
+            <option value="">Dịch vụ lẻ · không dùng combo</option>
+            {comboId && !purchases.some(row => row.id === comboId) && <option value={comboId}>Combo hiện tại · đang tải thông tin</option>}
+            {purchases.map(row => <option key={row.id} value={row.id}>{row.combo_name || 'Combo'} · còn {row.remaining} vé có thể dùng</option>)}
+          </select></label>}
+        </div>}
         {item.entries.map((entry, index) => <div data-ui-key="u-dad6dfd7205e" className="wide live-tour-data-card" key={index}>
           <strong>{entry.employee_name} · {entry.room}</strong>
           {editing ? <>

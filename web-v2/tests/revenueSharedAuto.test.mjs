@@ -50,7 +50,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
         const selectedEnd=body?.end_date || cutoff || savedEnd
         const selectedStart=body?.start_date || new URL(url).searchParams.get('start') || savedStart
         const historical=selectedEnd==='2026-09-24', tip=selectedStart==='2026-09-25' && selectedEnd==='2026-09-25'?15450000:historical?20:40
-        const result={ok:true,report_version:1,report_basis:'shared_history_and_system',source,source_revision:revision,
+        const result={ok:true,default_period:!body && !cutoff,report_version:1,report_basis:'shared_history_and_system',source,source_revision:revision,
           total_income:historical?1000:1760,total_expense:historical?100:190.25,net_income:historical?900:1569.75,
           total_revenue:historical?1000:1760,period_tip:tip,balance:historical?880:1529.75,
           start_date:'2025-09-05',start_date_label:'05-09-2025',end_date:selectedEnd,business_date:'2026-09-26',
@@ -390,4 +390,15 @@ for(const source of ['manual','auto','manual_tip_auto']) test(`${source}: all le
     assert.equal(exported.has('report_end'),false)
     assert.equal(f.calls.some(c=>c.method!=='GET'),false)
   } finally { await f.close() }
+})
+
+
+test('Manual default can show latest reporting day before this half-month without blanking totals', async () => {
+  const f=await fixture('admin','manual',false,1,'2026-09-15',true,'2026-09-16')
+  try {
+    assert.equal(f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]').value,'16-09-2026')
+    assert.equal(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]').value,'15-09-2026')
+    assert.match(f.doc.querySelector('.revenue-grid').textContent,/1\.760/)
+    assert.equal(f.calls.some(c=>c.method==='PUT'),false)
+  } finally {await f.close()}
 })

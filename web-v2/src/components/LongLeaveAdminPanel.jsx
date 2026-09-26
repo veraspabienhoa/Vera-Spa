@@ -38,6 +38,8 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
   const [busyId, setBusyId] = useState('')
   const [rejectReasons, setRejectReasons] = useState({})
   const [notice, setNotice] = useState(null)
+  const [checks, setChecks] = useState({})
+  const [checking, setChecking] = useState('')
   const [overlap, setOverlap] = useState(null)
   const [overlapFilters, setOverlapFilters] = useState({ start: isoToday(), end: addDays(isoToday(), 14), department: '' })
 
@@ -69,6 +71,17 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
 
   useEffect(() => { void loadOverlap() }, [loadOverlap])
 
+  const checkRequest = async (item) => {
+    if (checking) return
+    setChecking(item.id)
+    setChecks(current => ({...current,[item.id]:null}))
+    try {
+      const result = await request(`/v2/long-leave/admin/requests/${encodeURIComponent(item.id)}/overlap`)
+      setChecks(current => ({...current,[item.id]:result}))
+    } catch (error) { setChecks(current => ({...current,[item.id]:{error:error.message}})) }
+    finally { setChecking('') }
+  }
+
   if (!isAdmin) return null
 
   const decide = async (item, decision) => {
@@ -91,6 +104,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
         status: 'success',
         message: `${result.message}${result.annual_leave_rows_created ? ` Đã tạo ${result.annual_leave_rows_created} ngày Phép năm trong lịch nghỉ.` : ''}`,
       })
+      setChecks({})
       setRejectReasons((current) => ({ ...current, [item.id]: '' }))
       await load()
       await loadOverlap()
@@ -140,6 +154,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
         return <article className="long-leave-pending-card" key={item.id}>
           <div className="long-leave-pending-head">
             <div><strong>{item.employee_name}</strong><small>{item.id} · gửi {formatVeraDate(item.submitted_date, '—')} {item.submitted_time || ''}</small></div>
+            {annual && <button type="button" className="secondary-button" onClick={() => checkRequest(item)} disabled={Boolean(checking) || Boolean(busyId)}>{checking === item.id ? 'Đang kiểm tra…' : 'Kiểm tra'}</button>}
             <span className={`long-leave-request-type ${annual ? 'annual' : ''} ${resignation ? 'resignation' : ''}`}>{item.request_type}</span>
           </div>
           <div className="long-leave-pending-meta">
@@ -153,6 +168,15 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
             <div><strong>Chi tiết</strong>{item.detail || '—'}</div>
           </div>
           {!!conflictDays.length && <div className="leave-overlap-alert"><AlertTriangle size={16}/> Cảnh báo: {conflictDays.length} ngày trong đơn này có từ 3 người nghỉ. Hãy kiểm tra tổng quan trước khi duyệt.</div>}
+          {checks[item.id] && <div className="leave-overlap-panel" aria-label={`Kết quả kiểm tra ${item.id}`}>
+            {checks[item.id].error ? <p role="alert">{checks[item.id].error}</p> : <>
+              <strong>{checks[item.id].employee_count} nhân viên khác nghỉ trong {vnDate(checks[item.id].start)} – {vnDate(checks[item.id].end)}</strong>
+              <span>Cao nhất {checks[item.id].peak_with_applicant} người/ngày nếu tính cả đơn này.</span>
+              <div className="leave-heatmap">{checks[item.id].days.map(day => <article className="leave-heat-day" key={day.date}><time>{vnDate(day.date)}</time><strong>{day.other_count} người khác</strong><small>Đã duyệt: {day.approved_count} · Chờ duyệt: {day.pending_count}</small></article>)}</div>
+              {checks[item.id].requests.map(row => <div key={row.id}><strong>{row.full_name || row.employee_name}</strong> · {row.employee_name} · {row.request_type} · {row.status}<br/>{vnDate(row.start_date)} – {vnDate(row.end_date)}</div>)}
+              {!checks[item.id].requests.length && <span>Không có nhân viên khác nghỉ trùng khoảng ngày này.</span>}
+            </>}
+          </div>}
           <div className="long-leave-decision-row">
             <label>Lý do không duyệt
               <input value={rejectReasons[item.id] || ''} onChange={(event) => setRejectReasons((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Chỉ cần nhập khi không duyệt" />

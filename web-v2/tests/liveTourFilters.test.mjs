@@ -122,3 +122,10 @@ test('employee replacement follows the server remaining-time decision', async ()
   assert.equal(canChangeEmployee({ ...row, _tour_groups: ['waiting'] }), false)
   assert.equal(canChangeEmployee({ ...row, _employee_change_allowed: false }), false)
 })
+
+test('total amount matches displayed revenue including zero and combines with other filters', () => {
+  const source=[{id:'a',total:250000,employee_name:'An'},{id:'b',total:250000,employee_name:'Bình'},{id:'c',total:0,employee_name:'An'}]
+  assert.deepEqual(filterTourRows(source,{total_amount:'250.000',employee:'An'}).map(row=>row.id),['a'])
+  assert.deepEqual(filterTourRows(source,{total_amount:0}).map(row=>row.id),['c'])
+  assert.equal(filterTourRows(source,{total_amount:''}).length,3)
+})

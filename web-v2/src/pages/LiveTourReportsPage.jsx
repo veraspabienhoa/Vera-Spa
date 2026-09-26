@@ -82,9 +82,10 @@ export default function LiveTourReportsPage({ user }) {
     finally { running.current = false; setBusy(false) }
   }
   const invoiceById = useMemo(() => new Map(data.invoices.map(invoice => [invoice.id, invoice])), [data.invoices])
-  const invoices = filterTourRows(data.invoices, filters, true)
-  const reports = filterTourRows(data.reports, filters, true)
-  const performance = filterTourRows(data.performance || [], filters)
+  const appliedFilters = tab === 'revenue' ? filters : { ...filters, total_amount: '' }
+  const invoices = filterTourRows(data.invoices, appliedFilters, true)
+  const reports = filterTourRows(data.reports, appliedFilters, true)
+  const performance = filterTourRows(data.performance || [], appliedFilters)
   const performanceRows = performance.filter(row => {
     if (performanceTiming === 'all') return true
     const delta = Number(row.completion_delta_minutes)
@@ -106,13 +107,13 @@ export default function LiveTourReportsPage({ user }) {
     <StableFeedback>{error && <p className="error-box" role="alert">{error}</p>}</StableFeedback>
     <section data-ui-key="u-cc5b99345633" className="panel spa-content">
       <UiToolbar data-ui-key="u-ad5f380e835e" className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[['revenue', 'Doanh thu'], ['employee', 'Theo nhân viên'], ...(isAdmin ? [['tip', 'Tiền Tip'], ['performance', 'Thời gian dịch vụ']] : []), ['combos', 'Combo'], ['history', 'Lịch sử Live Tour']].map(([key,label]) => <button data-ui-key="u-a7458184ac7f" key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</UiToolbar>
-      <div className={tab === 'history' ? 'history-filter-scope' : ''}><LiveTourFilters value={filters} onChange={setFilters} rows={tab === 'history' ? history.rows : tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/></div>
+      <div className={tab === 'history' ? 'history-filter-scope' : ''}><LiveTourFilters showTotal={tab === 'revenue'} value={filters} onChange={setFilters} rows={tab === 'history' ? history.rows : tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/></div>
       {tab === 'performance' && <div className="performance-status-filter" role="group" aria-label="Lọc kết quả thời gian dịch vụ">{[['all', 'Tất cả'], ['ontime', 'Đúng giờ'], ['late', 'Trễ'], ['early', 'Sớm']].map(([key, label]) => <button data-ui-key="u-ee49af6dd36a" type="button" key={key} className="secondary-button" aria-pressed={performanceTiming === key} onClick={() => setPerformanceTiming(key)}>{label}</button>)}</div>}
       {tab === 'tip' && <div className="live-tour-report-metrics"><div className="live-tour-report-metric"><span>Nhân viên có Tip</span><strong>{new Set(rows.map(row => row.employee_id || row.employee_name)).size}</strong></div><div className="live-tour-report-metric"><span>Tổng tiền Tip</span><strong>{money(rows.reduce((sum, row) => sum + Number(row.tip || 0), 0))}</strong></div></div>}
       {tab === 'revenue' && <LiveTourRevenueSummary rows={rows} invoiceCount={reportInvoiceCount}/>}
       {tab === 'employee' && <LiveTourEmployeeRevenueBreakdown rows={reports}/>}
       {tab !== 'performance' && <p>{rows.length} dòng</p>}
-      {grants.export && <button data-ui-key="u-7dae37cfbfcd" data-ui-label-default="Xuất Excel theo bộ lọc" className="secondary-button" onClick={() => (tab === 'history' ? veraApi.exportLiveTourBoardHistory(filters) : veraApi.exportLiveTourExcel(tab === 'tip' ? 'tip' : tab === 'performance' ? 'performance' : tab === 'employee' ? 'employee' : 'reports', { ...filters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}), ...(tab === 'performance' ? { performance_timing: performanceTiming } : {}) })).catch(e => setError(e.message))}><UiCustomText uiKey="u-7dae37cfbfcd">Xuất Excel theo bộ lọc</UiCustomText></button>}
+      {grants.export && <button data-ui-key="u-7dae37cfbfcd" data-ui-label-default="Xuất Excel theo bộ lọc" className="secondary-button" onClick={() => (tab === 'history' ? veraApi.exportLiveTourBoardHistory(filters) : veraApi.exportLiveTourExcel(tab === 'tip' ? 'tip' : tab === 'performance' ? 'performance' : tab === 'employee' ? 'employee' : 'reports', { ...appliedFilters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}), ...(tab === 'performance' ? { performance_timing: performanceTiming } : {}) })).catch(e => setError(e.message))}><UiCustomText uiKey="u-7dae37cfbfcd">Xuất Excel theo bộ lọc</UiCustomText></button>}
       {tab === 'invoices' && !grants.paid_invoice_view && <p>Cần quyền Xem hóa đơn đã thanh toán để mở báo cáo hóa đơn.</p>}
       {tab === 'history' && isAdmin && <button data-ui-key="u-77eae750dea1" className="danger-button" disabled={busy || deletingHistory} onClick={cleanupHistory}>{deletingHistory ? 'Đang xử lý…' : 'Xóa lịch sử theo bộ lọc'}</button>}
       <StableFeedback>{tab === 'history' && historyNotice && <p role="status">{historyNotice}</p>}</StableFeedback>
