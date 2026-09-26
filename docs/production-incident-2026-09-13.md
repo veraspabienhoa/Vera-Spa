@@ -618,3 +618,24 @@ independent cancellation, account separation and module-load recovery. These are
 local automated checks, not production latency measurements. Validate the actual
 business tabs and health endpoints after deployment before claiming resolution
 of all production slowness.
+
+## 26-09-2026: Live Tour keeps only the pending-payment overlay
+
+The user marked two empty areas in a screenshot: the shell's reserved feedback
+slot above the board and Live Tour's reserved action-feedback slot below the
+header. Remove both from Live Tour, including their notices and reserved height.
+Suppress general popup, birthday/break and profile-completion banners on this
+page; other pages and notification delivery settings keep their existing behavior.
+The pending-payment reminder is now a fixed, viewport-bounded portal with Close
+and Open list controls, below transaction dialogs in stacking order. It creates
+no placeholder in the board and uses the existing pending-view permission and
+reminder schedule. Closing it does not clear invoices; zero pending bills removes
+it. Open list is explicit navigation to the existing pending-payment panel.
+
+Remove transient board-only message state while preserving operation busy guards,
+failed-save drafts, form-level errors, revision checks, idempotency keys and all
+financial action payloads. Updated regressions verify no banner insertion during
+saving/failure, portal placement/dismissal/list navigation, permission denial,
+retained drafts and room action payloads. This entry describes code and automated
+checks; it is not a claim of a completed production payment or browser latency
+measurement.

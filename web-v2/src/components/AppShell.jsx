@@ -96,6 +96,7 @@ const liveAlertTiming = (alert, nowMs) => {
 }
 
 export default function AppShell({ user, currentPage, standalone = false, onPageChange, onPageIntent, onRefreshCurrentPage, onSignOut, children }) {
+  const showPageNotifications = currentPage !== 'live-tour'
   const [refreshMessage, setRefreshMessage] = useState('')
   useEffect(() => {
     setRefreshMessage('')
@@ -455,17 +456,17 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           </UiToolbar>
         </header>}
         <div className={`page-wrap ${currentPage === 'tour' ? 'tour-page-wrap' : currentPage === 'live-tour' ? 'tour-page-wrap live-tour-page-wrap' : ''}`.trim()}>
-          <StableFeedback>
+          {showPageNotifications && <StableFeedback>
             {refreshMessage && <p role="status">{refreshMessage}</p>}
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
 
           {isAdmin && breakAlertControl.disabled && <div className="break-alert-global-off"><span>Thông báo nghỉ giữa ca đang TẮT cho mọi tài khoản.</span><button data-ui-key="u-c49a507e2857" type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(false)}>{breakAlertControl.busy ? 'Đang bật…' : 'Bật lại'}</button></div>}
           {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => choose('birthday', true)}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div>}
-          </StableFeedback>
+          </StableFeedback>}
 
-          {!breakAlertControl.disabled && breakAlerts.length > 0 && breakAlertsHidden && <div className="break-alert-hidden-chip" style={alertPositionStyle}><BellRing size={15} /><span>{breakAlerts.length} cảnh báo đang tạm ẩn</span><button data-ui-key="u-b92d7cc74167" data-ui-label-default="Hiện" type="button" onClick={() => setBreakAlertsHidden(false)}><UiCustomText uiKey="u-b92d7cc74167">Hiện</UiCustomText></button></div>}
+          {showPageNotifications && !breakAlertControl.disabled && breakAlerts.length > 0 && breakAlertsHidden && <div className="break-alert-hidden-chip" style={alertPositionStyle}><BellRing size={15} /><span>{breakAlerts.length} cảnh báo đang tạm ẩn</span><button data-ui-key="u-b92d7cc74167" data-ui-label-default="Hiện" type="button" onClick={() => setBreakAlertsHidden(false)}><UiCustomText uiKey="u-b92d7cc74167">Hiện</UiCustomText></button></div>}
 
-          {!breakAlertControl.disabled && breakAlerts.length > 0 && !breakAlertsHidden && <div ref={breakAlertStackRef} className="break-alert-stack" style={alertPositionStyle} aria-live="assertive">
+          {showPageNotifications && !breakAlertControl.disabled && breakAlerts.length > 0 && !breakAlertsHidden && <div ref={breakAlertStackRef} className="break-alert-stack" style={alertPositionStyle} aria-live="assertive">
             <UiToolbar data-ui-key="u-1b670af1a7f7" className="break-alert-toolbar" onPointerDown={beginAlertDrag} onPointerMove={moveAlertDrag} onPointerUp={endAlertDrag} onPointerCancel={endAlertDrag}>
               <strong>🔔 {breakAlerts.length} cảnh báo · kéo để di chuyển</strong>
               <UiToolbar data-ui-key="u-65c033d3e44a" className="break-alert-toolbar-actions">
@@ -492,7 +493,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       </main>
       <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>
       <BackToTop/>
-      <PopupNotifications/>
+      {showPageNotifications && <PopupNotifications/>}
     </div>
   )
 }

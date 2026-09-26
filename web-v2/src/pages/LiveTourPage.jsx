@@ -32,6 +32,7 @@ import {
   Printer, RefreshCw, Search, Share2, Trash2, X,
 } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
 import LiveTourBookingDialog from '../components/LiveTourBookingDialog'
 import LiveTourPendingDialog from '../components/LiveTourPendingDialog'
@@ -576,10 +577,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const initiallyCached = useRef(Boolean(boardData.records.length))
   const [busy, setBusy] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
-  const [actionFeedback, setActionFeedback] = useState('')
+  // Errors remain local to open forms; the board has no status banner or spacer.
   const [error, setError] = useState('')
-  const [loadError, setLoadError] = useState('')
-  const [notice, setNotice] = useState('')
   const [pendingReminder, setPendingReminder] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [activeFilter, setActiveFilter] = useState('all')
@@ -664,17 +663,15 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     // Explicit reloads wait for the previous read, then fetch fresh state.
     while (loadPending.current) await new Promise((resolve) => setTimeout(resolve, 100))
     loadPending.current = true
-    if (!quiet) { setBusy(true); setLoadError('') }
+    if (!quiet) setBusy(true)
     try {
       const response = await veraApi.liveTour(refresh, false, conditional ? latestRevisionRef.current : null, 'board')
       if (response?.unchanged) {
-        setLoadError('')
         return
       }
       const next = { ...EMPTY_LIVE_TOUR, ...response }
       latestRevisionRef.current = next.revision
       setData(next)
-      setLoadError('')
       saveCachedLiveTour(cacheKey, next)
       setSelectedIds((current) => {
         const valid = new Set(asArray(next.records).map((record, index) => recordId(record, index)))
@@ -683,7 +680,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     } catch (err) {
       setData((current) => cacheSafeLiveTour(current))
       if (err.status === 403) { setModal(null); setBookingContext(null); setPendingContext(null); setReceipt(null); setCustomerHistoryModal(null) }
-      setLoadError(err.message || 'Không tải được Live Tour.')
     } finally {
       loadPending.current = false
       if (!quiet) setBusy(false)
@@ -746,9 +742,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       return null
     }
     setActionBusy(action)
-    setActionFeedback('Đang lưu thao tác Live Tour…')
     setError('')
-    setNotice('')
     const rowIds = ids.filter(Boolean)
     const actionPayload = { ...payload }
     if (rowIds.length) {
@@ -772,7 +766,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           // A rejected maintenance fence cannot commit the action. Keep the
           // same idempotency key in case the response arrived after a commit.
           if (err.status !== 503 || !/(?:Tài nguyên|Đối tượng) đang được cập nhật/i.test(liveTourErrorDetail(err)) || attempt === fenceAttempts - 1) throw err
-          setActionFeedback('Live Tour đang bận. Đang thử lại thao tác với cùng mã chống ghi trùng…')
           await new Promise((resolve) => setTimeout(resolve, Math.min(2, attempt + 1) * 1000))
         }
       }
@@ -784,8 +777,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         saveCachedLiveTour(cacheKey, next)
       })
       setSelectedIds(new Set())
-      setNotice(result?.message === 'Đã cập nhật Live Tour.' ? '' : result?.message || '')
-      setActionFeedback('')
       return result
     } catch (err) {
       const message = liveTourErrorDetail(err)
@@ -793,11 +784,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         setSelectedIds(new Set())
         await load(true, true)
         setError(message)
-        setNotice(`${message} Dữ liệu mới nhất đã được tải lại; bạn có thể thử lại thao tác.`)
       } else {
         setError(message)
       }
-      setActionFeedback('')
       return null
     } finally {
       setActionBusy('')
@@ -818,14 +807,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
   const confirmExpired = async () => {
     if (!canAdmin || !expiredPreview || actionBusy || expiredPreview.base_revision !== data.revision) return
-    const result = await executeAction('clear_expired', { grace_minutes: expiredPreview.grace_minutes, confirm_token: expiredPreview.preview_token }, [])
+    await executeAction('clear_expired', { grace_minutes: expiredPreview.grace_minutes, confirm_token: expiredPreview.preview_token }, [])
     setExpiredPreview(null)
-    if (result) setNotice(`Đã chuyển ${result.result?.marked_for_payment ?? expiredPreview.count} phiên sang chờ thanh toán.`)
   }
 
   const runSelected = (action, payload = {}) => {
     if (!selectedIds.size) {
-      setNotice('Hãy chọn ít nhất một nhân viên trong bảng.')
       return Promise.resolve(null)
     }
     return executeAction(action, payload)
@@ -844,7 +831,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
   const runSingleSelected = (action, payload = {}) => {
     if (selectedIds.size !== 1) {
-      setNotice('Thao tác sắp xếp yêu cầu chọn đúng một nhân viên.')
       return Promise.resolve(null)
     }
     return executeAction(action, payload)
@@ -1052,21 +1038,16 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const remainingColumn = findColumn(columns, ['TG CON LAI', 'THOI GIAN CON LAI'])
   const requestColumn = findColumn(columns, ['YEU CAU'])
   const openEmployeeBooking = (record) => {
-    const name = cellValue(record, employeeColumn) || 'Nhân viên'
     setError('')
     if (!['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA']))))) {
-      setNotice(`${name} chưa vào ca, không thể đặt Booking.`)
       return
     }
     if (hasGroup(record, 'leave')) {
-      setNotice(`${name} đang nghỉ phép, không thể đặt Booking.`)
       return
     }
     if (isCurrentlyOnBreak(record)) {
-      setNotice(`${name} đang nghỉ giữa ca, chưa thể đặt Booking.`)
       return
     }
-    setNotice('')
     setModal(null)
     setBookingContext({ employeeId: stableEmployeeId(record) })
   }
@@ -1121,7 +1102,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     const result = await executeAction(action, { room: roomName }, [])
     if (result) {
       setSelectedRoomKey(areaKey(room))
-      setNotice(`${action === 'start_room' ? 'Đã bắt đầu' : 'Đã hoàn thành và chuyển sang chờ thanh toán'} ${result.result?.count || 0} nhân viên · ${areaLabel(room)}.`)
     }
   }
   const roomServiceActions = (room) => {
@@ -1377,17 +1357,16 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   ].filter(Boolean).join(' | ')).join('\n')
 
   const copySelectedSummary = async () => {
-    if (!summaryRecords.length) return setNotice(selectedRoomKey ? 'Phòng đang trống, chưa có thông tin để sao chép.' : 'Hãy chọn phòng hoặc nhân viên cần sao chép.')
+    if (!summaryRecords.length) return
     try {
       await navigator.clipboard.writeText(selectedSummary())
-      setNotice(`Đã sao chép ${summaryRecords.length} dòng Live Tour.`)
     } catch {
       setError('Trình duyệt không cho phép sao chép. Hãy cấp quyền Clipboard và thử lại.')
     }
   }
 
   const shareSelectedSummary = async () => {
-    if (!summaryRecords.length) return setNotice(selectedRoomKey ? 'Phòng đang trống, chưa có thông tin để chia sẻ.' : 'Hãy chọn phòng hoặc nhân viên cần chia sẻ.')
+    if (!summaryRecords.length) return
     if (!navigator.share) return copySelectedSummary()
     try { await navigator.share({ title: 'Live Tour · VERA SPA', text: selectedSummary() }) } catch (err) {
       if (err?.name !== 'AbortError') setError('Không chia sẻ được dữ liệu đã chọn.')
@@ -1402,7 +1381,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     }
     setActionBusy('copy-board')
     setError('')
-    setNotice('')
     try {
       await copyPngToClipboard(() => veraApi.readLiveTourPng())
     } catch (err) {
@@ -1437,7 +1415,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     setError('')
     try {
       await veraApi.exportLiveTourExcel(kind, query)
-      setNotice('Đã tạo file xuất Live Tour.')
     } catch (err) {
       setError(err.message || 'Không xuất được dữ liệu Live Tour.')
     } finally {
@@ -1475,7 +1452,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     setError('')
     try {
       await veraApi.exportLiveTourExcel('customer_detail', compactExportQuery({ customer_id: customerId, date_from: customerHistoryFilters.date_from, date_to: customerHistoryFilters.date_to }))
-      setNotice('Đã tạo file lịch sử chi tiết khách hàng.')
     } catch (err) {
       setError(err.message || 'Không xuất được lịch sử khách hàng.')
     } finally {
@@ -1508,7 +1484,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       .live-tour-page .tour-table tr.tour-row-waiting:not(.tour-row-break) td{color:#3f245d;background:var(--tour-row-waiting);font-weight:900}.live-tour-page .tour-table tr.live-tour-selected td{box-shadow:inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-table tr.live-tour-selected td:first-child{box-shadow:inset 2px 0 #173c30,inset 0 2px #173c30,inset 0 -2px #173c30}.live-tour-page .tour-legend-grid .waiting{color:#3f245d;background:var(--tour-row-waiting);border-color:#c9aee7;font-weight:900}.live-tour-page .live-tour-select-col input[type=checkbox]{display:block;min-width:0;min-height:0;margin:auto;padding:0;box-sizing:border-box;accent-color:#173c30}
       .live-tour-page .live-tour-shift-controls{display:flex;align-items:center;gap:6px;min-width:0}.live-tour-page .tour-shift-filter{display:flex;flex:0 0 auto;align-items:center;gap:4px;margin:0}.live-tour-page .tour-shift-filter button{flex:0 0 auto;min-width:48px;min-height:15px;padding:0 6px;border-radius:5px;font-size:9px;line-height:1.1;white-space:nowrap}
       .live-tour-page .tour-heading-actions{display:flex;gap:4px;flex-wrap:nowrap;justify-content:flex-end;margin-left:auto}.live-tour-page .tour-heading-actions button{min-height:24px;padding:3px 8px;font-family:inherit;font-size:10px;line-height:1.15;font-weight:900;border-radius:999px;background:#204e40;color:#fff;border:1px solid #204e40;white-space:nowrap}.live-tour-page .tour-heading-actions .live-tour-combo-approval-button{min-height:28.8px}.live-tour-combo-approvals .live-tour-card-actions button{min-height:32.4px}.live-tour-page .tour-heading-actions button svg{width:13px;height:13px}.live-tour-page .tour-topbar>.icon-button{width:auto;min-width:20px;height:20px;min-height:20px;flex:0 0 auto;padding:0 3px;border-radius:4px;font-size:9px}.live-tour-page .tour-topbar>.icon-button svg{width:14px;height:14px}.live-tour-page .tour-admin-tools-toggle.active{color:#fff;background:#8c6b30;border-color:#8c6b30}
-      .live-tour-payment-reminder{display:flex;align-items:center;gap:6px;min-height:23px;margin:0;padding:0 6px;border:1px solid #e9ad57;border-radius:9px;color:#64350d;background:#fff3d7;box-shadow:0 3px 12px rgba(124,73,17,.12);font-size:10px}.live-tour-payment-reminder strong{font-size:10px}.live-tour-payment-reminder>svg{width:12px;height:12px;flex-shrink:0}.live-tour-payment-reminder span{flex:1}.live-tour-payment-reminder button{min-height:20px;padding:0 6px;font-size:9px;line-height:1.1}.live-tour-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
       .live-tour-page .tour-control-layout{min-width:0}.live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(10,minmax(0,1fr));gap:4px;max-width:100%;margin:0;padding:0;overflow:hidden}.live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-width:0;min-height:15px;gap:3px;border-radius:4px;padding:0 3px}.live-tour-page .metric-grid.small .metric-card.tour-metric-card span{min-width:0;font-size:8px;white-space:nowrap}.live-tour-page .metric-grid.small .metric-card.tour-metric-card strong{font-size:13px;line-height:1}
       .live-tour-page .tour-room-segment-buttons{display:flex;flex:0 0 auto;align-items:center;gap:4px}.live-tour-page .tour-room-segment-button{flex:0 0 auto;min-width:0;min-height:15px;border:1px solid transparent;border-radius:4px;padding:0 6px;display:flex;align-items:center;justify-content:center;gap:5px;color:#fff;font-weight:900;text-align:center;white-space:nowrap}.live-tour-page .tour-room-segment-button.all{background:linear-gradient(180deg,#426d5b,#294d3e);border-color:#244638}.live-tour-page .tour-room-segment-button.standard{background:#155b78;border-color:#0d465f}.live-tour-page .tour-room-segment-button.vip{background:linear-gradient(180deg,#bd9243,#92702f);border-color:#7d5c22}.live-tour-page .tour-room-segment-button svg{width:11px;height:11px;flex-shrink:0}.live-tour-page .tour-room-segment-button span{font-size:9px;line-height:1.1}.live-tour-page .tour-room-segment-button.active{outline:2px solid rgba(23,51,41,.18);outline-offset:1px;box-shadow:0 5px 12px rgba(22,51,41,.17)}
       .live-tour-page .tour-table-panel{padding:0;border-radius:4px;box-shadow:none}.live-tour-page .tour-table th,.live-tour-page .tour-table td{padding-top:5px;padding-bottom:5px}.live-tour-page .tour-records-panel{min-height:0;height:auto;max-height:none}.live-tour-page .tour-records-panel .tour-table{max-height:none;height:auto;overflow-x:auto;overflow-y:hidden;scrollbar-gutter:auto}.live-tour-page .tour-records-panel .tour-table thead{position:static;transform:none}.live-tour-page .tour-records-panel .tour-table th{position:static}.live-tour-select-col{width:28px;min-width:28px;text-align:center}.live-tour-select-col input{width:13px;height:13px;accent-color:#173c30}
@@ -1539,13 +1514,16 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       @media(max-width:420px){.live-tour-page .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
       @media(max-width:430px){.live-tour-selection-summary{grid-column:1/-1}.live-tour-card-grid{grid-template-columns:1fr}}
     `}</style>
+    {canPending && hasPendingReminder && pendingReminder && createPortal(
+      <aside className="live-tour-payment-reminder" aria-label="Hóa đơn chờ thanh toán" role="status" aria-live="polite">
+        <BellRing size={20} aria-hidden="true"/>
+        <div className="live-tour-payment-reminder-copy"><strong>Hóa đơn chờ thanh toán</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span></div>
+        <button type="button" className="live-tour-payment-reminder-close" aria-label="Đóng nhắc hóa đơn chờ thanh toán" onClick={() => setPendingReminder(null)}><X size={18}/></button>
+        <button data-ui-key="u-1d49f95cc184" data-ui-label-default="Mở danh sách" type="button" className="secondary-button live-tour-payment-reminder-open" onClick={openPendingPanel} aria-controls="live-tour-pending-panel"><UiCustomText uiKey="u-1d49f95cc184">Mở danh sách</UiCustomText></button>
+      </aside>, document.body)}
     {/* The board expands in document flow to display every employee. */}
     <div className="live-tour-board">
     <div className="tour-board-top">
-      {canPending && <div className="live-tour-reminder-slot">{pendingReminder && <div className="live-tour-payment-reminder">
-        <BellRing size={16} aria-hidden="true"/><strong>CHỜ THANH TOÁN</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>
-        <button data-ui-key="u-1d49f95cc184" data-ui-label-default="Mở danh sách" type="button" className="secondary-button" onClick={openPendingPanel} aria-controls="live-tour-pending-panel"><UiCustomText uiKey="u-1d49f95cc184">Mở danh sách</UiCustomText></button>
-      </div>}</div>}
       <div className="tour-topbar">
         {navigationToggle}
         <div data-ui-key="u-a54bda9ab8fe" className="tour-heading-title"><h1>LIVE TOUR</h1><span className="live-tour-status">TRỰC TIẾP</span></div>
@@ -1567,18 +1545,6 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           {canExport && user?.role !== 'admin' && <button data-ui-key="u-8063318dcfcb" data-ui-label-default="Copy B.Tua" type="button" className="secondary-button live-tour-desktop-only" disabled={Boolean(actionBusy)} onClick={copyBoardImage}><ClipboardCopy size={16}/><UiCustomText uiKey="u-8063318dcfcb"> Copy B.Tua</UiCustomText></button>}
           <button data-ui-key="u-7859407699f6" data-ui-label-default="Làm mới" type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/><UiCustomText uiKey="u-7859407699f6"> Làm mới</UiCustomText></button>
         </UiToolbar>
-      </div>
-      {/* Keep this slot mounted: saving, retrying and errors must not move the board. */}
-      <div className="live-tour-feedback" aria-label="Trạng thái thao tác Live Tour" tabIndex={error || loadError || actionFeedback || notice || data.countdown_error ? 0 : undefined}>
-        {(error || loadError) && <div className="error-box" role="alert">{error || loadError}</div>}
-        <div role="status" aria-live="polite" aria-atomic="true">
-          {actionFeedback && <div className="live-tour-action-progress">{actionFeedback}</div>}
-          {notice && notice !== 'Đã cập nhật Live Tour.' && <div className="setup-note">{notice}</div>}
-        </div>
-        {data.countdown_error && <div className="warning-box">Countdown Live Tour: {data.countdown_error}</div>}
-      </div>
-      <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}
       </div>
       <div className="tour-control-layout">
         <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button data-ui-key="u-0df4cbaff447" type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Xếp theo TG bắt đầu thực hiện từ sớm đến muộn' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong khi cùng TG bắt đầu thực hiện' : `Ưu tiên ${label} khi cùng TG bắt đầu thực hiện`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>

@@ -72,54 +72,70 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   return { data, writes, exports, type, search, quick, save, dispose: async () => { await act(() => root.unmount()) } }
 }
 
-test('saving and errors reuse the reserved feedback space without remounting the board', async () => {
+test('saving and failed saves do not insert board notices or reserve empty space', async () => {
   let finish
-  const pending = new Promise((resolve, reject) => { finish = { resolve, reject } })
+  const pending = new Promise(resolve => { finish = resolve })
   let rejectWrite = false
   const f = await fixture({ beforeWrite: () => rejectWrite ? Promise.reject(Error('Lỗi lưu thử nghiệm')) : pending })
-  const style = document.createElement('style')
-  style.textContent = readFileSync(new URL('../src/pages/LiveTourControls.css', import.meta.url), 'utf8')
-  document.head.append(style)
   try {
-    const feedback = document.querySelector('.live-tour-feedback')
     const board = document.querySelector('.tour-records-panel')
     const parent = document.querySelector('.tour-board-top')
     const siblings = [...parent.children]
-    assert.ok(feedback)
-    const height = window.getComputedStyle(feedback).height
-    assert.ok(parseFloat(height) > 0, 'reserve feedback space before the first action')
-    assert.equal(window.getComputedStyle(feedback).overflow, 'auto', 'long errors remain readable')
+    assert.equal(document.querySelector('.live-tour-feedback'), null)
+    assert.equal(document.querySelector('.live-tour-reminder-slot'), null)
     await f.type(f.search(), 'an an')
     await f.type(f.quick().querySelector('input'), '18:30')
     await f.save(f.quick())
-    assert.match(feedback.textContent, /Đang lưu thao tác/)
-    assert.deepEqual([...parent.children], siblings, 'no new flow-level banner while saving')
-    await act(async () => finish.resolve())
+    assert.equal(document.querySelector('.live-tour-feedback'), null)
+    assert.equal(f.quick().querySelector('button').disabled, true)
+    assert.deepEqual([...parent.children], siblings)
+    await act(async () => finish())
     assert.equal(document.querySelector('.tour-records-panel'), board)
-    assert.equal(document.querySelector('.live-tour-feedback'), feedback)
-    assert.equal(window.getComputedStyle(feedback).height, height)
     assert.equal(f.writes.length, 1)
     rejectWrite = true
     await f.type(f.quick().querySelector('input'), '19:00')
     await f.save(f.quick())
-    assert.match(feedback.querySelector('[role=alert]').textContent, /Lỗi lưu thử nghiệm/)
+    assert.equal(document.querySelector('.live-tour-feedback'), null)
     assert.equal(f.quick().querySelector('input').value, '19:00', 'failed save retains the draft')
+    assert.equal(f.quick().querySelector('button').disabled, false, 'explicit retry remains available')
     assert.deepEqual([...parent.children], siblings)
-    assert.equal(window.getComputedStyle(feedback).height, height)
-  } finally { finish.resolve(); style.remove(); await f.dispose() }
+  } finally { finish(); await f.dispose() }
 })
 
-test('dismissing the payment reminder retains its place above the board', async () => {
+test('payment reminder floats outside the board, dismisses and opens the pending list', async () => {
   const f = await fixture({ setup(data) { data.pending_count = 2 } })
+  const style = document.createElement('style')
+  style.textContent = readFileSync(new URL('../src/pages/LiveTourControls.css', import.meta.url), 'utf8')
+  document.head.append(style)
   try {
-    const slot = document.querySelector('.live-tour-reminder-slot')
-    const next = slot.nextElementSibling
-    assert.ok(slot.querySelector('.live-tour-payment-reminder'))
-    await act(async () => slot.querySelector('button').click())
-    assert.equal(slot.querySelector('.live-tour-payment-reminder'), null)
-    assert.equal(document.querySelector('.live-tour-reminder-slot'), slot)
-    assert.equal(slot.nextElementSibling, next)
-  } finally { await f.dispose() }
+    const parent = document.querySelector('.tour-board-top')
+    const siblings = [...parent.children]
+    const popup = document.querySelector('.live-tour-payment-reminder')
+    assert.equal(popup.parentElement, document.body)
+    assert.equal(window.getComputedStyle(popup).position, 'fixed')
+    assert.equal(document.querySelector('.live-tour-reminder-slot'), null)
+    assert.match(popup.textContent, /2 phiếu/)
+    await act(async () => popup.querySelector('.live-tour-payment-reminder-close').click())
+    assert.equal(document.querySelector('.live-tour-payment-reminder'), null)
+    assert.deepEqual([...parent.children], siblings)
+    // A new batch of pending invoices can show a fresh reminder.
+    f.data.pending_count = 0
+    await act(async () => document.dispatchEvent(new dom.window.Event('visibilitychange')))
+    f.data.pending_count = 3
+    await act(async () => document.dispatchEvent(new dom.window.Event('visibilitychange')))
+    const next = document.querySelector('.live-tour-payment-reminder')
+    assert.match(next.textContent, /3 phiếu/)
+    await act(async () => next.querySelector('.live-tour-payment-reminder-open').click())
+    assert.equal(document.querySelector('.live-tour-payment-reminder'), null)
+    assert.ok(document.querySelector('#live-tour-pending-panel'))
+    assert.deepEqual([...parent.children], siblings)
+  } finally { style.remove(); await f.dispose() }
+})
+
+test('pending reminder stays absent without pending-view permission', async () => {
+  const f = await fixture({ setup(data) { data.pending_count = 2; data.capabilities.pending_view = false } })
+  try { assert.equal(document.querySelector('.live-tour-payment-reminder'), null) }
+  finally { await f.dispose() }
 })
 
 test('legacy dialog focuses its search and restores the opener without scrolling the page', async () => {
