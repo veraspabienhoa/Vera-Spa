@@ -16,6 +16,8 @@ import vera_revenue_auto as auto
 import vera_revenue_store as ledger
 import vera_purchase_store as purchases
 import vera_web_v2_revenue_leave_list as routes
+import vera_web_v2_purchase_reconcile as reconcile
+import vera_web_v2_purchase_reconcile_v2 as reconcile_v2
 from vera_web_v2_purchase_reconcile import install_purchase_reconcile_routes
 
 
@@ -103,6 +105,13 @@ def client(database, monkeypatch):
                   require_feature=require, norm=lambda value: str(value or '').strip().lower(), google_client=lambda: None)
     routes.install_revenue_leave_list_routes(app, **shared, feature_allowed=lambda *args: True, progressive_key=lambda *args: '')
     install_purchase_reconcile_routes(app, **shared)
+    # Production replaces the base route with V2. Exercise that same HTTP chain,
+    # including its forwarding of the shared-report source and cutoff filters.
+    monkeypatch.setattr(reconcile, '_comparison', reconcile._comparison)
+    monkeypatch.setattr(reconcile_v2, '_dispatch_mismatch_alerts', lambda **kwargs: None)
+    reconcile_v2.install_purchase_reconcile_v2(
+        app, engine_instance=lambda: database, api_module=None,
+        current_identity=lambda: ident, identity_type=SimpleNamespace)
     monkeypatch.setattr(routes, '_dispatch_revenue_admin_push', lambda **kwargs: None)
     with TestClient(app) as client:
         yield client, ident
@@ -401,3 +410,27 @@ def test_shared_report_uses_one_database_snapshot_during_concurrent_payment_edit
     assert first['total_income']==2537 and first['period_tip']==110
     again=http.get('/v2/revenue/period-report?start=2026-09-16&end=2026-09-26').json()
     assert again['total_income']==2717 and again['period_tip']==290
+
+
+@pytest.mark.parametrize('source', ['manual', 'auto'])
+def test_production_reconcile_wrapper_preserves_cutoff_defaults_and_validation(database, client, source):
+    seed(database)
+    http, ident = client
+    if source == 'auto':
+        enable(http)
+    response = http.get('/v2/revenue/purchase-reconcile?preset=all&canonical=true&report_end=2026-09-24')
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert 'overall_status' in result, 'must exercise the production V2 wrapper'
+    assert result['canonical'] is True
+    assert result['end_date'] == '2026-09-24'
+    assert result['ledger_income'] == 777 and result['ledger_expense'] == 0
+    assert all(row['date'] <= '2026-09-24' for row in result['ledger_rows'])
+    legacy = http.get('/v2/revenue/purchase-reconcile?preset=all')
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()['canonical'] is False
+    assert legacy.json()['ledger_income'] == (2537 if source == 'auto' else 777)
+    for query in ('report_end=invalid', 'canonical=invalid'):
+        assert http.get('/v2/revenue/purchase-reconcile?' + query).status_code == 422
+    ident.allowed = False
+    assert http.get('/v2/revenue/purchase-reconcile?preset=all&canonical=true&report_end=2026-09-24').status_code == 403

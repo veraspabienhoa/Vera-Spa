@@ -435,8 +435,8 @@ def install_purchase_reconcile_routes(
         preset: str = Query(default="this_month", max_length=30),
         start_date: date | None = Query(default=None, alias="start"),
         end_date: date | None = Query(default=None, alias="end"),
-        canonical: bool = Query(False),
-        report_end: date | None = Query(None),
+        canonical: bool = False,
+        report_end: date | None = None,
         ident=Depends(current_identity),
     ):
         start, end = _resolve_range(preset, start_date, end_date)
@@ -515,8 +515,8 @@ def install_purchase_reconcile_routes(
         amount: str = Query(default="", max_length=40),
         note: str = Query(default="", max_length=300),
         entered_by: str = Query(default="", max_length=200),
-        canonical: bool = Query(False),
-        report_end: date | None = Query(None),
+        canonical: bool = False,
+        report_end: date | None = None,
         ident=Depends(current_identity),
     ):
         start, end = _resolve_range(preset, start_date, end_date)

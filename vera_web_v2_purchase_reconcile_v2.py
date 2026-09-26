@@ -335,12 +335,16 @@ def install_purchase_reconcile_v2(
         preset: str = Query(default="this_month", max_length=30),
         start_date: date | None = Query(default=None, alias="start"),
         end_date: date | None = Query(default=None, alias="end"),
+        canonical: bool = False,
+        report_end: date | None = None,
         ident: identity_type = Depends(current_identity),
     ):
         result = original(
             preset=preset,
             start_date=start_date,
             end_date=end_date,
+            canonical=canonical,
+            report_end=report_end,
             ident=ident,
         )
         rows = list((result or {}).get("comparison_rows") or [])

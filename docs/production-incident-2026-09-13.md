@@ -1,5 +1,25 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: HTTP 500 Doanh thu do lớp đối soát V2 thiếu tham số mới
+
+Người dùng báo HTTP 500 lúc 20:35 sau Deploy VPS Production #36245308189.
+Workflow xác nhận đã chạy commit d2ba255 và hai health endpoint thành công;
+điều đó không kiểm tra được API đối soát có xác thực. Chưa lấy journal trực
+tiếp từ VPS. Đọc chuỗi installer production xác định purchase_reconcile_v2
+thay route gốc nhưng không nhận/chuyển tiếp canonical và report_end mới.
+Khi gọi hàm gốc trực tiếp, các mặc định Query(False)/Query(None) vẫn là đối
+tượng FastAPI, không được phân giải thành bool/None. Nhánh min(end, report_end)
+vì thế phát TypeError trước khi đọc database. Đã tái hiện phép gọi này cục bộ.
+
+Lớp V2 nhận và chuyển tiếp cả hai tham số, giữ ngày chốt và nguồn báo cáo.
+Mặc định của hai tham số ở các route dùng bool/None Python; FastAPI vẫn phân
+giải/kiểm tra kiểu query HTTP. Không thay đổi dữ liệu, phép tính, quyền hoặc
+thông báo nghiệp vụ. Fixture PostgreSQL nay cài cả wrapper V2 đúng production,
+vô hiệu hóa gửi thông báo chỉ trong test. Hồi quy kiểm tra Manual/Auto, ngày
+24-09-2026, client không gửi tham số mới, lỗi nhập ngày/bool và quyền 403.
+CI trước đây chỉ cài route gốc nên bỏ sót lỗi lắp ghép; phải kiểm tra route
+thực tế sau deploy, không dùng CI hoặc health để khẳng định đã hết lỗi VPS.
+
 ## 26-09-2026: báo cáo Manual/Auto chung nguồn và cùng kỳ trong một phản hồi
 
 Ảnh 19:44 có TIP ở ô nhập 230.310.000đ nhưng thẻ TIP 266.720.000đ. Đây là
