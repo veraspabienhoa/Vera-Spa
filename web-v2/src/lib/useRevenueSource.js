@@ -24,7 +24,7 @@ export default function useRevenueSource() {
   const [error, setError] = useState('')
   const active = useRef(null)
   const accept = useCallback(result => {
-    setShared(current => current && (current.revision > result.revision || (current.revision === result.revision && current.source === result.source && current.supported === result.supported)) ? current : result)
+    setShared(current => current && (current.revision > result.revision || (current.revision === result.revision && current.source === result.source && current.supported === result.supported && current.period_report_version === result.period_report_version)) ? current : result)
     setError('')
   }, [])
   const refresh = useCallback(async () => {
@@ -54,5 +54,5 @@ export default function useRevenueSource() {
     catch (err) { await refresh(); setError(err.message || 'Không đổi được chế độ Doanh thu.') }
     finally { setChanging(false) }
   }
-  return { source: shared?.source || 'manual', revision: shared?.revision, ready: Boolean(shared), supported: Boolean(shared?.supported), changing, error, change, refresh }
+  return { reportVersion: shared?.period_report_version || 0, source: shared?.source || 'manual', revision: shared?.revision, ready: Boolean(shared), supported: Boolean(shared?.supported), changing, error, change, refresh }
 }

@@ -317,3 +317,87 @@ def test_summary_cutoff_matches_manual_history_without_changing_tip_period_or_le
     assert live['total_income'] == 2737 and live['total_expense'] == 240.25
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 3
+
+
+@pytest.mark.parametrize('end',['2026-09-24','2026-09-25','2026-09-26'])
+def test_shared_period_report_has_identical_money_in_manual_and_auto(database, client, end):
+    seed(database)
+    http, ident = client
+    with database.begin() as conn:
+        conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',200,'2026-09-24','History'),('Chi',50,'2026-09-24','History'),('Thu',9999,'2026-09-25','Separate manual register')"))
+    path=f'/v2/revenue/period-report?start=2026-09-16&end={end}'
+    manual=http.get(path)
+    assert manual.status_code==200,manual.text
+    manual=manual.json()
+    assert manual['report_version']==1 and manual['end_date']==end
+    assert manual['period_tip_start']=='2026-09-16' and manual['period_tip_end']==end
+    assert 'entries' not in manual,'summary must not return all historical rows'
+    raw=http.get('/v2/revenue/purchase-reconcile?preset=all').json()
+    assert raw['ledger_income']==10976,'manual records remain available for inspection'
+    common=http.get(f'/v2/revenue/purchase-reconcile?preset=all&canonical=true&report_end={end}').json()
+    assert common['ledger_income']==manual['total_income']
+    assert common['ledger_expense']==manual['total_expense']
+    assert all(r['date']<=end for r in common['ledger_rows'])
+    assert any(not r['read_only'] for r in common['ledger_rows'] if r.get('source')=='manual_history')
+    assert all(r['read_only'] for r in common['ledger_rows'] if r.get('source')!='manual_history')
+    exported=http.get(f'/v2/revenue/ledger/export.xlsx?preset=all&canonical=true&report_end={end}')
+    assert exported.status_code==200
+    values=list(load_workbook(BytesIO(exported.content),read_only=True,data_only=True).active.values)[1:]
+    assert sum(r[2] for r in values if r[1]=='Thu')==manual['total_income']
+    assert sum(r[2] for r in values if r[1]=='Chi')==manual['total_expense']
+    enable(http)
+    auto_report=http.get(path).json()
+    for key in ['total_income','total_expense','total_revenue','service_revenue','tip_revenue','historical_income','net_income','period_tip','balance']:
+        assert auto_report[key]==manual[key],key
+    assert auto_report['balance']==round(auto_report['net_income']-auto_report['period_tip'],2)
+    if end=='2026-09-24':
+        assert auto_report['total_income']==977 and auto_report['total_expense']==50
+    with database.connect() as conn:
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar()==4
+    ident.allowed=False
+    assert http.get(path).status_code==403
+
+
+def test_shared_period_save_remembers_dates_across_modes_and_rejects_invalid_dates(database, client):
+    seed(database)
+    http,_=client
+    assert http.get('/v2/revenue/source').json()['period_report_version']==1
+    saved=http.put('/v2/revenue/report-period',json={'start_date':'2026-09-16','end_date':'2026-09-24'})
+    assert saved.status_code==200,saved.text
+    assert saved.json()['period_tip']==0 and saved.json()['total_income']==777
+    enable(http)
+    reopened=http.get('/v2/revenue/period-report').json()
+    assert reopened['period_tip_end']==reopened['end_date']=='2026-09-24'
+    assert reopened['period_tip']==0 and reopened['total_income']==777
+    for query in ['start=2026-09-16','start=2026-09-25&end=2026-09-24','start=2025-09-04&end=2026-09-24','start=2026-09-16&end=2026-09-27']:
+        assert http.get('/v2/revenue/period-report?'+query).status_code==400
+    result=http.put('/v2/revenue/report-period',json={'start_date':'2026-09-16','end_date':'2026-09-26'})
+    assert result.status_code==200 and result.json()['period_tip']==110
+    with database.connect() as conn:
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar()==1
+        assert routes._period_tip(conn)['period_end']=='2026-09-26'
+        assert routes._period_tip(conn,auto=True)['period_end']=='2026-09-26'
+
+
+def test_shared_report_uses_one_database_snapshot_during_concurrent_payment_edit(database, client, monkeypatch):
+    seed(database)
+    http,_=client
+    original=auto.daily
+    changed=False
+    def during_read(conn,*args,**kwargs):
+        nonlocal changed
+        assert conn.get_isolation_level()=='REPEATABLE READ'
+        assert kwargs.get('include_entries') is False,'do not aggregate historical JSON for card totals'
+        result=original(conn,*args,**kwargs)
+        if not changed:
+            changed=True
+            with database.begin() as writer:
+                writer.execute(text("UPDATE vera_live_tour_report SET payload=jsonb_set(jsonb_set(payload,'{total}','400'),'{tip}','200') WHERE resource_id='period'"))
+        return result
+    monkeypatch.setattr(auto,'daily',during_read)
+    response=http.get('/v2/revenue/period-report?start=2026-09-16&end=2026-09-26')
+    assert response.status_code==200,response.text
+    first=response.json()
+    assert first['total_income']==2537 and first['period_tip']==110
+    again=http.get('/v2/revenue/period-report?start=2026-09-16&end=2026-09-26').json()
+    assert again['total_income']==2717 and again['period_tip']==290

@@ -95,12 +95,15 @@ def _params(start, end):
     return {"start": start, "end": end, "start_text": start.isoformat(), "end_text": end.isoformat()}
 
 
-def daily(conn, start=None, end=None):
+def daily(conn, start=None, end=None, *, include_entries=True):
     start, end = bounds(start, end)
     if start > end:
         return []
     # Disjoint periods prevent Manual and live receipts/purchases being added twice.
     # One statement gives both sources and both sides of cash the same snapshot.
+    history_entries = """jsonb_agg(jsonb_build_object('id',id,'type',transaction_type,'amount',amount,
+            'note',note,'entered_at',entered_at,'entered_by',
+            COALESCE(NULLIF(entered_by_name,''),entered_by)) ORDER BY id DESC)""" if include_entries else "NULL::jsonb"
     params = _params(max(start, AUTO_START_DATE), end)
     params.update(history_start=start, history_end=min(end, HISTORY_END_DATE))
     return conn.execute(text(f"""WITH receipts AS ({REPORT_DAILY_SQL}), purchases AS (
@@ -113,9 +116,7 @@ def daily(conn, start=None, end=None):
           COALESCE(SUM(amount) FILTER (WHERE transaction_type='Chi'),0) AS expense,
           COUNT(*) FILTER (WHERE transaction_type='Thu') AS payments,
           COUNT(*) FILTER (WHERE transaction_type='Chi') AS purchases,
-          jsonb_agg(jsonb_build_object('id',id,'type',transaction_type,'amount',amount,
-            'note',note,'entered_at',entered_at,'entered_by',
-            COALESCE(NULLIF(entered_by_name,''),entered_by)) ORDER BY id DESC) AS history_entries
+          {history_entries} AS history_entries
         FROM vera_revenue_entry WHERE NOT is_deleted
           AND COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)
               BETWEEN :history_start AND :history_end

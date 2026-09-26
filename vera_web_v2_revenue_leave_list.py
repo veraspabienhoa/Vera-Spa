@@ -24,6 +24,7 @@ from vera_progressive_penalty import load_weekend_unpaid_enabled
 import vera_web_v2_permissions as permissions
 import vera_revenue_store as revenue_store
 import vera_revenue_auto as revenue_auto
+import vera_revenue_report as revenue_report
 
 
 RELEASE = "revenue-history-realtime-2026-09-26-v2"
@@ -614,14 +615,14 @@ def install_revenue_leave_list_routes(
     def revenue_source(ident=Depends(current_identity)):
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            return {"ok": True, **revenue_auto.mode(conn)}
+            return {"ok": True, "period_report_version": revenue_report.VERSION, **revenue_auto.mode(conn)}
 
     @app.put("/v2/revenue/source")
     def update_revenue_source(body: RevenueSourceUpdate, ident=Depends(current_identity)):
         _require_revenue_admin(ident)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            return {"ok": True, **revenue_auto.set_mode(conn, body.source, body.revision,
+            return {"ok": True, "period_report_version": revenue_report.VERSION, **revenue_auto.set_mode(conn, body.source, body.revision,
                 str(getattr(ident, "employee_username", "") or ""))}
 
     @app.get("/v2/revenue/revision")
@@ -630,6 +631,38 @@ def install_revenue_leave_list_routes(
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             return {"ok": True, "revision": revenue_auto.change_revision(conn)}
+
+    def period_report_permissions(conn, ident, result):
+        manual = result["source"] != "auto"
+        return {**result,
+            "can_edit_tip": bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE)),
+            "can_create_entry": manual and bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE)),
+            "can_edit_entry": manual and bool(feature_allowed(conn, ident, REVENUE_ENTRY_EDIT_FEATURE)),
+            "can_delete_entry": manual and bool(feature_allowed(conn, ident, REVENUE_ENTRY_DELETE_FEATURE))}
+
+    @app.get("/v2/revenue/period-report")
+    def period_report(response: Response, start: date | None = None, end: date | None = None,
+                      ident=Depends(current_identity)):
+        response.headers["Cache-Control"] = "no-store"
+        with engine_instance().connect().execution_options(isolation_level="REPEATABLE READ") as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            return period_report_permissions(conn, ident, revenue_report.snapshot(conn, start, end))
+
+    @app.put("/v2/revenue/report-period")
+    def save_report_period(body: RevenueTipPeriod, ident=Depends(current_identity)):
+        with engine_instance().connect().execution_options(isolation_level="REPEATABLE READ") as conn:
+            with conn.begin():
+                require_feature(conn, ident, REVENUE_FEATURE)
+                require_feature(conn, ident, REVENUE_TIP_FEATURE)
+                revenue_auto.lock_mode(conn)
+                result = revenue_report.snapshot(conn, body.start_date, body.end_date)
+                actor = str(getattr(ident, "employee_username", "") or "")
+                revenue_report.save_period(conn, result, actor)
+                # Keep older clients' saved period in agreement, without copying ledger rows.
+                for auto in (False, True):
+                    _save_period_tip(conn, result["period_tip_start"], result["period_tip_end"],
+                                     result["period_tip"], actor, auto=auto)
+                return {**period_report_permissions(conn, ident, result), "message": "Đã lưu kỳ báo cáo và TIP."}
 
     @app.get("/v2/revenue/tip-summary")
     def revenue_tip_summary(start: date, end: date, ident=Depends(current_identity)):

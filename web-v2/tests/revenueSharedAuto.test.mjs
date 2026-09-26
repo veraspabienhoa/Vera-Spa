@@ -23,9 +23,9 @@ const built = await build({
   } }],
 })
 
-async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26') {
+async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26', unified = false) {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
-  let source = initial, revision = 1
+  let source = initial, revision = 1, hold = false, pending = null
   const calls = []
   const names = ['window','document','navigator','ResizeObserver','requestAnimationFrame','cancelAnimationFrame','IS_REACT_ACT_ENVIRONMENT','fetch']
   const descriptors = Object.fromEntries(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
@@ -40,11 +40,26 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
       if (path.endsWith('/source')) {
         if (legacy) return { ok:false, status:404, json:async()=>({detail:'Not Found'}) }
         if (method === 'PUT') { source = JSON.parse(options.body).source; revision += 1 }
-        return response({ source, revision })
+        return response({ source, revision, period_report_version: unified ? 1 : 0 })
       }
       if (path.endsWith('/revision')) return response({revision:`fixture-${revision}`})
       const cutoff = new URL(url).searchParams.get('end')
       const filtered = cutoff === '2026-09-24'
+      if (path.endsWith('/period-report') || path.endsWith('/report-period')) {
+        const body=options.body ? JSON.parse(options.body) : null
+        const selectedEnd=body?.end_date || cutoff || savedEnd
+        const selectedStart=body?.start_date || new URL(url).searchParams.get('start') || '2026-09-16'
+        const historical=selectedEnd==='2026-09-24', tip=historical?20:40
+        const result={ok:true,report_version:1,report_basis:'shared_history_and_system',source,source_revision:revision,
+          total_income:historical?1000:1760,total_expense:historical?100:190.25,net_income:historical?900:1569.75,
+          total_revenue:historical?1000:1760,period_tip:tip,balance:historical?880:1529.75,
+          start_date:'2025-09-05',start_date_label:'05-09-2025',end_date:selectedEnd,business_date:'2026-09-26',
+          current_date:'2026-09-26',current_date_label:'26-09-2026',period_tip_start:selectedStart,period_tip_end:selectedEnd,
+          can_edit_tip:true,can_create_entry:source!=='auto',can_edit_entry:source!=='auto',can_delete_entry:source!=='auto'}
+        if(body) savedEnd=body.end_date
+        if(hold && !body){hold=false;return await new Promise(resolve=>{pending=()=>resolve(response(result))})}
+        return response(result)
+      }
       if (path.endsWith('/summary')) return response({ source, source_revision: legacy ? undefined : revision,
         total_income: filtered ? 1000 : 1760, total_expense: filtered ? 100 : 190.25, net_income: filtered ? 900 : 1569.75, period_tip: 20, balance: filtered ? 880 : 1549.75,
         end_date: cutoff || '2026-09-26', business_date: '2026-09-26',
@@ -52,7 +67,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
         period_tip_start: '2026-09-16', period_tip_end: savedEnd,
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
       })
-      if (path.endsWith('/purchase-reconcile')) return response({ source: legacy ? undefined : source, source_revision: legacy ? undefined : revision,
+      if (path.endsWith('/purchase-reconcile')) return response({ canonical:new URL(url).searchParams.get('canonical')==='true', source: legacy ? undefined : source, source_revision: legacy ? undefined : revision,
         start_date: '2025-09-05', end_date: '2026-09-26', purchase_rows: Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2025-09-05',item:`Hàng ${i+1}`,amount:10})),
         ledger_rows: Array.from({length:rowCount},(_,i)=>({ id: `auto:${i}`, date:'2025-09-05', date_label:'05-09-2025', type:'Thu', amount:1760, note:`Doanh thu dịch vụ + TIP ${i+1}`, read_only: source === 'auto' })),
       })
@@ -70,7 +85,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
   const root = createRoot(dom.window.document.querySelector('#root'))
   await act(async () => root.render(React.createElement(module.exports.default,{ user:{ role } })))
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
-  return { doc:dom.window.document, calls,
+  return { doc:dom.window.document, calls, holdNextReport(){hold=true}, releaseReport(){pending?.()},
     async change(node,value) { await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new dom.window.Event('input',{bubbles:true}));node.dispatchEvent(new dom.window.Event('change',{bubbles:true}))}) },
     button(text) { return [...dom.window.document.querySelectorAll('button')].find(b=>b.textContent.includes(text)) },
     async externalMode(mode) { source=mode; revision+=1; await act(async()=>dom.window.dispatchEvent(new dom.window.Event('focus'))); await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))}) },
@@ -201,4 +216,53 @@ test('Manual TIP end date retains its existing independent behavior',async()=>{
     assert.equal(f.calls.filter(c=>c.path.endsWith('/summary')).length,before)
     assert.match(f.doc.querySelector('.revenue-card.income').textContent,/1\.760đ/)
   } finally {await f.close()}
+})
+
+
+for(const initial of ['manual','auto']) test(`${initial}: one shared response keeps all totals and TIP on the selected period`,async()=>{
+  const f=await fixture('admin',initial,false,1,'2026-09-26',true)
+  try{
+    const reports=()=>f.calls.filter(c=>c.path.endsWith('/period-report'))
+    const money=kind=>f.doc.querySelector(`.revenue-card.${kind}`).textContent
+    assert.equal(reports().length,1,'opening initializes fields without refetching the same report')
+    assert.equal(f.calls.some(c=>/\/(summary|tip-summary)$/.test(c.path)),false,'no independent total/TIP requests')
+    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'24-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,260))})
+    assert.equal(reports().length,2)
+    assert.deepEqual(Object.fromEntries(new URL(reports().at(-1).url).searchParams),{start:'2026-09-16',end:'2026-09-24'})
+    assert.equal(f.doc.querySelector('[aria-label="Tiền TIP trong kỳ tự động"]').value,'20đ')
+    assert.match(money('tip'),/20đ/);assert.match(money('income'),/1\.000đ/);assert.match(money('balance'),/880đ/)
+    const detail=f.calls.filter(c=>c.path.endsWith('/purchase-reconcile')).at(-1)
+    assert.equal(new URL(detail.url).searchParams.get('report_end'),'2026-09-24')
+    assert.equal(new URL(detail.url).searchParams.get('canonical'),'true')
+    await act(async()=>f.button('Lưu Tiền TIP').click())
+    assert.deepEqual(f.calls.find(c=>c.path.endsWith('/report-period')).body,{start_date:'2026-09-16',end_date:'2026-09-24'})
+    await f.externalMode(initial==='auto'?'manual':'auto')
+    assert.equal(new URL(reports().at(-1).url).searchParams.get('end'),'2026-09-24')
+    assert.match(money('income'),/1\.000đ/);assert.match(money('expense'),/100đ/);assert.match(money('tip'),/20đ/);assert.match(money('balance'),/880đ/)
+    assert.equal(f.doc.querySelector('[aria-label="Tiền TIP trong kỳ tự động"]').value,'20đ')
+    if(initial==='auto'){
+      await act(async()=>f.button('Sổ nhập tay').click())
+      assert.equal(new URL(f.calls.filter(c=>c.path.endsWith('/purchase-reconcile')).at(-1).url).searchParams.has('canonical'),false)
+      assert.match(money('income'),/1\.000đ/,'raw ledger inspection does not change the common report')
+    }
+  }finally{await f.close()}
+})
+
+test('late report cannot overwrite a newer selected date or mix the TIP field and card',async()=>{
+  const f=await fixture('admin','auto',false,1,'2026-09-24',true)
+  try{
+    f.holdNextReport()
+    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'26-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,230))})
+    // Simulate the next selection arriving while the transport ignores abort.
+    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'24-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,230))})
+    await act(async()=>f.releaseReport())
+    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'24-09-2026')
+    assert.equal(f.doc.querySelector('.revenue-grid').getAttribute('aria-busy'),'false')
+    assert.equal(f.doc.querySelector('[aria-label="Tiền TIP trong kỳ tự động"]').value,'20đ')
+    assert.match(f.doc.querySelector('.revenue-card.tip').textContent,/20đ/)
+    assert.match(f.doc.querySelector('.revenue-card.income').textContent,/1\.000đ/)
+  }finally{await f.close()}
 })

@@ -25,6 +25,7 @@ from threading import Lock
 from vera_google_credentials import google_credentials
 import vera_revenue_store as revenue_store
 import vera_revenue_auto as revenue_auto
+import vera_revenue_report as revenue_report
 
 from vera_web_v2_revenue_leave_list import (
     REVENUE_FEATURE,
@@ -434,17 +435,21 @@ def install_purchase_reconcile_routes(
         preset: str = Query(default="this_month", max_length=30),
         start_date: date | None = Query(default=None, alias="start"),
         end_date: date | None = Query(default=None, alias="end"),
+        canonical: bool = Query(False),
+        report_end: date | None = Query(None),
         ident=Depends(current_identity),
     ):
         start, end = _resolve_range(preset, start_date, end_date)
+        if canonical and report_end is not None:
+            end = min(end, report_end)
         from vera_purchase_store import server_reconcile_rows
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             shared = revenue_auto.mode(conn)
-            if shared["source"] == "auto":
+            if shared["source"] == "auto" or canonical:
                 start, end = revenue_auto.bounds(start, end)
                 purchase_all = revenue_auto.purchase_rows(conn, start, end)
-                ledger_all = revenue_auto.ledger_rows(revenue_auto.daily(conn, start, end))
+                ledger_all = revenue_report.ledger_rows(conn, start, end, editable_history=shared["source"] != "auto")
             else:
                 purchase_all = server_reconcile_rows(conn)
                 ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
@@ -475,7 +480,7 @@ def install_purchase_reconcile_routes(
         return {
             "ok": True,
             "release": RELEASE,
-            "source": shared["source"], "source_revision": shared["revision"],
+            "source": shared["source"], "source_revision": shared["revision"], "canonical": canonical,
             "preset": preset,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
@@ -510,12 +515,16 @@ def install_purchase_reconcile_routes(
         amount: str = Query(default="", max_length=40),
         note: str = Query(default="", max_length=300),
         entered_by: str = Query(default="", max_length=200),
+        canonical: bool = Query(False),
+        report_end: date | None = Query(None),
         ident=Depends(current_identity),
     ):
         start, end = _resolve_range(preset, start_date, end_date)
+        if canonical and report_end is not None:
+            end = min(end, report_end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            if revenue_auto.mode(conn)["source"] == "auto":
+            if revenue_auto.mode(conn)["source"] == "auto" or canonical:
                 start, end = revenue_auto.bounds(start, end)
                 rows = revenue_auto.ledger_rows(revenue_auto.daily(conn, start, end))
             else:
