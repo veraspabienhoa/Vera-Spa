@@ -18,6 +18,7 @@ import vera_purchase_store as purchases
 import vera_web_v2_revenue_leave_list as routes
 import vera_web_v2_purchase_reconcile as reconcile
 import vera_web_v2_purchase_reconcile_v2 as reconcile_v2
+from vera_live_tour_lists import matches as report_matches
 from vera_web_v2_purchase_reconcile import install_purchase_reconcile_routes
 
 
@@ -434,3 +435,55 @@ def test_production_reconcile_wrapper_preserves_cutoff_defaults_and_validation(d
         assert http.get('/v2/revenue/purchase-reconcile?' + query).status_code == 422
     ident.allowed = False
     assert http.get('/v2/revenue/purchase-reconcile?preset=all&canonical=true&report_end=2026-09-24').status_code == 403
+
+
+@pytest.mark.parametrize('source', ['manual', 'auto'])
+def test_tip_period_matches_reports_calendar_filter_not_operational_day(database, client, source):
+    # Synthetic reproduction, not a copy/diagnosis of production invoice data.
+    rows = [
+        {'business_date': '2026-09-16', 'effective_at': '2026-09-16T12:00:00+07:00', 'tip': 100000000},
+        {'business_date': '2026-09-24', 'effective_at': '2026-09-24T23:59:59+07:00', 'tip': 130310000},
+        {'business_date': '2026-09-24', 'effective_at': '2026-09-24T17:00:00Z', 'tip': 85410000},
+    ]
+    with database.begin() as conn:
+        for index, row in enumerate(rows):
+            report(conn, str(index), total=row['tip'], **row)
+    http, _ = client
+    if source == 'auto':
+        enable(http)
+    expected = sum(row['tip'] for row in rows if report_matches(row, date_from='2026-09-16', date_to='2026-09-24'))
+    assert expected == 230310000
+    for path in ('/v2/revenue/period-report', '/v2/revenue/tip-summary'):
+        response = http.get(path + '?start=2026-09-16&end=2026-09-24')
+        assert response.status_code == 200, response.text
+        assert response.json()['period_tip'] == expected
+    saved = http.put('/v2/revenue/report-period', json={'start_date': '2026-09-16', 'end_date': '2026-09-24'})
+    assert saved.status_code == 200 and saved.json()['period_tip'] == expected
+    assert http.get('/v2/revenue/period-report').json()['period_tip'] == expected
+    next_day = http.get('/v2/revenue/period-report?start=2026-09-25&end=2026-09-25').json()
+    assert next_day['period_tip'] == 85410000
+    assert next_day['total_income'] == 85410000, 'Auto cash cutoff uses the same calendar date'
+    with database.connect() as conn:
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_live_tour_report')).scalar() == 3
+        assert conn.execute(text("SELECT SUM((payload->>'tip')::numeric) FROM vera_live_tour_report")).scalar() == 315720000
+
+
+@pytest.mark.parametrize('database_timezone', ['UTC', 'America/Los_Angeles'])
+def test_tip_calendar_date_precedence_offsets_and_naive_times_match_report_list(database, database_timezone):
+    rows = [
+        {'business_date': '2026-09-25', 'effective_at': '2026-09-24T23:59:59', 'created_at': '2026-09-26T00:00:00Z', 'tip': 10},
+        {'business_date': '2026-09-25', 'booked_at': '2026-09-24T16:59:59Z', 'created_at': '2026-09-25T00:00:00Z', 'tip': 20},
+        {'business_date': '2026-09-25', 'created_at': '2026-09-24T12:00:00+07:00', 'tip': 30},
+        {'business_date': '2026-09-24', 'tip': 40},
+        {'business_date': '2026-09-24', 'effective_at': '2026-09-24T17:00:00Z', 'tip': 500},
+        {'business_date': '2026-09-24', 'effective_at': '2026-09-23T23:59:59+07:00', 'tip': 600},
+        {'recorded_at': '2026-09-24T12:00:00+07:00', 'tip': 700},
+    ]
+    with database.begin() as conn:
+        conn.execute(text('SELECT set_config(\'TimeZone\', :zone, true)'), {'zone': database_timezone})
+        for index, row in enumerate(rows):
+            report(conn, str(index), total=row['tip'], **row)
+        report(conn, 'deleted', '2026-09-24', total=999, tip=999, deleted=True)
+        expected = sum(row['tip'] for row in rows if report_matches(row, date_from='2026-09-24', date_to='2026-09-24'))
+        assert expected == 100
+        assert auto.tip_total(conn, date(2026, 9, 24), date(2026, 9, 24)) == expected

@@ -1,5 +1,32 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: TIP giữa Báo cáo và Doanh thu lọc theo hai loại ngày
+
+Người dùng báo cùng kỳ 16–24-09-2026: Báo cáo 230.310.000đ, Doanh thu
+315.720.000đ. Khác với hai ảnh trước (khác năm bắt đầu), đây là yêu cầu đối
+chiếu cùng kỳ. Deploy #36246228618 chạy 3536ae5; schema gate xác nhận Live
+Tour active, parity ok, revision 6042. Chưa đọc hóa đơn/journal production
+để quy toàn bộ chênh 85.410.000đ cho một nhóm giao dịch cụ thể.
+
+Mã có sai khác xác định: ReportPage/filterTourRows và list API ưu tiên
+effective_at → booked_at → created_at → business_date, theo ngày lịch VN.
+SQL Doanh thu ưu tiên business_date (ngày nghiệp vụ có thể khác ngày lịch),
+đồng thời lọc trước theo business_date. Vì vậy giao dịch qua ngày hoặc chỉnh
+lùi ngày có thể thuộc hai kỳ khác nhau. SQL nay dùng cùng thứ tự ngày lịch;
+bỏ bộ lọc business_date cũ để không loại nhầm giao dịch đã chỉnh ngày. Timestamp
+không có offset được hiểu theo giờ VN, không phụ thuộc timezone PostgreSQL.
+TIP và phần Thu tự động dùng chung biểu thức này. Lịch sử Manual đến 24-09,
+ngày mua hàng, số tiền và ngày gốc hóa đơn không bị ghi lại.
+
+Fallback TIP trình duyệt và ReportPage dùng chung tourRowDate, giữ đọc ngày
+legacy dd/mm/yyyy và chuẩn hóa timestamp không múi giờ theo VN. Kiểm thử
+PostgreSQL/HTTP và JS tái hiện dữ liệu giả lập có tổng 315.720.000 nhưng chỉ
+230.310.000 thuộc kỳ ngày lịch, so với bộ lọc báo cáo thực tế; đồng thời kiểm
+tra lưu/mở lại kỳ, Manual/Auto, mốc chuyển nguồn, UTC, ngày chỉnh lùi, deleted
+rows và timezone DB khác VN. Không coi ví dụ này là đối chiếu giao dịch thật.
+Cần Deploy VPS Production và làm mới cả Báo cáo lẫn Doanh thu để đối chiếu
+cùng kỳ, không lọc thêm nhân viên/khách/dịch vụ/số hóa đơn ở trang Báo cáo.
+
 ## 26-09-2026: HTTP 500 Doanh thu do lớp đối soát V2 thiếu tham số mới
 
 Người dùng báo HTTP 500 lúc 20:35 sau Deploy VPS Production #36245308189.

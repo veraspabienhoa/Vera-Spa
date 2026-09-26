@@ -66,15 +66,19 @@ def bounds(start=None, end=None):
 
 # Report rows allocate actual invoice total and TIP once across employees.
 # Using subtotal would omit discounts and double-count prepaid combo services.
-# Historical timestamp-only records use the Vietnam day, not the UTC date.
+# Match Reports' calendar filters: effective_at, booked_at, created_at, then
+# business_date. Operational business days can differ around the shift cutoff.
+# Zone-less legacy timestamps are Vietnam local time, independent of DB timezone.
 REPORT_DAILY_SQL = """
-    SELECT business_day AS day, SUM(total - tip) AS service, SUM(tip) AS tip,
+    SELECT report_day AS day, SUM(total - tip) AS service, SUM(tip) AS tip,
            SUM(total) AS income, COUNT(*) AS payments
     FROM (
-      SELECT COALESCE(NULLIF(payload->>'business_date','')::date,
-        (COALESCE(NULLIF(payload->>'effective_at',''), NULLIF(payload->>'created_at',''),
-                  NULLIF(payload->>'recorded_at',''))::timestamptz
-          AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) AS business_day,
+      SELECT (CASE WHEN event_at ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
+                   THEN event_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                   ELSE event_at::timestamp END)::date AS report_day, total, tip
+      FROM (
+        SELECT COALESCE(NULLIF(payload->>'effective_at',''), NULLIF(payload->>'booked_at',''),
+                       NULLIF(payload->>'created_at',''), NULLIF(payload->>'business_date','')) AS event_at,
         COALESCE(NULLIF(payload->>'total','')::numeric,
           GREATEST(0, COALESCE(NULLIF(payload->>'subtotal','')::numeric,
                               NULLIF(payload->>'service_money','')::numeric, 0)
@@ -83,11 +87,10 @@ REPORT_DAILY_SQL = """
         COALESCE(NULLIF(payload->>'tip','')::numeric, 0) AS tip
       FROM vera_live_tour_report
       WHERE deleted_at IS NULL
-        AND (NULLIF(payload->>'business_date','') IS NULL
-             OR payload->>'business_date' BETWEEN :start_text AND :end_text)
+      ) events
     ) reports
-    WHERE business_day BETWEEN :start AND :end
-    GROUP BY business_day
+    WHERE report_day BETWEEN :start AND :end
+    GROUP BY report_day
 """
 
 
