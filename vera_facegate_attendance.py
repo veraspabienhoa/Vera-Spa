@@ -236,12 +236,21 @@ def mapping_candidates(events, datasets, employees, address, start, end):
 
 
 def compare_records(left, right):
+    import vera_web_v2_attendance_v42 as v42
     def keyed(records):
         return {(r['date'], r['employee_name']): r for r in records}
+    def comparable(field, value, work_day):
+        if field == 'punch_times' and isinstance(value, list):
+            return [comparable('check_in', item, work_day) for item in value]
+        if field in {'check_in', 'check_out', 'break_out', 'break_in', 'shift_start', 'shift_end'}:
+            parsed = v42._parse_datetime(value, v42._parse_date(work_day))
+            return parsed.strftime('%H:%M:%S') if parsed else str(value or '').strip()
+        return value
     a, b = keyed(left), keyed(right)
     differences = []
     for key in sorted(a.keys() | b.keys()):
-        fields = [field for field in COMPARE_FIELDS if a.get(key, {}).get(field) != b.get(key, {}).get(field)]
+        fields = [field for field in COMPARE_FIELDS
+                  if comparable(field, a.get(key, {}).get(field), key[0]) != comparable(field, b.get(key, {}).get(field), key[0])]
         if fields:
             differences.append({'date': key[0], 'employee_name': key[1], 'fields': fields,
                                 'timesoft': {f: a.get(key, {}).get(f) for f in fields},

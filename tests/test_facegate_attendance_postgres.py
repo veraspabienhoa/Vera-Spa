@@ -113,6 +113,7 @@ def test_preview_real_route_reuses_one_connection_and_never_changes_source(datab
     assert result['records'][0]['employee_name'] == 'Ánh Thử'
     assert result['records'][0]['check_in'] == '09:59:00'
     assert result['evidence_differences'] == [] and result['incomplete_days'] == []
+    assert result['differences'] == []
     assert result['payroll_and_penalties_written'] is False
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_facegate_event')).scalar_one() == 1

@@ -112,6 +112,15 @@ def test_raw_comparison_catches_scan_difference_inside_same_five_minute_group():
     assert result[0]['missing_in_facegate'] == ['2026-09-26T09:59:02']
 
 
+def test_comparison_normalizes_time_format_but_not_real_time_differences():
+    a = {'date': '26/09/2026', 'employee_name': 'Ánh Thử', 'check_in': '26/09/2026 09:59:00',
+         'shift_start': '10:00', 'punch_times': ['09:59', '15:00:00']}
+    b = {**a, 'check_in': '09:59:00', 'shift_start': '10:00:00', 'punch_times': ['09:59:00', '15:00']}
+    assert fg.compare_records([a], [b]) == []
+    b['check_in'] = '10:00:00'
+    assert fg.compare_records([a], [b])[0]['fields'] == ['check_in']
+
+
 def calculator(monkeypatch, rows, shift=('Ca 1', '10:00', '23:00')):
     definitions = [{'Tên ca': shift[0], 'Giờ bắt đầu': shift[1], 'Giờ kết thúc': shift[2], 'Bộ phận': 'Nhân viên + Leader'}]
     profile = {**STAFF[0], 'work_shift': f'{shift[0]} ({shift[1]}-{shift[2]})'}

@@ -19,6 +19,16 @@ const reasons = {
   overlapping_shifts: 'Có nhiều ca cùng phù hợp', invalid_timestamp: 'Ngày giờ không hợp lệ',
   conflicting_duplicate: 'Sự kiện trùng nhưng khác nội dung',
 }
+const fieldLabels = { check_in: 'Vào ca', check_out: 'Ra ca', punch_times: 'Nhóm quét', break_out: 'Ra nghỉ', break_in: 'Vào lại', break_actual_minutes: 'Số phút nghỉ', shift: 'Ca', shift_start: 'Bắt đầu ca', shift_end: 'Kết thúc ca' }
+function comparisonValue(value) {
+  if (Array.isArray(value)) return value.map(comparisonValue).join(' · ')
+  if (value === null || value === undefined || value === '') return '—'
+  const raw = String(value)
+  return raw.includes('T') || /\d{4}[ ,]+\d{2}:\d{2}/.test(raw) ? formatVeraDateTime(raw, raw) : raw
+}
+function ComparedFields({ values }) {
+  return <div>{Object.entries(values).map(([key, value]) => <div key={key}><strong>{fieldLabels[key] || key}:</strong> {comparisonValue(value)}</div>)}</div>
+}
 
 function yesterday() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
@@ -61,7 +71,8 @@ export default function FacegateAttendancePreview() {
         <div className="responsive-data-table"><table><thead><tr><th>Tên trên máy</th><th>Nhân viên VERA gợi ý</th><th>Số lượt</th><th>Tham chiếu hồ sơ</th></tr></thead><tbody>{result.mapping_candidates.map((row, i) => <tr key={i}><td>{row.device_names.join(' · ')}</td><td>{row.username_candidate || (row.status === 'ambiguous' ? 'Nhiều kết quả — cần đối chiếu' : 'Chưa khớp')}</td><td>{row.event_count}</td><td>{JSON.stringify(row.registration_ref)}</td></tr>)}</tbody></table></div>
       </details>
       {!!result.issues.length && <details><summary>Sự kiện cần kiểm tra{result.issues_truncated ? ' (200 dòng đầu)' : ''}</summary><ul>{result.issues.map((row, i) => <li key={i}>#{row.event_id} · {row.username || row.device_name || ''} · {reasons[row.reason] || row.reason}</li>)}</ul></details>}
-      {!!result.differences.length && <details><summary>Chi tiết kết quả khác nhau</summary><div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>TimeSoft</th><th>FaceGate</th></tr></thead><tbody>{result.differences.map(row => <tr key={`${row.date}:${row.employee_name}`}><td>{formatVeraDate(row.date)}</td><td>{row.employee_name}</td><td>{JSON.stringify(row.timesoft)}</td><td>{JSON.stringify(row.facegate)}</td></tr>)}</tbody></table></div></details>}
+      {!!result.evidence_differences.length && <details><summary>Thời điểm quét chưa khớp</summary><div className="responsive-data-table"><table><thead><tr><th>Nhân viên</th><th>Thiếu bên FaceGate</th><th>Chỉ có bên FaceGate</th></tr></thead><tbody>{result.evidence_differences.map(row => <tr key={row.employee_name}><td>{row.employee_name}</td><td>{row.missing_in_facegate.map(value => formatVeraDateTime(value)).join(' · ') || '—'}</td><td>{row.extra_in_facegate.map(value => formatVeraDateTime(value)).join(' · ') || '—'}</td></tr>)}</tbody></table></div></details>}
+      {!!result.differences.length && <details><summary>Chi tiết kết quả khác nhau</summary><div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Nhân viên</th><th>TimeSoft</th><th>FaceGate</th></tr></thead><tbody>{result.differences.map(row => <tr key={`${row.date}:${row.employee_name}`}><td>{formatVeraDate(row.date)}</td><td>{row.employee_name}</td><td><ComparedFields values={row.timesoft}/></td><td><ComparedFields values={row.facegate}/></td></tr>)}</tbody></table></div></details>}
     </>}
   </details>
 }
