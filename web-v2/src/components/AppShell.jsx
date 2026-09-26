@@ -1,3 +1,4 @@
+import PageContent from './PageContent'
 import StableFeedback from './StableFeedback'
 import { PAGE_REFRESH_ERROR } from '../lib/usePageRefresh'
 import '../page-stability.css'
@@ -9,7 +10,7 @@ import LayoutDesigner from './LayoutDesigner'
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, History, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
 
@@ -94,7 +95,7 @@ const liveAlertTiming = (alert, nowMs) => {
   return delta >= 0 ? `Còn ${durationText(delta)}` : `Đang trễ ${durationText(-delta)}`
 }
 
-export default function AppShell({ user, currentPage, standalone = false, onPageChange, onRefreshCurrentPage, onSignOut, children }) {
+export default function AppShell({ user, currentPage, standalone = false, onPageChange, onPageIntent, onRefreshCurrentPage, onSignOut, children }) {
   const [refreshMessage, setRefreshMessage] = useState('')
   useEffect(() => {
     setRefreshMessage('')
@@ -375,9 +376,9 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   }
 
   const sidebarOpen = mobileOpen || (standalone && standaloneMenuOpen)
-  const navigationToggle = standalone
+  const navigationToggle = useMemo(() => standalone
     ? <button data-ui-key="u-c7ea03a89a43" type="button" className="standalone-menu-toggle icon-button" onClick={() => setStandaloneMenuOpen((value) => !value)} aria-label={standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'} aria-expanded={standaloneMenuOpen}>{standaloneMenuOpen ? <X size={20} /> : <Menu size={20} />} {standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'}</button>
-    : <button data-ui-key="u-b36248799e5c" type="button" className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu" aria-expanded={mobileOpen}><Menu size={22} /></button>
+    : <button data-ui-key="u-b36248799e5c" type="button" className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu" aria-expanded={mobileOpen}><Menu size={22} /></button>, [standalone, standaloneMenuOpen, mobileOpen])
 
   return (
     <div className={`app-shell ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`} onPointerDown={beginMenuSwipe} onPointerUp={endMenuSwipe} onPointerCancel={cancelMenuSwipe}>
@@ -416,6 +417,8 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
               className={`nav-item ${(currentPage === id || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
               onClick={(event) => chooseFromLink(event, id, ready)}
+              onPointerEnter={() => { if (ready) onPageIntent?.(id) }}
+              onFocus={() => { if (ready) onPageIntent?.(id) }}
               aria-disabled={!ready || undefined}
               title={ready ? `${label} · Có thể nhấp chuột phải để mở tab mới` : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}
             >
@@ -484,7 +487,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           </div>}
 
 
-          {typeof children === 'function' ? children(navigationToggle) : children}
+          <PageContent navigationToggle={navigationToggle}>{children}</PageContent>
         </div>
       </main>
       <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>

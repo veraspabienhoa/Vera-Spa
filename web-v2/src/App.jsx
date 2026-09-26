@@ -1,3 +1,5 @@
+import { invalidateSharedReads } from './lib/sharedRead'
+import { pageModuleLoader } from './lib/pageModuleLoader'
 import { requestPageRefresh } from './lib/usePageRefresh'
 import SystemTabs from './components/SystemTabs'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -44,13 +46,18 @@ const readStandalonePageRequest = () => {
   }
 }
 
-const lazyPage = (importer) => lazy(async () => {
-  try { const module = await importer(); window.sessionStorage.removeItem('vera-v2-chunk-reload'); return module }
+const lazyPage = (importer) => {
+  const preload = pageModuleLoader(importer)
+  const component = lazy(async () => {
+  try { const module = await preload(); window.sessionStorage.removeItem('vera-v2-chunk-reload'); return module }
   catch (error) {
     if (!window.sessionStorage.getItem('vera-v2-chunk-reload')) { window.sessionStorage.setItem('vera-v2-chunk-reload', '1'); window.location.reload(); return new Promise(() => {}) }
     window.sessionStorage.removeItem('vera-v2-chunk-reload'); throw error
   }
-})
+  })
+  component.preload = preload
+  return component
+}
 
 const PurchasePage = lazyPage(() => import('./pages/PurchasePage'))
 
@@ -83,6 +90,19 @@ const DepartmentPayrollSettingsPage = lazyPage(() => import('./pages/DepartmentP
 const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollPanel'))
 const ContractPage = lazyPage(() => import('./pages/ContractPage'))
 const TrainingPage = lazyPage(() => import('./pages/TrainingPage'))
+const pageModules = {
+  leave: LeaveRegistrationPage, schedule: WorkSchedulePage, 'long-leave': LongLeaveSection,
+  employees: EmployeePage, 'contract-1': ContractPage, rules: RulesPage, profile: ProfilePage,
+  hr: HumanResourcesPage, payroll: PayrollPage, 'department-payroll': DepartmentPayrollPanel,
+  'payroll-config': DepartmentPayrollSettingsPage, revenue: RevenuePage, purchases: PurchasePage,
+  training: TrainingPage, snapshot: SnapshotPage, devices: DevicePage, 'checkin-history': CheckinHistoryPage,
+  birthday: BirthdayPage, tour: TourPage, reports: LiveTourReportsPage, 'live-tour': LiveTourPage,
+  'milk-tea': MilkTeaPage, customers: SpaManagementPage, settings: SettingsPage,
+  notifications: NotificationSettingsPage, permissions: PermissionsPage, 'auto-check': AutoCheckPage,
+  system: AdminChangesPage, changes: AdminChangesPage, storage: StorageAdminPage,
+}
+const preloadPage = page => { void pageModules[page]?.preload().catch(() => {}) }
+
 export default function App() {
   const verifiedUser = useRef(null)
   const [standaloneRequest] = useState(readStandalonePageRequest)
@@ -104,6 +124,7 @@ export default function App() {
     setSessionRecoveryError(false)
     const applySession = async (nextSession) => {
       if (!mounted) return
+      invalidateSharedReads()
       const attempt = ++verification
       setSession(nextSession); setAuthError(''); setSessionRecoveryError(false)
       if (!nextSession) { verifiedUser.current = null; setProfile(null); setLoading(false); return }
@@ -211,7 +232,7 @@ export default function App() {
   if (!shellUser) return <div className="boot-screen"><div><p role="alert">{authError || 'Đang xác minh hồ sơ VERA SPA…'}</p><button type="button" className="primary-button" onClick={() => setAuthRetry(value => value + 1)}>Thử xác minh lại</button><button type="button" className="secondary-button" onClick={signOut}>Đăng xuất</button></div></div>
 
   return (
-    <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
+    <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onPageIntent={preloadPage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       {(navigationToggle) => <>
         <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
         <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={page}>

@@ -1,3 +1,4 @@
+import { invalidateSharedReads } from './sharedRead'
 import { notifyLeaveChange } from './leaveRefresh'
 import { getCurrentSession, isSupabaseConfigured, refreshCurrentSession, supabase } from './supabase'
 import { apiErrorMessage } from './apiError'
@@ -10,6 +11,13 @@ export const isApiConfigured = Boolean(apiBase)
 export const isReadConfigured = Boolean(apiBase || isSupabaseConfigured)
 
 async function request(path, options = {}) {
+  const write = String(options.method || 'GET').toUpperCase() !== 'GET'
+  if (write) invalidateSharedReads()
+  try { return await requestUnshared(path, options) }
+  finally { if (write) invalidateSharedReads() }
+}
+
+async function requestUnshared(path, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
 
   let session = await getCurrentSession()
@@ -59,7 +67,14 @@ async function request(path, options = {}) {
   return payload
 }
 
-async function binaryResponse(path, options = {}, failureMessage = 'Không tải được dữ liệu sau 2 lần thử') {
+async function binaryResponse(path, options = {}, failureMessage) {
+  const write = String(options.method || 'GET').toUpperCase() !== 'GET'
+  if (write) invalidateSharedReads()
+  try { return await binaryResponseUnshared(path, options, failureMessage) }
+  finally { if (write) invalidateSharedReads() }
+}
+
+async function binaryResponseUnshared(path, options = {}, failureMessage = 'Không tải được dữ liệu sau 2 lần thử') {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   let session = await getCurrentSession()
   const headers = new Headers(options.headers || {})
@@ -117,6 +132,12 @@ async function download(path, fallbackName, options = {}) {
 }
 
 async function upload(path, file, params = null) {
+  invalidateSharedReads()
+  try { return await uploadUnshared(path, file, params) }
+  finally { invalidateSharedReads() }
+}
+
+async function uploadUnshared(path, file, params = null) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const session = await getCurrentSession()
   const headers = new Headers()

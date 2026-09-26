@@ -1,5 +1,6 @@
+import { sharedRead } from './sharedRead.js'
 // Read-only deadline and cancellation. Financial writes never enter this path.
-export async function readJsonRequest(url, options = {}, { timeoutMs = 20000, attempts = 3 } = {}) {
+async function unsharedReadJsonRequest(url, options = {}, { timeoutMs = 20000, attempts = 3 } = {}) {
   const controller = new AbortController()
   const abort = () => controller.abort(options.signal?.reason)
   if (options.signal?.aborted) abort()
@@ -36,4 +37,13 @@ export async function readJsonRequest(url, options = {}, { timeoutMs = 20000, at
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', abort)
   }
+}
+
+export async function readJsonRequest(url, options = {}, policy = {}) {
+  if (String(options.method || 'GET').toUpperCase() !== 'GET') return unsharedReadJsonRequest(url, options, policy)
+  const headers = [...new Headers(options.headers || {}).entries()].sort(([a], [b]) => a.localeCompare(b))
+  const key = JSON.stringify([String(url), headers, options.credentials, options.cache, options.mode, policy.timeoutMs, policy.attempts])
+  const result = await sharedRead(key, signal => unsharedReadJsonRequest(url, { ...options, signal }, policy), options.signal)
+  // Callers may normalize their own rows; one panel must not mutate another's result.
+  return { response: result.response, payload: structuredClone(result.payload) }
 }
