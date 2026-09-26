@@ -39,6 +39,7 @@ def database(monkeypatch):
             return datetime(2026, 9, 26, 12, tzinfo=auto.VN_TZ)
     monkeypatch.setattr(auto, 'datetime', Clock)
     monkeypatch.setattr(routes, 'datetime', Clock)
+    monkeypatch.setattr(reconcile, 'datetime', Clock)
     try:
         with engine.begin() as conn:
             conn.execute(text('''CREATE TABLE vera_app_setting (
@@ -568,3 +569,71 @@ def test_single_invoice_day_tip_and_purchase_reports_share_authoritative_rows(da
     assert http.get('/v2/purchases?preset=all').json()['total']==0
     ident.allowed=False
     assert http.get('/v2/revenue/purchases').status_code==403
+
+
+@pytest.mark.parametrize('source', ['manual', 'auto'])
+def test_live_ledger_has_no_implicit_dates_and_export_keeps_explicit_filters(database, client, source):
+    http, ident = client
+    with database.begin() as conn:
+        for key, day, amount in [('old', '2024-01-02', 100), ('selected', '2026-09-24', 200), ('latest', '2026-09-26', 300)]:
+            report(conn, key, day, total=amount, tip=10)
+            buy(conn, day, amount / 10)
+            conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',:amount,:day,:note)"),
+                         {'amount': amount * 2, 'day': day, 'note': key})
+        report(conn, 'undated', total=9999)
+        report(conn, 'removed', '2026-09-26', total=9999, deleted=True)
+        buy(conn, '2026-09-26', 9999, deleted=True)
+    if source == 'auto':
+        enable(http)
+    saved = http.put('/v2/revenue/report-period', json={'start_date': '2026-09-16', 'end_date': '2026-09-21'})
+    assert saved.status_code == 200, saved.text
+    query = '?preset=all&canonical=true&live_ledger=true&report_end=2026-09-21'
+    path = '/v2/revenue/purchase-reconcile'
+    response = http.get(path + query)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['live_ledger'] and 'overall_status' in result, 'production wrapper must forward live_ledger'
+    assert result['start_date'] == '2024-01-02' and result['end_date'] == '2026-09-26'
+    assert result['ledger_income'] == (600 if source == 'auto' else 1200)
+    assert result['ledger_expense'] == (60 if source == 'auto' else 0)
+    assert {row['date'] for row in result['ledger_rows']} == {'2024-01-02', '2026-09-24', '2026-09-26'}
+    for suffix, expected in [(query, result['ledger_income']),
+                             (query + '&transaction_date=2026-09-24', 200 if source == 'auto' else 400)]:
+        exported = http.get('/v2/revenue/ledger/export.xlsx' + suffix)
+        assert exported.status_code == 200, exported.text
+        values = list(load_workbook(BytesIO(exported.content), read_only=True, data_only=True).active.values)[1:]
+        assert sum(row[2] for row in values if row[1] == 'Thu') == expected
+    filtered = http.get(path + '?preset=custom&start=2026-09-24&end=2026-09-24&live_ledger=true').json()
+    assert {row['date'] for row in filtered['ledger_rows']} == {'2026-09-24'}
+    before = http.get('/v2/revenue/revision').json()
+    with database.begin() as conn:
+        report(conn, 'new', '2026-09-27', total=400)
+        conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',800,'2026-09-27','new')"))
+    assert http.get('/v2/revenue/revision').json() != before
+    latest = http.get(path + query).json()
+    assert latest['end_date'] == '2026-09-27'
+    assert latest['ledger_income'] == (1000 if source == 'auto' else 2000)
+    assert http.get('/v2/revenue/period-report').json()['end_date'] == '2026-09-21'
+    assert http.get(path + '?live_ledger=invalid').status_code == 422
+    ident.allowed = False
+    assert http.get(path + query).status_code == 403
+    assert http.get('/v2/revenue/ledger/export.xlsx' + query).status_code == 403
+
+
+def test_live_empty_ledger_and_revision_advance_on_vietnam_midnight(database, client, monkeypatch):
+    http, _ = client
+    path = '/v2/revenue/purchase-reconcile?preset=all&live_ledger=true'
+    before = http.get('/v2/revenue/revision').json()
+    empty = http.get(path).json()
+    assert empty['ledger_rows'] == [] and empty['ledger_income'] == empty['ledger_expense'] == 0
+    assert empty['start_date'] == empty['end_date'] == '2026-09-26'
+    class NextDay(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 27, 0, 0, 1, tzinfo=auto.VN_TZ)
+    monkeypatch.setattr(auto, 'datetime', NextDay)
+    monkeypatch.setattr(reconcile, 'datetime', NextDay)
+    assert http.get('/v2/revenue/revision').json() != before
+    assert http.get(path).json()['end_date'] == '2026-09-27'
+    with database.connect() as conn:
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 0

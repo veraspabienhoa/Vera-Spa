@@ -1,5 +1,24 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: sổ Thu Chi không giới hạn ngầm ngày và theo dữ liệu mới nhất
+
+Theo yêu cầu tiếp theo, mặc định Tất cả của cả Manual và Auto đọc toàn bộ
+dòng hiện có, kể cả trước 05-09-2025, không cắt theo kỳ TIP hoặc ngày cố định.
+API và Excel nhận live_ledger, được truyền qua wrapper V2 thật. Khoảng ngày
+hiển thị lấy ngày đầu có dữ liệu đến ngày mới nhất (ít nhất là hôm nay tại
+Việt Nam); bộ lọc Tùy chỉnh và Ngày do người dùng chọn vẫn có hiệu lực.
+API cũ và các thẻ tổng/TIP giữ kỳ báo cáo đã chọn; không đổi số tiền đã lưu.
+
+Manual, Auto và Manual/TIP tự động dùng chung kiểm tra revision mỗi 5 giây
+khi trang hiện, tải lại khi dữ liệu đổi hoặc sang ngày mới ở Việt Nam. Giữ
+chặn cập nhật khi biểu mẫu đang sửa/lưu và giữ bộ lọc đang chọn. Nguồn cũ
+vẫn tương thích, tránh thêm bộ hẹn giờ 30 giây trùng với revision poller.
+
+Kiểm thử UI bao gồm dữ liệu trước mốc cũ, sau kỳ TIP, thêm/sửa/xóa, ngày mới,
+giữ bộ lọc và tham số xuất. PostgreSQL/HTTP kiểm tra wrapper, Manual/Auto
+tách nguồn, Excel, bộ lọc chủ động, quyền truy cập và revision qua nửa đêm.
+Các dòng kiểm thử là giả lập; không chỉnh sửa hoặc xóa dữ liệu thực trên VPS.
+
 ## 26-09-2026: sổ Thu Chi Manual vẫn bị cắt theo kỳ báo cáo/TIP
 
 Kết quả chạy trên VPS do người dùng cung cấp lúc 22:46 xác nhận ngày 24-09:
