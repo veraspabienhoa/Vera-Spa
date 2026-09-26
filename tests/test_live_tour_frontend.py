@@ -439,7 +439,9 @@ def test_live_tour_pending_reminder_is_accessible_and_opens_the_pending_panel():
     source = _source(LIVE_TOUR)
 
     assert 'role="status" aria-live="polite" aria-atomic="true"' in source
-    assert "<span key={pendingReminder.id}>{pendingReminder.text}</span>" in source
+    assert '<span key={pendingReminder.id}>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>' in source
+    assert 'pendingReminder && createPortal(' in source
+    assert 'live-tour-reminder-slot' not in source
     assert "onClick={openPendingPanel}" in source
     assert "setActivePanel('pending')" in source
     assert 'aria-controls="live-tour-pending-panel"' in source

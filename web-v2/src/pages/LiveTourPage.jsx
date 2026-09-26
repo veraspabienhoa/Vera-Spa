@@ -1515,9 +1515,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       @media(max-width:430px){.live-tour-selection-summary{grid-column:1/-1}.live-tour-card-grid{grid-template-columns:1fr}}
     `}</style>
     {canPending && hasPendingReminder && pendingReminder && createPortal(
-      <aside className="live-tour-payment-reminder" aria-label="Hóa đơn chờ thanh toán" role="status" aria-live="polite">
+      <aside className="live-tour-payment-reminder" aria-label="Hóa đơn chờ thanh toán" role="status" aria-live="polite" aria-atomic="true">
         <BellRing size={20} aria-hidden="true"/>
-        <div className="live-tour-payment-reminder-copy"><strong>Hóa đơn chờ thanh toán</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span></div>
+        <div className="live-tour-payment-reminder-copy"><strong>Hóa đơn chờ thanh toán</strong><span key={pendingReminder.id}>Hiện có {pendingReminderCount} phiếu cần xử lý.</span></div>
         <button type="button" className="live-tour-payment-reminder-close" aria-label="Đóng nhắc hóa đơn chờ thanh toán" onClick={() => setPendingReminder(null)}><X size={18}/></button>
         <button data-ui-key="u-1d49f95cc184" data-ui-label-default="Mở danh sách" type="button" className="secondary-button live-tour-payment-reminder-open" onClick={openPendingPanel} aria-controls="live-tour-pending-panel"><UiCustomText uiKey="u-1d49f95cc184">Mở danh sách</UiCustomText></button>
       </aside>, document.body)}
