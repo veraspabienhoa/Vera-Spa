@@ -26,7 +26,9 @@ import vera_web_v2_snapshot as attendance
 import vera_web_v2_work_schedule as work_schedule
 
 
-RELEASE = "department-payroll-hr-2026-09-22-v8"
+RELEASE = "department-payroll-combo-exclusion-2026-09-26-v9"
+COMBO_COMMISSION = 100_000
+PAYROLL_EXCLUDED_SQL = "lower(btrim(COALESCE(payload->>'Không tính lương','false'))) IN ('1','true','yes','y','có','x','ẩn')"
 DEPARTMENTS = {
     "quanly": "Quản lý",
     "locker": "Locker",
@@ -267,6 +269,7 @@ def _salary_employee_catalog(conn) -> list[dict[str, Any]]:
         SELECT username,COALESCE(full_name,'') AS full_name,{hr.DEPARTMENT_SQL} AS role
         FROM employees
         WHERE {hr.ADMIN_PAY_SQL}
+          AND NOT ({PAYROLL_EXCLUDED_SQL})
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
         ORDER BY CASE lower(COALESCE(role,''))
@@ -407,6 +410,7 @@ def _employees(conn, department: str) -> list[dict[str, Any]]:
         SELECT username,COALESCE(full_name,'') AS full_name,COALESCE(email,'') AS email
         FROM employees
         WHERE {hr.DEPARTMENT_SQL}=:department
+          AND NOT ({PAYROLL_EXCLUDED_SQL})
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
         ORDER BY COALESCE(stt,2147483647),username
@@ -428,8 +432,36 @@ def _penalty_maps(conn, start: date, end: date, norm: Callable[[Any], str]) -> t
     return other, late
 
 
-def _calculation(conn, department: str, month: str, norm: Callable[[Any], str]) -> dict[str, Any]:
+def _combo_sale_counts(conn, start: date, end: date) -> dict[str, int]:
+    # The employee-specific combo ledger is authoritative. Do not add the old
+    # schedule checkbox or a default allowance, which can count the same sale twice.
+    if not conn.execute(text("SELECT to_regclass('vera_work_schedule_combo_sale')")).scalar():
+        return {}
+    rows = conn.execute(text("""
+        SELECT lower(btrim(employee_username)) AS employee, COUNT(*) AS count
+        FROM vera_work_schedule_combo_sale
+        WHERE department IN ('quanly','letan') AND sale_date BETWEEN :start AND :end
+        GROUP BY lower(btrim(employee_username))
+    """), {"start": start, "end": end}).mappings().all()
+    return {row["employee"]: int(row["count"]) for row in rows}
+
+
+def _visible_payroll_rows(conn, rows):
+    """Filter a saved view without rewriting completed payroll or source money."""
+    if not isinstance(rows, list) or not rows:
+        return []
+    excluded = {str(row["username"]).strip().casefold() for row in conn.execute(
+        text(f"SELECT username FROM employees WHERE {PAYROLL_EXCLUDED_SQL}")
+    ).mappings().all()}
+    visible = [dict(row) for row in rows if isinstance(row, dict)
+               and str(row.get("employee_username") or "").strip().casefold() not in excluded]
+    return [dict(row, tt=index) for index, row in enumerate(visible, 1)]
+
+
+def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None) -> dict[str, Any]:
     start, end, label = _draft_month_range(month)
+    if combo_counts is None:
+        combo_counts = _combo_sale_counts(conn, start, end)
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
@@ -457,7 +489,9 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str]) 
             "full_allowance": totals["full_days"] * employee_cfg["full_day_allowance"],
             "attendance_bonus": employee_cfg["default_attendance_bonus"],
             "responsibility": employee_cfg["default_responsibility"], "seniority": employee_cfg["default_seniority"],
-            "combo_sales": employee_cfg["default_combo_sales"], "other_income_1": 0, "other_income_2": 0,
+            "combo_count": combo_counts.get(username.casefold(), 0),
+            "combo_sales": combo_counts.get(username.casefold(), 0) * COMBO_COMMISSION,
+            "other_income_1": 0, "other_income_2": 0,
             "violation_penalty": violation_map.get(norm(username), 0),
             "late_penalty": late_map.get(norm(username), 0), "advance": 0,
             "incomplete_days": totals["incomplete_days"],
@@ -547,9 +581,11 @@ def _schedule_totals(
     return totals
 
 
-def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str]) -> dict[str, Any]:
+def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None) -> dict[str, Any]:
     start, end, label = _draft_month_range(month)
     work_schedule._ensure_schema(conn)
+    if combo_counts is None:
+        combo_counts = _combo_sale_counts(conn, start, end)
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
@@ -591,7 +627,9 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
             "full_allowance": totals["full_days"] * employee_cfg["full_day_allowance"],
             "attendance_bonus": employee_cfg["default_attendance_bonus"],
             "responsibility": employee_cfg["default_responsibility"],
-            "seniority": employee_cfg["default_seniority"], "combo_sales": employee_cfg["default_combo_sales"],
+            "seniority": employee_cfg["default_seniority"],
+            "combo_count": combo_counts.get(username.casefold(), 0),
+            "combo_sales": combo_counts.get(username.casefold(), 0) * COMBO_COMMISSION,
             "other_income_1": 0, "other_income_2": 0,
             "violation_penalty": violation_map.get(norm(username), 0),
             "late_penalty": late_map.get(norm(username), 0), "advance": 0,
@@ -606,11 +644,13 @@ def _combined_calculation(conn, month: str, norm: Callable[[Any], str], source: 
     if source not in {"attendance", "schedule"}:
         raise HTTPException(400, "Nguồn tính lương không hợp lệ.")
     calculator = _schedule_calculation if source == "schedule" else _calculation
+    start, end, _ = _draft_month_range(month)
+    combo_counts = _combo_sale_counts(conn, start, end)
     rows: list[dict[str, Any]] = []
     settings: dict[str, Any] = {}
     employee_configs = _employee_config_map(conn)
     for department in hr.admin_departments(conn):
-        result = calculator(conn, department, month, norm)
+        result = calculator(conn, department, month, norm, combo_counts=combo_counts)
         settings[department] = result
         for row in result["rows"]:
             cfg = employee_configs.get(str(row["employee_username"]).casefold(), result["config"])
@@ -643,6 +683,7 @@ def _combined_employee_catalog(conn) -> dict[str, dict[str, Any]]:
                {hr.DEPARTMENT_SQL} AS role
         FROM employees
         WHERE {hr.ADMIN_PAY_SQL}
+          AND NOT ({PAYROLL_EXCLUDED_SQL})
     """)).mappings().all()
     return {str(item["username"]).strip().casefold(): dict(item) for item in rows}
 
@@ -656,7 +697,7 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
         key = str(supplied.get("employee_username") or "").strip().casefold()
         employee = catalog.get(key)
         if not key or key in seen or not employee:
-            raise HTTPException(400, "Bảng lương có nhân viên trống, trùng hoặc không thuộc Lương hành chánh.")
+            raise HTTPException(400, "Bảng lương có nhân viên trống, trùng, không thuộc Lương hành chánh hoặc đang đánh dấu Không tính lương. Hãy tải lại bảng.")
         seen.add(key)
         department = str(employee.get("role") or "").lower()
         supplied_cfg = supplied.get("calculation_config")
@@ -863,6 +904,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
             rows = payroll._setting(conn, f"department_payroll_combined_draft_{month}", [])
+            rows = _visible_payroll_rows(conn, rows)
         return {"ok": True, "month": month, "rows": rows if isinstance(rows, list) else []}
 
     @app.put("/v2/department-payroll/combined/draft")
@@ -903,6 +945,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             if not item:
                 raise HTTPException(404, "Không tìm thấy lịch sử bảng Lương hành chánh.")
             rows = item.get("rows") if isinstance(item.get("rows"), list) else []
+            rows = _visible_payroll_rows(conn, rows)
             payroll._put_setting(conn, f"department_payroll_combined_draft_{item['month']}", rows, ident.employee_username)
         return {
             "ok": True, "history_id": wanted, "month": item["month"], "rows": rows,
@@ -960,7 +1003,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         department = valid_department(department); _month_range(month)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
-            return {"rows": payroll._setting(conn, _setting_key(department, f"draft_{month}"), []), "department": department, "month": month}
+            return {"rows": _visible_payroll_rows(conn, payroll._setting(conn, _setting_key(department, f"draft_{month}"), [])), "department": department, "month": month}
 
     @app.put("/v2/department-payroll/draft")
     def save_draft(body: DepartmentDraft, ident: identity_type = Depends(current_identity)):
