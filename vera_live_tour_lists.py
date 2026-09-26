@@ -37,7 +37,7 @@ def invoice_numbers(row):
     return [row.get('bill_no',''), *row.get('bill_numbers',[]), *[number for key in ('before','after','invoice','pending','payload') for number in invoice_numbers(row.get(key))]]
 
 
-def matches(row, *, date_from='', date_to='', employee='', customer='', service='', bill_no='', history=False):
+def matches(row, *, date_from='', date_to='', employee='', customer='', service='', bill_no='', history=False, invoice_dates=False):
     if history:
         row = {**row, 'effective_at':row.get('effective_at') or row.get('at') or row.get('created_at') or row.get('timestamp'),
                'customer_name':row.get('customer_name') or (row.get('before') or {}).get('name') or (row.get('after') or {}).get('name'),
@@ -45,7 +45,7 @@ def matches(row, *, date_from='', date_to='', employee='', customer='', service=
     if bill_no and not any(bill_no.strip().lower() in str(number).lower() for number in invoice_numbers(row)):
         return False
     if date_from or date_to:
-        raw = row.get('effective_at') or row.get('booked_at') or row.get('created_at') or row.get('business_date')
+        raw = (row.get('effective_at') or row.get('business_date')) if invoice_dates else (row.get('effective_at') or row.get('booked_at') or row.get('created_at') or row.get('business_date'))
         try:
             moment = datetime.fromisoformat(str(raw).replace('Z','+00:00'))
             day = (moment.replace(tzinfo=VN) if moment.tzinfo is None else moment.astimezone(VN)).date().isoformat()

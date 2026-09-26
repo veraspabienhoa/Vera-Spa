@@ -13,7 +13,7 @@ def test_revenue_tip_uses_native_date_filters_and_readonly_auto_total():
     assert 'aria-label="Tiền TIP trong kỳ tự động"' in page
     assert 'readOnly' in page
     assert 'loadPeriodTip(tipStart, tipEnd, controller.signal, !sharedSourceSupported)' in page
-    assert "return tourRowDate(row)" in helper
+    assert "return invoiceRowDate(row)" in helper
     filters = Path("web-v2/src/lib/liveTourFilters.js").read_text(encoding="utf-8")
     assert "row?.effective_at || row?.booked_at || row?.created_at || row?.business_date" in filters
     assert "revenueTipValue(row?.tip)" in helper

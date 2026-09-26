@@ -39,10 +39,13 @@ export function tourRowDate(row) {
   const parsed = new Date(raw)
   return Number.isFinite(parsed.getTime()) ? day(parsed) : ''
 }
-export function filterTourRows(rows, filters) {
+export function invoiceRowDate(row) {
+  return tourRowDate({ effective_at: row?.effective_at || row?.business_date })
+}
+export function filterTourRows(rows, filters, invoiceDates = false) {
   return rows.filter(row => {
     if (filters.bill_no && !invoiceNumbers(row).some(number => String(number).toLowerCase().includes(filters.bill_no.trim().toLowerCase()))) return false
-    const date = tourRowDate(row)
+    const date = invoiceDates ? invoiceRowDate(row) : tourRowDate(row)
     if ((filters.date_from && (!date || date < filters.date_from)) || (filters.date_to && (!date || date > filters.date_to))) return false
     if (filters.customer && !customerMatches(row, filters.customer)) return false
     const entries = row.entries?.length ? row.entries : [row]

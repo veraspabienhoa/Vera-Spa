@@ -419,6 +419,16 @@ def install_purchase_reconcile_routes(
     if getattr(app.state, "purchase_reconcile_installed", False):
         return
 
+    @app.get('/v2/revenue/purchases')
+    def revenue_purchases(preset: str = 'this_month', start: date | None = None,
+                          end: date | None = None, ident=Depends(current_identity)):
+        first, last = _resolve_range(preset, start, end)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            rows = revenue_auto.purchase_rows(conn, first, last)
+        return {'purchase_rows': _serialize_rows(rows), 'purchase_total': sum(row['amount'] for row in rows),
+                'start_date': first.isoformat(), 'end_date': last.isoformat(), 'source': 'purchases'}
+
     @app.get("/v2/revenue/purchase-reconcile/health")
     def purchase_reconcile_health():
         return {
@@ -446,12 +456,11 @@ def install_purchase_reconcile_routes(
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             shared = revenue_auto.mode(conn)
+            purchase_all = revenue_auto.purchase_rows(conn, start, end)
             if shared["source"] == "auto" or canonical:
                 start, end = revenue_auto.bounds(start, end)
-                purchase_all = revenue_auto.purchase_rows(conn, start, end)
                 ledger_all = revenue_report.ledger_rows(conn, start, end, editable_history=shared["source"] != "auto")
             else:
-                purchase_all = server_reconcile_rows(conn)
                 ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
         server_source = purchase_all is not None
         if purchase_all is None:
@@ -522,9 +531,11 @@ def install_purchase_reconcile_routes(
         start, end = _resolve_range(preset, start_date, end_date)
         if canonical and report_end is not None:
             end = min(end, report_end)
+        if canonical:
+            start, end = revenue_auto.bounds(start, end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            if revenue_auto.mode(conn)["source"] == "auto" or canonical:
+            if revenue_auto.mode(conn)["source"] == "auto":
                 start, end = revenue_auto.bounds(start, end)
                 rows = revenue_auto.ledger_rows(revenue_auto.daily(conn, start, end))
             else:

@@ -10,7 +10,7 @@ function typedDate(value) {
 
 export default function VeraDateInput({
   value = '', onChange, min = '', max = '', disabled = false, readOnly = false,
-  required = false, className = '', name, id, 'aria-label': ariaLabel,
+  required = false, className = '', name, id, onDraftValidity, 'aria-label': ariaLabel,
 }) {
   const [display, setDisplay] = useState(() => formatVeraDate(value))
   const [invalid, setInvalid] = useState(false)
@@ -30,6 +30,7 @@ export default function VeraDateInput({
 
   const validateAndEmit = (nextDisplay, allowPartial = true) => {
     if (!nextDisplay) {
+      onDraftValidity?.(false)
       setInvalid(false)
       textRef.current?.setCustomValidity('')
       emit('')
@@ -39,6 +40,7 @@ export default function VeraDateInput({
     const complete = nextDisplay.length === 10
     const outOfRange = Boolean(iso && ((min && iso < min) || (max && iso > max)))
     const hasError = (complete && !iso) || outOfRange || (!allowPartial && !iso)
+    onDraftValidity?.(Boolean(iso && !outOfRange))
     setInvalid(hasError)
     textRef.current?.setCustomValidity((!iso || outOfRange) ? 'Ngày phải đúng định dạng dd-mm-yyyy và nằm trong phạm vi cho phép.' : '')
     if (iso && !outOfRange) emit(iso)
@@ -52,6 +54,7 @@ export default function VeraDateInput({
 
   const pickDate = (event) => {
     const iso = event.target.value
+    onDraftValidity?.(Boolean(iso && (!min || iso >= min) && (!max || iso <= max)))
     setDisplay(formatVeraDate(iso))
     setInvalid(false)
     textRef.current?.setCustomValidity('')

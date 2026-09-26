@@ -82,8 +82,8 @@ export default function LiveTourReportsPage({ user }) {
     finally { running.current = false; setBusy(false) }
   }
   const invoiceById = useMemo(() => new Map(data.invoices.map(invoice => [invoice.id, invoice])), [data.invoices])
-  const invoices = filterTourRows(data.invoices, filters)
-  const reports = filterTourRows(data.reports, filters)
+  const invoices = filterTourRows(data.invoices, filters, true)
+  const reports = filterTourRows(data.reports, filters, true)
   const performance = filterTourRows(data.performance || [], filters)
   const performanceRows = performance.filter(row => {
     if (performanceTiming === 'all') return true

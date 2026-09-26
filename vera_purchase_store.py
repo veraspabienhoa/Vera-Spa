@@ -150,6 +150,18 @@ def import_workbook(conn, content, actor, mode='append', rows=None):
     return dict(source_rows=len(rows), inserted=inserted, skipped=len(rows)-inserted, total=str(total), sha256=digest)
 
 
+def list_entries(conn, start, end):
+    return [dict(row) for row in conn.execute(text('''SELECT id,purchase_date,item,quantity,
+        unit_price,amount,note,entered_at,entered_by,revision FROM vera_purchase_entry
+        WHERE NOT deleted AND purchase_date BETWEEN :start AND :end
+        ORDER BY purchase_date DESC,id DESC'''), {'start': start, 'end': end}).mappings()]
+
+
+def report_rows(conn, start, end):
+    return [dict(row, date=row['purchase_date'], date_label=row['purchase_date'].strftime('%d-%m-%Y'),
+                 buyer=row['note'], user=row['entered_by']) for row in list_entries(conn,start,end)]
+
+
 def server_reconcile_rows(conn):
     """None means not migrated; an empty ledger after deletion stays empty."""
     if not conn.execute(text("SELECT to_regclass('vera_purchase_entry')")).scalar_one_or_none():
