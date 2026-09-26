@@ -167,6 +167,24 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
                 WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'""")).mappings().all()
         return {'records': batch_plan(body.filenames, employees)}
 
+    @app.get('/v2/face-id/assignment-employees')
+    def assignment_employees(ident: identity_type = Depends(current_identity)):
+        # Names only: never read all image blobs or the attendance projection.
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'device_history_view')
+            try:
+                require_feature(conn, ident, 'employee_face_id_all_users_edit')
+            except HTTPException as exc:
+                if exc.status_code != 403:
+                    raise
+                require_feature(conn, ident, 'employee_face_id_manage')
+            rows = conn.execute(text("""SELECT username, COALESCE(full_name,'') AS full_name
+                FROM employees WHERE COALESCE(payload->>'__deleted','false') <> 'true'
+                ORDER BY username LIMIT 1001""")).mappings().all()
+            if len(rows) > 1000:
+                raise HTTPException(400, 'Danh sách vượt 1.000 nhân viên. Hãy chọn ảnh từ hồ sơ nhân viên.')
+        return {'employees': [dict(row) for row in rows]}
+
     @app.get('/v2/staff/{username}/face-id')
     def metadata(username: str, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
@@ -225,7 +243,7 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
                 if existing == digest:
                     return {'ok': True, 'message': 'Ảnh này đã được lưu.'}
                 if (if_none_match == '*' and existing) or (if_match is not None and existing != if_match.strip('"')):
-                    raise HTTPException(409, 'Ảnh FACE ID đã thay đổi. Hãy chọn lại lô ảnh để kiểm tra trước khi thay.')
+                    raise HTTPException(409, 'Ảnh FACE ID đã thay đổi. Hãy tải lại ảnh hiện có để kiểm tra trước khi thay.')
             conn.execute(text('''INSERT INTO vera_employee_face_id
                 (employee_username,content,content_type,size_bytes,sha256,updated_by)
                 VALUES (:username,:content,:type,:size,:sha,:actor)

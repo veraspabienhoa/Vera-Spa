@@ -1215,3 +1215,29 @@ The scheduler failure remains a failed workflow, not a claimed successful setup.
 Regression tests execute the actual installer with simulated non-root commands,
 existing/empty/denied/concurrently changed crontabs, an inactive daemon and repeated
 installation. Live cron availability and execution still require deployment.
+
+## 27-09-2026: chọn ảnh Capture Log cho hồ sơ FACE ID của nhân viên
+
+Ảnh người dùng xác nhận 0/66 ánh xạ có hiệu lực tại IP hiện tại. Bản PDF ngày
+26-09 hiển thị 132 sự kiện chưa có ánh xạ duy nhất và thiếu log TimeSoft cho
+bộ đối chiếu. Đây không phải chứng cứ ánh xạ bị xóa hay hai nguồn đã khớp.
+
+Theo yêu cầu mới, thêm Chọn ảnh cho nhân viên sau khi xem ảnh Capture Log.
+Danh mục chỉ đọc tên hệ thống và họ tên, tải khi mở công cụ, yêu cầu đồng thời
+quyền xem lịch sử thiết bị và quản lý FACE ID. Người vận hành chọn rõ nhân viên,
+xem ảnh FACE ID hiện có, cắt ảnh 3:4, xác nhận và bấm Lưu. Dùng đúng blob vừa
+xem; không quét lại toàn bộ Capture Log khi lưu. Nhân viên đã xóa không được
+chọn; lưu vẫn kiểm tra quyền, định dạng, kích thước và tỷ lệ qua API FACE ID.
+
+Lưu có điều kiện theo SHA ảnh lúc xem (hoặc If-None-Match khi chưa có ảnh), dùng
+khóa nhân viên hiện hữu; hai người thay cùng ảnh chỉ một người thành công.
+Retry đúng nội dung đã lưu không ghi lại. Xung đột giữ ảnh đang chọn và yêu cầu
+đọc lại ảnh hiện tại rồi xác nhận; lỗi mạng không xóa ảnh nháp. Dialog giữ vị trí
+trang, ảnh chỉ tải khi xem, phần cắt ảnh được tải theo yêu cầu. Không đưa ảnh vào
+Excel danh sách nhân viên, không đổi ảnh CCCD/đại diện hoặc tự ánh xạ nhân viên.
+
+Ảnh này lưu trong mục ẢNH FACE ID riêng của VERA. Adapter hiện có chỉ đọc hồ sơ,
+log và ảnh; chưa có luồng đăng ký ảnh mới lên thiết bị được xác minh. Không gửi
+lệnh ghi không rõ giao thức tới FaceGate, không đổi nguồn công hoặc ngừng TimeSoft.
+Kiểm thử HTTP/PostgreSQL, quyền, Unicode, retry và lưu đồng thời cùng kiểm thử
+UI được bổ sung. Chưa xác nhận thao tác lưu ảnh này trên VPS production.

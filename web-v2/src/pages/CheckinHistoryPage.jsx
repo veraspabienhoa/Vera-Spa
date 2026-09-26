@@ -2,7 +2,7 @@ import AttendanceCodePicker from '../components/AttendanceCodePicker'
 import FacegateAttendancePreview from '../components/FacegateAttendancePreview'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Download, History, RefreshCw } from 'lucide-react'
 import VeraDateInput from '../components/VeraDateInput'
 import { veraApi } from '../lib/api'
@@ -10,6 +10,8 @@ import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
 
 import { CHECKIN_PRESETS, EMPTY_CHECKIN_DETAILS, checkinDateRange, checkinQuery, checkinRangeError, initialCheckinFilters } from '../lib/checkinHistory'
 import './DevicesAndCheckin.css'
+
+const FacegateCaptureAssignment = lazy(() => import('../components/FacegateCaptureAssignment'))
 
 function MappingCheck({ record }) {
   const [result, setResult] = useState(null)
@@ -65,8 +67,11 @@ function FacegateMappings() {
   </details>
 }
 
-function CaptureImageButton({ record }) {
+function CaptureImageButton({ record, onChoose }) {
   const [imageUrl, setImageUrl] = useState('')
+  const [imageBlob, setImageBlob] = useState(null)
+  const active = useRef(true)
+  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -77,22 +82,26 @@ function CaptureImageButton({ record }) {
     setBusy(true); setError('')
     try {
       const blob = await veraApi.facegateCaptureImage(record.image_ref)
+      if (!active.current) return
       if (!String(blob.type || '').toLowerCase().startsWith('image/')) throw new Error('Thiết bị không trả về dữ liệu ảnh.')
-      setImageUrl(URL.createObjectURL(blob)); setOpen(true)
+      setImageBlob(blob); setImageUrl(URL.createObjectURL(blob)); setOpen(true)
     } catch (cause) {
-      setError(cause.message || 'Không tải được ảnh capture.')
-    } finally { setBusy(false) }
+      if (active.current) setError(cause.message || 'Không tải được ảnh capture.')
+    } finally { if (active.current) setBusy(false) }
   }
 
   return <div>
     <button className="secondary-button" type="button" disabled={busy} onClick={toggle}>{busy ? 'Đang tải ảnh…' : open ? 'Ẩn ảnh' : 'Xem ảnh'}</button>
     {error && <small role="alert">{error}</small>}
-    {open && imageUrl && <div><img src={imageUrl} alt={`Ảnh capture sự kiện ${record.event_id}`} loading="lazy" style={{ display: 'block', width: 120, height: 160, objectFit: 'contain', marginTop: 8 }} /></div>}
+    {open && imageUrl && <div><img src={imageUrl} alt={`Ảnh capture sự kiện ${record.event_id}`} loading="lazy" style={{ display: 'block', width: 120, height: 160, objectFit: 'contain', marginTop: 8 }} />{onChoose && <button type="button" className="secondary-button" onClick={() => onChoose(record, imageBlob)}>Chọn ảnh cho nhân viên</button>}</div>}
   </div>
 }
 
 export default function CheckinHistoryPage({ user }) {
-  usePageRefresh(() => load(), () => Boolean(busy || exporting))
+  usePageRefresh(() => load(), () => Boolean(busy || exporting || selectedCapture))
+  const [selectedCapture, setSelectedCapture] = useState(null)
+  const [assignmentNotice, setAssignmentNotice] = useState('')
+  const canAssign = user?.role === 'admin' || user?.permissions?.employee_face_id_manage || user?.permissions?.employee_face_id_all_users_edit
   const [filters, setFilters] = useState(initialCheckinFilters)
   const [records, setRecords] = useState(null)
   const [loadedQuery, setLoadedQuery] = useState(null)
@@ -181,13 +190,13 @@ export default function CheckinHistoryPage({ user }) {
           </tr>)}
         </tbody></table></div>
       </> : source === 'capture' ? <>
-        <p>{visible.length} ảnh/sự kiện Capture Log trong kỳ. Máy không gửi mã nhân viên trong danh sách này; ảnh chỉ để Admin tra cứu, không ghép hồ sơ và không dùng tính công/lương. Ảnh chỉ tải khi bấm Xem ảnh và không lưu vào VERA.</p>
+        <p>{visible.length} ảnh/sự kiện Capture Log trong kỳ. Ảnh chỉ tải khi bấm Xem ảnh. Kiểm tra đúng nhân viên trước khi chọn và lưu vào ẢNH FACE ID; thao tác này chưa đăng ký ảnh lên máy hoặc thay đổi chấm công.</p>
         {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn. Hãy thu hẹp khoảng ngày để xem và xuất đầy đủ dữ liệu.</p>}
         <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Loại sự kiện</th><th>Trạng thái trên máy</th><th>Ảnh capture</th></tr></thead><tbody>
           {visible.map(item => <tr key={item.event_id}>
             <td data-label="Mã sự kiện">{item.event_id}</td><td data-label="Thời điểm">{formatVeraDateTime(item.occurred_at, '—')}</td>
             <td data-label="Loại sự kiện">{item.event_text || '—'}</td><td data-label="Trạng thái trên máy">{item.event_status || '—'}</td>
-            <td data-label="Ảnh capture">{item.image_available ? <CaptureImageButton record={item} /> : 'Không có ảnh'}</td>
+            <td data-label="Ảnh capture">{item.image_available ? <CaptureImageButton key={`${item.event_id}-${JSON.stringify(item.image_ref)}`} record={item} onChoose={canAssign ? (record, blob) => { setAssignmentNotice(''); setSelectedCapture({ record, blob }) } : undefined} /> : 'Không có ảnh'}</td>
           </tr>)}
         </tbody></table></div>
       </> : <>
@@ -201,6 +210,12 @@ export default function CheckinHistoryPage({ user }) {
         </tbody></table></div>
       </>}
     </>}
+    {assignmentNotice && <p role="status">{assignmentNotice}</p>}
+    {selectedCapture && <Suspense fallback={<p role="status">Đang mở chọn ảnh…</p>}><FacegateCaptureAssignment capture={selectedCapture}
+      onClose={() => setSelectedCapture(null)} onSaved={username => {
+        setAssignmentNotice(`Đã lưu ẢNH FACE ID cho ${username} trong VERA SPA. Chưa đăng ký ảnh lên máy FaceGate.`)
+        setSelectedCapture(null)
+      }}/></Suspense>}
     {user?.permissions?.device_facegate_mapping_manage && <FacegateMappings />}
     {user?.role === 'admin' && <FacegateAttendancePreview />}
   </section>
