@@ -57,6 +57,7 @@ jobs:
             "set -e; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; curl -fsS http://127.0.0.1:8000/v2/health >/dev/null"
 
       - name: Deploy exact commit
+        id: deploy_commit
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -76,7 +77,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             "set -euo pipefail; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f \"/proc/\$pid/cwd\"); test \"\$(git -C \"\$release_dir\" rev-parse HEAD)\" = '$DEPLOY_SHA'; test -f \"\${release_dir}/configure_vps_database.sh\"; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_concurrency_schema.py\" --apply --verify; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_data_check.py\""
 
-      - name: Install FaceGate archive timer without changing attendance source
+      - name: Install FaceGate archive schedule as the deployment account
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -93,6 +94,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; timeout 15 /opt/vera-spa/.venv/bin/python vera_technical_retention.py; timeout 30 /opt/vera-spa/.venv/bin/python vera_technical_retention.py --apply --scheduled'
 
       - name: Verify production Auth through browser edge policy
+        if: ${{ !cancelled() && steps.deploy_commit.outcome == 'success' }}
         shell: bash
         run: |
           python - <<'PY'
@@ -130,6 +132,7 @@ jobs:
           PY
 
       - name: Verify exact production commit and health
+        if: ${{ !cancelled() && steps.deploy_commit.outcome == 'success' }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -140,6 +143,7 @@ jobs:
             "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f /proc/\$pid/cwd); live_sha=\$(git -C \"\$release_dir\" rev-parse HEAD); test \"\$live_sha\" = '$DEPLOY_SHA'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; curl -fsS http://127.0.0.1:8000/v2/health >/dev/null"
 
       - name: Verify public frontend commit and entry document
+        if: ${{ !cancelled() && steps.deploy_commit.outcome == 'success' }}
         env:
           DEPLOY_SHA: ${{ github.sha }}
         run: python vera_web_release_check.py --revision "$DEPLOY_SHA"

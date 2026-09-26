@@ -1186,3 +1186,32 @@ of 250 records plus two per-day bookkeeping statements; the evidence digest chec
 and transaction rollback remain mandatory. Regression tests use synthetic records,
 including first insert/replay, a conflict in the second batch, a pool of one,
 read-only enforcement, Unicode names, repeats, date rollover and ambiguous shifts.
+
+## 27-09-2026: FaceGate scheduler installer rejects the deployment account
+
+Deploy VPS Production #564, run 36265105847, confirms DEPLOY SUCCESS for
+21fcc40 and passes active-release/schema verification, then fails in the newly
+added FaceGate timer step with exit code 1 and no diagnostic. The API remains
+active. The installer begins with an unconditional `id -u = 0` test, incompatible
+with the documented production setup: the deployment and API share an
+unprivileged account. This root-only assumption was introduced in PR #305.
+The run does not establish that the timer was installed or that the subsequent
+public frontend/health gates passed; those steps were skipped.
+
+Replace privileged system-unit installation with a current-account crontab entry.
+Check API ownership, worker/Python files, writable status/lock files and an active
+cron daemon first. Preserve unrelated crontab entries, serialize installers,
+reject concurrent changes detected before replacement, and verify the installed
+entry. Repeated installation does not duplicate or rewrite an unchanged entry.
+Keep an existing active FaceGate timer if one was separately installed. No sudo,
+permission grants, service restart or source cutover is performed. The archive
+worker's existing nonblocking lock still excludes concurrent cron/hourly runs.
+The schedule checks every minute; a still-running archive is skipped.
+
+Failures now report a bounded stage/reason without dumping existing crontabs,
+credentials or API environment. Auth, commit/business health and frontend checks
+still run after a successful application deployment even if scheduler setup fails.
+The scheduler failure remains a failed workflow, not a claimed successful setup.
+Regression tests execute the actual installer with simulated non-root commands,
+existing/empty/denied/concurrently changed crontabs, an inactive daemon and repeated
+installation. Live cron availability and execution still require deployment.
