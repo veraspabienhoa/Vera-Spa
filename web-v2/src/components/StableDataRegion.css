@@ -1,0 +1,15 @@
+.stable-data-region { position: relative; min-width: 0; max-width: 100%; min-height: 48px; }
+.stable-data-content { min-width: 0; max-width: 100%; }
+.stable-data-region[aria-busy="true"] > .stable-data-content { opacity: .55; pointer-events: none; }
+.stable-data-loading {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  padding: 10px;
+  border: 1px solid #b9cec2;
+  border-radius: 6px;
+  color: #163b2a;
+  background: #edf5ef;
+  overflow-wrap: anywhere;
+}
+@media print { .stable-data-loading { display: none; } }

@@ -1,3 +1,4 @@
+import usePageRefresh from '../lib/usePageRefresh'
 import LiveTourBoard from '../components/LiveTourBoard'
 import LiveTourPendingPanel from '../components/LiveTourPendingPanel'
 import LiveTourInvoicesPanel from '../components/LiveTourInvoicesPanel'
@@ -568,6 +569,7 @@ const EMPTY_FORM = {
 }
 
 export default function LiveTourPage({ user, navigationToggle = null }) {
+  usePageRefresh(() => load(true), () => Boolean(busy || actionBusy || modal || bookingContext || pendingContext))
   const cacheKey = liveTourCacheKey(user)
   const tipPreferenceKey = `${cacheKey}:tip-mode`
   const [boardData, setData] = useState(() => readCachedLiveTour(cacheKey))

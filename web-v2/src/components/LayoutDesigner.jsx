@@ -451,7 +451,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
         <div className="layout-designer-actions layout-element-actions">
           <button type="button" onClick={()=>addElement('box')}>Thêm box</button>
           <button type="button" onClick={()=>addElement('text')}>Thêm text</button>
-          <button type="button" disabled={!canEditText} onClick={()=>{setGuideTool('Sửa text');textEditor.current?.focus()}}>Sửa text</button>
+          <button type="button" disabled={!canEditText} onClick={()=>{setGuideTool('Sửa text');textEditor.current?.focus({ preventScroll: true })}}>Sửa text</button>
           <button type="button" disabled={!selectedKey} onClick={removeElement}>{configuration.custom_kind ? 'Xóa '+(configuration.custom_kind==='box'?'box':configuration.custom_kind==='text'?'text':customKinds[configuration.custom_kind]) : 'Xóa khỏi giao diện'}</button>
         </div>
         <div className="layout-designer-actions"><button type="button" disabled={!selectedKey} onClick={() => step(-1)}>← Trước</button><button type="button" disabled={!selectedKey} onClick={() => step(1)}>Sau →</button><button type="button" disabled={!selectedKey} onClick={selectParent}>Chọn khung cha</button></div>
@@ -499,7 +499,7 @@ function InlineLabelEditor({ target, value, onCommit, onCancel }) {
   const input = useRef(null)
   const cancelled = useRef(false)
   const rect = target.getBoundingClientRect()
-  useEffect(() => { input.current?.focus(); input.current?.select() }, [])
+  useEffect(() => { input.current?.focus({ preventScroll: true }); input.current?.select() }, [])
   return <input ref={input} className="layout-inline-label" aria-label="Sửa tên trực tiếp" maxLength={100} defaultValue={value}
     style={{ position: 'fixed', left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(Math.max(rect.width, 180), window.innerWidth - 16) - 8)), top: Math.max(8, Math.min(rect.top, window.innerHeight - 60)), width: Math.min(Math.max(rect.width, 180), window.innerWidth - 16) }}
     onBlur={event => { if (!cancelled.current) onCommit(event.target.value) }}

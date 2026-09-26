@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { useCallback, useEffect, useState } from 'react'
@@ -7,6 +9,7 @@ import './KtvShiftSettingsPanel.css'
 const labels = { letan: 'Lễ tân', locker: 'Locker', quanly: 'Quản lý', tapvu: 'Tạp vụ' }
 
 export default function DepartmentShiftSettingsPanel() {
+  usePageRefresh(() => load(), () => Boolean(busy || drafts))
   const [data, setData] = useState(null)
   const [department, setDepartment] = useState('')
   const [drafts, setDrafts] = useState(null)
@@ -39,8 +42,8 @@ export default function DepartmentShiftSettingsPanel() {
       if (drafts && !window.confirm('Bỏ các thay đổi ca chưa lưu?')) return
       setDepartment(key); setDrafts(null); setError(''); setNotice('')
     }}>{labels[key]}</button>)}<button data-ui-key="u-8f161594a3de" data-ui-label-default="Làm mới" className="secondary-button" type="button" disabled={busy} onClick={() => { if (!drafts || window.confirm('Bỏ các thay đổi ca chưa lưu?')) void load() }}><UiCustomText uiKey="u-8f161594a3de">Làm mới</UiCustomText></button></UiToolbar>
-    {error && <p className="error-box" role="alert">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
+    <StableFeedback>{error && <p className="error-box" role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}</StableFeedback>
     {busy && <p role="status">Đang xử lý…</p>}
     {department === 'quanly' ? <p>Quản lý dùng giờ làm theo từng ngày. Đặt giờ bắt đầu, giờ kết thúc và tăng ca tại Lịch làm việc → Quản lý.</p> : data && <>
       <h3>{labels[department]}</h3>

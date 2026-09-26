@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
 import { CalendarRange, DatabaseBackup, Download, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -25,6 +27,7 @@ const rangeFor = (preset) => {
 const LABELS = { leave: 'Lịch nghỉ', payroll: 'Bảng lương', attendance: 'Chấm công' }
 
 export default function StorageAdminPage() {
+  usePageRefresh(() => load(), () => Boolean(busy))
   const initial = rangeFor('current_month')
   const [preset, setPreset] = useState('current_month')
   const [start, setStart] = useState(initial[0])
@@ -71,7 +74,7 @@ export default function StorageAdminPage() {
 
   return <div className="feature-page storage-page">
     <div data-ui-key="u-6a8b09b301fb" className="page-heading"><div><span className="eyebrow"><DatabaseBackup size={14} /> Chỉ Admin</span><h1>BỘ NHỚ HỆ THỐNG</h1><p>Xuất bản lưu Excel và quản lý thời hạn lưu Lịch nghỉ, Bảng lương, Chấm công.</p></div><button data-ui-key="u-baadccdfc0f5" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'preview' ? 'spin' : ''} /><UiCustomText uiKey="u-baadccdfc0f5"> Làm mới</UiCustomText></button></div>
-    {notice && <div className={notice.type === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.type === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}</StableFeedback>
     <section data-ui-key="u-4e26ff629c4b" className="panel storage-range-panel">
       <div className="storage-presets">
         {[['previous_month', 'Tháng trước'], ['current_month', 'Tháng này'], ['previous_year', 'Năm trước'], ['custom', 'Tùy chỉnh']].map(([value, label]) => <button data-ui-key="u-9c02717ee425" key={value} className={preset === value ? 'active' : ''} onClick={() => choosePreset(value)}>{label}</button>)}

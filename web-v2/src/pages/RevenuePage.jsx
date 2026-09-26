@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, RefreshCw, Save, Upload, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
@@ -193,6 +195,7 @@ function statusTextClass(status) {
 }
 
 export default function RevenuePage({ user }) {
+  usePageRefresh(() => { setRevision(value => value + 1); setReconcileRevision(value => value + 1) }, () => Boolean(busy || savingTip || savingEntry || importingRevenue || entryEditor))
   const [data, setData] = useState(null)
   const [tip, setTip] = useState(0)
   const [tipStart, setTipStart] = useState('')
@@ -325,7 +328,7 @@ export default function RevenuePage({ user }) {
               : Number(result.tip_revenue || result.period_tip || 0)
             const balance = Math.round((Number(result.total_income || 0) - Number(result.total_expense || 0) - autoTip) * 100) / 100
             setData({ ...result, period_tip: autoTip, balance, period_tip_start: defaultTipStartDate, period_tip_end: defaultTipEndDate })
-            setTipRows(liveTourRows); setTip(autoTip); setTipStart(defaultTipStartDate); setTipEnd(defaultTipEndDate)
+            setTipRows(liveTourRows); setTip(autoTip); setTipStart(current => current || defaultTipStartDate); setTipEnd(current => current || defaultTipEndDate)
           }
         }
       } catch (err) {
@@ -632,9 +635,9 @@ export default function RevenuePage({ user }) {
       <div><span className="eyebrow"><CircleDollarSign size={14} /> Tài chính</span><h1>DOANH THU</h1><p className="revenue-source">Dữ liệu Thu/Chi được lưu trực tiếp trên server VERA SPA.</p></div>
       <button data-ui-key="u-416bf407a667" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={() => { setNotice(''); setRevision((value) => value + 1); setReconcileRevision((value) => value + 1) }} disabled={busy || reconcileBusy}><RefreshCw size={16} className={(busy || reconcileBusy) ? 'spin' : ''} /><UiCustomText uiKey="u-416bf407a667"> Làm mới</UiCustomText></button>
     </div>
-    {error && <div className="error-box">{error}</div>}
+    <StableFeedback>{error && <div className="error-box">{error}</div>}
     {notice && <div className="success-box">{notice}</div>}
-    {tipLoadError && <div className="error-box">{tipLoadError}</div>}
+    {tipLoadError && <div className="error-box">{tipLoadError}</div>}</StableFeedback>
 
     {isAdmin && <section data-ui-key="u-c8da699c05ac" className="revenue-source-toolbar">
       <div className="revenue-source-toggle" role="group" aria-label="Nguồn dữ liệu doanh thu">
@@ -708,7 +711,7 @@ export default function RevenuePage({ user }) {
           <button data-ui-key="u-e82fca1fc852" data-ui-label-default="Xóa lọc chi tiết" type="button" className="secondary-button" onClick={() => { setLedgerDate(''); setLedgerType(''); setLedgerAmountFilter(''); setLedgerNoteFilter(''); setLedgerEnteredDate(''); setLedgerEnteredByFilter(''); setPurchaseDate(''); setPurchaseItemFilter(''); setPurchaseBuyerFilter(''); setPurchaseUserFilter('') }}><UiCustomText uiKey="u-e82fca1fc852">Xóa lọc chi tiết</UiCustomText></button>
         </UiToolbar>
       </div>
-      {detailError && <div className="error-box">{detailError}</div>}
+      <StableFeedback>{detailError && <div className="error-box">{detailError}</div>}</StableFeedback>
       {detailBusy && !detailData && <div className="revenue-meta">Đang tải dữ liệu…</div>}
       {activeTab === 'ledger' && <div className="report-box"><div className="ledger-summary-head" aria-live="polite"><article className="ledger-filter-total"><TrendingUp size={18}/><div><span>Doanh thu theo bộ lọc</span><strong>{money(ledgerTotals.income)}</strong></div></article><article className="ledger-filter-total expense"><TrendingDown size={18}/><div><span>Chi phí theo bộ lọc</span><strong>{money(ledgerTotals.expense)}</strong></div></article>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <UiToolbar data-ui-key="u-ad73a3b151e3" className="ledger-selected-actions">{canEditEntry && <button data-ui-key="u-81a960c20c4e" data-ui-label-default="Sửa dòng đã chọn" type="button" className="secondary-button compact" disabled={!selectedLedgerRow} onClick={() => openRevenueEditor('edit')}><UiCustomText uiKey="u-81a960c20c4e">Sửa dòng đã chọn</UiCustomText></button>}{canDeleteEntry && <button data-ui-key="u-8f6a391301f0" data-ui-label-default="Xóa dòng đã chọn" type="button" className="secondary-button compact danger-button" disabled={!selectedLedgerRow} onClick={() => openRevenueEditor('delete')}><UiCustomText uiKey="u-8f6a391301f0">Xóa dòng đã chọn</UiCustomText></button>}</UiToolbar>}{isAdmin && <><input ref={revenueImportAppendRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'append')} /><input ref={revenueImportReplaceRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => handleRevenueImport(event, 'replace')} /><button data-ui-key="u-7e27da35f77d" type="button" className="secondary-button compact ledger-import" disabled={Boolean(importingRevenue)} onClick={() => revenueImportAppendRef.current?.click()}><Upload size={14}/>{importingRevenue === 'append' ? 'Đang import…' : 'Import thêm mới'}</button><button data-ui-key="u-20ceef2515eb" type="button" className="secondary-button compact ledger-import danger-button" disabled={Boolean(importingRevenue)} onClick={() => revenueImportReplaceRef.current?.click()}><Upload size={14}/>{importingRevenue === 'replace' ? 'Đang thay thế…' : 'Import thay toàn bộ'}</button></>}<button data-ui-key="u-69a7e9901e0b" type="button" className="secondary-button compact ledger-export" disabled={exportingLedger || detailBusy || !detailData} onClick={exportLedger}><Download size={14}/>{exportingLedger ? 'Đang xuất…' : 'Xuất Excel'}</button></div><div className="report-scroll"><table data-ui-key="u-3a04a395affa" className="report-table ledger-table"><thead><tr>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <th data-ui-key="u-8a7b4635a7e5" aria-label="Chọn dòng" className="ledger-check-column"/>}<th data-ui-key="u-98934399c8f7" data-ui-label-default="Ngày"><UiCustomText uiKey="u-98934399c8f7">Ngày</UiCustomText></th><th data-ui-key="u-17fd19573619" data-ui-label-default="Loại giao dịch"><UiCustomText uiKey="u-17fd19573619">Loại giao dịch</UiCustomText></th><th data-ui-key="u-2a5610621cae" data-ui-label-default="Số tiền" className="money"><UiCustomText uiKey="u-2a5610621cae">Số tiền</UiCustomText></th><th data-ui-key="u-8b640f64dc26" data-ui-label-default="Ghi chú"><UiCustomText uiKey="u-8b640f64dc26">Ghi chú</UiCustomText></th><th data-ui-key="u-3c424c661a02" data-ui-label-default="Ngày nhập"><UiCustomText uiKey="u-3c424c661a02">Ngày nhập</UiCustomText></th><th data-ui-key="u-5f9896c666d2" data-ui-label-default="Giờ nhập"><UiCustomText uiKey="u-5f9896c666d2">Giờ nhập</UiCustomText></th><th data-ui-key="u-21727193cf42" data-ui-label-default="Người nhập"><UiCustomText uiKey="u-21727193cf42">Người nhập</UiCustomText></th></tr></thead><tbody>
         {ledgerRows.map((row, index) => <tr key={`${row.date}-${index}`} className={`${row.is_purchase ? 'purchase-row' : ''} ${selectedLedgerId === row.id ? 'selected-ledger-row' : ''}`}>{(canEditEntry || canDeleteEntry) && revenueSource !== 'auto' && <td data-label="Chọn" className="ledger-check-column"><input type="checkbox" checked={selectedLedgerId === row.id} disabled={!canManageCurrentEntry(row)} onChange={() => setSelectedLedgerId(current => current === row.id ? null : row.id)} aria-label={`Chọn dòng ${row.type} ${row.date_label}`}/></td>}<td data-label="Ngày">{row.date_label}</td><td data-label="Loại giao dịch">{row.type}</td><td data-label="Số tiền" className="money">{money(row.amount)}</td><td data-label="Ghi chú">{row.note || '—'}</td><td data-label="Ngày nhập">{row.entered_date_label || '—'}</td><td data-label="Giờ nhập">{row.entered_time || '—'}</td><td data-label="Người nhập">{row.entered_by || '—'}</td></tr>)}
@@ -732,7 +735,7 @@ export default function RevenuePage({ user }) {
       </div>
 
       {filterPreset === 'custom' && (!customStart || !customEnd) && <div className="revenue-meta">Chọn đủ Từ ngày và Đến ngày để xem hai báo cáo.</div>}
-      {reconcileError && <div className="error-box">{reconcileError}</div>}
+      <StableFeedback>{reconcileError && <div className="error-box">{reconcileError}</div>}</StableFeedback>
       {reconcileBusy && !reconcile && <div className="revenue-meta">Đang đọc BaoCaoMuaHang và Quản lý Thu Chi…</div>}
 
       {reconcile && <>

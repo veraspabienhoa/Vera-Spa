@@ -1,3 +1,5 @@
+import StableFeedback from '../components/StableFeedback'
+import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
@@ -112,6 +114,7 @@ function AdminTrackingTable({ rows, emptyText, editable = false, onAdd, onEdit, 
 }
 
 export default function PayrollPersonalTracking({ user, standalone = false }) {
+  usePageRefresh(() => sectionOpen && load(), () => Boolean(busy || busyEmployee))
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const canUsePersonalTracking = isAdmin || trackedRoles.has(role)
@@ -215,7 +218,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
       {isAdmin && !sectionOpen && <div className="payroll-personal-collapsed-note">Khu vực này mặc định được ẩn để giao diện Bảng lương gọn hơn.</div>}
 
       {sectionOpen && <>
-        {error && <div className="error-box">{error}</div>}
+        <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
         {busy && !data && <div className="setup-note">Đang tải số liệu Tích lũy…</div>}
 
         {isAdmin ? <>

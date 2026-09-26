@@ -1,3 +1,6 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
+import StableDataRegion from '../components/StableDataRegion'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
@@ -102,6 +105,7 @@ const matchesEmployeeName = (employeeName, searchValue) => {
 }
 
 export default function LeaveRegistrationPage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(busy || saving || managing || mutationRef.current || changedRecords.length))
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
   const [date, setDate] = useState(today())
   const [rangeFilter, setRangeFilter] = useState('Hôm nay')
@@ -134,6 +138,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [form, setForm] = useState(emptyForm)
   const [busy, setBusy] = useState(true)
   const [loadState, setLoadState] = useState({ daily: 'loading', records: 'loading', reasons: 'loading', employees: 'loading' })
+  const [loadedRecordsScope, setLoadedRecordsScope] = useState('')
   const pageLoader = useRef(null)
   const latestLoad = useRef(null)
   if (!pageLoader.current) pageLoader.current = createLeavePageLoader()
@@ -252,6 +257,7 @@ export default function LeaveRegistrationPage({ user }) {
         if (id === 'records') {
           const loadedRecords = data.records || []
           setRecords(loadedRecords)
+          setLoadedRecordsScope(key(listRangeStart, listRangeEnd))
           setReasonDrafts(Object.fromEntries(loadedRecords.map((item) => [item.record_uid, item.leave_reason])))
           setSelectedUids([])
         }
@@ -275,6 +281,7 @@ export default function LeaveRegistrationPage({ user }) {
         setLoadState((current) => ({ ...current, [id]: 'ready' }))
       },
       onError(id, err) {
+        if (id === 'records' && [401, 403].includes(err.status)) setLoadedRecordsScope('')
         setLoadState((current) => ({ ...current, [id]: 'error' }))
         if (id === 'reasons') setRecordReasonErrors((current) => ({ ...current, [date]: err.message || 'Không tải được lý do nghỉ.' }))
         if (!afterSave) {
@@ -726,7 +733,7 @@ export default function LeaveRegistrationPage({ user }) {
         <button data-ui-key="u-a75ced431985" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-a75ced431985"> Làm mới</UiCustomText></button>
       </div>
 
-      {!isApiConfigured && (
+      <StableFeedback>{!isApiConfigured && (
         <div className="warning-box"><strong>Chế độ chỉ đọc.</strong> API chưa được cấu hình nên nút Ghi đang khóa an toàn.</div>
       )}
 
@@ -736,7 +743,7 @@ export default function LeaveRegistrationPage({ user }) {
 
       {isApiConfigured && user?.permissions?.leave_create === false && !employeeSelfService && (
         <div className="warning-box"><strong>Chế độ chỉ xem.</strong> Tài khoản này chưa được cấp quyền ghi lịch nghỉ.</div>
-      )}
+      )}</StableFeedback>
 
       <UiToolbar data-ui-key="u-03cf771004d1" className="date-toolbar viewed-date-toolbar">
         <DatePickerControl
@@ -773,7 +780,7 @@ export default function LeaveRegistrationPage({ user }) {
         )}
       </UiToolbar>
 
-      {pushMessage && <div className="success-box push-status-box">{pushMessage}</div>}
+      <StableFeedback>{pushMessage && <div className="success-box push-status-box">{pushMessage}</div>}</StableFeedback>
 
       {unreadWatchDates.length > 0 && (
         <section data-ui-key="u-32fb4b567164" className="watch-notification-panel ringing" role="alert" aria-live="assertive">
@@ -805,7 +812,7 @@ export default function LeaveRegistrationPage({ user }) {
         </section>
       )}
 
-      {watchError && <div className="error-box watch-error-box">{watchError}</div>}
+      <StableFeedback>{watchError && <div className="error-box watch-error-box">{watchError}</div>}</StableFeedback>
 
       <div className="content-grid">
         <section data-ui-key="u-3ad934e889f0" className="panel registration-panel">
@@ -876,10 +883,10 @@ export default function LeaveRegistrationPage({ user }) {
             <label>Chi tiết</label>
             <textarea value={form.detail} onChange={(e) => setForm((current) => ({ ...current, detail: e.target.value }))} rows="3" placeholder="Ghi chú nếu cần" />
 
-            {dateIsPast && <div className="warning-box"><strong>Ngày chỉ xem.</strong> Nhân viên không thể đăng ký cho ngày trong quá khứ.</div>}
+            <StableFeedback>{dateIsPast && <div className="warning-box"><strong>Ngày chỉ xem.</strong> Nhân viên không thể đăng ký cho ngày trong quá khứ.</div>}
             {message && <div className="success-box">{message}</div>}
             {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
-            {error && <div className="error-box">{error}</div>}
+            {error && <div className="error-box">{error}</div>}</StableFeedback>
             <button data-ui-key="u-7712757bd8c0" className="primary-button" type="submit" disabled={saving || !canCreate}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
             </fieldset>
           </form>
@@ -1032,7 +1039,7 @@ export default function LeaveRegistrationPage({ user }) {
               {canDeleteVisibleRecord && <button data-ui-key="u-dad1744abe2f" data-ui-label-default="Xóa đã chọn" type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || deletableSelectedUids.length === 0}><Trash2 size={15} /><UiCustomText uiKey="u-dad1744abe2f"> Xóa đã chọn</UiCustomText></button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {loadState.records === 'ready' ? `${totalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}
           </UiToolbar>
-          {listActionNotice && (
+          <StableFeedback>{listActionNotice && (
             <div
               className={`list-action-notice ${listActionNotice.status} ${listActionNotice.action}`}
               role={listActionNotice.status === 'error' ? 'alert' : 'status'}
@@ -1054,7 +1061,7 @@ export default function LeaveRegistrationPage({ user }) {
               </button>
             </div>
           )}
-          <UiToolbar data-ui-key="u-1bf317df3f46" className="list-filter-toolbar">
+          </StableFeedback><UiToolbar data-ui-key="u-1bf317df3f46" className="list-filter-toolbar">
             <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian danh sách">
               {LIST_DATE_FILTERS.map((filter) => (
                 <button data-ui-key="u-0512fe10d2e8"
@@ -1091,6 +1098,7 @@ export default function LeaveRegistrationPage({ user }) {
               {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
             </datalist>
           </UiToolbar>
+          <StableDataRegion loading={loadState.records !== 'ready'} label={loadState.records === 'error' ? 'Chưa tải được danh sách. Vui lòng bấm Làm mới.' : 'Đang tải danh sách lịch nghỉ…'}>
           <div className="table-wrap leave-list-wrap" aria-busy={loadState.records === 'loading'}>
             <table data-ui-key="u-1d60b99a3b6d" className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
               <colgroup>
@@ -1104,7 +1112,7 @@ export default function LeaveRegistrationPage({ user }) {
               </colgroup>
               <thead><tr><th data-ui-key="u-3f090c8da00d" data-ui-label-default="Chọn" className="select-column"><UiCustomText uiKey="u-3f090c8da00d">Chọn</UiCustomText></th><th data-ui-key="u-06ade8ca026c" data-ui-label-default="Ngày"><UiCustomText uiKey="u-06ade8ca026c">Ngày</UiCustomText></th><th data-ui-key="u-e58316817ea9" data-ui-label-default="Thứ"><UiCustomText uiKey="u-e58316817ea9">Thứ</UiCustomText></th><th data-ui-key="u-cf02e7475dd8" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-cf02e7475dd8">Nhân viên</UiCustomText></th><th data-ui-key="u-a8a96dc68700" data-ui-label-default="Lý do"><UiCustomText uiKey="u-a8a96dc68700">Lý do</UiCustomText></th><th data-ui-key="u-802a8e189292" data-ui-label-default="Chi tiết"><UiCustomText uiKey="u-802a8e189292">Chi tiết</UiCustomText></th>{canViewPenalty && <th data-ui-key="u-5034577af92e" data-ui-label-default="Phạt" className="right"><UiCustomText uiKey="u-5034577af92e">Phạt</UiCustomText></th>}</tr></thead>
               <tbody>
-                {loadState.records !== 'ready' ? (
+                {loadedRecordsScope !== JSON.stringify([identityKey, listRangeStart, listRangeEnd]) ? (
                   <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell" role="status">{loadState.records === 'loading' ? 'Đang tải danh sách lịch nghỉ…' : 'Chưa tải được danh sách. Vui lòng bấm Làm mới.'}</td></tr>
                 ) : filteredRecords.length === 0 ? (
                   <tr><td colSpan={canViewPenalty ? 7 : 6} className="empty-cell">Không có lịch nghỉ phù hợp bộ lọc.</td></tr>
@@ -1134,6 +1142,7 @@ export default function LeaveRegistrationPage({ user }) {
               </tbody>
             </table>
           </div>
+          </StableDataRegion>
         </section>
       </div>
 

@@ -166,7 +166,7 @@ function renderImageTextPanel(overlay, text, statusText, statusType = '') {
     status.textContent = copied
       ? 'Đã sao chép toàn bộ chữ vào clipboard.'
       : 'Không tự sao chép được. Hãy chọn văn bản phía trên rồi dùng Ctrl/Cmd+C.'
-    textarea.focus()
+    textarea.focus({ preventScroll: true })
   })
   actions.appendChild(copyButton)
   panel.append(textarea, actions)

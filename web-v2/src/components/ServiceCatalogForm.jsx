@@ -1,4 +1,5 @@
 import UiToolbar from './UiToolbar'
+import { useEffect, useRef } from 'react'
 import UiCustomText from './UiCustomText'
 import { ArrowDown, ArrowUp, Layers, ListChecks, Plus, Trash2 } from 'lucide-react'
 import VeraDateInput from './VeraDateInput'
@@ -16,6 +17,8 @@ export function ServiceTypePicker({ onChoose }) {
 }
 
 export default function ServiceCatalogForm({ kind, form, setForm, services, groups, existing }) {
+  const nameInput = useRef(null)
+  useEffect(() => { nameInput.current?.focus({ preventScroll: true }) }, [])
   const combo = kind === 'combo'
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
   const updateRow = (key, index, patch) => setForm((current) => ({ ...current, [key]: current[key].map((row, i) => i === index ? { ...row, ...patch } : row) }))
@@ -26,7 +29,7 @@ export default function ServiceCatalogForm({ kind, form, setForm, services, grou
   }
   const total = form.components.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
   return <>
-    <Field label="Tên dịch vụ *" wide><input autoFocus required maxLength={150} value={form.name} placeholder={combo ? 'Nhập tên dịch vụ combo' : 'Nhập tên dịch vụ'} onChange={(event) => set('name', event.target.value)}/></Field>
+    <Field label="Tên dịch vụ *" wide><input ref={nameInput} required maxLength={150} value={form.name} placeholder={combo ? 'Nhập tên dịch vụ combo' : 'Nhập tên dịch vụ'} onChange={(event) => set('name', event.target.value)}/></Field>
     <Field label="Nhóm dịch vụ" wide><input list="spa-service-groups" maxLength={120} value={form.group} placeholder="Chọn hoặc nhập nhóm dịch vụ" onChange={(event) => set('group', event.target.value)}/><datalist id="spa-service-groups">{groups.map((group) => <option key={group} value={group}/>)}</datalist></Field>
     <Field label="Giá (đ)"><VeraMoneyInput max="10000000000" value={form.price} onChange={(event) => set('price', event.target.value)} placeholder="0"/></Field>
     {!combo && <Field label="Số lượt *"><input type="number" required min="1" max="100000" step="1" value={form.sessions} onChange={(event) => set('sessions', event.target.value)}/></Field>}

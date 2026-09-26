@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import StableFeedback from './StableFeedback'
+import usePageRefresh from '../lib/usePageRefresh'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { veraApi } from '../lib/api'
 
 export default function LiveTourRecoveryPanel({ isAdmin, onReload, actionBusy }) {
+  usePageRefresh(() => check(), () => Boolean(busy || actionBusy))
   const [status, setStatus] = useState(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -49,7 +52,7 @@ export default function LiveTourRecoveryPanel({ isAdmin, onReload, actionBusy })
       <button type="button" className="secondary-button" onClick={() => onReload()} disabled={actionBusy}>Tải bản đã lưu</button>
       {isAdmin && <button type="button" className="secondary-button" onClick={retry} disabled={busy || !recoverable}>Thử lại một tác vụ quá hạn</button>}
     </div>
-    {message && <p role="status">{message}</p>}
+    <StableFeedback>{message && <p role="status">{message}</p>}</StableFeedback>
     {status?.history?.length > 0 && <div className="live-tour-recovery-history">
       <strong>Lịch sử khôi phục</strong>
       <ul>{status.history.map((entry, index) => <li key={`${entry.job_id}-${index}`}>

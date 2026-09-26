@@ -12,14 +12,14 @@ export default function NotificationEditorDialog({ children, title, busy, onClos
     if (node.showModal) node.showModal()
     else node.setAttribute('open', '')
     const initialFocus = node.querySelector('input:not([type=checkbox]):not([disabled])') || node.querySelector('button:not([disabled])')
-    initialFocus?.focus()
+    initialFocus?.focus({ preventScroll: true })
     const cancel = event => { event.preventDefault(); if (!state.current.busy) state.current.onClose() }
     node.addEventListener('cancel', cancel)
     return () => {
       node.removeEventListener('cancel', cancel)
       if (node.close) node.close()
       document.body.style.overflow = overflow
-      if (opener?.isConnected) opener.focus()
+      if (opener?.isConnected) opener.focus({ preventScroll: true })
     }
   }, [])
   return createPortal(<dialog ref={dialog} role="dialog" aria-modal="true" aria-labelledby="notification-dialog-title" className="notification-settings-page notification-modal">

@@ -1,3 +1,4 @@
+import StableFeedback from './StableFeedback'
 import { useState } from 'react'
 import { ImageDown, Share2, X } from 'lucide-react'
 import { formatVeraDate } from '../lib/veraDate'
@@ -79,7 +80,7 @@ export default function TrainingNoticeDetail({ notice, onClose }) {
         <button type="button" aria-label="Đóng" onClick={onClose}><X size={20}/></button></header>
       <p>{notice.notification?.body}</p>
       <dl>{linesFor(notice).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-      {error && <p role="alert">{error}</p>}
+      <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
       <div className="training-notification-actions">
         <button type="button" className="primary-button" onClick={() => void share()}><Share2 size={16}/> Chia sẻ ảnh / Zalo</button>
         <button type="button" className="secondary-button" onClick={() => void share(true)}><ImageDown size={16}/> Tải ảnh PNG</button>

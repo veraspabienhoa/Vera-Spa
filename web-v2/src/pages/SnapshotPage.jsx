@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
@@ -157,6 +159,7 @@ async function downloadExcel(path, fallbackName) {
 }
 
 export default function SnapshotPage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(busy || controlBusy))
   const initial = useMemo(() => rangeFor('Hôm nay'), [])
   const [period, setPeriod] = useState('Hôm nay')
   const [start, setStart] = useState(initial[0])
@@ -296,7 +299,7 @@ export default function SnapshotPage({ user }) {
       @media(max-width:390px){.attendance-filter-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-page .responsive-data-table table{font-size:8px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:4px 2px}.attendance-page .responsive-data-table td strong{font-size:8px}.attendance-page .responsive-data-table td small{font-size:7px}}
     `}</style>
     <div data-ui-key="u-a9281c85e098" className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>FaceID lấy từ TimeSoft. Quy tắc nghỉ giữa ca của Lễ tân, Locker và Tạp vụ được điều khiển theo công tắc của Admin.</p></div><button data-ui-key="u-274e5db19281" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-274e5db19281"> Làm mới</UiCustomText></button></div>
-    {error && <div className="error-box">{error}</div>}
+    <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
 
     <section data-ui-key="u-35e8ac56af0a" className="panel data-toolbar attendance-toolbar">
       <div className="attendance-filter-content">

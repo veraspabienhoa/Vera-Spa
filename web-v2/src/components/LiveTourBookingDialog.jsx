@@ -1,3 +1,4 @@
+import StableFeedback from './StableFeedback'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
 import { useEffect, useState } from 'react'
@@ -213,7 +214,7 @@ export default function LiveTourBookingDialog({ data, context, canAdmin, canOper
           <label className="live-tour-field"><span>Combo của khách</span><select data-booking-step value={comboId} onChange={(event) => { const field = event.currentTarget; flushSync(() => selectCombo(field.value)); advanceBookingField(field) }}><option value="">Dịch vụ lẻ · không dùng combo</option>{purchases.map((purchase, index) => <option key={purchase.id} value={purchase.id}>{purchase.combo_name || 'Combo'} · còn {purchase.remaining} vé có thể đặt lịch · #{index + 1}</option>)}</select></label>
           {selectedCombo && <div aria-live="polite"><p><strong>Còn {selectedCombo.remaining} vé</strong> · Giữ vé đến khi thanh toán.</p>{selectedCombo.component_balances ? <LiveTourPageItems items={selectedCombo.component_balances} label="Dịch vụ combo" pageSize={1}>{(part) => <small key={part.service_id}>{catalog.find((service) => service.id === part.service_id)?.name || part.service_name}: còn <strong>{part.remaining}</strong> lượt</small>}</LiveTourPageItems> : <small>Chọn dịch vụ bên dưới để dùng combo vé.</small>}</div>}
 
-          {comboError && <p className="error-box" role="alert">{comboError}</p>}
+          <StableFeedback>{comboError && <p className="error-box" role="alert">{comboError}</p>}</StableFeedback>
         </div>}
         <div className="tour-booking-service-picker"><LiveTourSearchSelect advanceOnSelect label="Dịch vụ" showAllOptions clearOnSelect value={serviceId} options={serviceOptions} onChange={(id) => { setServiceId(''); if (id) setItems((current) => [...current, { service_id: id, quantity: 1 }]) }}/></div>
         <div className="tour-booking-items"><LiveTourPageItems items={items} label="Dịch vụ đã chọn">{(row, i) => <div className="tour-booking-item" key={row.service_id}><div><strong>{catalog.find((item) => item.id === row.service_id)?.name || row.service_id}</strong><small>{money(catalog.find((item) => item.id === row.service_id)?.price)}</small></div><label>Số lượng<input type="number" min="1" max="30" required value={row.quantity} onChange={(event) => setItems((current) => current.map((item, index) => index === i ? { ...item, quantity: Number(event.target.value) } : item))}/></label><button data-ui-key="u-cc7af269f540" type="button" className="icon-button" aria-label={`Bỏ dịch vụ ${i + 1}`} onClick={() => setItems((current) => current.filter((_, index) => index !== i))}><Trash2 size={17}/></button></div>}</LiveTourPageItems>{!items.length && <p><Plus size={14}/> Chọn một hoặc nhiều dịch vụ phía trên.</p>}</div>

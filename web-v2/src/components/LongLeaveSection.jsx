@@ -1,3 +1,5 @@
+import StableFeedback from './StableFeedback'
+import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
 import { CalendarDays, CheckCircle2, Clock3, RefreshCw, Send, UserRoundCheck } from 'lucide-react'
@@ -43,7 +45,8 @@ const emptyForm = () => ({
   detail: '',
 })
 
-export default function LongLeaveSection({ user }) {
+export default function LongLeaveSection({ user, refreshRevision = 0 }) {
+  usePageRefresh(() => load(), () => Boolean(loading || saving || returnBusyId))
   const role = String(user?.role || '').toLowerCase()
   const canOpen = role === 'admin'
     || user?.permissions?.long_leave === true
@@ -73,7 +76,7 @@ export default function LongLeaveSection({ user }) {
     }
   }, [canOpen])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load() }, [load, refreshRevision])
   useEffect(() => {
     if (!canUseForm && canUseResignation) {
       setForm((current) => ({ ...current, request_type: RESIGNATION, end_date: current.start_date }))
@@ -173,13 +176,13 @@ export default function LongLeaveSection({ user }) {
         </UiCustomText></button>
       </div>
 
-      {notice && (
+      <StableFeedback>{notice && (
         <div className={`long-leave-notice ${notice.status}`} role={notice.status === 'error' ? 'alert' : 'status'}>
           {notice.status === 'success' ? <CheckCircle2 size={17} /> : <Clock3 size={17} />}
           <span>{notice.message}</span>
           <button data-ui-key="u-611f824d1c77" data-ui-label-default="×" type="button" onClick={() => setNotice(null)} aria-label="Đóng thông báo"><UiCustomText uiKey="u-611f824d1c77">×</UiCustomText></button>
         </div>
-      )}
+      )}</StableFeedback>
 
       {role !== 'admin' && (canUseForm || canUseResignation) && (
         <section data-ui-key="u-93da09a1ad4e" className="panel long-leave-form-panel">

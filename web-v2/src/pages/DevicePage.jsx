@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import { Camera, Monitor, Plus, Printer, RefreshCw, ScanLine, Server, Settings2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -10,6 +12,7 @@ const kindIcons = { faceid: ScanLine, printer: Printer, scanner: ScanLine, camer
 const newDevice = () => ({ id: crypto.randomUUID(), name: '', kind: 'faceid', connection: 'network', manufacturer: '', model: '', serial: '', location: '', address: '', port: '', notes: '', enabled: true, adapter: 'pending' })
 
 export default function DevicePage({ user }) {
+  usePageRefresh(() => reload(), () => Boolean(busy || editing))
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -96,7 +99,7 @@ export default function DevicePage({ user }) {
   }
   const edit = device => {
     setEditing({ ...device, port: device.port ?? '' }); setError(''); setMessage('')
-    window.setTimeout(() => { formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); formRef.current?.querySelector('input')?.focus() }, 0)
+    window.setTimeout(() => { formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); formRef.current?.querySelector('input')?.focus({ preventScroll: true }) }, 0)
   }
   const change = patch => setEditing(value => ({ ...value, ...patch }))
   const visible = (data?.devices || []).filter(item => (!kind || item.kind === kind)
@@ -112,8 +115,8 @@ export default function DevicePage({ user }) {
     </div>
     <p>Điện thoại Android/iPhone có thể chụp ảnh, quét mã và gửi sự kiện chấm công qua tài khoản Admin trên HTTPS. Wi-Fi Direct trực tiếp cần ứng dụng hệ điều hành hỗ trợ.</p>
     {detected && <p className="device-detected">Đã nhận diện: {detected.manufacturer || 'USB'} {detected.model || `${detected.vendor}:${detected.product}`}. <a href={`https://www.google.com/search?q=${encodeURIComponent(`${detected.manufacturer} ${detected.model} ${detected.vendor}:${detected.product} driver official`)}`} target="_blank" rel="noopener noreferrer">Tìm driver từ hãng</a></p>}
-    {error && <p className="device-error" role="alert">{error}</p>}
-    {message && <p role="status">{message}</p>}
+    <StableFeedback>{error && <p className="device-error" role="alert">{error}</p>}
+    {message && <p role="status">{message}</p>}</StableFeedback>
     {editing && <form ref={formRef} className="device-editor" onSubmit={save}>
       <h2>{data.devices.some(item => item.id === editing.id) ? 'Chỉnh sửa thiết bị' : 'Thêm thiết bị'}</h2>
       <fieldset disabled={busy}>

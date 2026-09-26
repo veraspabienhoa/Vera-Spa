@@ -1,3 +1,6 @@
+import StableFeedback from '../components/StableFeedback'
+import StableDataRegion from '../components/StableDataRegion'
+import usePageRefresh from '../lib/usePageRefresh'
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import FaceIdBulkUpload from './FaceIdBulkUpload'
 import UiToolbar from '../components/UiToolbar'
@@ -145,17 +148,17 @@ function changedPayload(employee, draft) {
 }
 
 function Notice({ notice, onClose }) {
-  if (!notice) return null
-  return (
+  return <StableFeedback>{notice && (
     <div className={`staff-notice ${notice.type}`} role="status">
       <strong>{notice.type === 'success' ? 'THÀNH CÔNG' : 'KHÔNG THÀNH CÔNG'}</strong>
       <span>{notice.message}</span>
       <button data-ui-key="u-317d8195183e" data-ui-label-default="×" type="button" onClick={onClose} aria-label="Đóng thông báo"><UiCustomText uiKey="u-317d8195183e">×</UiCustomText></button>
     </div>
-  )
+  )}</StableFeedback>
 }
 
 export default function EmployeePage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(loading || busy || dirtyRows.length || addOpen || profileUser || bulkOpen || faceUser))
   const [data, setData] = useState(null)
   const [faceSettings, setFaceSettings] = useState(null)
   const [drafts, setDrafts] = useState({})
@@ -600,7 +603,7 @@ export default function EmployeePage({ user }) {
           {permissions.employees_visibility_manage && <button data-ui-key="u-221f796363b0" className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.visible.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', true)}><EyeOff size={17}/> Ẩn tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.visible.length || 0})</button>}
           {permissions.employees_visibility_manage && <button data-ui-key="u-5df29f8d4faf" className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.hidden.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', false)}><Eye size={17}/> Hiện tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.hidden.length || 0})</button>}
         </UiToolbar>}
-        {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải danh sách…</div> : <>
+        <StableDataRegion loading={loading}><>
           <div className="staff-desktop-table table-wrap">
             <table data-ui-key="u-4393b63484c6" className="staff-table">
               <colgroup><col className="staff-col-select"/><col className="staff-col-employee"/><col className="staff-col-role"/><col className="staff-col-status"/><col className="staff-col-shift"/><col className="staff-col-date"/><col className="staff-col-cycle"/><col className="staff-col-profile"/><col className="staff-col-lock"/><col className="staff-col-exempt"/><col className="staff-col-payroll"/><col className="staff-col-admin"/></colgroup>
@@ -647,7 +650,7 @@ export default function EmployeePage({ user }) {
             </article>
           })}</div>
           {!visible.length && <div className="empty-cell">Không có nhân viên phù hợp bộ lọc.</div>}
-        </>}
+        </></StableDataRegion>
       </section>
     </div>
   )

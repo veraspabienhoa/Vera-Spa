@@ -1,3 +1,4 @@
+import StableFeedback from '../components/StableFeedback'
 import { Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { isAuthConfigured, signInWithVeraPassword } from '../lib/supabase'
@@ -99,7 +100,7 @@ export default function LoginPage({ externalError = '' }) {
             </button>
           </div>
 
-          {error && <div className="error-box">{error}</div>}
+          <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
           <button className="primary-button full" type="submit" disabled={busy}>{busy ? 'Đang xác thực…' : 'Đăng nhập'}</button>
 
           {!isAuthConfigured && <div className="setup-note">Máy chủ đăng nhập chưa được cấu hình cho bản deploy này.</div>}

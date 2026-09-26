@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
 import { BellRing, CheckCircle2, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
@@ -18,6 +20,7 @@ const toVnDate = (value) => {
 }
 
 export default function ProfilePage({ user, onPasswordChanged, forcePasswordChange = false }) {
+  usePageRefresh(() => load(), () => Boolean(loading || saving || renamingUsername || JSON.stringify(form) !== baseline || confirmPassword))
   const [form, setForm] = useState({ current_password: '', new_password: '', full_name: '', birth_date: '', gender: '', ethnicity: '', phone: '', email: '', address: '', province: '', ward: '', address_detail: '', bank_account: '', bank_name: '', cccd_number: '', cccd_issue_date: '', cccd_issue_place: '' })
   const [references, setReferences] = useState({ provinces: [], wards: [], banks: [], bank_options: [] })
   const formRef = useRef(null)
@@ -164,7 +167,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
 
   return <div className="feature-page">
     <div data-ui-key="u-02ad0292fa11" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật hồ sơ mà không bắt buộc thay đổi mật khẩu.'}</p></div><button data-ui-key="u-eb800f2fd183" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-eb800f2fd183"> Làm mới</UiCustomText></button></div>
-    {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}</StableFeedback>
     <section data-ui-key="u-99eefc96a586" className="panel profile-panel">
       <form ref={formRef} className="profile-form" onSubmit={submit}>
         <p className="wide-field" role="status">{saving ? 'Đang tự lưu…' : 'Thông tin được tự lưu khi nhập xong và rời ô. Đổi mật khẩu cần nhập đủ mật khẩu hiện tại, mật khẩu mới và xác nhận.'}</p>
@@ -218,7 +221,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
     {user?.role !== 'admin' && <section data-ui-key="u-3a2f78fdca27" className="panel android-push-panel">
       <div><span className="eyebrow"><Smartphone size={14} /> iPhone · Android</span><h2>THÔNG BÁO MÀN HÌNH KHÓA</h2><p>Mỗi điện thoại đăng nhập có thể bật Web Push riêng. Trên iPhone/iPad, hãy thêm VERA SPA vào Màn hình chính rồi mở từ biểu tượng; trên Android, dùng Chrome. Chế độ Không làm phiền vẫn có thể chặn âm thanh.</p></div>
       <button data-ui-key="u-8d2b4d049425" className={push.subscribed ? 'danger-button' : 'primary-button'} onClick={togglePush} disabled={push.loading || pushBusy || !push.supported}><BellRing size={16} /> {pushBusy ? 'Đang xử lý…' : (push.subscribed ? 'Tắt thông báo thiết bị này' : 'Bật thông báo thiết bị này')}</button>
-      {!push.supported && !push.loading && <div className="warning-box">{push.reason || 'Trình duyệt hoặc thiết bị này chưa hỗ trợ Web Push.'}</div>}
+      <StableFeedback>{!push.supported && !push.loading && <div className="warning-box">{push.reason || 'Trình duyệt hoặc thiết bị này chưa hỗ trợ Web Push.'}</div>}</StableFeedback>
     </section>}
   </div>
 }

@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { apiBase } from '../lib/apiConfig'
@@ -20,6 +22,7 @@ async function request(method, settings) {
 }
 
 export default function TechnicalRetentionSettings() {
+  usePageRefresh(() => reload(), () => Boolean(busy || (saved && (days !== saved.days || Number(hours) !== saved.cleanup_interval_hours))))
   const [days, setDays] = useState(3)
   const [hours, setHours] = useState('1')
   const [saved, setSaved] = useState(null)
@@ -75,6 +78,6 @@ export default function TechnicalRetentionSettings() {
       {saved.last_cleanup_at && <p>Đã dọn {saved.last_cleanup_removed ?? 0} bản ghi kỹ thuật trong lần đó.</p>}
       <p>Hạn dọn tiếp theo: {formatVeraDateTime(saved.next_cleanup_at, 'Lần kiểm tra lịch kế tiếp')}.</p>
     </div>}
-    {message && <p role="status">{message}</p>}
+    <StableFeedback>{message && <p role="status">{message}</p>}</StableFeedback>
   </section>
 }

@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
@@ -242,6 +244,7 @@ function isPrivateService(value) {
 }
 
 export default function TourPage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(busy))
   const tourCacheKey = cacheKey(user)
   const [data, setData] = useState(() => readCachedTour(tourCacheKey))
   const initiallyCached = useRef(Boolean(data.records.length))
@@ -474,8 +477,8 @@ export default function TourPage({ user }) {
         </div>
         <UiToolbar data-ui-key="u-05953170bde4" className="tour-heading-actions">{isAdmin && <button data-ui-key="u-b85a6f2d0c8b" type="button" className={`secondary-button tour-admin-tools-toggle ${showAdminTools ? 'active' : ''}`.trim()} onClick={() => setShowAdminTools((current) => !current)} aria-expanded={showAdminTools}><Link2 size={16} /> {showAdminTools ? 'Ẩn Link & màu dòng' : 'Hiện Link & màu dòng'}</button>}<button data-ui-key="u-3c56a07ed977" data-ui-label-default="Mở tab mới" type="button" className="secondary-button" onClick={openTourInNewTab}><ExternalLink size={16} /><UiCustomText uiKey="u-3c56a07ed977"> Mở tab mới</UiCustomText></button>{user?.permissions?.tour_refresh && <button data-ui-key="u-af6c0dfc47f2" data-ui-label-default="Làm mới Bảng tua" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-af6c0dfc47f2"> Làm mới Bảng tua</UiCustomText></button>}</UiToolbar>
       </div>
-      {error && <div className="error-box">{error}</div>}
-      {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}
+      <StableFeedback>{error && <div className="error-box">{error}</div>}
+      {data.countdown_error && <div className="warning-box">Countdown Bảng tua: {data.countdown_error}</div>}</StableFeedback>
       {data.metrics_retained_until_10 && <div className="setup-note">Số khách và tổng lượt Nghỉ giữa ca đang giữ số ngày {String(data.metrics_business_date || '').split('-').reverse().join('/')} đến 10:00 sáng. Nghỉ giữa ca hiển thị Tổng lượt-Đang ở ngoài.</div>}
       <div className="tour-control-layout">
         <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button data-ui-key="u-7ba0d2e58f62" type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Khôi phục thứ tự danh sách' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong lên đầu danh sách' : `Ưu tiên ${label} lên đầu danh sách`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>

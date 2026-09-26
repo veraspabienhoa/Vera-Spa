@@ -9,7 +9,7 @@ import { JSDOM } from 'jsdom'
 const require = createRequire(import.meta.url)
 const built = await build({
   entryPoints: [fileURLToPath(new URL('../src/pages/TechnicalRetentionSettings.jsx', import.meta.url))],
-  bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic',
+  bundle: true, write: false, loader: { '.css': 'empty' }, platform: 'node', format: 'cjs', jsx: 'automatic',
   external: ['react', 'react/jsx-runtime'],
   plugins: [{ name: 'settings-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/(supabase|apiConfig)$/ }, args => ({ path: args.path.split('/').at(-1), namespace: 'fixture' }))

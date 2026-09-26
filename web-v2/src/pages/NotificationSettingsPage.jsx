@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import { BellRing, GripVertical, Search, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -24,6 +26,7 @@ function Recipients({ options, groups = [], selected, onChange, source }) {
   </fieldset>
 }
 export default function NotificationSettingsPage({ user }) {
+  usePageRefresh(() => reload(), () => Boolean(busy || editor))
   const [data,setData]=useState({settings:[],recipients:[],channels:[],revision:0})
   const [tasks,setTasks]=useState([]), [query,setQuery]=useState(''), [taskQuery,setTaskQuery]=useState('')
   const [editor,setEditor]=useState(null),[draft,setDraft]=useState(null)
@@ -55,8 +58,8 @@ export default function NotificationSettingsPage({ user }) {
   return <div className="notification-settings-page">
     <header className="panel notification-settings-head"><BellRing/><div><h2>THÔNG BÁO</h2><p>Chọn người nhận, kênh gửi và sắp xếp các thông báo của hệ thống.</p></div></header>
     <section className="panel notification-device-panel"><Smartphone size={26}/><div><h3>Thông báo màn hình khóa</h3><p>Bật thông báo trên từng thiết bị. Admin có thể bật hoặc tắt từng loại thông báo thiết bị ở danh sách bên dưới. Trên iPhone/iPad, mở ứng dụng từ biểu tượng Màn hình chính.</p>{!push.loading && !push.supported && <small>{push.reason || 'Thiết bị không hỗ trợ Web Push.'}</small>}</div><button type="button" disabled={push.loading || pushBusy || !push.supported} onClick={toggleDevice}>{pushBusy?'Đang xử lý…':push.subscribed?'Tắt trên thiết bị này':'Bật trên thiết bị này'}</button></section>
-    {error && !editor && <div className="error-box" role="alert">{error} <button disabled={busy} onClick={()=>{void reload().then(()=>{setError('');setEditor(null)}).catch(err=>setError(err.message))}}>Tải lại cấu hình</button></div>}
-    {notice && <p role="status">{notice}</p>}
+    <StableFeedback>{error && !editor && <div className="error-box" role="alert">{error} <button disabled={busy} onClick={()=>{void reload().then(()=>{setError('');setEditor(null)}).catch(err=>setError(err.message))}}>Tải lại cấu hình</button></div>}
+    {notice && <p role="status">{notice}</p>}</StableFeedback>
     <div className="notification-settings-toolbar"><label><Search size={16}/><input aria-label="Tìm thông báo" placeholder="Tìm thông báo…" value={query} onChange={event=>setQuery(event.target.value)}/></label>{admin && <button type="button" disabled={busy} onClick={()=>open(null)}>+ Tạo thông báo</button>}</div>
     {admin && <details className="notification-custom-groups"><summary>Nhóm người nhận tùy chỉnh</summary><div className="notification-settings-toolbar"><label>Tên nhóm<input value={groupName} maxLength={80} onChange={event=>setGroupName(event.target.value)} placeholder="Ví dụ: Trưởng ca"/></label><button type="button" disabled={busy || !groupName.trim() || !groupMembers.length} onClick={()=>void manageGroup(()=>veraApi.createNotificationGroup({label:groupName,members:groupMembers,revision:data.revision}))}>+ Thêm nhóm</button></div><div className="notification-group-member-list">{data.recipients?.map(person=><label key={person.id}><input type="checkbox" checked={groupMembers.includes(person.id)} onChange={event=>setGroupMembers(current=>event.target.checked?[...current,person.id]:current.filter(id=>id!==person.id))}/>{person.name} · {person.role}</label>)}</div>{data.groups?.map(group=><div className="notification-custom-group" key={group.key}><span>{group.label} · {group.members?.length || 0} tài khoản</span><button type="button" disabled={busy} onClick={()=>void manageGroup(()=>veraApi.deleteNotificationGroup(group.key,data.revision))}>Xóa nhóm</button></div>)}</details>}
     {editor && draft && <NotificationEditorDialog title={editor==='new'?'Tạo thông báo mới':draft.label} busy={busy} onClose={()=>{setEditor(null);setDraft(null);setError('')}}>

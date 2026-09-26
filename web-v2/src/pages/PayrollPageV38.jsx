@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { ChevronDown, ChevronRight, RefreshCw, Save, Settings2, Undo2 } from 'lucide-react'
@@ -63,6 +65,7 @@ function PayrollAdminSectionOrder({ enabled, version }) {
 }
 
 export default function PayrollPageV38({ user }) {
+  usePageRefresh(() => overridesOpen && loadOverrides(), () => Boolean(busy || (overridesOpen && (selected.length || living !== Number(data.config?.default_living_expense ?? 150000) || locker !== Number(data.config?.default_locker_support ?? 80000)))))
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const canEditConfig = isAdmin || Boolean(user?.permissions?.payroll_config_edit)
@@ -198,7 +201,7 @@ export default function PayrollPageV38({ user }) {
 
         {!overridesOpen && <div className="v38-collapsed-note">Khu vực Mức riêng mặc định được ẩn.</div>}
         {overridesOpen && <>
-          {notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}
+          <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
           <div className="payroll-config-grid">
             <label>Chi phí sinh hoạt riêng<VeraMoneyInput disabled={Boolean(busy)} value={living} onChange={(event) => setLiving(Number(event.target.value))} /></label>

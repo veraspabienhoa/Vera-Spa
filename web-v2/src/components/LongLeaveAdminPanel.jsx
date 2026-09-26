@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from './StableFeedback'
 import UiCustomText from './UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
 import { AlertTriangle, CalendarRange, CheckCircle2, Clock3, RefreshCw, XCircle } from 'lucide-react'
@@ -29,6 +31,7 @@ const isoToday = () => new Date().toISOString().slice(0, 10)
 const addDays = (value, days) => { const date = new Date(`${value}T12:00:00`); date.setDate(date.getDate() + days); return date.toISOString().slice(0, 10) }
 
 export default function LongLeaveAdminPanel({ user, onChanged }) {
+  usePageRefresh(() => Promise.all([load(), loadOverlap()]), () => Boolean(loading || busyId))
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
@@ -121,7 +124,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
       </div>
       <button data-ui-key="u-bbacc6bc597e" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-bbacc6bc597e"> Làm mới</UiCustomText></button>
     </div>
-    {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}</StableFeedback>
     <section data-ui-key="u-fc2038c8cf81" className="leave-overlap-panel">
       <div className="leave-overlap-head"><CalendarRange size={18}/><h3>TỔNG QUAN & KIỂM TRA XUNG ĐỘT NGHỈ PHÉP</h3></div>
       <div className="leave-overlap-controls"><label>Từ ngày<VeraDateInput value={overlapFilters.start} onChange={(event) => setOverlapFilters({ ...overlapFilters, start:event.target.value })}/></label><label>Đến ngày<VeraDateInput value={overlapFilters.end} min={overlapFilters.start} onChange={(event) => setOverlapFilters({ ...overlapFilters, end:event.target.value })}/></label><label>Bộ phận<select value={overlapFilters.department} onChange={(event) => setOverlapFilters({ ...overlapFilters, department:event.target.value })}><option value="">Tất cả</option><option value="nhanvien">Nhân viên</option><option value="letan">Lễ tân</option><option value="locker">Locker</option><option value="tapvu">Tạp vụ</option><option value="quanly">Quản lý</option></select></label><button data-ui-key="u-9d31be5e1f85" data-ui-label-default="Kiểm tra" type="button" className="secondary-button compact" onClick={loadOverlap}><UiCustomText uiKey="u-9d31be5e1f85">Kiểm tra</UiCustomText></button></div>

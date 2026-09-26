@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { Download, Mail, Plus, RefreshCw, Save, Settings2, Trash2, Upload, WalletCards } from 'lucide-react'
@@ -50,6 +52,7 @@ function ObligationGroup({ group }) {
 }
 
 export default function PayrollPage({ user }) {
+  usePageRefresh(() => reload(), () => Boolean(busy || JSON.stringify(config) !== configBaseline))
   const permissions = user?.permissions || {}
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const canCalculate = isAdmin || permissions.payroll_calculate
@@ -68,6 +71,7 @@ export default function PayrollPage({ user }) {
   const [draft, setDraft] = useState(null)
   const [selected, setSelected] = useState([])
   const [config, setConfig] = useState(CONFIG_DEFAULT)
+  const [configBaseline, setConfigBaseline] = useState(() => JSON.stringify(CONFIG_DEFAULT))
   const [obligations, setObligations] = useState([])
   const [obligationGroups, setObligationGroups] = useState([])
   const [obligationForm, setObligationForm] = useState({ employee_name: '', amount: '', content: 'Chưa hoàn thành nghĩa vụ Vi phạm', due_from: '' })
@@ -90,7 +94,7 @@ export default function PayrollPage({ user }) {
   const loadSupporting = async () => {
     if (canCalculate || canEditConfig) {
       const result = await veraApi.payrollConfig()
-      setConfig(result.config || CONFIG_DEFAULT)
+      setConfig(result.config || CONFIG_DEFAULT); setConfigBaseline(JSON.stringify(result.config || CONFIG_DEFAULT))
     }
     if (canManageObligations) {
       const result = await veraApi.payrollObligations()
@@ -136,7 +140,7 @@ export default function PayrollPage({ user }) {
     const result = await veraApi.calculatePayroll(file, month, periodNo)
     setDraft(result)
     setSelected((result.rows || []).map((row) => row['Tên Hệ thống']))
-    setConfig(result.config || config)
+    setConfig(result.config || config); setConfigBaseline(JSON.stringify(result.config || config))
     const summary = result.source_summary || {}
     const detail = summary.matched_tip_rows
       ? `${summary.matched_tip_rows} dòng Tip · Tổng Tiền Lương ${money(summary.matched_salary_total)}`
@@ -251,7 +255,7 @@ export default function PayrollPage({ user }) {
 
   const saveConfig = () => run('config', async () => {
     const result = await veraApi.savePayrollConfig(config)
-    setConfig(result.config)
+    setConfig(result.config); setConfigBaseline(JSON.stringify(result.config))
     setNotice({ type: 'success', message: result.message })
   })
 
@@ -280,7 +284,7 @@ export default function PayrollPage({ user }) {
 
   return <div className="feature-page payroll-page">
     <div data-ui-key="u-fa114796e72b" className="page-heading"><div><span className="eyebrow"><WalletCards size={14} /> Kỳ 1 · Kỳ 2</span><h1>BẢNG LƯƠNG</h1><p>Tải file TimeSoft, tính lương, quản lý khấu trừ và gửi phiếu lương qua email.</p></div><button data-ui-key="u-4a2bbe33310c" data-ui-label-default="Làm mới" className="secondary-button" onClick={reload} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-4a2bbe33310c"> Làm mới</UiCustomText></button></div>
-    {notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
     {canCalculate && <section data-ui-key="u-ea9b3a18e95a" className="panel payroll-calculate-panel">
       <div data-ui-key="u-0691637823dd" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Tiền trách nhiệm Leader chỉ tự cộng ở Kỳ 2.</p></div></div>

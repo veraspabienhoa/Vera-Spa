@@ -1,3 +1,5 @@
+import StableFeedback from '../components/StableFeedback'
+import usePageRefresh from '../lib/usePageRefresh'
 import TrainingNoticeDetail from '../components/TrainingNoticeDetail'
 import TrainingDailyReport from '../components/TrainingDailyReport'
 import { formatVeraDate } from '../lib/veraDate'
@@ -15,7 +17,7 @@ const emptySession = { employee_username: '', training_date: today(), start_time
 const emptyEvaluation = { craft_score: 3, communication_score: 3, attitude_score: 3, discipline_score: 3, appearance_score: 3, hygiene_score: 3, attendance_score: 3, strengths: '', improvements: '', comments: '' }
 const formatDate = value => formatVeraDate(value, '—')
 
-function Notice({ value }) { return value ? <p className={`training-notice ${value.type}`}>{value.text}</p> : null }
+function Notice({ value }) { return <StableFeedback>{value && <p className={`training-notice ${value.type}`}>{value.text}</p>}</StableFeedback> }
 
 function Radar({ values }) {
   const scores = [values?.craft || 0, values?.communication || 0, values?.attitude || 0, values?.conduct || 0]
@@ -59,6 +61,7 @@ function CriteriaHistoryChart({ history }) {
 }
 
 export default function TrainingPage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(busy || JSON.stringify(notificationRecipients) !== JSON.stringify((data?.notification_recipients || []).map(x => x.username))))
   const permissions = user?.permissions || {}
   const [data, setData] = useState(null); const [tab, setTab] = useState('sessions')
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(null)

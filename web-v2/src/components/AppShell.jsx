@@ -1,3 +1,6 @@
+import StableFeedback from './StableFeedback'
+import { PAGE_REFRESH_ERROR } from '../lib/usePageRefresh'
+import '../page-stability.css'
 import NotificationInbox from './NotificationInbox'
 import { getCustomization, subscribeCustomization } from '../lib/uiCustomizationStore'
 import UiToolbar from './UiToolbar'
@@ -92,6 +95,17 @@ const liveAlertTiming = (alert, nowMs) => {
 }
 
 export default function AppShell({ user, currentPage, standalone = false, onPageChange, onRefreshCurrentPage, onSignOut, children }) {
+  const [refreshMessage, setRefreshMessage] = useState('')
+  useEffect(() => {
+    setRefreshMessage('')
+    const failed = event => setRefreshMessage(event.detail)
+    window.addEventListener(PAGE_REFRESH_ERROR, failed)
+    return () => window.removeEventListener(PAGE_REFRESH_ERROR, failed)
+  }, [currentPage])
+  const refreshPage = () => {
+    setRefreshMessage('')
+    if (onRefreshCurrentPage?.() === false) setRefreshMessage('Có thay đổi chưa lưu hoặc tác vụ đang xử lý. Hãy hoàn tất rồi làm mới.')
+  }
   const [mobileOpen, setMobileOpen] = useState(false)
   const layoutTrigger = useRef(null)
   const [layoutDesignerOpen, setLayoutDesignerOpen] = useState(currentPage === 'appearance')
@@ -368,7 +382,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   return (
     <div className={`app-shell ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`} onPointerDown={beginMenuSwipe} onPointerUp={endMenuSwipe} onPointerCancel={cancelMenuSwipe}>
       {/* Canonical phrase retained for CI/history: Suối nguồn thư giãn, trọn vẹn an yên. */}
-      {/* Legacy full reload used window.location.reload(); current refresh remounts only the visible page. */}
+      {/* Refresh updates data in place; keep the mounted page, filters and scroll containers. */}
       <style>{`
         .topbar-title.vera-script-tagline{font-family:'Lavishly Yours',cursive;font-size:28px;font-weight:700;line-height:1;letter-spacing:.01em;color:#173329;white-space:nowrap}
         .page-wrap.live-tour-page-wrap{padding-block:0}
@@ -434,13 +448,17 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           <UiToolbar data-ui-key="u-d08e23e02899" className="topbar-actions">
             {!user?.must_change_password && <NotificationInbox key={user.id} showTrigger={isAdmin}/>}
             {currentPage !== 'tour' && currentPage !== 'live-tour' && <button data-ui-key="u-f10aa9b76c0d" data-ui-label-default="Mở tab mới" type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /><UiCustomText uiKey="u-f10aa9b76c0d"> Mở tab mới</UiCustomText></button>}
-            <button data-ui-key="u-ae117d0698c3" data-ui-label-default="Làm mới" type="button" className="topbar-refresh-button" onClick={onRefreshCurrentPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /><UiCustomText uiKey="u-ae117d0698c3"> Làm mới</UiCustomText></button>
+            <button data-ui-key="u-ae117d0698c3" data-ui-label-default="Làm mới" type="button" className="topbar-refresh-button" onClick={refreshPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /><UiCustomText uiKey="u-ae117d0698c3"> Làm mới</UiCustomText></button>
           </UiToolbar>
         </header>}
         <div className={`page-wrap ${currentPage === 'tour' ? 'tour-page-wrap' : currentPage === 'live-tour' ? 'tour-page-wrap live-tour-page-wrap' : ''}`.trim()}>
+          <StableFeedback>
+            {refreshMessage && <p role="status">{refreshMessage}</p>}
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
 
           {isAdmin && breakAlertControl.disabled && <div className="break-alert-global-off"><span>Thông báo nghỉ giữa ca đang TẮT cho mọi tài khoản.</span><button data-ui-key="u-c49a507e2857" type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(false)}>{breakAlertControl.busy ? 'Đang bật…' : 'Bật lại'}</button></div>}
+          {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => choose('birthday', true)}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div>}
+          </StableFeedback>
 
           {!breakAlertControl.disabled && breakAlerts.length > 0 && breakAlertsHidden && <div className="break-alert-hidden-chip" style={alertPositionStyle}><BellRing size={15} /><span>{breakAlerts.length} cảnh báo đang tạm ẩn</span><button data-ui-key="u-b92d7cc74167" data-ui-label-default="Hiện" type="button" onClick={() => setBreakAlertsHidden(false)}><UiCustomText uiKey="u-b92d7cc74167">Hiện</UiCustomText></button></div>}
 
@@ -465,11 +483,11 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             </div>)}
           </div>}
 
-          {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => choose('birthday', true)}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div>}
+
           {typeof children === 'function' ? children(navigationToggle) : children}
         </div>
       </main>
-      <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus() }}/>
+      <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>
       <BackToTop/>
       <PopupNotifications/>
     </div>

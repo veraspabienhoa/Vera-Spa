@@ -1,3 +1,4 @@
+import StableFeedback from './StableFeedback'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
@@ -40,7 +41,7 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
     <section data-ui-key="u-022439885343" ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={`${deleting ? 'Hủy' : 'Sửa'} hóa đơn đã thanh toán`} onClick={(event) => event.stopPropagation()}>
       <div className="live-tour-modal-head"><strong>{deleting ? 'Xóa / hủy' : 'Sửa'} hóa đơn đã thanh toán</strong><button data-ui-key="u-9dbbb3e4bef1" type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
       <p><strong>{item.bill_no} · {item.customer_name || 'Khách lẻ'}</strong><br/>{formatVeraDate(item.business_date)} · {item.payment_method} · {money(item.total)}</p>
-      {error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất.</p>}
+      <StableFeedback>{error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất.</p>}</StableFeedback>
       <p className={deleting ? 'error-box' : 'setup-note'}>{deleting
         ? isAdmin
           ? 'Admin có thể hủy hóa đơn ở mọi ngày. Tiền và TIP của hóa đơn được loại khỏi báo cáo. Lượt combo được hoàn theo lịch sử gốc. Nếu hủy hóa đơn bán combo đã dùng hoặc đang giữ chỗ, số dư và booking combo được giữ nguyên; admin có thể điều chỉnh combo riêng. Bản gốc được giữ trong lịch sử.'

@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
@@ -90,6 +92,7 @@ function Snapshot({ item }) {
 }
 
 export default function AdminChangesPage() {
+  usePageRefresh(() => load(), () => Boolean(busy))
   const initial = useMemo(() => rangeFor('Hôm nay'), [])
   const [period, setPeriod] = useState('Hôm nay')
   const [start, setStart] = useState(initial[0])
@@ -155,7 +158,7 @@ export default function AdminChangesPage() {
       @media(max-width:640px){.audit-detailed article{grid-template-columns:1fr}.audit-detailed time{font-size:11px}.audit-field-grid{grid-template-columns:1fr}.audit-snapshot-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.audit-filter-buttons button:last-child{grid-column:1/-1}.audit-search-line label{min-width:100%}.admin-change-push{align-items:stretch;flex-direction:column}.admin-change-push button{width:100%}}
     `}</style>
     <div data-ui-key="u-e5982f729629" className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1><p>Tự động lọc theo người thực hiện khi gõ tên, lọc thời gian, xem chi tiết trước/sau và export Excel.</p></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button data-ui-key="u-1dff9f5b8620" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-1dff9f5b8620"> Làm mới</UiCustomText></button><button data-ui-key="u-9b7c0983c926" className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button></div></div>
-    {error && <div className="error-box">{error}</div>}
+    <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
 
     <section data-ui-key="u-6d7ee12b26b7" className="panel data-toolbar"><UiToolbar data-ui-key="u-3175e389120b" className="audit-toolbar-content">
       <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button data-ui-key="u-afa1823cde30" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>

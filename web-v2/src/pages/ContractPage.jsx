@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
@@ -50,6 +52,7 @@ const placeholderHelp = [
 ]
 
 export default function ContractPage({ user }) {
+  usePageRefresh(() => load(contractType), () => Boolean(busy || (data && JSON.stringify(settings) !== JSON.stringify(data.settings))))
   const initialContractType = contractTypeByRole[String(user?.role || '').toLowerCase()] || 'ktv'
   const [contractType, setContractType] = useState(initialContractType)
   const [data, setData] = useState(null)
@@ -159,7 +162,7 @@ export default function ContractPage({ user }) {
       <button data-ui-key="u-00d24a0cfef1" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load(contractType)} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-00d24a0cfef1"> Làm mới</UiCustomText></button>
     </div>
 
-    {notice && <div className={notice.type === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.type === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}</StableFeedback>
 
     <section data-ui-key="u-c340ffe124d2" className="panel contract-type-panel">
       <div data-ui-key="u-26005b0bde28" className="panel-title-row"><div><h2><FileSignature size={18} /> Chọn loại hợp đồng</h2></div></div>

@@ -7,6 +7,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { LETAN_REASON_GROUPS, canEditLeaveRecord, canDeleteLeaveRecord, canChangeLeaveReason } from '../src/lib/leaveRecordPermissions.js'
+import { requestPageRefresh } from '../src/lib/usePageRefresh.js'
 
 const require = createRequire(import.meta.url)
 const built = await build({
@@ -250,5 +251,32 @@ test('changing the list month also confines statistics to that month', async () 
       assert.equal(call[1].slice(0, 7), month)
       assert.equal(call[2].slice(0, 7), month)
     }
+  } finally { await f.dispose() }
+})
+
+test('same-month refresh retains rows, but changing month hides the previous scope while loading', async () => {
+  const records = [{ record_uid: 'stable-row', employee_name: 'An An', leave_date: iso(0), leave_reason: 'Nghỉ CÓ phép', detail: 'saved-scope' }]
+  let pending, finish
+  const f = await fixture({ records, catalog: { [iso(0)]: [{ name: 'Nghỉ CÓ phép' }] }, setupApi: api => {
+    api.leaveRecords = async () => pending ? new Promise(resolve => { finish = resolve }) : ({ records })
+  } })
+  try {
+    const table = f.dom.window.document.querySelector('.leave-records-table')
+    const row = table.querySelector('tbody tr'), scroll = table.parentElement
+    scroll.scrollLeft = 250
+    pending = true
+    await act(async () => requestPageRefresh())
+    assert.equal(table.querySelector('tbody tr'), row)
+    assert.equal(scroll.scrollLeft, 250)
+    assert.equal(table.closest('.stable-data-content').hasAttribute('inert'), true)
+    await act(async () => finish({ records }))
+    assert.equal(table.querySelector('tbody tr'), row)
+    const nextMonth = [...f.dom.window.document.querySelectorAll('.leave-list-panel button')].find(b => b.textContent === 'Tháng sau')
+    await act(async () => nextMonth.click())
+    assert.doesNotMatch(table.textContent, /saved-scope/)
+    assert.equal(table.closest('.stable-data-content').hasAttribute('inert'), true)
+    await act(async () => finish({ records: [] }))
+    assert.doesNotMatch(table.textContent, /saved-scope/)
+    assert.match(table.textContent, /Không có lịch nghỉ phù hợp/)
   } finally { await f.dispose() }
 })

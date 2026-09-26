@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -46,6 +48,7 @@ const emptyForm = () => ({
 })
 
 export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChanged }) {
+  usePageRefresh(() => load(), () => Boolean(busy))
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const [target, setTarget] = useState(null)
   const [rows, setRows] = useState([])
@@ -143,7 +146,7 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
       <button data-ui-key="u-845b2c94fc3e" data-ui-label-default="Làm mới" className="secondary-button compact" type="button" onClick={() => load()} disabled={Boolean(busy)}><RefreshCw size={14} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-845b2c94fc3e"> Làm mới</UiCustomText></button>
     </div>
 
-    {notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
     <form className="payroll-obligation-form" onSubmit={addDebt}>
       <label>Loại nợ<select value={form.debt_type} disabled={Boolean(busy)} onChange={(event) => setForm({ ...form, debt_type: event.target.value })}><option>Âm thực nhận</option><option>Tạm hoãn vi phạm</option></select></label>

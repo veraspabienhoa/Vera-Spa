@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import { useEffect, useRef, useState } from 'react'
 import { Download, History, RefreshCw } from 'lucide-react'
 import VeraDateInput from '../components/VeraDateInput'
@@ -87,6 +89,7 @@ function CaptureImageButton({ record }) {
 }
 
 export default function CheckinHistoryPage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(busy || exporting))
   const [filters, setFilters] = useState(initialCheckinFilters)
   const [records, setRecords] = useState(null)
   const [loadedQuery, setLoadedQuery] = useState(null)
@@ -103,13 +106,13 @@ export default function CheckinHistoryPage({ user }) {
   const change = patch => { setFilters(value => ({ ...value, ...patch })); setDirty(true); setError('') }
   const preset = value => change({ preset: value, ...checkinDateRange(value), event_date: '' })
   const load = async event => {
-    event.preventDefault()
-    if (!event.currentTarget.reportValidity()) return
+    event?.preventDefault()
+    if (!formRef.current?.reportValidity()) return
     const invalid = checkinRangeError(filters)
     if (invalid) { setError(invalid); return }
     const id = ++requestId.current
     const query = checkinQuery(filters)
-    setBusy(true); setError(''); setRecords(null)
+    setBusy(true); setError('')
     try {
       const response = await veraApi.checkinHistory(query)
       if (requestId.current !== id) return
@@ -118,7 +121,10 @@ export default function CheckinHistoryPage({ user }) {
       setOptions(response.options || { statuses: [], types: [] })
       setLoadedQuery(query); setDirty(false)
     } catch (cause) {
-      if (requestId.current === id) setError(cause.message || 'Không tải được lịch sử checkin.')
+      if (requestId.current === id) {
+        setError(cause.message || 'Không tải được lịch sử checkin.')
+        if ([401, 403].includes(cause.status)) setRecords(null)
+      }
     } finally { if (requestId.current === id) setBusy(false) }
   }
   const exportExcel = async () => {
@@ -150,13 +156,13 @@ export default function CheckinHistoryPage({ user }) {
         <div className="checkin-quick-dates">{CHECKIN_PRESETS.filter(([id]) => id !== 'custom').map(([id, label]) => <button key={id} type="button" className="secondary-button" aria-pressed={filters.preset === id} onClick={() => preset(id)}>{label}</button>)}<button type="button" className="secondary-button" onClick={() => change(EMPTY_CHECKIN_DETAILS)}>Xóa lọc chi tiết</button></div>
         <div className="device-actions">
           <button className="secondary-button" type="submit"><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang tải…' : 'Xem lịch sử'}</button>
-          <button className="secondary-button" type="button" disabled={!records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất Excel'}</button>
+          <button className="secondary-button" type="button" disabled={busy || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất Excel'}</button>
         </div>
       </fieldset>
       <small>Tra cứu tối đa 63 ngày/lượt. “Tất cả” lấy 63 ngày gần nhất. Danh sách trạng thái và loại sự kiện được cập nhật sau khi tải. Excel lấy dữ liệu mới nhất theo bộ lọc đã áp dụng.</small>
     </form>
     {dirty && records && <p role="status">Bộ lọc đã thay đổi. Bấm Xem lịch sử để cập nhật bảng và xuất Excel.</p>}
-    {error && <p role="alert">{error}</p>}
+    <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
     {records && <>
       <p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p>
       {visible.length === 0 && <p role="status">Không có bản ghi phù hợp bộ lọc.</p>}

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
-const built=await build({stdin:{contents:"export {default} from './src/components/PaymentCustomerScreen'",resolveDir:fileURLToPath(new URL('..',import.meta.url)),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime','react-dom']})
+const built=await build({stdin:{contents:"export {default} from './src/components/PaymentCustomerScreen'",resolveDir:fileURLToPath(new URL('..',import.meta.url)),loader:'jsx'},bundle:true,write:false,loader:{'.css':'empty'},platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime','react-dom']})
 test('Customer QR updates safely, handles blocked popup and closes stale screen',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://test.invalid',pretendToBeVisual:true})
  const saved=Object.fromEntries(['window','document','navigator','IS_REACT_ACT_ENVIRONMENT'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]))

@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { useEffect, useState } from 'react'
@@ -8,6 +10,7 @@ const modes = { monthly: 'Lương tháng', hourly: 'Lương giờ', tip: 'Tip' }
 const empty = { code: '', name: '', salary_mode: 'hourly' }
 
 export default function HumanResourcesPage({ user }) {
+  usePageRefresh(() => isAdmin && load(), () => Boolean(busy || editing || JSON.stringify(assignments) !== JSON.stringify(Object.fromEntries((data?.employees || []).map(person => [person.username, person.department])))))
   const [data, setData] = useState(null)
   const [draft, setDraft] = useState(empty)
   const [editing, setEditing] = useState(false)
@@ -42,7 +45,7 @@ export default function HumanResourcesPage({ user }) {
   }
   return <div className="feature-page hr-page">
     <div data-ui-key="u-7fd60f444946" className="page-heading"><div><h1>NHÂN SỰ</h1><p>Quản lý bộ phận và hình thức lương độc lập với phân quyền tài khoản.</p></div><button data-ui-key="u-eca8c9b24429" data-ui-label-default="Làm mới" className="secondary-button" disabled={busy} onClick={() => run(load, 'Đã làm mới.')}><UiCustomText uiKey="u-eca8c9b24429">Làm mới</UiCustomText></button></div>
-    {error && <div className="error-box" role="alert">{error}</div>}{notice && <div className="success-box" role="status">{notice}</div>}
+    <StableFeedback>{error && <div className="error-box" role="alert">{error}</div>}{notice && <div className="success-box" role="status">{notice}</div>}</StableFeedback>
     <section data-ui-key="u-f6aa77c86491" className="panel"><h2>Bộ phận & hình thức lương</h2>
       <p>Lương tháng: lương cơ bản theo 26 ngày công. Lương giờ: theo giờ làm và mức lương từng ca. Tip: dùng cách tính Lương KTV hiện tại, cùng các khoản phụ cấp và khấu trừ.</p>
       <form className="hr-department-form" onSubmit={submit}>
