@@ -1,5 +1,24 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: chọn ngày chốt cho tổng Doanh thu Auto
+
+Ảnh 18:49 cho thấy người dùng chỉnh Đến ngày trong kỳ TIP thành 24-09 nhưng
+Báo cáo tới ngày vẫn 26-09. Xác nhận summaryRange ở frontend cố định là all;
+API summary đã nhận start/end nhưng chưa có điều khiển nối tới tham số này.
+Bổ sung form Chọn ngày báo cáo / Xem báo cáo ngay trong thẻ Báo cáo tới ngày
+cho Auto, lọc từ 05-09-2025 đến ngày chọn (bao gồm cả ngày cuối). Nút Đến hôm
+nay trở lại báo cáo cập nhật theo ngày hiện tại. Kỳ TIP độc lập và có nhãn rõ.
+Ngày báo cáo hiển thị dùng end_date thực tế từ API; current_date vẫn là ngày
+kinh doanh để không đổi quy ước chọn TIP. Bộ lọc được giữ khi refresh/polling;
+không sửa dữ liệu thu chi, chế độ dùng chung hoặc kỳ TIP đã lưu. Lưu TIP tính
+lại Còn lại từ tổng đang xem, không lấy số dư toàn thời gian trong phản hồi.
+
+Kiểm thử tương tác gồm ngày TIP không đổi tổng, ngày báo cáo gửi đúng khoảng,
+trả về hôm nay, giữ bộ lọc khi cập nhật và lưu TIP không ghi đè số dư đang lọc.
+PostgreSQL đối chiếu Auto và Manual cùng kỳ đến 24-09, loại giao dịch ngày 25
+khỏi tổng và xác nhận đọc không sửa sổ. Cần Deploy VPS Production sau CI;
+chưa đối chiếu từng giao dịch/tổng tiền của cơ sở dữ liệu production.
+
 ## 26-09-2026: Lương hành chánh lấy thưởng combo và loại tài khoản không tính lương
 
 Ảnh người dùng cho thấy lượt bán combo theo nhân viên ở Lịch làm việc khác

@@ -43,8 +43,11 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
         return response({ source, revision })
       }
       if (path.endsWith('/revision')) return response({revision:`fixture-${revision}`})
+      const cutoff = new URL(url).searchParams.get('end')
+      const filtered = cutoff === '2026-09-24'
       if (path.endsWith('/summary')) return response({ source, source_revision: legacy ? undefined : revision,
-        total_income: 1760, total_expense: 190.25, net_income: 1569.75, period_tip: 20, balance: 1549.75,
+        total_income: filtered ? 1000 : 1760, total_expense: filtered ? 100 : 190.25, net_income: filtered ? 900 : 1569.75, period_tip: 20, balance: filtered ? 880 : 1549.75,
+        end_date: cutoff || '2026-09-26', business_date: '2026-09-26',
         start_date: '2025-09-05', start_date_label: '05-09-2025', current_date: '2026-09-26', current_date_label: '26-09-2026',
         period_tip_start: '2026-09-16', period_tip_end: '2026-09-26',
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
@@ -56,7 +59,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
       if (path.endsWith('/ledger/export.xlsx')) return {ok:true,blob:async()=>new Blob(['synthetic full export'])}
       if (path.endsWith('/live-tour/reports')) return response({reports:[{business_date:'2026-09-20',tip:20}]})
       if (path.endsWith('/tip-summary')) return response({ source, period_tip: 20 })
-      if (path.endsWith('/tip-period')) return response({ period_tip:20, balance:1549.75, period_tip_start:'2026-09-16', period_tip_end:'2026-09-26' })
+      if (path.endsWith('/tip-period')) { const body=JSON.parse(options.body); return response({ period_tip:20, balance:1549.75, period_tip_start:body.start_date, period_tip_end:body.end_date }) }
       throw new Error(`Unexpected request ${path}`)
     },
   }
@@ -68,6 +71,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
   await act(async () => root.render(React.createElement(module.exports.default,{ user:{ role } })))
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
   return { doc:dom.window.document, calls,
+    async change(node,value) { await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new dom.window.Event('input',{bubbles:true}));node.dispatchEvent(new dom.window.Event('change',{bubbles:true}))}) },
     button(text) { return [...dom.window.document.querySelectorAll('button')].find(b=>b.textContent.includes(text)) },
     async externalMode(mode) { source=mode; revision+=1; await act(async()=>dom.window.dispatchEvent(new dom.window.Event('focus'))); await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))}) },
     async close() { await act(async()=>root.unmount()); dom.window.close(); for(const [key,desc] of Object.entries(descriptors)){ if(desc) Object.defineProperty(globalThis,key,desc); else delete globalThis[key] } },
@@ -80,6 +84,7 @@ for (const role of ['admin','giamdoc','quanly','letan','nhanvien']) {
     try {
       assert.match(f.doc.body.textContent,/Auto · Tự động hệ thống/)
       assert.equal(f.doc.querySelector('.revenue-entry-form'),null)
+      assert.equal(Boolean(f.doc.querySelector('.revenue-report-date-form')),['admin','giamdoc'].includes(role))
       if(role==='admin') assert.equal(f.button('Import thêm mới').disabled,true); else assert.equal(f.button('Import thêm mới'),undefined)
       if(role==='admin') assert.equal(f.button('Sửa dòng đã chọn').disabled,true); else assert.equal(f.button('Sửa dòng đã chọn'),undefined)
       if(role==='admin') assert.equal(f.button('Xóa dòng đã chọn').disabled,true); else assert.equal(f.button('Xóa dòng đã chọn'),undefined)
@@ -128,4 +133,42 @@ test('an already open Manual page locks after another admin changes the shared m
     assert.equal(f.button('Auto · Tự động hệ thống').disabled,true)
     assert.equal(f.button('Lưu Tiền TIP').disabled,false)
   } finally { await f.close() }
+})
+
+
+test('Auto report cutoff filters totals separately from TIP and survives refresh and TIP saving', async()=>{
+  const f=await fixture('admin')
+  try {
+    const summaries=()=>f.calls.filter(c=>c.path.endsWith('/summary'))
+    const amount=kind=>f.doc.querySelector(`.revenue-card-${kind}`)?.textContent || f.doc.querySelector(`.revenue-card.${kind}`).textContent
+    const n=summaries().length
+    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'24-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
+    assert.equal(summaries().length,n,'TIP dates must not change the report cutoff')
+    assert.equal(new URL(f.calls.filter(c=>c.path.endsWith('/tip-summary')).at(-1).url).searchParams.get('end'),'2026-09-24')
+    assert.match(amount('income'),/1\.760đ/)
+    const date=f.doc.querySelector('[aria-label="Chọn ngày báo cáo"]')
+    await f.change(date,'24-09-20')
+    await act(async()=>f.button('Xem báo cáo').click())
+    assert.equal(summaries().length,n,'incomplete date cannot apply the previous date')
+    await f.change(date,'24-09-2026')
+    await act(async()=>f.button('Xem báo cáo').click())
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
+    assert.deepEqual(Object.fromEntries(new URL(summaries().at(-1).url).searchParams),{source:'auto',time_range:'custom',start:'2025-09-05',end:'2026-09-24'})
+    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'24-09-2026')
+    assert.match(amount('income'),/1\.000đ/);assert.match(amount('expense'),/100đ/);assert.match(amount('net'),/900đ/);assert.match(amount('balance'),/880đ/)
+    await act(async()=>f.button('Lưu Tiền TIP').click())
+    assert.match(amount('balance'),/880đ/,'unfiltered save response must not replace filtered balance')
+    assert.deepEqual(f.calls.find(c=>c.path.endsWith('/tip-period')).body,{start_date:'2026-09-16',end_date:'2026-09-24'})
+    await f.externalMode('auto')
+    assert.equal(new URL(summaries().at(-1).url).searchParams.get('end'),'2026-09-24')
+    assert.match(amount('income'),/1\.000đ/)
+    await act(async()=>f.button('Đến hôm nay').click())
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
+    assert.equal(new URL(summaries().at(-1).url).searchParams.get('time_range'),'all')
+    assert.equal(new URL(summaries().at(-1).url).searchParams.has('end'),false)
+    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'26-09-2026')
+    assert.match(amount('income'),/1\.760đ/)
+    assert.equal(f.calls.filter(c=>c.method!=='GET').length,1,'only the explicit TIP save writes')
+  } finally {await f.close()}
 })

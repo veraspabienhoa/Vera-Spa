@@ -18,3 +18,10 @@
   .revenue-page .report-scroll { width:100%; max-width:100%; min-width:0; overflow:auto; }
   .revenue-page .revenue-actions > * { max-width:100%; box-sizing:border-box; white-space:normal; }
 }
+
+.revenue-page .revenue-report-cutoff { flex-wrap:wrap; min-width:0; }
+.revenue-page .revenue-report-date-form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; width:100%; min-width:0; }
+.revenue-page .revenue-report-date-form label { display:grid; gap:4px; flex:1 1 170px; min-width:0; }
+.revenue-page .revenue-report-date-form .vera-date-input { width:100%; min-width:0; }
+.revenue-page .revenue-report-date-form input { width:100%; min-width:0; box-sizing:border-box; }
+.revenue-page .revenue-report-date-form small { flex:1 0 100%; color:#596e61; }
