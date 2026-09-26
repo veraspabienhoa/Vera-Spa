@@ -277,7 +277,8 @@ def test_live_tour_modal_supports_escape_focus_trap_and_focus_restore():
     assert "const previousFocus = document.activeElement" in modal
     assert "event.key === 'Escape'" in modal
     assert "event.key !== 'Tab'" in modal
-    assert "previousFocus?.focus?.()" in modal
+    assert "previousFocus?.isConnected" in modal
+    assert "previousFocus.focus({ preventScroll: true })" in modal
     assert 'tabIndex="-1"' in modal
     assert 'role="dialog"' in modal
     assert 'aria-modal="true"' in modal

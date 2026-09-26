@@ -527,7 +527,7 @@ function LiveTourLegacyModal({ title, onClose, children, className = '' }) {
     const dialog = dialogRef.current
     const focusableSelector = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
     const focusable = () => [...(dialog?.querySelectorAll(focusableSelector) || [])]
-    const frame = window.requestAnimationFrame(() => (dialog?.querySelector('[autofocus]') || focusable()[0] || dialog)?.focus())
+    const frame = window.requestAnimationFrame(() => (dialog?.querySelector('[data-autofocus]') || focusable()[0] || dialog)?.focus({ preventScroll: true }))
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -546,7 +546,7 @@ function LiveTourLegacyModal({ title, onClose, children, className = '' }) {
     return () => {
       window.cancelAnimationFrame(frame)
       document.removeEventListener('keydown', onKeyDown)
-      previousFocus?.focus?.()
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
     }
   }, [])
 
@@ -1540,10 +1540,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     {/* The board expands in document flow to display every employee. */}
     <div className="live-tour-board">
     <div className="tour-board-top">
-      {pendingReminder && <div className="live-tour-payment-reminder">
+      {canPending && <div className="live-tour-reminder-slot">{pendingReminder && <div className="live-tour-payment-reminder">
         <BellRing size={16} aria-hidden="true"/><strong>CHỜ THANH TOÁN</strong><span>Hiện có {pendingReminderCount} phiếu cần xử lý.</span>
         <button data-ui-key="u-1d49f95cc184" data-ui-label-default="Mở danh sách" type="button" className="secondary-button" onClick={openPendingPanel} aria-controls="live-tour-pending-panel"><UiCustomText uiKey="u-1d49f95cc184">Mở danh sách</UiCustomText></button>
-      </div>}
+      </div>}</div>}
       <div className="tour-topbar">
         {navigationToggle}
         <div data-ui-key="u-a54bda9ab8fe" className="tour-heading-title"><h1>LIVE TOUR</h1><span className="live-tour-status">TRỰC TIẾP</span></div>
@@ -1566,13 +1566,18 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           <button data-ui-key="u-7859407699f6" data-ui-label-default="Làm mới" type="button" className="secondary-button" onClick={() => load(true)} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/><UiCustomText uiKey="u-7859407699f6"> Làm mới</UiCustomText></button>
         </UiToolbar>
       </div>
-      {(error || loadError) && <div className="error-box">{error || loadError}</div>}
-      {actionFeedback && <div className="live-tour-action-progress" role="status" aria-live="polite">{actionFeedback}</div>}
-      {notice && notice !== 'Đã cập nhật Live Tour.' && <div className="setup-note">{notice}</div>}
+      {/* Keep this slot mounted: saving, retrying and errors must not move the board. */}
+      <div className="live-tour-feedback" aria-label="Trạng thái thao tác Live Tour" tabIndex={error || loadError || actionFeedback || notice || data.countdown_error ? 0 : undefined}>
+        {(error || loadError) && <div className="error-box" role="alert">{error || loadError}</div>}
+        <div role="status" aria-live="polite" aria-atomic="true">
+          {actionFeedback && <div className="live-tour-action-progress">{actionFeedback}</div>}
+          {notice && notice !== 'Đã cập nhật Live Tour.' && <div className="setup-note">{notice}</div>}
+        </div>
+        {data.countdown_error && <div className="warning-box">Countdown Live Tour: {data.countdown_error}</div>}
+      </div>
       <div className="live-tour-sr-only" role="status" aria-live="polite" aria-atomic="true">
         {pendingReminder && <span key={pendingReminder.id}>{pendingReminder.text}</span>}
       </div>
-      {data.countdown_error && <div className="warning-box">Countdown Live Tour: {data.countdown_error}</div>}
       <div className="tour-control-layout">
         <div className="metric-grid small tour-metrics">{metrics.map(({ key, label, value, className }) => <button data-ui-key="u-0df4cbaff447" type="button" className={`metric-card tour-metric-card ${className} ${activeFilter === key ? 'active' : ''}`.trim()} onClick={() => chooseFilter(key)} aria-pressed={activeFilter === key} title={key === 'all' ? 'Xếp theo TG bắt đầu thực hiện từ sớm đến muộn' : key === 'finishing' ? 'Ưu tiên Đang rảnh và Sắp xong khi cùng TG bắt đầu thực hiện' : `Ưu tiên ${label} khi cùng TG bắt đầu thực hiện`} key={key}><span>{label}</span><strong>{value}</strong></button>)}</div>
       </div>
@@ -1706,7 +1711,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     {comboLookupOpen && canViewComboPackages && <LiveTourModal className="live-tour-combo-modal" title="Kiểm tra Gói Combo khách hàng" onClose={() => setComboLookupOpen(false)}>
       <div className="live-tour-combo-lookup">
         <UiToolbar data-ui-key="u-6948e5d17d87" className="live-tour-panel-toolbar"><p>Tìm khách hàng để xem số vé còn lại, ngày mua và toàn bộ lịch sử sử dụng combo.</p><button data-ui-key="u-7e34d298e21b" data-ui-label-default="Xuất Excel" type="button" className="secondary-button" disabled={!canExportKind('customers') || Boolean(actionBusy)} onClick={() => exportData('customers')}><Download size={13}/><UiCustomText uiKey="u-7e34d298e21b"> Xuất Excel</UiCustomText></button></UiToolbar>
-        <label className="live-tour-customer-search"><Search size={14}/><ClearableSearchInput autoFocus type="search" aria-label="Tìm khách hàng trong Gói Combo" autoComplete="off" value={comboLookupSearch} onChange={(event) => setComboLookupSearch(event.target.value)} placeholder="Tìm theo tên khách hàng hoặc số điện thoại…"/></label>
+        <label className="live-tour-customer-search"><Search size={14}/><ClearableSearchInput data-autofocus="true" type="search" aria-label="Tìm khách hàng trong Gói Combo" autoComplete="off" value={comboLookupSearch} onChange={(event) => setComboLookupSearch(event.target.value)} placeholder="Tìm theo tên khách hàng hoặc số điện thoại…"/></label>
         <div data-ui-key="u-3a71c9cca2d1" className="live-tour-card-grid live-tour-combo-lookup-grid">
           {comboLookupCustomers.map((customer, index) => <button data-ui-key="u-9aa9421c024d" type="button" className="live-tour-data-card live-tour-combo-customer" onClick={() => openCustomerHistory(customer)} key={itemId(customer, index)}>
             <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong><span>{customer?.phone || 'Chưa có số điện thoại'}</span>
@@ -1830,7 +1835,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           </>}
 
 
-          {['replace_service', 'add_service'].includes(modal.kind) && <><label className="live-tour-field wide"><span>Dịch vụ</span><input list="live-tour-service-change-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required autoFocus/><datalist id="live-tour-service-change-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
+          {['replace_service', 'add_service'].includes(modal.kind) && <><label className="live-tour-field wide"><span>Dịch vụ</span><input list="live-tour-service-change-options" value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required data-autofocus="true"/><datalist id="live-tour-service-change-options">{bookableServices.map((service, index) => <option value={itemLabel(service)} key={itemId(service, index)}/>)}</datalist></label><label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label></>}
 
           {modal.kind === 'combo_approvals' && <div className="wide live-tour-combo-approvals">
             {pendingComboSaleRequests.length ? pendingComboSaleRequests.map((request) => <article className="live-tour-data-card" key={request.id}>
@@ -1864,7 +1869,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
           {modal.kind === 'combo_import' && <LiveTourComboImportFields onSearch={setLookupSearch} customers={customers} combos={combos} form={form} setForm={setForm}/>}
 
-          {modal.kind === 'room_upsert' && <><label className="live-tour-field"><span>Mã phòng / giường</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value, room: event.target.value }))} required autoFocus/></label><p>Phòng 16–21 tự động thuộc nhóm VIP; các phòng khác là Standard.</p></>}
+          {modal.kind === 'room_upsert' && <><label className="live-tour-field"><span>Mã phòng / giường</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value, room: event.target.value }))} required data-autofocus="true"/></label><p>Phòng 16–21 tự động thuộc nhóm VIP; các phòng khác là Standard.</p></>}
           {modal.kind === 'service_upsert' && <><label className="live-tour-field"><span>Mã dịch vụ</span><input value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}/></label><label className="live-tour-field"><span>Tên dịch vụ</span><input value={form.service} onChange={(event) => setForm((current) => ({ ...current, service: event.target.value }))} required/></label><label className="live-tour-field"><span>Thời lượng (phút)</span><input type="number" min="0" value={form.duration} onChange={(event) => setForm((current) => ({ ...current, duration: event.target.value }))}/></label><label className="live-tour-field"><span>Đơn giá</span><input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}/></label></>}
           {modal.kind === 'service_upsert' && <>
             <label className="live-tour-field"><span>Số vé combo trừ</span><input type="number" min="0" max="100000" step="1" value={form.ticket_units} required onChange={(event) => setForm((current) => ({ ...current, ticket_units: event.target.value }))}/></label>
