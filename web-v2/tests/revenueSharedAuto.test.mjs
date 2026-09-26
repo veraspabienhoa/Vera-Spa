@@ -25,7 +25,7 @@ const built = await build({
 
 async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26', unified = false, savedStart = '2026-09-16', ledgerFixture = null) {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
-  let source = initial, revision = 1, hold = false, pending = null
+  let source = initial, revision = 1, hold = false, pending = null, today = '2026-09-26', dataRevision = 1
   const calls = []
   const names = ['window','document','navigator','ResizeObserver','requestAnimationFrame','cancelAnimationFrame','IS_REACT_ACT_ENVIRONMENT','fetch']
   const descriptors = Object.fromEntries(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
@@ -42,7 +42,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
         if (method === 'PUT') { source = JSON.parse(options.body).source; revision += 1 }
         return response({ source, revision, period_report_version: Number(unified) })
       }
-      if (path.endsWith('/revision')) return response({revision:`fixture-${revision}`})
+      if (path.endsWith('/revision')) return response({revision:`fixture-${revision}-${dataRevision}-${today}`})
       const cutoff = new URL(url).searchParams.get('end')
       const filtered = cutoff === '2026-09-24'
       if (path.endsWith('/period-report') || path.endsWith('/report-period')) {
@@ -70,10 +70,15 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
       if (path.endsWith('/purchases')) return response({ start_date:'2025-09-05', end_date:'2026-09-26', purchase_rows:Array.from({length:rowCount},(_,i)=>({id:i,date:'2026-09-26',date_label:'26-09-2026',item:`Hàng ${i+1}`,amount:10,buyer:'Nguoi dat',user:'Nguoi nhap'})) })
       if (path.endsWith('/purchase-reconcile')) {
         const params=new URL(url).searchParams, canonical=params.get('canonical')==='true'
-        const start=params.get('start') || '2025-09-05'
-        let end=params.get('end') || '2026-09-26'
-        if(canonical && params.get('report_end') && params.get('report_end')<end) end=params.get('report_end')
-        return response({canonical,source:legacy ? undefined : source,source_revision:legacy ? undefined : revision,
+        let start=params.get('start') || '2025-09-05'
+        let end=params.get('end') || today
+        const live=params.get('live_ledger')==='true'
+        if(live && params.get('preset')==='all' && ledgerFixture?.length){
+          start=ledgerFixture.map(row=>row.date).sort()[0]
+          end=[today,...ledgerFixture.map(row=>row.date)].sort().at(-1)
+        }
+        if(!live && canonical && params.get('report_end') && params.get('report_end')<end) end=params.get('report_end')
+        return response({canonical,live_ledger:live,source:legacy ? undefined : source,source_revision:legacy ? undefined : revision,
           start_date:start,end_date:end,purchase_rows:Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2025-09-05',item:`Hàng ${i+1}`,amount:10})),
           ledger_rows:ledgerFixture ? ledgerFixture.filter(row=>row.date>=start && row.date<=end) : Array.from({length:rowCount},(_,i)=>({id:`auto:${i}`,date:'2025-09-05',date_label:'05-09-2025',type:'Thu',amount:1760,note:`Doanh thu dịch vụ + TIP ${i+1}`,read_only:source==='auto'})),
         })
@@ -96,6 +101,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
     async change(node,value) { await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new dom.window.Event('input',{bubbles:true}));node.dispatchEvent(new dom.window.Event('change',{bubbles:true}))}) },
     button(text) { return [...dom.window.document.querySelectorAll('button')].find(b=>b.textContent.includes(text)) },
     async externalMode(mode) { source=mode; revision+=1; await act(async()=>dom.window.dispatchEvent(new dom.window.Event('focus'))); await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))}) },
+    async updateLedger(rows, day = today) { ledgerFixture=rows; today=day; dataRevision+=1; await act(async()=>dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'))); await act(async()=>{await new Promise(resolve=>setTimeout(resolve,320))}) },
     async close() { await act(async()=>root.unmount()); dom.window.close(); for(const [key,desc] of Object.entries(descriptors)){ if(desc) Object.defineProperty(globalThis,key,desc); else delete globalThis[key] } },
   }
 }
@@ -338,7 +344,7 @@ test('Manual ledger and export can inspect September 24 while the summary stays 
     await f.change(field('Đến ngày'),'24-09-2026')
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20))})
     query=new URL(details().at(-1).url).searchParams
-    assert.equal(query.get('start'),'2025-09-05','editing one date retains the other displayed bound')
+    assert.equal(query.get('start'),'2026-09-24','editing one date retains the other displayed bound')
     assert.equal(query.get('end'),'2026-09-24')
     await f.change(field('Từ ngày'),'24-09-2026')
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20))})
@@ -346,5 +352,42 @@ test('Manual ledger and export can inspect September 24 while the summary stays 
     assert.equal(f.doc.querySelectorAll('.ledger-table tbody tr').length,3)
     assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'21-09-2026')
     assert.equal(f.calls.some(c=>c.method!=='GET'),false,'inspecting the ledger must not change the saved report or money')
+  } finally { await f.close() }
+})
+
+for(const source of ['manual','auto','manual_tip_auto']) test(`${source}: all ledger dates stay live beyond the TIP cutoff and preserve explicit filters`,async()=>{
+  const row=(id,date,amount)=>({id,date,date_label:date.split('-').reverse().join('-'),type:'Thu',amount,note:`Synthetic ${id}`,read_only:source==='auto'})
+  const rows=[row(1,'2024-01-02',100),row(2,'2026-09-24',200),row(3,'2026-09-26',300)]
+  const f=await fixture('admin',source,false,3,'2026-09-21',2,'2026-09-16',rows)
+  try {
+    const details=()=>f.calls.filter(c=>c.path.endsWith('/purchase-reconcile'))
+    const query=()=>new URL(details().at(-1).url).searchParams
+    const field=label=>[...f.doc.querySelectorAll('.detail-filter-panel label')].find(node=>node.firstChild?.textContent===label)?.querySelector('input[type="text"]')
+    if(source==='manual_tip_auto'){
+      await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'21-09-2026')
+      await act(async()=>{await new Promise(resolve=>setTimeout(resolve,320))})
+    }
+    assert.equal(query().get('live_ledger'),'true')
+    assert.equal(query().has('report_end'),false)
+    assert.equal(f.doc.querySelectorAll('.ledger-table tbody tr').length,3)
+    assert.match(f.doc.querySelector('.ledger-table').textContent,/02-01-2024/)
+    assert.equal(field('Đến ngày').value,'26-09-2026')
+    await f.updateLedger([...rows,row(4,'2026-09-27',400)],'2026-09-27')
+    assert.equal(f.doc.querySelectorAll('.ledger-table tbody tr').length,4)
+    assert.equal(field('Đến ngày').value,'27-09-2026')
+    assert.match(f.doc.querySelector('.ledger-summary-head').textContent,/1\.000đ/)
+    assert.equal(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]').value,'21-09-2026','refresh must preserve the deliberate TIP period')
+    await f.change(field('Ngày'),'24-09-2026')
+    await f.updateLedger([row(2,'2026-09-24',250),row(4,'2026-09-27',400)])
+    assert.equal(f.doc.querySelectorAll('.ledger-table tbody tr').length,1)
+    assert.match(f.doc.querySelector('.ledger-summary-head').textContent,/250đ/)
+    assert.equal(field('Ngày').value,'24-09-2026')
+    f.doc.addEventListener('click',event=>{if(event.target.closest('a[download]'))event.preventDefault()})
+    await act(async()=>f.button('Xuất Excel').click())
+    const exported=new URL(f.calls.filter(c=>c.path.endsWith('/ledger/export.xlsx')).at(-1).url).searchParams
+    assert.equal(exported.get('live_ledger'),'true')
+    assert.equal(exported.get('transaction_date'),'2026-09-24')
+    assert.equal(exported.has('report_end'),false)
+    assert.equal(f.calls.some(c=>c.method!=='GET'),false)
   } finally { await f.close() }
 })

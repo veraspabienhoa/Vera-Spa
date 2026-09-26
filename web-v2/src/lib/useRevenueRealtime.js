@@ -12,7 +12,7 @@ export function watchRevenueChanges(load, { changed, blocked, failed, stale = ()
       failed('')
       // Do not consume a revision while a form/save/read is still in progress.
       if (revision && (revision !== seen || stale()) && !blocked()) { seen = revision; changed() }
-    } catch (error) { if (error?.name !== 'AbortError') failed('Tạm mất kết nối cập nhật Auto. Hệ thống sẽ tự thử lại.') }
+    } catch (error) { if (error?.name !== 'AbortError') failed('Tạm mất kết nối cập nhật Doanh thu. Hệ thống sẽ tự thử lại.') }
   }, { interval: 5000, ...options })
 }
 

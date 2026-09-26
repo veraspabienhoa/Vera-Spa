@@ -84,23 +84,28 @@ REPORT_DAILY_SQL = """
       WHERE deleted_at IS NULL
       ) events
     ) reports
-    WHERE report_day BETWEEN :start AND :end
+    WHERE report_day IS NOT NULL
+      AND (CAST(:start AS date) IS NULL OR report_day >= CAST(:start AS date))
+      AND (CAST(:end AS date) IS NULL OR report_day <= CAST(:end AS date))
     GROUP BY report_day
 """
 
 
 def _params(start, end):
-    return {"start": start, "end": end, "start_text": start.isoformat(), "end_text": end.isoformat()}
+    return {"start": start, "end": end, "start_text": start.isoformat() if start else None, "end_text": end.isoformat() if end else None}
 
 
-def daily(conn, start=None, end=None, *, include_entries=True):
+def daily(conn, start=None, end=None, *, include_entries=True, limit_to_reporting_period=True):
     """Auto is independent: paid Live Tour income and authoritative purchases only."""
-    start, end = bounds(start, end)
-    if start > end:
+    if limit_to_reporting_period:
+        start, end = bounds(start, end)
+    if start is not None and end is not None and start > end:
         return []
     return conn.execute(text(f"""WITH receipts AS ({REPORT_DAILY_SQL}), purchases AS (
         SELECT purchase_date AS day, SUM(amount) AS expense, COUNT(*) AS purchases
-        FROM vera_purchase_entry WHERE NOT deleted AND purchase_date BETWEEN :start AND :end
+        FROM vera_purchase_entry WHERE NOT deleted
+          AND (CAST(:start AS date) IS NULL OR purchase_date >= CAST(:start AS date))
+          AND (CAST(:end AS date) IS NULL OR purchase_date <= CAST(:end AS date))
         GROUP BY purchase_date
       ) SELECT COALESCE(r.day, p.day) AS day,
         COALESCE(service,0) AS service, COALESCE(tip,0) AS tip,

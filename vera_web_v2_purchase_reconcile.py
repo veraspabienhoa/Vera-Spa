@@ -368,6 +368,24 @@ def _comparison(
     return output
 
 
+def _live_ledger(conn, source, preset, start, end):
+    """The register follows its own filters, independently of saved report dates."""
+    all_dates = str(preset).strip().lower() == 'all'
+    first, last = (None, None) if all_dates else (start, end)
+    if source == 'auto':
+        rows = revenue_auto.ledger_rows(revenue_auto.daily(
+            conn, first, last, limit_to_reporting_period=False))
+    else:
+        rows = revenue_store.list_entries(conn, start_date=first, end_date=last)
+    if all_dates:
+        days = [_parse_date(row.get('date')) for row in rows]
+        days = [day for day in days if day]
+        today = datetime.now(VN_TZ).date()
+        start = min(days) if days else today
+        end = max([today, *days])
+    return rows, start, end
+
+
 def _serialize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     output = []
     for row in rows:
@@ -447,20 +465,23 @@ def install_purchase_reconcile_routes(
         end_date: date | None = Query(default=None, alias="end"),
         canonical: bool = False,
         report_end: date | None = None,
+        live_ledger: bool = False,
         ident=Depends(current_identity),
     ):
         start, end = _resolve_range(preset, start_date, end_date)
-        if canonical and report_end is not None:
+        if canonical and not live_ledger and report_end is not None:
             end = min(end, report_end)
         from vera_purchase_store import server_reconcile_rows
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
             shared = revenue_auto.mode(conn)
+            if live_ledger:
+                ledger_all, start, end = _live_ledger(conn, shared['source'], preset, start, end)
             purchase_all = revenue_auto.purchase_rows(conn, start, end)
-            if shared["source"] == "auto" or canonical:
+            if not live_ledger and (shared["source"] == "auto" or canonical):
                 start, end = revenue_auto.bounds(start, end)
                 ledger_all = revenue_report.ledger_rows(conn, start, end, editable_history=shared["source"] != "auto")
-            else:
+            elif not live_ledger:
                 ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
         server_source = purchase_all is not None
         if purchase_all is None:
@@ -489,7 +510,7 @@ def install_purchase_reconcile_routes(
         return {
             "ok": True,
             "release": RELEASE,
-            "source": shared["source"], "source_revision": shared["revision"], "canonical": canonical,
+            "source": shared["source"], "source_revision": shared["revision"], "canonical": canonical, "live_ledger": live_ledger,
             "preset": preset,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
@@ -526,16 +547,20 @@ def install_purchase_reconcile_routes(
         entered_by: str = Query(default="", max_length=200),
         canonical: bool = False,
         report_end: date | None = None,
+        live_ledger: bool = False,
         ident=Depends(current_identity),
     ):
         start, end = _resolve_range(preset, start_date, end_date)
-        if canonical and report_end is not None:
+        if canonical and not live_ledger and report_end is not None:
             end = min(end, report_end)
-        if canonical:
+        if canonical and not live_ledger:
             start, end = revenue_auto.bounds(start, end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            if revenue_auto.mode(conn)["source"] == "auto":
+            source = revenue_auto.mode(conn)['source']
+            if live_ledger:
+                rows, start, end = _live_ledger(conn, source, preset, start, end)
+            elif source == "auto":
                 start, end = revenue_auto.bounds(start, end)
                 rows = revenue_auto.ledger_rows(revenue_auto.daily(conn, start, end))
             else:

@@ -89,9 +89,10 @@ async function loadPeriodTip(start, end, signal, legacy = false) {
   return result
 }
 
-async function loadPurchaseReconcile({ preset, start, end, signal, canonical = false, reportEnd = '', purchaseOnly = false }) {
+async function loadPurchaseReconcile({ preset, start, end, signal, canonical = false, reportEnd = '', purchaseOnly = false, liveLedger = false }) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const params = new URLSearchParams({ preset })
+  if (liveLedger) params.set('live_ledger', 'true')
   if (canonical) { params.set('canonical', 'true'); if (reportEnd) params.set('report_end', reportEnd) }
   if (preset === 'custom') {
     if (start) params.set('start', start)
@@ -244,7 +245,7 @@ export default function RevenuePage({ user }) {
   const reportSnapshot = useRef(null)
   const [manualLedger, setManualLedger] = useState(false)
   const canonicalLedger = commonReport && (independentSources || !(manualLedger && revenueSource !== 'auto'))
-  const ledgerFollowsReportEnd = canonicalLedger && (!independentSources || revenueSource === 'auto')
+  const ledgerFollowsReportEnd = canonicalLedger && !independentSources
   const tipEditorRef = useRef(null)
   // Auto uses the displayed TIP end date as its report cutoff too. A cleared
   // input must not silently switch the report back to all dates.
@@ -451,14 +452,14 @@ export default function RevenuePage({ user }) {
       setDetailError('')
       return undefined
     }
-    const scope = JSON.stringify([detailPreset, detailStart, detailEnd, sourceRevision, reconcileRevision, canonicalLedger, detailReportEnd, purchaseOnly])
+    const scope = JSON.stringify([detailPreset, detailStart, detailEnd, sourceRevision, reconcileRevision, canonicalLedger, detailReportEnd, purchaseOnly, independentSources])
     if (detailLoaded.current?.scope === scope && Date.now() - detailLoaded.current.at < 30000) return undefined
     const controller = new AbortController()
     const run = async () => {
       setDetailBusy(true)
       setDetailError('')
       try {
-        const result = await loadPurchaseReconcile({ preset: detailPreset, start: detailStart, end: detailEnd, canonical: !purchaseOnly && canonicalLedger, reportEnd: detailReportEnd, purchaseOnly, signal: controller.signal })
+        const result = await loadPurchaseReconcile({ preset: detailPreset, start: detailStart, end: detailEnd, canonical: !purchaseOnly && canonicalLedger, reportEnd: detailReportEnd, purchaseOnly, liveLedger: independentSources && !purchaseOnly, signal: controller.signal })
         if (!controller.signal.aborted) { setDetailData(result); detailLoaded.current = { scope, at: Date.now() } }
       } catch (err) {
         if (!controller.signal.aborted && err?.name !== 'AbortError') setDetailError(err.message || 'Không tải được dữ liệu chi tiết.')
@@ -468,7 +469,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [detailPreset, detailStart, detailEnd, reconcileRevision, sourceReady, sourceRevision, detailTabActive, canonicalLedger, detailReportEnd, ledgerFollowsReportEnd, reportEnd, purchaseOnly])
+  }, [detailPreset, detailStart, detailEnd, reconcileRevision, sourceReady, sourceRevision, detailTabActive, canonicalLedger, detailReportEnd, ledgerFollowsReportEnd, reportEnd, purchaseOnly, independentSources])
 
   useEffect(() => {
     if (!isAdmin || !['audit', 'duplicates'].includes(activeTab) || (detailPreset === 'custom' && (!detailStart || !detailEnd))) return undefined
@@ -575,6 +576,7 @@ export default function RevenuePage({ user }) {
     setDetailError('')
     try {
       const params = new URLSearchParams({ preset: detailPreset })
+      if (independentSources) params.set('live_ledger', 'true')
       if (canonicalLedger) { params.set('canonical', 'true'); if (detailReportEnd) params.set('report_end', detailReportEnd) }
       if (detailPreset === 'custom') {
         if (detailStart) params.set('start', detailStart)
@@ -608,14 +610,14 @@ export default function RevenuePage({ user }) {
   }
 
   useEffect(() => {
-    if (!systemTipMode || autoMode) return undefined
+    if (!systemTipMode || autoMode || independentSources) return undefined
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'hidden') { setRevision(value => value + 1); setReconcileRevision(value => value + 1) }
     }, 30000)
     return () => window.clearInterval(timer)
-  }, [systemTipMode, autoMode])
+  }, [systemTipMode, autoMode, independentSources])
 
-  const realtimeError = useRevenueRealtime(sourceReady && (autoMode || commonReport),
+  const realtimeError = useRevenueRealtime(sourceReady && (autoMode || commonReport || independentSources),
     Boolean(busy || (detailTabActive && detailBusy) || (activeTab === 'overview' && reconcileBusy) || tipBusy || savingTip || savingEntry || importingRevenue || entryEditor),
     () => { setRevision(value => value + 1); setReconcileRevision(value => value + 1); void sharedSource.refresh() },
     Boolean(error || (detailTabActive && detailError) || (activeTab === 'overview' && reconcileError) || tipLoadError))

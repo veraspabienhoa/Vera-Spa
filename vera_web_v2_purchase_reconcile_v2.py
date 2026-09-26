@@ -337,6 +337,7 @@ def install_purchase_reconcile_v2(
         end_date: date | None = Query(default=None, alias="end"),
         canonical: bool = False,
         report_end: date | None = None,
+        live_ledger: bool = False,
         ident: identity_type = Depends(current_identity),
     ):
         result = original(
@@ -345,6 +346,7 @@ def install_purchase_reconcile_v2(
             end_date=end_date,
             canonical=canonical,
             report_end=report_end,
+            live_ledger=live_ledger,
             ident=ident,
         )
         rows = list((result or {}).get("comparison_rows") or [])
