@@ -234,7 +234,7 @@ export default function App() {
   return (
     <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onPageIntent={preloadPage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       {(navigationToggle) => <>
-        <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
+        {page !== 'live-tour' && <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />}
         <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={page}>
           {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
           {page === 'schedule' && <WorkSchedulePage user={shellUser} />}

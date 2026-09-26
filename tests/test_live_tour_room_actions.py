@@ -152,13 +152,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const source = fs.readFileSync('src/pages/LiveTourPage.jsx', 'utf8');
 const handler = source.slice(source.indexOf('const runRoomAction = async'), source.indexOf('const roomServiceActions =')).replace('const runRoomAction = ', '').trim();
-const calls = [], notices = [];
-const run = new Function('executeAction', 'setSelectedRoomKey', 'setNotice', 'areaKey', 'areaLabel', `return ${handler}`)(
-  async (...args) => { calls.push(args); return {result:{count:2}} }, () => {}, value => notices.push(value), value => value, value => value);
+const calls = [];
+const run = new Function('executeAction', 'setSelectedRoomKey', 'areaKey', `return ${handler}`)(
+  async (...args) => { calls.push(args); return {result:{count:2}} }, () => {}, value => value);
 await run('Phòng Sen', 'start_room');
 await run('VIP 19', 'finish_room');
 assert.deepEqual(calls, [['start_room', {room:'Phòng Sen'}, []], ['finish_room', {room:'VIP 19'}, []]]);
-assert.match(notices[1], /chờ thanh toán/);
+assert.equal(handler.includes('setNotice'), false);
 '''
     result = subprocess.run(['node', '--input-type=module', '-e', script], cwd=root / 'web-v2', capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
