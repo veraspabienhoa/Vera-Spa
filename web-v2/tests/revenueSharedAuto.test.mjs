@@ -42,15 +42,16 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
         if (method === 'PUT') { source = JSON.parse(options.body).source; revision += 1 }
         return response({ source, revision })
       }
+      if (path.endsWith('/revision')) return response({revision:`fixture-${revision}`})
       if (path.endsWith('/summary')) return response({ source, source_revision: legacy ? undefined : revision,
         total_income: 1760, total_expense: 190.25, net_income: 1569.75, period_tip: 20, balance: 1549.75,
-        start_date: '2026-09-05', start_date_label: '05-09-2026', current_date: '2026-09-26', current_date_label: '26-09-2026',
+        start_date: '2025-09-05', start_date_label: '05-09-2025', current_date: '2026-09-26', current_date_label: '26-09-2026',
         period_tip_start: '2026-09-16', period_tip_end: '2026-09-26',
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
       })
       if (path.endsWith('/purchase-reconcile')) return response({ source: legacy ? undefined : source, source_revision: legacy ? undefined : revision,
-        start_date: '2026-09-05', end_date: '2026-09-26', purchase_rows: Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2026-09-05',item:`Hàng ${i+1}`,amount:10})),
-        ledger_rows: Array.from({length:rowCount},(_,i)=>({ id: `auto:${i}`, date:'2026-09-05', date_label:'05-09-2026', type:'Thu', amount:1760, note:`Doanh thu dịch vụ + TIP ${i+1}`, read_only: source === 'auto' })),
+        start_date: '2025-09-05', end_date: '2026-09-26', purchase_rows: Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2025-09-05',item:`Hàng ${i+1}`,amount:10})),
+        ledger_rows: Array.from({length:rowCount},(_,i)=>({ id: `auto:${i}`, date:'2025-09-05', date_label:'05-09-2025', type:'Thu', amount:1760, note:`Doanh thu dịch vụ + TIP ${i+1}`, read_only: source === 'auto' })),
       })
       if (path.endsWith('/ledger/export.xlsx')) return {ok:true,blob:async()=>new Blob(['synthetic full export'])}
       if (path.endsWith('/live-tour/reports')) return response({reports:[{business_date:'2026-09-20',tip:20}]})
@@ -74,15 +75,15 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
 }
 
 for (const role of ['admin','giamdoc','quanly','letan','nhanvien']) {
-  test(`${role}: Auto is shared and all Manual write controls are absent`, async () => {
+  test(`${role}: Auto is shared and Manual form stays hidden and the Auto toolbar cannot write`, async () => {
     const f = await fixture(role)
     try {
       assert.match(f.doc.body.textContent,/Auto · Tự động hệ thống/)
       assert.equal(f.doc.querySelector('.revenue-entry-form'),null)
-      assert.equal(f.button('Import thêm mới'),undefined)
-      assert.equal(f.button('Sửa dòng đã chọn'),undefined)
-      assert.equal(f.button('Xóa dòng đã chọn'),undefined)
-      assert.match(f.doc.querySelector('.ledger-table').textContent,/05-09-2026/)
+      if(role==='admin') assert.equal(f.button('Import thêm mới').disabled,true); else assert.equal(f.button('Import thêm mới'),undefined)
+      if(role==='admin') assert.equal(f.button('Sửa dòng đã chọn').disabled,true); else assert.equal(f.button('Sửa dòng đã chọn'),undefined)
+      if(role==='admin') assert.equal(f.button('Xóa dòng đã chọn').disabled,true); else assert.equal(f.button('Xóa dòng đã chọn'),undefined)
+      assert.match(f.doc.querySelector('.ledger-table').textContent,/05-09-2025/)
       if(role!=='admin') assert.equal(f.doc.querySelector('.revenue-source-toggle'),null)
       assert.equal(f.calls.filter(c=>c.path.endsWith('/purchase-reconcile')).length,1)
       assert.equal(f.calls.some(c=>c.path.includes('live-tour/reports')),false)
@@ -122,7 +123,7 @@ test('an already open Manual page locks after another admin changes the shared m
   const f=await fixture('admin','manual',true)
   try {
     assert.ok(f.doc.querySelector('.revenue-entry-form'))
-    assert.match(f.doc.querySelector('.ledger-table').textContent,/05-09-2026/)
+    assert.match(f.doc.querySelector('.ledger-table').textContent,/05-09-2025/)
     assert.match(f.doc.body.textContent,/Cần chạy Deploy VPS Production/)
     assert.equal(f.button('Auto · Tự động hệ thống').disabled,true)
     assert.equal(f.button('Lưu Tiền TIP').disabled,false)

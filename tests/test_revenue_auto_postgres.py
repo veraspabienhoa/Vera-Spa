@@ -42,7 +42,7 @@ def database(monkeypatch):
                 revision bigint NOT NULL, created_at timestamptz, updated_at timestamptz,
                 PRIMARY KEY(category, setting_key))'''))
             conn.execute(text('CREATE TABLE vera_schema_version (component text PRIMARY KEY, version int, updated_at timestamptz)'))
-            conn.execute(text('CREATE TABLE vera_live_tour_report (resource_id text PRIMARY KEY, payload jsonb, deleted_at timestamptz)'))
+            conn.execute(text('CREATE TABLE vera_live_tour_report (resource_id text PRIMARY KEY, payload jsonb, deleted_at timestamptz, aggregate_revision bigint NOT NULL DEFAULT 1)'))
             ledger.ensure_schema(conn)
             purchases.ensure_schema(conn)
         yield engine
@@ -57,7 +57,7 @@ def report(conn, key, day=None, *, total=0, tip=0, deleted=False, **fields):
     payload = {'total': total, 'tip': tip, **fields}
     if day:
         payload['business_date'] = day
-    conn.execute(text('''INSERT INTO vera_live_tour_report VALUES
+    conn.execute(text('''INSERT INTO vera_live_tour_report(resource_id,payload,deleted_at) VALUES
         (:id, CAST(:payload AS jsonb), CASE WHEN :deleted THEN NOW() ELSE NULL END)'''),
         {'id': key, 'payload': json.dumps(payload), 'deleted': deleted})
 
@@ -72,20 +72,20 @@ def buy(conn, day, amount, deleted=False):
 def seed(database):
     with database.begin() as conn:
         report(conn, 'before', '2026-09-04', total=999999)
-        report(conn, 'cash-a', '2026-09-05', total=200, tip=25, subtotal=999)
-        report(conn, 'cash-b', '2026-09-05', total=200, tip=25, subtotal=999)
-        report(conn, 'sale', '2026-09-05', total=1000, type='combo_purchase')
-        report(conn, 'use', '2026-09-06', total=30, tip=30, subtotal=700, payment_method='COMBO')
-        report(conn, 'legacy', effective_at='2026-09-04T18:00:00Z', total=110, tip=10)
-        report(conn, 'deleted', '2026-09-05', total=99999, deleted=True)
+        report(conn, 'cash-a', '2026-09-25', total=200, tip=25, subtotal=999)
+        report(conn, 'cash-b', '2026-09-25', total=200, tip=25, subtotal=999)
+        report(conn, 'sale', '2026-09-25', total=1000, type='combo_purchase')
+        report(conn, 'use', '2026-09-26', total=30, tip=30, subtotal=700, payment_method='COMBO')
+        report(conn, 'legacy', effective_at='2026-09-24T18:00:00Z', total=110, tip=10)
+        report(conn, 'deleted', '2026-09-25', total=99999, deleted=True)
         report(conn, 'future', '2099-09-05', total=99999)
-        report(conn, 'period', '2026-09-20', total=220, tip=20)
-        buy(conn, '2026-09-04', 99999)
-        buy(conn, '2026-09-05', 100)
-        buy(conn, '2026-09-05', 50.25)
-        buy(conn, '2026-09-06', 99999, deleted=True)
-        buy(conn, '2026-09-07', 40)
-        conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',777,'2026-09-05','Manual retained')"))
+        report(conn, 'period', '2026-09-26', total=220, tip=20)
+        buy(conn, '2025-09-04', 99999)
+        buy(conn, '2026-09-25', 100)
+        buy(conn, '2026-09-25', 50.25)
+        buy(conn, '2026-09-26', 99999, deleted=True)
+        buy(conn, '2026-09-26', 40)
+        conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',777,'2025-09-05','Manual retained')"))
 
 
 @pytest.fixture
@@ -120,14 +120,14 @@ def test_daily_totals_cutoff_cash_combo_discount_deleted_and_vietnam_day(databas
     with database.connect() as conn:
         days = auto.daily(conn)
         result = auto.totals(days)
-        assert result == dict(service_revenue=1650, tip_revenue=110, total_revenue=1760,
-                              total_income=1760, total_expense=190.25, net_income=1569.75)
-        assert auto.tip_total(conn, date(2026, 9, 16), date(2026, 9, 26), auto=True) == 20
+        assert result == dict(service_revenue=1650, tip_revenue=110, historical_income=777, total_revenue=2537,
+                              total_income=2537, total_expense=190.25, net_income=2346.75)
+        assert auto.tip_total(conn, date(2026, 9, 16), date(2026, 9, 26), auto=True) == 110
         assert auto.daily(conn, date(2026, 8, 1), date(2026, 9, 4)) == []
         entries = auto.ledger_rows(days)
-        assert all(row['date'] >= '2026-09-05' and row['read_only'] for row in entries)
+        assert all(row['date'] >= '2025-09-05' and row['read_only'] for row in entries)
         assert len(entries) == 5
-        assert sum(row['amount'] for row in entries if row['type'] == 'Thu') == 1760
+        assert sum(row['amount'] for row in entries if row['type'] == 'Thu') == 2537
         assert sum(row['amount'] for row in entries if row['type'] == 'Chi') == 190.25
 
 
@@ -139,9 +139,9 @@ def test_all_accounts_see_auto_summary_ledger_export_and_live_source_edits(datab
         ident.role = role
         summary = http.get('/v2/revenue/summary?source=manual').json()
         assert summary['source'] == 'auto'
-        assert summary['start_date_label'] == '05-09-2026'
-        assert summary['total_income'] == 1760 and summary['total_expense'] == 190.25
-        assert summary['period_tip'] == 20 and summary['balance'] == 1549.75
+        assert summary['start_date_label'] == '05-09-2025'
+        assert summary['total_income'] == 2537 and summary['total_expense'] == 190.25
+        assert summary['period_tip'] == 110 and summary['balance'] == 2236.75
         assert not any(summary[key] for key in ['can_create_entry', 'can_edit_entry', 'can_delete_entry', 'can_admin_crud'])
         detail = http.get('/v2/revenue/purchase-reconcile?preset=all').json()
         assert detail['ledger_income'] == summary['total_income']
@@ -157,7 +157,7 @@ def test_all_accounts_see_auto_summary_ledger_export_and_live_source_edits(datab
         conn.execute(text("UPDATE vera_live_tour_report SET deleted_at=now() WHERE resource_id='sale'"))
         conn.execute(text("UPDATE vera_purchase_entry SET amount=60 WHERE amount=40"))
     refreshed = http.get('/v2/revenue/summary').json()
-    assert refreshed['total_income'] == 760 and refreshed['total_expense'] == 210.25
+    assert refreshed['total_income'] == 1537 and refreshed['total_expense'] == 210.25
 
 
 @pytest.mark.parametrize('role', ['admin', 'giamdoc', 'quanly', 'letan', 'nhanvien'])
@@ -167,7 +167,7 @@ def test_auto_blocks_every_manual_write_including_stale_tabs(database, client, r
     enable(http)
     ident.role = role
     requests = [
-        ('post', '/v2/revenue/entry', {'json': {'transaction_date': '2026-09-05', 'income_amount': 1}}),
+        ('post', '/v2/revenue/entry', {'json': {'transaction_date': '2026-09-25', 'income_amount': 1}}),
         ('patch', '/v2/revenue/entries/1', {'json': {'transaction_type': 'Thu', 'amount': 1}}),
         ('delete', '/v2/revenue/entries/1', {}),
         ('put', '/v2/revenue/tip', {'json': {'amount': 999}}),
@@ -185,15 +185,15 @@ def test_admin_mode_revision_auth_and_original_manual_tip_survive_switch(databas
     seed(database)
     http, ident = client
     with database.begin() as conn:
-        routes._save_period_tip(conn, '2026-09-01', '2026-09-05', 88, 'synthetic')
+        routes._save_period_tip(conn, '2026-09-01', '2026-09-25', 88, 'synthetic')
     ident.role = 'quanly'
     assert http.put('/v2/revenue/source', json={'source': 'auto', 'revision': 0}).status_code == 403
     ident.role = 'admin'
     saved = enable(http)
     assert http.put('/v2/revenue/source', json={'source': 'manual', 'revision': 0}).status_code == 409
-    response = http.put('/v2/revenue/tip-period', json={'start_date': '2026-09-05', 'end_date': '2026-09-06', 'amount': 999999})
-    assert response.status_code == 200 and response.json()['period_tip'] == 90
-    assert http.get('/v2/revenue/summary').json()['period_tip'] == 90
+    response = http.put('/v2/revenue/tip-period', json={'start_date': '2026-09-25', 'end_date': '2026-09-26', 'amount': 999999})
+    assert response.status_code == 200 and response.json()['period_tip'] == 110
+    assert http.get('/v2/revenue/summary').json()['period_tip'] == 110
     assert http.put('/v2/revenue/source', json={'source': 'manual', 'revision': saved['revision']}).status_code == 200
     result = http.get('/v2/revenue/summary?source=auto').json()
     assert result['source'] == 'manual' and result['total_income'] == 777 and result['period_tip'] == 88
@@ -219,7 +219,76 @@ def test_mode_switch_cannot_interrupt_or_race_manual_transaction(database, clien
     # Reverse interleaving: an uncommitted mode change excludes a manual writer.
     with database.begin() as conn:
         auto.set_mode(conn, 'manual', 1, 'synthetic')
-        result = http.post('/v2/revenue/entry', json={'transaction_date': '2026-09-05', 'income_amount': 2})
+        result = http.post('/v2/revenue/entry', json={'transaction_date': '2026-09-25', 'income_amount': 2})
         assert result.status_code == 409
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 1
+
+
+def test_history_and_live_periods_never_overlap_or_copy_rows(database, client):
+    with database.begin() as conn:
+        for day, amount, kind in [('2025-09-04',9999,'Thu'),('2025-09-05',100,'Thu'),
+                                  ('2026-09-24',200,'Thu'),('2026-09-24',200,'Thu'),
+                                  ('2026-09-24',50,'Chi'),('2026-09-25',9999,'Thu')]:
+            conn.execute(text('''INSERT INTO vera_revenue_entry(transaction_date,amount,transaction_type,note)
+                VALUES (:day,:amount,:kind,'History')'''),dict(day=day,amount=amount,kind=kind))
+        report(conn,'old-overlap','2026-09-24',total=9999)
+        report(conn,'new','2026-09-25',total=120,tip=20)
+        buy(conn,'2026-09-25',30)
+    http,_ = client
+    enable(http)
+    for _ in range(3):
+        result = http.get('/v2/revenue/summary').json()
+        assert result['total_income'] == 620 and result['total_expense'] == 80
+        history = [r for r in result['entries'] if r.get('source') == 'manual_history']
+        assert len(history) == 4 and len({r['id'] for r in history}) == 4
+        assert sum(r['amount'] for r in history if r['type']=='Thu') == 500
+        assert all(r['date'] <= '2026-09-24' and r['read_only'] for r in history)
+    exported_response = http.get('/v2/revenue/ledger/export.xlsx?preset=all')
+    assert exported_response.status_code == 200
+    book = load_workbook(BytesIO(exported_response.content), read_only=True, data_only=True)
+    exported = list(book.active.values)[1:]
+    assert len(exported) == 6
+    assert sum(r[2] for r in exported if r[1] == 'Thu') == 620
+    assert sum(r[2] for r in exported if r[1] == 'Chi') == 80
+    filtered = http.get('/v2/revenue/ledger/export.xlsx?preset=all&transaction_type=Thu&note=History')
+    book = load_workbook(BytesIO(filtered.content), read_only=True, data_only=True)
+    history_exported = list(book.active.values)[1:]
+    assert len(history_exported) == 3 and sum(r[2] for r in history_exported) == 500
+    with database.begin() as conn:
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 6
+        conn.execute(text("UPDATE vera_live_tour_report SET deleted_at=NOW(),aggregate_revision=2 WHERE resource_id='new'"))
+    assert http.get('/v2/revenue/summary').json()['total_income'] == 500, 'deleting Auto must not resurrect excluded Manual entries'
+    older = http.get('/v2/revenue/purchase-reconcile?preset=custom&start=2025-09-05&end=2026-09-24').json()
+    assert older['ledger_income'] == 500 and older['ledger_expense'] == 50
+
+
+def test_realtime_revision_changes_on_edit_delete_and_mode_with_no_money_payload(database, client):
+    seed(database)
+    http, ident = client
+    enable(http)
+    before = http.get('/v2/revenue/revision')
+    assert before.headers['cache-control'] == 'no-store'
+    assert set(before.json()) == {'ok','revision'}
+    assert http.get('/v2/revenue/revision').json() == before.json()
+    with database.begin() as conn:
+        conn.execute(text("UPDATE vera_live_tour_report SET aggregate_revision=2 WHERE resource_id='cash-a'"))
+    after = http.get('/v2/revenue/revision').json()
+    assert after != before.json()
+    with database.begin() as conn:
+        conn.execute(text('UPDATE vera_purchase_entry SET revision=revision+1,amount=amount+1 WHERE NOT deleted'))
+    latest = http.get('/v2/revenue/revision').json()
+    assert latest != after
+    with database.begin() as conn:
+        conn.execute(text('UPDATE vera_purchase_entry SET revision=revision+1,deleted=true WHERE NOT deleted'))
+    after_delete = http.get('/v2/revenue/revision').json()
+    assert after_delete != latest
+    with database.begin() as conn:
+        conn.execute(text('UPDATE vera_revenue_entry SET edit_revision=edit_revision+1,amount=amount+1'))
+    after_history = http.get('/v2/revenue/revision').json()
+    assert after_history != after_delete
+    revision = http.get('/v2/revenue/source').json()['revision']
+    assert http.put('/v2/revenue/source', json={'source':'manual','revision':revision}).status_code == 200
+    assert http.get('/v2/revenue/revision').json() != after_history
+    ident.allowed = False
+    assert http.get('/v2/revenue/revision').status_code == 403

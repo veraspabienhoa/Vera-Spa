@@ -2,11 +2,15 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import json
+import hashlib
 
 from fastapi import HTTPException
 from sqlalchemy import text
 
-START_DATE = date(2026, 9, 5)
+START_DATE = date(2025, 9, 5)
+# Confirmed by the operator: retain Manual through 24-09, use live sources after.
+AUTO_START_DATE = date(2026, 9, 25)
+HISTORY_END_DATE = AUTO_START_DATE - timedelta(days=1)
 VN_TZ = timezone(timedelta(hours=7))
 MODE_KEY = "shared_source"
 MODES = {"manual", "auto", "manual_tip_auto"}
@@ -95,17 +99,37 @@ def daily(conn, start=None, end=None):
     start, end = bounds(start, end)
     if start > end:
         return []
-    # One statement gives income and expenses the same committed snapshot.
+    # Disjoint periods prevent Manual and live receipts/purchases being added twice.
+    # One statement gives both sources and both sides of cash the same snapshot.
+    params = _params(max(start, AUTO_START_DATE), end)
+    params.update(history_start=start, history_end=min(end, HISTORY_END_DATE))
     return conn.execute(text(f"""WITH receipts AS ({REPORT_DAILY_SQL}), purchases AS (
         SELECT purchase_date AS day, SUM(amount) AS expense, COUNT(*) AS purchases
         FROM vera_purchase_entry WHERE NOT deleted AND purchase_date BETWEEN :start AND :end
         GROUP BY purchase_date
+      ), history AS (
+        SELECT COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) AS day,
+          COALESCE(SUM(amount) FILTER (WHERE transaction_type='Thu'),0) AS income,
+          COALESCE(SUM(amount) FILTER (WHERE transaction_type='Chi'),0) AS expense,
+          COUNT(*) FILTER (WHERE transaction_type='Thu') AS payments,
+          COUNT(*) FILTER (WHERE transaction_type='Chi') AS purchases,
+          jsonb_agg(jsonb_build_object('id',id,'type',transaction_type,'amount',amount,
+            'note',note,'entered_at',entered_at,'entered_by',
+            COALESCE(NULLIF(entered_by_name,''),entered_by)) ORDER BY id DESC) AS history_entries
+        FROM vera_revenue_entry WHERE NOT is_deleted
+          AND COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)
+              BETWEEN :history_start AND :history_end
+        GROUP BY 1
       ) SELECT COALESCE(r.day, p.day) AS day,
         COALESCE(service, 0) AS service, COALESCE(tip, 0) AS tip,
         COALESCE(income, 0) AS income, COALESCE(expense, 0) AS expense,
-        COALESCE(payments, 0) AS payments, COALESCE(purchases, 0) AS purchases
-      FROM receipts r FULL JOIN purchases p ON p.day=r.day ORDER BY day DESC
-    """), _params(start, end)).mappings().all()
+        COALESCE(payments, 0) AS payments, COALESCE(purchases, 0) AS purchases,
+        0::numeric AS historical_income, NULL::jsonb AS history_entries
+      FROM receipts r FULL JOIN purchases p ON p.day=r.day
+      UNION ALL
+      SELECT day,0,0,income,expense,payments,purchases,income,history_entries FROM history
+      ORDER BY day DESC
+    """), params).mappings().all()
 
 
 def tip_total(conn, start, end, *, auto=False):
@@ -121,6 +145,18 @@ def ledger_rows(days):
     rows = []
     for day in days:
         date_value = day["day"]
+        if day.get("history_entries") is not None:
+            for item in day["history_entries"]:
+                entered = datetime.fromisoformat(item["entered_at"]).astimezone(VN_TZ) if item.get("entered_at") else None
+                rows.append({"id": f"history:{item['id']}", "source": "manual_history",
+                    "source_entry_id": item["id"], "date": date_value.isoformat(),
+                    "date_label": date_value.strftime("%d-%m-%Y"), "type": item["type"],
+                    "amount": float(item["amount"]), "note": item["note"],
+                    "entered_date": entered.date().isoformat() if entered else "",
+                    "entered_date_label": entered.strftime("%d-%m-%Y") if entered else "",
+                    "entered_time": entered.strftime("%H:%M:%S") if entered else "",
+                    "entered_by": item["entered_by"], "read_only": True})
+            continue
         for kind, amount, count, note in (
             ("Thu", day["income"], day["payments"], "Doanh thu dịch vụ + TIP"),
             ("Chi", day["expense"], day["purchases"], "Mua hàng · Nhập mua"),
@@ -140,8 +176,24 @@ def totals(days):
         return float(sum((Decimal(str(day[key])) for day in days), Decimal(0)))
     income, expense = total("income"), total("expense")
     return {"service_revenue": total("service"), "tip_revenue": total("tip"),
+            "historical_income": float(sum(Decimal(str(day.get("historical_income", 0))) for day in days)),
             "total_revenue": income, "total_income": income, "total_expense": expense,
             "net_income": round(income - expense, 2)}
+
+
+def change_revision(conn):
+    # Read counters only; a poll never reloads the historical ledger or JSON bills.
+    row = conn.execute(text("""SELECT
+        (SELECT concat(COUNT(*),':',COALESCE(MAX(aggregate_revision),0),':',COUNT(deleted_at))
+         FROM vera_live_tour_report) AS reports,
+        (SELECT concat(COUNT(*),':',COALESCE(MAX(id),0),':',COALESCE(SUM(revision),0),':',COUNT(*) FILTER (WHERE deleted))
+         FROM vera_purchase_entry) AS purchases,
+        (SELECT concat(COUNT(*),':',COALESCE(MAX(id),0),':',COALESCE(SUM(edit_revision),0),':',COUNT(*) FILTER (WHERE is_deleted))
+         FROM vera_revenue_entry) AS history,
+        (SELECT COALESCE(SUM(revision),0) FROM vera_app_setting WHERE category='revenue') AS settings
+    """)).mappings().one()
+    value = json.dumps([dict(row), datetime.now(VN_TZ).date().isoformat()], sort_keys=True, default=str)
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def purchase_rows(conn, start, end):
