@@ -92,6 +92,43 @@ def seed(database):
         conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',777,'2025-09-05','Manual retained')"))
 
 
+def test_read_only_day_reconciliation_separates_manual_and_system_sources(database):
+    from vera_revenue_day_check import summarize_day
+    with database.begin() as conn:
+        conn.execute(text('CREATE TABLE vera_live_tour_invoice (resource_id text PRIMARY KEY, payload jsonb, deleted_at timestamptz)'))
+        for key, moment, total, tip in (
+            ('a', '2026-09-23T17:00:00Z', 42000000, 20000000),
+            ('b', '2026-09-24T23:59:59+07:00', 7250000, 7250000),
+            ('next-day', '2026-09-24T17:00:00Z', 999, 9),
+        ):
+            report(conn, key, '2026-09-23', effective_at=moment, created_at='2026-09-26T00:00:00Z', total=total, tip=tip)
+            conn.execute(text('INSERT INTO vera_live_tour_invoice(resource_id,payload) VALUES (:id,CAST(:payload AS jsonb))'),
+                         {'id': key, 'payload': json.dumps({'effective_at': moment, 'business_date': '2026-09-23', 'total': total, 'tip': tip})})
+        report(conn, 'deleted', '2026-09-24', total=999, tip=9, deleted=True)
+        conn.execute(text("INSERT INTO vera_live_tour_invoice VALUES ('deleted',CAST(:payload AS jsonb),NOW())"),
+                     {'payload': json.dumps({'effective_at': '2026-09-24T12:00:00+07:00', 'total': 999})})
+        buy(conn, '2026-09-24', 121000)
+        buy(conn, '2026-09-25', 999)
+        buy(conn, '2026-09-24', 999, deleted=True)
+        conn.execute(text("""INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note)
+            VALUES ('Thu',49250000,'2026-09-24','Manual'), ('Chi',121000,'2026-09-24','Manual'),
+                   ('Thu',999,'2026-09-25','Other day')"""))
+    with database.connect().execution_options(isolation_level='REPEATABLE READ') as conn:
+        conn.execute(text('SET TRANSACTION READ ONLY'))
+        result = summarize_day(conn, date(2026, 9, 24))
+        assert result['manual'] == {'rows': 2, 'income': 49250000, 'expense': 121000}
+        assert result['auto'] == {'income': 49250000, 'expense': 121000, 'service': 22000000,
+                                  'tip': 27250000, 'report_rows': 2, 'purchase_rows': 1}
+        assert result['paid_invoices'] == {'count': 2, 'total': 49250000, 'tip': 27250000}
+        assert result['invoice_report_difference'] == 0
+    with database.begin() as conn:
+        conn.execute(text("UPDATE vera_revenue_entry SET amount=50000000 WHERE transaction_type='Thu' AND transaction_date='2026-09-24'"))
+    with database.connect() as conn:
+        result = summarize_day(conn, date(2026, 9, 24))
+        assert result['manual']['income'] == 50000000
+        assert result['auto']['income'] == 49250000
+
+
 @pytest.fixture
 def client(database, monkeypatch):
     ident = SimpleNamespace(role='admin', employee_username='synthetic', full_name='Synthetic', allowed=True)

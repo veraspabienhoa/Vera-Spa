@@ -60,5 +60,5 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
     const customers=[...new Map([...(detail.customers || board.customers || []), ...lookup].map(row=>[row.id,row])).values()]
     return {...board,...detail,revision:value?.revision ?? board.revision,customers,state:{...board.state,...detail.state,customers}}
   },[board,value,lookup])
-  return {data,page,setPage,initialLoading:loading && !value,pages:value?.pages || 1,total:value?.total || 0,loading,error}
+  return {data,page,setPage,ready:Boolean(value),initialLoading:loading && !value,pages:value?.pages || 1,total:value?.total || 0,loading,error}
 }
