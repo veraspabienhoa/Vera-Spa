@@ -24,11 +24,11 @@ export async function prepareFacePhoto(file) {
       image.src = url
     })
     const { naturalWidth: width, naturalHeight: height } = image
-    if (width < 160 || height < 160 || width > 6000 || height > 6000 || width * height > 24000000) throw Error('Ảnh cần từ 160 px đến 6000 px mỗi chiều, tối đa 24 megapixel.')
-    // Preserve the complete image. Letterbox to 3:4 instead of automatically
-    // cropping an employee's face. Operators may use the shared crop editor.
+    if (width < 1 || height < 1 || width > 6000 || height > 6000 || width * height > 24000000) throw Error('Ảnh cần kích thước hợp lệ, tối đa 6000 px mỗi chiều và 24 megapixel.')
+    // Preserve native proportions without cropping, padding or upscaling.
     const canvas = document.createElement('canvas')
-    canvas.width = 900; canvas.height = 1200
+    const resize = Math.min(1, 1600 / Math.max(width, height))
+    canvas.width = Math.max(1, Math.round(width * resize)); canvas.height = Math.max(1, Math.round(height * resize))
     const ctx = canvas.getContext('2d')
     const scale = Math.min(canvas.width / width, canvas.height / height)
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height)

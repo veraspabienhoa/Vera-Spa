@@ -1158,19 +1158,26 @@ def install_staff_routes(
         role: str = Query(default="", max_length=50),
         status: str = Query(default="", max_length=100),
         shift: str = Query(default="", max_length=300),
+        include_photos: bool = False,
         ident: identity_type = Depends(current_identity),
     ):
+        if include_photos and str(getattr(ident, 'role', '')).lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xuất Excel kèm ảnh nhân viên.')
+        from vera_staff_photo_export import read_portraits, with_portraits
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "staff_export")
             result = staff_result(conn, ident)
             rows = filtered_staff(conn, ident, search, role, status, shift, result=result)
             shifts = result["shifts_by_department"]
+            portraits = read_portraits(conn, [row['username'] for row in rows]) if include_photos else {}
         content = build_staff_workbook(rows, shifts)
+        if include_photos:
+            content = with_portraits(content, rows, portraits)
         filename = f"VeraSpa_DanhSachNhanSu_{datetime.now(vn_tz).strftime('%d%m%Y')}.xlsx"
         return StreamingResponse(
             BytesIO(content),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}", "Cache-Control": "private, no-store"},
         )
 
     def parse_import(content: bytes) -> list[dict[str, Any]]:

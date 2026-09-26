@@ -292,12 +292,13 @@ export const veraApi = {
     method: 'DELETE',
     body: JSON.stringify({ usernames }),
   }),
-  exportStaffExcel: (search = '', role = '', status = '', shift = '') => {
+  exportStaffExcel: (search = '', role = '', status = '', shift = '', includePhotos = false) => {
     const params = new URLSearchParams()
     if (search.trim()) params.set('search', search.trim())
     if (role) params.set('role', role)
     if (status) params.set('status', status)
     if (shift) params.set('shift', shift)
+    if (includePhotos) params.set('include_photos', 'true')
     const query = params.toString()
     return download(`/v2/staff/export.xlsx${query ? `?${query}` : ''}`, 'VeraSpa_DanhSachNhanSu.xlsx')
   },

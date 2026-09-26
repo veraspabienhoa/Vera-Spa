@@ -13,7 +13,7 @@ const TARGET_BYTES = 450 * 1024
 const MAX_SOURCE_BYTES = 20 * 1024 * 1024
 const MIN_CROP = 20
 const CCCD_ASPECT_RATIO = 85.6 / 53.98
-const PORTRAIT_ASPECT_RATIO = 3 / 4
+const PORTRAIT_ASPECT_RATIO = null
 const DEFAULT_RESET_PASSWORD = 'Vera123456'
 
 function formatBytes(value) {
@@ -159,7 +159,7 @@ function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_
             facingMode: { ideal: facingMode },
             width: { ideal: 1920 },
             height: { ideal: 1210 },
-            aspectRatio: { ideal: aspectRatio },
+            ...(aspectRatio ? { aspectRatio: { ideal: aspectRatio } } : {}),
           },
         })
         if (!active) { stream.getTracks().forEach((track) => track.stop()); return }
@@ -194,16 +194,16 @@ function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_
     let sy = 0
     let sw = video.videoWidth
     let sh = video.videoHeight
-    if (sourceRatio > aspectRatio) {
+    if (aspectRatio && sourceRatio > aspectRatio) {
       sw = Math.round(video.videoHeight * aspectRatio)
       sx = Math.max(0, Math.round((video.videoWidth - sw) / 2))
-    } else if (sourceRatio < aspectRatio) {
+    } else if (aspectRatio && sourceRatio < aspectRatio) {
       sh = Math.round(video.videoWidth / aspectRatio)
       sy = Math.max(0, Math.round((video.videoHeight - sh) / 2))
     }
 
     const outputWidth = Math.min(1800, sw)
-    const outputHeight = Math.max(1, Math.round(outputWidth / aspectRatio))
+    const outputHeight = Math.max(1, Math.round(outputWidth * sh / sw))
     const canvas = document.createElement('canvas')
     canvas.width = outputWidth
     canvas.height = outputHeight
@@ -219,18 +219,18 @@ function IdentityCamera({ title, onCancel, onCapture, aspectRatio = CCCD_ASPECT_
   const isPortrait = aspectRatio < 1
   return <div className="identity-editor-backdrop" role="dialog" aria-modal="true" aria-label={`Camera ${title} ${mediaLabel}`}>
     <div data-ui-key="u-4768cf250b00" className="identity-camera-card">
-      <div className="identity-editor-head"><div><span className="eyebrow"><Camera size={14}/> Camera {mediaLabel}</span><h3>CHỤP {title.toUpperCase()}</h3><p>{isPortrait ? 'Canh khuôn mặt và phần thân trên trong khung dọc 3:4.' : 'Canh đủ bốn góc CCCD trong khung ngang rồi chụp.'}</p></div><button data-ui-key="u-73d792115c93" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={onCancel}><X size={16}/><UiCustomText uiKey="u-73d792115c93"> Đóng</UiCustomText></button></div>
+      <div className="identity-editor-head"><div><span className="eyebrow"><Camera size={14}/> Camera {mediaLabel}</span><h3>CHỤP {title.toUpperCase()}</h3><p>{isPortrait ? 'Canh rõ khuôn mặt; ảnh giữ toàn bộ khung hình camera.' : 'Canh đủ bốn góc CCCD trong khung ngang rồi chụp.'}</p></div><button data-ui-key="u-73d792115c93" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={onCancel}><X size={16}/><UiCustomText uiKey="u-73d792115c93"> Đóng</UiCustomText></button></div>
       <div className="identity-camera-facing" aria-label="Lựa chọn camera trước hoặc camera sau">
         <span>Chọn camera</span>
         <button data-ui-key="u-8390b4bab86b" data-ui-label-default="Camera trước" type="button" aria-pressed={facingMode === 'user'} className={facingMode === 'user' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('user')} disabled={busy}><Camera size={14}/><UiCustomText uiKey="u-8390b4bab86b"> Camera trước</UiCustomText></button>
         <button data-ui-key="u-e84f14c43c4f" data-ui-label-default="Camera sau" type="button" aria-pressed={facingMode === 'environment'} className={facingMode === 'environment' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('environment')} disabled={busy}><Camera size={14}/><UiCustomText uiKey="u-e84f14c43c4f"> Camera sau</UiCustomText></button>
       </div>
-      <div className={`identity-camera-landscape ${isPortrait ? 'portrait' : ''}`} style={{ aspectRatio }}>
+      <div className={`identity-camera-landscape ${isPortrait ? 'portrait' : ''}`} style={{ aspectRatio: aspectRatio || undefined }}>
         <video ref={videoRef} playsInline muted autoPlay style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }} />
-        <div data-ui-key="u-41b5b7dc03c3" className="identity-camera-card-guide"><span>{isPortrait ? 'CANH ẢNH NHÂN VIÊN TỶ LỆ 3:4' : 'CANH 4 GÓC CCCD TRONG KHUNG NÀY'}</span></div>
+        <div data-ui-key="u-41b5b7dc03c3" className="identity-camera-card-guide"><span>{isPortrait ? 'CANH RÕ KHUÔN MẶT NHÂN VIÊN' : 'CANH 4 GÓC CCCD TRONG KHUNG NÀY'}</span></div>
         {busy && <div className="identity-camera-loading"><LoaderCircle className="spin" size={24}/> Đang mở Camera…</div>}
       </div>
-      <div className="identity-camera-help">{isPortrait ? 'Ảnh được cắt theo tỷ lệ dọc 3:4 trước khi chuyển sang bước Crop/Rotate/Nén.' : 'Khung chụp nằm ngang theo tỷ lệ CCCD 85,6 × 53,98 mm; ảnh được cắt đúng tỷ lệ trước khi xử lý.'}</div>
+      <div className="identity-camera-help">{isPortrait ? 'Giữ tỷ lệ ảnh camera. Bạn có thể cắt hoặc xoay ảnh ở bước tiếp theo.' : 'Khung chụp nằm ngang theo tỷ lệ CCCD 85,6 × 53,98 mm; ảnh được cắt đúng tỷ lệ trước khi xử lý.'}</div>
       {error && <div className="employee-identity-notice error">{error}</div>}
       <div className="identity-editor-footer"><button data-ui-key="u-7d5ea8462f67" data-ui-label-default="Hủy" type="button" className="secondary-button" onClick={onCancel}><UiCustomText uiKey="u-7d5ea8462f67">Hủy</UiCustomText></button><button data-ui-key="u-7afe1cb8a636" data-ui-label-default="Chụp ảnh" type="button" className="primary-button" onClick={capture} disabled={busy || Boolean(error)}><Camera size={16}/><UiCustomText uiKey="u-7afe1cb8a636"> Chụp ảnh</UiCustomText></button></div>
     </div>
@@ -352,7 +352,7 @@ export function IdentityImageEditor({ file, title, onCancel, onConfirm, aspectRa
 
   return <div className="identity-editor-backdrop" role="dialog" aria-modal="true" aria-label={`Chỉnh ảnh ${title} ${mediaLabel}`}>
     <div data-ui-key="u-2b13b01e0a2c" className="identity-editor-card">
-      <div className="identity-editor-head"><div><span className="eyebrow"><Crop size={14}/> {mediaLabel}</span><h3>CHỈNH ẢNH {title.toUpperCase()}</h3><p>Crop vùng cần giữ, xoay đúng chiều và nén ảnh trước khi tải lên theo tỷ lệ {aspectRatio < 1 ? '3:4' : 'CCCD'}.</p></div><button data-ui-key="u-a0252d06097b" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={onCancel} disabled={busy}><X size={16}/><UiCustomText uiKey="u-a0252d06097b"> Đóng</UiCustomText></button></div>
+      <div className="identity-editor-head"><div><span className="eyebrow"><Crop size={14}/> {mediaLabel}</span><h3>CHỈNH ẢNH {title.toUpperCase()}</h3><p>Crop vùng cần giữ, xoay đúng chiều và nén ảnh trước khi tải lên {aspectRatio ? 'theo tỷ lệ CCCD' : 'và giữ tỷ lệ vùng ảnh đã chọn'}.</p></div><button data-ui-key="u-a0252d06097b" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={onCancel} disabled={busy}><X size={16}/><UiCustomText uiKey="u-a0252d06097b"> Đóng</UiCustomText></button></div>
       <div className="identity-editor-layout">
         <div className="identity-editor-preview"><canvas ref={canvasRef} onPointerDown={beginCropGesture} onPointerMove={updateCropGesture} onPointerUp={endCropGesture} onPointerCancel={endCropGesture}/><small>Chạm/kéo trực tiếp trên ảnh để chọn hoặc di chuyển vùng giữ lại.</small></div>
         <div className="identity-editor-controls">
@@ -522,7 +522,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
         if (previewUrl) URL.revokeObjectURL(previewUrl)
         setPreviewUrl(URL.createObjectURL(blob))
         setPendingFile(null)
-        setNotice({ type: 'success', message: `${result.message} Ảnh được lưu đúng tỷ lệ 3:4.` })
+        setNotice({ type: 'success', message: result.message })
         window.dispatchEvent(new CustomEvent('vera-profile-updated'))
         resolve(true)
         return true
@@ -550,8 +550,8 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
   })
 
   return <div className="employee-portrait-side">
-    <div className="employee-id-side-head"><div><strong>{title}</strong><span>{metadata ? `Đã lưu · ${formatBytes(metadata.size_bytes)}` : 'Chưa có ảnh · tỷ lệ 3:4'}</span></div>{busy && <LoaderCircle className="spin" size={16}/>}</div>
-    <div className="employee-portrait-preview">{previewUrl ? <img src={previewUrl} alt={title}/> : <div className="employee-id-placeholder"><ImageIcon size={28}/><span>ẢNH 3:4</span></div>}</div>
+    <div className="employee-id-side-head"><div><strong>{title}</strong><span>{metadata ? `Đã lưu · ${formatBytes(metadata.size_bytes)}` : 'Chưa có ảnh'}</span></div>{busy && <LoaderCircle className="spin" size={16}/>}</div>
+    <div className="employee-portrait-preview">{previewUrl ? <img src={previewUrl} alt={title}/> : <div className="employee-id-placeholder"><ImageIcon size={28}/><span>ẢNH NHÂN VIÊN</span></div>}</div>
     {canEdit && sources?.(acceptFile)}
     <UiToolbar data-ui-key="u-e846d87f96c5" className="employee-id-actions">
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/*" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; acceptFile(file) }} hidden/>
@@ -629,8 +629,8 @@ function DraftMediaSide({ title, value, onChange, aspectRatio, mediaLabel, onExt
     setPendingFile(file)
   }
   return <div className={`employee-id-side draft ${aspectRatio < 1 ? 'portrait-draft' : ''}`}>
-    <div className="employee-id-side-head"><div><strong>{title}</strong><span>{value ? `Sẵn sàng tải · ${formatBytes(value.size)}` : `Chưa chọn · ${aspectRatio < 1 ? '3:4' : 'tỷ lệ CCCD'}`}</span></div></div>
-    <div className={aspectRatio < 1 ? 'employee-portrait-preview' : 'employee-id-preview'}>{previewUrl ? <img src={previewUrl} alt={title}/> : <div className="employee-id-placeholder">{aspectRatio < 1 ? 'ẢNH 3:4' : 'CCCD'}</div>}</div>
+    <div className="employee-id-side-head"><div><strong>{title}</strong><span>{value ? `Sẵn sàng tải · ${formatBytes(value.size)}` : `Chưa chọn · ${aspectRatio ? 'tỷ lệ CCCD' : 'giữ tỷ lệ ảnh'}`}</span></div></div>
+    <div className={aspectRatio < 1 ? 'employee-portrait-preview' : 'employee-id-preview'}>{previewUrl ? <img src={previewUrl} alt={title}/> : <div className="employee-id-placeholder">{aspectRatio < 1 ? 'ẢNH NHÂN VIÊN' : 'CCCD'}</div>}</div>
     <UiToolbar data-ui-key="u-109f9dc9b127" className="employee-id-actions">
       <input ref={inputRef} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; acceptFile(file) }}/>
       <button data-ui-key="u-d2583df8c0ab" data-ui-label-default="Chụp" type="button" className="secondary-button compact" onClick={() => setCameraOpen(true)}><Camera size={14}/><UiCustomText uiKey="u-d2583df8c0ab"> Chụp</UiCustomText></button>
@@ -662,7 +662,7 @@ export function EmployeeMediaDraftPanel({ value, onChange, onIdentityExtracted }
   const media = value || { portrait: null, front: null, back: null }
   const update = (side, blob) => onChange({ ...media, [side]: blob })
   return <div className="employee-media-draft span-2">
-    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH HỒ SƠ KHI TẠO NHÂN VIÊN</h3><p>Bắt buộc có ảnh nhân viên 3:4 và đủ hai mặt CCCD. Hệ thống tự điền ô còn trống, sau đó đối chiếu Họ tên và Số Căn cước trước khi cho lưu.</p></div></div>
+    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH HỒ SƠ KHI TẠO NHÂN VIÊN</h3><p>Bắt buộc có ảnh nhân viên và đủ hai mặt CCCD. Hệ thống tự điền ô còn trống, sau đó đối chiếu Họ tên và Số Căn cước trước khi cho lưu.</p></div></div>
     <div className="employee-media-draft-grid">
       <DraftMediaSide title="Ảnh nhân viên" value={media.portrait} onChange={(blob) => update('portrait', blob)} aspectRatio={PORTRAIT_ASPECT_RATIO} mediaLabel="Hồ sơ"/>
       <DraftMediaSide title="Mặt trước CCCD" value={media.front} onChange={(blob) => update('front', blob)} aspectRatio={CCCD_ASPECT_RATIO} mediaLabel="CCCD" onExtracted={onIdentityExtracted}/>
@@ -706,7 +706,7 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
 
   return <div className={`employee-identity-panel ${className}`}>
 
-    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3><p>Ảnh hiển thị theo tỷ lệ dọc 3:4. Nhân viên có thể upload hoặc chụp trực tiếp với khung căn hình.</p></div></div>
+    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3><p>Ảnh giữ tỷ lệ đã chọn. Nhân viên có thể tải ảnh hoặc chụp trực tiếp; cắt và xoay là tùy chọn.</p></div></div>
     <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowAdminEdit || allowPasswordReset}/><FaceIdCard key={username} username={username}/></div>
     <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3></div></div>
     <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.includes('front')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.includes('back')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/></div>

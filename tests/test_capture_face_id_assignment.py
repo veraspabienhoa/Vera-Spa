@@ -92,7 +92,7 @@ def test_explicit_save_retry_conflict_permission_revocation_and_deleted_staff(fi
     assert api.put(path,content=initial,headers=matched).status_code == 403
     grants.add('employee_face_id_manage')
     assert api.put('/v2/staff/Đã xóa/face-id/image',content=initial,headers=headers).status_code == 404
-    assert api.put(path,content=png(400,300),headers=matched).status_code == 400
+    assert api.put(path,content=png(400,300),headers=matched).status_code == 409
     assert api.put(path,content=b'bad image',headers=matched).status_code == 400
     with db.connect() as conn:
         tables = set(conn.execute(text('SELECT tablename FROM pg_tables WHERE schemaname=current_schema()')).scalars())
