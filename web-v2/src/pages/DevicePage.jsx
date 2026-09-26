@@ -82,7 +82,7 @@ export default function DevicePage({ user }) {
     finally { setBusy(false) }
   }
   const removeDevice = async item => {
-    if (busy || editing || !window.confirm(`Xóa thiết bị “${item.name}” khỏi danh sách? Lịch sử chấm công đã lưu được giữ lại.`)) return
+    if (busy || editing || !window.confirm(`Xóa thiết bị “${item.name}” khỏi danh sách? ${item.id === 'facegate-current' ? 'Kết nối FaceGate sẽ dừng cho tới khi khôi phục hồ sơ. ' : ''}Lịch sử chấm công đã lưu được giữ lại.`)) return
     setBusy(true); setError(''); setMessage('')
     try {
       setData(await veraApi.deleteDevice(item.id, data.revision))
@@ -133,7 +133,7 @@ export default function DevicePage({ user }) {
         </div>
         <label>Ghi chú<textarea rows={3} maxLength={1000} value={editing.notes} onChange={event => change({ notes: event.target.value })} placeholder="Mục đích sử dụng, máy trạm phụ trách…" /></label>
         <label className="device-checkbox"><input type="checkbox" checked={editing.enabled} onChange={event => change({ enabled: event.target.checked })} />Đang sử dụng trong danh sách quản lý</label>
-        <p>{editing.adapter === 'facegate_server' ? 'Hồ sơ này dùng kết nối FaceGate đã cấu hình trên máy chủ. Thay đổi địa chỉ trong hồ sơ không tự đổi đường kết nối đang chạy.' : 'Lưu hồ sơ để chuẩn bị kết nối. Thiết bị mới cần tích hợp bộ kết nối phù hợp với hãng/model và máy trạm sử dụng.'} Trạng thái sử dụng quản lý hồ sơ, không bật/tắt phần cứng.</p>
+        <p>{editing.adapter === 'facegate_server' ? 'Hồ sơ này dùng kết nối FaceGate đã cấu hình trên máy chủ. IP nội bộ đã lưu được sử dụng ở lần kết nối tiếp theo.' : 'Lưu hồ sơ để chuẩn bị kết nối. Thiết bị mới cần tích hợp bộ kết nối phù hợp với hãng/model và máy trạm sử dụng.'} Trạng thái sử dụng quản lý hồ sơ, không bật/tắt phần cứng.</p>
         <div className="device-actions"><button type="submit" className="secondary-button">Lưu thiết bị</button><button type="button" className="secondary-button" onClick={() => setEditing(null)}>Hủy</button></div>
       </fieldset>
     </form>}
@@ -145,7 +145,7 @@ export default function DevicePage({ user }) {
         <label>Trạng thái sử dụng<select value={state} onChange={event => setState(event.target.value)}><option value="">Tất cả</option><option value="true">Đang sử dụng</option><option value="false">Ngừng sử dụng</option></select></label>
       </div>
       <p>{visible.length} / {data.devices.length} thiết bị</p>
-      {user?.permissions?.device_facegate_ip_manage && <div className="device-facegate-ip"><strong>IP FaceGate đang lưu: {data.devices.find(item => item.id === 'facegate-current')?.address || 'Theo cấu hình máy chủ'}</strong><button type="button" className="secondary-button compact" disabled={busy} onClick={async () => { setFacegateStatus('Đang kiểm tra kết nối...'); try { const result = await veraApi.checkFacegateConnection(); setFacegateStatus(result.message) } catch (cause) { setFacegateStatus(cause.message || 'Không kiểm tra được FaceGate.') } }}>Kiểm tra kết nối</button>{facegateStatus && <span role="status">{facegateStatus}</span>}<small>Chọn Chỉnh sửa tại máy FaceGate để cập nhật IP. Tài khoản thiết bị được quản lý trong cấu hình bảo mật máy chủ.</small></div>}
+      {user?.permissions?.device_facegate_ip_manage && <div className="device-facegate-ip"><strong>IP FaceGate đang lưu: {data.devices.some(item => item.id === 'facegate-current') ? (data.devices.find(item => item.id === 'facegate-current')?.address || 'Theo cấu hình máy chủ') : 'Chưa có hồ sơ FaceGate'}</strong><button type="button" className="secondary-button compact" disabled={busy || !data.devices.some(item => item.id === 'facegate-current')} onClick={async () => { setFacegateStatus('Đang kiểm tra kết nối...'); try { const result = await veraApi.checkFacegateConnection(); setFacegateStatus(result.message) } catch (cause) { setFacegateStatus(cause.message || 'Không kiểm tra được FaceGate.') } }}>Kiểm tra kết nối</button>{facegateStatus && <span role="status">{facegateStatus}</span>}<small>Chọn Chỉnh sửa tại máy FaceGate để cập nhật IP. Tài khoản thiết bị được quản lý trong cấu hình bảo mật máy chủ.</small></div>}
       <div className="device-grid">{visible.map(item => {
         const Icon = kindIcons[item.kind] || Server
         const adapter = data.adapters[item.adapter]

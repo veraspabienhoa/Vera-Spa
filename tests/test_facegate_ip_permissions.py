@@ -20,8 +20,7 @@ def test_facegate_ip_is_restricted_and_override_is_scoped(monkeypatch):
         with pytest.raises(ValueError):
             devices.Device(id='facegate-current', name='FaceGate', kind='faceid', adapter='facegate_server', address=address)
     devices.Device(id='facegate-current', name='FaceGate', kind='faceid', adapter='facegate_server', address='192.168.1.26')
-    monkeypatch.setattr(devices, 'read_registry', lambda conn: {'devices': devices.default_devices()})
-    monkeypatch.setattr(devices, 'facegate_address', lambda conn: '192.168.1.26')
+    monkeypatch.setattr(devices, 'facegate_address', lambda conn, **kwargs: '192.168.1.26')
     monkeypatch.setenv('VERA_FACEGATE_BASE_URL', 'http://192.168.1.25')
     monkeypatch.setenv('VERA_FACEGATE_USERNAME', 'service')
     monkeypatch.setenv('VERA_FACEGATE_PASSWORD', 'placeholder')

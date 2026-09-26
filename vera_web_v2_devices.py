@@ -95,10 +95,7 @@ def use_registered_facegate(engine_instance):
     """Resolve the allowlisted IP before network I/O, releasing the DB connection."""
     engine = engine_instance() if callable(engine_instance) else engine_instance
     with engine.connect() as conn:
-        registry = read_registry(conn)
-        if not any(d.get("id") == "facegate-current" for d in registry["devices"]):
-            raise RuntimeError("Hồ sơ FaceGate đã bị xóa. Admin cần khôi phục hồ sơ trước khi kết nối.")
-        address = facegate_address(conn)
+        address = facegate_address(conn, require_registered=True)
     if address:
         try:
             if IPv4Address(address) not in IPv4Network('192.168.1.0/24'):
@@ -110,11 +107,13 @@ def use_registered_facegate(engine_instance):
         yield address
 
 
-def facegate_address(conn) -> str:
+def facegate_address(conn, *, require_registered=False) -> str:
     raw = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='devices' AND setting_key='registry'")).scalar()
     value = json.loads(raw) if isinstance(raw, str) else raw
     if not isinstance(value, dict):
         return ''
+    if require_registered and not any(isinstance(row, dict) and row.get('id') == 'facegate-current' for row in value.get('devices', [])):
+        raise RuntimeError('Hồ sơ FaceGate đã bị xóa. Admin cần khôi phục hồ sơ trước khi kết nối.')
     return next((str(row.get('address') or '') for row in value.get('devices', [])
                  if isinstance(row, dict) and row.get('id') == 'facegate-current'), '')
 
