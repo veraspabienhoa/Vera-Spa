@@ -1,5 +1,31 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026 15:32: frontend production vẫn ở bản VPS trước các sửa UI
+
+Ảnh mới vẫn có hai vùng giữ chỗ Live Tour, và người dùng không mở được Đăng ký
+nghỉ ở desktop/mobile. Đã kiểm tra trực tiếp DOM trang đăng nhập tại
+`app.veraspa.vn`: URL gốc và URL có reload đều nhận `index-COQl75VV.js` cùng
+`index-BzLSJTZQ.css`. Log Deploy VPS Production #545 (run 36223625705, 13:23 ICT)
+build chính entry này vào frontend-next tại commit
+`745a46028fbfa93fe0261c30738dbfb2c9fee284` (#282).
+
+Ngược lại, artifact GitHub Pages của main `f8461efd` (run 36229456931) chứa
+`index-CFjHMqmu.js` và `index-CTTwSQva.css`. Vì vậy đã xác nhận các sửa #284–287
+chưa nằm trong giao diện được domain thật phục vụ; không thể quy lỗi chỉ cho
+cache của người dùng. Hướng dẫn trước đó “frontend-only không cần deploy VPS”
+không đúng với hosting hiện tại. Không đổi DNS, khóa DB, idempotency hay dữ liệu.
+
+Main đã bỏ các vùng giữ chỗ và có bản Đăng ký nghỉ được khôi phục. Kiểm thử lại
+42 trường hợp Live Tour/leave route/navigation đạt. Triển khai main lên VPS theo
+yêu cầu người dùng để đưa các thay đổi này vào nơi thực sự phục vụ frontend.
+Thêm dấu commit/entry vào build và kiểm tra cả HTML canonical lẫn URL tải mới ở
+cuối Deploy VPS. Metadata không chứa biến môi trường, token hay dữ liệu cá nhân.
+Lỗi đối chiếu phải làm workflow thất bại, không tự sửa routing hay xóa cache.
+
+Ghi nhận này xác minh sai lệch phiên bản từ DOM/artifact/log triển khai. Chưa có
+phiên đăng nhập production trong trình duyệt bảo trì để kiểm thử thao tác thật;
+không xem CI, health hoặc metadata thành bằng chứng một lần ghi nghiệp vụ.
+
 ## 26-09-2026: Doanh thu Auto dùng chung, chờ triển khai VPS
 
 Rà soát xác nhận Auto cũ lấy `subtotal/service_money` trong report nhưng thanh

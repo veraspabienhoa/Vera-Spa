@@ -1241,7 +1241,7 @@ jobs:
 
       - name: Verify page position and refresh safety
         # Includes in-place page refresh, dirty guards, loading geometry and dialogs.
-        run: node --test tests/pageStability.test.mjs
+        run: node --test tests/pageStability.test.mjs tests/buildInfo.test.mjs
 
       - name: Revenue shared Auto behavior
         run: node --test tests/revenueSharedAuto.test.mjs tests/revenueTipPeriod.source.test.mjs tests/revenueTipPeriod.test.mjs

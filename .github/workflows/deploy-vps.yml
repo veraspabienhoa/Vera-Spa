@@ -131,6 +131,11 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f /proc/\$pid/cwd); live_sha=\$(git -C \"\$release_dir\" rev-parse HEAD); test \"\$live_sha\" = '$DEPLOY_SHA'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; curl -fsS http://127.0.0.1:8000/v2/health >/dev/null"
 
+      - name: Verify public frontend commit and entry document
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        run: python vera_web_release_check.py --revision "$DEPLOY_SHA"
+
       - name: Show production status on failure
         if: ${{ failure() }}
         env:
