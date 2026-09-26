@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -10,6 +12,7 @@ const money = value => `${Number(value || 0).toLocaleString('vi-VN')} đ`
 const initialFilters = () => ({ preset: 'today', ...tourDateRange('today'), employee: '', customer: '', service: '', bill_no: '' })
 
 export default function MilkTeaPage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(busy))
   const allowed = ['leader', 'nhanvien'].includes(String(user?.role || '').toLowerCase())
   const [data, setData] = useState({ rows: [] })
   const [filters, setFilters] = useState(initialFilters)
@@ -39,7 +42,7 @@ export default function MilkTeaPage({ user }) {
       </div>
       <button data-ui-key="u-e5996bbfaf53" className="secondary-button" disabled={busy} onClick={load}>{busy ? 'Đang tải…' : 'Làm mới'}</button>
     </div>
-    {error && <div className="error-box" role="alert">{error}</div>}
+    <StableFeedback>{error && <div className="error-box" role="alert">{error}</div>}</StableFeedback>
     <section data-ui-key="u-4ef30a5028d5" className="panel spa-content">
       <UiToolbar data-ui-key="u-261a2d0029c8" className="milk-tea-filters">
         <label><span>Thời gian</span><select value={filters.preset} onChange={event => changePreset(event.target.value)}>{TOUR_DATE_PRESETS.filter(([id]) => id !== 'all').map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>

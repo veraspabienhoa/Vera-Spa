@@ -1,3 +1,4 @@
+import StableFeedback from '../components/StableFeedback'
 import { Camera, ScanLine, Smartphone, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -138,7 +139,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       <button type="button" className="secondary-button" disabled={busy} onClick={() => submit('scan')}><ScanLine size={16}/>{barcode.trim() ? 'Lưu mã' : 'Quét mã'}</button>
       <button type="button" className="primary-button" disabled={busy || !camera || !employee.trim()} onClick={() => submit('checkin')}>Gửi chấm công có ảnh</button>
     </div>
-    {message && <p role="status">{message}</p>}
+    <StableFeedback>{message && <p role="status">{message}</p>}</StableFeedback>
     <div className="device-actions"><h3>Sự kiện từ điện thoại</h3><button type="button" className="secondary-button" disabled={busy} onClick={async () => { try { setRecords((await veraApi.mobileStationEvents()).records) } catch (cause) { setMessage(cause.message) } }}><RefreshCw size={16}/>Làm mới</button></div>
     {records && <div className="device-mobile-records">{records.map(record => <article key={record.id}><strong>{record.event_type === 'checkin' ? 'Chấm công' : record.event_type === 'scan' ? 'Quét mã' : 'Ảnh'}</strong><span>{record.employee_username || record.barcode || '—'}</span><small>{formatVeraDateTime(record.occurred_at)} · {record.operator}</small>{record.has_image && <StationImage id={record.id} onViewed={() => setViewed(current => ({ ...current, [record.id]: true }))}/ >}{record.event_type === 'checkin' && canConfirm && <button type="button" className="secondary-button compact" disabled={busy || Boolean(record.confirmed_at) || !viewed[record.id]} onClick={() => confirm(record.id)}>{record.confirmed_at ? 'Đã xác nhận' : 'Xem ảnh rồi xác nhận'}</button>}</article>)}</div>}
   </section>

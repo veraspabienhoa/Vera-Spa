@@ -1,4 +1,6 @@
 import UiToolbar from '../components/UiToolbar'
+import StableFeedback from '../components/StableFeedback'
+import usePageRefresh from '../lib/usePageRefresh'
 import UiCustomText from '../components/UiCustomText'
 import { Clock3, RefreshCw, Save } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -25,6 +27,8 @@ function numberValue(value, fallback = 0) {
 }
 
 export default function ShiftBreakSettingsPanel() {
+  usePageRefresh(() => open && load(), () => Boolean(loading || saving || dirty))
+  const [dirty, setDirty] = useState(false)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -41,6 +45,7 @@ export default function ShiftBreakSettingsPanel() {
       const result = await apiRequest('/v2/staff/shift-break-settings')
       setShifts(Array.isArray(result.shifts) ? result.shifts : [])
       setDepartments(Array.isArray(result.departments) ? result.departments : [])
+      setDirty(false)
     } catch (err) {
       setError(err.message || 'Không tải được cài đặt nghỉ giữa ca.')
     } finally {
@@ -53,10 +58,12 @@ export default function ShiftBreakSettingsPanel() {
   }, [load, loading, open, shifts.length])
 
   const updateShift = (id, field, value) => {
+    setDirty(true)
     setShifts((current) => current.map((row) => row.id === id ? { ...row, [field]: value } : row))
   }
 
   const updateDepartment = (name, field, value) => {
+    setDirty(true)
     setDepartments((current) => current.map((row) => row.department === name ? { ...row, [field]: value } : row))
   }
 
@@ -131,8 +138,8 @@ export default function ShiftBreakSettingsPanel() {
     </div>
 
     {open && <div className="shift-break-body">
-      {error && <div className="shift-break-error">{error}</div>}
-      {message && <div className="shift-break-message">{message}</div>}
+      <StableFeedback>{error && <div className="shift-break-error">{error}</div>}
+      {message && <div className="shift-break-message">{message}</div>}</StableFeedback>
 
       <div>
         <div className="shift-break-subtitle">THEO TỪNG CA</div>

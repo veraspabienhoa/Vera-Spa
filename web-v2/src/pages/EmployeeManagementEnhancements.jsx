@@ -70,7 +70,7 @@ function renderPortraitTextPanel(card, text, statusText, statusType = '') {
       : 'Không tự sao chép được. Hãy chọn văn bản rồi dùng Ctrl/Cmd+C.'
     status.style.color = copied ? '#17603b' : '#a62a20'
     status.style.fontWeight = '800'
-    textarea.focus()
+    textarea.focus({ preventScroll: true })
   }
   panel.append(textarea, copyButton)
 }

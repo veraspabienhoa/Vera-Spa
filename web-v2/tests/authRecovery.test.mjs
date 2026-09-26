@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom'
 
 const require = createRequire(import.meta.url)
 const built = await build({ entryPoints: ['src/App.jsx'], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime'], plugins: [{ name: 'fixtures', setup(b) {
-  b.onResolve({ filter: /^\.\// }, args => args.kind === 'entry-point' ? undefined : ({ path: args.path, namespace: 'fixture' }))
+  b.onResolve({ filter: /^\.\// }, args => args.kind === 'entry-point' || args.path.endsWith('/usePageRefresh') ? undefined : ({ path: args.path, namespace: 'fixture' }))
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ loader: 'js', contents:
     args.path.endsWith('/api') ? 'export const veraApi = { me: () => globalThis.authFixture.me() };' :
     args.path.endsWith('/supabase') ? `

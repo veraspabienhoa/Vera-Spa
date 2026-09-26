@@ -1,3 +1,6 @@
+import StableDataRegion from '../components/StableDataRegion'
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ShoppingCart, RefreshCw, Upload, Download, TrendingDown, Plus, History } from 'lucide-react'
@@ -22,7 +25,7 @@ function Modal({ title, busy, close, children }) {
     document.body.style.overflow = 'hidden'; node.showModal()
     const cancel = event => { event.preventDefault(); if (!state.current.busy) state.current.close() }
     node.addEventListener('cancel', cancel)
-    return () => { node.removeEventListener('cancel', cancel); node.close(); document.body.style.overflow = overflow; opener?.focus() }
+    return () => { node.removeEventListener('cancel', cancel); node.close(); document.body.style.overflow = overflow; opener?.focus({ preventScroll: true }) }
   }, [])
   return createPortal(<dialog className="purchase-modal" ref={ref} aria-labelledby="purchase-modal-title">
     <header><h2 id="purchase-modal-title">{title}</h2><button disabled={busy} onClick={close} aria-label="Đóng">✕</button></header>{children}
@@ -30,6 +33,7 @@ function Modal({ title, busy, close, children }) {
 }
 
 export default function PurchasePage({ user }) {
+  usePageRefresh(() => setReload(value => value + 1), () => Boolean(loading || busy || editor))
   const admin = user?.role === 'admin'
   const [data,setData] = useState({ rows: [], permissions: {} }), [error,setError] = useState(''), [message,setMessage] = useState('')
   const [preset,setPreset] = useState('this_month'), [start,setStart] = useState(today()), [end,setEnd] = useState(today())
@@ -93,7 +97,7 @@ export default function PurchasePage({ user }) {
     <div className="page-heading">
       <div><span className="eyebrow"><ShoppingCart size={14} /> Tài chính</span><h1>NHẬP MUA</h1><p>Dữ liệu mua hàng được lưu trực tiếp trên server VERA SPA.</p></div>
     </div>
-    {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
+    <StableFeedback>{error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}</StableFeedback>
     <div className="purchase-filters">
       <label>Thời gian<select value={preset} onChange={e=>setPreset(e.target.value)}>{presets.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
       <label>Từ ngày<VeraDateInput value={preset === 'custom' ? start : data.start || ''} onChange={e=>{ setStart(e.target.value); if (preset !== 'custom' && data.end) setEnd(data.end); setPreset('custom') }} /></label>
@@ -124,13 +128,13 @@ export default function PurchasePage({ user }) {
     </div>
     </section>
     <input ref={importInput} hidden type="file" accept=".xlsb,.xlsx" onChange={importFile} />
-    {loading ? <p role="status">Đang tải…</p> : <div className="purchase-table"><table><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>
+    <StableDataRegion loading={loading}><div className="purchase-table"><table><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>
       {rows.map(row=><tr key={row.id} className={selected.includes(row.id)?'purchase-selected-row':''}><td><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selected.includes(row.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,row.id]:old.filter(id=>id!==row.id))} /></td>
         <td>{formatVeraDate(row.purchase_date)}</td><td>{row.item}</td><td>{row.quantity}</td><td>{money(row.unit_price)}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.entered_at ? new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(row.entered_at)).replaceAll('/','-') : '—'}</td><td>{row.entered_at ? new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(row.entered_at)) : '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
       {!rows.length && <tr><td colSpan={10}>Không có dữ liệu trong khoảng đang chọn.</td></tr>}
-    </tbody></table></div>}
+    </tbody></table></div></StableDataRegion>
     {editor && <Modal title={editor.id?'Sửa mua hàng':'Nhập mua hàng'} busy={busy} close={()=>setEditor(null)}><form onSubmit={save}>
-      {modalError && <p role="alert">{modalError}</p>}
+      <StableFeedback>{modalError && <p role="alert">{modalError}</p>}</StableFeedback>
       {draft.map((row,index)=><div className="purchase-entry" key={index}>
         {['purchase_date','item','quantity','unit_price','amount','note'].map((key,i)=><label key={key}>{['Ngày mua hàng','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt mua hàng'][i]}
           {key==='amount' ? (editor.id ? <VeraMoneyInput value={row.amount} disabled={busy} required onChange={e=>setDraft(old=>old.map((entry,n)=>n===index?{...entry,amount:e.target.value}:entry))} /> : <output>{money(Number(row.quantity)*Number(row.unit_price))}</output>) : (()=>{

@@ -9,7 +9,7 @@ const ClearableSearchInput = forwardRef(function ClearableSearchInput({ onClear,
     if (!node) return
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(node, '')
     node.dispatchEvent(new node.ownerDocument.defaultView.Event('input', { bubbles: true }))
-    node.focus()
+    node.focus({ preventScroll: true })
     onClear?.()
     node.dispatchEvent(new node.ownerDocument.defaultView.Event('vera-search-clear', { bubbles: true }))
   }

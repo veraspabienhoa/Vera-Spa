@@ -1,3 +1,6 @@
+import StableDataRegion from '../components/StableDataRegion'
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import {
@@ -291,6 +294,7 @@ function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave
 }
 
 export default function WorkSchedulePage({ user }) {
+  usePageRefresh(() => load(), () => Boolean(loading || busy || pendingChanges.length))
   const today = atNoon()
   const todayIso = isoDate(today)
   const [rangeMode, setRangeMode] = useState('week')
@@ -1080,11 +1084,11 @@ export default function WorkSchedulePage({ user }) {
       <label>Đến ngày<VeraDateInput aria-label="Đến ngày" min={selectedCell.day} max={rangeEnd} value={pasteEndDay} onChange={(event) => setPasteEndDay(event.target.value)} /></label>
       <button data-ui-key="u-13a4082a88f2" data-ui-label-default="Áp dụng" type="button" className="schedule-save" onClick={applyPasteRange}><ClipboardPaste size={15}/><UiCustomText uiKey="u-13a4082a88f2"> Áp dụng</UiCustomText></button>
     </div>}
-    {notice && <div className="schedule-notice">{notice}</div>}
+    <StableFeedback>{notice && <div className="schedule-notice">{notice}</div>}</StableFeedback>
 
     {(isWeekView || isMonthView) && selectedCell && selectedEmployee && selectedValue && canEdit && <div className={`mobile-week-editor ${isMonthView ? 'month-editor' : ''}`}><strong>{systemName(selectedEmployee)} · {selectedCell.day}</strong>{editorFor(selectedEmployee, selectedCell.day, selectedValue)}</div>}
 
-    {loading ? <div className="page-loading"><LoaderCircle size={18} className="spin" /> Đang tải lịch…</div> : <div className={`schedule-scroll ${isWeekView ? 'week-view' : ''} ${isMonthView ? 'month-view' : ''}`.trim()}>
+    <StableDataRegion loading={loading}><div className={`schedule-scroll ${isWeekView ? 'week-view' : ''} ${isMonthView ? 'month-view' : ''}`.trim()}>
       <table data-ui-key="u-e0c90c8ff947" className="schedule-grid">
         <thead><tr><th data-ui-key="u-e1888c33b316" data-ui-label-default="Tên nhân viên" className="employee-head" rowSpan="2"><UiCustomText uiKey="u-e1888c33b316">Tên nhân viên</UiCustomText></th><th data-ui-key="u-6e0efd07f097" className="month-head" colSpan={days.length}>{rangeTitle}</th></tr><tr>{days.map((date) => {
           const day = isoDate(date)
@@ -1115,7 +1119,7 @@ export default function WorkSchedulePage({ user }) {
         })}</tr>)}</tfoot>}
       </table>
       {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {DEPARTMENT_INFO[department].label}.</div>}
-    </div>}
+    </div></StableDataRegion>
     {!loading && <div className="schedule-scroll monthly-statistics">
       <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến ngày hiện tại · {DEPARTMENT_INFO[department].label}</h3>
       <table data-ui-key="u-8fdcd960382d">

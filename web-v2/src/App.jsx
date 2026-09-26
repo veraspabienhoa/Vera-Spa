@@ -1,3 +1,4 @@
+import { requestPageRefresh } from './lib/usePageRefresh'
 import SystemTabs from './components/SystemTabs'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import AppShell from './components/AppShell'
@@ -92,7 +93,6 @@ export default function App() {
   const [sessionRecoveryError, setSessionRecoveryError] = useState(false)
   const [authRetry, setAuthRetry] = useState(0)
   const [page, setPage] = useState('leave')
-  const [pageRefreshRevision, setPageRefreshRevision] = useState(0)
   const [longLeaveRevision, setLongLeaveRevision] = useState(0)
 
   useEffect(() => {
@@ -195,9 +195,8 @@ export default function App() {
     }
     rememberActivePage(user, nextPage)
     setPage(nextPage)
-    setPageRefreshRevision(0)
   }
-  const refreshCurrentPage = () => setPageRefreshRevision((value) => value + 1)
+  const refreshCurrentPage = () => requestPageRefresh()
 
   const shellUser = profile ? {
     ...user,
@@ -215,13 +214,13 @@ export default function App() {
     <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       {(navigationToggle) => <>
         <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />
-        <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={`${page}:${pageRefreshRevision}`}>
+        <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={page}>
           {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
           {page === 'schedule' && <WorkSchedulePage user={shellUser} />}
           {page === 'long-leave' && <>
             {/* Canonical route shape retained for CI/history: <LongLeaveSection user={shellUser} /> */}
             <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
-            <LongLeaveSection key={longLeaveRevision} user={shellUser} />
+            <LongLeaveSection refreshRevision={longLeaveRevision} user={shellUser} />
         </>}
         {page === 'employees' && <><EmployeePage user={shellUser} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
         {page === 'contract-1' && <ContractPage user={shellUser} />}

@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
@@ -89,6 +91,7 @@ function ObligationGroup({ group }) {
 }
 
 export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onTabChange }) {
+  usePageRefresh(() => reload(), () => Boolean(busy || JSON.stringify(config) !== configBaseline))
   const permissions = user?.permissions || {}
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const canCalculate = isAdmin || permissions.payroll_calculate
@@ -114,6 +117,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [historySelected, setHistorySelected] = useState([])
   const [searchSelectionMode, setSearchSelectionMode] = useState(false)
   const [config, setConfig] = useState(CONFIG_DEFAULT)
+  const [configBaseline, setConfigBaseline] = useState(() => JSON.stringify(CONFIG_DEFAULT))
   const [accumulationRefunds, setAccumulationRefunds] = useState([])
   const [formerEmployees, setFormerEmployees] = useState([])
   const [refundForm, setRefundForm] = useState({ employee_name: '', amount: '', note: 'Hoàn trả tiền tích lũy khi nghỉ việc' })
@@ -150,7 +154,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const loadSupporting = async () => {
     if (canCalculate || canEditConfig) {
       const result = await veraApi.payrollConfig()
-      setConfig(result.config || CONFIG_DEFAULT)
+      setConfig(result.config || CONFIG_DEFAULT); setConfigBaseline(JSON.stringify(result.config || CONFIG_DEFAULT))
     }
     if (isAdmin && canEditConfig) {
       const result = await veraApi.payrollAccumulationRefunds()
@@ -275,7 +279,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setDraft(result)
     setDraftSearch('')
     setSelected((result.rows || []).map((row) => row['Tên Hệ thống']))
-    setConfig(result.config || config)
+    setConfig(result.config || config); setConfigBaseline(JSON.stringify(result.config || config))
     const summary = result.source_summary || {}
     const detail = summary.matched_tip_rows
       ? `${summary.matched_tip_rows} dòng Tip · Tổng Tiền Lương ${money(summary.matched_salary_total)}`
@@ -296,7 +300,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setDraftSearch('')
     setSearchSelectionMode(false)
     setSelected((result.rows || []).map((row) => row['Tên Hệ thống']))
-    setConfig(result.config || config)
+    setConfig(result.config || config); setConfigBaseline(JSON.stringify(result.config || config))
     const summary = result.source_summary || {}
     const detail = summary.matched_tip_rows
       ? `${summary.matched_tip_rows} dòng Tip · Tổng Tiền Lương ${money(summary.matched_salary_total)}`
@@ -494,7 +498,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
 
   const saveConfig = () => run('config', async () => {
     const result = await veraApi.savePayrollConfig(config)
-    setConfig(result.config)
+    setConfig(result.config); setConfigBaseline(JSON.stringify(result.config))
     setNotice({ type: 'success', message: result.message })
   })
 
@@ -566,7 +570,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       <button data-ui-key="u-6a99f7168de5" data-ui-label-default="Tính lương" type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}><UiCustomText uiKey="u-6a99f7168de5">Tính lương</UiCustomText></button>
       <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => onTabChange?.('history')}><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
     </UiToolbar>
-    {notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
     {canCalculate && <section data-ui-key="u-856731095818" className="panel payroll-calculate-panel">
       <div data-ui-key="u-7722410132ee" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Nợ vi phạm đủ ngày bắt đầu trừ sẽ tự cộng vào “Nợ vi phạm kỳ trước”.</p></div></div>

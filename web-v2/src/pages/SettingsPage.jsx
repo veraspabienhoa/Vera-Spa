@@ -35,7 +35,7 @@ export default function SettingsPage({ user, initialTab, notifications, permissi
     if (next === null) return
     event.preventDefault()
     setTab(tabs[next][0])
-    document.getElementById(`settings-${tabs[next][0]}-tab`)?.focus()
+    document.getElementById(`settings-${tabs[next][0]}-tab`)?.focus({ preventScroll: true })
   }
   if (!tabs.length) return <p className="error-box">Tài khoản chưa được cấp quyền mở Cài đặt.</p>
   return <div className="feature-page spa-management settings-page">

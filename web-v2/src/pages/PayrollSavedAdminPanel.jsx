@@ -1,3 +1,4 @@
+import StableFeedback from '../components/StableFeedback'
 import { Edit3 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -76,8 +77,8 @@ export default function PayrollSavedAdminPanel({ user }) {
       `edit-${batch}`,
     ))}
 
-    {historyPanel && notice && createPortal(
-      <div className={notice.type === 'error' ? 'error-box' : 'success-box'} style={{ marginTop: 12 }}>{notice.message}</div>,
+    {historyPanel && createPortal(
+      <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>,
       historyPanel,
       'payroll-edit-notice',
     )}

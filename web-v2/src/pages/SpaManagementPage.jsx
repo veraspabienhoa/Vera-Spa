@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
@@ -58,7 +60,7 @@ function CustomerHistory({ value, canExport }) {
   return <div className="spa-history">
     <UiToolbar data-ui-key="u-1314dc780bc9" className="spa-actions"><button data-ui-key="u-2b1746283627" type="button" className="secondary-button" disabled={!allowed || exporting} onClick={exportHistory}><Download size={16}/>{exporting ? 'Đang xuất…' : 'Xuất Excel mua / sử dụng combo'}</button></UiToolbar>
     {!allowed && <p>Cần quyền xuất Excel và xem đầy đủ lịch sử khách hàng, hóa đơn, chờ thanh toán, báo cáo để xuất file chi tiết.</p>}
-    {exportError && <p role="alert">{exportError}</p>}
+    <StableFeedback>{exportError && <p role="alert">{exportError}</p>}</StableFeedback>
     <div className="spa-summary">{canPaid && <><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span></>}<span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
     {canPaid ? <><h3>Dịch vụ đã sử dụng</h3>
     <div className="responsive-data-table"><table data-ui-key="u-1f49db7f27b3"><thead><tr><th data-ui-key="u-cbac5ab16187" data-ui-label-default="Ngày / hóa đơn"><UiCustomText uiKey="u-cbac5ab16187">Ngày / hóa đơn</UiCustomText></th><th data-ui-key="u-51d1a7b8cbff" data-ui-label-default="Dịch vụ"><UiCustomText uiKey="u-51d1a7b8cbff">Dịch vụ</UiCustomText></th><th data-ui-key="u-f3f7e890ee21" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-f3f7e890ee21">Nhân viên</UiCustomText></th><th data-ui-key="u-9b1d384bc7aa" data-ui-label-default="Vị trí"><UiCustomText uiKey="u-9b1d384bc7aa">Vị trí</UiCustomText></th><th data-ui-key="u-82ed5930ab19" data-ui-label-default="Giá dịch vụ"><UiCustomText uiKey="u-82ed5930ab19">Giá dịch vụ</UiCustomText></th></tr></thead><tbody>{value.services.map((item) => <tr key={item.id}><td>{formatVeraDateTime(item.business_date)}<small>{item.bill_no}</small></td><td>{item.service}</td><td>{item.employee_name}</td><td>{item.room}</td><td>{money(item.price)}</td></tr>)}</tbody></table></div>
@@ -72,6 +74,7 @@ function CustomerHistory({ value, canExport }) {
 }
 
 export default function SpaManagementPage({ user, mode, initialTab = 'services', embedded = false }) {
+  usePageRefresh(() => refresh(), () => Boolean(busy || editor || customerContext))
   const customersPage = mode === 'customers'
   const allowed = user?.role === 'admin' || user?.permissions?.[customersPage ? 'live_tour_customers_view' : 'live_tour_admin'] === true
   const canEditCustomer = user?.role === 'admin' || user?.permissions?.live_tour_customers_edit === true
@@ -252,8 +255,8 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
   return <div className="feature-page spa-management">
     {!embedded && <div data-ui-key="u-1aeb0ab6fd31" className="page-heading"><div><span className="eyebrow">{customersPage ? <Users size={14}/> : <Settings2 size={14}/>} VERA SPA</span><h1>{title}</h1><p>{customersPage ? 'Hồ sơ khách hàng, lịch sử dịch vụ và số vé combo còn lại.' : 'Quản lý dịch vụ và vị trí phục vụ dùng chung với Live Tour.'}</p></div><button data-ui-key="u-f103be953884" data-ui-label-default="Làm mới" className="secondary-button" onClick={refresh} disabled={busy}><RefreshCw size={16}/><UiCustomText uiKey="u-f103be953884"> Làm mới</UiCustomText></button></div>}
     {embedded && <button data-ui-key="u-c4471a8b8466" data-ui-label-default="Làm mới" className="secondary-button" onClick={refresh} disabled={busy}><RefreshCw size={16}/><UiCustomText uiKey="u-c4471a8b8466"> Làm mới</UiCustomText></button>}
-    {error && !editor && <div className="error-box" role="alert">{error}</div>}
-    {notice && <div className="success-box" role="status">{notice}</div>}
+    <StableFeedback>{error && !editor && <div className="error-box" role="alert">{error}</div>}
+    {notice && <div className="success-box" role="status">{notice}</div>}</StableFeedback>
     {!customersPage && !embedded && <UiToolbar data-ui-key="u-5e5916d017e9" className="spa-tabs" role="tablist" aria-label="Cài đặt"><button data-ui-key="u-6a6a7a648943" data-ui-label-default="Cài đặt dịch vụ" role="tab" aria-selected={tab === 'services'} aria-controls="spa-settings-content" id="spa-services-tab" disabled={busy} onClick={() => { setTab('services'); setSearch('') }}><UiCustomText uiKey="u-6a6a7a648943">Cài đặt dịch vụ</UiCustomText></button><button data-ui-key="u-d25cbee13b8c" data-ui-label-default="Cài đặt khu vực dịch vụ" role="tab" aria-selected={tab === 'areas'} aria-controls="spa-settings-content" id="spa-areas-tab" disabled={busy} onClick={() => { setTab('areas'); setSearch('') }}><UiCustomText uiKey="u-d25cbee13b8c">Cài đặt khu vực dịch vụ</UiCustomText></button></UiToolbar>}
     <section data-ui-key="u-dc002737a58a" className="panel spa-content" id="spa-settings-content" role={customersPage || embedded ? undefined : 'tabpanel'} aria-labelledby={customersPage || embedded ? undefined : `spa-${tab}-tab`}>
       {!customersPage && tab === 'services' && <UiToolbar data-ui-key="u-f9d93fb223c3" className="spa-service-filters" aria-label="Lọc loại dịch vụ">{[['all', 'Tất cả'], ['service', 'Dịch vụ đơn lẻ'], ['combo', 'Dịch vụ combo']].map(([value, label]) => <button data-ui-key="u-6c455947190a" type="button" className="secondary-button" aria-pressed={serviceFilter === value} key={value} onClick={() => setServiceFilter(value)}>{label}</button>)}</UiToolbar>}

@@ -9,7 +9,7 @@ import { JSDOM } from 'jsdom'
 const require = createRequire(import.meta.url)
 const built = await build({
   entryPoints: [fileURLToPath(new URL('../src/pages/ProfilePage.jsx', import.meta.url))],
-  bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic',
+  bundle: true, write: false, loader: { '.css': 'empty' }, platform: 'node', format: 'cjs', jsx: 'automatic',
   external: ['react', 'react/jsx-runtime', 'lucide-react'],
   plugins: [{ name: 'fixture', setup(b) {
     b.onResolve({ filter: /\/lib\/(api|profileReferenceRefresh|pushNotifications)$|EmployeeIdentityPanel$/ }, (args) => ({ path: args.path.split('/').at(-1), namespace: 'fixture' }))

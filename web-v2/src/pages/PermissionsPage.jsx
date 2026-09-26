@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
@@ -8,6 +10,7 @@ import { veraApi } from '../lib/api'
 const roleLabel = { giamdoc: 'Giám đốc', quanly: 'Quản lý', letan: 'Lễ tân', leader: 'Leader', nhanvien: 'Nhân viên', locker: 'Locker', tapvu: 'Tạp vụ' }
 
 export default function PermissionsPage() {
+  usePageRefresh(() => load(), () => Boolean(busy || refreshDirty))
   const [data, setData] = useState(null)
   const [scope, setScope] = useState('role')
   const [target, setTarget] = useState('quanly')
@@ -16,6 +19,7 @@ export default function PermissionsPage() {
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState(null)
+  const [refreshDirty, setRefreshDirty] = useState(false)
 
   const allFeatureKeys = (source = data) => {
     const pageKeys = (source?.pages || []).flatMap((page) => Object.keys(page?.features || {}))
@@ -55,6 +59,7 @@ export default function PermissionsPage() {
   }
   const applyTarget = (nextScope, nextTarget, source = data) => {
     if (!source) return
+    setRefreshDirty(false)
     if (nextScope === 'role') {
       setAllowed(roleAllowed(nextTarget, source))
       setInherit(false)
@@ -91,6 +96,7 @@ export default function PermissionsPage() {
   }
   const chooseTarget = (value) => { setTarget(value); applyTarget(scope, value) }
   const toggle = (feature) => {
+    setRefreshDirty(true)
     // Clicking any permission while the account is inheriting automatically
     // starts a private override from the inherited role baseline.
     if (scope === 'account' && inherit) setInherit(false)
@@ -101,12 +107,14 @@ export default function PermissionsPage() {
     })
   }
   const enablePrivatePermissions = () => {
+    setRefreshDirty(true)
     if (scope !== 'account') return
     const account = data?.accounts?.find((item) => item.username === target)
     if (!allowed.length) setAllowed(roleAllowed(account?.role))
     setInherit(false)
   }
   const resetToRolePermissions = () => {
+    setRefreshDirty(true)
     if (scope !== 'account') return
     const account = data?.accounts?.find((item) => item.username === target)
     setAllowed(roleAllowed(account?.role))
@@ -147,7 +155,7 @@ export default function PermissionsPage() {
       .permission-view-permission strong:after{content:' · MỞ TRANG';font-size:9px;color:#2d6a50;font-weight:900}
     `}</style>
     <div data-ui-key="u-7f40edd7308c" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Admin</span><h1>PHÂN QUYỀN THEO TRANG</h1><p>Mỗi trang/menu có các tác vụ riêng. Admin có thể cấp từng tác vụ cho nhóm hoặc cho từng tài khoản.</p></div><button data-ui-key="u-9d2013a3b024" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load()} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-9d2013a3b024"> Làm mới</UiCustomText></button></div>
-    {notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}
+    <StableFeedback>{notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}</StableFeedback>
     <section data-ui-key="u-651db1ae818d" className="panel permission-target-panel">
       <UiToolbar data-ui-key="u-a0020edbc857" className="permission-scope-tabs"><button data-ui-key="u-f183ddd5f06a" data-ui-label-default="Theo nhóm" className={scope === 'role' ? 'active' : ''} onClick={() => chooseScope('role')}><UiCustomText uiKey="u-f183ddd5f06a">Theo nhóm</UiCustomText></button><button data-ui-key="u-cd99f6cb1fbe" data-ui-label-default="Theo tài khoản" className={scope === 'account' ? 'active' : ''} onClick={() => chooseScope('account')}><UiCustomText uiKey="u-cd99f6cb1fbe">Theo tài khoản</UiCustomText></button></UiToolbar>
       <label>{scope === 'role' ? 'Chọn nhóm' : 'Chọn tài khoản'}<select value={target} onChange={(e) => chooseTarget(e.target.value)}>{scope === 'role' ? data?.roles?.map((role) => <option key={role} value={role}>{roleLabel[role] || role}</option>) : data?.accounts?.map((item) => <option key={item.username} value={item.username}>{item.username} · {roleLabel[item.role] || item.role}</option>)}</select></label>

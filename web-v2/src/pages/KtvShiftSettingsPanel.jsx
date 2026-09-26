@@ -1,3 +1,5 @@
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { useCallback, useEffect, useState } from 'react'
@@ -8,6 +10,7 @@ import './KtvShiftSettingsPanel.css'
 const EMPTY = { name: '', main_shift: 'Ca 1', start: '09:00', end: '17:00', fixed: false }
 
 export default function KtvShiftSettingsPanel({ onChanged }) {
+  usePageRefresh(() => load(), () => Boolean(busy || draft || cycleDraft))
   const [data, setData] = useState(null)
   const [draft, setDraft] = useState(null)
   const [cycles, setCycles] = useState(null)
@@ -57,8 +60,8 @@ export default function KtvShiftSettingsPanel({ onChanged }) {
       <button data-ui-key="u-ee5fac9c6358" data-ui-label-default="Làm mới" type="button" className="secondary-button" disabled={busy} onClick={load}><RefreshCw size={16}/><UiCustomText uiKey="u-ee5fac9c6358"> Làm mới</UiCustomText></button>
       {data?.permissions?.create && <button data-ui-key="u-7574b5707176" data-ui-label-default="Thêm ca" type="button" className="primary-button" disabled={busy} onClick={() => { setDraft({ ...EMPTY }); setError(''); setNotice('') }}><Plus size={16}/><UiCustomText uiKey="u-7574b5707176"> Thêm ca</UiCustomText></button>}
     </UiToolbar>
-    {error && <p className="error-box" role="alert">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
+    <StableFeedback>{error && <p className="error-box" role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}</StableFeedback>
     <div className="ktv-shift-table-wrap"><table data-ui-key="u-1d53041d87e4"><thead><tr><th data-ui-key="u-c2a9cddbdbbd" data-ui-label-default="Tên ca"><UiCustomText uiKey="u-c2a9cddbdbbd">Tên ca</UiCustomText></th><th data-ui-key="u-452fbb35f75c" data-ui-label-default="Ca chính"><UiCustomText uiKey="u-452fbb35f75c">Ca chính</UiCustomText></th><th data-ui-key="u-84e4e06dbbbf" data-ui-label-default="Bắt đầu"><UiCustomText uiKey="u-84e4e06dbbbf">Bắt đầu</UiCustomText></th><th data-ui-key="u-fbb590a52a7a" data-ui-label-default="Kết thúc"><UiCustomText uiKey="u-fbb590a52a7a">Kết thúc</UiCustomText></th><th data-ui-key="u-ed9378a74ce0" data-ui-label-default="Cố định"><UiCustomText uiKey="u-ed9378a74ce0">Cố định</UiCustomText></th><th data-ui-key="u-a3e002589a6b" data-ui-label-default="Thao tác"><UiCustomText uiKey="u-a3e002589a6b">Thao tác</UiCustomText></th></tr></thead><tbody>
       {(data?.shifts || []).map(row => <tr key={row.id}><td>{row.name}</td><td>{row.main_shift || 'Chưa chọn'}</td><td>{row.start}</td><td>{row.end}</td><td>{row.fixed ? 'Có' : 'Không'}</td><td><UiToolbar data-ui-key="u-cfc5c3b1a061" className="ktv-shift-toolbar">
         {data.permissions.edit && <button data-ui-key="u-df30c4862522" data-ui-label-default="Sửa" type="button" className="secondary-button" disabled={busy} aria-label={`Sửa ca ${row.name}`} onClick={() => { setDraft({ ...row, main_shift: row.main_shift || 'Ca 1' }); setError(''); setNotice('') }}><PencilLine size={15}/><UiCustomText uiKey="u-df30c4862522"> Sửa</UiCustomText></button>}

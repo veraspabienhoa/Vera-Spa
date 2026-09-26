@@ -1,0 +1,19 @@
+/* Preserve the viewport through row updates and modal scroll locking. These
+   rules do not block user scrolling or explicit navigation to another section. */
+html { scrollbar-gutter: stable; overflow-anchor: none; }
+.page-wrap { overflow-anchor: none; }
+.face-id-card { position: relative; }
+/* Reserve feedback space without changing identity/password handling code. */
+.face-id-card::after { content: ''; display: block; height: 64px; }
+.face-id-card > .employee-identity-notice {
+  position: absolute;
+  inset: auto 12px 12px;
+  box-sizing: border-box;
+  height: 64px;
+  max-height: 64px;
+  margin: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+}
+@media print { html { scrollbar-gutter: auto; } }

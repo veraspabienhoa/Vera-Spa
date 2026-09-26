@@ -1,3 +1,6 @@
+import StableFeedback from '../components/StableFeedback'
+import StableDataRegion from '../components/StableDataRegion'
+import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
@@ -33,17 +36,17 @@ function uniqueOptions(rows, key) {
 }
 
 function Notice({ notice, onClose }) {
-  if (!notice) return null
-  return (
+  return <StableFeedback>{notice && (
     <div className={`rules-notice ${notice.type}`} role="status">
       <strong>{notice.type === 'success' ? 'THÀNH CÔNG' : 'KHÔNG THÀNH CÔNG'}</strong>
       <span>{notice.message}</span>
       <button data-ui-key="u-1861ebb8a0a3" data-ui-label-default="×" type="button" onClick={onClose} aria-label="Đóng thông báo"><UiCustomText uiKey="u-1861ebb8a0a3">×</UiCustomText></button>
     </div>
-  )
+  )}</StableFeedback>
 }
 
 export default function RulesPage() {
+  usePageRefresh(() => load(), () => Boolean(loading || busy || dirty || quotaDirty || lateThresholdDirty || employeeSelfServiceDirty || letanLeavePolicyDirty || Object.keys(departmentRuleLabels).some(departmentRulesDirty)))
   const [data, setData] = useState(null)
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
@@ -626,7 +629,7 @@ export default function RulesPage() {
 
       <section data-ui-key="u-70dcbd5c56b7" className="panel rules-grid-panel">
         <div data-ui-key="u-002b1c2b9b6f" className="panel-title-row"><div><h2>BẢNG NỘI QUY</h2><p>{visibleRows.length} / {rows.length} dòng · {data?.updated_by ? `Cập nhật bởi ${data.updated_by}` : 'Chưa có người cập nhật'}.</p></div>{dirty && <span className="rules-unsaved-chip">Chưa ghi</span>}</div>
-        {loading ? <div className="empty-cell"><LoaderCircle className="spin" /> Đang tải Bảng nội quy…</div> : <>
+        <StableDataRegion loading={loading}><>
           <div className="rules-desktop-table table-wrap">
             <table data-ui-key="u-6422d71adff5" className="rules-table">
               <thead><tr>{canEdit && <th data-ui-key="u-1b55cdb1c452" data-ui-label-default="Chọn" className="rules-select-column"><UiCustomText uiKey="u-1b55cdb1c452">Chọn</UiCustomText></th>}{columns.map((column) => <th data-ui-key="u-039558ffbc48" key={column} className={requiredColumns.has(column) ? 'required' : ''}>{column}</th>)}</tr></thead>
@@ -656,7 +659,7 @@ export default function RulesPage() {
             </article>
           })}</div>
           {!visibleRows.length && <div className="empty-cell">Không có dòng Nội quy phù hợp bộ lọc.</div>}
-        </>}
+        </></StableDataRegion>
       </section>
     </div>
   )

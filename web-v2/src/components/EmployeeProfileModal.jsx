@@ -11,7 +11,7 @@ export default function EmployeeProfileModal({ children, onClose, busy }) {
     const opener = document.activeElement
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    root.current?.focus()
+    root.current?.focus({ preventScroll: true })
     const onKeyDown = (event) => {
       // Nested calendars and image viewers handle their own keyboard events.
       if (event.defaultPrevented || !root.current?.contains(event.target)) return
