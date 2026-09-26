@@ -90,6 +90,7 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
   const canCustomer = feature => user?.role === 'admin' || user?.permissions?.[`live_tour_${feature}`] === true
   const [editor, setEditor] = useState(null)
   const [form, setForm] = useState({})
+  const [areaConflict, setAreaConflict] = useState(false)
   const requests = useRef(new Map())
   const running = useRef(false)
   const pointerDrag = useRef(null)
@@ -114,7 +115,7 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
   }
 
   const openEditor = (kind, item) => {
-    setError(''); setNotice('')
+    setError(''); setNotice(''); setAreaConflict(false)
     setForm(kind === 'customer' ? { customer_id: item?.id || '', customer_name: item?.name || '', customer_phone: item?.phone || '' }
       : kind === 'area' ? structuredClone(item || blankArea()) : newCatalogForm(kind, item))
     setEditor({ kind, existing: Boolean(item) })
@@ -128,8 +129,31 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
     const signature = JSON.stringify([action, payload])
     if (!requests.current.has(signature)) requests.current.set(signature, crypto.randomUUID())
     try {
-      const result = await veraApi.liveTourAction({ action, payload, expected_revision: options?.expectedRevision ?? data.revision, idempotency_key: requests.current.get(signature) })
+      const areaAction = ['service_area_upsert', 'service_area_delete'].includes(action)
+      const body = { action, payload, expected_revision: options?.expectedRevision ?? data.revision, idempotency_key: requests.current.get(signature), ...(areaAction ? { response_view: 'receipt' } : {}) }
+      let result
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try { result = await veraApi.liveTourAction(body); break }
+        catch (err) {
+          // Only a rejected resource fence is retryable. Keep intent and key;
+          // never change the area's precondition or replay an actual conflict.
+          if (!areaAction || err.status !== 503 || !/(?:Tài nguyên|Đối tượng) đang được cập nhật/i.test(err.message) || attempt === 2) throw err
+          await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)))
+        }
+      }
       requests.current.delete(signature)
+      if (areaAction) {
+        setData(current => ({ ...current, revision: result.revision,
+          service_areas: result.result.service_area
+            ? (current.service_areas || []).some(area => area.id === result.result.service_area.id)
+              ? current.service_areas.map(area => area.id === result.result.service_area.id ? result.result.service_area : area)
+              : [...(current.service_areas || []), result.result.service_area]
+            : (current.service_areas || []).filter(area => area.id !== result.result.deleted_id) }))
+        setEditor(null); setAreaConflict(false); setNotice('Đã lưu thay đổi.')
+        try { setData(await read()) }
+        catch { setError('Đã lưu thành công nhưng chưa tải được danh sách mới nhất. Hãy bấm Làm mới.') }
+        return result
+      }
       setData(customersPage ? { revision: result.revision, customers: result.customers, combo_catalog: result.combo_catalog || data?.combo_catalog || [], can_export: result.capabilities.export }
         : { revision: result.revision, services: result.services, combos: result.combo_catalog, service_areas: result.service_areas })
       setEditor(null)
@@ -137,7 +161,10 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
       return result
     } catch (err) {
       let message = err.message || 'Không lưu được thay đổi.'
-      if (err.status === 409 && /Live Tour đã thay đổi ở thiết bị khác/i.test(message)) {
+      if (err.status === 409 && err.payload?.detail?.code === 'LIVE_TOUR_AREA_CHANGED') {
+        setAreaConflict(true)
+        try { setData(await read()) } catch { /* Keep the draft and its original version. */ }
+      } else if (err.status === 409 && /Live Tour đã thay đổi ở thiết bị khác/i.test(message)) {
         try { setData(await read()); message = 'Dữ liệu đã thay đổi ở thiết bị khác. Đã tải bản mới nhất; hãy kiểm tra lại nội dung rồi bấm Lưu.' }
         catch { message += ' Không tải được bản mới nhất; hãy thử Làm mới.' }
       }
@@ -148,12 +175,25 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
   const submit = (event) => {
     event.preventDefault()
     if (editor.kind === 'customer') void mutate('customer_upsert', form)
-    if (editor.kind === 'area') void mutate('service_area_upsert', { id: form.id, name: form.name, kind: form.kind, beds: form.beds })
+    if (editor.kind === 'area') void mutate('service_area_upsert', { id: form.id, name: form.name, kind: form.kind, beds: form.beds, ...(form.version ? { expected_area_version: form.version } : !form.id ? { expected_area_version: null } : {}) })
     if (['service', 'combo'].includes(editor.kind)) void mutate(editor.kind === 'combo' ? 'combo_upsert' : 'service_upsert', catalogPayload(editor.kind, form, editor.existing))
   }
 
   const remove = (kind, item) => {
-    if (window.confirm(`Xóa ${kind === 'area' ? 'khu vực' : 'dịch vụ'} “${item.name}”${kind === 'area' && item.kind === 'room' ? ' cùng các giường bên trong' : ''}?`)) void mutate(kind === 'area' ? 'service_area_delete' : kind === 'combo' ? 'combo_delete' : 'service_delete', { id: item.id })
+    if (window.confirm(`Xóa ${kind === 'area' ? 'khu vực' : 'dịch vụ'} “${item.name}”${kind === 'area' && item.kind === 'room' ? ' cùng các giường bên trong' : ''}?`)) void mutate(kind === 'area' ? 'service_area_delete' : kind === 'combo' ? 'combo_delete' : 'service_delete', { id: item.id, ...(kind === 'area' && item.version ? { expected_area_version: item.version } : {}) })
+  }
+
+  const reopenLatestArea = async () => {
+    if (running.current || busy) return
+    setBusy(true)
+    try {
+      const latest = await read()
+      setData(latest)
+      const area = latest.service_areas?.find(item => item.id === form.id)
+      if (!area) { setError('Khu vực đã bị xóa. Nội dung chưa lưu vẫn được giữ; hãy đóng khung khi đã kiểm tra.'); return }
+      if (window.confirm('Mở bản mới nhất sẽ thay nội dung chưa lưu trong khung này. Bạn muốn tiếp tục?')) openEditor('area', area)
+    } catch (err) { setError(err.message || 'Không tải được khu vực mới nhất.') }
+    finally { setBusy(false) }
   }
 
   const toggleComboApproval = (item, checked) => {
@@ -278,6 +318,7 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
     {customerContext && <LiveTourCustomerDialog context={customerContext} comboCatalog={data?.combo_catalog || []} busy={busy} error={error} onAction={mutate} onClose={() => setCustomerContext(null)}/>}
     {editor && <Editor title={editTitle} onClose={() => { setEditor(null); setError('') }} busy={busy}>
       {error && <div className="error-box" role="alert">{error}</div>}
+      {areaConflict && editor.kind === 'area' && <button className="secondary-button" type="button" disabled={busy} onClick={reopenLatestArea}>Mở bản mới nhất</button>}
       {editor.kind === 'choose-service' ? <ServiceTypePicker onChoose={(kind) => openEditor(kind)}/> : editor.kind === 'history' ? <CustomerHistory key={editor.value.customer.id} value={editor.value} canExport={data?.can_export}/> : <form onSubmit={submit}><fieldset disabled={busy} className="spa-form">
         {editor.kind === 'customer' && <><Field label="Tên khách hàng"><input required maxLength={150} value={form.customer_name} onChange={(event) => set('customer_name', event.target.value)}/></Field><Field label="Số điện thoại"><input type="tel" maxLength={30} value={form.customer_phone} onChange={(event) => set('customer_phone', event.target.value)}/></Field></>}
         {['service', 'combo'].includes(editor.kind) && <ServiceCatalogForm kind={editor.kind} form={form} setForm={setForm} services={services} groups={groups} existing={editor.existing}/>}

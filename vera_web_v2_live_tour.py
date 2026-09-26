@@ -624,11 +624,29 @@ def _service_areas(state: dict[str, Any]) -> list[dict[str, Any]]:
         if not any(_norm(area["name"]) == _norm(name) for area in areas.values()):
             areas[f"legacy:{name}"] = {"id": f"legacy:{name}", "name": name, "kind": "room", "beds": []}
     projected = list(areas.values())
+    for area in projected:
+        # Compare only this area's editable configuration, not the live board.
+        area["version"] = hashlib.sha256(json.dumps(area, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     saved_order = state.get("service_area_order")
     if isinstance(saved_order, list):
         positions = {str(area_id): index for index, area_id in enumerate(saved_order)}
         projected.sort(key=lambda area: positions.get(str(area["id"]), len(positions)))
     return projected
+
+
+def _area_precondition(state: dict[str, Any], action: str, payload: dict[str, Any]) -> bool:
+    if action not in {"service_area_upsert", "service_area_delete"} or "expected_area_version" not in payload:
+        return False
+    area_id = str(payload.get("id") or "").strip()
+    if not area_id and action == "service_area_upsert" and payload["expected_area_version"] is None:
+        return True
+    current = next((area for area in _service_areas(state) if area["id"] == area_id), None)
+    if not current or not isinstance(payload["expected_area_version"], str) or payload["expected_area_version"] != current["version"]:
+        raise HTTPException(409, detail={
+            "code": "LIVE_TOUR_AREA_CHANGED",
+            "message": "Khu vực này vừa được người khác sửa hoặc xóa. Nội dung bạn nhập vẫn được giữ; hãy mở bản mới nhất trước khi lưu lại.",
+        })
+    return True
 
 
 def _settings_reorder(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -662,9 +680,10 @@ def _service_area_change(state: dict[str, Any], payload: dict[str, Any], *, dele
     current = _find_by_id(areas, area_id, "khu vực dịch vụ") if area_id else None
     old_ids = {bed["id"] for bed in (current or {}).get("beds", [])}
     old_rooms = [row for row in state["rooms"] if row["id"] in old_ids]
-    if any(_catalog_referenced(state, "rooms", row) for row in old_rooms):
-        raise HTTPException(409, "Khu vực còn dịch vụ chưa thanh toán; hãy hoàn tất trước khi thay đổi hoặc xóa.")
+    referenced = [row for row in old_rooms if _catalog_referenced(state, "rooms", row)]
     if delete:
+        if referenced:
+            raise HTTPException(409, "Khu vực còn dịch vụ chưa thanh toán; chưa thể xóa khu vực.")
         if current is None:
             raise HTTPException(400, "Thiếu mã khu vực dịch vụ.")
         state["rooms"] = [row for row in state["rooms"] if row["id"] not in old_ids]
@@ -717,6 +736,12 @@ def _service_area_change(state: dict[str, Any], payload: dict[str, Any], *, dele
             "type": "vip" if kind == "room" and _room_group(name) in {str(n) for n in range(16, 22)} else "standard",
             "active": old.get("active", True),
         })
+    replacements_by_id = {row["id"]: row for row in replacements}
+    for old in referenced:
+        replacement = replacements_by_id.get(old["id"])
+        if (not replacement or replacement["name"] != old["name"]
+                or name != current["name"] or kind != current["kind"]):
+            raise HTTPException(409, "Giường đang có dịch vụ chưa thanh toán; có thể thêm giường mới nhưng chưa thể đổi tên, chuyển loại hoặc xóa giường đang dùng.")
     state["rooms"] = remaining + replacements
     if current and "physical_rooms" in state:
         state["physical_rooms"] = [value for value in state["physical_rooms"] if _norm(value) != _norm(current["name"])]
@@ -4920,7 +4945,10 @@ def install_live_tour_routes(
                 )
             if body.expected_revision is None:
                 raise HTTPException(428, "Thiếu phiên bản Live Tour. Hãy tải lại bảng trước khi thao tác.")
-            if body.expected_revision != revision and not resource_fresh:
+            # Check the submitted area version even when the board revision is
+            # current: refreshing the list must not rebase an unsaved stale form.
+            area_fresh = _area_precondition(state, action, payload)
+            if body.expected_revision != revision and not resource_fresh and not (area_fresh and body.expected_revision <= revision):
                 raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.")
             if action == "clear_expired_preview":
                 return {"ok": True, "base_revision": revision, **_expired_preview(state, payload, now)}

@@ -21,6 +21,8 @@ PAYMENT_ACTIONS = frozenset({'checkout', 'quick_checkout'})
 PAYMENT_COLLECTIONS = frozenset({'employees', 'rooms', 'services', 'combos', 'customers', 'pending', 'invoices', 'invoice_changes'})
 PAYMENT_APPENDS = frozenset({'invoices', 'reports', 'combo_usage', 'audit'})
 OPERATIONAL_ACTIONS = frozenset({'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'start', 'start_room', 'finish_room', 'complete', 'finish_to_pending', 'move_pending', 'update_appointment', 'set_vip', 'add_minutes', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'pending_update', 'pending_delete'})
+AREA_ACTIONS = frozenset({'service_area_upsert', 'service_area_delete'})
+AREA_COLLECTIONS = frozenset({'rooms', 'employees', 'pending'})
 ADJUSTMENT_ACTIONS = frozenset({'paid_invoice_update', 'paid_invoice_delete'})
 OPERATIONAL_COLLECTIONS = frozenset({'employees', 'rooms', 'services', 'combos', 'customers', 'pending', 'break_events', 'combo_sale_requests'})
 
@@ -34,6 +36,11 @@ class _ScopedSnapshot(dict):
 class _OperationalSnapshot(_ScopedSnapshot):
     appends = frozenset({'audit', 'pending_changes'})
     writable = frozenset({'employees', 'customers', 'pending', 'break_events'}) | appends
+
+
+class _AreaSnapshot(_ScopedSnapshot):
+    appends = frozenset({'audit'})
+    writable = frozenset({'rooms'}) | appends
 
 
 class _AdjustmentSnapshot(_ScopedSnapshot):
@@ -93,6 +100,9 @@ def read(conn, collections=None, *, payment_key=None, receipt_key=None, profile=
     if profile == 'operational':
         collections = OPERATIONAL_COLLECTIONS
         snapshot_type = _OperationalSnapshot
+    elif profile == 'area':
+        collections = AREA_COLLECTIONS
+        snapshot_type = _AreaSnapshot
     elif profile == 'adjustment':
         collections = OPERATIONAL_COLLECTIONS | {'invoices', 'reports', 'combo_usage'}
         snapshot_type = _AdjustmentSnapshot
@@ -204,6 +214,8 @@ def begin_action(conn, action, payload, expected_revision, idempotency_key, coun
         # action_resources only inspects pending/invoice rows for explicit IDs.
         # Booking/start/finish discover their resources from employee rows.
         discovery = discovery - {'pending'}
+    if compact and action in AREA_ACTIONS:
+        discovery = AREA_COLLECTIONS
     state, _, _ = read(conn, collections=discovery)
     resources = action_resources(state, action, payload, idempotency_key)
     try:
@@ -213,7 +225,7 @@ def begin_action(conn, action, payload, expected_revision, idempotency_key, coun
     if compact and action in PAYMENT_ACTIONS:
         state, revision, versions = read(conn, payment_key=idempotency_key)
     elif compact and action not in {'backup', 'restore'}:
-        profile = 'operational' if action in OPERATIONAL_ACTIONS else 'adjustment' if action in ADJUSTMENT_ACTIONS else None
+        profile = 'operational' if action in OPERATIONAL_ACTIONS else 'adjustment' if action in ADJUSTMENT_ACTIONS else 'area' if action in AREA_ACTIONS else None
         state, revision, versions = read(conn, receipt_key=idempotency_key, profile=profile)
     else:
         state, revision, versions = read(conn)
@@ -225,6 +237,12 @@ def begin_action(conn, action, payload, expected_revision, idempotency_key, coun
     if independent and expected_revision is not None and expected_revision <= revision:
         mapping = {'live_tour_employee':'employees','live_tour_customer':'customers','live_tour_pending':'pending','live_tour_invoices':'invoices'}
         observed = [(mapping[domain], value) for domain,value in resources if domain in mapping]
+        # Area edits invalidate the touched physical room, not every booking on
+        # the board. Include sibling beds because PR reserves the whole room.
+        from vera_web_v2_live_tour import _catalog_room_group
+        room_groups = {value for domain, value in resources if domain == 'live_tour_room'}
+        observed.extend(('rooms', str(row['id'])) for row in state['rooms']
+                        if _catalog_room_group(state, row.get('name')) in room_groups)
         fresh = state.get('_configuration_revision', 0) <= expected_revision and all(versions.get(key, 0) <= expected_revision for key in observed)
     conn.info['live_tour_resources'] = resources
     return state, revision, fresh
@@ -272,7 +290,7 @@ def write(conn, before, after, actor):
     receipts = {key: value for key, value in after_meta.get('idempotency', {}).items() if before_meta.get('idempotency', {}).get(key) != value}
     removed_receipts = sorted(set(before_meta.get('idempotency', {})) - set(after_meta.get('idempotency', {})))
     receipt_patch = " || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb))" if receipts or removed_receipts else ''
-    configuration_patch = " || jsonb_build_object('_configuration_revision',aggregate_revision+1)" if conn.info.get('live_tour_exclusive', True) else ''
+    configuration_patch = " || jsonb_build_object('_configuration_revision',aggregate_revision+1)" if conn.info.get('live_tour_exclusive', True) and not isinstance(before, _AreaSnapshot) else ''
     revision = int(conn.execute(text(f"""
         UPDATE {relational.META_TABLE}
         SET payload=payload || CAST(:patch AS jsonb){receipt_patch}{configuration_patch},

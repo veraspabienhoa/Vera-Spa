@@ -1,5 +1,39 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: thêm giường khi phòng đang dùng và xung đột giữa nhiều người
+
+Hai ảnh người dùng gửi lúc 23:31 cho thấy lưu khu vực bị chặn bởi revision
+toàn bảng và bởi việc khu vực còn dịch vụ chưa thanh toán. Mã xác nhận
+_service_area_change chặn mọi sửa đổi ngay khi có bất kỳ giường được tham
+chiếu, kể cả thêm giường mà không đổi giường đang phục vụ.
+
+Cho phép thêm phòng/giường, giữ ID và tên booking của giường đang dùng. Chỉ
+chặn đổi tên/chuyển loại/xóa vị trí đang được tham chiếu bởi phiên mở hoặc
+hóa đơn chờ. Quy tắc khóa toàn phòng PR vẫn áp dụng cả với giường mới.
+
+Khu vực trả version riêng; biểu mẫu giữ version lúc mở, gửi lại làm điều
+kiện so sánh trong giao dịch đã khóa. Các thay đổi ngoài khu vực không làm
+hỏng việc lưu. Hai người sửa cùng khu vực có một người nhận 409 cụ thể;
+tải danh sách mới không tự nâng version cho nội dung cũ. Mở bản mới nhất
+cần xác nhận thay nội dung chưa lưu. Replay cùng idempotency key trả kết
+quả cũ trước khi kiểm tra version, không thêm trùng giường. API cũ vẫn giữ
+kiểm tra revision; quyền server không thay đổi.
+
+Trong resource mode, lưu khu vực dùng snapshot riêng gồm rooms/employees/
+pending và một receipt, ghi rooms/audit theo batch; không tải lịch sử
+hóa đơn, báo cáo hay hàng nghìn receipt. Trả receipt ngay sau commit rồi
+giao diện tải danh mục riêng. Vẫn giữ exclusive maintenance fence ngắn để
+kiểm tra tham chiếu nhất quán với booking/thanh toán. Revision của phòng
+được kiểm tra theo phòng vật lý (gồm giường cùng phòng PR); thay khu vực
+không còn tăng cấu hình toàn bảng gây xung đột cho phòng khác.
+
+Kiểm thử mô phỏng hai admin lưu đồng thời, phòng khác cùng thành công,
+cùng phòng trả xung đột thật; kiểm tra dữ liệu tài chính giữ nguyên, thêm
+giường ở cả trạng thái chờ/đang làm/chờ thanh toán, PR, replay và SQL ghi
+theo batch. UI kiểm tra giữ draft, không retry 409, retry 503 khóa bị từ
+chối với cùng ý định/key và không báo lưu thất bại khi chỉ lỗi tải lại.
+Đây là kiểm thử trên fixture/CI PostgreSQL, chưa phải phép đo tải VPS.
+
 ## 26-09-2026: sổ Thu Chi không giới hạn ngầm ngày và theo dữ liệu mới nhất
 
 Theo yêu cầu tiếp theo, mặc định Tất cả của cả Manual và Auto đọc toàn bộ
