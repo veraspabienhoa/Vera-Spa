@@ -1,9 +1,4 @@
-const vnDateFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Ho_Chi_Minh',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
+import { tourRowDate } from './liveTourFilters.js'
 
 export function defaultRevenueTipStart(currentDate) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(currentDate || '').trim())
@@ -12,14 +7,7 @@ export function defaultRevenueTipStart(currentDate) {
 }
 
 export function revenueTipRowDate(row) {
-  const value = row?.business_date || row?.effective_at || row?.booked_at || row?.created_at
-  if (!value) return ''
-  const raw = String(value).trim()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
-  const vn = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw)
-  if (vn) return `${vn[3]}-${vn[2].padStart(2, '0')}-${vn[1].padStart(2, '0')}`
-  const parsed = new Date(raw)
-  return Number.isFinite(parsed.getTime()) ? vnDateFormatter.format(parsed) : ''
+  return tourRowDate(row)
 }
 
 export function revenueTipValue(value) {

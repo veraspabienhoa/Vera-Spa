@@ -29,12 +29,20 @@ export function defaultTourMonthFilters(now = new Date()) {
 export function defaultTourYesterdayFilters(now = new Date()) {
   return { ...EMPTY_TOUR_FILTERS, preset: 'yesterday', ...tourDateRange('yesterday', now) }
 }
+export function tourRowDate(row) {
+  let raw = String(row?.effective_at || row?.booked_at || row?.created_at || row?.business_date || '').trim()
+  if (!raw) return ''
+  const legacy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw)
+  if (legacy) raw = `${legacy[3]}-${legacy[2].padStart(2, '0')}-${legacy[1].padStart(2, '0')}`
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) raw += 'T00:00:00+07:00'
+  else if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)) raw = raw.replace(' ', 'T') + '+07:00'
+  const parsed = new Date(raw)
+  return Number.isFinite(parsed.getTime()) ? day(parsed) : ''
+}
 export function filterTourRows(rows, filters) {
   return rows.filter(row => {
     if (filters.bill_no && !invoiceNumbers(row).some(number => String(number).toLowerCase().includes(filters.bill_no.trim().toLowerCase()))) return false
-    const dateValue = row.effective_at || row.booked_at || row.created_at || row.business_date
-    const parsed = dateValue ? new Date(dateValue) : null
-    const date = parsed && Number.isFinite(parsed.getTime()) ? day(parsed) : ''
+    const date = tourRowDate(row)
     if ((filters.date_from && (!date || date < filters.date_from)) || (filters.date_to && (!date || date > filters.date_to))) return false
     if (filters.customer && !customerMatches(row, filters.customer)) return false
     const entries = row.entries?.length ? row.entries : [row]
