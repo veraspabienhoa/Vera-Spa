@@ -254,7 +254,7 @@ test('changing the list month also confines statistics to that month', async () 
   } finally { await f.dispose() }
 })
 
-test('same-month refresh retains rows, but changing month hides the previous scope while loading', async () => {
+test('restored leave layout shows loading rows during refresh and never displays another month', async () => {
   const records = [{ record_uid: 'stable-row', employee_name: 'An An', leave_date: iso(0), leave_reason: 'Nghỉ CÓ phép', detail: 'saved-scope' }]
   let pending, finish
   const f = await fixture({ records, catalog: { [iso(0)]: [{ name: 'Nghỉ CÓ phép' }] }, setupApi: api => {
@@ -266,15 +266,17 @@ test('same-month refresh retains rows, but changing month hides the previous sco
     scroll.scrollLeft = 250
     pending = true
     await act(async () => requestPageRefresh())
-    assert.equal(table.querySelector('tbody tr'), row)
+    assert.notEqual(table.querySelector('tbody tr'), row)
+    assert.doesNotMatch(table.textContent, /saved-scope/)
     assert.equal(scroll.scrollLeft, 250)
-    assert.equal(table.closest('.stable-data-content').hasAttribute('inert'), true)
+    assert.equal(scroll.getAttribute('aria-busy'), 'true')
+    assert.equal(requestPageRefresh(), false, 'A pending read must not start a second refresh')
     await act(async () => finish({ records }))
-    assert.equal(table.querySelector('tbody tr'), row)
+    assert.match(table.textContent, /saved-scope/)
     const nextMonth = [...f.dom.window.document.querySelectorAll('.leave-list-panel button')].find(b => b.textContent === 'Tháng sau')
     await act(async () => nextMonth.click())
     assert.doesNotMatch(table.textContent, /saved-scope/)
-    assert.equal(table.closest('.stable-data-content').hasAttribute('inert'), true)
+    assert.equal(scroll.getAttribute('aria-busy'), 'true')
     await act(async () => finish({ records: [] }))
     assert.doesNotMatch(table.textContent, /saved-scope/)
     assert.match(table.textContent, /Không có lịch nghỉ phù hợp/)
