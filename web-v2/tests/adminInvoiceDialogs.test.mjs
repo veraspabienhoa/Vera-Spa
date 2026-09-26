@@ -110,6 +110,8 @@ test('pending edit switches cash to combo and back only on explicit submit', asy
     isAdmin:true,onClose:()=>{},onAction:async (...args)=>{writes.push(args);return true}}
   try {
     await act(()=>root.render(React.createElement(dialogs.Pending,props)))
+    // Let the modal's initial focus settle before the simulated user opens its dropdown.
+    await act(async()=>{await new Promise(resolve=>dom.window.requestAnimationFrame(resolve))})
     const input = document.querySelector('input[placeholder="Tìm tên hoặc số điện thoại"]')
     await act(()=>input.focus())
     const option = [...document.querySelectorAll('[role="option"]')].find(node=>node.textContent.includes('Khách thử'))
