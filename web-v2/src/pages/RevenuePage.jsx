@@ -64,6 +64,16 @@ async function loadRevenue({ source = 'manual', timeRange = 'all', start = '', e
   return payload
 }
 
+async function loadPeriodReport(start, end, signal) {
+  const params = new URLSearchParams()
+  if (start) params.set('start', start)
+  if (end) params.set('end', end)
+  const response = await fetch(`${apiBase}/v2/revenue/period-report?${params}`, { signal, cache: 'no-store', headers: await authorizedHeaders() })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`)
+  return result
+}
+
 async function loadPeriodTip(start, end, signal, legacy = false) {
   if (legacy) {
     const response = await fetch(`${apiBase}/v2/live-tour/reports`, { signal, headers: await authorizedHeaders() })
@@ -78,9 +88,10 @@ async function loadPeriodTip(start, end, signal, legacy = false) {
   return result
 }
 
-async function loadPurchaseReconcile({ preset, start, end, signal }) {
+async function loadPurchaseReconcile({ preset, start, end, signal, canonical = false, reportEnd = '' }) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const params = new URLSearchParams({ preset })
+  if (canonical) { params.set('canonical', 'true'); if (reportEnd) params.set('report_end', reportEnd) }
   if (preset === 'custom') {
     if (start) params.set('start', start)
     if (end) params.set('end', end)
@@ -157,12 +168,12 @@ async function importRevenueExcel(file, mode) {
   return payload
 }
 
-async function savePeriodTip(amount, startDate, endDate, autoMode) {
+async function savePeriodTip(amount, startDate, endDate, autoMode, commonReport = false) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const response = await fetch(`${apiBase}/v2/revenue/${autoMode ? 'tip-period' : 'tip'}`, {
+  const response = await fetch(`${apiBase}/v2/revenue/${commonReport ? 'report-period' : autoMode ? 'tip-period' : 'tip'}`, {
     method: 'PUT',
     headers: await authorizedHeaders(true),
-    body: JSON.stringify({ ...(autoMode ? {} : { amount: Number(amount || 0) }), start_date: startDate || null, end_date: endDate || null }),
+    body: JSON.stringify({ ...(autoMode || commonReport ? {} : { amount: Number(amount || 0) }), start_date: startDate || null, end_date: endDate || null }),
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
@@ -224,10 +235,18 @@ export default function RevenuePage({ user }) {
   const sourceReady = sharedSource.ready
   const sharedSourceSupported = sharedSource.supported
   const sourceRevision = sharedSource.revision
+  const refreshRevenueSource = sharedSource.refresh
+  const commonReport = sharedSource.reportVersion >= 1 && revenueSource !== 'manual_tip_auto'
+  const reportSnapshot = useRef(null)
+  const [manualLedger, setManualLedger] = useState(false)
+  const canonicalLedger = commonReport && !(manualLedger && revenueSource !== 'auto')
   const tipEditorRef = useRef(null)
   // Auto uses the displayed TIP end date as its report cutoff too. A cleared
   // input must not silently switch the report back to all dates.
-  const summaryEnd = revenueSource === 'auto' ? tipEnd || data?.end_date || '' : ''
+  const summaryEnd = commonReport || revenueSource === 'auto' ? tipEnd || data?.end_date || '' : ''
+  const reportEnd = commonReport ? data?.end_date || summaryEnd : ''
+  const summaryTipStart = commonReport ? tipStart : ''
+  const summaryTipEnd = commonReport ? tipEnd : ''
   const summaryRange = summaryEnd ? 'custom' : 'all'
   const summaryStart = summaryEnd ? '2025-09-05' : ''
   const [entryDate, setEntryDate] = useState(todayIsoVietnam)
@@ -291,7 +310,7 @@ export default function RevenuePage({ user }) {
       && (!purchaseBuyerFilter || buyer.includes(purchaseBuyerFilter.toLocaleLowerCase('vi')))
       && (!purchaseUserFilter || rowUser.includes(purchaseUserFilter.toLocaleLowerCase('vi')))
   }), [detailData, purchaseDate, purchaseItemFilter, purchaseBuyerFilter, purchaseUserFilter])
-  const ledgerRows = useMemo(() => ((detailData?.source === revenueSource || (sourceReady && !sharedSourceSupported)) ? (detailData?.ledger_rows || []) : []).filter(row => {
+  const ledgerRows = useMemo(() => ((detailData?.source === revenueSource || (sourceReady && !sharedSourceSupported)) && (!commonReport || detailData?.canonical === canonicalLedger) ? (detailData?.ledger_rows || []) : []).filter(row => {
     const note = String(row.note || '').toLocaleLowerCase('vi')
     const enteredBy = String(row.entered_by || '').toLocaleLowerCase('vi')
     const amountText = String(Math.round(Number(row.amount || 0)))
@@ -302,7 +321,7 @@ export default function RevenuePage({ user }) {
       && (!ledgerEnteredDate || row.entered_date_label === formatVeraDate(ledgerEnteredDate))
       && (!ledgerEnteredByFilter || enteredBy.includes(ledgerEnteredByFilter.toLocaleLowerCase('vi')))
       && (!wantedAmount || amountText.includes(wantedAmount))
-  }), [detailData, revenueSource, sourceReady, sharedSourceSupported, ledgerDate, ledgerType, ledgerNoteFilter, ledgerEnteredDate, ledgerEnteredByFilter, ledgerAmountFilter])
+  }), [detailData, revenueSource, sourceReady, sharedSourceSupported, commonReport, canonicalLedger, ledgerDate, ledgerType, ledgerNoteFilter, ledgerEnteredDate, ledgerEnteredByFilter, ledgerAmountFilter])
   const ledgerTotals = ledgerRows.reduce((totals, row) => {
     const type = String(row.type || '').trim().toLocaleLowerCase('vi')
     const amount = Number(row.amount || 0)
@@ -320,19 +339,34 @@ export default function RevenuePage({ user }) {
 
   useEffect(() => {
     if (!sourceReady) return undefined
+    const key = (start, end) => JSON.stringify([revenueSource, sourceRevision, revision, start, end])
+    if (commonReport && reportSnapshot.current) {
+      if (!summaryTipStart || !summaryTipEnd || summaryTipStart > summaryTipEnd) { setBusy(false); return undefined }
+      if (reportSnapshot.current === key(summaryTipStart, summaryTipEnd)) { setBusy(false); return undefined }
+    }
     const controller = new AbortController()
+    setBusy(true)
+    setError('')
     const run = async () => {
-      setBusy(true)
-      setError('')
       try {
-        const result = await loadRevenue({ source: revenueSource, timeRange: summaryRange, start: summaryStart, end: summaryEnd, signal: controller.signal })
+        const result = commonReport
+          ? await loadPeriodReport(summaryTipStart, summaryTipEnd, controller.signal)
+          : await loadRevenue({ source: revenueSource, timeRange: summaryRange, start: summaryStart, end: summaryEnd, signal: controller.signal })
         if (!controller.signal.aborted) {
+          if (commonReport && (result.source !== revenueSource || result.source_revision !== sourceRevision)) {
+            void refreshRevenueSource()
+            return
+          }
           const defaultTipStartDate = defaultRevenueTipStart(result.current_date) || result.period_tip_start || ''
           const defaultTipEndDate = result.current_date || result.period_tip_end || ''
+          if (commonReport) {
+            reportSnapshot.current = key(result.period_tip_start, result.period_tip_end)
+            setTip(Number(result.period_tip || 0))
+          }
           setData({ ...result, source_revision: result.source_revision ?? sourceRevision })
           setSummaryVersion(value => value + 1)
-          setTipStart(current => result.source === 'auto' && (!current || current < '2025-09-05') ? result.period_tip_start : current || defaultTipStartDate)
-          setTipEnd(current => current || (result.source === 'auto' ? result.period_tip_end : defaultTipEndDate))
+          setTipStart(current => current || (commonReport || result.source === 'auto' ? result.period_tip_start : defaultTipStartDate))
+          setTipEnd(current => current || (commonReport || result.source === 'auto' ? result.period_tip_end : defaultTipEndDate))
         }
       } catch (err) {
         if (!controller.signal.aborted && err?.name !== 'AbortError') setError(err.message || 'Không tải được Doanh thu.')
@@ -340,11 +374,14 @@ export default function RevenuePage({ user }) {
         if (!controller.signal.aborted) setBusy(false)
       }
     }
-    void run()
-    return () => controller.abort()
-  }, [sourceReady, sourceRevision, revenueSource, summaryEnd, summaryRange, summaryStart, revision])
+    let timer
+    if (commonReport && summaryTipStart && summaryTipEnd) timer = setTimeout(run, 200)
+    else void run()
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [sourceReady, sourceRevision, revenueSource, summaryEnd, summaryRange, summaryStart, revision, commonReport, summaryTipStart, summaryTipEnd, refreshRevenueSource])
 
   useEffect(() => {
+    if (commonReport) { setTipBusy(false); return undefined }
     if (!sourceReady || data?.source_revision !== sourceRevision || !tipStart || !tipEnd || tipStart > tipEnd) return undefined
     const controller = new AbortController()
     setTipBusy(true)
@@ -363,10 +400,10 @@ export default function RevenuePage({ user }) {
       } finally { if (!controller.signal.aborted) setTipBusy(false) }
     }, 250)
     return () => { clearTimeout(timer); controller.abort() }
-  }, [sourceReady, sourceRevision, tipStart, tipEnd, summaryVersion, data?.source_revision, sharedSourceSupported])
+  }, [sourceReady, sourceRevision, tipStart, tipEnd, summaryVersion, data?.source_revision, sharedSourceSupported, commonReport])
 
   useEffect(() => {
-    if (!sourceReady || activeTab !== 'overview') return undefined
+    if (!sourceReady || (commonReport && !reportEnd) || activeTab !== 'overview') return undefined
     if (filterPreset === 'custom' && (!customStart || !customEnd)) {
       setReconcile(null)
       setReconcileError('')
@@ -378,7 +415,7 @@ export default function RevenuePage({ user }) {
       setReconcileError('')
       try {
         const result = await loadPurchaseReconcile({
-          preset: filterPreset,
+          preset: filterPreset, canonical: commonReport, reportEnd,
           start: customStart,
           end: customEnd,
           signal: controller.signal,
@@ -392,23 +429,23 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [filterPreset, customStart, customEnd, reconcileRevision, sourceReady, sourceRevision, activeTab])
+  }, [filterPreset, customStart, customEnd, reconcileRevision, sourceReady, sourceRevision, activeTab, commonReport, reportEnd])
 
   useEffect(() => {
-    if (!sourceReady || !detailTabActive) return undefined
+    if (!sourceReady || (commonReport && !reportEnd) || !detailTabActive) return undefined
     if (detailPreset === 'custom' && (!detailStart || !detailEnd)) {
       setDetailData(null)
       setDetailError('')
       return undefined
     }
-    const scope = JSON.stringify([detailPreset, detailStart, detailEnd, sourceRevision, reconcileRevision])
+    const scope = JSON.stringify([detailPreset, detailStart, detailEnd, sourceRevision, reconcileRevision, canonicalLedger, reportEnd])
     if (detailLoaded.current?.scope === scope && Date.now() - detailLoaded.current.at < 30000) return undefined
     const controller = new AbortController()
     const run = async () => {
       setDetailBusy(true)
       setDetailError('')
       try {
-        const result = await loadPurchaseReconcile({ preset: detailPreset, start: detailStart, end: detailEnd, signal: controller.signal })
+        const result = await loadPurchaseReconcile({ preset: detailPreset, start: detailStart, end: detailEnd, canonical: canonicalLedger, reportEnd, signal: controller.signal })
         if (!controller.signal.aborted) { setDetailData(result); detailLoaded.current = { scope, at: Date.now() } }
       } catch (err) {
         if (!controller.signal.aborted && err?.name !== 'AbortError') setDetailError(err.message || 'Không tải được dữ liệu chi tiết.')
@@ -418,7 +455,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [detailPreset, detailStart, detailEnd, reconcileRevision, sourceReady, sourceRevision, detailTabActive])
+  }, [detailPreset, detailStart, detailEnd, reconcileRevision, sourceReady, sourceRevision, detailTabActive, canonicalLedger, reportEnd, commonReport])
 
   useEffect(() => {
     if (!isAdmin || !['audit', 'duplicates'].includes(activeTab) || (detailPreset === 'custom' && (!detailStart || !detailEnd))) return undefined
@@ -441,8 +478,9 @@ export default function RevenuePage({ user }) {
       if (!Number.isFinite(Number(tip)) || Number(tip) < 0) throw new Error('Tiền TIP trong kỳ phải là số không âm.')
       if (!tipStart || !tipEnd) throw new Error('Chọn đủ Ngày bắt đầu và Đến ngày cho Tiền TIP trong kỳ.')
       if (tipStart > tipEnd) throw new Error('Ngày bắt đầu Tiền TIP không được sau Đến ngày.')
-      const result = await savePeriodTip(tip, tipStart, tipEnd, autoMode)
-      setData((current) => current ? ({ ...current, period_tip: result.period_tip, balance: Math.round((Number(current.net_income ?? (Number(current.total_income || 0) - Number(current.total_expense || 0))) - Number(result.period_tip || 0)) * 100) / 100, period_tip_start: result.period_tip_start, period_tip_end: result.period_tip_end }) : current)
+      const result = await savePeriodTip(tip, tipStart, tipEnd, autoMode, commonReport)
+      if (commonReport) setData(result)
+      else setData((current) => current ? ({ ...current, period_tip: result.period_tip, balance: Math.round((Number(current.net_income ?? (Number(current.total_income || 0) - Number(current.total_expense || 0))) - Number(result.period_tip || 0)) * 100) / 100, period_tip_start: result.period_tip_start, period_tip_end: result.period_tip_end }) : current)
       setTip(Number(result.period_tip || 0))
       setTipStart(result.period_tip_start || tipStart)
       setTipEnd(result.period_tip_end || tipEnd)
@@ -488,6 +526,7 @@ export default function RevenuePage({ user }) {
       setExpenseNoteEdited(false)
       setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
       setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
+      if (commonReport) setManualLedger(true)
       setNotice(result.message || 'Đã ghi Thu Chi vào Chi tiết Doanh thu - Chi phí.')
       setRevision((value) => value + 1)
       setReconcileRevision((value) => value + 1)
@@ -523,6 +562,7 @@ export default function RevenuePage({ user }) {
     setDetailError('')
     try {
       const params = new URLSearchParams({ preset: detailPreset })
+      if (canonicalLedger) { params.set('canonical', 'true'); if (reportEnd) params.set('report_end', reportEnd) }
       if (detailPreset === 'custom') {
         if (detailStart) params.set('start', detailStart)
         if (detailEnd) params.set('end', detailEnd)
@@ -562,7 +602,7 @@ export default function RevenuePage({ user }) {
     return () => window.clearInterval(timer)
   }, [systemTipMode, autoMode])
 
-  const realtimeError = useRevenueRealtime(sourceReady && autoMode,
+  const realtimeError = useRevenueRealtime(sourceReady && (autoMode || commonReport),
     Boolean(busy || (detailTabActive && detailBusy) || (activeTab === 'overview' && reconcileBusy) || tipBusy || savingTip || savingEntry || importingRevenue || entryEditor),
     () => { setRevision(value => value + 1); setReconcileRevision(value => value + 1); void sharedSource.refresh() },
     Boolean(error || (detailTabActive && detailError) || (activeTab === 'overview' && reconcileError) || tipLoadError))
@@ -675,6 +715,7 @@ export default function RevenuePage({ user }) {
       </div>
     </section>}
 
+    {commonReport && <p className="revenue-meta">Manual và Auto dùng chung báo cáo: lịch sử Manual đến 24-09-2026, thanh toán và Nhập mua từ 25-09-2026. Sổ nhập tay sau mốc này được giữ riêng, không cộng lại vào tổng.</p>}
     <div className="revenue-meta" role="status">{!sourceReady ? 'Đang tải chế độ Doanh thu…' : !sharedSourceSupported ? 'Cần chạy Deploy VPS Production để bật chế độ Doanh thu dùng chung. Manual hiện tại vẫn sử dụng được.' : autoMode
       ? 'Auto · Tự động hệ thống · Áp dụng cho mọi tài khoản. Lịch sử Manual từ 05-09-2025 đến 24-09-2026; từ 25-09-2026, Thu = tiền dịch vụ thực thu + TIP, Chi = Nhập mua. Tự kiểm tra thay đổi mỗi 5 giây khi mở trang. Đã khóa nhập, sửa, xóa và import Manual.'
       : 'Manual · Nhập Thu/Chi theo quyền được cấp.'}</div>
@@ -691,23 +732,24 @@ export default function RevenuePage({ user }) {
 
     {canViewAdminRevenueSummary && <section data-ui-key="u-4e91fcf9b37c" className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày bắt đầu</span><strong>{busy && !data ? '…' : (data?.start_date_label || '—')}</strong></div></article>
-      <article className="revenue-period-card revenue-report-cutoff"><CalendarDays size={20} /><div><span>Báo cáo tới ngày</span><strong>{busy && !data ? '…' : (autoMode && data?.end_date ? formatVeraDate(data.end_date) : data?.current_date_label || '—')}</strong></div>
+      <article className="revenue-period-card revenue-report-cutoff"><CalendarDays size={20} /><div><span>Báo cáo tới ngày</span><strong>{busy && !data ? '…' : ((commonReport || autoMode) && data?.end_date ? formatVeraDate(data.end_date) : data?.current_date_label || '—')}</strong></div>
 
       </article>
     </section>}
 
     {canViewAdminRevenueSummary && canEditTip && <section data-ui-key="u-a5723df4546d" className="revenue-tip-editor" ref={tipEditorRef}>
-      <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
+      <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(commonReport ? data?.period_tip : tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
       <label>Từ ngày tính TIP<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} min={autoMode ? '2025-09-05' : undefined} max={tipEnd || data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipStart(event.target.value)} /></label>
-      <label>{autoMode ? 'Đến ngày (báo cáo và TIP)' : 'Đến ngày tính TIP'}<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
+      <label>{commonReport || autoMode ? 'Đến ngày (báo cáo và TIP)' : 'Đến ngày tính TIP'}<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
       <div className="revenue-tip-current"><button data-ui-key="u-225f35c741ac" type="button" className="secondary-button" disabled={savingTip || busy || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày này · {data?.current_date_label || '—'}</button></div>
       {!hybridMode && <button data-ui-key="u-e90fac269afb" type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy || tipBusy || Boolean(tipLoadError) || !tipStart || !tipEnd || tipStart > tipEnd}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>}
-      {autoMode && <p className="revenue-auto-date-note">Đổi Đến ngày sẽ tự tính Tổng thu, Tổng chi và Còn lại từ 05-09-2025 đến hết ngày chọn. TIP tính theo Từ ngày tính TIP → Đến ngày.</p>}
+      {(commonReport || autoMode) && <p className="revenue-auto-date-note">Đổi Đến ngày sẽ tự tính Tổng thu, Tổng chi và Còn lại từ 05-09-2025 đến hết ngày chọn. TIP tính theo Từ ngày tính TIP → Đến ngày.</p>}
       <small>{hybridMode ? 'Dịch vụ Manual · Tip Auto: ' : ''}Tiền TIP tự động cộng từ TIP của nhân viên trong báo cáo hóa đơn Live Tour theo đúng khoảng Ngày bắt đầu → Đến ngày. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định bằng Ngày hiện tại. Đổi một trong hai ngày sẽ tự lọc và tính lại số TIP ngay.</small>
     </section>}
 
     {canViewAdminRevenueSummary && <div className="admin-revenue-summary">
-      <section data-ui-key="u-a4c778e6c2bb" className="revenue-grid" aria-live="polite">
+      {commonReport && busy && <p role="status">Đang tính báo cáo và TIP theo cùng kỳ đã chọn…</p>}
+      <section data-ui-key="u-a4c778e6c2bb" className="revenue-grid" aria-live="polite" aria-busy={busy}>
         {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}`} key={key}><div data-ui-key="u-2ffef07af4fc" className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><AutoFitMoney>{busy && !data ? '…' : money(value)}</AutoFitMoney></article>)}
       </section>
       {data && <div className="revenue-formula">{hybridMode ? <>Tổng doanh thu = Tiền dịch vụ {hybridMode ? '(Manual)' : ''} + Tiền tip (Auto) = <strong>{money(data.total_revenue)}</strong></> : <>Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></>}</div>}
@@ -722,6 +764,10 @@ export default function RevenuePage({ user }) {
     </UiToolbar>
 
     {activeTab !== 'overview' && <section data-ui-key="u-ccb707340dfb" className="detail-tab-panel">
+      {commonReport && !autoMode && activeTab === 'ledger' && <div className="revenue-ledger-view" role="group" aria-label="Nguồn sổ thu chi">
+        <button type="button" aria-pressed={!manualLedger} onClick={() => { setManualLedger(false); setSelectedLedgerId(null) }}>Báo cáo chung</button>
+        <button type="button" aria-pressed={manualLedger} onClick={() => { setManualLedger(true); setSelectedLedgerId(null) }}>Sổ nhập tay</button>
+      </div>}
       <div data-ui-key="u-92de57f35d25" className="detail-filter-panel">
         <label>Thời gian<select value={detailPreset} onChange={(event) => setDetailPreset(event.target.value)}>{reconcileFilters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label>Từ ngày<VeraDateInput value={detailPreset === 'custom' ? detailStart : (detailData?.start_date || '')} onChange={(event) => { setDetailPreset('custom'); setDetailStart(event.target.value) }} /></label>

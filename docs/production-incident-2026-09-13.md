@@ -1,5 +1,37 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: báo cáo Manual/Auto chung nguồn và cùng kỳ trong một phản hồi
+
+Ảnh 19:44 có TIP ở ô nhập 230.310.000đ nhưng thẻ TIP 266.720.000đ. Đây là
+bằng chứng giao diện đang ghép hai kết quả khác kỳ. Mã dùng một request summary
+đọc kỳ đã lưu và request tip-summary đọc kỳ đang chọn; polling có thể ghi đè
+thẻ TIP trước khi lượt đọc TIP hoàn tất. Workflow VPS #36242291544 thành công
+ở commit 169ea00 (PR #293), nhưng ảnh vẫn có nhãn cũ; chưa xác nhận bundle
+trình duyệt đang dùng nên không kết luận chỉ do deployment hay cache.
+
+Theo yêu cầu cùng kỳ phải bằng nhau, Manual và Auto dùng chung nguồn báo cáo:
+lịch sử Manual từ 05-09-2025 đến 24-09-2026, thanh toán + TIP và Nhập mua từ
+25-09-2026. Đầu kỳ TIP chỉ giới hạn TIP; Đến ngày chốt cả Thu, Chi và số dư.
+Không sao chép/sửa/xóa giao dịch để ép khớp. Sổ nhập tay, kể cả các dòng sau
+mốc chuyển đổi, vẫn giữ riêng và mở bằng Sổ nhập tay trong Manual; các dòng
+sau mốc không cộng lại vào báo cáo chung. Bảng chung và Excel dùng cùng nguồn,
+cùng ngày chốt; hàng tự tổng hợp chỉ đọc, lịch sử Manual vẫn giữ quyền sửa cũ.
+
+API period-report trả toàn bộ tổng, TIP, số dư và ngày áp dụng trong một phản
+hồi, sử dụng một kết nối REPEATABLE READ cho các truy vấn liên quan. Không
+nhận số TIP do client gửi. Chế độ nhập vẫn kiểm tra quyền/khóa cũ. Report tổng
+không còn jsonb_agg/toàn bộ entries lịch sử. report-period lưu chung ngày chọn,
+đồng bộ metadata kỳ của client cũ; không sửa sổ tài chính. Frontend dùng một
+đối tượng kết quả cho cả ô TIP và thẻ TIP, hủy/bỏ phản hồi cũ, giữ kỳ khi đổi
+chế độ và polling. Capability version giữ tương thích VPS cũ/hybrid riêng.
+
+Kiểm thử PostgreSQL so sánh cả hai chế độ trước/sau mốc chuyển đổi, tổng bảng
+và Excel, dữ liệu Manual sau mốc vẫn còn, lưu/đổi chế độ, kiểm tra ngày/quyền và
+hóa đơn bị sửa đồng thời giữa lượt đọc tổng và TIP. UI kiểm tra một request
+cho kết quả chung, ngày đang chọn, phản hồi trễ, lưu và đổi chế độ. CI phải đạt
+trước merge. Chưa đối chiếu giao dịch thực tế production; cần Deploy VPS
+Production và tải lại bundle mới. Không xem CI là bằng chứng tổng tiền thật.
+
 ## 26-09-2026: ô Đến ngày điều khiển toàn bộ tổng Auto
 
 Người dùng làm rõ lúc 19:13: chính ô Đến ngày trong khung TIP phải chốt cả

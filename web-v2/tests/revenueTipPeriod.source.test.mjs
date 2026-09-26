@@ -8,6 +8,6 @@ test('Revenue page loads server-calculated TIP and defaults the period from curr
   assert.match(source, /\/v2\/revenue\/tip-summary/)
   assert.match(source, /defaultRevenueTipStart\(result\.current_date\)/)
   assert.match(source, /loadPeriodTip\(tipStart, tipEnd, controller.signal, !sharedSourceSupported\)/)
-  assert.match(source, /value=\{money\(tip\)\} readOnly/)
+  assert.match(source, /value=\{money\(commonReport \? data\?\.period_tip : tip\)\} readOnly/)
   assert.match(source, /onClick=\{\(\) => setTipEnd\(data\?\.current_date \|\| ''\)\}/)
 })
