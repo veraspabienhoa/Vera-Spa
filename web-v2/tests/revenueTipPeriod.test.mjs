@@ -55,6 +55,6 @@ test('Revenue and Reports agree across the period boundary and backdated timesta
   assert.equal(revenueTipTotal(rows, '2026-09-25', '2026-09-25'), 85410000)
   const backdated = { business_date: '2026-09-25', effective_at: '2026-09-24T23:59:59', created_at: '2026-09-26T00:00:00Z', tip: 123 }
   assert.equal(revenueTipRowDate(backdated), '2026-09-24')
-  assert.equal(revenueTipRowDate({ business_date: '2026-09-25', booked_at: '2026-09-24T16:59:59Z' }), '2026-09-24')
+  assert.equal(revenueTipRowDate({ business_date: '2026-09-25', booked_at: '2026-09-24T16:59:59Z' }), '2026-09-25')
   assert.equal(revenueTipTotal([backdated], '2026-09-24', '2026-09-24'), 123)
 })

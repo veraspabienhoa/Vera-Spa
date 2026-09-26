@@ -658,10 +658,9 @@ def install_revenue_leave_list_routes(
                 result = revenue_report.snapshot(conn, body.start_date, body.end_date)
                 actor = str(getattr(ident, "employee_username", "") or "")
                 revenue_report.save_period(conn, result, actor)
-                # Keep older clients' saved period in agreement, without copying ledger rows.
-                for auto in (False, True):
-                    _save_period_tip(conn, result["period_tip_start"], result["period_tip_end"],
-                                     result["period_tip"], actor, auto=auto)
+                # Each mode owns its period; saving Auto cannot overwrite Manual metadata.
+                _save_period_tip(conn, result["period_tip_start"], result["period_tip_end"],
+                                 result["period_tip"], actor, auto=result["source"] == "auto")
                 return {**period_report_permissions(conn, ident, result), "message": "Đã lưu kỳ báo cáo và TIP."}
 
     @app.get("/v2/revenue/tip-summary")

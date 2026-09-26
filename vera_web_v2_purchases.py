@@ -88,10 +88,7 @@ def install_purchase_routes(app, *, engine_instance, current_identity, require_f
 
     def entries(conn, preset, start, end):
         first, last = _resolve_range(preset, start, end)
-        rows = [dict(r) for r in conn.execute(text('''SELECT id,purchase_date,item,quantity,unit_price,amount,note,
-          entered_at,entered_by,revision FROM vera_purchase_entry
-          WHERE NOT deleted AND purchase_date BETWEEN :start AND :end ORDER BY purchase_date DESC,id DESC'''),
-          dict(start=first,end=last)).mappings()]
+        rows = store.list_entries(conn, first, last)
         return rows, first, last
 
     @app.get('/v2/purchases')

@@ -8,9 +8,6 @@ from fastapi import HTTPException
 from sqlalchemy import text
 
 START_DATE = date(2025, 9, 5)
-# Confirmed by the operator: retain Manual through 24-09, use live sources after.
-AUTO_START_DATE = date(2026, 9, 25)
-HISTORY_END_DATE = AUTO_START_DATE - timedelta(days=1)
 VN_TZ = timezone(timedelta(hours=7))
 MODE_KEY = "shared_source"
 MODES = {"manual", "auto", "manual_tip_auto"}
@@ -66,8 +63,7 @@ def bounds(start=None, end=None):
 
 # Report rows allocate actual invoice total and TIP once across employees.
 # Using subtotal would omit discounts and double-count prepaid combo services.
-# Match Reports' calendar filters: effective_at, booked_at, created_at, then
-# business_date. Operational business days can differ around the shift cutoff.
+# Match the displayed Invoice date/time column exactly: effective_at or business_date.
 # Zone-less legacy timestamps are Vietnam local time, independent of DB timezone.
 REPORT_DAILY_SQL = """
     SELECT report_day AS day, SUM(total - tip) AS service, SUM(tip) AS tip,
@@ -77,8 +73,7 @@ REPORT_DAILY_SQL = """
                    THEN event_at::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh'
                    ELSE event_at::timestamp END)::date AS report_day, total, tip
       FROM (
-        SELECT COALESCE(NULLIF(payload->>'effective_at',''), NULLIF(payload->>'booked_at',''),
-                       NULLIF(payload->>'created_at',''), NULLIF(payload->>'business_date','')) AS event_at,
+        SELECT COALESCE(NULLIF(payload->>'effective_at',''), NULLIF(payload->>'business_date','')) AS event_at,
         COALESCE(NULLIF(payload->>'total','')::numeric,
           GREATEST(0, COALESCE(NULLIF(payload->>'subtotal','')::numeric,
                               NULLIF(payload->>'service_money','')::numeric, 0)
@@ -99,41 +94,21 @@ def _params(start, end):
 
 
 def daily(conn, start=None, end=None, *, include_entries=True):
+    """Auto is independent: paid Live Tour income and authoritative purchases only."""
     start, end = bounds(start, end)
     if start > end:
         return []
-    # Disjoint periods prevent Manual and live receipts/purchases being added twice.
-    # One statement gives both sources and both sides of cash the same snapshot.
-    history_entries = """jsonb_agg(jsonb_build_object('id',id,'type',transaction_type,'amount',amount,
-            'note',note,'entered_at',entered_at,'entered_by',
-            COALESCE(NULLIF(entered_by_name,''),entered_by)) ORDER BY id DESC)""" if include_entries else "NULL::jsonb"
-    params = _params(max(start, AUTO_START_DATE), end)
-    params.update(history_start=start, history_end=min(end, HISTORY_END_DATE))
     return conn.execute(text(f"""WITH receipts AS ({REPORT_DAILY_SQL}), purchases AS (
         SELECT purchase_date AS day, SUM(amount) AS expense, COUNT(*) AS purchases
         FROM vera_purchase_entry WHERE NOT deleted AND purchase_date BETWEEN :start AND :end
         GROUP BY purchase_date
-      ), history AS (
-        SELECT COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) AS day,
-          COALESCE(SUM(amount) FILTER (WHERE transaction_type='Thu'),0) AS income,
-          COALESCE(SUM(amount) FILTER (WHERE transaction_type='Chi'),0) AS expense,
-          COUNT(*) FILTER (WHERE transaction_type='Thu') AS payments,
-          COUNT(*) FILTER (WHERE transaction_type='Chi') AS purchases,
-          {history_entries} AS history_entries
-        FROM vera_revenue_entry WHERE NOT is_deleted
-          AND COALESCE(transaction_date, (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)
-              BETWEEN :history_start AND :history_end
-        GROUP BY 1
       ) SELECT COALESCE(r.day, p.day) AS day,
-        COALESCE(service, 0) AS service, COALESCE(tip, 0) AS tip,
-        COALESCE(income, 0) AS income, COALESCE(expense, 0) AS expense,
-        COALESCE(payments, 0) AS payments, COALESCE(purchases, 0) AS purchases,
+        COALESCE(service,0) AS service, COALESCE(tip,0) AS tip,
+        COALESCE(income,0) AS income, COALESCE(expense,0) AS expense,
+        COALESCE(payments,0) AS payments, COALESCE(purchases,0) AS purchases,
         0::numeric AS historical_income, NULL::jsonb AS history_entries
-      FROM receipts r FULL JOIN purchases p ON p.day=r.day
-      UNION ALL
-      SELECT day,0,0,income,expense,payments,purchases,income,history_entries FROM history
-      ORDER BY day DESC
-    """), params).mappings().all()
+      FROM receipts r FULL JOIN purchases p ON p.day=r.day ORDER BY day DESC
+    """), _params(start,end)).mappings().all()
 
 
 def tip_total(conn, start, end, *, auto=False):
@@ -201,9 +176,5 @@ def change_revision(conn):
 
 
 def purchase_rows(conn, start, end):
-    start, end = bounds(start, end)
-    rows = conn.execute(text("""SELECT purchase_date AS date, item, quantity, unit_price,
-        amount, entered_by AS buyer, entered_by AS "user"
-        FROM vera_purchase_entry WHERE NOT deleted AND purchase_date BETWEEN :start AND :end
-        ORDER BY purchase_date DESC, id DESC"""), {"start": start, "end": end}).mappings().all()
-    return [dict(row, date_label=row["date"].strftime("%d-%m-%Y")) for row in rows]
+    from vera_purchase_store import report_rows
+    return report_rows(conn, start, end)

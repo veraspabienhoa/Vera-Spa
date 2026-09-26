@@ -20,6 +20,7 @@ import vera_web_v2_purchase_reconcile as reconcile
 import vera_web_v2_purchase_reconcile_v2 as reconcile_v2
 from vera_live_tour_lists import matches as report_matches
 from vera_web_v2_purchase_reconcile import install_purchase_reconcile_routes
+from vera_web_v2_purchases import install_purchase_routes
 
 
 @pytest.fixture
@@ -74,7 +75,7 @@ def buy(conn, day, amount, deleted=False):
 
 def seed(database):
     with database.begin() as conn:
-        report(conn, 'before', '2026-09-04', total=999999)
+        report(conn, 'before', '2025-09-04', total=999999)
         report(conn, 'cash-a', '2026-09-25', total=200, tip=25, subtotal=999)
         report(conn, 'cash-b', '2026-09-25', total=200, tip=25, subtotal=999)
         report(conn, 'sale', '2026-09-25', total=1000, type='combo_purchase')
@@ -106,6 +107,8 @@ def client(database, monkeypatch):
                   require_feature=require, norm=lambda value: str(value or '').strip().lower(), google_client=lambda: None)
     routes.install_revenue_leave_list_routes(app, **shared, feature_allowed=lambda *args: True, progressive_key=lambda *args: '')
     install_purchase_reconcile_routes(app, **shared)
+    install_purchase_routes(app, engine_instance=lambda: database, current_identity=lambda: ident,
+                            require_feature=require, feature_allowed=lambda *args: True)
     # Production replaces the base route with V2. Exercise that same HTTP chain,
     # including its forwarding of the shared-report source and cutoff filters.
     monkeypatch.setattr(reconcile, '_comparison', reconcile._comparison)
@@ -130,14 +133,14 @@ def test_daily_totals_cutoff_cash_combo_discount_deleted_and_vietnam_day(databas
     with database.connect() as conn:
         days = auto.daily(conn)
         result = auto.totals(days)
-        assert result == dict(service_revenue=1650, tip_revenue=110, historical_income=777, total_revenue=2537,
-                              total_income=2537, total_expense=190.25, net_income=2346.75)
+        assert result == dict(service_revenue=1650, tip_revenue=110, historical_income=0, total_revenue=1760,
+                              total_income=1760, total_expense=190.25, net_income=1569.75)
         assert auto.tip_total(conn, date(2026, 9, 16), date(2026, 9, 26), auto=True) == 110
         assert auto.daily(conn, date(2026, 8, 1), date(2026, 9, 4)) == []
         entries = auto.ledger_rows(days)
         assert all(row['date'] >= '2025-09-05' and row['read_only'] for row in entries)
-        assert len(entries) == 5
-        assert sum(row['amount'] for row in entries if row['type'] == 'Thu') == 2537
+        assert len(entries) == 4
+        assert sum(row['amount'] for row in entries if row['type'] == 'Thu') == 1760
         assert sum(row['amount'] for row in entries if row['type'] == 'Chi') == 190.25
 
 
@@ -150,8 +153,8 @@ def test_all_accounts_see_auto_summary_ledger_export_and_live_source_edits(datab
         summary = http.get('/v2/revenue/summary?source=manual').json()
         assert summary['source'] == 'auto'
         assert summary['start_date_label'] == '05-09-2025'
-        assert summary['total_income'] == 2537 and summary['total_expense'] == 190.25
-        assert summary['period_tip'] == 110 and summary['balance'] == 2236.75
+        assert summary['total_income'] == 1760 and summary['total_expense'] == 190.25
+        assert summary['period_tip'] == 110 and summary['balance'] == 1459.75
         assert not any(summary[key] for key in ['can_create_entry', 'can_edit_entry', 'can_delete_entry', 'can_admin_crud'])
         detail = http.get('/v2/revenue/purchase-reconcile?preset=all').json()
         assert detail['ledger_income'] == summary['total_income']
@@ -167,7 +170,7 @@ def test_all_accounts_see_auto_summary_ledger_export_and_live_source_edits(datab
         conn.execute(text("UPDATE vera_live_tour_report SET deleted_at=now() WHERE resource_id='sale'"))
         conn.execute(text("UPDATE vera_purchase_entry SET amount=60 WHERE amount=40"))
     refreshed = http.get('/v2/revenue/summary').json()
-    assert refreshed['total_income'] == 1537 and refreshed['total_expense'] == 210.25
+    assert refreshed['total_income'] == 760 and refreshed['total_expense'] == 210.25
 
 
 @pytest.mark.parametrize('role', ['admin', 'giamdoc', 'quanly', 'letan', 'nhanvien'])
@@ -235,42 +238,20 @@ def test_mode_switch_cannot_interrupt_or_race_manual_transaction(database, clien
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 1
 
 
-def test_history_and_live_periods_never_overlap_or_copy_rows(database, client):
+def test_auto_uses_all_live_history_without_copying_or_adding_manual_rows(database, client):
+    seed(database)
+    http, _ = client
     with database.begin() as conn:
-        for day, amount, kind in [('2025-09-04',9999,'Thu'),('2025-09-05',100,'Thu'),
-                                  ('2026-09-24',200,'Thu'),('2026-09-24',200,'Thu'),
-                                  ('2026-09-24',50,'Chi'),('2026-09-25',9999,'Thu')]:
-            conn.execute(text('''INSERT INTO vera_revenue_entry(transaction_date,amount,transaction_type,note)
-                VALUES (:day,:amount,:kind,'History')'''),dict(day=day,amount=amount,kind=kind))
-        report(conn,'old-overlap','2026-09-24',total=9999)
-        report(conn,'new','2026-09-25',total=120,tip=20)
-        buy(conn,'2026-09-25',30)
-    http,_ = client
+        report(conn, 'old-live', '2025-09-05', total=123, tip=3)
+        buy(conn, '2025-09-05', 12)
     enable(http)
-    for _ in range(3):
-        result = http.get('/v2/revenue/summary').json()
-        assert result['total_income'] == 620 and result['total_expense'] == 80
-        history = [r for r in result['entries'] if r.get('source') == 'manual_history']
-        assert len(history) == 4 and len({r['id'] for r in history}) == 4
-        assert sum(r['amount'] for r in history if r['type']=='Thu') == 500
-        assert all(r['date'] <= '2026-09-24' and r['read_only'] for r in history)
-    exported_response = http.get('/v2/revenue/ledger/export.xlsx?preset=all')
-    assert exported_response.status_code == 200
-    book = load_workbook(BytesIO(exported_response.content), read_only=True, data_only=True)
-    exported = list(book.active.values)[1:]
-    assert len(exported) == 6
-    assert sum(r[2] for r in exported if r[1] == 'Thu') == 620
-    assert sum(r[2] for r in exported if r[1] == 'Chi') == 80
-    filtered = http.get('/v2/revenue/ledger/export.xlsx?preset=all&transaction_type=Thu&note=History')
-    book = load_workbook(BytesIO(filtered.content), read_only=True, data_only=True)
-    history_exported = list(book.active.values)[1:]
-    assert len(history_exported) == 3 and sum(r[2] for r in history_exported) == 500
+    result = http.get('/v2/revenue/summary').json()
+    assert result['total_income'] == 1883 and result['total_expense'] == 202.25
+    assert all(r.get('source') != 'manual_history' for r in result['entries'])
     with database.begin() as conn:
-        assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 6
-        conn.execute(text("UPDATE vera_live_tour_report SET deleted_at=NOW(),aggregate_revision=2 WHERE resource_id='new'"))
-    assert http.get('/v2/revenue/summary').json()['total_income'] == 500, 'deleting Auto must not resurrect excluded Manual entries'
-    older = http.get('/v2/revenue/purchase-reconcile?preset=custom&start=2025-09-05&end=2026-09-24').json()
-    assert older['ledger_income'] == 500 and older['ledger_expense'] == 50
+        assert conn.execute(text('SELECT SUM(amount) FROM vera_revenue_entry')).scalar() == 777
+        conn.execute(text('UPDATE vera_live_tour_report SET deleted_at=now()'))
+    assert http.get('/v2/revenue/summary').json()['total_income'] == 0
 
 
 def test_realtime_revision_changes_on_edit_delete_and_mode_with_no_money_payload(database, client):
@@ -304,7 +285,7 @@ def test_realtime_revision_changes_on_edit_delete_and_mode_with_no_money_payload
     assert http.get('/v2/revenue/revision').status_code == 403
 
 
-def test_summary_cutoff_matches_manual_history_without_changing_tip_period_or_ledger(database, client):
+def test_auto_summary_cutoff_does_not_add_manual_history(database, client):
     seed(database)
     http, _ = client
     with database.begin() as conn:
@@ -319,18 +300,17 @@ def test_summary_cutoff_matches_manual_history_without_changing_tip_period_or_le
         assert auto_summary['business_date'] == '2026-09-26'
         assert auto_summary['period_tip_start'] == '2026-09-16'
         assert auto_summary['period_tip_end'] == '2026-09-24'
-        for key in ['total_income','total_expense','net_income']:
-            assert auto_summary[key] == manual[key]
-        assert auto_summary['total_income'] == 977 and auto_summary['total_expense'] == 50
+        assert manual['total_income'] == 977 and manual['total_expense'] == 50
+        assert auto_summary['total_income'] == 0 and auto_summary['total_expense'] == 0
         assert all(row['date'] <= '2026-09-24' for row in auto_summary['entries'])
     live = http.get('/v2/revenue/summary').json()
-    assert live['total_income'] == 2737 and live['total_expense'] == 240.25
+    assert live['total_income'] == 1760 and live['total_expense'] == 190.25
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 3
 
 
 @pytest.mark.parametrize('end',['2026-09-24','2026-09-25','2026-09-26'])
-def test_shared_period_report_has_identical_money_in_manual_and_auto(database, client, end):
+def test_period_report_keeps_manual_and_auto_sources_independent(database, client, end):
     seed(database)
     http, ident = client
     with database.begin() as conn:
@@ -339,7 +319,7 @@ def test_shared_period_report_has_identical_money_in_manual_and_auto(database, c
     manual=http.get(path)
     assert manual.status_code==200,manual.text
     manual=manual.json()
-    assert manual['report_version']==1 and manual['end_date']==end
+    assert manual['report_version']==2 and manual['end_date']==end
     assert manual['period_tip_start']=='2026-09-16' and manual['period_tip_end']==end
     assert 'entries' not in manual,'summary must not return all historical rows'
     raw=http.get('/v2/revenue/purchase-reconcile?preset=all').json()
@@ -348,8 +328,7 @@ def test_shared_period_report_has_identical_money_in_manual_and_auto(database, c
     assert common['ledger_income']==manual['total_income']
     assert common['ledger_expense']==manual['total_expense']
     assert all(r['date']<=end for r in common['ledger_rows'])
-    assert any(not r['read_only'] for r in common['ledger_rows'] if r.get('source')=='manual_history')
-    assert all(r['read_only'] for r in common['ledger_rows'] if r.get('source')!='manual_history')
+    assert all(not r.get('read_only', False) for r in common['ledger_rows'])
     exported=http.get(f'/v2/revenue/ledger/export.xlsx?preset=all&canonical=true&report_end={end}')
     assert exported.status_code==200
     values=list(load_workbook(BytesIO(exported.content),read_only=True,data_only=True).active.values)[1:]
@@ -357,41 +336,45 @@ def test_shared_period_report_has_identical_money_in_manual_and_auto(database, c
     assert sum(r[2] for r in values if r[1]=='Chi')==manual['total_expense']
     enable(http)
     auto_report=http.get(path).json()
-    for key in ['total_income','total_expense','total_revenue','service_revenue','tip_revenue','historical_income','net_income','period_tip','balance']:
-        assert auto_report[key]==manual[key],key
+    assert auto_report['period_tip'] == manual['period_tip']
+    income, expense = {'2026-09-24': (0,0), '2026-09-25': (1510,150.25), '2026-09-26': (1760,190.25)}[end]
+    assert auto_report['total_income'] == income and auto_report['total_expense'] == expense
+    assert manual['total_income'] == (977 if end=='2026-09-24' else 10976)
+    assert manual['total_expense'] == 50
     assert auto_report['balance']==round(auto_report['net_income']-auto_report['period_tip'],2)
     if end=='2026-09-24':
-        assert auto_report['total_income']==977 and auto_report['total_expense']==50
+        assert auto_report['total_income']==0 and auto_report['total_expense']==0
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar()==4
     ident.allowed=False
     assert http.get(path).status_code==403
 
 
-def test_shared_period_save_remembers_dates_across_modes_and_rejects_invalid_dates(database, client):
+def test_period_save_is_independent_by_mode_and_rejects_invalid_dates(database, client):
     seed(database)
     http,_=client
-    assert http.get('/v2/revenue/source').json()['period_report_version']==1
+    assert http.get('/v2/revenue/source').json()['period_report_version']==2
     saved=http.put('/v2/revenue/report-period',json={'start_date':'2026-09-16','end_date':'2026-09-24'})
     assert saved.status_code==200,saved.text
     assert saved.json()['period_tip']==0 and saved.json()['total_income']==777
     enable(http)
     reopened=http.get('/v2/revenue/period-report').json()
-    assert reopened['period_tip_end']==reopened['end_date']=='2026-09-24'
-    assert reopened['period_tip']==0 and reopened['total_income']==777
+    assert reopened['period_tip_end']==reopened['end_date']=='2026-09-26'
+    assert reopened['period_tip']==110 and reopened['total_income']==1760
     for query in ['start=2026-09-16','start=2026-09-25&end=2026-09-24','start=2025-09-04&end=2026-09-24','start=2026-09-16&end=2026-09-27']:
         assert http.get('/v2/revenue/period-report?'+query).status_code==400
     result=http.put('/v2/revenue/report-period',json={'start_date':'2026-09-16','end_date':'2026-09-26'})
     assert result.status_code==200 and result.json()['period_tip']==110
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar()==1
-        assert routes._period_tip(conn)['period_end']=='2026-09-26'
+        assert routes._period_tip(conn)['period_end']=='2026-09-24'
         assert routes._period_tip(conn,auto=True)['period_end']=='2026-09-26'
 
 
 def test_shared_report_uses_one_database_snapshot_during_concurrent_payment_edit(database, client, monkeypatch):
     seed(database)
     http,_=client
+    enable(http)
     original=auto.daily
     changed=False
     def during_read(conn,*args,**kwargs):
@@ -408,9 +391,9 @@ def test_shared_report_uses_one_database_snapshot_during_concurrent_payment_edit
     response=http.get('/v2/revenue/period-report?start=2026-09-16&end=2026-09-26')
     assert response.status_code==200,response.text
     first=response.json()
-    assert first['total_income']==2537 and first['period_tip']==110
+    assert first['total_income']==1760 and first['period_tip']==110
     again=http.get('/v2/revenue/period-report?start=2026-09-16&end=2026-09-26').json()
-    assert again['total_income']==2717 and again['period_tip']==290
+    assert again['total_income']==1940 and again['period_tip']==290
 
 
 @pytest.mark.parametrize('source', ['manual', 'auto'])
@@ -425,12 +408,12 @@ def test_production_reconcile_wrapper_preserves_cutoff_defaults_and_validation(d
     assert 'overall_status' in result, 'must exercise the production V2 wrapper'
     assert result['canonical'] is True
     assert result['end_date'] == '2026-09-24'
-    assert result['ledger_income'] == 777 and result['ledger_expense'] == 0
+    assert result['ledger_income'] == (0 if source=='auto' else 777) and result['ledger_expense'] == 0
     assert all(row['date'] <= '2026-09-24' for row in result['ledger_rows'])
     legacy = http.get('/v2/revenue/purchase-reconcile?preset=all')
     assert legacy.status_code == 200, legacy.text
     assert legacy.json()['canonical'] is False
-    assert legacy.json()['ledger_income'] == (2537 if source == 'auto' else 777)
+    assert legacy.json()['ledger_income'] == (1760 if source == 'auto' else 777)
     for query in ('report_end=invalid', 'canonical=invalid'):
         assert http.get('/v2/revenue/purchase-reconcile?' + query).status_code == 422
     ident.allowed = False
@@ -451,7 +434,7 @@ def test_tip_period_matches_reports_calendar_filter_not_operational_day(database
     http, _ = client
     if source == 'auto':
         enable(http)
-    expected = sum(row['tip'] for row in rows if report_matches(row, date_from='2026-09-16', date_to='2026-09-24'))
+    expected = sum(row['tip'] for row in rows if report_matches(row, date_from='2026-09-16', date_to='2026-09-24', invoice_dates=True))
     assert expected == 230310000
     for path in ('/v2/revenue/period-report', '/v2/revenue/tip-summary'):
         response = http.get(path + '?start=2026-09-16&end=2026-09-24')
@@ -462,7 +445,7 @@ def test_tip_period_matches_reports_calendar_filter_not_operational_day(database
     assert http.get('/v2/revenue/period-report').json()['period_tip'] == expected
     next_day = http.get('/v2/revenue/period-report?start=2026-09-25&end=2026-09-25').json()
     assert next_day['period_tip'] == 85410000
-    assert next_day['total_income'] == 85410000, 'Auto cash cutoff uses the same calendar date'
+    assert next_day['total_income'] == (315720000 if source=='auto' else 0), 'Auto cash cutoff uses the same calendar date'
     with database.connect() as conn:
         assert conn.execute(text('SELECT COUNT(*) FROM vera_live_tour_report')).scalar() == 3
         assert conn.execute(text("SELECT SUM((payload->>'tip')::numeric) FROM vera_live_tour_report")).scalar() == 315720000
@@ -484,6 +467,38 @@ def test_tip_calendar_date_precedence_offsets_and_naive_times_match_report_list(
         for index, row in enumerate(rows):
             report(conn, str(index), total=row['tip'], **row)
         report(conn, 'deleted', '2026-09-24', total=999, tip=999, deleted=True)
-        expected = sum(row['tip'] for row in rows if report_matches(row, date_from='2026-09-24', date_to='2026-09-24'))
-        assert expected == 100
+        expected = sum(row['tip'] for row in rows if report_matches(row, date_from='2026-09-24', date_to='2026-09-24', invoice_dates=True))
+        assert expected == 50
         assert auto.tip_total(conn, date(2026, 9, 24), date(2026, 9, 24)) == expected
+
+
+def test_single_invoice_day_tip_and_purchase_reports_share_authoritative_rows(database, client):
+    http, ident = client
+    with database.begin() as conn:
+        report(conn, 'today-a', '2026-09-24', effective_at='2026-09-25T00:01:00+07:00', total=20000000, tip=10000000)
+        report(conn, 'today-b', '2026-09-25', effective_at='2026-09-25T23:59:00+07:00', total=7000000, tip=5450000)
+        report(conn, 'tomorrow', '2026-09-25', effective_at='2026-09-26T00:00:00+07:00', total=999, tip=999)
+        for i in range(105):
+            buy(conn, '2026-09-25', i+1)
+        buy(conn, '2026-09-26', 100)
+        conn.execute(text("UPDATE vera_purchase_entry SET note='Nguoi dat', entered_by='Nguoi nhap'"))
+    enable(http)
+    day=http.get('/v2/revenue/period-report?start=2026-09-25&end=2026-09-25').json()
+    assert day['period_tip']==15450000 and day['total_income']==27000000
+    http.put('/v2/revenue/report-period',json={'start_date':'2026-09-25','end_date':'2026-09-25'})
+    for _ in range(2):
+        original=http.get('/v2/purchases?preset=custom&start=2026-09-25&end=2026-09-26').json()
+        mirror=http.get('/v2/revenue/purchases?preset=custom&start=2026-09-25&end=2026-09-26').json()
+        assert mirror['purchase_total']==original['total']
+        assert [r['id'] for r in mirror['purchase_rows']]==[r['id'] for r in original['rows']]
+        assert any(r['date']=='2026-09-26' for r in mirror['purchase_rows']), 'purchase filters are independent of TIP cutoff'
+        assert all(r['buyer']=='Nguoi dat' and r['user']=='Nguoi nhap' for r in mirror['purchase_rows'])
+        with database.begin() as conn:
+            conn.execute(text('UPDATE vera_purchase_entry SET amount=20,revision=revision+1 WHERE id=1'))
+            conn.execute(text('UPDATE vera_purchase_entry SET deleted=true,revision=revision+1 WHERE id=2'))
+    with database.begin() as conn:
+        conn.execute(text('UPDATE vera_purchase_entry SET deleted=true'))
+    assert http.get('/v2/revenue/purchases?preset=all').json()['purchase_rows']==[]
+    assert http.get('/v2/purchases?preset=all').json()['total']==0
+    ident.allowed=False
+    assert http.get('/v2/revenue/purchases').status_code==403

@@ -23,7 +23,7 @@ const built = await build({
   } }],
 })
 
-async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26', unified = false) {
+async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26', unified = false, savedStart = '2026-09-16') {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
   let source = initial, revision = 1, hold = false, pending = null
   const calls = []
@@ -40,7 +40,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
       if (path.endsWith('/source')) {
         if (legacy) return { ok:false, status:404, json:async()=>({detail:'Not Found'}) }
         if (method === 'PUT') { source = JSON.parse(options.body).source; revision += 1 }
-        return response({ source, revision, period_report_version: unified ? 1 : 0 })
+        return response({ source, revision, period_report_version: Number(unified) })
       }
       if (path.endsWith('/revision')) return response({revision:`fixture-${revision}`})
       const cutoff = new URL(url).searchParams.get('end')
@@ -48,8 +48,8 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
       if (path.endsWith('/period-report') || path.endsWith('/report-period')) {
         const body=options.body ? JSON.parse(options.body) : null
         const selectedEnd=body?.end_date || cutoff || savedEnd
-        const selectedStart=body?.start_date || new URL(url).searchParams.get('start') || '2026-09-16'
-        const historical=selectedEnd==='2026-09-24', tip=historical?20:40
+        const selectedStart=body?.start_date || new URL(url).searchParams.get('start') || savedStart
+        const historical=selectedEnd==='2026-09-24', tip=selectedStart==='2026-09-25' && selectedEnd==='2026-09-25'?15450000:historical?20:40
         const result={ok:true,report_version:1,report_basis:'shared_history_and_system',source,source_revision:revision,
           total_income:historical?1000:1760,total_expense:historical?100:190.25,net_income:historical?900:1569.75,
           total_revenue:historical?1000:1760,period_tip:tip,balance:historical?880:1529.75,
@@ -67,6 +67,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
         period_tip_start: '2026-09-16', period_tip_end: savedEnd,
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
       })
+      if (path.endsWith('/purchases')) return response({ start_date:'2025-09-05', end_date:'2026-09-26', purchase_rows:Array.from({length:rowCount},(_,i)=>({id:i,date:'2026-09-26',date_label:'26-09-2026',item:`Hàng ${i+1}`,amount:10,buyer:'Nguoi dat',user:'Nguoi nhap'})) })
       if (path.endsWith('/purchase-reconcile')) return response({ canonical:new URL(url).searchParams.get('canonical')==='true', source: legacy ? undefined : source, source_revision: legacy ? undefined : revision,
         start_date: '2025-09-05', end_date: '2026-09-26', purchase_rows: Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2025-09-05',item:`Hàng ${i+1}`,amount:10})),
         ledger_rows: Array.from({length:rowCount},(_,i)=>({ id: `auto:${i}`, date:'2025-09-05', date_label:'05-09-2025', type:'Thu', amount:1760, note:`Doanh thu dịch vụ + TIP ${i+1}`, read_only: source === 'auto' })),
@@ -265,4 +266,46 @@ test('late report cannot overwrite a newer selected date or mix the TIP field an
     assert.match(f.doc.querySelector('.revenue-card.tip').textContent,/20đ/)
     assert.match(f.doc.querySelector('.revenue-card.income').textContent,/1\.000đ/)
   }finally{await f.close()}
+})
+
+
+test('independent Auto accepts start-first single-day editing and hides old TIP for invalid drafts', async()=>{
+  const f=await fixture('admin','auto',false,1,'2026-09-24',2,'2025-09-16')
+  try {
+    const start=f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]'), end=f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]')
+    const tip=()=>f.doc.querySelector('[aria-label="Tiền TIP trong kỳ tự động"]').value
+    const requests=()=>f.calls.filter(c=>c.path.endsWith('/period-report'))
+    await f.change(start,'25-09-2026')
+    assert.equal(tip(),'—','do not show old period money beside a reversed period')
+    await f.change(end,'25-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,280))})
+    assert.deepEqual(Object.fromEntries(new URL(requests().at(-1).url).searchParams),{start:'2026-09-25',end:'2026-09-25'})
+    assert.equal(tip(),'15.450.000đ')
+    assert.equal(f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]').getAttribute('aria-invalid'),null)
+    await act(async()=>f.button('Lưu Tiền TIP').click())
+    assert.deepEqual(f.calls.filter(c=>c.method==='PUT').at(-1).body,{start_date:'2026-09-25',end_date:'2026-09-25'})
+    const count=requests().length
+    await f.change(start,'25-09-20')
+    assert.equal(tip(),'—')
+    assert.equal(f.button('Lưu Tiền TIP').disabled,true)
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,280))})
+    assert.equal(requests().length,count,'incomplete text cannot reuse a previous date')
+  } finally { await f.close() }
+})
+
+test('independent purchase report total includes all filtered rows and ignores the TIP cutoff',async()=>{
+  const f=await fixture('admin','auto',false,105,'2026-09-24',2)
+  try {
+    await act(async()=>f.button('Báo cáo mua hàng').click())
+    const call=f.calls.filter(c=>c.path.endsWith('/purchases')).at(-1)
+    assert.ok(call)
+    assert.equal(new URL(call.url).searchParams.has('report_end'),false)
+    const total=()=>f.doc.querySelector('[aria-label="Tổng mua theo bộ lọc"]').textContent
+    assert.match(total(),/1\.050đ/); assert.match(total(),/105 dòng/)
+    assert.equal(f.doc.querySelectorAll('.report-table tbody tr').length,100)
+    await f.change(f.doc.querySelector('[placeholder="Tìm hàng hóa"]'),'Hàng 1')
+    assert.match(total(),/170đ/); assert.match(total(),/17 dòng/)
+    await f.change(f.doc.querySelector('[placeholder="Tìm người đặt"]'),'khong-co')
+    assert.match(total(),/0đ/); assert.match(total(),/0 dòng/)
+  } finally { await f.close() }
 })

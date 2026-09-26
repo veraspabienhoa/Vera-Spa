@@ -1,4 +1,4 @@
-import { tourRowDate } from './liveTourFilters.js'
+import { invoiceRowDate } from './liveTourFilters.js'
 
 export function defaultRevenueTipStart(currentDate) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(currentDate || '').trim())
@@ -7,7 +7,7 @@ export function defaultRevenueTipStart(currentDate) {
 }
 
 export function revenueTipRowDate(row) {
-  return tourRowDate(row)
+  return invoiceRowDate(row)
 }
 
 export function revenueTipValue(value) {

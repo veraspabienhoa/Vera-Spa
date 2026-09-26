@@ -1,5 +1,38 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: Auto độc lập, ngày hóa đơn và Nhập mua làm nguồn chính
+
+Yêu cầu lúc 21:11 thay thế quy tắc chung nguồn trước đây: Auto chỉ đọc thu từ
+Live Tour (dịch vụ + TIP) và chi từ Nhập mua, không trộn lịch sử Manual. Manual
+đọc riêng sổ nhập tay. Khoảng báo cáo vẫn từ 05-09-2025 đến ngày chốt; TIP có
+khoảng riêng. Các kỳ lưu theo nguồn, lưu Auto không ghi đè kỳ Manual. Không
+sao chép hoặc thay đổi giao dịch gốc khi chuyển chế độ. Capability version 2
+phân biệt giao diện nguồn độc lập với API cũ.
+
+Ngày hóa đơn dùng đúng cột đang hiển thị: effective_at, thiếu thì business_date,
+theo lịch VN. Áp dụng cho lọc báo cáo, TIP, tổng Auto, danh sách và xuất Excel
+báo cáo hóa đơn. Ngày mua vẫn theo purchase_date của Nhập mua.
+
+Ảnh 14:09 UTC cho thấy ngày bắt đầu 25-09 đỏ nhưng TIP vẫn 400.380.000đ. Mã
+VeraDateInput giữ draft khi ngoài max=ngày kết thúc cũ và không emit; đổi ngày
+kết thúc có thể gửi ngày bắt đầu cũ. Bỏ min/max chéo giữa hai ô TIP, kiểm tra
+khoảng ở cấp form, báo trạng thái draft, hủy phản hồi cũ và che tổng chưa khớp
+kỳ. Nhập bắt đầu trước kết thúc được hỗ trợ; nhập dở/sai không gửi ngày cũ hoặc
+lưu kỳ cũ. Kiểm thử một ngày 25-09 có TIP giả lập 15.450.000đ theo chứng cứ
+người dùng; số này là mốc đối chiếu, không được gán cố định trong mã nghiệp vụ.
+
+Nhập mua và báo cáo mua trong Doanh thu dùng cùng list_entries PostgreSQL,
+người đặt lấy note và người nhập lấy entered_by. Endpoint đọc báo cáo mua
+riêng chỉ yêu cầu quyền Doanh thu; bộ lọc mua không bị cắt bởi kỳ TIP, không
+quay về nguồn Google khi dữ liệu trống. Tổng và số dòng theo toàn bộ kết quả
+lọc, trước phân trang. Giữ poll revision 5 giây khi trang hiện và không đang
+lưu/nhập; sửa/xóa Nhập mua làm thay đổi revision. Kiểm thử so sánh API gốc và
+báo cáo qua thêm/sửa/xóa, hơn 100 dòng, quyền và ngày ngoài kỳ TIP.
+
+Deploy #36247109031 đã thành công ở 53e6281 trước yêu cầu này. Các kiểm thử và
+thay đổi ở đây cần CI và deploy mới; chưa chứng minh tổng tiền thật trên VPS.
+
+
 ## 26-09-2026: TIP giữa Báo cáo và Doanh thu lọc theo hai loại ngày
 
 Người dùng báo cùng kỳ 16–24-09-2026: Báo cáo 230.310.000đ, Doanh thu

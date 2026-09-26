@@ -3677,6 +3677,8 @@ def _event_in_export_bounds(
         event = _parse_datetime(item.get(key))
         if event:
             break
+    if bounds.get("invoice_dates"):
+        event = _parse_datetime(item.get("effective_at") or item.get("business_date"))
     raw_day = item.get("business_date") or fallback_business_date
     try:
         event_day = event.astimezone(VN_TZ).date() if event and bounds.get("calendar_date") else date.fromisoformat(str(raw_day)) if raw_day else (event.astimezone(VN_TZ).date() if event else None)
@@ -4676,7 +4678,7 @@ def install_live_tour_routes(
                 values = [row for row in values if not row.get("deleted_at") and (not customer_id or str(row.get("id")) == customer_id)
                           and list_queries.customer_matches(row,search)]
             else:
-                values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,history=panel=="history")]
+                values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,history=panel=="history",invoice_dates=panel in {"reports","invoices"})]
             # Preserve source ordering inside each page, newest pages first.
             totals[key] = len(values)
             if key == "reports":
@@ -5039,7 +5041,7 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
-        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending", "performance", "employee"})
+        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending", "performance", "employee"}, invoice_dates=export_kind in {"revenue", "tip", "reports", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):
