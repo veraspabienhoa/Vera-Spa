@@ -76,6 +76,14 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             "set -euo pipefail; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f \"/proc/\$pid/cwd\"); test \"\$(git -C \"\$release_dir\" rev-parse HEAD)\" = '$DEPLOY_SHA'; test -f \"\${release_dir}/configure_vps_database.sh\"; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_concurrency_schema.py\" --apply --verify; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_data_check.py\""
 
+      - name: Install FaceGate archive timer without changing attendance source
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; cd /opt/vera-spa/current; bash configure_facegate_sync.sh'
+
       - name: Verify configured Live Tour background cleanup
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}

@@ -326,11 +326,14 @@ def _append_missing_active_employees(
     return output
 
 
-def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
+def _records_v42_fast(conn, start: date, end: date, *, datasets=None) -> list[dict[str, Any]]:
     definitions, break_config = snapshot._shift_break_settings(conn)
     department_controls = department_attendance.controls(conn)
     aliases, roles = v42._eligible_aliases(conn)
-    datasets = _datasets(conn, start, end)
+    # A read-only FaceGate preview supplies evidence here and uses exactly the
+    # same VERA schedule/break calculator. Ordinary callers keep their source.
+    if datasets is None:
+        datasets = _datasets(conn, start, end)
     schedules = _schedule_map(conn, start, end)
     profiles = {
         v42._norm(row['username']): dict(row)
@@ -367,7 +370,9 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
         rows = bucket["rows"]
         if not rows:
             continue
-        representative = dict(max(rows, key=v42._representative_score))
+        is_facegate = all(row.get('_vera_evidence_source') == 'facegate' for row in rows)
+        representative = dict(min(rows, key=lambda row: row['_vera_checkin_at']) if is_facegate
+                              else max(rows, key=v42._representative_score))
         role = roles.get(v42._norm(employee), "")
         profile = profiles.get(v42._norm(employee), {'role': role})
         name, shift_start, shift_end = _vera_shift_fields(
@@ -395,6 +400,8 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
         ):
             restricted_reasons.append("về sớm")
         cfg = apply_break_restriction(cfg, restricted_reasons)
+        if is_facegate:
+            cfg['faceid_cluster_minutes'] = 5
         faceid = v42._break_from_punches(
             bucket["punches"],
             work_day=work_day,
@@ -448,6 +455,27 @@ def _records_v42_fast(conn, start: date, end: date) -> list[dict[str, Any]]:
             if faceid.get("raw_faceid_count", 0) >= 2
             else "TimeSoft"
         )
+        if is_facegate:
+            # Device names are evidence metadata, never the VERA display name.
+            # Retain calendar dates so a 00:30 scan is not rewritten as 00:30
+            # on the previous day when a leave-return consumer reads it.
+            first = min(bucket['punches'])
+            base['check_in'] = base.get('faceid_check_in') or first.strftime('%H:%M:%S')
+            base['check_in_at'] = representative['_vera_checkin_at']
+            base['punch_datetimes'] = [p.isoformat() for p in v42._cluster_punches(bucket['punches'], 5)]
+            base['attendance_source'] = 'FaceGate · Tính thử theo lịch VERA'
+            base['evidence_source'] = 'facegate'
+            base['attendance_preview'] = True
+            if base.get('break_source'):
+                base['break_source'] = 'FaceGate FaceID'
+            from vera_facegate_attendance import shift_interval
+            interval = shift_interval(work_day, shift_start, shift_end)
+            base['overnight_shift'] = bool(interval and interval[1].date() > work_day)
+            base['late_minutes'] = max(0, int((first - interval[0]).total_seconds() // 60)) if interval else 0
+            base['arrival_status'] = 'Đi trễ' if base['late_minutes'] else 'Đúng giờ'
+            # No synthetic end-of-shift punch or guessed payable duration.
+            # Payroll and approved early leave are checked in the cutover stage.
+            base['payable_minutes_verified'] = False
         base["attendance_expected"] = scheduled if role in {"quanly", "letan", "locker", "tapvu"} else bool(name)
         if not name and role in {"leader", "nhanvien"}:
             base["attendance_note"] = "Chưa phân ca có hiệu lực trong Vera Spa"

@@ -1,4 +1,5 @@
 import AttendanceCodePicker from '../components/AttendanceCodePicker'
+import FacegateAttendancePreview from '../components/FacegateAttendancePreview'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import { useEffect, useRef, useState } from 'react'
@@ -201,5 +202,6 @@ export default function CheckinHistoryPage({ user }) {
       </>}
     </>}
     {user?.permissions?.device_facegate_mapping_manage && <FacegateMappings />}
+    {user?.role === 'admin' && <FacegateAttendancePreview />}
   </section>
 }
