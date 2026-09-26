@@ -639,3 +639,22 @@ saving/failure, portal placement/dismissal/list navigation, permission denial,
 retained drafts and room action payloads. This entry describes code and automated
 checks; it is not a claim of a completed production payment or browser latency
 measurement.
+
+## 26-09-2026: opening Leave Registration clears the React screen
+
+The user recording shows Live Tour disappearing into a blank page after opening
+Leave Registration. Mounting the actual leave page with all three enhancement
+components reproduces NotFoundError from LeaveListPersonalStats.insertBefore:
+StableDataRegion now wraps the table, so leave-list-wrap is no longer a direct
+child of leave-list-panel. Passing that nested node as the panel's insertion
+anchor throws during a React effect and tears down the application tree.
+
+Resolve the direct child ancestor of the table before inserting the statistics
+portal host. Keep the existing table/loading wrapper, month-scoped data reads,
+quota checks and permission rules. The new CI integration test mounts the real
+page and all enhancements together under StrictMode, for Admin, Lễ tân and Nhân
+viên; it checks open/reopen, one summary host, quota access and a failed records
+read without losing the form. The older isolated quota fixture had a flat table
+layout and could not catch this integration failure. This frontend fix does not
+require a database migration or VPS restart. Local reproduction and tests are
+not a claim of an authenticated production leave write.
