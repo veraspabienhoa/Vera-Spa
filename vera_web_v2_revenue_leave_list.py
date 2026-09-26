@@ -23,9 +23,10 @@ from vera_progressive_penalty import load_weekend_unpaid_enabled
 
 import vera_web_v2_permissions as permissions
 import vera_revenue_store as revenue_store
+import vera_revenue_auto as revenue_auto
 
 
-RELEASE = "revenue-audit-duplicate-admin-push-2026-09-22-v1"
+RELEASE = "revenue-shared-auto-daily-2026-09-26-v1"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_ENTRY_FEATURE = "revenue_entry_create"
@@ -48,11 +49,21 @@ REVENUE_ENTRY_FORM_URL = os.getenv(
     "https://docs.google.com/forms/d/e/1FAIpQLSeJp1bLrl8zSyESu_K0eo6NxdKsm85p4fxGXPXigPlmgkAs7w/viewform",
 )
 VN_TZ = timezone(timedelta(hours=7))
-REVENUE_PERIOD_START = date(2025, 9, 5)
+REVENUE_PERIOD_START = date(2026, 9, 5)
 REVENUE_CURRENT_DATE_COLUMN_INDEX = 4  # Sheet Input, column E.
 DATE_IN_TEXT_RE = re.compile(
     r"(?<!\d)(\d{1,2})\s*([./-])\s*(\d{1,2})\s*\2\s*(\d{4})(?!\d)"
 )
+
+
+class RevenueSourceUpdate(BaseModel):
+    source: Literal["manual", "auto", "manual_tip_auto"]
+    revision: int = Field(ge=0)
+
+
+class RevenueTipPeriod(BaseModel):
+    start_date: date
+    end_date: date
 
 
 class RevenueTipUpdate(BaseModel):
@@ -237,36 +248,9 @@ def _dispatch_revenue_admin_push(*, engine_instance, api_module, event: str, det
 
 
 def _auto_revenue(conn, start_date: date | None, end_date: date | None) -> dict[str, Any]:
-    rows = conn.execute(text("""
-        SELECT resource_id, payload
-        FROM vera_live_tour_report
-        WHERE deleted_at IS NULL
-        ORDER BY ordinal, resource_id
-    """)).mappings().all()
-    service = tip = 0.0
-    records = []
-    for row in rows:
-        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-        raw_date = payload.get("business_date") or payload.get("effective_at") or payload.get("created_at") or payload.get("recorded_at")
-        parsed = _parse_date(raw_date)
-        if start_date and (not parsed or parsed < start_date):
-            continue
-        if end_date and (not parsed or parsed > end_date):
-            continue
-        service_amount = _money(payload.get("subtotal", payload.get("service_money", 0)))
-        tip_amount = _money(payload.get("tip", 0))
-        service += service_amount
-        tip += tip_amount
-        records.append({
-            "id": str(row["resource_id"]), "date": parsed.isoformat() if parsed else "",
-            "date_label": parsed.strftime("%d-%m-%Y") if parsed else "",
-            "service_revenue": round(service_amount, 2), "tip_revenue": round(tip_amount, 2),
-            "total_revenue": round(service_amount + tip_amount, 2),
-            "employee": str(payload.get("employee_name") or ""), "service": str(payload.get("service") or ""),
-            "bill_no": str(payload.get("bill_no") or ""),
-        })
-    return {"service_revenue": round(service, 2), "tip_revenue": round(tip, 2),
-            "total_revenue": round(service + tip, 2), "transaction_count": len(records), "records": records}
+    days = revenue_auto.daily(conn, start_date, end_date)
+    return {**revenue_auto.totals(days), "transaction_count": sum(row["payments"] for row in days),
+            "entries": revenue_auto.ledger_rows(days)}
 
 
 def _find_route(app, path: str, method: str):
@@ -413,13 +397,13 @@ def _revenue_summary(
     }
 
 
-def _period_tip(conn, default_start_date_text: str = "", default_end_date_text: str = "") -> dict[str, Any]:
+def _period_tip(conn, default_start_date_text: str = "", default_end_date_text: str = "", *, auto: bool = False) -> dict[str, Any]:
     payload = conn.execute(text("""
         SELECT value_json
         FROM vera_app_setting
         WHERE category='revenue' AND setting_key=:key
         LIMIT 1
-    """), {"key": REVENUE_TIP_SETTING}).scalar_one_or_none()
+    """), {"key": REVENUE_TIP_SETTING + ("_auto" if auto else "")}).scalar_one_or_none()
     if not isinstance(payload, dict):
         payload = {}
     return {
@@ -429,7 +413,7 @@ def _period_tip(conn, default_start_date_text: str = "", default_end_date_text: 
     }
 
 
-def _save_period_tip(conn, start_date_text: str, end_date_text: str, amount: float, actor: str) -> None:
+def _save_period_tip(conn, start_date_text: str, end_date_text: str, amount: float, actor: str, *, auto: bool = False) -> None:
     payload = {
         "period_start": str(start_date_text or ""),
         "period_end": str(end_date_text or ""),
@@ -450,7 +434,7 @@ def _save_period_tip(conn, start_date_text: str, end_date_text: str, amount: flo
             revision=vera_app_setting.revision+1,
             updated_at=NOW()
     """), {
-        "key": REVENUE_TIP_SETTING,
+        "key": REVENUE_TIP_SETTING + ("_auto" if auto else ""),
         "payload": json.dumps(payload, ensure_ascii=False),
         "actor": str(actor or ""),
     })
@@ -605,7 +589,7 @@ def install_revenue_leave_list_routes(
             "storage": "postgresql",
             "transaction_table": revenue_store.TABLE,
             "period_metadata": True,
-            "period_start_source": "fixed 2025-09-05",
+            "period_start_source": "fixed 2026-09-05",
             "summary_scope": "PostgreSQL revenue ledger",
             "current_date_source": "ledger transaction date / note",
             "period_tip": True,
@@ -626,6 +610,49 @@ def install_revenue_leave_list_routes(
             "penalty_visibility": "permission_gated",
         }
 
+    @app.get("/v2/revenue/source")
+    def revenue_source(ident=Depends(current_identity)):
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            return {"ok": True, **revenue_auto.mode(conn)}
+
+    @app.put("/v2/revenue/source")
+    def update_revenue_source(body: RevenueSourceUpdate, ident=Depends(current_identity)):
+        _require_revenue_admin(ident)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            return {"ok": True, **revenue_auto.set_mode(conn, body.source, body.revision,
+                str(getattr(ident, "employee_username", "") or ""))}
+
+    @app.get("/v2/revenue/tip-summary")
+    def revenue_tip_summary(start: date, end: date, ident=Depends(current_identity)):
+        if start > end:
+            raise HTTPException(400, "Ngày bắt đầu Tiền TIP không được sau Đến ngày.")
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            shared = revenue_auto.mode(conn)
+            amount = revenue_auto.tip_total(conn, start, end, auto=shared["source"] == "auto")
+            return {"ok": True, "period_tip": amount, "source": shared["source"],
+                    "period_tip_start": start.isoformat(), "period_tip_end": end.isoformat()}
+
+    @app.put("/v2/revenue/tip-period")
+    def save_auto_tip_period(body: RevenueTipPeriod, ident=Depends(current_identity)):
+        if (body.start_date > body.end_date or body.start_date < REVENUE_PERIOD_START
+                or body.end_date > datetime.now(VN_TZ).date()):
+            raise HTTPException(400, "Kỳ TIP Auto phải nằm trong khoảng 05-09-2026 đến ngày hiện tại.")
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, REVENUE_TIP_FEATURE)
+            revenue_auto.lock_mode(conn)
+            if revenue_auto.mode(conn)["source"] != "auto":
+                raise HTTPException(409, "Chế độ Doanh thu đã thay đổi. Hãy tải lại.")
+            tip = revenue_auto.tip_total(conn, body.start_date, body.end_date, auto=True)
+            _save_period_tip(conn, body.start_date.isoformat(), body.end_date.isoformat(), tip,
+                             getattr(ident, "employee_username", ""), auto=True)
+            totals = revenue_auto.totals(revenue_auto.daily(conn))
+            return {"ok": True, "period_tip": tip, "period_tip_start": body.start_date.isoformat(),
+                    "period_tip_end": body.end_date.isoformat(), "balance": round(totals["net_income"] - tip, 2),
+                    "message": "Đã lưu kỳ TIP; số tiền được tính từ dữ liệu hệ thống."}
+
     @app.get("/v2/revenue/summary")
     def revenue_summary(
         source: Literal["manual", "auto", "manual_tip_auto"] = Query("manual"),
@@ -637,7 +664,8 @@ def install_revenue_leave_list_routes(
         start_date, end_date = _range_bounds(time_range, start, end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            revenue_store.ensure_schema(conn)
+            shared = revenue_auto.mode(conn)
+            source = shared["source"]  # Never let a client override the global mode.
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
             can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
             can_edit_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_EDIT_FEATURE))
@@ -645,16 +673,22 @@ def install_revenue_leave_list_routes(
             if source == "auto":
                 auto = _auto_revenue(conn, start_date, end_date)
                 today = datetime.now(VN_TZ).date()
+                first, last = revenue_auto.bounds(start_date, end_date)
+                default_tip_start = max(today.replace(day=1 if today.day <= 15 else 16), REVENUE_PERIOD_START)
+                tip_setting = _period_tip(conn, default_tip_start.isoformat(), today.isoformat(), auto=True)
+                tip_start = max(_parse_date(tip_setting["period_start"]) or default_tip_start, REVENUE_PERIOD_START)
+                tip_end = min(_parse_date(tip_setting["period_end"]) or today, today)
+                period_tip = revenue_auto.tip_total(conn, tip_start, tip_end, auto=True)
                 return {
-                    "ok": True, "release": RELEASE, "source": "auto", "source_label": "Tự động từ hệ thống",
-                    "storage": "postgresql", "time_range": time_range,
-                    "start_date": start_date.isoformat() if start_date else "",
-                    "end_date": end_date.isoformat() if end_date else "",
+                    **auto, "ok": True, "release": RELEASE, "source": "auto", "source_revision": shared["revision"],
+                    "source_label": "Tự động từ hệ thống", "storage": "postgresql", "time_range": time_range,
+                    "start_date": first.isoformat(), "start_date_label": first.strftime("%d-%m-%Y"),
+                    "end_date": last.isoformat(), "business_date": today.isoformat(),
                     "current_date": today.isoformat(), "current_date_label": today.strftime("%d-%m-%Y"),
-                    "can_edit_tip": False, "can_create_entry": False, "can_edit_entry": False, "can_delete_entry": False, "can_admin_crud": False,
-                    "total_income": auto["total_revenue"], "total_expense": 0,
-                    "net_income": auto["total_revenue"], "balance": auto["total_revenue"],
-                    "period_tip": auto["tip_revenue"], **auto,
+                    "can_edit_tip": can_edit_tip, "can_create_entry": False, "can_edit_entry": False,
+                    "can_delete_entry": False, "can_admin_crud": False,
+                    "period_tip": period_tip, "period_tip_start": tip_start.isoformat(), "period_tip_end": tip_end.isoformat(),
+                    "balance": round(auto["net_income"] - period_tip, 2),
                 }
             entries = revenue_store.list_entries(conn, start_date=start_date, end_date=end_date)
             report_dates = [_parse_date(row.get("date")) for row in entries]
@@ -665,7 +699,7 @@ def install_revenue_leave_list_routes(
             auto_tip = _auto_revenue(conn, start_date, end_date)["tip_revenue"] if source == "manual_tip_auto" else None
         tip = float(tip_setting["amount"])
         return {
-            "ok": True, "release": RELEASE, "source": source,
+            "ok": True, "release": RELEASE, "source": source, "source_revision": shared["revision"],
             "source_label": "Dịch vụ Manual · Tip Auto" if source == "manual_tip_auto" else "Thủ công",
             "storage": "postgresql", "transaction_table": revenue_store.TABLE, "time_range": time_range,
             "start_date": (start_date or REVENUE_PERIOD_START).isoformat(),
@@ -703,6 +737,7 @@ def install_revenue_leave_list_routes(
             entries.append(("Chi", expense_amount, body.expense_note))
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_FEATURE)
+            revenue_auto.require_manual(conn)
             duplicate_rows = revenue_store.find_duplicate_web_entries(conn, entries=entries)
             if duplicate_rows and not body.confirm_duplicate:
                 labels = ", ".join(
@@ -752,6 +787,7 @@ def install_revenue_leave_list_routes(
         content = await request.body()
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
+            revenue_auto.require_manual(conn)
             try:
                 result = revenue_store.import_ledger_xlsx(
                     conn, content, mode=mode,
@@ -779,6 +815,7 @@ def install_revenue_leave_list_routes(
             entered_at = datetime.combine(body.entered_date, entered_clock).replace(tzinfo=VN_TZ)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_EDIT_FEATURE)
+            revenue_auto.require_manual(conn)
             try:
                 result = revenue_store.update_entry(
                     conn, entry_id=entry_id, transaction_type=body.transaction_type,
@@ -804,6 +841,7 @@ def install_revenue_leave_list_routes(
         notification_detail: dict[str, Any] = {"entry_id": entry_id, "actor": str(getattr(ident, "employee_username", "") or "")}
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_DELETE_FEATURE)
+            revenue_auto.require_manual(conn)
             try:
                 current = next((row for row in revenue_store.list_entries(conn) if row.get("id") == entry_id), None)
                 if current:
@@ -885,33 +923,26 @@ def install_revenue_leave_list_routes(
 
     @app.put("/v2/revenue/tip")
     def save_revenue_tip(body: RevenueTipUpdate, ident=Depends(current_identity)):
-        values = _read_revenue_values(google_client, engine_instance)
-        period_start = _revenue_period_start(norm, values)
-        summary = _revenue_summary(values, norm, period_start=period_start)
-        default_start = str(summary.get("start_date") or "")
-        default_end = str(summary.get("current_date") or "")
-        tip_start = body.start_date.isoformat() if body.start_date else default_start
-        tip_end = body.end_date.isoformat() if body.end_date else default_end
-        if not tip_start or not tip_end:
-            raise HTTPException(409, "Chọn đủ Ngày bắt đầu và Đến ngày cho Tiền TIP trong kỳ.")
-        if tip_start > tip_end:
-            raise HTTPException(400, "Ngày bắt đầu Tiền TIP không được sau Đến ngày.")
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_TIP_FEATURE)
-            _save_period_tip(conn, tip_start, tip_end, body.amount, getattr(ident, "employee_username", ""))
+            revenue_auto.require_manual(conn)
+            entries = revenue_store.list_entries(conn)
+            report_date = max((_parse_date(row["date"]) for row in entries if _parse_date(row["date"])),
+                              default=datetime.now(VN_TZ).date())
+            tip_start = body.start_date or report_date.replace(day=1 if report_date.day <= 15 else 16)
+            tip_end = body.end_date or report_date
+            if tip_start > tip_end:
+                raise HTTPException(400, "Ngày bắt đầu Tiền TIP không được sau Đến ngày.")
+            _save_period_tip(conn, tip_start.isoformat(), tip_end.isoformat(), body.amount,
+                             getattr(ident, "employee_username", ""))
+            total_income = sum(row["amount"] for row in entries if row["type"] == "Thu")
+            total_expense = sum(row["amount"] for row in entries if row["type"] == "Chi")
         tip = round(float(body.amount), 2)
-        balance = round(summary["total_income"] - summary["total_expense"] - tip, 2)
-        return {
-            "ok": True,
-            "release": RELEASE,
-            "period_tip": tip,
-            "balance": balance,
-            "period_tip_start": tip_start,
-            "period_tip_end": tip_end,
-            "period_start": tip_start,
-            "period_end": tip_end,
-            "message": f"Đã lưu Tiền TIP trong kỳ {tip_start} đến {tip_end}: {round(tip):,}đ.".replace(",", "."),
-        }
+        return {"ok": True, "release": RELEASE, "period_tip": tip,
+                "balance": round(total_income - total_expense - tip, 2),
+                "period_tip_start": tip_start.isoformat(), "period_tip_end": tip_end.isoformat(),
+                "period_start": tip_start.isoformat(), "period_end": tip_end.isoformat(),
+                "message": f"Đã lưu Tiền TIP trong kỳ {tip_start:%d-%m-%Y} đến {tip_end:%d-%m-%Y}."}
 
     @app.get("/v2/leave/records")
     def leave_records_enhanced(

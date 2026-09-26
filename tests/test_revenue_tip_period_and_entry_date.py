@@ -5,7 +5,7 @@ def test_manual_and_hybrid_use_same_current_period_tip_and_shared_date_control()
     page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
 
     assert "if (result.source !== 'manual_tip_auto')" not in page
-    assert "revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)" in page
+    assert "loadPeriodTip(tipStart, tipEnd, controller.signal, !sharedSourceSupported)" in page
     assert "const todayIsoVietnam = () =>" in page
     assert "useState(todayIsoVietnam)" in page
     assert '<VeraDateInput aria-label="Ngày giao dịch"' in page
