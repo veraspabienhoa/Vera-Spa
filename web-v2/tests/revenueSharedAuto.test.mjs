@@ -23,7 +23,7 @@ const built = await build({
   } }],
 })
 
-async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
+async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26') {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
   let source = initial, revision = 1
   const calls = []
@@ -49,7 +49,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
         total_income: filtered ? 1000 : 1760, total_expense: filtered ? 100 : 190.25, net_income: filtered ? 900 : 1569.75, period_tip: 20, balance: filtered ? 880 : 1549.75,
         end_date: cutoff || '2026-09-26', business_date: '2026-09-26',
         start_date: '2025-09-05', start_date_label: '05-09-2025', current_date: '2026-09-26', current_date_label: '26-09-2026',
-        period_tip_start: '2026-09-16', period_tip_end: '2026-09-26',
+        period_tip_start: '2026-09-16', period_tip_end: savedEnd,
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
       })
       if (path.endsWith('/purchase-reconcile')) return response({ source: legacy ? undefined : source, source_revision: legacy ? undefined : revision,
@@ -59,7 +59,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
       if (path.endsWith('/ledger/export.xlsx')) return {ok:true,blob:async()=>new Blob(['synthetic full export'])}
       if (path.endsWith('/live-tour/reports')) return response({reports:[{business_date:'2026-09-20',tip:20}]})
       if (path.endsWith('/tip-summary')) return response({ source, period_tip: 20 })
-      if (path.endsWith('/tip-period')) { const body=JSON.parse(options.body); return response({ period_tip:20, balance:1549.75, period_tip_start:body.start_date, period_tip_end:body.end_date }) }
+      if (path.endsWith('/tip-period')) { const body=JSON.parse(options.body); savedEnd=body.end_date; return response({ period_tip:20, balance:1549.75, period_tip_start:body.start_date, period_tip_end:body.end_date }) }
       throw new Error(`Unexpected request ${path}`)
     },
   }
@@ -84,7 +84,8 @@ for (const role of ['admin','giamdoc','quanly','letan','nhanvien']) {
     try {
       assert.match(f.doc.body.textContent,/Auto · Tự động hệ thống/)
       assert.equal(f.doc.querySelector('.revenue-entry-form'),null)
-      assert.equal(Boolean(f.doc.querySelector('.revenue-report-date-form')),['admin','giamdoc'].includes(role))
+      assert.equal(f.doc.querySelector('.revenue-report-date-form'),null)
+      assert.equal(Boolean(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]')),['admin','giamdoc'].includes(role))
       if(role==='admin') assert.equal(f.button('Import thêm mới').disabled,true); else assert.equal(f.button('Import thêm mới'),undefined)
       if(role==='admin') assert.equal(f.button('Sửa dòng đã chọn').disabled,true); else assert.equal(f.button('Sửa dòng đã chọn'),undefined)
       if(role==='admin') assert.equal(f.button('Xóa dòng đã chọn').disabled,true); else assert.equal(f.button('Xóa dòng đã chọn'),undefined)
@@ -136,39 +137,68 @@ test('an already open Manual page locks after another admin changes the shared m
 })
 
 
-test('Auto report cutoff filters totals separately from TIP and survives refresh and TIP saving', async()=>{
+test('Auto uses the displayed end date for every total and keeps it through refresh and saving', async()=>{
   const f=await fixture('admin')
   try {
     const summaries=()=>f.calls.filter(c=>c.path.endsWith('/summary'))
-    const amount=kind=>f.doc.querySelector(`.revenue-card-${kind}`)?.textContent || f.doc.querySelector(`.revenue-card.${kind}`).textContent
+    const amount=kind=>f.doc.querySelector(`.revenue-card.${kind}`).textContent
     const n=summaries().length
-    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'24-09-2026')
-    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
-    assert.equal(summaries().length,n,'TIP dates must not change the report cutoff')
-    assert.equal(new URL(f.calls.filter(c=>c.path.endsWith('/tip-summary')).at(-1).url).searchParams.get('end'),'2026-09-24')
-    assert.match(amount('income'),/1\.760đ/)
-    const date=f.doc.querySelector('[aria-label="Chọn ngày báo cáo"]')
-    await f.change(date,'24-09-20')
-    await act(async()=>f.button('Xem báo cáo').click())
-    assert.equal(summaries().length,n,'incomplete date cannot apply the previous date')
+    const date=f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]')
+    assert.equal(f.doc.querySelector('.revenue-report-date-form'),null,'one end date, no separate report form')
+    for (const invalid of ['24-09-20','31-09-2026','27-09-2026']) {
+      await f.change(date,invalid)
+      await act(async()=>f.button('Lưu Tiền TIP').click())
+      assert.equal(summaries().length,n,'invalid/partial date does not query with an old value')
+      assert.equal(f.calls.some(c=>c.method==='PUT'),false,'invalid/partial date cannot save the previous date')
+    }
     await f.change(date,'24-09-2026')
-    await act(async()=>f.button('Xem báo cáo').click())
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
+    assert.equal(summaries().length,n+1,'one summary request per complete date')
     assert.deepEqual(Object.fromEntries(new URL(summaries().at(-1).url).searchParams),{source:'auto',time_range:'custom',start:'2025-09-05',end:'2026-09-24'})
+    assert.equal(new URL(f.calls.filter(c=>c.path.endsWith('/tip-summary')).at(-1).url).searchParams.get('end'),'2026-09-24')
     assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'24-09-2026')
     assert.match(amount('income'),/1\.000đ/);assert.match(amount('expense'),/100đ/);assert.match(amount('net'),/900đ/);assert.match(amount('balance'),/880đ/)
+    await f.change(f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]'),'17-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
+    assert.equal(summaries().length,n+1,'TIP start must not move the revenue start away from 05-09-2025')
     await act(async()=>f.button('Lưu Tiền TIP').click())
-    assert.match(amount('balance'),/880đ/,'unfiltered save response must not replace filtered balance')
-    assert.deepEqual(f.calls.find(c=>c.path.endsWith('/tip-period')).body,{start_date:'2026-09-16',end_date:'2026-09-24'})
+    assert.match(amount('balance'),/880đ/,'save response cannot replace the selected report balance')
+    assert.deepEqual(f.calls.find(c=>c.path.endsWith('/tip-period')).body,{start_date:'2026-09-17',end_date:'2026-09-24'})
     await f.externalMode('auto')
     assert.equal(new URL(summaries().at(-1).url).searchParams.get('end'),'2026-09-24')
     assert.match(amount('income'),/1\.000đ/)
-    await act(async()=>f.button('Đến hôm nay').click())
+    const refreshed=summaries().length
+    await f.change(date,'')
+    assert.equal(summaries().length,refreshed,'clearing date does not reset to all time')
+    assert.match(amount('income'),/1\.000đ/)
+    await act(async()=>f.button('Dùng ngày này').click())
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
-    assert.equal(new URL(summaries().at(-1).url).searchParams.get('time_range'),'all')
-    assert.equal(new URL(summaries().at(-1).url).searchParams.has('end'),false)
+    assert.equal(new URL(summaries().at(-1).url).searchParams.get('end'),'2026-09-26')
     assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'26-09-2026')
+    assert.equal(date.value,'26-09-2026')
     assert.match(amount('income'),/1\.760đ/)
-    assert.equal(f.calls.filter(c=>c.method!=='GET').length,1,'only the explicit TIP save writes')
+    assert.equal(f.calls.filter(c=>c.method!=='GET').length,1,'only explicit TIP saving writes')
+  } finally {await f.close()}
+})
+
+test('Auto opens the saved TIP end date as its report end date',async()=>{
+  const f=await fixture('admin','auto',false,1,'2026-09-24')
+  try {
+    assert.equal(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]').value,'24-09-2026')
+    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'24-09-2026')
+    assert.match(f.doc.querySelector('.revenue-card.income').textContent,/1\.000đ/)
+    assert.equal(new URL(f.calls.filter(c=>c.path.endsWith('/summary')).at(-1).url).searchParams.get('end'),'2026-09-24')
+    assert.equal(f.calls.some(c=>c.method!=='GET'),false)
+  } finally {await f.close()}
+})
+
+test('Manual TIP end date retains its existing independent behavior',async()=>{
+  const f=await fixture('admin','manual')
+  try {
+    const before=f.calls.filter(c=>c.path.endsWith('/summary')).length
+    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'24-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
+    assert.equal(f.calls.filter(c=>c.path.endsWith('/summary')).length,before)
+    assert.match(f.doc.querySelector('.revenue-card.income').textContent,/1\.760đ/)
   } finally {await f.close()}
 })

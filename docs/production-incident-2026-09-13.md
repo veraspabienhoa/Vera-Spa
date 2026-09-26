@@ -1,5 +1,23 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: ô Đến ngày điều khiển toàn bộ tổng Auto
+
+Người dùng làm rõ lúc 19:13: chính ô Đến ngày trong khung TIP phải chốt cả
+Tổng thu/Tổng chi, không yêu cầu một bộ chọn báo cáo riêng. Yêu cầu này thay
+thế thiết kế hai ngày độc lập ở PR #292. Bỏ form Chọn ngày báo cáo; Auto gửi
+khoảng 05-09-2025 đến tipEnd khi người dùng nhập/chọn ngày hợp lệ. Báo cáo tới
+ngày dùng end_date trả về từ API. Ngày bắt đầu kỳ TIP chỉ ảnh hưởng khoản TIP.
+Giữ ngày đã chọn qua refresh, polling và lưu TIP; nút Dùng ngày này đưa cả
+báo cáo và TIP về ngày kinh doanh hiện tại. Khi mở trang, kỳ TIP đã lưu cũng
+được dùng để chốt tổng Auto. Manual giữ cách tính cũ. Nhập ngày chưa đủ/sai
+không phát request tính mới hoặc lưu nhầm ngày cũ; xóa ngày không tải lại tổng
+đến hôm nay. Không ghi/sao chép giao dịch hoặc thay đổi mốc chuyển nguồn.
+
+Kiểm thử tương tác gồm chọn trực tiếp 24-09, đổi ngày bắt đầu TIP, refresh,
+lưu, quay về ngày hiện tại, mở kỳ đã lưu và ngày không hợp lệ. PostgreSQL đã
+có kiểm thử summary với khoảng tùy chọn đến 24-09 đối chiếu Manual. CI vẫn
+phải đạt trước khi merge; cần Deploy VPS Production để áp dụng giao diện.
+
 ## 26-09-2026: chọn ngày chốt cho tổng Doanh thu Auto
 
 Ảnh 18:49 cho thấy người dùng chỉnh Đến ngày trong kỳ TIP thành 24-09 nhưng
