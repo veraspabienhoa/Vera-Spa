@@ -224,9 +224,10 @@ export default function RevenuePage({ user }) {
   const sourceReady = sharedSource.ready
   const sharedSourceSupported = sharedSource.supported
   const sourceRevision = sharedSource.revision
-  const [reportEnd, setReportEnd] = useState('')
-  const [reportDateDraft, setReportDateDraft] = useState(todayIsoVietnam)
-  const summaryEnd = revenueSource === 'auto' ? reportEnd : ''
+  const tipEditorRef = useRef(null)
+  // Auto uses the displayed TIP end date as its report cutoff too. A cleared
+  // input must not silently switch the report back to all dates.
+  const summaryEnd = revenueSource === 'auto' ? tipEnd || data?.end_date || '' : ''
   const summaryRange = summaryEnd ? 'custom' : 'all'
   const summaryStart = summaryEnd ? '2025-09-05' : ''
   const [entryDate, setEntryDate] = useState(todayIsoVietnam)
@@ -435,6 +436,8 @@ export default function RevenuePage({ user }) {
     setError('')
     setNotice('')
     try {
+      const invalidDate = [...(tipEditorRef.current?.querySelectorAll('input') || [])].find(input => !input.checkValidity())
+      if (invalidDate) { invalidDate.reportValidity(); return }
       if (!Number.isFinite(Number(tip)) || Number(tip) < 0) throw new Error('Tiền TIP trong kỳ phải là số không âm.')
       if (!tipStart || !tipEnd) throw new Error('Chọn đủ Ngày bắt đầu và Đến ngày cho Tiền TIP trong kỳ.')
       if (tipStart > tipEnd) throw new Error('Ngày bắt đầu Tiền TIP không được sau Đến ngày.')
@@ -689,21 +692,17 @@ export default function RevenuePage({ user }) {
     {canViewAdminRevenueSummary && <section data-ui-key="u-4e91fcf9b37c" className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
       <article className="revenue-period-card"><CalendarDays size={20} /><div><span>Ngày bắt đầu</span><strong>{busy && !data ? '…' : (data?.start_date_label || '—')}</strong></div></article>
       <article className="revenue-period-card revenue-report-cutoff"><CalendarDays size={20} /><div><span>Báo cáo tới ngày</span><strong>{busy && !data ? '…' : (autoMode && data?.end_date ? formatVeraDate(data.end_date) : data?.current_date_label || '—')}</strong></div>
-        {autoMode && <form className="revenue-report-date-form" onSubmit={event => { event.preventDefault(); setReportEnd(reportDateDraft) }}>
-          <label>Chọn ngày báo cáo<VeraDateInput aria-label="Chọn ngày báo cáo" value={reportDateDraft} min="2025-09-05" max={data?.business_date || todayIsoVietnam()} required disabled={busy || savingTip} onChange={event => setReportDateDraft(event.target.value)} /></label>
-          <button type="submit" className="secondary-button" disabled={busy || savingTip || !reportDateDraft}>Xem báo cáo</button>
-          <button type="button" className="secondary-button" disabled={busy || savingTip} onClick={() => { setReportDateDraft(data?.business_date || todayIsoVietnam()); setReportEnd('') }}>Đến hôm nay</button>
-          <small>Áp dụng cho Tổng thu, Tổng chi và Còn lại. Kỳ TIP chọn riêng bên dưới.</small>
-        </form>}
+
       </article>
     </section>}
 
-    {canViewAdminRevenueSummary && canEditTip && <section data-ui-key="u-a5723df4546d" className="revenue-tip-editor">
+    {canViewAdminRevenueSummary && canEditTip && <section data-ui-key="u-a5723df4546d" className="revenue-tip-editor" ref={tipEditorRef}>
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={money(tip)} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
       <label>Từ ngày tính TIP<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} min={autoMode ? '2025-09-05' : undefined} max={tipEnd || data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipStart(event.target.value)} /></label>
-      <label>Đến ngày tính TIP<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
+      <label>{autoMode ? 'Đến ngày (báo cáo và TIP)' : 'Đến ngày tính TIP'}<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={tipStart || undefined} max={data?.current_date || undefined} disabled={savingTip || busy} onChange={(event) => setTipEnd(event.target.value)} /></label>
       <div className="revenue-tip-current"><button data-ui-key="u-225f35c741ac" type="button" className="secondary-button" disabled={savingTip || busy || !data?.current_date} onClick={() => setTipEnd(data?.current_date || '')}>Dùng ngày này · {data?.current_date_label || '—'}</button></div>
       {!hybridMode && <button data-ui-key="u-e90fac269afb" type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy || tipBusy || Boolean(tipLoadError) || !tipStart || !tipEnd || tipStart > tipEnd}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>}
+      {autoMode && <p className="revenue-auto-date-note">Đổi Đến ngày sẽ tự tính Tổng thu, Tổng chi và Còn lại từ 05-09-2025 đến hết ngày chọn. TIP tính theo Từ ngày tính TIP → Đến ngày.</p>}
       <small>{hybridMode ? 'Dịch vụ Manual · Tip Auto: ' : ''}Tiền TIP tự động cộng từ TIP của nhân viên trong báo cáo hóa đơn Live Tour theo đúng khoảng Ngày bắt đầu → Đến ngày. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định bằng Ngày hiện tại. Đổi một trong hai ngày sẽ tự lọc và tính lại số TIP ngay.</small>
     </section>}
 
