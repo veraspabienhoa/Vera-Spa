@@ -585,3 +585,36 @@ Old notifications without a delivery ID cannot retroactively gain that ID.
 The prior CI static idempotency test matched the inner retry catch; it now
 checks release ordering against the outer action-failure handler, preserving
 the requirement to retain the request key on failure.
+
+## 26-09-2026: browser work when switching Revenue tabs and application pages
+
+A user recording shows delayed tab changes on Revenue. It does not establish the
+current deployed backend revision or isolate network latency. Source inspection
+confirms three browser costs: the shell's one-second clock reconstructs business
+page children, customized labels search the entire document once per repeated
+row, and Revenue/report tables mount the full result set on each tab change.
+The Revenue ledger and purchase tabs also reload the same detail endpoint.
+
+Isolate page content from shell-only renders, resolve custom label owners locally,
+and subscribe each label only to its own value. Paginate Revenue and Live Tour
+report tables at 100 displayed rows, keeping totals, filters and Excel exports
+on the complete result set. Index invoices once for report-row lookups. Reuse the
+loaded Revenue detail payload across its two tabs; existing source/mutation/refresh
+revisions invalidate it and Auto retains its 30-second visible refresh. Prefetch
+page code on authorized menu hover/focus without mounting a page or loading its
+business data.
+
+The shared API transport coalesces only concurrently pending identical GETs,
+isolated by authorization headers and request policy. There is no response or
+identity cache; independent readers can cancel without cancelling each other.
+Writes, uploads and session application clear the pending registry, so later
+reads cannot join pre-change work. Authentication checks and financial write
+retry/idempotency behavior stay on their existing paths.
+
+Regression fixtures cover 3,000 rows with 100 rendered rows, complete totals and
+export filters, one detail request across Revenue tab switches, refresh after a
+shared mode change, ten identical concurrent reads using one HTTP request,
+independent cancellation, account separation and module-load recovery. These are
+local automated checks, not production latency measurements. Validate the actual
+business tabs and health endpoints after deployment before claiming resolution
+of all production slowness.

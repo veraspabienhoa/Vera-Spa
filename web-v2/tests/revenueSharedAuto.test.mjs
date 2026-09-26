@@ -23,7 +23,7 @@ const built = await build({
   } }],
 })
 
-async function fixture(role, initial = 'auto', legacy = false) {
+async function fixture(role, initial = 'auto', legacy = false, rowCount = 1) {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
   let source = initial, revision = 1
   const calls = []
@@ -49,9 +49,10 @@ async function fixture(role, initial = 'auto', legacy = false) {
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
       })
       if (path.endsWith('/purchase-reconcile')) return response({ source: legacy ? undefined : source, source_revision: legacy ? undefined : revision,
-        start_date: '2026-09-05', end_date: '2026-09-26', purchase_rows: [],
-        ledger_rows: [{ id: 'auto:2026-09-05:Thu', date:'2026-09-05', date_label:'05-09-2026', type:'Thu', amount:1760, note:'Doanh thu dịch vụ + TIP', read_only: source === 'auto' }],
+        start_date: '2026-09-05', end_date: '2026-09-26', purchase_rows: Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2026-09-05',item:`Hàng ${i+1}`,amount:10})),
+        ledger_rows: Array.from({length:rowCount},(_,i)=>({ id: `auto:${i}`, date:'2026-09-05', date_label:'05-09-2026', type:'Thu', amount:1760, note:`Doanh thu dịch vụ + TIP ${i+1}`, read_only: source === 'auto' })),
       })
+      if (path.endsWith('/ledger/export.xlsx')) return {ok:true,blob:async()=>new Blob(['synthetic full export'])}
       if (path.endsWith('/live-tour/reports')) return response({reports:[{business_date:'2026-09-20',tip:20}]})
       if (path.endsWith('/tip-summary')) return response({ source, period_tip: 20 })
       if (path.endsWith('/tip-period')) return response({ period_tip:20, balance:1549.75, period_tip_start:'2026-09-16', period_tip_end:'2026-09-26' })

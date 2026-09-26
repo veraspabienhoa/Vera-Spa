@@ -1246,6 +1246,9 @@ jobs:
       - name: Revenue shared Auto behavior
         run: node --test tests/revenueSharedAuto.test.mjs tests/revenueTipPeriod.source.test.mjs tests/revenueTipPeriod.test.mjs
 
+      - name: Verify navigation performance and concurrent read isolation
+        run: node --test tests/navigationPerformance.test.mjs tests/sharedRead.test.mjs
+
       - name: Lint
         run: npm run lint
 
