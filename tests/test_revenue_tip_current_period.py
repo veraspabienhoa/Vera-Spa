@@ -8,4 +8,4 @@ def test_tip_period_uses_current_half_month_not_revenue_dataset_start():
     assert "const defaultTipStartDate = defaultRevenueTipStart(result.current_date)" in page
     assert "const defaultTipStartDate = result.start_date" not in page
     assert "Number(match[3]) <= 15 ? '01' : '16'" in helper
-    assert "revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)" in page
+    assert "loadPeriodTip(tipStart, tipEnd, controller.signal, !sharedSourceSupported)" in page

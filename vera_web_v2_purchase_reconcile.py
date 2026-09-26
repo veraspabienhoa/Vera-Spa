@@ -24,6 +24,7 @@ from threading import Lock
 
 from vera_google_credentials import google_credentials
 import vera_revenue_store as revenue_store
+import vera_revenue_auto as revenue_auto
 
 from vera_web_v2_revenue_leave_list import (
     REVENUE_FEATURE,
@@ -435,20 +436,23 @@ def install_purchase_reconcile_routes(
         end_date: date | None = Query(default=None, alias="end"),
         ident=Depends(current_identity),
     ):
-        with engine_instance().connect() as conn:
-            require_feature(conn, ident, REVENUE_FEATURE)
-
         start, end = _resolve_range(preset, start_date, end_date)
         from vera_purchase_store import server_reconcile_rows
         with engine_instance().connect() as conn:
-            purchase_all = server_reconcile_rows(conn)
+            require_feature(conn, ident, REVENUE_FEATURE)
+            shared = revenue_auto.mode(conn)
+            if shared["source"] == "auto":
+                start, end = revenue_auto.bounds(start, end)
+                purchase_all = revenue_auto.purchase_rows(conn, start, end)
+                ledger_all = revenue_auto.ledger_rows(revenue_auto.daily(conn, start, end))
+            else:
+                purchase_all = server_reconcile_rows(conn)
+                ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
         server_source = purchase_all is not None
         if purchase_all is None:
             purchase_all = _cached_purchase_rows(norm)
-        with engine_instance().connect() as conn:
-            ledger_all = revenue_store.list_entries(conn, start_date=start, end_date=end)
         for row in ledger_all:
-            row["is_purchase"] = norm(row.get("type")) == "chi" and bool(re.match(r"^mua(?:\\s|$)", norm(row.get("note"))))
+            row["is_purchase"] = bool(row.get("is_purchase")) or (norm(row.get("type")) == "chi" and bool(re.match(r"^mua(?:\s|$)", norm(row.get("note")))))
             parsed_date = _parse_date(row.get("date"))
             row["date"] = parsed_date
             row["date_label"] = _fmt_date(parsed_date) if parsed_date else ""
@@ -471,6 +475,7 @@ def install_purchase_reconcile_routes(
         return {
             "ok": True,
             "release": RELEASE,
+            "source": shared["source"], "source_revision": shared["revision"],
             "preset": preset,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
@@ -507,11 +512,14 @@ def install_purchase_reconcile_routes(
         entered_by: str = Query(default="", max_length=200),
         ident=Depends(current_identity),
     ):
-        with engine_instance().connect() as conn:
-            require_feature(conn, ident, REVENUE_FEATURE)
         start, end = _resolve_range(preset, start_date, end_date)
         with engine_instance().connect() as conn:
-            rows = revenue_store.list_entries(conn, start_date=start, end_date=end)
+            require_feature(conn, ident, REVENUE_FEATURE)
+            if revenue_auto.mode(conn)["source"] == "auto":
+                start, end = revenue_auto.bounds(start, end)
+                rows = revenue_auto.ledger_rows(revenue_auto.daily(conn, start, end))
+            else:
+                rows = revenue_store.list_entries(conn, start_date=start, end_date=end)
         type_key, note_key, entered_by_key = norm(transaction_type), norm(note), norm(entered_by)
         amount_digits = re.sub(r"\D", "", amount)
         rows = [row for row in rows if (

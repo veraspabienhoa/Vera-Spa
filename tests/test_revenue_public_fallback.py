@@ -149,7 +149,7 @@ def test_summary_uses_every_full_input_row_from_visible_period_start():
     assert result["total_expense"] == 50
 
 
-def test_revenue_period_always_starts_on_5_september_2025():
+def test_revenue_period_always_starts_on_5_september_2026():
     full = [
         ["Loại giao dịch", "Số tiền", "Ngày giao dịch"],
         ["Thu", "999", "01/01/2026"],
@@ -158,4 +158,4 @@ def test_revenue_period_always_starts_on_5_september_2025():
     ]
     norm = lambda value: str(value or "").strip().lower()
 
-    assert revenue._revenue_period_start(norm, full) == date(2025, 9, 5)
+    assert revenue._revenue_period_start(norm, full) == date(2026, 9, 5)

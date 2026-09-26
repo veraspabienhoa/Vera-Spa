@@ -1,5 +1,26 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: Doanh thu Auto dùng chung, chờ triển khai VPS
+
+Rà soát xác nhận Auto cũ lấy `subtotal/service_money` trong report nhưng thanh
+toán thực tế ghi `total` đã phân bổ, chưa lấy Nhập mua và chỉ chọn chế độ trên
+trình duyệt. Bản sửa cộng `total - tip` và `tip` theo ngày Việt Nam; tổng Thu
+bao gồm TIP, tổng Chi lấy `amount` của Nhập mua chưa xóa, từ 05-09-2026 đến
+ngày hiện tại. Bảng Thu/Chi, tổng số và Excel dùng cùng phép tính. Vé combo
+đã thu khi bán không bị tính lại khi dùng lượt. Không tạo bản sao giao dịch.
+
+Admin lưu chế độ dùng chung có revision trên server; mọi API ghi Manual
+(tạo/sửa/xóa/import/TIP nhập số tiền) kiểm tra chế độ trong cùng transaction và
+cùng khóa ngắn với lệnh đổi chế độ. Thao tác đang ghi được hoàn tất; lệnh cạnh
+tranh trả 409 để thử lại, không hủy kết nối. Auto lưu riêng khoảng ngày TIP,
+số tiền tính trên server, giữ nguyên sổ Manual và cấu hình TIP Manual.
+
+Kiểm thử bổ sung bao gồm giao diện năm vai trò, PostgreSQL qua HTTP, giảm giá,
+combo, xóa hóa đơn, biên ngày Việt Nam, xuất Excel và tranh chấp đổi chế độ.
+Chưa truy cập PostgreSQL production hoặc xác minh doanh số thực tế. Sau deploy
+VPS cần đối chiếu commit, `/v2/auth/health`, `/v2/health` và Thu/Chi ngày 05-09-2026
+với hóa đơn đã thanh toán và Nhập mua; không suy ra production đúng chỉ từ CI.
+
 ## 25-09-2026: quyền trạm điện thoại, IP FaceGate và độ phủ ánh xạ, chưa triển khai
 
 Mục Quản lý thiết bị trước đây chỉ cho Admin dù trạm điện thoại cần người vận

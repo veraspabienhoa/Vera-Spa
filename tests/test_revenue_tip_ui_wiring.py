@@ -12,6 +12,6 @@ def test_revenue_tip_uses_native_date_filters_and_readonly_auto_total():
     assert 'type="date"' in date_component
     assert 'aria-label="Tiền TIP trong kỳ tự động"' in page
     assert 'readOnly' in page
-    assert 'revenueTipTotal(liveTourRows, defaultTipStartDate, defaultTipEndDate)' in page
+    assert 'loadPeriodTip(tipStart, tipEnd, controller.signal, !sharedSourceSupported)' in page
     assert "row?.business_date || row?.effective_at" in helper
     assert "revenueTipValue(row?.tip)" in helper

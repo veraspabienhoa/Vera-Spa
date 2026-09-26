@@ -14,11 +14,11 @@ def test_revenue_net_summary_and_web_entry_permission_contract():
     assert '"storage": "postgresql"' in backend
     assert '"net_income": round(total_income - total_expense, 2)' in backend
     assert '"balance": round(total_income - total_expense - tip, 2)' in backend
-    assert '"total_revenue": round(service + tip, 2)' in backend
+    assert "revenue_auto.totals(days)" in backend
     assert '"can_create_entry": can_create_entry' in backend
 
     assert 'label: \'TỔNG THU - TỔNG CHI\'' in page
-    assert 'canCreateEntry = Boolean(data?.can_create_entry)' in page
+    assert 'canCreateEntry = Boolean(sourceReady && !sharedSource.changing && !autoMode && data?.source === revenueSource && data?.can_create_entry)' in page
     assert '<form className="revenue-entry-form"' in page
     assert 'NHẬP DOANH THU - CHI PHÍ' in page
     assert "const canViewAdminRevenueSummary = role === 'admin' || role === 'giamdoc'" in page
