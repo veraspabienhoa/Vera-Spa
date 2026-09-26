@@ -384,9 +384,14 @@ export const veraApi = {
     if (!response.ok) throw new Error(apiErrorMessage(payload, response.status))
     return payload
   },
+  deleteDevice: (id, revision) => request(`/v2/devices/registry/${encodeURIComponent(id)}?expected_revision=${revision}`, { method: 'DELETE' }),
+  deleteMobileStationImage: id => request(`/v2/devices/mobile-station/events/${encodeURIComponent(id)}/image`, { method: 'DELETE' }),
   saveDeviceRegistry: body => request('/v2/devices/registry', { method: 'PUT', body: JSON.stringify(body) }),
   checkinHistory: query => request(`/v2/devices/checkin-history?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== ''))}`),
   exportCheckinHistory: query => download(`/v2/devices/checkin-history/export.xlsx?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== ''))}`, 'VERA_LichSu_Checkin.xlsx'),
+  comboCustomers: department => request(`/v2/work-schedule/combo-customers?${new URLSearchParams({ department })}`),
+  attendanceCodes: () => request('/v2/devices/attendance-codes'),
+  previewAttendanceCodes: file => upload('/v2/devices/attendance-codes/preview', file),
   attendanceSource: () => request('/v2/devices/attendance-source'),
   facegateMappings: () => request('/v2/devices/facegate-mappings'),
   facegateProfile: (id) => request(`/v2/devices/facegate-profiles/${encodeURIComponent(id)}`),

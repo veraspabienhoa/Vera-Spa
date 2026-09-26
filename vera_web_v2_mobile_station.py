@@ -37,6 +37,19 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
         with engine_instance().connect() as conn:
             require_feature(conn, ident, feature)
 
+    def photo_access(ident):
+        if ident.role not in {'admin', 'quanly', 'letan'}:
+            raise HTTPException(403, 'Chỉ Admin, Quản lý và Lễ tân được xóa ảnh.')
+        access(ident, 'device_photo_delete')
+
+    def gallery_access(ident):
+        try:
+            access(ident, 'device_station_operate')
+        except HTTPException as exc:
+            if exc.status_code != 403:
+                raise
+            photo_access(ident)
+
     def station(conn, device_id):
         device = next((item for item in read_registry(conn)['devices'] if item['id'] == device_id), None)
         if not device or not device['enabled'] or device['kind'] not in {'camera', 'scanner', 'faceid'}:
@@ -99,12 +112,12 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
 
     @app.get('/v2/devices/mobile-station/events')
     def events(ident: identity_type = Depends(current_identity)):
-        access(ident, 'device_station_operate')
+        gallery_access(ident)
         with engine_instance().begin() as conn:
             ensure_station_table(conn)
             conn.execute(text("DELETE FROM vera_mobile_station_event WHERE occurred_at < NOW() - INTERVAL '7 days'"))
             rows = conn.execute(text('''SELECT id,device_id,operator,event_type,employee_username,barcode,
-                image_sha256 IS NOT NULL AS has_image, occurred_at, confirmed_by, confirmed_at FROM vera_mobile_station_event
+                image IS NOT NULL AS has_image, occurred_at, confirmed_by, confirmed_at FROM vera_mobile_station_event
                 WHERE occurred_at >= NOW() - INTERVAL '7 days' ORDER BY occurred_at DESC LIMIT 100''')).mappings().all()
         return {'records': [dict(row) for row in rows]}
 
@@ -113,12 +126,14 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
         access(ident, 'device_checkin_confirm')
         with engine_instance().begin() as conn:
             ensure_station_table(conn)
-            row = conn.execute(text('''SELECT device_id,event_type,employee_username,occurred_at,confirmed_at
+            row = conn.execute(text('''SELECT device_id,event_type,employee_username,occurred_at,confirmed_at,image IS NOT NULL AS has_image
                 FROM vera_mobile_station_event WHERE id=:id FOR UPDATE'''), {'id': str(event_id)}).mappings().first()
             if not row or row['event_type'] != 'checkin' or not row['employee_username']:
                 raise HTTPException(404, 'Không tìm thấy lần chấm công cần xác nhận.')
             if row['confirmed_at']:
                 return {'ok': True, 'already_confirmed': True}
+            if not row['has_image']:
+                raise HTTPException(409, 'Ảnh đã bị xóa; không thể xác nhận chấm công từ ảnh này.')
             station(conn, row['device_id'])
             from vera_web_v2_hr_enhancements import record_checkin
             result = record_checkin(conn, username=row['employee_username'], checkin_at=row['occurred_at'],
@@ -131,10 +146,29 @@ def install_mobile_station_routes(app, *, engine_instance, current_identity, ide
 
     @app.get('/v2/devices/mobile-station/events/{event_id}/image')
     def event_image(event_id: UUID, ident: identity_type = Depends(current_identity)):
-        access(ident, 'device_station_operate')
+        gallery_access(ident)
         with engine_instance().begin() as conn:
             ensure_station_table(conn)
             photo = conn.execute(text('SELECT image FROM vera_mobile_station_event WHERE id=:id AND occurred_at >= NOW() - INTERVAL \'7 days\''), {'id': str(event_id)}).scalar()
         if not photo:
             raise HTTPException(404, 'Không tìm thấy ảnh.')
         return Response(bytes(photo), media_type='image/jpeg', headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+
+    @app.delete('/v2/devices/mobile-station/events/{event_id}/image')
+    def delete_image(event_id: UUID, ident: identity_type = Depends(current_identity)):
+        photo_access(ident)
+        with engine_instance().begin() as conn:
+            ensure_station_table(conn)
+            conn.execute(text('''ALTER TABLE vera_mobile_station_event
+                ADD COLUMN IF NOT EXISTS image_deleted_by text,
+                ADD COLUMN IF NOT EXISTS image_deleted_at timestamptz'''))
+            row = conn.execute(text('SELECT id FROM vera_mobile_station_event WHERE id=:id FOR UPDATE'),
+                               {'id': str(event_id)}).mappings().first()
+            if not row:
+                raise HTTPException(404, 'Không tìm thấy sự kiện.')
+            # Keep digest and evidence ID: retrying the original upload must not restore a deleted photo.
+            conn.execute(text("""UPDATE vera_mobile_station_event SET image=NULL,
+                image_deleted_by=COALESCE(image_deleted_by,:actor),
+                image_deleted_at=COALESCE(image_deleted_at,NOW()) WHERE id=:id"""),
+                {'id': str(event_id), 'actor': ident.employee_username})
+        return {'ok': True, 'id': str(event_id), 'has_image': False}

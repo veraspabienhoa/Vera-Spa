@@ -68,8 +68,6 @@ class RegistryInput(BaseModel):
     def unique_devices(self):
         if len({d.id for d in self.devices}) != len(self.devices):
             raise ValueError('ID thiết bị bị trùng.')
-        if not any(d.id == 'facegate-current' for d in self.devices):
-            raise ValueError('Giữ hồ sơ FaceGate hiện tại; có thể ngừng sử dụng thay vì xóa.')
         serials = [d.serial.casefold() for d in self.devices if d.serial]
         if len(set(serials)) != len(serials):
             raise ValueError('Số serial thiết bị bị trùng.')
@@ -97,7 +95,7 @@ def use_registered_facegate(engine_instance):
     """Resolve the allowlisted IP before network I/O, releasing the DB connection."""
     engine = engine_instance() if callable(engine_instance) else engine_instance
     with engine.connect() as conn:
-        address = facegate_address(conn)
+        address = facegate_address(conn, require_registered=True)
     if address:
         try:
             if IPv4Address(address) not in IPv4Network('192.168.1.0/24'):
@@ -109,11 +107,13 @@ def use_registered_facegate(engine_instance):
         yield address
 
 
-def facegate_address(conn) -> str:
+def facegate_address(conn, *, require_registered=False) -> str:
     raw = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='devices' AND setting_key='registry'")).scalar()
     value = json.loads(raw) if isinstance(raw, str) else raw
     if not isinstance(value, dict):
         return ''
+    if require_registered and not any(isinstance(row, dict) and row.get('id') == 'facegate-current' for row in value.get('devices', [])):
+        raise RuntimeError('Hồ sơ FaceGate đã bị xóa. Admin cần khôi phục hồ sơ trước khi kết nối.')
     return next((str(row.get('address') or '') for row in value.get('devices', [])
                  if isinstance(row, dict) and row.get('id') == 'facegate-current'), '')
 
@@ -274,6 +274,9 @@ def saved_facegate_history(conn, start, end):
 
 
 def install_device_routes(app, *, engine_instance, current_identity, require_feature, identity_type, read_timesoft):
+    from vera_web_v2_attendance_codes import install_attendance_code_routes
+    install_attendance_code_routes(app, engine_instance=engine_instance, current_identity=current_identity,
+        identity_type=identity_type, require_feature=require_feature)
     from vera_web_v2_mobile_station import install_mobile_station_routes
     install_mobile_station_routes(app, engine_instance=engine_instance,
                                   current_identity=current_identity, identity_type=identity_type,
@@ -299,6 +302,9 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
                 VALUES ('devices','registry',CAST(:initial AS jsonb),'web_v2',:actor,0,NOW(),NOW())
                 ON CONFLICT(category,setting_key) DO NOTHING"""), {'initial': json.dumps({'devices': default_devices()}), 'actor': actor})
             current = read_registry(conn, lock=True)
+            removed = {d['id'] for d in current['devices']} - {d.id for d in body.devices}
+            if removed and ident.role != 'admin':
+                raise HTTPException(403, 'Chỉ Admin được xóa thiết bị.')
             previous_ip = next((d.get('address') or '' for d in current['devices'] if d.get('id') == 'facegate-current'), '')
             next_ip = next((d.address for d in body.devices if d.id == 'facegate-current'), '')
             if previous_ip != next_ip:
@@ -310,6 +316,22 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
                 updated_at=NOW(),revision=revision+1 WHERE category='devices' AND setting_key='registry'"""),
                 {'value': json.dumps({'devices': devices}, ensure_ascii=False), 'actor': actor})
         return registry_result({'devices': devices, 'revision': current['revision'] + 1})
+
+    @app.delete('/v2/devices/registry/{device_id}')
+    def delete_device(device_id: str, expected_revision: int = Query(..., ge=0),
+                      ident: identity_type = Depends(current_identity)):
+        if ident.role != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xóa thiết bị.')
+        access(ident, 'device_manage')
+        # Reuse the same locked registry writer; stale clients cannot remove new data.
+        with engine_instance().connect() as conn:
+            current = read_registry(conn)
+        if current['revision'] != expected_revision:
+            raise HTTPException(409, 'Danh sách thiết bị đã thay đổi. Tải lại trước khi xóa.')
+        if not any(d['id'] == device_id for d in current['devices']):
+            raise HTTPException(404, 'Không tìm thấy thiết bị.')
+        return save_registry(RegistryInput(expected_revision=expected_revision,
+            devices=[d for d in current['devices'] if d['id'] != device_id]), ident)
 
     @app.get('/v2/devices/facegate-connection/check')
     def check_facegate_connection(ident: identity_type = Depends(current_identity)):

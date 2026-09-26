@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from io import BytesIO
 import re
+import json
 from typing import Any, Callable, Literal
 import unicodedata
 from urllib.parse import quote
@@ -101,6 +102,8 @@ class ShiftDefinitionSave(BaseModel):
 
 
 class ComboSaleSave(BaseModel):
+    customer_id: str = Field(default="", max_length=160)
+    combo_purchase_id: str = Field(default="", max_length=160)
     sale_date: date
     employee_username: str = Field(min_length=1, max_length=200)
     employee_name: str = Field(default="", max_length=300)
@@ -109,6 +112,37 @@ class ComboSaleSave(BaseModel):
     customer_phone: str = Field(default="", max_length=50)
     combo_ticket: str = Field(min_length=1, max_length=300)
     note: str = Field(default="", max_length=500)
+
+
+def _combo_customers(conn):
+    import vera_live_tour_resource_store as resource_store
+    if resource_store.enabled():
+        state, _, _ = resource_store.read(conn, collections={'customers'})
+        rows = state.get('customers', [])
+    else:
+        rows = conn.execute(text("SELECT value_json->'customers' FROM vera_app_setting WHERE category='live_tour' AND setting_key='state'")).scalar() or []
+        rows = json.loads(rows) if isinstance(rows, str) else rows
+    return [row for row in rows if not row.get('deleted_at')]
+
+
+def _resolve_combo_customer(conn, body, ident, feature_allowed):
+    if not body.customer_id:
+        return body  # Preserve existing imports and historical edits.
+    customers = _combo_customers(conn)
+    customer = next((row for row in customers if row.get('id') == body.customer_id and not row.get('deleted_at')), None)
+    purchases = [row for row in (customer or {}).get('combo_purchases', []) if not row.get('deleted_at')]
+    def purchased_at(row):
+        try:
+            return datetime.fromisoformat(str(row.get('effective_at') or row.get('purchased_at') or row.get('created_at') or '').replace('Z', '+00:00')).timestamp()
+        except (ValueError, TypeError):
+            return 0
+    purchase = max(enumerate(purchases), key=lambda pair: (purchased_at(pair[1]), pair[0]))[1] if purchases else None
+    if not customer or not purchase:
+        raise HTTPException(409, 'Khách hàng không còn combo đã mua. Hãy chọn lại khách hàng.')
+    if purchase.get('id') != body.combo_purchase_id:
+        raise HTTPException(409, 'Khách hàng vừa có combo mới hơn. Hãy chọn lại khách để lấy combo mới nhất.')
+    return body.model_copy(update={'customer_name': customer.get('name') or '', 'customer_phone': customer.get('phone') or '',
+        'combo_ticket': f"{purchase.get('combo_name') or 'Combo'} · còn {int(purchase.get('remaining') or 0)} vé"})
 
 
 def _time_is_next_day(start_time: str, end_time: str) -> bool:
@@ -873,6 +907,18 @@ def install_work_schedule_routes(
 
         return {"ok": True, "saved": len(normalized), "message": "Đã cập nhật cấu hình ca làm việc."}
 
+    @app.get('/v2/work-schedule/combo-customers')
+    def combo_customers(department: str = Query(...), ident=Depends(current_identity)):
+        _require_combo_editor(ident)
+        with engine_instance().connect() as conn:
+            if department not in {'quanly', 'letan'} or not _allowed_department(conn, ident, department, feature_allowed):
+                raise HTTPException(403, 'Bạn không có quyền xem danh bạ bán combo của bộ phận này.')
+            rows = _combo_customers(conn)
+        return {'customers': [dict(id=row['id'], name=row.get('name', ''), phone=row.get('phone', ''),
+            combo_purchases=[{key: p.get(key) for key in ('id','combo_name','remaining','effective_at','purchased_at','created_at')}
+                             for p in row.get('combo_purchases', []) if not p.get('deleted_at')])
+            for row in rows if any(not p.get('deleted_at') for p in row.get('combo_purchases', []))]}
+
     @app.get("/v2/work-schedule/combo-sales")
     def get_combo_sales(
         start: date = Query(...), end: date = Query(...), department: str = Query(...),
@@ -907,6 +953,7 @@ def install_work_schedule_routes(
             _ensure_schema(conn)
             if not _allowed_department(conn, ident, body.department, feature_allowed):
                 raise HTTPException(403, "Bạn không có quyền cập nhật bảng bán combo của bộ phận này.")
+            body = _resolve_combo_customer(conn, body, ident, feature_allowed)
             employee = _combo_employee(conn, body.department, body.employee_username)
             conn.execute(text("""
                 INSERT INTO vera_work_schedule_combo_sale(
@@ -941,6 +988,7 @@ def install_work_schedule_routes(
                 raise HTTPException(403, "Bạn không có quyền sửa dữ liệu này.")
             if body.department != existing_department:
                 raise HTTPException(400, "Không được chuyển dữ liệu bán combo sang bộ phận khác.")
+            body = _resolve_combo_customer(conn, body, ident, feature_allowed)
             employee = _combo_employee(conn, body.department, body.employee_username)
             conn.execute(text("""
                 UPDATE vera_work_schedule_combo_sale
