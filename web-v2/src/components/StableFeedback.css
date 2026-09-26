@@ -12,6 +12,12 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
+/* Removing the box also removes its grid/flex gap. :empty covers children that
+   render nothing (for example an empty Fragment) without changing their state. */
+.stable-feedback[hidden],
+.stable-feedback:empty {
+  display: none;
+}
 .stable-feedback > :is(div, p, small),
 .stable-feedback > :is(.error-box, .success-box, .warning-box, .setup-note) {
   margin-block: 0;
