@@ -17,3 +17,7 @@ html { scrollbar-gutter: stable; overflow-anchor: none; }
   overscroll-behavior: contain;
 }
 @media print { html { scrollbar-gutter: auto; } }
+
+.page-recovery{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.page-recovery-actions{display:flex;flex-wrap:wrap;gap:10px}
+.page-recovery-actions>a{text-decoration:none;white-space:normal}

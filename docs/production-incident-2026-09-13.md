@@ -658,3 +658,38 @@ read without losing the form. The older isolated quota fixture had a flat table
 layout and could not catch this integration failure. This frontend fix does not
 require a database migration or VPS restart. Local reproduction and tests are
 not a claim of an authenticated production leave write.
+
+## 26-09-2026: repeated Leave Registration opening failure and page recovery
+
+The operator reports that opening Leave Registration still fails after PR #285.
+The Pages workflow for aec96028 completed successfully, but this is not proof of
+an authenticated browser operation. The earlier recording shows the older inline
+pending-payment banner. It does not prove which assets the latest browser loaded.
+Direct app/health reads from the maintenance environment timed out or were denied;
+do not interpret those results as production health or change server settings.
+
+A broader regression now bundles the actual App, AppShell, LiveTourPage and leave
+route plus the production startup DOM enhancers, with synthetic API/auth fixtures.
+Opening/reopening Leave Registration succeeds on #285 with these fixtures. The
+latest operator failure has not been reproduced with production data or layout.
+However, source inspection confirms that rejected lazy page imports automatically
+reload the entire app (losing the selected page), then can escape Suspense, which
+only handles loading and is not an error boundary. Other page render/effect errors
+also tear down the shell. Injecting a leave statistics render failure reproduces
+that loss of navigation on the previous code.
+
+Wrap business page content in a keyed error boundary, keep the shell/menu alive,
+and replace automatic full-app reload with explicit lazy-module retry. A rejected
+React.lazy needs a fresh instance as well as eviction of the rejected loader
+promise. Provide a same-origin new-tab link to the selected standalone page with
+a fresh query key; it loads the current entry document without interrupting the
+existing tab. Session verification/password-change gates and default Live Tour
+routing remain unchanged. No successful write is automatically retried.
+
+Tests exercise full-app navigation with startup enhancers and nonempty violation
+catalogs, render-error recovery, repeated module-load failures followed by success,
+month-scoped reads, existing role gates, auth recovery, preserved form/focus on
+normal refresh, and reopen after recovery. The old App fails the navigation-loss
+assertion and the updated App passes it. This hardens a confirmed failure mode;
+it is not a claim that the latest operator-specific cause or a real leave write
+has been verified on production.
