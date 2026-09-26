@@ -693,3 +693,27 @@ normal refresh, and reopen after recovery. The old App fails the navigation-loss
 assertion and the updated App passes it. This hardens a confirmed failure mode;
 it is not a claim that the latest operator-specific cause or a real leave write
 has been verified on production.
+
+## 26-09-2026: user-requested rollback of Leave Registration only
+
+At 15:10 ICT the user requests the older Leave Registration version after a new
+recording still shows a blank screen even through the fresh standalone URL. The
+underlying production exception remains unknown; do not claim the recovery layer
+resolved it. Restore this feature from edbb05160494d1ff18c1941a02645774fdfa8f43
+(PR #279, before the #281 page-stability changes). This snapshot retains month-only
+queries, quota checking, employee self-service and current leave edit policies.
+
+Restore LeaveRegistrationPage's original feedback/table structure and loading-row
+behavior plus its matching LeaveListPersonalStats. LeaveRegistrationEnhancements
+and LeaveListTypeColumn are byte-identical between that snapshot and current main.
+The sole compatibility addition to the old page is the existing usePageRefresh
+subscription/busy guard so the current shell's Refresh button still works. Restore
+neither the database nor the shared shell, Live Tour, payments, Revenue, auth,
+notification configuration, caches or cleanup jobs. Do not delete leave records.
+
+Regression coverage uses the real page and all enhancements, the direct table
+parent expected by the original statistics portal, Admin/Manager/Reception/Staff
+roles, current-month quota arguments, loading/error rows, bounded refreshes and
+reopening from the current Live Tour. CI remains required before frontend deploy.
+The requested rollback is a scoped mitigation; production opening still needs
+confirmation on the user's browser.

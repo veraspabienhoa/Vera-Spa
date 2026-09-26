@@ -25,17 +25,7 @@ export default function LeaveListPersonalStats({ user }) {
       const panel = document.querySelector('.leave-list-panel'); const tableWrap = panel?.querySelector('.leave-list-wrap')
       if (!panel || !tableWrap) return
       let host = panel.querySelector('[data-leave-list-personal-stats="true"]')
-      if (!host) {
-        // Loading wrappers may sit between the panel and the table. insertBefore
-        // requires a direct child; using the nested table crashes the whole route.
-        let anchor = tableWrap
-        while (anchor.parentElement && anchor.parentElement !== panel) anchor = anchor.parentElement
-        if (anchor.parentElement !== panel) return
-        host = document.createElement('div')
-        host.dataset.leaveListPersonalStats = 'true'
-        panel.insertBefore(host, anchor)
-        ownedHost = host
-      }
+      if (!host) { host = document.createElement('div'); host.dataset.leaveListPersonalStats = 'true'; panel.insertBefore(host, tableWrap); ownedHost = host }
       setTarget((current) => current === host ? current : host)
       const start = panel.dataset.leaveStart || ''
       const end = panel.dataset.leaveEnd || ''

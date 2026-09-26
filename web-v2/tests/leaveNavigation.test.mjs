@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { build } from 'esbuild'
+import { transformSync } from '@babel/core'
+import layoutIdentity from '../build/layoutIdentity.js'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
 const require = createRequire(import.meta.url)
@@ -12,6 +14,7 @@ const built = await build({
   define:{'import.meta.env':'{"VITE_VERA_API_BASE_URL":"https://api.invalid"}'},
   plugins:[{name:'transport-fixtures',setup(b){
     b.onLoad({filter:/\/src\/main\.jsx$/},args=>({loader:'jsx',contents:readFileSync(args.path,'utf8').replace(/ReactDOM\.createRoot[\s\S]*$/, 'export default function Root(){return <><EmployeeProfileLiveEnhancer/><App/></>}')}))
+    b.onLoad({filter:/\.jsx$/},args=>({loader:'jsx',contents:transformSync(readFileSync(args.path,'utf8'),{filename:args.path,parserOpts:{plugins:['jsx']},plugins:[layoutIdentity],configFile:false,babelrc:false}).code}))
     b.onResolve({filter:/\/(api|supabase)$/},args=>({path:args.path.split('/').at(-1),namespace:'fixture'}))
     b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({loader:'js',contents:path==='api'?
       'export const isApiConfigured=true; export const isReadConfigured=true; export const veraApi=globalThis.__navigationApi;':
@@ -23,8 +26,8 @@ const built = await build({
   }}],
 })
 
-test('actual application opens leave from Live Tour with production startup enhancers',async()=>{
-  const dom=new JSDOM('<body><div id="root"></div></body>',{url:'https://example.test',pretendToBeVisual:true})
+for(const entry of ['/', '/?standalone=1&page=leave'])test(`actual application opens the restored leave page through ${entry}`,async()=>{
+  const dom=new JSDOM('<body><div id="root"></div></body>',{url:`https://example.test${entry}`,pretendToBeVisual:true})
   const observers=[],errors=[], calls=[],day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date())
   let failStats=false
   const reasons=[{name:'Có phép',leave_type:'Có phép'},{name:'Đi trễ',leave_type:'Vi phạm'}]
@@ -63,13 +66,16 @@ test('actual application opens leave from Live Tour with production startup enha
   const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root'))
   const settle=async()=>{for(let i=0;i<4;i++)await act(async()=>{await new Promise(r=>setTimeout(r,80))})}
   const click=async(label)=>{
+    const toggle=document.querySelector('.standalone-menu-toggle[aria-expanded="false"]')
+    if(toggle)await act(async()=>toggle.click())
     const button=[...document.querySelectorAll('.sidebar a')].find(b=>b.textContent.trim()===label)
     assert.ok(button,`Menu ${label} exists`);await act(async()=>button.click());await settle()
   }
   try{
     new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports)
     await act(async()=>root.render(React.createElement(React.StrictMode,null,React.createElement(Boundary,null,React.createElement(mod.exports.default)))))
-    await settle();assert.deepEqual(errors,[]);assert.ok(document.querySelector('.live-tour-workspace'))
+    await settle();assert.deepEqual(errors,[]);assert.ok(document.querySelector(entry==='/'?'.live-tour-workspace':'.registration-panel .leave-form'))
+    if(entry!=='/')await click('Live Tour')
     await click('Đăng ký nghỉ');assert.deepEqual(errors,[]);assert.ok(document.querySelector('.registration-panel .leave-form'))
     await click('Live Tour');await click('Đăng ký nghỉ');assert.deepEqual(errors,[])
     assert.equal(document.querySelectorAll('[data-leave-list-personal-stats]').length,1)

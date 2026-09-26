@@ -67,12 +67,13 @@ async function fixture(role, failRecords=false) {
     async close(){await act(()=>root.unmount());dom.window.close();console.error=originalError;for(const[k,d]of Object.entries(descriptors)){if(d)Object.defineProperty(globalThis,k,d);else delete globalThis[k]}}
   }
 }
-for(const role of ['admin','letan','nhanvien'])test(`complete leave route opens and reopens with all enhancements: ${role}`,async()=>{
+for(const role of ['admin','quanly','letan','nhanvien'])test(`complete leave route opens and reopens with all enhancements: ${role}`,async()=>{
   const f=await fixture(role)
   try {
     assert.deepEqual(f.errors.map(e=>`${e.name}: ${e.message}`),[])
     assert.ok(f.doc.querySelector('.leave-form'))
-    assert.ok(f.doc.querySelector('.stable-data-region .leave-list-wrap'))
+    assert.ok(f.doc.querySelector('.leave-list-panel > .leave-list-wrap'))
+    assert.equal(f.doc.querySelector('.registration-panel .stable-feedback'),null)
     assert.equal(f.doc.querySelectorAll('[data-leave-list-personal-stats]').length,1)
     assert.ok(f.doc.querySelector('.leave-list-personal-summary'))
     if(role==='admin'){
