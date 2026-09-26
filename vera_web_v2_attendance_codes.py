@@ -43,10 +43,13 @@ def workbook_codes(content):
             'employee_code': {'ma nhan vien','employeecode'},
         }
         for ws in wb.worksheets:
-            if (ws.max_column or 0) > 256:
-                raise HTTPException(413, 'Báo cáo có quá nhiều cột.')
+            # TimeSoft can declare only the first data row in <dimension> while
+            # the worksheet XML contains the full report. Stream actual rows.
+            ws.reset_dimensions()
             headers = None
             for number, cells in enumerate(ws.iter_rows(), 1):
+                if len(cells) > 256:
+                    raise HTTPException(413, 'Báo cáo có quá nhiều cột.')
                 count += 1
                 if count > MAX_ROWS:
                     raise HTTPException(413, 'Báo cáo vượt 50.000 dòng; hãy xuất khoảng ngày nhỏ hơn.')
