@@ -41,9 +41,23 @@ Mục **Nhân viên** cũng chỉ ghi qua Python API. Màn hình này tập trun
 
 Mục **Nội quy** giữ toàn bộ cột/dòng động của bảng `LoaiNghi`. PostgreSQL `official_policy/leave_rules` là dữ liệu chính thức; một lần ghi chỉ thành công khi kiểm tra hợp lệ, đúng phiên bản và đồng bộ được worksheet `LoaiNghi`. Chỉ Admin/Quản lý mặc định được sửa hoặc Import; các vai trò còn lại chỉ xem và Export, trừ khi được cấu hình khác tại Phân quyền.
 
-## Web production
+## Web production — xác minh ngày 26-09-2026
 
-Workflow `.github/workflows/vera-web-v2-pages.yml` build `web-v2` và deploy artifact lên Pages. Lần đầu cần vào repository **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+`app.veraspa.vn` hiện phục vụ giao diện được build trong **Deploy VPS Production**.
+Log lần chạy #545 build `index-COQl75VV.js` tại commit `745a460`; trình duyệt mới
+vẫn nhận chính entry này lúc 15:32 dù Pages đã triển khai commit `f8461efd`.
+Vì vậy, sửa giao diện cũng cần chạy Deploy VPS Production cho đúng commit main.
+Không kết luận trang thật đã cập nhật chỉ từ workflow GitHub Pages thành công.
+
+Vite xuất `build-info.json` chỉ chứa commit nguồn và tên entry script. Cuối
+Deploy VPS Production, `vera_web_release_check.py` đối chiếu commit này với
+commit yêu cầu và entry trong HTML của cả URL gốc lẫn URL tải mới. Nếu khác,
+workflow báo lỗi để kiểm tra origin/cache; không tự thay DNS hoặc bỏ xác thực.
+Kiểm tra này xác minh phiên bản, không thay thế kiểm thử đăng nhập và nghiệp vụ.
+
+### Bản build GitHub Pages
+
+Workflow `.github/workflows/vera-web-v2-pages.yml` vẫn build `web-v2` và deploy artifact lên Pages. Kết quả này không xác minh frontend mà domain production đang phục vụ.
 
 Địa chỉ duy nhất dành cho người dùng là custom domain:
 
