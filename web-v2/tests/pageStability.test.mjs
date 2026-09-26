@@ -86,23 +86,33 @@ test('refresh preflight protects every panel, uses current filters, and prevents
   assert.equal(errors.length, 2, 'an old page cannot report errors on the next page')
 })
 
-test('feedback and loading keep the same table, focus, and horizontal scroll container', async context => {
+test('empty feedback collapses while messages and loading preserve the table, focus and scroll container', async context => {
   const { render } = await setup(context)
+  const style = document.createElement('style')
+  style.textContent = readFileSync('src/components/StableFeedback.css', 'utf8')
+  document.head.append(style)
   const view = (loading, message) => h('section', null,
     h(Feedback, null, message && h('p', { role: 'status' }, message)),
     h(DataRegion, { loading }, h('div', { className: 'table-scroll' }, h('input', { defaultValue: 'draft' }), h('table', null, h('tbody', null, h('tr', null, h('td', null, 'Saved row')))))))
   await render(view(false, ''))
   const feedback = document.querySelector('.stable-feedback'), table = document.querySelector('table'), scroll = document.querySelector('.table-scroll'), input = document.querySelector('main input')
+  assert.equal(feedback.hidden, true)
+  assert.equal(window.getComputedStyle(feedback).display, 'none', 'empty slots must not occupy a grid/flex row')
+  assert.equal(feedback.hasAttribute('tabindex'), false)
   input.focus(); input.value = 'Still editing'; scroll.scrollLeft = 360
   for (const [loading, message] of [[true, 'Đang lưu'], [false, 'Đã lưu'], [false, 'Lỗi dài '.repeat(100)], [false, '']]) {
     await render(view(loading, message))
     assert.equal(document.querySelector('.stable-feedback'), feedback)
     assert.equal(document.querySelector('table'), table)
+    assert.equal(document.activeElement, input)
     assert.equal(scroll.scrollLeft, 360)
     assert.equal(input.value, 'Still editing')
     assert.equal(document.querySelector('.stable-data-content').hasAttribute('inert'), loading)
     assert.equal(document.querySelector('.stable-data-region').getAttribute('aria-busy'), String(loading))
     assert.equal(feedback.textContent, message, 'long errors remain readable rather than cut from the DOM')
+    assert.equal(feedback.hidden, !message)
+    assert.equal(window.getComputedStyle(feedback).display === 'none', !message)
+    assert.equal(feedback.hasAttribute('tabindex'), Boolean(message))
   }
   // JSDOM has no layout engine: verify the CSS contract, not fictional pixel measurements.
   const css = readFileSync('src/components/StableFeedback.css', 'utf8')

@@ -1,5 +1,22 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: bỏ vùng thông báo rỗng trên toàn bộ trang
+
+Người dùng đánh dấu các khoảng trống trên 20 trang. Đối chiếu ảnh và mã xác
+nhận StableFeedback vẫn tạo ô cao 52px (64px trên mobile) khi không có thông
+báo: một ô trong AppShell, ô còn lại trong nội dung nhiều trang. Đăng ký nghỉ
+đang dùng bản khôi phục, nên khoảng đánh dấu nằm ở khung chung. Lương và Lịch
+sử checkin cũng được sửa qua khung chung, không thay đổi dữ liệu nghiệp vụ.
+
+Ẩn hoàn toàn ô rỗng bằng hidden/display:none để ô không chiếm chiều cao hoặc
+khoảng cách grid/flex. Giữ phần tử bao và nội dung lỗi/kết quả khi có thông báo;
+không remount bảng, bộ lọc hoặc form lân cận, không thêm popup hay request.
+Live Tour tiếp tục chỉ dùng overlay hóa đơn chờ thanh toán như trước. Thay đổi
+chỉ ở component/CSS dùng chung và kiểm thử, không chạm mã mật khẩu/định danh,
+API, giao dịch, quyền hay dữ liệu. Kiểm thử kiểm tra ô rỗng ẩn, thông báo hiện,
+chuyển trạng thái giữ bảng/focus/scroll và luồng mở Đăng ký nghỉ. JSDOM không
+đo pixel thực; vẫn cần Deploy VPS Production để áp dụng frontend thực tế.
+
 ## 26-09-2026: mốc lịch sử Doanh thu và cập nhật Auto khi đang mở trang
 
 Người dùng sửa mốc bắt đầu thành 05-09-2025 và xác nhận giữ sổ Manual đến hết
