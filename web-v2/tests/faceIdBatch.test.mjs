@@ -31,12 +31,12 @@ test('uploads are sequential, successes skipped on retry, auth failure stops bat
   assert.deepEqual(calls,[0])
 })
 
-test('preview preserves full image, existing photos need selection, and unmatched files cannot upload',async()=>{
+for (const [width,height] of [[1600,900],[80,120]]) test(`preview preserves ${width}x${height}; existing photos need selection and unmatched files cannot upload`,async()=>{
   const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true})
   let uploaded=[],draws=[]
   dom.window.api={batchPlan:async names=>({records:names.map((filename,id)=>({filename,status:id===2?'not_found':'ready',username:id===2?null:['An','Nhi'][id],existing_sha256:id===1?'old':null}))}),uploadBatchPhoto:async row=>uploaded.push(row.username)}
   dom.window.URL.createObjectURL=()=>`blob:${Math.random()}`;dom.window.URL.revokeObjectURL=()=>{}
-  dom.window.Image=class{naturalWidth=1600;naturalHeight=900;set src(_value){setTimeout(()=>this.onload(),0)}}
+  dom.window.Image=class{naturalWidth=width;naturalHeight=height;set src(_value){setTimeout(()=>this.onload(),0)}}
   dom.window.HTMLCanvasElement.prototype.getContext=()=>({fillRect(){},drawImage(...args){draws.push(args.slice(1))}})
   dom.window.HTMLCanvasElement.prototype.toBlob=function(cb,type){cb(new dom.window.Blob(['compressed'],{type}))}
   dom.window.eval(built.outputFiles[0].text);dom.window.mount();await tick()
@@ -45,7 +45,7 @@ test('preview preserves full image, existing photos need selection, and unmatche
   input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await tick();await tick()
   const boxes=[...dom.window.document.querySelectorAll('input[type=checkbox]')]
   assert.equal(boxes[0].checked,true);assert.equal(boxes[1].checked,false);assert.equal(boxes[2].disabled,true)
-  assert.ok(draws.every(([x,y,w,h])=>x===0&&y>0&&w===900&&h<1200))
+  assert.ok(draws.every(([x,y,w,h])=>x===0&&y===0&&w===width&&h===height))
   button(dom,'Lưu 1 ảnh đã chọn').click();await tick()
   assert.deepEqual(uploaded,['An'])
   assert.equal(boxes[0].disabled,true)

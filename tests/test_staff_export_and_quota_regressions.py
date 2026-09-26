@@ -120,3 +120,26 @@ def test_quota_endpoint_selected_month_handles_older_excluded_history():
     assert response.status_code == 200
     assert response.json()['items'][0]['month'] == '2026-09'
     assert response.json()['items'][0]['days'] == 6
+
+
+def test_optional_portrait_export_has_exact_3_by_4_cm_after_global_styling(workbook_builder):
+    from test_face_id_photos import png
+    from vera_staff_photo_export import with_portraits
+    rows = [staff._public_employee({'username': name, 'role':'nhanvien'}, 'Đang làm việc') for name in ('Test','No photo','Broken')]
+    original = png(120,80)
+    output = with_portraits(workbook_builder(rows, {}), rows, {'Test':original,'Broken':b'invalid'})
+    sheet = load_workbook(BytesIO(style_workbook_bytes(output)))['DanhSachNhanSu']
+    assert len(sheet._images) == 1
+    anchor = sheet._images[0].anchor
+    assert (anchor.ext.cx,anchor.ext.cy) == (1080000,1440000)
+    assert anchor._from.row == 1
+    assert sheet.row_dimensions[2].height >= 4 / 2.54 * 72
+    assert sheet.cell(1,sheet.max_column).value == 'Ảnh nhân viên (3 × 4 cm)'
+    assert sheet.cell(4,sheet.max_column).value == 'Ảnh không đọc được'
+
+
+def test_photo_export_rejects_non_admin_before_database(staff_app):
+    dependency = next(r for r in staff_app.routes if r.path == '/v2/staff/export.xlsx').dependant.dependencies[0].call
+    staff_app.dependency_overrides[dependency] = lambda: SimpleNamespace(role='quanly')
+    result = TestClient(staff_app).get('/v2/staff/export.xlsx?include_photos=true')
+    assert result.status_code == 403

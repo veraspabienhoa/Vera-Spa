@@ -26,7 +26,7 @@ function identityKey(value) {
 }
 
 async function validateDraftIdentity(media, fullName, cccdNumber) {
-  if (!media?.portrait) throw new Error('Phải có ảnh nhân viên tỷ lệ 3:4 trước khi lưu.')
+  if (!media?.portrait) throw new Error('Phải có ảnh nhân viên trước khi lưu.')
   if (!media?.front || !media?.back) throw new Error('Phải tải hoặc chụp đủ mặt trước và mặt sau CCCD trước khi lưu.')
   const results = await Promise.all([
     staffSecurityApi.extractIdentity(media.front),

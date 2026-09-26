@@ -66,10 +66,10 @@ export default function FacegateCaptureAssignment({ capture, onClose, onSaved })
     finally { if (requestId.current === id) setBusy(false) }
   }
   const save = async () => {
-    if (saving.current || busy || !prepared || !metadata || !confirmed || conflict) return
+    if (saving.current || busy || !metadata || !confirmed || conflict) return
     saving.current = true; setBusy(true); setError('')
     try {
-      await faceIdApi.assignCapturePhoto(username, prepared, metadata.photo?.sha256 || null)
+      await faceIdApi.assignCapturePhoto(username, prepared || capture.blob, metadata.photo?.sha256 || null)
       window.dispatchEvent(new CustomEvent('vera-profile-updated'))
       onSaved(username)
     } catch (cause) {
@@ -80,8 +80,8 @@ export default function FacegateCaptureAssignment({ capture, onClose, onSaved })
   const choices = (employees || []).filter(row => searchKey(`${row.username} ${row.full_name}`).includes(searchKey(query)) || row.username === username)
   return createPortal(<div className="capture-assignment-backdrop">
     <section ref={ref} tabIndex={-1} className="capture-assignment-dialog" role={editing ? undefined : 'dialog'} aria-modal={editing ? undefined : true} aria-label="Chọn ảnh FACE ID cho nhân viên">
-      {editing ? <IdentityImageEditor file={capture.blob} title={username || 'FACE ID'} mediaLabel="FACE ID" aspectRatio={3 / 4}
-        allowOriginal={false} confirmLabel="Dùng ảnh đã cắt" onCancel={() => setEditing(false)}
+      {editing ? <IdentityImageEditor file={capture.blob} title={username || 'FACE ID'} mediaLabel="FACE ID" aspectRatio={null}
+        confirmLabel="Dùng ảnh đã chỉnh" onCancel={() => setEditing(false)}
         onConfirm={async blob => { setPrepared(blob); setConfirmed(false); setEditing(false) }}/> : <>
         <header><h2>Chọn ảnh cho nhân viên</h2><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Đóng</button></header>
         <p>Ảnh Capture #{capture.record.event_id} · {formatVeraDateTime(capture.record.occurred_at)}</p>
@@ -92,17 +92,17 @@ export default function FacegateCaptureAssignment({ capture, onClose, onSaved })
           <label>Nhân viên VERA<select value={username} disabled={busy} onChange={event => selectEmployee(event.target.value)}>
             <option value="">Chọn nhân viên</option>{choices.map(row => <option key={row.username} value={row.username}>{row.username}{row.full_name ? ` · ${row.full_name}` : ''}</option>)}
           </select></label></>}
-        <div className="capture-assignment-images"><figure><figcaption>{prepared ? 'Ảnh mới đã cắt 3:4' : 'Ảnh đang chọn'}</figcaption><img src={sourceUrl} alt="Ảnh Capture đã chọn" /></figure>
+        <div className="capture-assignment-images"><figure><figcaption>{prepared ? 'Ảnh mới đã chỉnh' : 'Ảnh đang chọn'}</figcaption><img src={sourceUrl} alt="Ảnh Capture đã chọn" /></figure>
           {existingUrl && <figure><figcaption>Ảnh FACE ID hiện có</figcaption><img src={existingUrl} alt={`Ảnh FACE ID hiện có của ${username}`} /></figure>}</div>
-        <button type="button" className="secondary-button" disabled={busy} onClick={() => setEditing(true)}>{prepared ? 'Cắt lại ảnh' : 'Cắt ảnh 3:4'}</button>
+        <button type="button" className="secondary-button" disabled={busy} onClick={() => setEditing(true)}>{prepared ? 'Chỉnh lại ảnh' : 'Cắt / xoay ảnh (tùy chọn)'}</button>
         {busy && <p role="status">{saving.current ? 'Đang lưu ảnh…' : 'Đang kiểm tra ảnh hiện có…'}</p>}
         {metadata && <p>{metadata.photo ? `Lưu sẽ thay ảnh FACE ID hiện có của ${username}.` : `${username} chưa có ảnh FACE ID.`}</p>}
-        <label className="capture-assignment-confirm"><input type="checkbox" checked={confirmed} disabled={busy || !metadata || !prepared || conflict} onChange={event => setConfirmed(event.target.checked)} />
+        <label className="capture-assignment-confirm"><input type="checkbox" checked={confirmed} disabled={busy || !metadata || conflict} onChange={event => setConfirmed(event.target.checked)} />
           Tôi đã kiểm tra ảnh đúng nhân viên {username || 'đã chọn'}{metadata?.photo ? ' và đồng ý thay ảnh FACE ID hiện có' : ''}.</label>
         {error && <p role="alert">{error}</p>}
         {(conflict || (username && !metadata && !busy)) && <button type="button" className="secondary-button" disabled={busy} onClick={() => selectEmployee(username)}>Kiểm tra lại ảnh hiện có</button>}
         <footer><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Hủy</button>
-          <button type="button" className="primary-button" disabled={busy || !metadata || !prepared || !confirmed || conflict} onClick={save}>Lưu ảnh FACE ID</button></footer>
+          <button type="button" className="primary-button" disabled={busy || !metadata || !confirmed || conflict} onClick={save}>Lưu ảnh FACE ID</button></footer>
       </>}
     </section>
   </div>, document.body)

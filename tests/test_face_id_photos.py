@@ -89,7 +89,7 @@ def test_reject_invalid_images_and_missing_employee():
     _, api = client({'employee_face_id_view', 'employee_face_id_manage'})
     path = '/v2/staff/worker/face-id/image'
     assert api.put(path, content=b'<svg/>', headers={'Content-Type':'image/svg+xml'}).status_code == 400
-    assert api.put(path, content=png(400,300), headers={'Content-Type':'image/png'}).status_code == 400
+    assert api.put(path, content=png(6001,10), headers={'Content-Type':'image/png'}).status_code == 400
     assert api.put(path, content=b'x' * (700*1024+1), headers={'Content-Type':'image/png'}).status_code == 413
     assert api.get('/v2/staff/missing/face-id').status_code == 404
 
@@ -152,3 +152,13 @@ def test_batch_api_permissions_limit_and_existing_photo_guard():
     assert api.put(path.replace('worker.jpg','someone.jpg'),content=png(),headers=headers).status_code == 409
     grants.remove('employee_face_id_manage')
     assert api.post('/v2/face-id/batch-plan',json={'filenames':['worker.jpg']}).status_code == 403
+
+
+@pytest.mark.parametrize('size', [(400,300), (300,300), (80,120), (120,80)])
+def test_native_ratio_and_small_face_photo_roundtrip(size):
+    _, api = client({'employee_face_id_view', 'employee_face_id_manage'})
+    original = png(*size)
+    path = '/v2/staff/worker/face-id/image'
+    result = api.put(path, content=original, headers={'Content-Type':'image/png'})
+    assert result.status_code == 200, result.text
+    assert api.get(path).content == original

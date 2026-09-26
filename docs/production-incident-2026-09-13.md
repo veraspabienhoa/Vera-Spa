@@ -1241,3 +1241,21 @@ log và ảnh; chưa có luồng đăng ký ảnh mới lên thiết bị đư�
 lệnh ghi không rõ giao thức tới FaceGate, không đổi nguồn công hoặc ngừng TimeSoft.
 Kiểm thử HTTP/PostgreSQL, quyền, Unicode, retry và lưu đồng thời cùng kiểm thử
 UI được bổ sung. Chưa xác nhận thao tác lưu ảnh này trên VPS production.
+
+## 27-09-2026: lưu ảnh FACE ID và nhân viên theo tỷ lệ gốc
+
+Ảnh chụp mới của người dùng cho thấy lưu Capture Log bị chặn bởi ngưỡng tối thiểu
+160 × 160 px. Yêu cầu mới thay thế tỷ lệ 3:4 bắt buộc: ảnh nhân viên và FACE ID
+được lưu theo tỷ lệ gốc, kể cả ảnh nhỏ. Giữ kiểm tra file ảnh, dung lượng và giới
+hạn giải mã tối đa; CCCD vẫn giữ kiểm tra riêng. Camera giữ toàn khung hình,
+chỉnh ảnh và tải hàng loạt không ép 3:4 hoặc phóng lớn ảnh nhỏ. Capture Log có thể
+lưu ảnh gốc sau khi chọn và xác nhận nhân viên, không bắt buộc mở trình cắt ảnh.
+Cơ chế kiểm tra quyền và chống ghi đè ảnh khi nhiều người cùng thao tác giữ nguyên.
+
+Excel mặc định vẫn chỉ có dữ liệu. Thêm lựa chọn Admin xuất kèm ảnh nhân viên
+3 × 4 cm, giữ toàn ảnh trong khung trắng khi tỷ lệ gốc khác 3:4. Đọc ảnh theo
+nhân viên đã lọc bằng truy vấn theo lô, tối đa 200 nhân viên/40 MB; xử lý ảnh sau
+khi trả kết nối. Không đọc ảnh CCCD/FACE ID cho bản xuất, không sửa ảnh gốc và
+không đăng ký ảnh lên FaceGate. Bổ sung kiểm thử HTTP/PostgreSQL, UI lưu ảnh gốc,
+ảnh nhỏ/ngang/vuông, quyền và kích thước khung Excel qua middleware định dạng.
+Chưa xác nhận bản sửa trên VPS; không thay nguồn tính công hoặc dừng TimeSoft.

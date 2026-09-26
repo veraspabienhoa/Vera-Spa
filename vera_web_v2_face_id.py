@@ -43,9 +43,9 @@ def validate_photo(content, content_type):
         raise HTTPException(400, 'Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP hợp lệ.')
     if len(content) > MAX_IDENTITY_BYTES:
         raise HTTPException(413, 'Ảnh vượt dung lượng cho phép; hãy nén ảnh trước khi lưu.')
-    width, height = _image_dimensions(content)
-    if abs(width / height - 0.75) > 0.035:
-        raise HTTPException(400, 'ẢNH FACE ID cần được cắt theo tỷ lệ 3:4.')
+    # Capture photos may be small or landscape. Keep the exact source ratio;
+    # validation still verifies decoded pixels, file size and maximum dimensions.
+    _image_dimensions(content, min_edge=1)
 
 
 class BatchPlanRequest(BaseModel):

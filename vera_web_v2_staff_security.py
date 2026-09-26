@@ -113,14 +113,14 @@ def _valid_image(data: bytes, content_type: str) -> bool:
     return False
 
 
-def _image_dimensions(data: bytes) -> tuple[int, int]:
+def _image_dimensions(data: bytes, *, min_edge: int = 160) -> tuple[int, int]:
     try:
         with PILImage.open(BytesIO(data)) as image:
             image.verify()
         with PILImage.open(BytesIO(data)) as image:
             width, height = int(image.width), int(image.height)
-            if width < 160 or height < 160:
-                raise HTTPException(400, "Ảnh quá nhỏ; cần tối thiểu 160 × 160 px.")
+            if width < min_edge or height < min_edge:
+                raise HTTPException(400, f"Ảnh quá nhỏ; cần tối thiểu {min_edge} × {min_edge} px.")
             if width > 6000 or height > 6000 or width * height > 24_000_000:
                 raise HTTPException(400, "Ảnh có độ phân giải quá lớn; vui lòng nén ảnh trước khi tải lên.")
             return width, height
@@ -720,9 +720,7 @@ def install_staff_security_routes(
             raise HTTPException(413, "Ảnh sau nén vẫn quá lớn. Vui lòng chọn ảnh rõ hơn hoặc thử lại.")
         if not _valid_image(content, content_type):
             raise HTTPException(400, "Nội dung file ảnh không hợp lệ.")
-        width, height = _image_dimensions(content)
-        if side == "portrait" and abs((width / max(height, 1)) - 0.75) > 0.035:
-            raise HTTPException(400, "Ảnh nhân viên phải được Crop đúng tỷ lệ dọc 3:4 trước khi lưu.")
+        _image_dimensions(content, min_edge=1 if side == "portrait" else 160)
 
         with engine_instance().begin() as conn:
             row = require_identity_access(conn, ident, username, for_update=True)

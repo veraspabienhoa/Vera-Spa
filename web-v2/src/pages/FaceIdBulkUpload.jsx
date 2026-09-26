@@ -59,7 +59,7 @@ export default function FaceIdBulkUpload({ onBusyChange = () => {} }) {
   return <section className="face-batch">
     <h2 id="employee-profile-modal-title">TẢI ẢNH FACE ID HÀNG LOẠT</h2>
     <p>Tên file = <strong>Tên nhân viên / tài khoản VERA</strong>, không phải Họ tên đầy đủ. Ví dụ: <strong>Tuyết Nhi.jpg</strong>. Giữ đúng dấu tiếng Việt; không thêm số hoặc hậu tố.</p>
-    <p>Tối đa 50 ảnh/lần, JPG/PNG/WebP. Ảnh được nén và thêm viền theo tỷ lệ 3:4 để giữ toàn bộ ảnh; bạn có thể cắt và xoay từng ảnh trước khi lưu.</p>
+    <p>Tối đa 50 ảnh/lần, JPG/PNG/WebP. Ảnh được nén và giữ nguyên tỷ lệ, toàn bộ khung hình; bạn có thể cắt và xoay từng ảnh trước khi lưu.</p>
     <label className="secondary-button">Chọn nhiều ảnh<input aria-label="Chọn nhiều ảnh FACE ID" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy || Boolean(editor)} onChange={selectFiles}/></label>
     <p role="status">{notice}</p>
     {rows.length > 0 && <>
@@ -74,7 +74,7 @@ export default function FaceIdBulkUpload({ onBusyChange = () => {} }) {
       <button type="button" className="primary-button" disabled={busy || !chosen || Boolean(editor)} onClick={save}>{busy ? 'Đang xử lý…' : `Lưu ${chosen} ảnh đã chọn`}</button>
       <p>Đã lưu {rows.filter(row => row.state === 'saved').length}/{rows.length} ảnh. Ảnh trùng tên, không khớp hoặc chưa được chọn sẽ không được lưu.</p>
     </>}
-    {editor && <IdentityImageEditor file={editor.file} title={`FACE ID · ${editor.username}`} mediaLabel="FACE ID" aspectRatio={3 / 4} confirmLabel="Áp dụng vào lô ảnh" onCancel={() => setEditor(null)} onConfirm={async blob => {
+    {editor && <IdentityImageEditor file={editor.file} title={`FACE ID · ${editor.username}`} mediaLabel="FACE ID" aspectRatio={null} confirmLabel="Áp dụng vào lô ảnh" onCancel={() => setEditor(null)} onConfirm={async blob => {
       if (editor.url) { URL.revokeObjectURL(editor.url); urls.current.delete(editor.url) }
       update(editor.id, {blob, url: preview(blob), state:'ready', message:'Đã chỉnh ảnh — sẵn sàng lưu', selected: editor.selected || !editor.existing_sha256})
       setEditor(null)
