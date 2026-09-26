@@ -14,6 +14,9 @@ def cash_pending():
     action(state,'booking',{**booking(customer,owned,skin),'customer_id':'','combo_purchase_id':''})
     action(state,'start',{'employee_id':'e1'})
     pending=action(state,'finish_to_pending',{'employee_id':'e1'})['pending']
+    # finish_to_pending commits a deep-copy transaction; return the live fixture.
+    customer=next(row for row in state['customers'] if row['id']==customer['id'])
+    owned=next(row for row in customer['combo_purchases'] if row['id']==owned['id'])
     return state,pending,customer,owned
 
 
