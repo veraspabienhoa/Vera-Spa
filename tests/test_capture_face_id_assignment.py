@@ -29,7 +29,7 @@ def fixture(monkeypatch):
     with db.begin() as conn:
         conn.execute(text("CREATE TABLE employees(username text PRIMARY KEY,full_name text,payload jsonb DEFAULT '{}'::jsonb)"))
         conn.execute(text("""INSERT INTO employees VALUES ('Ánh Thử','Nguyễn Ánh Thử','{}'),
-            ('Đã xóa','Không trả về','{"__deleted":true}')"""))
+            ('Đã xóa','Không trả về',CAST(:deleted AS jsonb))"""), {'deleted': '{"__deleted":true}'})
         face.ensure_table(conn)
     grants = {'device_history_view', 'employee_face_id_view', 'employee_face_id_manage'}
     app = FastAPI()
