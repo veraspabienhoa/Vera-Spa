@@ -64,3 +64,41 @@ def test_preview_and_catalogue_are_read_only_and_require_mapping_permission(monk
     ident.role = 'letan'
     assert api.get('/v2/devices/attendance-codes').status_code == 403
     assert api.post('/v2/devices/attendance-codes/preview',content=workbook()).status_code == 403
+
+
+@pytest.mark.parametrize('declared_dimension', ['A1:D2', 'A1:A1', 'A1:XFD1048576'])
+def test_timesoft_incorrect_dimension_does_not_hide_rows_or_columns(declared_dimension):
+    import re
+    from zipfile import ZipFile, ZIP_DEFLATED
+    wb = Workbook()
+    ws = wb.active
+    ws.append(['Tên nhân viên', 'Số điện thoại', 'Mã chấm công', 'Mã nhân viên'])
+    ws.append(['Test Alpha', '0901000001', '00123', 'EMP001'])
+    ws.append(['Test Beta', '0901000002', '00456', 'EMP002'])
+    original = BytesIO(); wb.save(original); wb.close()
+    malformed = BytesIO()
+    with ZipFile(BytesIO(original.getvalue())) as source, ZipFile(malformed, 'w', ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == 'xl/worksheets/sheet1.xml':
+                data = re.sub(rb'<dimension ref="[^"]+"', f'<dimension ref="{declared_dimension}"'.encode(), data, count=1)
+            target.writestr(item, data)
+    rows = codes.workbook_codes(malformed.getvalue())
+    assert [row['attendance_code'] for row in rows] == ['00123', '00456']
+    assert codes.match_codes(EMPLOYEES, rows)['matched_count'] == 2
+
+
+def test_actual_row_limit_still_applies_when_dimension_is_ignored(monkeypatch):
+    monkeypatch.setattr(codes, 'MAX_ROWS', 1)
+    with pytest.raises(HTTPException) as error:
+        codes.workbook_codes(workbook())
+    assert error.value.status_code == 413
+
+
+def test_actual_column_limit_still_applies_when_dimension_is_ignored():
+    wb = Workbook()
+    wb.active.cell(1,257,'too wide')
+    stream = BytesIO(); wb.save(stream); wb.close()
+    with pytest.raises(HTTPException) as error:
+        codes.workbook_codes(stream.getvalue())
+    assert error.value.status_code == 413

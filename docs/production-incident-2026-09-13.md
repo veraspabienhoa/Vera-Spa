@@ -1130,3 +1130,23 @@ the same event; an unconfirmed event with a deleted photo cannot be confirmed.
 Photo-only access does not grant capture or attendance-confirmation privileges.
 Regression tests cover these behaviors, stale gallery reads, permission boundaries,
 canonical combo matching and compact reads in both PostgreSQL storage modes.
+
+
+## 27-09-2026: TimeSoft XLSX declared dimensions hide actual attendance rows
+
+Two operator exports for 26-09-2026 were compared read-only. FaceGate Control Log
+contains 126 unique event IDs and 126 unique timestamps for 40 machine names.
+TimeSoft has 126 detail events for 40 staff, plus 40 daily summary rows. All 126
+timestamps match to the second. Six names differ beyond accents; their event
+sequences match. These are comparison candidates, not newly confirmed FaceGate
+profile mappings. No employee data or original files are committed here.
+
+The TimeSoft XML declares A1:K4 for its summary and A1:F2 for detail despite later
+rows in sheetData. openpyxl read_only trusts those dimensions, so the new attendance
+code preview read just two source rows instead of the full report. Earlier manual
+analysis using the same read-only default also understated the available codes.
+Reset declared dimensions before streaming and enforce limits against actual rows
+and columns. The supplied report then yields all 40 distinct attendance codes.
+Tests cover understated/overstated row and column metadata, leading-zero codes and
+actual row/column limits. Existing ZIP/upload bounds remain enforced. This fixes
+the preview reader; it does not alter XLSX inputs, saved attendance or mappings.
