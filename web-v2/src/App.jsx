@@ -1,8 +1,9 @@
 import { invalidateSharedReads } from './lib/sharedRead'
-import { pageModuleLoader } from './lib/pageModuleLoader'
+import { recoverablePage as lazyPage } from './lib/recoverablePage'
+import PageErrorBoundary from './components/PageErrorBoundary'
 import { requestPageRefresh } from './lib/usePageRefresh'
 import SystemTabs from './components/SystemTabs'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import AppShell from './components/AppShell'
 import PayrollTabs from './components/PayrollTabs'
 import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
@@ -44,19 +45,6 @@ const readStandalonePageRequest = () => {
   } catch {
     return { enabled: false, page: '' }
   }
-}
-
-const lazyPage = (importer) => {
-  const preload = pageModuleLoader(importer)
-  const component = lazy(async () => {
-  try { const module = await preload(); window.sessionStorage.removeItem('vera-v2-chunk-reload'); return module }
-  catch (error) {
-    if (!window.sessionStorage.getItem('vera-v2-chunk-reload')) { window.sessionStorage.setItem('vera-v2-chunk-reload', '1'); window.location.reload(); return new Promise(() => {}) }
-    window.sessionStorage.removeItem('vera-v2-chunk-reload'); throw error
-  }
-  })
-  component.preload = preload
-  return component
 }
 
 const PurchasePage = lazyPage(() => import('./pages/PurchasePage'))
@@ -235,6 +223,7 @@ export default function App() {
     <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onPageIntent={preloadPage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       {(navigationToggle) => <>
         {page !== 'live-tour' && <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />}
+        <PageErrorBoundary key={page} page={page} onRetry={() => pageModules[page]?.reset()}>
         <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={page}>
           {page === 'leave' && <><LeaveRegistrationPage user={shellUser} /><LeaveRegistrationEnhancements user={shellUser} /><LeaveListPersonalStats user={shellUser} /><LeaveListTypeColumn user={shellUser} /></>}
           {page === 'schedule' && <WorkSchedulePage user={shellUser} />}
@@ -267,6 +256,7 @@ export default function App() {
         {page === 'auto-check' && <AutoCheckPage user={shellUser} />}
         {['system', 'changes', 'storage'].includes(page) && <SystemTabs user={shellUser} initialTab={page === 'storage' ? 'storage' : 'changes'} changes={<AdminChangesPage user={shellUser} />} storage={<StorageAdminPage />} />}
       </Suspense>
+      </PageErrorBoundary>
       </>}
     </AppShell>
   )

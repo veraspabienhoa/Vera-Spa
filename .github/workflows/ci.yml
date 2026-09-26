@@ -1137,7 +1137,7 @@ jobs:
               'production payroll save CORS and safe retry are configured': 'https://app.veraspa.vn' in api and 'VERA_V2_CORS_ORIGINS=https://app.veraspa.vn' in build and 'https://veraspabienhoa.github.io' not in api and "path === '/v2/payroll/save' ? 2 : 1" in api_client,
               'payroll Excel download retries and stays mobile-safe': all(token in api_client for token in ('Không tải được file Excel sau 2 lần thử', 'setTimeout(() => URL.revokeObjectURL(url), 1000)', 'decodeURIComponent')),
               'payroll mobile cards replace wide editing and history tables': all(token in payroll_page for token in ('payroll-mobile-card', 'payroll-mobile-edit-grid', 'payroll-history-mobile', 'toggleAllSelected')) and all(token in styles for token in ('.payroll-desktop-table, .payroll-history-desktop { display: none; }', '.payroll-mobile-list { display: grid;', '.payroll-mobile-edit-grid')),
-              'authenticated feature pages load on demand': 'const lazyPage' in app and app.count('lazyPage(() => import(') >= 12 and '<Suspense fallback=' in app,
+              'authenticated feature pages load on demand': 'recoverablePage as lazyPage' in app and app.count('lazyPage(() => import(') >= 12 and '<Suspense fallback=' in app and 'let Page = lazy(preload)' in Path('web-v2/src/lib/recoverablePage.jsx').read_text(encoding='utf-8'),
               'snapshot is attendance only': 'timesoft_employee_checkin_' in snapshot and 'timesoft_summary_invoice' not in snapshot and 'timesoft_summary_totals' not in snapshot,
               'attendance filters apply automatically without search button': 'setApplied((current)' in snapshot_page and 'normalizedFilters(filters)' in snapshot_page and 'applyFilters' not in snapshot_page and '<Search' not in snapshot_page,
               'attendance prioritizes start and break-return punctuality': all(label in snapshot_page for label in ('Tình trạng đầu ca', 'Tình trạng vào lại sau nghỉ', 'Đi trễ', 'Vào lại trễ', 'Vào lại đúng giờ')) and all(label not in snapshot_page for label in ('FaceID / Ra ca', '<th>Trạng thái</th>', 'Về sớm {item.early_minutes')),
@@ -1247,7 +1247,7 @@ jobs:
         run: node --test tests/revenueSharedAuto.test.mjs tests/revenueTipPeriod.source.test.mjs tests/revenueTipPeriod.test.mjs
 
       - name: Verify navigation performance and concurrent read isolation
-        run: node --test tests/navigationPerformance.test.mjs tests/sharedRead.test.mjs tests/leaveRoute.test.mjs
+        run: node --test tests/navigationPerformance.test.mjs tests/sharedRead.test.mjs tests/leaveRoute.test.mjs tests/leaveNavigation.test.mjs tests/pageRecovery.test.mjs
 
       - name: Lint
         run: npm run lint
