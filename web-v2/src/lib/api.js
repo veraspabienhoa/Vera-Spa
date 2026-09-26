@@ -394,6 +394,7 @@ export const veraApi = {
   previewAttendanceCodes: file => upload('/v2/devices/attendance-codes/preview', file),
   attendanceSource: () => request('/v2/devices/attendance-source'),
   facegateMappings: () => request('/v2/devices/facegate-mappings'),
+  previewFacegateAttendance: (start, end) => request(`/v2/devices/facegate-attendance/preview?${new URLSearchParams({ start, end })}`),
   facegateProfile: (id) => request(`/v2/devices/facegate-profiles/${encodeURIComponent(id)}`),
   saveFacegateMapping: (body) => request('/v2/devices/facegate-mappings', { method: 'POST', body: JSON.stringify(body) }),
   checkFacegateMapping: (registration_ref) => request('/v2/devices/facegate-mappings/check', { method: 'POST', body: JSON.stringify({ registration_ref }) }),

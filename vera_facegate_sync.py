@@ -75,7 +75,31 @@ def persist_batch(conn, device_id, day, batch):
     """Caller owns one transaction; no device/network calls while it is open."""
     now = datetime.now(timezone.utc).isoformat()
     inserted = 0
-    for event in batch:
+    if getattr(getattr(conn, 'dialect', None), 'name', '') == 'postgresql':
+        # Two statements per <=250 events, not two round trips per event on
+        # every poll. Keep conflict verification: duplicate IDs may not mutate
+        # previously archived evidence. The caller serializes each device.
+        for offset in range(0, len(batch), 250):
+            params = {'device': device_id, 'now': now,
+                      'batch': json.dumps(batch[offset:offset + 250], ensure_ascii=False)}
+            inserted += conn.execute(text('''WITH incoming AS (
+                SELECT * FROM jsonb_to_recordset(CAST(:batch AS jsonb)) AS x(
+                    event_id text,occurred_at text,work_date text,payload_json text,payload_sha256 text)
+            ), added AS (
+                INSERT INTO vera_facegate_event
+                    (device_id,event_id,occurred_at,work_date,payload_json,payload_sha256,imported_at)
+                SELECT :device,event_id,occurred_at,work_date,payload_json,payload_sha256,:now FROM incoming
+                ON CONFLICT(device_id,event_id,occurred_at) DO NOTHING RETURNING 1
+            ) SELECT COUNT(*) FROM added'''), params).scalar_one()
+            mismatch = conn.execute(text('''SELECT EXISTS (
+                SELECT 1 FROM jsonb_to_recordset(CAST(:batch AS jsonb)) AS x(
+                    event_id text,occurred_at text,payload_sha256 text)
+                JOIN vera_facegate_event e ON e.device_id=:device
+                    AND e.event_id=x.event_id AND e.occurred_at=x.occurred_at
+                WHERE e.payload_sha256 <> x.payload_sha256)'''), params).scalar_one()
+            if mismatch:
+                raise SyncError('existing_event_changed')
+    for event in ([] if getattr(getattr(conn, 'dialect', None), 'name', '') == 'postgresql' else batch):
         row = {**event, 'device_id': device_id, 'imported_at': now}
         changed = conn.execute(text('''INSERT INTO vera_facegate_event
             (device_id,event_id,occurred_at,work_date,payload_json,payload_sha256,imported_at)

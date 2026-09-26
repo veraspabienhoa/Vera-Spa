@@ -1,0 +1,7 @@
+.facegate-attendance-preview { border: 1px solid #527b67; border-radius: 12px; padding: 14px; margin-top: 16px; background: #f4faf6; min-width: 0; max-width: 100%; }
+.facegate-attendance-preview fieldset { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; border: 0; padding: 0; }
+.facegate-attendance-preview label { display: grid; gap: 5px; }
+.facegate-attendance-preview .responsive-data-table { max-width: 100%; overflow-x: auto; margin-block: 12px; }
+.facegate-attendance-preview td { max-width: 380px; overflow-wrap: anywhere; white-space: normal; }
+.facegate-attendance-preview summary { cursor: pointer; font-weight: 700; padding-block: 8px; }
+@media (max-width: 600px) { .facegate-attendance-preview fieldset > * { width: 100%; } }

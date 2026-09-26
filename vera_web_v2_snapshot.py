@@ -306,6 +306,9 @@ def _records(conn, start: date, end: date) -> list[dict[str, Any]]:
 
 
 def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, identity_type):
+    from vera_web_v2_facegate_attendance import install_facegate_attendance_routes
+    install_facegate_attendance_routes(app, engine_instance=engine_instance,
+                                      current_identity=current_identity, identity_type=identity_type)
     from vera_web_v2_devices import install_device_routes
     install_device_routes(app, engine_instance=engine_instance, current_identity=current_identity,
                           require_feature=require_feature, identity_type=identity_type, read_timesoft=_records)

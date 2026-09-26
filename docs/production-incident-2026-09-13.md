@@ -1150,3 +1150,39 @@ and columns. The supplied report then yields all 40 distinct attendance codes.
 Tests cover understated/overstated row and column metadata, leading-zero codes and
 actual row/column limits. Existing ZIP/upload bounds remain enforced. This fixes
 the preview reader; it does not alter XLSX inputs, saved attendance or mappings.
+
+## 27-09-2026: FaceGate attendance rehearsal before TimeSoft cutover
+
+The operator requests confirmed mapping completion and direct FaceGate attendance.
+The supplied comparison exports do not contain device profile IDs/registration
+references, so their 126 matching timestamps cannot authorize bulk identity writes.
+No new production mapping, successful VPS deployment or source switch is claimed.
+
+An Admin-only installed API and Check-in History panel now adapt saved FaceGate
+events into the existing VERA attendance reader with explicitly supplied datasets.
+Production readers keep TimeSoft. The preview reuses one caller connection in a
+PostgreSQL REPEATABLE READ, READ ONLY transaction and performs no device I/O,
+leave-return writes, payroll updates or penalty/outbox generation. Identity comes
+only from a unique confirmed device reference at the current registered address
+and an existing VERA username. Machine names remain review metadata. Exact unique
+timestamp sequences propose mappings but cannot supply a device profile ID or
+confirm a mapping. Normal VERA shifts still do not require an exit scan.
+
+Workday assignment uses VERA schedules/effective assignments, with the next calendar
+day fetched for overnight evidence. The preview preserves full local timestamps;
+overlapping shift windows, missing shifts, changed evidence, unknown status/type
+and missing identities are review blockers. Raw timestamps and the shared base
+attendance/break result are compared separately, so five-minute grouping cannot
+hide a missing repeat scan. This is not a full payroll/approved-leave/Auto Check
+cutover validation: payable minutes and vendor status semantics remain unverified,
+and attendance_cutover_ready remains false. Never stop the whole TimeSoft worker:
+it also handles historical invoice imports and delivery of committed penalty events.
+
+The production deployment workflow installs an independent archive-only systemd
+timer, 60 seconds after the prior service finishes. A nonblocking local file lock
+also excludes the hourly GitHub fallback. Device fetches finish before database
+transactions. PostgreSQL archival now uses two SQL statements per bounded batch
+of 250 records plus two per-day bookkeeping statements; the evidence digest check
+and transaction rollback remain mandatory. Regression tests use synthetic records,
+including first insert/replay, a conflict in the second batch, a pool of one,
+read-only enforcement, Unicode names, repeats, date rollover and ambiguous shifts.

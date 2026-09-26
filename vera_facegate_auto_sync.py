@@ -1,13 +1,15 @@
 """Archive today's and yesterday's FaceGate evidence; never project attendance."""
 from datetime import datetime, timedelta
+import fcntl
 import json
+import os
 import subprocess
 import sys
 
 from vera_facegate_control_log import VN_TZ
 
 
-def main():
+def archive_days():
     today = datetime.now(VN_TZ).date()
     failures = []
     for day in (today - timedelta(days=1), today):
@@ -32,6 +34,22 @@ def main():
         print(json.dumps({'ok': False, 'failures': failures}))
         return 1
     return 0
+
+
+def main():
+    # The hourly fallback and the VPS timer can coincide. A local nonblocking
+    # lock prevents duplicate device fetches, without occupying a DB connection.
+    lock_path = '/opt/vera-spa/.facegate-sync.lock'
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(json.dumps({'ok': True, 'skipped': 'sync_running'}))
+            return 0
+        return archive_days()
+    finally:
+        os.close(fd)
 
 
 if __name__ == '__main__':
