@@ -95,6 +95,10 @@ def client(database, monkeypatch):
         if not identity.allowed:
             raise HTTPException(403, 'No permission')
     app = FastAPI()
+    # Revenue is installed as part of the existing revenue/leave route bundle.
+    # Supply the two upstream leave routes just as the production app does.
+    app.add_api_route('/v2/leave/records', lambda: {'items': []}, methods=['GET'])
+    app.add_api_route('/v2/leave/daily-stats', lambda: {}, methods=['GET'])
     shared = dict(engine_instance=lambda: database, current_identity=lambda: ident,
                   require_feature=require, norm=lambda value: str(value or '').strip().lower(), google_client=lambda: None)
     routes.install_revenue_leave_list_routes(app, **shared, feature_allowed=lambda *args: True, progressive_key=lambda *args: '')
