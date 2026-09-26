@@ -1,3 +1,4 @@
+import ComboCustomerFields from '../components/ComboCustomerFields'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
@@ -238,10 +239,11 @@ function saleDateLabel(value) {
   return parsed ? displayFullDate(parsed) : (value || '—')
 }
 
-function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave, onDelete }) {
+function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave, onDelete, customers, loadCustomers }) {
   const emptyDraft = () => ({ sale_date: defaultDate, customer_name: '', customer_phone: '', combo_ticket: '', note: '' })
   const [draft, setDraft] = useState(emptyDraft)
   const [editingId, setEditingId] = useState('')
+  const submitting = useRef(false)
 
   const reset = () => {
     setDraft(emptyDraft())
@@ -260,8 +262,10 @@ function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave
   }
 
   const submit = async () => {
-    const saved = await onSave(employee, draft, editingId)
-    if (saved) reset()
+    if (submitting.current) return
+    submitting.current = true
+    try { const saved = await onSave(employee, draft, editingId); if (saved) reset() }
+    finally { submitting.current = false }
   }
 
   return <section data-ui-key="u-cf2cd9c589b7" className="combo-employee-card">
@@ -269,11 +273,9 @@ function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave
       <strong>BẢNG CỦA {systemName(employee).toUpperCase()}</strong>
       <span>{rows.length.toLocaleString('vi-VN')} lượt trong tháng</span>
     </div>
-    {canEdit && <div className="combo-sale-fields">
+    {canEdit && <div className="combo-sale-fields" onFocusCapture={loadCustomers}>
       <label>Ngày bán<VeraDateInput aria-label="Ngày bán" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
-      <label>Tên khách hàng<input value={draft.customer_name} onChange={(event) => setDraft({ ...draft, customer_name: event.target.value })} /></label>
-      <label>Số điện thoại<input type="tel" inputMode="tel" value={draft.customer_phone} onChange={(event) => setDraft({ ...draft, customer_phone: event.target.value })} /></label>
-      <label>Vé combo<input value={draft.combo_ticket} onChange={(event) => setDraft({ ...draft, combo_ticket: event.target.value })} /></label>
+      <ComboCustomerFields customers={customers} draft={draft} setDraft={setDraft} busy={busy}/>
       <label>Ghi chú<input value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></label>
       <UiToolbar data-ui-key="u-3233d64b529b" className="combo-form-actions">
         {editingId && <button data-ui-key="u-7d54a3d9d14c" data-ui-label-default="Hủy sửa" type="button" className="schedule-copy-button" disabled={busy} onClick={reset}><UiCustomText uiKey="u-7d54a3d9d14c">Hủy sửa</UiCustomText></button>}
@@ -338,6 +340,15 @@ export default function WorkSchedulePage({ user }) {
   const [drafts, setDrafts] = useState({})
   const [monthlyRows, setMonthlyRows] = useState([])
   const [comboSales, setComboSales] = useState([])
+  const [comboCustomers, setComboCustomers] = useState([])
+  const customerRead = useRef({ at: 0, department: '', pending: null })
+  const loadComboCustomers = () => {
+    if (customerRead.current.pending || (customerRead.current.department === department && Date.now() - customerRead.current.at < 5000)) return
+    customerRead.current.pending = veraApi.comboCustomers(department).then(result => {
+      setComboCustomers(result.customers || []); customerRead.current.at = Date.now(); customerRead.current.department = department
+    }).catch(error => setNotice(error.message || 'Không tải được danh bạ khách mua combo.'))
+      .finally(() => { customerRead.current.pending = null })
+  }
   const comboFileInputRef = useRef(null)
   const scheduleFileInputRef = useRef(null)
   const autoSaveTimerRef = useRef(null)
@@ -1018,7 +1029,7 @@ export default function WorkSchedulePage({ user }) {
       <div className="combo-sale-head"><strong>BẢNG BÁN COMBO · {DEPARTMENT_INFO[department].label}</strong>{canEditCombo && <UiToolbar data-ui-key="u-f600ca113e5d" className="combo-excel-actions"><input ref={comboFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importComboSales(event)} /><button data-ui-key="u-4fe327c22b3c" data-ui-label-default="Import Excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => comboFileInputRef.current?.click()}><Upload size={15}/><UiCustomText uiKey="u-4fe327c22b3c"> Import Excel</UiCustomText></button><button data-ui-key="u-be3d05eab551" data-ui-label-default="Export Excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => void exportComboSales()}><Download size={15}/><UiCustomText uiKey="u-be3d05eab551"> Export Excel</UiCustomText></button></UiToolbar>}</div>
       <div className="combo-employee-sections">{comboEmployees.map((employee) => {
         const employeeRows = comboSales.filter((sale) => String(sale.employee_username || '').toLowerCase() === String(employee.username || '').toLowerCase())
-        return <ComboEmployeeTable key={`${department}-${month}-${employee.username}`} employee={employee} rows={employeeRows} defaultDate={comboDefaultDate} canEdit={canEditCombo} busy={busy} onSave={saveComboSale} onDelete={deleteComboSale} />
+        return <ComboEmployeeTable key={`${department}-${month}-${employee.username}`} employee={employee} rows={employeeRows} defaultDate={comboDefaultDate} canEdit={canEditCombo} busy={busy} onSave={saveComboSale} onDelete={deleteComboSale} customers={comboCustomers} loadCustomers={loadComboCustomers} />
       })}</div>
       {!comboEmployees.length && <div className="revenue-meta">Chưa có nhân viên {DEPARTMENT_INFO[department].label} để tạo bảng bán combo.</div>}
     </div> : null

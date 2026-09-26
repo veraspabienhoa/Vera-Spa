@@ -27,7 +27,6 @@ export default function DevicePage({ user }) {
   const [detected, setDetected] = useState(null)
   const [facegateStatus, setFacegateStatus] = useState('')
   const sequence = useRef(0)
-  const registerUsbRef = useRef(null)
   const formRef = useRef(null)
   const reload = async () => {
     const id = ++sequence.current
@@ -55,7 +54,6 @@ export default function DevicePage({ user }) {
       setMessage('Đã thêm hồ sơ thiết bị USB. Kết nối nghiệp vụ cần bộ điều khiển tương thích.')
     } catch (cause) { setError(cause.message || 'Không lưu được hồ sơ thiết bị.'); await reload() }
   }
-  registerUsbRef.current = registerUsb
   const discoverUsb = async () => {
     if (!navigator.usb?.requestDevice) { setError('Trình duyệt này không hỗ trợ nhận diện USB. Hãy dùng Chrome hoặc Edge trên máy tính.'); return }
     try { await registerUsb(await navigator.usb.requestDevice({ filters: [] })) }
@@ -70,14 +68,6 @@ export default function DevicePage({ user }) {
       edit({ ...newDevice(), name: found.name || 'Thiết bị Bluetooth', kind: 'other', connection: 'bluetooth', serial: found.id, notes: 'Đã chọn qua Web Bluetooth; cần tích hợp giao thức của thiết bị để dùng dữ liệu.' })
     } catch (cause) { if (cause?.name !== 'NotFoundError') setError(cause.message || 'Không nhận diện được Bluetooth.') }
   }
-  const hasRegistry = Boolean(data)
-  useEffect(() => {
-    if (!hasRegistry || !navigator.usb) return undefined
-    const onConnect = event => { void registerUsbRef.current?.(event.device) }
-    navigator.usb.addEventListener('connect', onConnect)
-    navigator.usb.getDevices().then(devices => devices.forEach(onDevice => { void registerUsbRef.current?.(onDevice) })).catch(() => {})
-    return () => navigator.usb.removeEventListener('connect', onConnect)
-  }, [hasRegistry])
   const save = async event => {
     event.preventDefault()
     if (!event.currentTarget.reportValidity() || !data) return
@@ -89,6 +79,15 @@ export default function DevicePage({ user }) {
       setData(await veraApi.saveDeviceRegistry({ expected_revision: data.revision, devices }))
       setEditing(null); setMessage('Đã lưu hồ sơ thiết bị.')
     } catch (cause) { setError(cause.message || 'Không lưu được thiết bị.') }
+    finally { setBusy(false) }
+  }
+  const removeDevice = async item => {
+    if (busy || editing || !window.confirm(`Xóa thiết bị “${item.name}” khỏi danh sách? Lịch sử chấm công đã lưu được giữ lại.`)) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      setData(await veraApi.deleteDevice(item.id, data.revision))
+      setMessage('Đã xóa thiết bị khỏi danh sách.')
+    } catch (cause) { setError(cause.message || 'Không xóa được thiết bị.') }
     finally { setBusy(false) }
   }
   const inspectSource = async () => {
@@ -113,6 +112,7 @@ export default function DevicePage({ user }) {
       {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverUsb()}><ScanLine size={16}/>Nhận diện USB</button>}
       {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverBluetooth()}><ScanLine size={16}/>Nhận diện Bluetooth</button>}
     </div>
+    {data && user?.role === 'admin' && !data.devices.some(item => item.id === 'facegate-current') && <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={() => edit({ ...newDevice(), id: 'facegate-current', name: 'Máy nhận diện chấm công', kind: 'faceid', adapter: 'facegate_server' })}>Khôi phục hồ sơ FaceGate</button>}
     <p>Điện thoại Android/iPhone có thể chụp ảnh, quét mã và gửi sự kiện chấm công qua tài khoản Admin trên HTTPS. Wi-Fi Direct trực tiếp cần ứng dụng hệ điều hành hỗ trợ.</p>
     {detected && <p className="device-detected">Đã nhận diện: {detected.manufacturer || 'USB'} {detected.model || `${detected.vendor}:${detected.product}`}. <a href={`https://www.google.com/search?q=${encodeURIComponent(`${detected.manufacturer} ${detected.model} ${detected.vendor}:${detected.product} driver official`)}`} target="_blank" rel="noopener noreferrer">Tìm driver từ hãng</a></p>}
     <StableFeedback>{error && <p className="device-error" role="alert">{error}</p>}
@@ -138,7 +138,7 @@ export default function DevicePage({ user }) {
       </fieldset>
     </form>}
     {data && <>
-      {user?.permissions?.device_station_operate && <MobileStationPanel registry={data} onRegistryChange={setData} canRegister={Boolean(user?.permissions?.device_manage)} canConfirm={Boolean(user?.permissions?.device_checkin_confirm)}/>}
+      {(user?.permissions?.device_station_operate || user?.permissions?.device_photo_delete) && <MobileStationPanel canOperate={Boolean(user?.permissions?.device_station_operate)} canDeletePhotos={Boolean(user?.permissions?.device_photo_delete && ['admin', 'quanly', 'letan'].includes(user?.role))} registry={data} onRegistryChange={setData} canRegister={Boolean(user?.permissions?.device_manage)} canConfirm={Boolean(user?.permissions?.device_checkin_confirm)}/>}
       <div className="device-list-filters">
         <label>Tìm thiết bị<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Tên, serial, hãng, vị trí" /></label>
         <label>Loại thiết bị<select value={kind} onChange={event => setKind(event.target.value)}><option value="">Tất cả</option>{Object.entries(data.kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -155,6 +155,7 @@ export default function DevicePage({ user }) {
           <dl><dt>Vị trí</dt><dd>{item.location || 'Chưa đặt'}</dd><dt>Hãng / model</dt><dd>{[item.manufacturer, item.model].filter(Boolean).join(' · ') || 'Chưa nhập'}</dd><dt>Serial / ID</dt><dd>{item.serial || 'Chưa nhập'}</dd><dt>Kết nối</dt><dd>{data.connections[item.connection]}</dd><dt>Bộ kết nối</dt><dd>{adapter?.label || 'Chờ tích hợp'}</dd></dl>
           <p>{item.adapter === 'pending' ? 'Chưa có kết nối vận hành.' : adapter?.configured ? 'Đã có cấu hình máy chủ. Trạng thái online chưa được kiểm tra.' : 'Chưa đủ cấu hình máy chủ.'}</p>
           {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || Boolean(editing) || (item.id === 'facegate-current' && !user?.permissions?.device_facegate_ip_manage)} onClick={() => edit(item)}><Settings2 size={16} />Chỉnh sửa</button>}
+          {user?.role === 'admin' && <button type="button" className="secondary-button danger" disabled={busy || Boolean(editing)} onClick={() => removeDevice(item)}>Xóa thiết bị</button>}
         </article>
       })}</div>
       {!visible.length && <p role="status">Không có thiết bị phù hợp bộ lọc.</p>}

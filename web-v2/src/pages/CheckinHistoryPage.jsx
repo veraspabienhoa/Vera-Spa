@@ -1,3 +1,4 @@
+import AttendanceCodePicker from '../components/AttendanceCodePicker'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import { useEffect, useRef, useState } from 'react'
@@ -42,6 +43,7 @@ function FacegateMappings() {
     {data && <>
       <p role="status">Đã xác nhận trên IP hiện tại: <strong>{data.confirmed_count} / {data.total_count}</strong> nhân viên. {data.unmapped_employees?.length ? `Còn ${data.unmapped_employees.length} nhân viên cần đối chiếu từng hồ sơ thiết bị và mã TimeSoft.` : 'Tất cả nhân viên đã có ánh xạ xác nhận.'} Ánh xạ chưa tự bật tính công.</p>
       {!!data.unmapped_employees?.length && <details><summary>Nhân viên chưa được xác nhận trên IP hiện tại</summary><div className="device-unmapped-list">{data.unmapped_employees.map(item => <button type="button" className="secondary-button compact" key={item.username} onClick={() => { setUsername(item.username); setConfirmed(false) }}>{item.username}{item.full_name ? ` · ${item.full_name}` : ''}</button>)}</div></details>}
+      <AttendanceCodePicker onChoose={(employee, attendanceCode) => { setUsername(employee); setCode(attendanceCode); setConfirmed(false) }}/>
       <form onSubmit={event => { event.preventDefault(); if (!profile) return; run(async () => {
         await veraApi.saveFacegateMapping({ profile_id: profile.profile_id, device_name: profile.device_name, registration_ref: profile.registration_ref, username, employee_code: code.trim(), confirmed })
         setData(await veraApi.facegateMappings()); setConfirmed(false); setMessage('Đã lưu ánh xạ để đối chiếu.')
@@ -51,7 +53,7 @@ function FacegateMappings() {
           <button type="button" className="secondary-button" disabled={!/^[1-9][0-9]*$/.test(profileId)} onClick={() => run(async () => { setProfile(null); setConfirmed(false); setProfile(await veraApi.facegateProfile(profileId)) })}>Đọc hồ sơ thiết bị</button>
           {profile && <p>Hồ sơ {profile.profile_id}: <strong>{profile.device_name || 'Chưa có tên'}</strong></p>}
           <label>Nhân viên VERA<select required value={username} onChange={event => { setUsername(event.target.value); setConfirmed(false) }}><option value="">Chọn nhân viên</option>{data.employees.map(item => <option key={item.username} value={item.username}>{item.username}{item.full_name ? ` · ${item.full_name}` : ''}</option>)}</select></label>
-          <label>Mã nhân viên TimeSoft<input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={code} onChange={event => { setCode(event.target.value); setConfirmed(false) }} /></label>
+          <label>Mã chấm công TimeSoft đã đối chiếu<input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={code} onChange={event => { setCode(event.target.value); setConfirmed(false) }} /></label>
           <label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Tôi đã kiểm tra hồ sơ thiết bị và mã TimeSoft thuộc nhân viên đã chọn.</label>
           <button className="secondary-button" type="submit" disabled={!profile || !confirmed || !username || !code.trim()}>Lưu / xác nhận lại ánh xạ</button>
         </fieldset>

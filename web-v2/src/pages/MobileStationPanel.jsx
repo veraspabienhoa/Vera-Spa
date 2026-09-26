@@ -18,7 +18,7 @@ function StationImage({ id, onViewed }) {
   return <span>{!url && <button type="button" className="secondary-button compact" onClick={load}>Xem ảnh</button>}{url && <img src={url} alt="Ảnh ghi từ điện thoại" width="90" loading="lazy"/>}{error && <small role="alert">{error}</small>}</span>
 }
 
-export default function MobileStationPanel({ registry, onRegistryChange, canRegister, canConfirm }) {
+export default function MobileStationPanel({ registry, onRegistryChange, canRegister, canConfirm, canOperate = true, canDeletePhotos = false }) {
   const devices = registry.devices
   const stations = devices.filter(device => device.enabled && ['camera', 'scanner', 'faceid'].includes(device.kind))
   const [stationId, setStationId] = useState(() => localStorage.getItem('vera-mobile-station-id') || '')
@@ -32,11 +32,19 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const pendingRef = useRef(null)
+  const galleryEpoch = useRef(0)
+  const mutation = useRef(false)
+
+  const refreshRecords = async () => {
+    const epoch = galleryEpoch.current
+    const result = await veraApi.mobileStationEvents()
+    if (epoch === galleryEpoch.current && !mutation.current) setRecords(result.records)
+  }
 
   useEffect(() => {
     if (typeof veraApi.mobileStationEvents !== 'function') return undefined
     let active = true
-    const refresh = () => veraApi.mobileStationEvents().then(value => { if (active) setRecords(value.records) }).catch(() => {})
+    const refresh = () => { const epoch = galleryEpoch.current; return veraApi.mobileStationEvents().then(value => { if (active && epoch === galleryEpoch.current && !mutation.current) setRecords(value.records) }).catch(() => {}) }
     void refresh()
     const timer = window.setInterval(refresh, 15000)
     return () => { active = false; window.clearInterval(timer) }
@@ -92,7 +100,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       await veraApi.saveMobileStationEvent(pending)
       pendingRef.current = null
       setMessage(type === 'checkin' ? 'Đã gửi sự kiện chấm công. Admin cần xem ảnh và xác nhận để ghi nhận chấm công.' : 'Đã gửi dữ liệu từ điện thoại.')
-      setRecords((await veraApi.mobileStationEvents()).records)
+      await refreshRecords()
     } catch (cause) { setMessage(cause.message || 'Không gửi được dữ liệu; bấm lại để thử cùng mã thao tác.') }
     finally { setBusy(false) }
   }
@@ -100,9 +108,21 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   const confirm = async id => {
     if (!window.confirm('Đã đối chiếu ảnh và tên nhân viên? Xác nhận sẽ ghi chấm công và có thể cập nhật thời gian kết thúc kỳ nghỉ.')) return
     setBusy(true)
-    try { await veraApi.confirmMobileCheckin(id); setRecords((await veraApi.mobileStationEvents()).records); setMessage('Đã xác nhận chấm công.') }
+    try { await veraApi.confirmMobileCheckin(id); await refreshRecords(); setMessage('Đã xác nhận chấm công.') }
     catch (cause) { setMessage(cause.message || 'Không xác nhận được.') }
     finally { setBusy(false) }
+  }
+
+  const deletePhoto = async id => {
+    if (mutation.current || !window.confirm('Xóa ảnh đã lưu? Sự kiện và chấm công đã xác nhận được giữ lại.')) return
+    mutation.current = true; galleryEpoch.current += 1; setBusy(true)
+    try {
+      await veraApi.deleteMobileStationImage(id)
+      setRecords(current => current?.map(row => row.id === id ? { ...row, has_image: false } : row))
+      setViewed(current => ({ ...current, [id]: false }))
+      setMessage('Đã xóa ảnh.')
+    } catch (cause) { setMessage(cause.message || 'Không xóa được ảnh.') }
+    finally { galleryEpoch.current += 1; mutation.current = false; setBusy(false) }
   }
 
   const registerPhone = async () => {
@@ -126,6 +146,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
 
   return <section className="device-mobile-station panel">
     <h2><Smartphone size={20}/> Điện thoại chụp ảnh · quét mã · chấm công</h2>
+    {canOperate && <>
     <p>Mở ứng dụng VERA bằng HTTPS và đăng nhập Admin trên điện thoại. Chọn hồ sơ điện thoại đang bật; ảnh và mã sẽ gửi tới máy chủ để xem trên máy tính. Hai thiết bị chỉ cần có Internet, không cần Bluetooth hay Wi-Fi Direct.</p>
     <div className="device-mobile-actions">
       <label>Điện thoại đã đăng ký<select value={stationId} onChange={event => { setStationId(event.target.value); pendingRef.current = null; localStorage.setItem('vera-mobile-station-id', event.target.value) }}><option value="">Chọn thiết bị</option>{stations.map(device => <option key={device.id} value={device.id}>{device.name}</option>)}</select></label>
@@ -139,8 +160,9 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       <button type="button" className="secondary-button" disabled={busy} onClick={() => submit('scan')}><ScanLine size={16}/>{barcode.trim() ? 'Lưu mã' : 'Quét mã'}</button>
       <button type="button" className="primary-button" disabled={busy || !camera || !employee.trim()} onClick={() => submit('checkin')}>Gửi chấm công có ảnh</button>
     </div>
+    </>}
     <StableFeedback>{message && <p role="status">{message}</p>}</StableFeedback>
-    <div className="device-actions"><h3>Sự kiện từ điện thoại</h3><button type="button" className="secondary-button" disabled={busy} onClick={async () => { try { setRecords((await veraApi.mobileStationEvents()).records) } catch (cause) { setMessage(cause.message) } }}><RefreshCw size={16}/>Làm mới</button></div>
-    {records && <div className="device-mobile-records">{records.map(record => <article key={record.id}><strong>{record.event_type === 'checkin' ? 'Chấm công' : record.event_type === 'scan' ? 'Quét mã' : 'Ảnh'}</strong><span>{record.employee_username || record.barcode || '—'}</span><small>{formatVeraDateTime(record.occurred_at)} · {record.operator}</small>{record.has_image && <StationImage id={record.id} onViewed={() => setViewed(current => ({ ...current, [record.id]: true }))}/ >}{record.event_type === 'checkin' && canConfirm && <button type="button" className="secondary-button compact" disabled={busy || Boolean(record.confirmed_at) || !viewed[record.id]} onClick={() => confirm(record.id)}>{record.confirmed_at ? 'Đã xác nhận' : 'Xem ảnh rồi xác nhận'}</button>}</article>)}</div>}
+    <div className="device-actions"><h3>Sự kiện từ điện thoại</h3><button type="button" className="secondary-button" disabled={busy} onClick={async () => { try { await refreshRecords() } catch (cause) { setMessage(cause.message) } }}><RefreshCw size={16}/>Làm mới</button></div>
+    {records && <div className="device-mobile-records">{records.map(record => <article key={record.id}><strong>{record.event_type === 'checkin' ? 'Chấm công' : record.event_type === 'scan' ? 'Quét mã' : 'Ảnh'}</strong><span>{record.employee_username || record.barcode || '—'}</span><small>{formatVeraDateTime(record.occurred_at)} · {record.operator}</small>{record.has_image && <StationImage id={record.id} onViewed={() => setViewed(current => ({ ...current, [record.id]: true }))}/ >}{record.has_image && canDeletePhotos && <button type="button" className="secondary-button compact danger" disabled={busy} onClick={() => deletePhoto(record.id)}>Xóa ảnh</button>}{record.event_type === 'checkin' && canConfirm && <button type="button" className="secondary-button compact" disabled={busy || Boolean(record.confirmed_at) || !record.has_image || !viewed[record.id]} onClick={() => confirm(record.id)}>{record.confirmed_at ? 'Đã xác nhận' : 'Xem ảnh rồi xác nhận'}</button>}</article>)}</div>}
   </section>
 }

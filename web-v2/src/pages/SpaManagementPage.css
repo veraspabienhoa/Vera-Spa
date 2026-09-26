@@ -84,3 +84,5 @@
 .spa-editor textarea{box-sizing:border-box;width:100%;font:inherit;padding:12px;border:1px solid #cbdcd1;border-radius:9px;resize:vertical}
 .spa-service-rules{border:1px solid #dce6df;border-radius:10px;padding:14px}.spa-service-rules summary{cursor:pointer;font-weight:700}.spa-service-rules[open] summary{margin-bottom:16px}
 @media(max-width:650px){.spa-service-types{grid-template-columns:1fr}.spa-component-row,.spa-step-row{grid-template-columns:minmax(0,1fr) 82px}.spa-component-row>.icon-button,.spa-step-row>.spa-actions{grid-column:1/-1;justify-self:end}.spa-service-types button{padding:20px}.spa-editor .spa-field input,.spa-editor .spa-field select,.spa-editor textarea{font-size:16px}}
+
+.spa-customer-combos .spa-customer-combo-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%}.spa-customer-combo-row>span:first-child{min-width:0;overflow-wrap:anywhere}.spa-combo-actions{display:flex;gap:6px;margin-left:auto;justify-content:flex-end;flex-wrap:wrap;flex-shrink:0}@media(max-width:820px){.spa-customer-combos .spa-customer-combo-row{flex-wrap:wrap}.spa-combo-actions{width:100%}}

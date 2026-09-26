@@ -154,3 +154,29 @@ def test_truncation_blocks_export_and_invalid_dates_do_not_call_device():
 def test_vietnam_day_boundary():
     assert devices.record_day({'occurred_at': '2026-09-23T18:00:00Z'}) == '2026-09-24'
     assert devices.filtered_records(RECORDS, 'facegate', event_date=date(2026, 9, 24)) == RECORDS[1:]
+
+
+def test_admin_device_delete_rejects_stale_revision_and_retains_archive():
+    client, store = fixture()
+    initial = devices.default_devices() + [devices.Device(id='printer', name='Printer', kind='printer').model_dump()]
+    assert client.put('/v2/devices/registry', json={'expected_revision': 0, 'devices': initial}).status_code == 200
+    assert client.delete('/v2/devices/registry/printer?expected_revision=0').status_code == 409
+    result = client.delete('/v2/devices/registry/printer?expected_revision=1')
+    assert result.status_code == 200
+    assert len(result.json()['devices']) == 1 and result.json()['revision'] == 2
+    assert client.delete('/v2/devices/registry/facegate-current?expected_revision=2').status_code == 200
+    with pytest.raises(RuntimeError, match='đã bị xóa'):
+        with devices.use_registered_facegate(store):
+            raise AssertionError('must not connect to a removed FaceGate')
+    assert not any(sql.startswith('DELETE') for sql in store.calls)
+
+
+def test_device_delete_requires_admin_even_when_device_manage_is_granted():
+    store = Store()
+    app = FastAPI()
+    identity = SimpleNamespace(role='quanly', employee_username='manager')
+    devices.install_device_routes(app, engine_instance=lambda: store, current_identity=lambda: identity,
+        require_feature=lambda *args: None, identity_type=SimpleNamespace, read_timesoft=lambda *args: [])
+    api = TestClient(app)
+    assert api.delete('/v2/devices/registry/facegate-current?expected_revision=0').status_code == 403
+    assert api.put('/v2/devices/registry', json={'expected_revision': 0, 'devices': []}).status_code == 403

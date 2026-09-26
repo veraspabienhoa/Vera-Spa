@@ -1096,3 +1096,37 @@ roles, current-month quota arguments, loading/error rows, bounded refreshes and
 reopening from the current Live Tour. CI remains required before frontend deploy.
 The requested rollback is a scoped mitigation; production opening still needs
 confirmation on the user's browser.
+
+
+## 27-09-2026: attendance-code review, combo directory and device/photo removal
+
+The owner requests TimeSoft attendance-code discovery for manual FaceGate mapping,
+customer selection by name/phone in schedule combo sales, a row per remaining
+customer purchase, and role-scoped device/photo deletion. This change is code-level
+work; no production database write or new FaceGate attendance cutover is claimed.
+
+The attendance catalogue projects only name, phone and the two distinct TimeSoft
+code fields from saved datasets. It does not call attendance projection, re-ingest
+FaceGate events or infer a FaceGate profile ID. XLSX preview is bounded and read-only;
+ambiguous matches and reused codes cannot auto-fill a confirmed mapping. Confirmation
+still validates the actual FaceGate profile using the existing route.
+
+Schedule combo lookups read only the canonical customer collection, reuse the
+caller connection during save, and validate the newest nondeleted purchase date.
+Selecting a customer fills the fields; explicit Add/Save remains the operation
+that records a commission sale. Older imports and historical edits stay compatible.
+The customer table shows separate remaining purchases and right-aligned actions.
+
+Only Admin can remove registry entries, including through bulk registry writes.
+Deletion shares the existing revision check and locked writer; saved attendance is
+not removed. Removing the FaceGate profile blocks new adapter I/O until the profile
+is restored. USB discovery now requires the explicit discovery button so a removed
+device is not immediately re-added by a browser reconnect event.
+
+Admin, Manager and Reception have a distinct stored-photo deletion permission.
+Photo deletion preserves event ID, upload digest and confirmed attendance. Replaying
+the original upload cannot restore a deleted photo. Confirmation and deletion lock
+the same event; an unconfirmed event with a deleted photo cannot be confirmed.
+Photo-only access does not grant capture or attendance-confirmation privileges.
+Regression tests cover these behaviors, stale gallery reads, permission boundaries,
+canonical combo matching and compact reads in both PostgreSQL storage modes.

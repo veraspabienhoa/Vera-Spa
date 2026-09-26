@@ -123,7 +123,8 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
     },
     "Chấm công / hệ thống": {
         "snapshot_today": "Xem Chấm công", "snapshot_export": "Export Chấm công",
-        "device_view": "Xem Quản lý thiết bị", "device_manage": "Thêm, sửa thiết bị",
+        "device_view": "Xem Quản lý thiết bị", "device_manage": "Thêm, sửa thiết bị (Admin có thể xóa)",
+        "device_photo_delete": "Xem và xóa ảnh thiết bị đã lưu",
         "device_station_operate": "Dùng điện thoại chụp ảnh, quét mã và gửi chấm công",
         "device_checkin_confirm": "Đối chiếu ảnh và xác nhận chấm công điện thoại",
         "device_history_view": "Xem lịch sử checkin và ảnh thiết bị",
@@ -216,7 +217,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         "snapshot_today", "snapshot_export",
     ]},
     {"id": "devices", "label": "Quản lý thiết bị", "view_feature": "device_view", "features": [
-        "device_view", "device_manage", "device_station_operate", "device_checkin_confirm",
+        "device_view", "device_manage", "device_photo_delete", "device_station_operate", "device_checkin_confirm",
         "device_history_view", "device_facegate_mapping_manage", "device_facegate_ip_manage",
     ]},
     {"id": "auto-check", "label": "Auto Check", "view_feature": "auto_penalty", "features": [
@@ -360,6 +361,7 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "employee_face_id_manage": {"employee_face_id_view"},
     "employee_face_id_all_users_edit": {"employee_face_id_view"},
     "device_manage": {"device_view"},
+    "device_photo_delete": {"device_view"},
     "device_station_operate": {"device_view"},
     "device_checkin_confirm": {"device_station_operate"},
     "device_history_view": {"device_view"},
@@ -460,6 +462,7 @@ def dependent_features(feature: str) -> set[str]:
     return output
 
 FRONTDESK = {
+    "device_view", "device_photo_delete",
     "tour", "tour_refresh", "tour_leave_sync", "leave", "leave_manage", "leave_create", "leave_export", "leave_email", "leave_detail_edit", "leave_detail_delete",
     "live_tour_view", "live_tour_operate", "live_tour_reorder", "live_tour_payment", "live_tour_export",
     "leave_manage_edit", "leave_manage_delete", "leave_today_khong_phep_edit_delete",
