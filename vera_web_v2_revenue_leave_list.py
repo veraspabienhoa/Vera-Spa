@@ -9,7 +9,7 @@ import os
 import re
 from typing import Any, Callable, Literal
 
-from fastapi import BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import Response, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from openpyxl import Workbook
@@ -26,7 +26,7 @@ import vera_revenue_store as revenue_store
 import vera_revenue_auto as revenue_auto
 
 
-RELEASE = "revenue-shared-auto-daily-2026-09-26-v1"
+RELEASE = "revenue-history-realtime-2026-09-26-v2"
 REVENUE_FEATURE = "revenue_view"
 REVENUE_TIP_FEATURE = "revenue_tip_edit"
 REVENUE_ENTRY_FEATURE = "revenue_entry_create"
@@ -49,7 +49,7 @@ REVENUE_ENTRY_FORM_URL = os.getenv(
     "https://docs.google.com/forms/d/e/1FAIpQLSeJp1bLrl8zSyESu_K0eo6NxdKsm85p4fxGXPXigPlmgkAs7w/viewform",
 )
 VN_TZ = timezone(timedelta(hours=7))
-REVENUE_PERIOD_START = date(2026, 9, 5)
+REVENUE_PERIOD_START = date(2025, 9, 5)
 REVENUE_CURRENT_DATE_COLUMN_INDEX = 4  # Sheet Input, column E.
 DATE_IN_TEXT_RE = re.compile(
     r"(?<!\d)(\d{1,2})\s*([./-])\s*(\d{1,2})\s*\2\s*(\d{4})(?!\d)"
@@ -589,7 +589,7 @@ def install_revenue_leave_list_routes(
             "storage": "postgresql",
             "transaction_table": revenue_store.TABLE,
             "period_metadata": True,
-            "period_start_source": "fixed 2026-09-05",
+            "period_start_source": "fixed 2025-09-05",
             "summary_scope": "PostgreSQL revenue ledger",
             "current_date_source": "ledger transaction date / note",
             "period_tip": True,
@@ -624,6 +624,13 @@ def install_revenue_leave_list_routes(
             return {"ok": True, **revenue_auto.set_mode(conn, body.source, body.revision,
                 str(getattr(ident, "employee_username", "") or ""))}
 
+    @app.get("/v2/revenue/revision")
+    def revenue_revision(response: Response, ident=Depends(current_identity)):
+        response.headers["Cache-Control"] = "no-store"
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, REVENUE_FEATURE)
+            return {"ok": True, "revision": revenue_auto.change_revision(conn)}
+
     @app.get("/v2/revenue/tip-summary")
     def revenue_tip_summary(start: date, end: date, ident=Depends(current_identity)):
         if start > end:
@@ -639,7 +646,7 @@ def install_revenue_leave_list_routes(
     def save_auto_tip_period(body: RevenueTipPeriod, ident=Depends(current_identity)):
         if (body.start_date > body.end_date or body.start_date < REVENUE_PERIOD_START
                 or body.end_date > datetime.now(VN_TZ).date()):
-            raise HTTPException(400, "Kỳ TIP Auto phải nằm trong khoảng 05-09-2026 đến ngày hiện tại.")
+            raise HTTPException(400, "Kỳ TIP Auto phải nằm trong khoảng 05-09-2025 đến ngày hiện tại.")
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_TIP_FEATURE)
             revenue_auto.lock_mode(conn)
@@ -696,7 +703,8 @@ def install_revenue_leave_list_routes(
             total_income = round(sum(row["amount"] for row in entries if row["type"] == "Thu"), 2)
             total_expense = round(sum(row["amount"] for row in entries if row["type"] == "Chi"), 2)
             tip_setting = _period_tip(conn, start_date.isoformat() if start_date else "", end_date.isoformat() if end_date else "")
-            auto_tip = _auto_revenue(conn, start_date, end_date)["tip_revenue"] if source == "manual_tip_auto" else None
+            auto_tip = revenue_auto.tip_total(conn, start_date or REVENUE_PERIOD_START,
+                end_date or datetime.now(VN_TZ).date()) if source == "manual_tip_auto" else None
         tip = float(tip_setting["amount"])
         return {
             "ok": True, "release": RELEASE, "source": source, "source_revision": shared["revision"],

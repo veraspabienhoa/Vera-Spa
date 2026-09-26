@@ -1,5 +1,33 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: mốc lịch sử Doanh thu và cập nhật Auto khi đang mở trang
+
+Người dùng sửa mốc bắt đầu thành 05-09-2025 và xác nhận giữ sổ Manual đến hết
+24-09-2026, lấy thanh toán/TIP/Nhập mua từ 25-09-2026. File xuất do người dùng
+cung cấp có 923 giao dịch trong khoảng lịch sử này. Không đưa dữ liệu tài chính
+của file vào repository và không import lại vào PostgreSQL.
+
+Auto đọc hai khoảng không giao nhau trong cùng một câu SQL: lịch sử Manual
+chưa xóa trước mốc chuyển đổi, giao dịch hệ thống chưa xóa từ mốc chuyển đổi.
+Bảng, tổng tiền, đối chiếu và Excel cùng dùng phép tính này; không tạo bản sao
+giao dịch và không gộp nhầm hai khoản hợp lệ chỉ vì cùng ngày/số tiền. TIP trong
+kỳ vẫn tính theo khoảng đã chọn, không cộng thêm vào tổng Thu lịch sử. Các nút
+Admin Sửa/Xóa/Import hiện đủ nhưng tiếp tục khóa trong Auto theo xác nhận của
+người dùng; tổng theo bộ lọc và Excel vẫn hoạt động.
+
+Trang Auto kiểm tra dấu thay đổi mỗi 5 giây khi đang hiển thị. API có kiểm tra
+quyền chỉ trả mã băm của bộ đếm/revision và ngày Việt Nam, không tải JSON hóa
+đơn hoặc toàn sổ trong lượt kiểm tra. Chỉ khi dấu đổi mới tải lại số liệu; dừng
+lượt kiểm tra khi tab ẩn, tránh request chồng nhau, đợi tác vụ/lựa chọn đang lưu
+hoàn tất. Đây là cập nhật bằng polling, không phải thông báo đẩy tức thời.
+Kiểm tra hạn mức Đăng ký nghỉ đặt nút và kết quả trong cùng hàng hai cột có
+giới hạn chiều rộng, bỏ vùng giữ chỗ rỗng cũ.
+
+Kiểm thử bao gồm khoảng chuyển đổi, giao dịch giá trị bằng nhau, đọc lặp không
+ghi thêm, Excel có bộ lọc, thay đổi/xóa nguồn, quyền ghi và polling ẩn/bận/lỗi.
+Chưa xác minh số dư thực tế hoặc thao tác tài chính trên production. Cần Deploy
+VPS Production để cập nhật cả API lẫn frontend thực tế; Pages riêng không đủ.
+
 ## 26-09-2026 15:32: frontend production vẫn ở bản VPS trước các sửa UI
 
 Ảnh mới vẫn có hai vùng giữ chỗ Live Tour, và người dùng không mở được Đăng ký

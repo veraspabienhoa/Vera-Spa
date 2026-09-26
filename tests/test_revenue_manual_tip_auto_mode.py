@@ -7,8 +7,8 @@ def test_revenue_manual_tip_auto_mode_and_period_contract():
 
     assert 'Literal["manual", "auto", "manual_tip_auto"]' in backend
     assert 'source == "manual_tip_auto"' in backend
-    assert 'auto_tip = _auto_revenue' in backend
-    assert 'REVENUE_PERIOD_START = date(2026, 9, 5)' in backend
+    assert 'auto_tip = revenue_auto.tip_total' in backend
+    assert 'REVENUE_PERIOD_START = date(2025, 9, 5)' in backend
     assert '"start_date_label": (start_date or REVENUE_PERIOD_START).strftime("%d-%m-%Y")' in backend
 
     assert "Dịch vụ Manual · Tip Auto" in page

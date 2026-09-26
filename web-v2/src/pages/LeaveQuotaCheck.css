@@ -1,1 +1,11 @@
-.leave-list-personal-summary-note .leave-quota-check-button{display:inline-flex;align-items:center;justify-content:center;gap:10px;max-width:100%;min-height:48px;padding:12px 20px;background:linear-gradient(135deg,#a83b06,#783005);color:#fff;border:2px solid #642706;border-radius:12px;box-shadow:0 3px 0 #642706,0 5px 14px #78300533;font-size:16px;font-weight:800;white-space:normal;text-align:center}.leave-quota-check-button:focus-visible{outline:3px solid #176448;outline-offset:4px}.leave-list-personal-summary-note .leave-quota-check-button:disabled{opacity:.6;box-shadow:none;cursor:wait}@media(max-width:760px){.leave-list-personal-summary-note .leave-quota-check-button{width:100%;font-size:15px}}
+.leave-list-personal-summary-note.leave-quota-check{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:12px;align-items:start;max-width:100%;box-sizing:border-box}
+.leave-list-personal-summary-note .leave-quota-check-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;min-width:0;max-width:100%;min-height:48px;padding:10px 14px;background:linear-gradient(135deg,#a83b06,#783005);color:#fff;border:2px solid #642706;border-radius:12px;box-shadow:0 3px 0 #642706,0 5px 14px #78300533;font-size:16px;font-weight:800;white-space:normal;text-align:center;overflow-wrap:anywhere}
+.leave-quota-check-button svg{flex-shrink:0}
+.leave-quota-check-button:focus-visible{outline:3px solid #176448;outline-offset:4px}
+.leave-list-personal-summary-note .leave-quota-check-button:disabled{opacity:.6;box-shadow:none;cursor:wait}
+.leave-quota-check-result{min-width:0;overflow-wrap:anywhere;padding-block:8px}
+.leave-quota-check-result p{margin:0}
+.leave-quota-check-result [role=alert]{color:#b42318}
+.leave-quota-check-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px}
+.leave-quota-check-item{min-width:0;border:1px solid #b45309;border-radius:8px;padding:8px;margin-top:8px;background:#fffbeb;overflow-wrap:anywhere}
+@media(max-width:760px){.leave-list-personal-summary-note.leave-quota-check{grid-template-columns:minmax(0,35%) minmax(0,1fr);gap:8px}.leave-list-personal-summary-note .leave-quota-check-button{font-size:12px;padding:8px 6px;gap:4px}.leave-quota-check-button svg{width:16px;height:16px}.leave-quota-check-result{font-size:12px}}
