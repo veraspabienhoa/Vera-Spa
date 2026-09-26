@@ -1237,7 +1237,7 @@ jobs:
         run: node --test tests/authRecovery.test.mjs tests/authSessionTransport.test.mjs tests/checkinHistory.test.mjs tests/checkinDevicePages.test.mjs
 
       - name: Verify Live Tour appointment editing and checkout display
-        run: node --test tests/readTransport.test.mjs tests/liveTourDetailsLoading.test.mjs tests/adminInvoiceDialogs.test.mjs tests/liveTourActionResult.test.mjs tests/notificationFeed.test.mjs tests/liveTourDetails.test.mjs tests/observeLayoutNodes.test.mjs tests/liveTourQuickCombo.test.mjs tests/liveTourAppointments.test.mjs tests/liveTourFilters.test.mjs tests/paymentPresentation.test.mjs tests/liveTourBreaktime.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs tests/searchableDropdowns.test.mjs tests/liveTourReceipt.test.mjs
+        run: node --test tests/readTransport.test.mjs tests/liveTourDetailsLoading.test.mjs tests/adminInvoiceDialogs.test.mjs tests/liveTourActionResult.test.mjs tests/notificationFeed.test.mjs tests/liveTourDetails.test.mjs tests/observeLayoutNodes.test.mjs tests/liveTourQuickCombo.test.mjs tests/liveTourAppointments.test.mjs tests/liveTourFilters.test.mjs tests/paymentPresentation.test.mjs tests/liveTourBreaktime.test.mjs tests/bookingControls.test.mjs tests/bookingAvailability.test.mjs tests/searchableDropdowns.test.mjs tests/liveTourReceipt.test.mjs tests/spaAreaConcurrency.test.mjs tests/spaHistoryExport.test.mjs
 
       - name: Verify page position and refresh safety
         # Includes in-place page refresh, dirty guards, loading geometry and dialogs.
