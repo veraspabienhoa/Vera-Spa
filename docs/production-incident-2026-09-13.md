@@ -1,5 +1,33 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: Lương hành chánh lấy thưởng combo và loại tài khoản không tính lương
+
+Ảnh người dùng cho thấy lượt bán combo theo nhân viên ở Lịch làm việc khác
+tiền Bán combo trong bảng lương. Mã cũ chỉ lấy default_combo_sales và không
+truy vấn vera_work_schedule_combo_sale. Bản sửa đếm mỗi dòng bán trong kỳ
+(tháng hiện tại đến hôm nay), theo username, nhân 100.000đ; không cộng thêm
+mức mặc định hoặc cờ combo_sold cũ. Hai nguồn tính lương lịch/chấm công dùng
+cùng phép tính; bảng tổng hợp đọc số lượt một lần cho tất cả bộ phận. Khi
+người dùng bấm tính lại sẽ lấy số mới; không tự sửa số tiền lịch sử đã chốt.
+
+Lương KTV đã kiểm tra cờ Không tính lương nhưng ba truy vấn nhân viên hành
+chánh còn thiếu điều kiện. Thêm điều kiện ở API, ẩn các tài khoản đã đánh dấu
+trong bản nháp/lịch sử mở để sửa; từ chối yêu cầu lưu/hoàn thành/xuất có tài
+khoản bị loại từ tab cũ. Chỉ lọc bản hiển thị, giữ nguyên lịch sử lưu gốc.
+
+Bổ sung lọc tên không dấu và bộ phận trên dữ liệu đã tải. Tổng tiền và Excel
+theo bộ lọc; lưu nháp/hoàn thành giữ toàn bộ bảng, không xóa các dòng tạm ẩn.
+Trên mobile bỏ khung input nằm trong ô bảng, giữ số tiền, chỉnh sửa và focus.
+
+Video cho thấy mở Cấu hình lương dẫn tới màn hình khôi phục; chưa có trace
+production để kết luận ngoại lệ khởi đầu. Xác nhận đường khôi phục trước đây
+đặt ở trang Lương chung nên retry chỉ reset module KTV, không reset module
+Cấu hình vừa lỗi. Cô lập Suspense/error boundary từng tab, retry đúng module
+và giữ tab khác/dữ liệu đang nhập. Kiểm thử mở cấu hình có dòng thực, quyền
+Admin, lỗi import giả lập rồi retry, lọc/chỉnh/lưu/xuất và PostgreSQL cho nguồn
+combo, biên ngày, cờ loại nhân viên, bảo toàn lịch sử. Cần Deploy VPS Production
+và đối chiếu bảng nháp thực tế; không xem CI là lần tính/gửi lương production.
+
 ## 26-09-2026: bỏ vùng thông báo rỗng trên toàn bộ trang
 
 Người dùng đánh dấu các khoảng trống trên 20 trang. Đối chiếu ảnh và mã xác

@@ -1246,6 +1246,9 @@ jobs:
       - name: Revenue shared Auto behavior
         run: node --test tests/revenueSharedAuto.test.mjs tests/revenueTipPeriod.source.test.mjs tests/revenueTipPeriod.test.mjs tests/revenueRealtime.test.mjs
 
+      - name: Administrative payroll filters and configuration recovery
+        run: node --test tests/departmentPayroll.test.mjs
+
       - name: Verify navigation performance and concurrent read isolation
         run: node --test tests/navigationPerformance.test.mjs tests/sharedRead.test.mjs tests/leaveRoute.test.mjs tests/leaveNavigation.test.mjs tests/pageRecovery.test.mjs
 

@@ -1,13 +1,14 @@
 import UiToolbar from './UiToolbar'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import PageErrorBoundary from './PageErrorBoundary'
 import './PayrollTabs.css'
 
 export default function PayrollTabs({ user, initialTab = 'ktv', ktv, administrative, configuration }) {
   const admin = user?.role === 'admin'
   const tabs = [
-    { id: 'ktv', label: 'Lương KTV', allowed: admin || user?.permissions?.payroll_history === true, content: ktv },
-    { id: 'administrative', label: 'Lương hành chánh', allowed: admin || user?.permissions?.payroll_calculate === true, content: administrative },
-    { id: 'configuration', label: 'Cấu hình lương', allowed: admin, content: configuration },
+    { id: 'ktv', page: 'payroll', label: 'Lương KTV', allowed: admin || user?.permissions?.payroll_history === true, content: ktv },
+    { id: 'administrative', page: 'department-payroll', label: 'Lương hành chánh', allowed: admin || user?.permissions?.payroll_calculate === true, content: administrative },
+    { id: 'configuration', page: 'payroll-config', label: 'Cấu hình lương', allowed: admin, content: configuration },
   ].filter(tab => tab.allowed)
   const [selected, setSelected] = useState(initialTab)
   const active = tabs.find(tab => tab.id === selected)?.id || tabs[0]?.id
@@ -19,7 +20,9 @@ export default function PayrollTabs({ user, initialTab = 'ktv', ktv, administrat
       setVisited(current => current.includes(tab.id) ? current : [...current, tab.id])
     }}>{tab.label}</button>)}</UiToolbar>
     {tabs.map(tab => <div key={tab.id} id={`payroll-panel-${tab.id}`} role="tabpanel" aria-labelledby={`payroll-tab-${tab.id}`} hidden={active !== tab.id}>
-      {(active === tab.id || visited.includes(tab.id)) && tab.content}
+      {(active === tab.id || visited.includes(tab.id)) && <PageErrorBoundary page={tab.page} onRetry={() => tab.content?.type?.reset?.()}>
+        <Suspense fallback={<p role="status">Đang tải {tab.label}…</p>}>{tab.content}</Suspense>
+      </PageErrorBoundary>}
     </div>)}
   </section>
 }
