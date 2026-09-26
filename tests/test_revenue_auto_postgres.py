@@ -346,6 +346,35 @@ def test_auto_summary_cutoff_does_not_add_manual_history(database, client):
         assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 3
 
 
+def test_manual_register_and_export_remain_visible_after_saved_summary_cutoff(database, client):
+    http, ident = client
+    with database.begin() as conn:
+        conn.execute(text("""INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note)
+            VALUES ('Thu',49250000,'2026-09-24','Synthetic income'),
+                   ('Chi',54000000,'2026-09-24','Synthetic expense A'),
+                   ('Chi',202000,'2026-09-24','Synthetic expense B')"""))
+    saved = http.put('/v2/revenue/report-period', json={'start_date':'2026-09-16','end_date':'2026-09-21'})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['total_income'] == saved.json()['total_expense'] == 0
+    for query in ('preset=all', 'preset=custom&start=2026-09-24&end=2026-09-24'):
+        response = http.get('/v2/revenue/purchase-reconcile?' + query + '&canonical=true')
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data['ledger_row_count'] == 3
+        assert data['ledger_income'] == 49250000 and data['ledger_expense'] == 54202000
+        assert all(row['date'] == '2026-09-24' and not row.get('read_only') for row in data['ledger_rows'])
+        response = http.get('/v2/revenue/ledger/export.xlsx?' + query + '&canonical=true&transaction_date=2026-09-24')
+        assert response.status_code == 200, response.text
+        sheet = load_workbook(BytesIO(response.content), data_only=True).active
+        assert sheet.max_row == 4
+        assert sorted(sheet.cell(row, 3).value for row in range(2, 5)) == [202000, 49250000, 54000000]
+    current = http.get('/v2/revenue/period-report').json()
+    assert current['end_date'] == '2026-09-21'
+    assert current['total_income'] == current['total_expense'] == 0
+    ident.allowed = False
+    assert http.get('/v2/revenue/purchase-reconcile?preset=all&canonical=true').status_code == 403
+
+
 @pytest.mark.parametrize('end',['2026-09-24','2026-09-25','2026-09-26'])
 def test_period_report_keeps_manual_and_auto_sources_independent(database, client, end):
     seed(database)
