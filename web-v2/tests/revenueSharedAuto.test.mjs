@@ -23,7 +23,7 @@ const built = await build({
   } }],
 })
 
-async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26', unified = false, savedStart = '2026-09-16') {
+async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, savedEnd = '2026-09-26', unified = false, savedStart = '2026-09-16', ledgerFixture = null) {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
   let source = initial, revision = 1, hold = false, pending = null
   const calls = []
@@ -68,10 +68,16 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
       })
       if (path.endsWith('/purchases')) return response({ start_date:'2025-09-05', end_date:'2026-09-26', purchase_rows:Array.from({length:rowCount},(_,i)=>({id:i,date:'2026-09-26',date_label:'26-09-2026',item:`Hàng ${i+1}`,amount:10,buyer:'Nguoi dat',user:'Nguoi nhap'})) })
-      if (path.endsWith('/purchase-reconcile')) return response({ canonical:new URL(url).searchParams.get('canonical')==='true', source: legacy ? undefined : source, source_revision: legacy ? undefined : revision,
-        start_date: '2025-09-05', end_date: '2026-09-26', purchase_rows: Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2025-09-05',item:`Hàng ${i+1}`,amount:10})),
-        ledger_rows: Array.from({length:rowCount},(_,i)=>({ id: `auto:${i}`, date:'2025-09-05', date_label:'05-09-2025', type:'Thu', amount:1760, note:`Doanh thu dịch vụ + TIP ${i+1}`, read_only: source === 'auto' })),
-      })
+      if (path.endsWith('/purchase-reconcile')) {
+        const params=new URL(url).searchParams, canonical=params.get('canonical')==='true'
+        const start=params.get('start') || '2025-09-05'
+        let end=params.get('end') || '2026-09-26'
+        if(canonical && params.get('report_end') && params.get('report_end')<end) end=params.get('report_end')
+        return response({canonical,source:legacy ? undefined : source,source_revision:legacy ? undefined : revision,
+          start_date:start,end_date:end,purchase_rows:Array.from({length:rowCount},(_,i)=>({id:`purchase-${i}`,date:'2025-09-05',item:`Hàng ${i+1}`,amount:10})),
+          ledger_rows:ledgerFixture ? ledgerFixture.filter(row=>row.date>=start && row.date<=end) : Array.from({length:rowCount},(_,i)=>({id:`auto:${i}`,date:'2025-09-05',date_label:'05-09-2025',type:'Thu',amount:1760,note:`Doanh thu dịch vụ + TIP ${i+1}`,read_only:source==='auto'})),
+        })
+      }
       if (path.endsWith('/ledger/export.xlsx')) return {ok:true,blob:async()=>new Blob(['synthetic full export'])}
       if (path.endsWith('/live-tour/reports')) return response({reports:[{business_date:'2026-09-20',tip:20}]})
       if (path.endsWith('/tip-summary')) return response({ source, period_tip: 20 })
@@ -307,5 +313,38 @@ test('independent purchase report total includes all filtered rows and ignores t
     assert.match(total(),/170đ/); assert.match(total(),/17 dòng/)
     await f.change(f.doc.querySelector('[placeholder="Tìm người đặt"]'),'khong-co')
     assert.match(total(),/0đ/); assert.match(total(),/0 dòng/)
+  } finally { await f.close() }
+})
+
+test('Manual ledger and export can inspect September 24 while the summary stays at September 21',async()=>{
+  const rows=[['Thu',49250000],['Chi',54000000],['Chi',202000]].map(([type,amount],i)=>({
+    id:i+1,date:'2026-09-24',date_label:'24-09-2026',type,amount,note:`Synthetic entry ${i+1}`}))
+  const f=await fixture('admin','manual',false,3,'2026-09-21',2,'2026-09-16',rows)
+  try {
+    const details=()=>f.calls.filter(c=>c.path.endsWith('/purchase-reconcile'))
+    assert.equal(new URL(details().at(-1).url).searchParams.has('report_end'),false)
+    assert.equal(f.doc.querySelectorAll('.ledger-table tbody tr').length,3)
+    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'21-09-2026')
+    const field=label=>[...f.doc.querySelectorAll('.detail-filter-panel label')].find(node=>node.firstChild?.textContent===label)?.querySelector('input[type="text"]')
+    await f.change(field('Ngày'),'24-09-2026')
+    assert.equal(f.doc.querySelectorAll('.ledger-table tbody tr').length,3)
+    assert.match(f.doc.querySelector('.ledger-summary-head').textContent,/49\.250\.000đ/)
+    assert.match(f.doc.querySelector('.ledger-summary-head').textContent,/54\.202\.000đ/)
+    f.doc.addEventListener('click', event=>{if(event.target.closest('a[download]'))event.preventDefault()})
+    await act(async()=>f.button('Xuất Excel').click())
+    let query=new URL(f.calls.find(c=>c.path.endsWith('/ledger/export.xlsx')).url).searchParams
+    assert.equal(query.has('report_end'),false)
+    assert.equal(query.get('transaction_date'),'2026-09-24')
+    await f.change(field('Đến ngày'),'24-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20))})
+    query=new URL(details().at(-1).url).searchParams
+    assert.equal(query.get('start'),'2025-09-05','editing one date retains the other displayed bound')
+    assert.equal(query.get('end'),'2026-09-24')
+    await f.change(field('Từ ngày'),'24-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20))})
+    assert.equal(new URL(details().at(-1).url).searchParams.get('start'),'2026-09-24')
+    assert.equal(f.doc.querySelectorAll('.ledger-table tbody tr').length,3)
+    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'21-09-2026')
+    assert.equal(f.calls.some(c=>c.method!=='GET'),false,'inspecting the ledger must not change the saved report or money')
   } finally { await f.close() }
 })

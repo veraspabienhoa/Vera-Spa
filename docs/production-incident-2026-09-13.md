@@ -1,5 +1,30 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: sổ Thu Chi Manual vẫn bị cắt theo kỳ báo cáo/TIP
+
+Kết quả chạy trên VPS do người dùng cung cấp lúc 22:46 xác nhận ngày 24-09:
+Manual có 3 dòng, Thu 49.250.000đ, Chi 54.202.000đ; Auto Thu 49.250.000đ,
+Chi Nhập mua 121.000đ, dịch vụ 22.000.000đ, TIP 27.250.000đ. Có 73 hóa đơn,
+tổng hóa đơn và báo cáo chênh 0. Chưa biết nội dung từng dòng chi Manual,
+không kết luận hoặc xóa khoản 54.081.000đ chênh nguồn khi chưa đối chiếu.
+
+Ảnh 22:55: sổ chọn Tất cả nhưng hiển thị khoảng 05-09-2025–21-09-2026,
+bộ lọc Ngày là 24-09-2026, kết quả rỗng. Lỗi mã: capability v2 đã tách
+nguồn Manual/Auto nhưng vẫn gửi report_end của phần tổng/TIP cho sổ Manual.
+API cắt khoảng trước ngày cần xem, sau đó frontend lọc ngày 24 thành rỗng.
+
+Với nguồn độc lập v2, chỉ sổ Auto theo ngày chốt báo cáo. Sổ Manual và Excel
+không gửi report_end, dùng bộ lọc riêng; vẫn giữ canonical để lấy sổ server
+trong khoảng hỗ trợ 05-09-2025 đến hôm nay. API cũ giữ hành vi tương thích.
+Sửa một đầu khoảng Từ/Đến sẽ giữ đầu còn lại đang hiển thị khi chuyển từ
+preset sang Tùy chỉnh. Không đổi kỳ TIP đã lưu, quyền ghi, hoặc dòng tiền.
+
+Hồi quy UI tái hiện thất bại trên mã cũ, kiểm tra 3 dòng sau ngày chốt 21,
+tổng theo bộ lọc, tham số Excel và chỉnh khoảng ngày mà không phát lệnh ghi.
+Hồi quy PostgreSQL/HTTP kiểm tra bảng và nội dung Excel cùng ngày 24, ngày
+chốt vẫn 21 và quyền 403. Số tiền từng dòng trong fixture là giả lập, không
+được coi là nội dung 3 dòng thật trên VPS. Bản sửa cần CI và triển khai.
+
 ## 26-09-2026: nhãn hóa đơn đã thanh toán đếm trang thay vì tổng bộ lọc
 
 Ảnh lúc 22:18–22:19 ICT chọn cùng ngày 26-09: Báo cáo ghi 64 hóa đơn,

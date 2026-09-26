@@ -244,6 +244,7 @@ export default function RevenuePage({ user }) {
   const reportSnapshot = useRef(null)
   const [manualLedger, setManualLedger] = useState(false)
   const canonicalLedger = commonReport && (independentSources || !(manualLedger && revenueSource !== 'auto'))
+  const ledgerFollowsReportEnd = canonicalLedger && (!independentSources || revenueSource === 'auto')
   const tipEditorRef = useRef(null)
   // Auto uses the displayed TIP end date as its report cutoff too. A cleared
   // input must not silently switch the report back to all dates.
@@ -283,7 +284,7 @@ export default function RevenuePage({ user }) {
   const detailLoaded = useRef(null)
   const detailTabActive = ['ledger', 'purchase'].includes(activeTab)
   const purchaseOnly = independentSources && activeTab === 'purchase'
-  const detailReportEnd = purchaseOnly ? '' : reportEnd
+  const detailReportEnd = purchaseOnly || !ledgerFollowsReportEnd ? '' : reportEnd
   const [detailBusy, setDetailBusy] = useState(false)
   const [detailError, setDetailError] = useState('')
   const [exportingLedger, setExportingLedger] = useState(false)
@@ -444,7 +445,7 @@ export default function RevenuePage({ user }) {
   }, [filterPreset, customStart, customEnd, reconcileRevision, sourceReady, sourceRevision, activeTab, commonReport, reportEnd])
 
   useEffect(() => {
-    if (!sourceReady || (commonReport && !purchaseOnly && !reportEnd) || !detailTabActive) return undefined
+    if (!sourceReady || (ledgerFollowsReportEnd && !purchaseOnly && !reportEnd) || !detailTabActive) return undefined
     if (detailPreset === 'custom' && (!detailStart || !detailEnd)) {
       setDetailData(null)
       setDetailError('')
@@ -467,7 +468,7 @@ export default function RevenuePage({ user }) {
     }
     void run()
     return () => controller.abort()
-  }, [detailPreset, detailStart, detailEnd, reconcileRevision, sourceReady, sourceRevision, detailTabActive, canonicalLedger, detailReportEnd, commonReport, reportEnd, purchaseOnly])
+  }, [detailPreset, detailStart, detailEnd, reconcileRevision, sourceReady, sourceRevision, detailTabActive, canonicalLedger, detailReportEnd, ledgerFollowsReportEnd, reportEnd, purchaseOnly])
 
   useEffect(() => {
     if (!isAdmin || !['audit', 'duplicates'].includes(activeTab) || (detailPreset === 'custom' && (!detailStart || !detailEnd))) return undefined
@@ -574,7 +575,7 @@ export default function RevenuePage({ user }) {
     setDetailError('')
     try {
       const params = new URLSearchParams({ preset: detailPreset })
-      if (canonicalLedger) { params.set('canonical', 'true'); if (reportEnd) params.set('report_end', reportEnd) }
+      if (canonicalLedger) { params.set('canonical', 'true'); if (detailReportEnd) params.set('report_end', detailReportEnd) }
       if (detailPreset === 'custom') {
         if (detailStart) params.set('start', detailStart)
         if (detailEnd) params.set('end', detailEnd)
@@ -786,8 +787,8 @@ export default function RevenuePage({ user }) {
       </div>}
       <div data-ui-key="u-92de57f35d25" className="detail-filter-panel">
         <label>Thời gian<select value={detailPreset} onChange={(event) => setDetailPreset(event.target.value)}>{reconcileFilters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label>Từ ngày<VeraDateInput value={detailPreset === 'custom' ? detailStart : (detailData?.start_date || '')} onChange={(event) => { setDetailPreset('custom'); setDetailStart(event.target.value) }} /></label>
-        <label>Đến ngày<VeraDateInput value={detailPreset === 'custom' ? detailEnd : (detailData?.end_date || '')} onChange={(event) => { setDetailPreset('custom'); setDetailEnd(event.target.value) }} /></label>
+        <label>Từ ngày<VeraDateInput value={detailPreset === 'custom' ? detailStart : (detailData?.start_date || '')} onChange={(event) => { if (detailPreset !== 'custom') setDetailEnd(detailData?.end_date || ''); setDetailPreset('custom'); setDetailStart(event.target.value) }} /></label>
+        <label>Đến ngày<VeraDateInput value={detailPreset === 'custom' ? detailEnd : (detailData?.end_date || '')} onChange={(event) => { if (detailPreset !== 'custom') setDetailStart(detailData?.start_date || ''); setDetailPreset('custom'); setDetailEnd(event.target.value) }} /></label>
         {activeTab === 'ledger' ? <div className="detail-filter-secondary">
           <label>Ngày<VeraDateInput value={ledgerDate} onChange={(event) => setLedgerDate(event.target.value)} /></label>
           <label>Loại giao dịch<select value={ledgerType} onChange={(event) => setLedgerType(event.target.value)}><option value="">Tất cả</option>{ledgerTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
