@@ -1849,13 +1849,13 @@ def _snapshot_for_backup(state: dict[str, Any]) -> dict[str, Any]:
 def _change_pending(state, action, payload, actor, now, *, admin_override=False):
     """Edit/void only an unpaid draft; preserve a complete, append-only snapshot.
 
-    Customer/staff identity and completion counters are historical facts here.
+    Staff identity and completion counters remain historical facts here.
     Service selections, line prices and notes may be corrected. Nothing debits
     tickets or rewrites a paid invoice until the normal checkout transaction.
     """
-    allowed = {"pending_id", "reason", "note", "entries", "invoice_at"} if action == "pending_update" else {"pending_id", "reason"}
+    allowed = {"pending_id", "reason", "note", "entries", "invoice_at", "customer_id", "combo_purchase_id"} if action == "pending_update" else {"pending_id", "reason"}
     if set(payload) - allowed:
-        raise HTTPException(400, "Chỉ được sửa dịch vụ, giá và ghi chú của hóa đơn chờ thanh toán.")
+        raise HTTPException(400, "Chỉ được sửa khách hàng, combo, dịch vụ, giá và ghi chú của hóa đơn chờ thanh toán.")
     reason = payload.get("reason")
     if admin_override and (reason is None or isinstance(reason, str) and not reason.strip()):
         reason = "Admin điều chỉnh hóa đơn"
@@ -1887,7 +1887,24 @@ def _change_pending(state, action, payload, actor, now, *, admin_override=False)
         if not isinstance(edits, list) or len(edits) > len(pending["entries"]):
             raise HTTPException(400, "Danh sách dòng hóa đơn không hợp lệ.")
         entries = deepcopy(pending["entries"])
-        seen, changed_services = set(), set()
+        target_changed = "customer_id" in payload or "combo_purchase_id" in payload
+        if target_changed:
+            customer_id = payload.get("customer_id", pending.get("customer_id") or "")
+            if not isinstance(customer_id, str) or len(customer_id) > 160:
+                raise HTTPException(400, "Mã khách hàng không hợp lệ.")
+            customer_id = customer_id.strip()
+            customer = next((row for row in working["customers"] if row["id"] == customer_id and not row.get("deleted_at")), None)
+            if customer_id and not customer:
+                raise HTTPException(404, "Không tìm thấy khách hàng đang sử dụng.")
+            purchase_id = payload.get("combo_purchase_id", "" if customer_id != pending.get("customer_id", "") else pending.get("combo_purchase_id", ""))
+            if purchase_id and not customer:
+                raise HTTPException(400, "Phải chọn khách hàng khi sử dụng combo.")
+            pending.update(customer_id=customer_id, customer_name=(customer or {}).get("name", ""),
+                           customer_phone=(customer or {}).get("phone", ""))
+            for entry in entries:
+                entry.update(customer_id=customer_id, customer_name=pending["customer_name"], customer_phone=pending["customer_phone"],
+                             combo_purchase_id=purchase_id)
+        seen, changed_services = set(), set(range(len(entries))) if target_changed else set()
         for edit in edits:
             if not isinstance(edit, dict) or set(edit) - {"index", "service_items", "price"}:
                 raise HTTPException(400, "Nội dung dòng hóa đơn không hợp lệ.")
@@ -1918,6 +1935,8 @@ def _change_pending(state, action, payload, actor, now, *, admin_override=False)
             entry.update(_booking_combo(working, customer, {"combo_purchase_id": entry.get("combo_purchase_id", "")}, entry, now))
             pending["entries"].append(entry)
         pending["entries"] = entries
+        combo_ids = {row.get("combo_purchase_id", "") for row in entries}
+        pending["combo_purchase_id"] = next(iter(combo_ids)) if len(combo_ids) == 1 else ""
         pending.update(updated_at=_iso(now), updated_by=actor)
         after = deepcopy(pending)
     change = {"id": str(uuid4()), "pending_id": before["id"], "action": action,
@@ -3678,6 +3697,8 @@ def _parse_export_bounds(
 def _event_in_export_bounds(
     item: dict[str, Any], bounds: dict[str, Any], *, fallback_business_date: Any = None,
 ) -> bool:
+    if bounds.get('total_amount') not in (None, '') and int(item.get('total') or 0) != int(bounds['total_amount']):
+        return False
     if not any(bounds.values()):
         return True
     if bounds.get('bill_no'):
@@ -4874,6 +4895,8 @@ def install_live_tour_routes(
                 payload.get("start_now") or any(row.get("start_now") for row in (payload.get("bookings") or []) if isinstance(row, dict))
             ):
                 require_feature(conn, ident, "live_tour_operate")
+            if action == "pending_update" and ({"customer_id", "combo_purchase_id"} & payload.keys()):
+                require_feature(conn, ident, "live_tour_customers_view")
             if action in {"pending_update", "pending_delete"} or (action in {"checkout", "quick_checkout"} and payload.get("pending_id")):
                 require_feature(conn, ident, "live_tour_pending_view")
                 require_feature(conn, ident, "live_tour_invoice_view")
@@ -5051,6 +5074,7 @@ def install_live_tour_routes(
         customer_id: str = Query(default=""),
         employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
         report_kind: str = "", performance_timing: str = "",
+        total_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
         columns: list[str] | None = Query(default=None),
         employee_ids: list[str] | None = Query(default=None),
         ident: identity_type = Depends(current_identity),
@@ -5069,7 +5093,7 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
-        bounds.update(employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending", "performance", "employee"}, invoice_dates=export_kind in {"revenue", "tip", "reports", "employee"})
+        bounds.update(total_amount=total_amount, employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending", "performance", "employee"}, invoice_dates=export_kind in {"revenue", "tip", "reports", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):

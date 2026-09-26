@@ -669,7 +669,7 @@ export default function RevenuePage({ user }) {
   const comparisonPagination = useTablePage(comparisonRows, JSON.stringify([filterPreset, customStart, customEnd, differenceFilter, statusFilter]))
 
   const tipRangeValid = tipStartValid && tipEndValid && Boolean(tipStart && tipEnd && tipStart <= tipEnd)
-  const datedReportReady = !commonReport || (tipRangeValid && !busy && data?.period_tip_start === tipStart && data?.period_tip_end === tipEnd)
+  const datedReportReady = !commonReport || ((tipRangeValid || data?.default_period === true) && !busy && data?.period_tip_start === tipStart && data?.period_tip_end === tipEnd)
   const cards = hybridMode ? [
     { key: 'income', label: hybridMode ? 'TIỀN DỊCH VỤ · MANUAL' : 'TIỀN DỊCH VỤ', value: data?.service_revenue, icon: TrendingUp },
     { key: 'tip', label: 'TIỀN TIP', value: data?.tip_revenue, icon: CircleDollarSign },

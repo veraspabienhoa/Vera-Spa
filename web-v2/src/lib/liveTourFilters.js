@@ -44,6 +44,7 @@ export function invoiceRowDate(row) {
 }
 export function filterTourRows(rows, filters, invoiceDates = false) {
   return rows.filter(row => {
+    if (filters.total_amount != null && filters.total_amount !== '' && Number(row.total || 0) !== Number(String(filters.total_amount).replace(/[^0-9]/g, ''))) return false
     if (filters.bill_no && !invoiceNumbers(row).some(number => String(number).toLowerCase().includes(filters.bill_no.trim().toLowerCase()))) return false
     const date = invoiceDates ? invoiceRowDate(row) : tourRowDate(row)
     if ((filters.date_from && (!date || date < filters.date_from)) || (filters.date_to && (!date || date > filters.date_to))) return false

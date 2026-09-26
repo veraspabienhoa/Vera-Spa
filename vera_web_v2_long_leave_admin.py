@@ -134,6 +134,52 @@ def _pending_rows(conn) -> list[dict[str, Any]]:
     return output
 
 
+def _request_overlap(conn, target):
+    """Read only the canonical requests intersecting this application's dates."""
+    start, end = _parse_vn_date(target.get('date_from')), _parse_vn_date(target.get('date_to'))
+    if not start or not end or end < start or (end-start).days > 366:
+        raise HTTPException(400, "Khoảng ngày của đơn không hợp lệ hoặc vượt quá 367 ngày.")
+    target_payload = _payload_value(target.get('payload'))
+    employee = str(target_payload.get('Tên nhân viên') or target.get('employee_key') or '').strip()
+    rows = conn.execute(text("""SELECT r.logical_id,r.record_type,r.record_status,r.date_from,r.date_to,r.payload,
+        e.username,COALESCE(e.full_name,'') full_name,COALESCE(e.role,'') department
+        FROM vera_phase14_record r
+        JOIN employees e ON lower(btrim(e.username))=lower(btrim(COALESCE(r.payload->>'Tên nhân viên',r.employee_key)))
+        WHERE r.dataset=:dataset AND r.logical_id<>:target
+          AND r.record_status IN ('Chờ duyệt','Đã duyệt') AND COALESCE(r.record_type,'')<>:resignation
+          AND r.date_from<=:end AND r.date_to>=:start
+          AND COALESCE(r.payload->>'Trạng thái kỳ nghỉ','')<>'Đã kết thúc'
+          AND COALESCE(e.payload->>'__deleted','false')<>'true'
+          AND lower(COALESCE(e.payload->>'Trạng thái làm việc',e.payload->>'employment_status','Đang làm việc')) IN ('đang làm việc','active')
+        ORDER BY r.date_from,e.username,r.logical_id"""),
+        {'dataset':LONG_LEAVE_DATASET,'target':target['logical_id'],'resignation':REQUEST_TYPE_RESIGNATION,'start':start,'end':end}).mappings().all()
+    requests = []
+    for row in rows:
+        if str(row['username']).strip().casefold() == employee.casefold():
+            continue
+        first, last = max(start,_parse_vn_date(row['date_from'])), min(end,_parse_vn_date(row['date_to']))
+        returned = _parse_vn_date(_payload_value(row['payload']).get('Ngày quay lại làm việc'))
+        if returned:
+            last = min(last, date.fromordinal(returned.toordinal()-1))
+        if first > last:
+            continue
+        requests.append({'id':str(row['logical_id']).removeprefix('long:'), 'employee_name':row['username'],
+            'full_name':row['full_name'], 'department':row['department'],
+            'request_type':_display_request_type(row['record_type']), 'status':row['record_status'],
+            'start_date':first.isoformat(), 'end_date':last.isoformat()})
+    days = []
+    for ordinal in range(start.toordinal(),end.toordinal()+1):
+        day = date.fromordinal(ordinal).isoformat()
+        active = [row for row in requests if row['start_date']<=day<=row['end_date']]
+        approved = {row['employee_name'].casefold() for row in active if row['status']==STATUS_APPROVED}
+        pending = {row['employee_name'].casefold() for row in active if row['status']==STATUS_PENDING}-approved
+        days.append({'date':day,'other_count':len(approved|pending),'approved_count':len(approved),
+                     'pending_count':len(pending),'with_applicant_count':len(approved|pending)+1})
+    return {'start':start.isoformat(),'end':end.isoformat(),'requests':requests,'days':days,
+            'employee_count':len({row['employee_name'].casefold() for row in requests}),
+            'peak_with_applicant':max(row['with_applicant_count'] for row in days)}
+
+
 def install_long_leave_admin_routes(
     app,
     *,
@@ -162,6 +208,15 @@ def install_long_leave_admin_routes(
         with engine_instance().connect() as conn:
             rows = _pending_rows(conn)
         return {"ok": True, "release": LONG_LEAVE_ADMIN_RELEASE, "requests": rows, "count": len(rows)}
+
+    @app.get("/v2/long-leave/admin/requests/{request_id}/overlap")
+    def check_request_overlap(request_id: str, ident: identity_type = Depends(current_identity)):
+        _require_admin(ident)
+        with engine_instance().connect().execution_options(isolation_level="REPEATABLE READ") as conn:
+            target = _request_row(conn, request_id)
+            if not target:
+                raise HTTPException(404, "Không tìm thấy đơn nghỉ phép.")
+            return {"ok": True, "request_id": request_id, **_request_overlap(conn, target)}
 
     @app.post("/v2/long-leave/admin/requests/{request_id}/decision")
     def decide_long_leave_request(

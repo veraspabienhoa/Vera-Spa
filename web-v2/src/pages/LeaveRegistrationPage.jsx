@@ -1,7 +1,6 @@
 import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
-import useAutoSave from '../hooks/useAutoSave'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import VeraDateInput from '../components/VeraDateInput'
 import { Bell, BellRing, CalendarDays, Download, RefreshCw, Save, Search, Trash2, X } from 'lucide-react'
@@ -542,7 +541,6 @@ export default function LeaveRegistrationPage({ user }) {
       setManaging(false)
     }
   }
-  useAutoSave({ signature: JSON.stringify(changedRecords.map((item) => [item.record_uid, reasonDrafts[item.record_uid]])), enabled: !busy && !managing && !saving && changedRecords.length > 0, save: saveEdits, rootRef: leavePageRef, lockRef: mutationRef })
 
   const deleteSelected = async () => {
     if (deletableSelectedUids.length === 0) return
@@ -720,7 +718,6 @@ export default function LeaveRegistrationPage({ user }) {
       setSaving(false)
     }
   }
-  useAutoSave({ signature: JSON.stringify([date, form]), enabled: canCreate && !busy && !saving && !managing && Boolean(form.employee_name && form.leave_reason) && (!selectedReason?.requires_manual_penalty || form.manual_penalty !== ''), save: submit, rootRef: leaveFormRef, lockRef: mutationRef, waitForExit: true })
 
   return (
     <div ref={leavePageRef}>

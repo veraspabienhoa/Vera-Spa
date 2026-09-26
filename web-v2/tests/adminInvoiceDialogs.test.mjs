@@ -101,3 +101,33 @@ for (const kind of ['PaidInvoice', 'Pending']) for (const mode of ['delete', 'ed
     } finally { await act(() => root.unmount()) }
   })
 }
+
+test('pending edit switches cash to combo and back only on explicit submit', async () => {
+  const root = createRoot(document.querySelector('#root')), writes = []
+  const customer = { id:'customer', name:'Khách thử', phone:'0900000000', combo_purchases:[{id:'combo',combo_name:'Combo thử',remaining:3}] }
+  const item = {id:'pending',entries:[{employee_name:'Test',service:'Body',price:100}]}
+  const props = {context:{mode:'edit',revision:7,item},catalog:[],customers:[customer],canChangeCustomer:true,
+    isAdmin:true,onClose:()=>{},onAction:async (...args)=>{writes.push(args);return true}}
+  try {
+    await act(()=>root.render(React.createElement(dialogs.Pending,props)))
+    // Let the modal's initial focus settle before the simulated user opens its dropdown.
+    await act(async()=>{await new Promise(resolve=>dom.window.requestAnimationFrame(resolve))})
+    const input = document.querySelector('input[placeholder="Tìm tên hoặc số điện thoại"]')
+    await act(()=>input.focus())
+    const option = [...document.querySelectorAll('[role="option"]')].find(node=>node.textContent.includes('Khách thử'))
+    assert.ok(option)
+    await act(()=>option.click())
+    const combo = document.querySelector('select[aria-label="Combo của khách"]')
+    await act(()=>{combo.value='combo';combo.dispatchEvent(new dom.window.Event('change',{bubbles:true}))})
+    assert.equal(writes.length,0)
+    await act(()=>document.querySelector('button[type="submit"]').click())
+    assert.equal(writes[0][1].customer_id,'customer')
+    assert.equal(writes[0][1].combo_purchase_id,'combo')
+    await act(()=>root.render(React.createElement(dialogs.Pending,{...props,key:'combo',context:{...props.context,item:{...item,customer_id:'customer',combo_purchase_id:'combo'}}})))
+    await act(()=>[...document.querySelectorAll('button')].find(node=>node.textContent==='Chuyển thành khách lẻ').click())
+    assert.equal(writes.length,1)
+    await act(()=>document.querySelector('button[type="submit"]').click())
+    assert.equal(writes[1][1].customer_id,'')
+    assert.equal(writes[1][1].combo_purchase_id,'')
+  } finally {await act(()=>root.unmount())}
+})

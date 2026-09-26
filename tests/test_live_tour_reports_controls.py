@@ -289,3 +289,17 @@ def test_customer_export_omits_deleted_profiles_and_purchases():
     live._apply_action(state, 'customer_delete', {'customer_id':'c1', 'reason':'Gỡ hồ sơ'}, 'admin', NOW)
     assert live._export_rows(state, 'customers', NOW)[2] == []
     assert len(state['customer_changes']) == 2
+
+
+@pytest.mark.parametrize('kind', ['revenue', 'reports'])
+def test_revenue_export_total_filter_matches_visible_amount(monkeypatch, kind):
+    state,invoice=paid_state()
+    client,_=scoped_client(monkeypatch,state,ALL)
+    for amount,expected in [(invoice['total'],1),(invoice['total']+1,0),(0,0)]:
+        response=client.get('/v2/live-tour/export.xlsx',params={'kind':kind,'total_amount':amount})
+        assert response.status_code==200,response.text
+        values=list(load_workbook(BytesIO(response.content)).active.values)
+        data=[row for row in values[1:] if row[0]!='Tổng cộng']
+        assert len(data)==expected
+        assert all(row[values[0].index('Tổng tiền')]==amount for row in data)
+    assert client.get('/v2/live-tour/export.xlsx',params={'total_amount':-1}).status_code==422

@@ -1,5 +1,31 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: mặc định TIP, lọc tiền, đổi khách hóa đơn chờ và kiểm tra phép năm
+
+Ảnh người dùng cho thấy Manual mở Từ ngày tính TIP ở 16-09-2025 dù đang
+ở tháng 09-2026. Mã đọc lại kỳ TIP đã lưu, không tính kỳ hiện tại. Khi mở
+Manual, dùng ngày 01 hoặc 16 của tháng hiện tại theo giờ Việt Nam; Đến ngày
+lấy ngày giao dịch cuối trong sổ Manual (bỏ dòng đã xóa và ngày tương lai).
+Nếu chưa có báo cáo, dùng hôm nay. Chọn ngày rõ ràng vẫn được giữ trong
+phiên xem. Khi báo cáo chưa tới đầu kỳ mới, tổng Thu/Chi vẫn hiển thị tới
+ngày báo cáo cuối và TIP kỳ mới bằng 0. Không sửa số tiền hay dữ liệu cũ.
+
+Báo cáo/Doanh thu thêm lọc Tổng tiền chính xác; Excel dùng cùng điều kiện.
+Hóa đơn chờ cho đổi khách và combo: kiểm tra khách còn hoạt động, quyền xem
+khách, số lượt và thành phần combo, giữ chỗ trong giao dịch hiện hữu; khóa
+cả khách cũ và mới, giữ idempotency. Trả lượt giữ chỗ khi chuyển về khách
+lẻ. Không trừ vé trước checkout, không sửa nhân viên hoặc hóa đơn đã thu.
+
+Mỗi đơn Phép năm chờ duyệt có nút Kiểm tra riêng. API chỉ Admin, đọc đúng
+khoảng ngày của đơn trên một connection; không đồng bộ/ghi lại toàn bộ
+lịch sử. Tách đã duyệt/chờ duyệt, đếm nhân viên duy nhất, bỏ người đã nghỉ
+việc, đơn không duyệt, phần thời gian sau ngày quay lại làm. Chỉ trang
+Đăng ký nghỉ bỏ tự lưu (đăng ký mới và sửa danh sách), giữ nút Ghi/Lưu.
+
+Bổ sung kiểm thử giao diện, API, Excel, ranh giới kỳ TIP, PostgreSQL thực
+và replay hóa đơn chờ. Đây là sửa mã và kiểm thử tổng hợp; chưa xác nhận
+dữ liệu hay phiên bản đang chạy trên VPS production.
+
 ## 26-09-2026: thêm giường khi phòng đang dùng và xung đột giữa nhiều người
 
 Hai ảnh người dùng gửi lúc 23:31 cho thấy lưu khu vực bị chặn bởi revision

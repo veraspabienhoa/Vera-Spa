@@ -14,6 +14,14 @@ def resolve_period(conn, start=None, end=None, *, mode):
     today = source.datetime.now(source.VN_TZ).date()
     if (start is None) != (end is None):
         raise HTTPException(400, 'Chọn đủ Từ ngày tính TIP và Đến ngày.')
+    if start is None and mode == 'manual':
+        # Defaults follow the current half-month and the last actual Manual
+        # reporting day, not a previously saved TIP year/cutoff.
+        last = conn.execute(text("""SELECT MAX(COALESCE(transaction_date,
+            (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date))
+            FROM vera_revenue_entry WHERE NOT is_deleted
+              AND COALESCE(transaction_date,(entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)<=:today"""), {'today': today}).scalar_one_or_none()
+        return today.replace(day=1 if today.day <= 15 else 16), last or today
     if start is None:
         saved = conn.execute(text("""SELECT value_json FROM vera_app_setting
             WHERE category='revenue' AND setting_key IN (:key, :legacy)
@@ -33,6 +41,7 @@ def resolve_period(conn, start=None, end=None, *, mode):
 def snapshot(conn, start=None, end=None):
     """Caller owns one REPEATABLE READ connection for settings, money and TIP."""
     shared = source.mode(conn)
+    default_period = start is None and end is None
     start, end = resolve_period(conn, start, end, mode=shared['source'])
     if shared['source'] == 'auto':
         totals = source.totals(source.daily(conn, source.START_DATE, end, include_entries=False))
@@ -47,10 +56,10 @@ def snapshot(conn, start=None, end=None):
         totals = dict(total_income=income, total_revenue=income, total_expense=expense,
                       net_income=round(income-expense,2), service_revenue=0, tip_revenue=0,
                       historical_income=income)
-    tip = round(source.tip_total(conn, start, end, auto=True), 2)
+    tip = round(source.tip_total(conn, start, end, auto=True), 2) if start <= end else 0
     today = source.datetime.now(source.VN_TZ).date()
     return {
-        'ok': True, 'report_version': VERSION, 'report_basis': 'live_tour_and_purchases' if shared['source']=='auto' else 'manual_ledger',
+        'ok': True, 'default_period': default_period, 'report_version': VERSION, 'report_basis': 'live_tour_and_purchases' if shared['source']=='auto' else 'manual_ledger',
         'source': shared['source'], 'source_revision': shared['revision'],
         **totals, 'period_tip': tip, 'balance': round(totals['net_income'] - tip, 2),
         'period_tip_start': start.isoformat(), 'period_tip_end': end.isoformat(),
