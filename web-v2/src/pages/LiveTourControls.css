@@ -302,3 +302,46 @@
 .live-tour-admin-controls-toggle{display:flex;justify-content:flex-end;margin:0 0 0 auto;flex:0 0 auto}
 .live-tour-admin-controls-toggle .secondary-button{min-height:34px;padding:6px 12px;font-size:12px;font-weight:800}
 @media(max-width:820px){.live-tour-admin-controls-toggle{width:100%;margin:0}.live-tour-admin-controls-toggle .secondary-button{width:100%;justify-content:center}}
+/* Stable document position while feedback changes or employee rows reorder.
+   Do not restore an old scroll offset after a request: the user may have scrolled
+   while waiting. Explicit navigation and ordinary scrolling remain available. */
+.live-tour-page { overflow-anchor: none; }
+.live-tour-page .live-tour-feedback {
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  min-width: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.live-tour-page .live-tour-feedback :is(.error-box, .warning-box, .setup-note, .live-tour-action-progress) {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: inherit;
+  line-height: inherit;
+}
+.live-tour-page .live-tour-reminder-slot {
+  height: 32px;
+  min-height: 32px;
+  min-width: 0;
+  overflow: hidden;
+}
+.live-tour-page .live-tour-reminder-slot .live-tour-payment-reminder {
+  box-sizing: border-box;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.live-tour-page .live-tour-reminder-slot .live-tour-payment-reminder span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 820px) {
+  .live-tour-page .live-tour-feedback { height: 56px; min-height: 56px; max-height: 56px; }
+  .live-tour-page .live-tour-reminder-slot { height: 52px; min-height: 52px; }
+}

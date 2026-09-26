@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
@@ -29,7 +30,7 @@ b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(UiToolbar|UiCustomTex
   } }],
 })
 
-async function fixture({ canEdit = true, conflict = false, payable = false, setup, preserveStorage = false, role } = {}) {
+async function fixture({ canEdit = true, conflict = false, payable = false, setup, preserveStorage = false, role, beforeWrite } = {}) {
   if (!preserveStorage) dom.window.localStorage.clear()
   const records = ['An An', 'An Bình'].map((name, i) => ({ _id: `e${i + 1}`, 'Tên nhân viên': name, 'STT': i + 1,
     'Lịch hẹn': i ? '' : '16:00', 'Vào ca': 'Ca 1', 'Trạng thái': '', 'Dịch vụ': '', 'Phòng': '',
@@ -48,6 +49,7 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
     exportLiveTourExcel: async (kind, query) => { exports.push({ kind, query }) },
     liveTourAction: async (body) => {
       writes.push(body)
+      await beforeWrite?.(body)
       if (fail) { fail = false; data.revision++; throw Object.assign(new Error('Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.'), { status: 409 }) }
       assert.equal(body.expected_revision, data.revision)
       if (body.action !== 'update_appointment') return { ...structuredClone(data), ok: true }
@@ -69,6 +71,78 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   const save = async (form) => act(async () => form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })))
   return { data, writes, exports, type, search, quick, save, dispose: async () => { await act(() => root.unmount()) } }
 }
+
+test('saving and errors reuse the reserved feedback space without remounting the board', async () => {
+  let finish
+  const pending = new Promise((resolve, reject) => { finish = { resolve, reject } })
+  let rejectWrite = false
+  const f = await fixture({ beforeWrite: () => rejectWrite ? Promise.reject(Error('Lỗi lưu thử nghiệm')) : pending })
+  const style = document.createElement('style')
+  style.textContent = readFileSync(new URL('../src/pages/LiveTourControls.css', import.meta.url), 'utf8')
+  document.head.append(style)
+  try {
+    const feedback = document.querySelector('.live-tour-feedback')
+    const board = document.querySelector('.tour-records-panel')
+    const parent = document.querySelector('.tour-board-top')
+    const siblings = [...parent.children]
+    assert.ok(feedback)
+    const height = window.getComputedStyle(feedback).height
+    assert.ok(parseFloat(height) > 0, 'reserve feedback space before the first action')
+    assert.equal(window.getComputedStyle(feedback).overflow, 'auto', 'long errors remain readable')
+    await f.type(f.search(), 'an an')
+    await f.type(f.quick().querySelector('input'), '18:30')
+    await f.save(f.quick())
+    assert.match(feedback.textContent, /Đang lưu thao tác/)
+    assert.deepEqual([...parent.children], siblings, 'no new flow-level banner while saving')
+    await act(async () => finish.resolve())
+    assert.equal(document.querySelector('.tour-records-panel'), board)
+    assert.equal(document.querySelector('.live-tour-feedback'), feedback)
+    assert.equal(window.getComputedStyle(feedback).height, height)
+    assert.equal(f.writes.length, 1)
+    rejectWrite = true
+    await f.type(f.quick().querySelector('input'), '19:00')
+    await f.save(f.quick())
+    assert.match(feedback.querySelector('[role=alert]').textContent, /Lỗi lưu thử nghiệm/)
+    assert.equal(f.quick().querySelector('input').value, '19:00', 'failed save retains the draft')
+    assert.deepEqual([...parent.children], siblings)
+    assert.equal(window.getComputedStyle(feedback).height, height)
+  } finally { finish.resolve(); style.remove(); await f.dispose() }
+})
+
+test('dismissing the payment reminder retains its place above the board', async () => {
+  const f = await fixture({ setup(data) { data.pending_count = 2 } })
+  try {
+    const slot = document.querySelector('.live-tour-reminder-slot')
+    const next = slot.nextElementSibling
+    assert.ok(slot.querySelector('.live-tour-payment-reminder'))
+    await act(async () => slot.querySelector('button').click())
+    assert.equal(slot.querySelector('.live-tour-payment-reminder'), null)
+    assert.equal(document.querySelector('.live-tour-reminder-slot'), slot)
+    assert.equal(slot.nextElementSibling, next)
+  } finally { await f.dispose() }
+})
+
+test('legacy dialog focuses its search and restores the opener without scrolling the page', async () => {
+  const f = await fixture({ setup(data) { data.capabilities.customers_view = true; data.customers = [] } })
+  const original = dom.window.HTMLElement.prototype.focus
+  const calls = []
+  dom.window.HTMLElement.prototype.focus = function (options) {
+    calls.push({ node: this, options })
+    return original.call(this, options)
+  }
+  try {
+    const opener = document.querySelector('[data-ui-key="u-a7223a00bd17"]')
+    await act(() => { opener.focus({ preventScroll: true }); opener.click() })
+    await act(() => new Promise(resolve => window.requestAnimationFrame(resolve)))
+    const input = document.querySelector('[aria-label="Tìm khách hàng trong Gói Combo"]')
+    assert.equal(document.activeElement, input)
+    assert.ok(calls.some(call => call.node === input && call.options?.preventScroll === true))
+    assert.ok(calls.filter(call => call.node === input).every(call => call.options?.preventScroll === true), 'native autofocus must not scroll before the effect')
+    await act(() => document.querySelector('.live-tour-modal [aria-label="Đóng"]').click())
+    assert.equal(document.activeElement, opener)
+    assert.equal(calls.at(-1).options?.preventScroll, true)
+  } finally { dom.window.HTMLElement.prototype.focus = original; await f.dispose() }
+})
 
 test('quick appointment sits beside search, rejects ambiguous names and saves only the exact employee', async () => {
   const f = await fixture()
