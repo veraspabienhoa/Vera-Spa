@@ -292,3 +292,28 @@ def test_realtime_revision_changes_on_edit_delete_and_mode_with_no_money_payload
     assert http.get('/v2/revenue/revision').json() != after_history
     ident.allowed = False
     assert http.get('/v2/revenue/revision').status_code == 403
+
+
+def test_summary_cutoff_matches_manual_history_without_changing_tip_period_or_ledger(database, client):
+    seed(database)
+    http, _ = client
+    with database.begin() as conn:
+        conn.execute(text("INSERT INTO vera_revenue_entry(transaction_type,amount,transaction_date,note) VALUES ('Thu',200,'2026-09-24','History'),('Chi',50,'2026-09-24','History')"))
+    query = '?time_range=custom&start=2025-09-05&end=2026-09-24'
+    manual = http.get('/v2/revenue/summary' + query).json()
+    enable(http)
+    http.put('/v2/revenue/tip-period', json={'start_date':'2026-09-16','end_date':'2026-09-24'})
+    for _ in range(2):
+        auto_summary = http.get('/v2/revenue/summary' + query).json()
+        assert auto_summary['end_date'] == '2026-09-24'
+        assert auto_summary['business_date'] == '2026-09-26'
+        assert auto_summary['period_tip_start'] == '2026-09-16'
+        assert auto_summary['period_tip_end'] == '2026-09-24'
+        for key in ['total_income','total_expense','net_income']:
+            assert auto_summary[key] == manual[key]
+        assert auto_summary['total_income'] == 977 and auto_summary['total_expense'] == 50
+        assert all(row['date'] <= '2026-09-24' for row in auto_summary['entries'])
+    live = http.get('/v2/revenue/summary').json()
+    assert live['total_income'] == 2737 and live['total_expense'] == 240.25
+    with database.connect() as conn:
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_revenue_entry')).scalar() == 3
