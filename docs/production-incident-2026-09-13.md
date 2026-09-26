@@ -1,5 +1,32 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 26-09-2026: nhãn hóa đơn đã thanh toán đếm trang thay vì tổng bộ lọc
+
+Ảnh lúc 22:18–22:19 ICT chọn cùng ngày 26-09: Báo cáo ghi 64 hóa đơn,
+Live Tour ghi 50. Mã xác nhận endpoint collections mặc định 50 dòng/trang,
+trả total trước phân trang, nhưng LiveTourInvoicesPanel hiển thị
+visibleInvoices.length. Dùng total của chính phản hồi/bộ lọc hiện tại cho
+nhãn tổng; ghi riêng số đang hiển thị và trang. Giữ phân trang 50 để không
+tải lại toàn bộ lịch sử. Không dùng số 64 cố định, không thay đổi hóa đơn.
+Không hiện tổng/dữ liệu trang cũ khi đang đổi trang hoặc đổi bộ lọc.
+
+Live Tour bên trong cũng dùng bộ lọc và nhãn ngày effective_at hoặc
+business_date theo Ngày giờ hóa đơn như trang Báo cáo độc lập và SQL Auto;
+không dùng ngày tạo thay ngày hóa đơn ở các bảng này. Hồi quy API và UI
+kiểm tra 64 hóa đơn qua 2 trang (50 + 14), hóa đơn nhiều dòng nhân viên,
+ngày tạo khác ngày hóa đơn, đổi bộ lọc và không có kết quả.
+
+Người dùng nêu sổ nhập tới 24-09-2026, ngày đó Thu 49.250.000đ và Chi
+121.000đ. Hai ảnh chỉ có số liệu ngày 26, chưa chứng minh số thật ngày 24.
+Thêm vera_revenue_day_check.py cho người vận hành chạy cục bộ trên VPS:
+đọc một ngày, trả tổng Manual, tổng Auto, số hóa đơn, tổng tiền hóa đơn
+và chênh với báo cáo. Một kết nối REPEATABLE READ/read-only có thời hạn,
+không import API hoặc gửi thông báo, không ghi dữ liệu; không xuất tên,
+số hóa đơn hay bí mật kết nối. Không chạy tổng tiền trong workflow logs.
+Kiểm thử PostgreSQL dùng tiền mẫu đúng mốc đối chiếu, mốc UTC/VN và dòng
+đã xóa; không coi mẫu là xác minh dữ liệu production. Deploy c61380e đã
+thành công trước báo lỗi này; bản sửa nhãn mới vẫn cần CI và deploy.
+
 ## 26-09-2026: Auto độc lập, ngày hóa đơn và Nhập mua làm nguồn chính
 
 Yêu cầu lúc 21:11 thay thế quy tắc chung nguồn trước đây: Auto chỉ đọc thu từ

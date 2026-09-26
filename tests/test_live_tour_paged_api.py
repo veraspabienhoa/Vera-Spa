@@ -45,6 +45,33 @@ def test_reports_total_covers_all_matching_pages_and_receipts_stay_available():
     assert len(result['data']['state']['invoices'])==10
 
 
+def test_paid_invoice_total_is_64_across_50_and_14_row_pages_using_invoice_date():
+    state = sample()
+    for key in ('invoices', 'reports'):
+        state[key] = state[key][:65]
+        for index, row in enumerate(state[key]):
+            row.update(effective_at='2026-09-26T10:00:00+07:00' if index < 64 else '2026-09-25T10:00:00+07:00',
+                       business_date='2026-09-24', created_at='2026-09-24T10:00:00+07:00')
+    # A second employee line belongs to the same invoice, not an extra bill.
+    state['reports'].append(dict(state['reports'][0], id='second-line', total=20, tip=5))
+    state['invoices'][0].update(total=120, tip=15)
+    _, client = app_client(SettingsDatabase(state))
+    query = '?date_from=2026-09-26&date_to=2026-09-26'
+    first = client.get('/v2/live-tour/collections/invoices' + query).json()
+    second = client.get('/v2/live-tour/collections/invoices' + query + '&page=2').json()
+    assert first['total'] == second['total'] == 64
+    assert first['pages'] == second['pages'] == 2
+    rows = first['data']['state']['invoices'] + second['data']['state']['invoices']
+    assert len(first['data']['state']['invoices']) == 50
+    assert len(second['data']['state']['invoices']) == 14
+    assert len({row['id'] for row in rows}) == 64
+    summary = client.get('/v2/live-tour/collections/reports' + query).json()['data']['report_totals']
+    assert summary['invoiceCount'] == 64
+    assert summary['totalRevenue'] == sum(row['total'] for row in rows)
+    empty = client.get('/v2/live-tour/collections/invoices?date_from=2026-09-24&date_to=2026-09-24').json()
+    assert empty['total'] == 0 and empty['data']['state']['invoices'] == []
+
+
 def test_combo_index_matches_reference_and_does_not_mutate_ledger():
     state=sample()
     purchase={'id':'p1','remaining':10,'component_balances':[{'service_id':'s','remaining':10}]}

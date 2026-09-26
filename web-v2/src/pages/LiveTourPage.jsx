@@ -1173,8 +1173,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const pendingComboSaleRequests = asArray(data.combo_sale_requests).filter((item) => item?.status === 'pending')
   const allReports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
   const pendingPayments = useMemo(()=>activePanel === 'pending' ? filterTourRows(pagedPendingPayments, listFilters) : [],[activePanel,pagedPendingPayments,listFilters])
-  const reports = useMemo(()=>activePanel === 'reports' ? filterTourRows(allReports, listFilters) : [],[activePanel,allReports,listFilters])
-  const visibleInvoices = useMemo(()=>activePanel === 'invoices' ? filterTourRows(asArray(data.state?.invoices), listFilters) : [],[activePanel,data.state?.invoices,listFilters])
+  const reports = useMemo(()=>activePanel === 'reports' ? filterTourRows(allReports, listFilters, true) : [],[activePanel,allReports,listFilters])
+  const visibleInvoices = useMemo(()=>activePanel === 'invoices' ? filterTourRows(asArray(data.state?.invoices), listFilters, true) : [],[activePanel,data.state?.invoices,listFilters])
   const reportInvoiceCount = new Set(reports.map((item) => String(item?.invoice_id || item?.bill_no || '')).filter(Boolean)).size
 
   const historyMatches = useCallback((item) => filterTourRows([{
@@ -1665,7 +1665,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
       {activePanel === 'pending' && canPending && <LiveTourPendingPanel actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canInvoiceDelete={canInvoiceDelete} canInvoiceEdit={canInvoiceEdit} canInvoiceView={canInvoiceView} canPayment={canPayment} data={data} exportData={panelActions.exportData} itemId={itemId} openModal={panelActions.openModal} pendingPayments={pendingPayments} setError={setError} setPendingContext={setPendingContext}/>}
 
-      {activePanel === 'invoices' && !details.initialLoading && canPaidInvoiceView && <LiveTourInvoicesPanel actionBusy={actionBusy} asArray={asArray} canPaidInvoiceDelete={canPaidInvoiceDelete} canPaidInvoiceEdit={canPaidInvoiceEdit} data={data} formatMoney={formatMoney} setError={setError} setPendingContext={setPendingContext} setReceipt={setReceipt} visibleInvoices={visibleInvoices}/>}
+      {activePanel === 'invoices' && details.ready && canPaidInvoiceView && <LiveTourInvoicesPanel actionBusy={actionBusy} asArray={asArray} canPaidInvoiceDelete={canPaidInvoiceDelete} canPaidInvoiceEdit={canPaidInvoiceEdit} data={data} formatMoney={formatMoney} setError={setError} setPendingContext={setPendingContext} setReceipt={setReceipt} visibleInvoices={visibleInvoices} invoiceTotal={details.total} page={details.page} pages={details.pages}/>}
 
       {activePanel === 'customers' && canCustomers && <LiveTourCustomersPanel canCustomers={canCustomers} canExportKind={canExportKind} canImportCombo={canImportCombo} canPayment={canPayment} capabilities={capabilities} customerComboPurchases={customerComboPurchases} customerSearch={customerSearch} data={data} exportData={panelActions.exportData} filteredCustomers={filteredCustomers} isAdmin={isAdmin} itemId={itemId} itemLabel={itemLabel} openCustomerHistory={panelActions.openCustomerHistory} openModal={panelActions.openModal} setCustomerContext={setCustomerContext} setCustomerSearch={setCustomerSearch} setError={setError} stableCustomerId={stableCustomerId}/>}
 

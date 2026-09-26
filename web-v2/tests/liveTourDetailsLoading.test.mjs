@@ -45,3 +45,46 @@ test('board polling cannot starve a slower invoice request; filtered reads cance
     assert.equal(observed.total,1)
   }finally{await act(()=>root.unmount())}
 })
+
+test('paid invoice heading keeps filtered total 64 on both pages and shows 50 then 14 cards', async()=>{
+  const panelBuild=await build({entryPoints:['src/components/LiveTourInvoicesPanel.jsx'],bundle:true,write:false,
+    platform:'node',format:'cjs',jsx:'automatic',external:['react'],plugins:[{name:'layout-fixture',setup(b){
+      b.onResolve({filter:/\/Ui(Toolbar|CustomText)$/},()=>({path:'layout',namespace:'fixture'}))
+      b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'import React from "react"; export default function Layout({children}){return React.createElement("div",null,children)}'}))
+    }}]})
+  const panelModule={exports:{}}
+  new Function('require','module','exports',panelBuild.outputFiles[0].text)(createRequire(import.meta.url),panelModule,panelModule.exports)
+  const Panel=panelModule.exports.default
+  const requests=[]
+  globalThis.__detailsApi={liveTourCollection:(panel,query)=>new Promise(resolve=>requests.push({panel,query,resolve}))}
+  const hookModule={exports:{}}
+  new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),hookModule,hookModule.exports)
+  let details
+  function Screen(props){
+    details=hookModule.exports.default(props)
+    return details.ready ? React.createElement(Panel,{data:details.data,visibleInvoices:details.data.state.invoices,
+      invoiceTotal:details.total,page:details.page,pages:details.pages,asArray:value=>value||[],formatMoney:String}) : null
+  }
+  const root=createRoot(document.querySelector('#root'))
+  const props={board:board(1),panel:'invoices',filters:{date_from:'2026-09-26',date_to:'2026-09-26'},lookupOpen:false}
+  const response=(start,count,total)=>({revision:1,pages:Math.max(1,Math.ceil(total/50)),total,
+    data:{state:{invoices:Array.from({length:count},(_,i)=>({id:`i${start+i}`,bill_no:`HD${start+i}`,
+      total:100,effective_at:'2026-09-26T10:00:00+07:00',entries:[]}))}}})
+  try{
+    await act(()=>root.render(React.createElement(Screen,props)));await act(delay)
+    await act(async()=>requests[0].resolve(response(14,50,64)))
+    assert.equal(document.querySelector('.live-tour-invoice-count').textContent,'64')
+    assert.equal(document.querySelectorAll('.live-tour-data-card').length,50)
+    assert.match(document.body.textContent,/50 \/ 64 hóa đơn theo bộ lọc · Trang 1\/2/)
+    await act(()=>details.setPage(2));await act(delay)
+    assert.equal(document.querySelector('.live-tour-invoice-count'),null,'do not label old page data as a new page')
+    await act(async()=>requests[1].resolve(response(0,14,64)))
+    assert.equal(document.querySelector('.live-tour-invoice-count').textContent,'64')
+    assert.equal(document.querySelectorAll('.live-tour-data-card').length,14)
+    assert.match(document.body.textContent,/14 \/ 64 hóa đơn theo bộ lọc · Trang 2\/2/)
+    await act(()=>root.render(React.createElement(Screen,{...props,filters:{bill_no:'missing'}})));await act(delay)
+    await act(async()=>requests.at(-1).resolve(response(0,0,0)))
+    assert.equal(document.querySelector('.live-tour-invoice-count').textContent,'0')
+    assert.equal(document.querySelectorAll('.live-tour-data-card').length,0)
+  }finally{await act(()=>root.unmount())}
+})
