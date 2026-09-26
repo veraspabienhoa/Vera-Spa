@@ -84,6 +84,7 @@ for (const role of ['admin','giamdoc','quanly','letan','nhanvien']) {
     try {
       assert.match(f.doc.body.textContent,/Auto · Tự động hệ thống/)
       assert.equal(f.doc.querySelector('.revenue-entry-form'),null)
+      assert.equal(Boolean(f.doc.querySelector('.revenue-report-date-form')),['admin','giamdoc'].includes(role))
       if(role==='admin') assert.equal(f.button('Import thêm mới').disabled,true); else assert.equal(f.button('Import thêm mới'),undefined)
       if(role==='admin') assert.equal(f.button('Sửa dòng đã chọn').disabled,true); else assert.equal(f.button('Sửa dòng đã chọn'),undefined)
       if(role==='admin') assert.equal(f.button('Xóa dòng đã chọn').disabled,true); else assert.equal(f.button('Xóa dòng đã chọn'),undefined)
