@@ -1202,7 +1202,23 @@ jobs:
         if: always()
         env:
           VERA_TEST_POSTGRES_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/vera_test
+          VERA_TEST_BOOKING_MEASUREMENT_PATH: ${{ runner.temp }}/vera-booking-measurement.json
         run: python scripts/run_pytest_offline.py -q
+
+      - name: Report isolated booking work measurements
+        if: always()
+        env:
+          VERA_TEST_BOOKING_MEASUREMENT_PATH: ${{ runner.temp }}/vera-booking-measurement.json
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = Path(os.environ['VERA_TEST_BOOKING_MEASUREMENT_PATH'])
+          if report.exists():
+              print('BOOKING_MEASUREMENT=' + json.dumps(json.loads(report.read_text()), sort_keys=True))
+          else:
+              print('Booking measurement did not complete; inspect the pytest result.')
+          PY
 
   web-v2:
     name: React Web V2 build

@@ -1,5 +1,34 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: Booking bị từ chối khi đổi ngày nghiệp vụ lúc 11:10
+
+Ảnh người dùng ghi nhận đặt lịch `90 PR VIP` tại giường `20.1` báo
+“Cấu hình đã đổi. Hãy làm mới rồi thử lại.” Deploy VPS Production
+[36298048116](https://github.com/veraspabienhoa/Vera-Spa/actions/runs/36298048116)
+đã xác minh API và frontend ở commit `1e215ece`, cùng cả hai health. Đây
+không phải bằng chứng booking thành công và không đủ để suy ra độ trễ VPS.
+
+Kiểm thử API với PostgreSQL thật ở commit `aacb8b8`,
+[run 36299337789](https://github.com/veraspabienhoa/Vera-Spa/actions/runs/36299337789),
+tái hiện đúng HTTP 409/thông báo trong ảnh tại 11:10:00, 11:10:01 và sau đó;
+11:09:59 vẫn thành công. `_apply_action_impl` cập nhật `business_date` từ đồng
+hồ server, nhưng resource writer coi trường này là cấu hình không được phép
+đổi dưới khóa độc lập. Ngày bộ đếm đã đổi lúc 10:00 nên không chặn luồng này
+sớm hơn. GET/làm mới trình duyệt không sửa được sai lệch phân loại đó.
+Chưa đọc trực tiếp metadata giao dịch lỗi của production; đây là nguyên nhân
+đã tái hiện tương ứng với triệu chứng, không phải suy đoán từ riêng video.
+
+Bản sửa cho phép ngày nghiệp vụ do server tính đi qua khóa độc lập. Ngày được
+gộp bằng GREATEST ngay trong câu UPDATE xuất bản revision hiện có, để giao dịch
+trước 11:10 commit muộn không kéo ngày lùi lại. Không thêm query/connection,
+không đổi mốc ngày, không ghi lại lịch sử. Cấu hình thật vẫn cần khóa phù hợp;
+khóa phòng/nhân viên, revision, chống trùng, chuyển bộ đếm 10:00 và rollback
+được giữ nguyên. Không retry tự động lỗi 409 bằng payload cũ.
+
+Xem [báo cáo kiểm chứng booking](live-tour-booking-rollover-2026-09-27.md) cho
+số đo trên dữ liệu giả, phạm vi chưa đo và bước Deploy VPS Production thủ công.
+Bản ghi này không xác nhận production đã nhận bản sửa.
+
 ## 27-09-2026: tám điều chỉnh giao diện và popup thiếu check-in (chờ deploy thủ công)
 
 Đối chiếu đủ bảy ảnh người dùng gửi: thêm lọc số tiền TIP chính xác (kể cả

@@ -279,7 +279,10 @@ def write(conn, before, after, actor):
                 continue
             if key[0] in domains and (domains[key[0]],key[1]) not in locked:
                 raise HTTPException(409, 'Phạm vi giao dịch đã đổi. Hãy làm mới rồi thử lại.')
-        allowed_meta = {'updated_at','counter_business_date','bill_counters','idempotency','manual_order_active'}
+        # Every action stamps the server-owned business day at 11:10, separately
+        # from the exclusive counter reset at 10:00. This is operational metadata,
+        # not a catalog/settings edit; rejecting it blocks the first new-day action.
+        allowed_meta = {'updated_at','business_date','counter_business_date','bill_counters','idempotency','manual_order_active'}
         if before_meta.get('manual_order_active') != after_meta.get('manual_order_active') and after_meta.get('manual_order_active') is not False:
             raise HTTPException(409, 'Chỉ tác vụ sắp xếp toàn bảng được bật thứ tự thủ công.')
         if any(before_meta.get(key) != value and key not in allowed_meta for key,value in after_meta.items()):
@@ -287,16 +290,22 @@ def write(conn, before, after, actor):
     # Allocate the publication revision at commit time. The short metadata row
     # lock also orders commits, avoiding a missed revision from sequence gaps.
     changes = {key: value for key, value in after_meta.items() if before_meta.get(key) != value and key != 'idempotency'}
+    business_day = changes.pop('business_date', None) if not conn.info.get('live_tour_exclusive', True) else None
+    # Two disjoint actions can straddle the cutoff and publish in reverse order.
+    # Merge the day in the existing atomic publication UPDATE, without another
+    # read/lock or a whole-board write. Exclusive restore/maintenance is unchanged.
+    business_day_patch = " || jsonb_build_object('business_date',GREATEST(COALESCE(payload->>'business_date',''),CAST(:business_day AS text)))" if business_day is not None else ''
     receipts = {key: value for key, value in after_meta.get('idempotency', {}).items() if before_meta.get('idempotency', {}).get(key) != value}
     removed_receipts = sorted(set(before_meta.get('idempotency', {})) - set(after_meta.get('idempotency', {})))
     receipt_patch = " || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb))" if receipts or removed_receipts else ''
     configuration_patch = " || jsonb_build_object('_configuration_revision',aggregate_revision+1)" if conn.info.get('live_tour_exclusive', True) and not isinstance(before, _AreaSnapshot) else ''
     revision = int(conn.execute(text(f"""
         UPDATE {relational.META_TABLE}
-        SET payload=payload || CAST(:patch AS jsonb){receipt_patch}{configuration_patch},
+        SET payload=payload || CAST(:patch AS jsonb){business_day_patch}{receipt_patch}{configuration_patch},
             aggregate_revision=aggregate_revision+1, updated_at=NOW(), payload_hash='active'
         WHERE singleton=1 RETURNING aggregate_revision
-    """), {'patch': relational._json(changes), 'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
+    """), {'patch': relational._json(changes), 'business_day': business_day,
+           'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
     ordinal_updates = {}
     deleted = {}
     upserts = {}
