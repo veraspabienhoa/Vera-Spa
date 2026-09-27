@@ -40,8 +40,16 @@ def booking_api(database, monkeypatch):
         require_feature=lambda *args: None, feature_allowed=lambda *args: True,
         identity_type=Identity,
     )
-    with TestClient(app) as client:
+    # These tests exercise synchronous HTTP transactions, not the scheduler.
+    # Entering TestClient's lifespan starts three production background threads
+    # on this engine; their queue queries contaminate the measurement listener
+    # and can mutate projections between fixture resets. Lifecycle/worker tests
+    # cover those jobs separately. Keep the real request and transaction path.
+    client = TestClient(app)
+    try:
         yield client, clock
+    finally:
+        client.close()
 
 
 def seed(database, *, history=0, day_offset=-1):

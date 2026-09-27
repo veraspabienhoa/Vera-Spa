@@ -31,7 +31,7 @@ def enqueue_bookings(conn, action, result, operation_key):
     if not events:
         return
     try:
-        # One INSERT for all booked staff and both channels; no schema checks,
+        # One INSERT for all booked staff and all channels; no schema checks,
         # extra connection, polling request, catalog read or network send here.
         # A failed notification write must not poison the booking transaction.
         with conn.begin_nested():
@@ -41,7 +41,7 @@ def enqueue_bookings(conn, action, result, operation_key):
                     e.payload || jsonb_build_object('_native_recipients',jsonb_build_array(p.auth_user_id::text))
                 FROM jsonb_to_recordset(CAST(:events AS jsonb)) AS e(event text,username text,payload jsonb)
                 JOIN vera_v2_user_profile p ON lower(btrim(p.employee_username))=lower(btrim(e.username)) AND p.is_active
-                CROSS JOIN (VALUES ('in_app'),('push')) c(channel)
+                CROSS JOIN (VALUES ('in_app'),('push'),('popup')) c(channel)
                 WHERE NOT EXISTS(SELECT 1 FROM vera_v2_notification_setting s
                     WHERE s.notification_key='live_tour_booking' AND NOT s.enabled)
                   AND NOT EXISTS(SELECT 1 FROM vera_v2_notification_channel_setting cs

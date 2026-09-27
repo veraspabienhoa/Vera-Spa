@@ -96,11 +96,11 @@ def test_booking_commits_exact_employee_notice_once_without_sending_in_transacti
     assert len(set(connections)) <= (2 if mode=='active' else 1)
     assert not any('vera_v2_push_subscription' in sql for sql in statements)
     rows = stored(database)
-    assert len(rows)==2 and {row['channel'] for row in rows}=={'in_app','push'}
+    assert len(rows)==3 and {row['channel'] for row in rows}=={'in_app','push','popup'}
     assert {row['recipient'] for row in rows}=={booking_state['nhanvien']}
     assert {row['payload']['body'] for row in rows}=={'Minh Anh | 90 PR Tiêu chuẩn | YC | 2.1'}
     assert client.post('/v2/live-tour/action',json=booking()).json()['duplicate']
-    assert len(stored(database))==2
+    assert len(stored(database))==3
     subscribe(database,booking_state['nhanvien'])
     subscribe(database,booking_state['leader'])
     sent=dispatch(database)  # helper asserts zero checked-out DB connections at send
@@ -110,8 +110,20 @@ def test_booking_commits_exact_employee_notice_once_without_sending_in_transacti
     identity[0]=Identity(role='nhanvien',auth_user_id=accounts['nhanvien'])
     visible=inbox.get('/v2/notification-inbox').json()['notifications']
     assert len(visible)==1 and str(visible[0]['id'])==sent[0]['notification_id']
+    feed=inbox.get('/v2/notification-feed').json()
+    assert len(feed['popup'])==1
+    popup=feed['popup'][0]
+    assert popup['payload']['body']==visible[0]['payload']['body']
+    assert popup['payload']['tag']==visible[0]['payload']['tag']
+    assert not any(key.startswith('_') for key in popup['payload'])
     identity[0]=Identity(role='leader',auth_user_id=accounts['leader'])
     assert inbox.get('/v2/notification-inbox').json()['notifications']==[]
+    assert inbox.get('/v2/notification-popup').json()['notifications']==[]
+    assert inbox.get(f"/v2/notification-inbox/{popup['id']}").status_code==404
+    identity[0]=Identity(role='nhanvien',auth_user_id=accounts['nhanvien'])
+    assert inbox.post(f"/v2/notification-inbox/{visible[0]['id']}/read").status_code==200
+    assert inbox.get('/v2/notification-popup').json()['notifications']==[]
+    assert all(row['read_at'] for row in stored(database))
 
 
 def test_batch_booking_is_one_insert_and_each_employee_gets_own_details(database, booking_state, booking_api):
@@ -128,7 +140,7 @@ def test_batch_booking_is_one_insert_and_each_employee_gets_own_details(database
     finally:event.remove(database,'before_cursor_execute',capture)
     assert len(inserts)==1
     rows=stored(database)
-    assert len(rows)==4
+    assert len(rows)==6
     assert {row['recipient'] for row in rows}=={booking_state['nhanvien'],booking_state['leader']}
     assert all(row['payload']['body'].startswith('Minh Anh |') if row['recipient']==booking_state['nhanvien'] else row['payload']['body'].startswith('Bình |') for row in rows)
 
@@ -147,7 +159,7 @@ def test_failed_booking_and_failed_state_write_leave_no_notifications(database, 
     assert stored(database)==[]
     monkeypatch.setattr(live,'_write_state_compat',original)
     assert client.post('/v2/live-tour/action',json=booking()).status_code==200
-    assert len(stored(database))==2
+    assert len(stored(database))==3
 
 
 def test_notification_storage_error_does_not_break_successful_booking(database, booking_state, booking_api):
@@ -178,6 +190,35 @@ def test_pending_booking_honors_current_admin_and_account_controls(database, boo
     accounts,identity,inbox=notices
     identity[0]=Identity(role='nhanvien',auth_user_id=accounts['nhanvien'])
     assert len(inbox.get('/v2/notification-inbox').json()['notifications'])==(1 if control=='push' else 0)
+    assert len(inbox.get('/v2/notification-popup').json()['notifications'])==(1 if control=='push' else 0)
+
+
+@pytest.mark.parametrize('channel',['popup','push','in_app'])
+def test_booking_channel_switches_are_independent(database, booking_state, booking_api, notices, channel):
+    accounts,identity,client=notices
+    revision=client.get('/v2/notification-settings').json()['revision']
+    changed=client.put(f'/v2/notification-settings/live_tour_booking/channels/{channel}',json={'enabled':False,'revision':revision})
+    assert changed.status_code==200,changed.text
+    booking_client,_=booking_api
+    assert booking_client.post('/v2/live-tour/action',json=booking()).status_code==200
+    assert {row['channel'] for row in stored(database)}=={'in_app','push','popup'}-{channel}
+    identity[0]=Identity(role='nhanvien',auth_user_id=accounts['nhanvien'])
+    assert len(client.get('/v2/notification-popup').json()['notifications'])==(0 if channel=='popup' else 1)
+    subscribe(database,accounts['nhanvien'])
+    assert len(dispatch(database))==(0 if channel=='push' else 1)
+
+
+def test_admin_can_hide_pending_popup_without_disabling_lock_screen(database, booking_state, booking_api, notices):
+    accounts,identity,client=notices
+    booking_client,_=booking_api
+    assert booking_client.post('/v2/live-tour/action',json=booking()).status_code==200
+    revision=client.get('/v2/notification-settings').json()['revision']
+    assert client.put('/v2/notification-settings/live_tour_booking/channels/popup',json={'enabled':False,'revision':revision}).status_code==200
+    identity[0]=Identity(role='nhanvien',auth_user_id=accounts['nhanvien'])
+    assert client.get('/v2/notification-popup').json()['notifications']==[]
+    assert len(client.get('/v2/notification-inbox').json()['notifications'])==1
+    subscribe(database,accounts['nhanvien'])
+    assert len(dispatch(database))==1
 
 
 def test_admin_toggle_controls_new_bookings_and_cannot_broadcast_them(database, booking_state, booking_api, notices):

@@ -42,6 +42,7 @@ export default function PopupNotifications({ user }) {
       if (!active) return
       settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item]))
       const fresh = (result.popup || []).filter(item => !seenRouted.current.has(item.id)
+        && item.payload?.kind !== 'live_tour_booking'
         && !(canSeeMissingCheckins(user?.role) && item.payload?.kind === 'missing-scheduled-checkin'))
       fresh.forEach(item => seenRouted.current.add(item.id))
       if (fresh.length) setItems(current => [...current, ...fresh.map(item => ({
