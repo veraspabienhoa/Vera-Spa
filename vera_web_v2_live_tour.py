@@ -1390,6 +1390,7 @@ def _capture_tour_position(employee: dict[str, Any], now: datetime, state: dict 
         "board_index": _ordered_employees(state["employees"], now, manual_order_active=state.get("manual_order_active", True)).index(employee) if state else None,
         "sort_index": employee.get("sort_index", 0),
         "manual_order": state.get("manual_order_active", True) and any(row.get("manual_order") for row in state["employees"]) if state else False,
+        "board_started_at": _board_starts(employee)["board_started_at"],
         "display": {column: record.get(column, "") for column in ("TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC")},
         "counter_key": "request_count" if _norm(employee.get("request")) == "yc" else "tour_count",
         "counter_day": _counter_business_date(now).isoformat(),
@@ -2014,7 +2015,8 @@ def _appearance_settings_update(payload: dict[str, Any]) -> dict[str, Any]:
 def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime, *, admin_invoice_override: bool = False) -> dict[str, Any]:
     action = str(action or "").strip().lower()
     # Preserve legacy display values when an action replaces booking/backup data.
-    # Only start and reorder explicitly write the persistent board fields.
+    # Start/reorder write board times; replacing a standard-tour worker restores
+    # their pre-start clock so the cancelled turn does not consume their position.
     previous = {row["id"]: _board_starts(row) for row in state["employees"]}
     result = _apply_action_impl(state, action, payload, actor, now, admin_invoice_override=admin_invoice_override)
     for row in state["employees"]:
@@ -2147,8 +2149,22 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         _clear_assignment(source, now)
         source["sort_index"] = original_position["sort_index"]
         source["last_assignment_display"] = original_position["display"]
-        if original_position.get("board_index") is not None and (original_position.get("manual_order") or (state.get("manual_order_active", True) and any(row.get("manual_order") for row in state["employees"]))):
-            restored_order = [row for row in _ordered_employees(state["employees"], now, manual_order_active=state.get("manual_order_active", True)) if row["id"] != source["id"]]
+        standard_turn = counter_key == "tour_count"
+        if standard_turn:
+            # Explicitly restore even an empty clock. Old in-flight bookings
+            # already saved the display value before this raw field was added.
+            source["board_started_at"] = original_position.get(
+                "board_started_at", original_position["display"].get("TG bắt đầu thực hiện", ""))
+        ordered = _ordered_employees(state["employees"], now, manual_order_active=state.get("manual_order_active", True))
+        board_index = original_position.get("board_index")
+        manual_position = original_position.get("manual_order") or (
+            state.get("manual_order_active", True) and any(row.get("manual_order") for row in state["employees"]))
+        # The old clock normally restores the slot without touching other rows.
+        # If intervening starts changed the queue, restore the saved slot under
+        # change_employee's existing exclusive fence, preserving everyone else's
+        # relative order. A later standard start resumes normal automatic order.
+        if board_index is not None and (manual_position or (standard_turn and ordered.index(source) != min(board_index, len(ordered) - 1))):
+            restored_order = [row for row in ordered if row["id"] != source["id"]]
             restored_order.insert(min(original_position["board_index"], len(restored_order)), source)
             state["manual_order_active"] = True
             for index, row in enumerate(restored_order):

@@ -1,5 +1,27 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: đổi nhân viên trả lại vị trí trước lượt không yêu cầu
+
+Tái hiện bằng nhân viên giả: bắt đầu lượt không YC đẩy người đầu xuống dưới;
+đổi nhân viên vẫn giữ board_started_at của lượt vừa bị thay nên thứ tự tự động
+không trả người đó về vị trí ban đầu. Nhánh phục hồi board_index trước đây chỉ
+chạy khi có thứ tự thủ công. Tám ca hồi quy mới đều thất bại trên mã cũ.
+
+Snapshot trước khi bắt đầu lưu thêm giờ bắt đầu thường gốc. Khi đổi nhân viên
+ở lượt không YC, phục hồi giờ đó, kể cả giá trị trống; booking đang chạy từ bản
+cũ dùng giờ hiển thị đã có trong snapshot. Nếu giờ cũ đã trả đúng vị trí, không
+ghi lại nhân viên khác. Nếu các lượt bắt đầu xen kẽ làm thay đổi hàng đợi, chèn
+người bị thay vào chỉ số đã lưu, giữ thứ tự tương đối của những người còn lại.
+Luồng này dùng khóa độc quyền change_employee hiện có; không thêm query,
+connection, poller hoặc gọi mạng. Lượt thường tiếp theo vẫn chạy sắp xếp tự động.
+
+Giữ thời gian dịch vụ, hạn đổi nhân viên, YC, số lượt chuyển sang người thay,
+combo, quyền, revision và idempotency. Kiểm thử gồm thứ tự tự động/thủ công,
+lượt đầu, lịch sử giờ cũ, refresh, đổi liên tiếp và snapshot trước nâng cấp.
+Cục bộ 118 kiểm thử đạt; hai ca HTTP/PostgreSQL cần service CI để xác minh lưu,
+replay và từ chối revision cũ. CI là gate trước merge. Chưa triển khai hoặc
+xác minh hành vi này trên VPS; Deploy VPS Production vẫn chạy thủ công.
+
 ## 27-09-2026: nhân viên tự nhận popup chưa check-in
 
 Mở popup cho leader, nhanvien, locker, tapvu và support với phạm vi chỉ
