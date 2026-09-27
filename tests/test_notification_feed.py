@@ -23,7 +23,7 @@ def test_combined_feed_reuses_one_connection_and_keeps_recipient_channel_filters
                 assert 'p.is_active' in sql and 'COALESCE(s.enabled,TRUE)' in sql
                 assert 'COALESCE(cs.enabled,TRUE)' in sql and 'd.read_at IS NULL' in sql
                 assert 'vera_notification_group' in sql
-                return Result([{'id':1 if "d.channel='in_app'" in sql else 2, 'payload':{'title':'Test'}}])
+                return Result([{'id':1 if "DISTINCT ON" in sql else 2, 'payload':{'title':'Test'}}])
             return Result()
     def config(conn, admin=False):
         assert conn is connections[0] and not admin

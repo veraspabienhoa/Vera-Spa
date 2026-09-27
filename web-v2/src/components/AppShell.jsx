@@ -3,6 +3,7 @@ import StableFeedback from './StableFeedback'
 import { PAGE_REFRESH_ERROR } from '../lib/usePageRefresh'
 import '../page-stability.css'
 import NotificationInbox from './NotificationInbox'
+import DevicePushMenu from './DevicePushMenu'
 import { getCustomization, subscribeCustomization } from '../lib/uiCustomizationStore'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
@@ -149,7 +150,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
     if (window.localStorage.getItem('vera-birthday-dismissed') === today) return
     veraApi.birthdays().then((result) => {
       if ((result.birthdays || []).length) {
-        if(notificationSettings.birthday_has_rules) void veraApi.routeLocalNotification('birthday').catch(()=>{})
+        void veraApi.routeLocalNotification('birthday').catch(()=>{})
         if(!notificationSettings.birthday_routed) setBirthdayNotice(result)
       }
     }).catch(() => {})
@@ -436,6 +437,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           ))}
         </nav>
 
+        {!user?.must_change_password && <DevicePushMenu key={user.id}/>}
         <div className="sidebar-footer">
           <div data-ui-key="u-dd74261c77ac" className="user-card">
             <div className="avatar">{(user?.email || 'V')[0].toUpperCase()}</div>
@@ -452,7 +454,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           {navigationToggle}
           <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
           <UiToolbar data-ui-key="u-d08e23e02899" className="topbar-actions">
-            {!user?.must_change_password && <NotificationInbox key={user.id} showTrigger={isAdmin}/>}
+            {!user?.must_change_password && <NotificationInbox key={user.id}/>}
             {currentPage !== 'tour' && currentPage !== 'live-tour' && <button data-ui-key="u-f10aa9b76c0d" data-ui-label-default="Mở tab mới" type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /><UiCustomText uiKey="u-f10aa9b76c0d"> Mở tab mới</UiCustomText></button>}
             <button data-ui-key="u-ae117d0698c3" data-ui-label-default="Làm mới" type="button" className="topbar-refresh-button" onClick={refreshPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /><UiCustomText uiKey="u-ae117d0698c3"> Làm mới</UiCustomText></button>
           </UiToolbar>

@@ -22,7 +22,7 @@ const built = await build({ entryPoints: ['src/App.jsx'], bundle: true, write: f
         globalThis.authFixture.listener?.('SIGNED_OUT', null);
       };
     ` :
-    args.path.endsWith('/pushNotifications') ? 'export const ensureGrantedPushSubscription = async () => {};' :
+    args.path.endsWith('/pushNotifications') ? 'export const ensureGrantedPushSubscription = async () => {}; export const setPushAccount = async () => {};' :
     `export default function Stub() { return ${JSON.stringify(args.path.endsWith('/AppShell') ? 'BUSINESS' : args.path.endsWith('/LoginPage') ? 'LOGIN' : '')}; }`,
   }))
 } }] })

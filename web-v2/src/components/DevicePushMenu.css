@@ -1,0 +1,8 @@
+.device-push-menu{margin:8px 0;padding:8px 0;border-top:1px solid #668577}
+.device-push-switch{width:100%;min-height:48px;text-align:left;gap:9px}
+.device-push-switch>span{flex:1;min-width:0;white-space:normal;line-height:1.35;font-size:12px}
+.device-push-switch small{display:block;font-size:11px;font-weight:400;margin-top:2px}
+.device-push-switch>b{flex:none;padding:3px 7px;border:1px solid currentColor;border-radius:12px;font-size:11px}
+.device-push-switch[aria-checked=true]>b{background:#d6f1df;color:#164b32}
+.device-push-switch:disabled{opacity:.7;cursor:default}
+.device-push-menu>p{margin:5px 12px 0;font-size:11px;line-height:1.45;color:inherit;opacity:.88}

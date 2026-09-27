@@ -2,7 +2,7 @@ import StableFeedback from './StableFeedback'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
-import { subscribeNotificationFeed } from '../lib/notificationFeed'
+import { subscribeNotificationFeed, refreshNotificationFeed } from '../lib/notificationFeed'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { Bell, Check, X } from 'lucide-react'
 import './NotificationInbox.css'
@@ -36,6 +36,7 @@ export default function NotificationInbox({ showTrigger = true }) {
     setMarking(String(id)); setError('')
     try {
       await veraApi.readNotification(id)
+      void refreshNotificationFeed()
       setItems(rows => rows.filter(row => String(row.id) !== String(id)))
       if (selected === String(id)) { setSelected(''); setDetail(null) }
     } catch (err) { setError(err.message || 'Chưa đánh dấu được thông báo. Vui lòng thử lại.') }

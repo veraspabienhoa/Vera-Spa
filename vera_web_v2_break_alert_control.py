@@ -67,7 +67,7 @@ def _set_disabled(conn, disabled: bool, actor: str) -> None:
 
 def _all_subscriptions(conn) -> list[dict[str, Any]]:
     return [dict(row) for row in conn.execute(text("""
-        SELECT subscription_id::text AS subscription_id, endpoint, p256dh, auth_secret
+        SELECT subscription_id::text AS subscription_id, auth_user_id::text AS auth_user_id, endpoint, p256dh, auth_secret
         FROM vera_v2_push_subscription
         WHERE is_active=true
         ORDER BY updated_at DESC

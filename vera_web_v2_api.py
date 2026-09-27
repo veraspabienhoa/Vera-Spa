@@ -864,6 +864,8 @@ def _send_web_push(delivery: dict[str, Any], private_key: str, subject: str) -> 
         "tag": f"vera-leave-{delivery['watched_date'].isoformat()}",
         "watched_date": delivery["watched_date"].isoformat(),
     }
+    if delivery.get("auth_user_id"):
+        payload = {**payload, "recipient_id": str(delivery["auth_user_id"])}
     try:
         response = webpush(
             subscription_info={
@@ -887,7 +889,7 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
     dates = sorted(set(target_dates))
     deliveries: list[dict[str, Any]] = []
     with _engine_instance().begin() as conn:
-        if (not notification_settings.is_enabled(conn, "leave_watch") or not notification_settings.is_channel_enabled(conn, "leave_watch", "push")):
+        if not notification_settings.is_enabled(conn, "leave_watch"):
             return {"dates": len(dates), "deliveries": 0, "sent": 0, "failed": 0, "deactivated": 0}
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
         subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"
@@ -977,7 +979,7 @@ def _dispatch_paid_watch_pushes(target_dates: list[date]) -> dict[str, int]:
 
 def _dispatch_admin_daily_pushes() -> dict[str, int]:
     with _engine_instance().connect() as conn:
-        if (not notification_settings.is_enabled(conn, "admin_daily_summary") or not notification_settings.is_channel_enabled(conn, "admin_daily_summary", "push")):
+        if not notification_settings.is_enabled(conn, "admin_daily_summary"):
             return {"deliveries": 0, "sent": 0, "failed": 0, "deactivated": 0}
         private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
         subject = _vault_secret(conn, "vera_v2_vapid_subject") or "https://app.veraspa.vn/"

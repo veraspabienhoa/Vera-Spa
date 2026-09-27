@@ -32,6 +32,11 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
   const [push, setPush] = useState({ loading: true, supported: false, subscribed: false })
+  useEffect(() => {
+    const changed = event => setPush({ ...event.detail, loading: false })
+    window.addEventListener('vera-device-push-changed', changed)
+    return () => window.removeEventListener('vera-device-push-changed', changed)
+  }, [])
   const [pushBusy, setPushBusy] = useState(false)
   const [referenceBusy, setReferenceBusy] = useState('')
   const [adminUsername, setAdminUsername] = useState(user?.employee_username || '')

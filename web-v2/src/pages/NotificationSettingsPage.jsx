@@ -33,6 +33,11 @@ export default function NotificationSettingsPage({ user }) {
   const [groupName,setGroupName]=useState(''),[groupMembers,setGroupMembers]=useState([])
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
   const [push,setPush]=useState({loading:true,supported:false,subscribed:false}),[pushBusy,setPushBusy]=useState(false)
+  useEffect(() => {
+    const changed = event => setPush({ ...event.detail, loading: false })
+    window.addEventListener('vera-device-push-changed', changed)
+    return () => window.removeEventListener('vera-device-push-changed', changed)
+  }, [])
   const dragged=useRef(null)
   const admin=String(user?.role || '').toLowerCase()==='admin'
   const reload=async()=>{setData(await veraApi.notificationSettings())}

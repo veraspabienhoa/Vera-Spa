@@ -16,7 +16,7 @@ import EmployeeManagementEnhancements from './pages/EmployeeManagementEnhancemen
 import EmployeeExactSearch from './pages/EmployeeExactSearch'
 import TourAdminCustomerCount from './pages/TourAdminCustomerCount'
 import { veraApi } from './lib/api'
-import { ensureGrantedPushSubscription } from './lib/pushNotifications'
+import { ensureGrantedPushSubscription, setPushAccount } from './lib/pushNotifications'
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 import LiveTourRecoveryPanel from './components/LiveTourRecoveryPanel'
@@ -167,7 +167,11 @@ export default function App() {
   // is recreated/re-registered without another prompt and remains usable for
   // lock-screen push while the app is not in the foreground.
   useEffect(() => {
-    if (!session?.access_token || !profile?.employee_username) return undefined
+    if (!session?.access_token || !profile?.employee_username || profile?.must_change_password) {
+      void setPushAccount('')
+      return undefined
+    }
+    void setPushAccount(session.user?.id || '')
     let stopped = false
     let running = false
     const syncPush = async () => {
@@ -188,13 +192,13 @@ export default function App() {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [profile?.employee_username, session?.access_token])
+  }, [profile?.employee_username, profile?.must_change_password, session?.access_token, session?.user?.id])
 
   if (loading) return <div className="boot-screen">Đang mở VERA SPA…</div>
   const user = session?.user
   if (!user && !sessionRecoveryError) return <LoginPage externalError={authError} />
 
-  const signOut = async () => { setProfile(null); await signOutVera() }
+  const signOut = async () => { void setPushAccount(''); setProfile(null); await signOutVera() }
   const changePage = (nextPage) => {
     if (standaloneRequest.enabled) {
       const url = new URL(window.location.href)

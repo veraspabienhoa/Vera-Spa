@@ -6,6 +6,10 @@ self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
 
 self.addEventListener('push', (event) => {
+  event.waitUntil(handlePush(event))
+})
+
+async function handlePush(event) {
   let payload = {}
   try {
     payload = event.data ? event.data.json() : {}
@@ -13,8 +17,16 @@ self.addEventListener('push', (event) => {
     payload = { body: event.data?.text() || '' }
   }
 
+  // Device opt-out and account ownership apply even while every tab is closed.
+  try {
+    const cache = await caches.open('vera-push-device-v1')
+    const response = await cache.match('/__vera_push_device__')
+    const control = response ? await response.json() : null
+    if (!control?.enabled || !control.owner || control.owner !== payload.recipient_id) return
+  } catch { return }
+
   if (payload.kind === 'attendance-break-cleared' && payload.tag) {
-    event.waitUntil((async () => {
+    await (async () => {
       const notifications = await self.registration.getNotifications({ tag: payload.tag })
       notifications.forEach((notification) => notification.close())
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
@@ -24,19 +36,19 @@ self.addEventListener('push', (event) => {
         eventKey: payload.event_key || '',
         globallyDeleted: Boolean(payload.globally_deleted),
       }))
-    })())
+    })()
     return
   }
 
   if (payload.kind === 'attendance-break-global-disabled') {
-    event.waitUntil((async () => {
+    await (async () => {
       const notifications = await self.registration.getNotifications()
       notifications.forEach((notification) => {
         if (String(notification.tag || '').startsWith('vera-break-')) notification.close()
       })
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       windows.forEach((client) => client.postMessage({ type: 'attendance-break-global-disabled' }))
-    })())
+    })()
     return
   }
 
@@ -84,8 +96,10 @@ self.addEventListener('push', (event) => {
     options.actions = [{ action: 'open', title: 'Mở thông báo' }]
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
-})
+  await self.registration.showNotification(title, options)
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  windows.forEach(client => client.postMessage({ type: 'vera-notification-received' }))
+}
 
 self.addEventListener('notificationclick', (event) => {
   const action = event.action || 'open'

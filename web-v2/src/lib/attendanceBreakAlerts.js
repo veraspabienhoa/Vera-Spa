@@ -107,29 +107,6 @@ export async function syncPersistentBreakNotifications(alerts = []) {
     if (/^vera-(break|missing-checkin)-/.test(String(notification.tag || '')) && !activeTags.has(notification.tag)) notification.close()
   }
 
-  for (const item of alerts || []) {
-    if (!item.tag) continue
-    const sameTag = await registration.getNotifications({ tag: item.tag }).catch(() => [])
-    if (sameTag.length) continue
-    const overdue = item.level === 'overdue'
-    const title = item.kind === 'missing-scheduled-checkin' ? 'VERA SPA · CHƯA CHECK-IN' : overdue
-      ? `VERA SPA · ${item.employee} VÀO LẠI TRỄ`
-      : 'VERA SPA · Sắp hết giờ nghỉ giữa ca'
-    const remainingMinutes = Math.max(1, Math.ceil(Math.max(0, Number(item.remaining_seconds || 0)) / 60))
-    const lateMinutes = Math.max(1, Math.ceil(Math.max(0, Number(item.late_seconds || 0)) / 60))
-    const body = item.kind === 'missing-scheduled-checkin' ? item.body : overdue
-      ? `${item.employee}: nghỉ từ ${item.break_out}, phải vào lại ${item.deadline}, hiện đã trễ ${lateMinutes} phút.`
-      : `${item.employee}: còn ${remainingMinutes} phút. Nghỉ từ ${item.break_out}, phải FaceID vào lại lúc ${item.deadline}.`
-    await registration.showNotification(title, {
-      body,
-      icon: `${import.meta.env.BASE_URL}icons/vera-icon-192.png`,
-      badge: `${import.meta.env.BASE_URL}icons/vera-icon-192.png`,
-      tag: item.tag,
-      renotify: true,
-      requireInteraction: overdue,
-      silent: false,
-      vibrate: overdue ? [260, 120, 260, 120, 420] : [180, 90, 240],
-      data: { url: import.meta.env.BASE_URL, kind: overdue ? 'attendance-break-overdue' : 'attendance-break-reminder' },
-    })
-  }
+  // Creation belongs to the durable event worker. The foreground only closes
+  // resolved alerts, avoiding duplicate or device-opt-out-bypassing notifications.
 }

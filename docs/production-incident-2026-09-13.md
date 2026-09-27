@@ -1,5 +1,29 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: hợp nhất thông báo và công tắc theo thiết bị
+
+Kiểm tra mã xác nhận inbox chỉ đọc kênh in_app, nút mở chỉ dành cho Admin,
+trong khi nhiều nguồn mặc định chỉ gửi trực tiếp tới thiết bị đã đăng ký.
+Đồng bộ Web Push khi focus có thể đăng ký lại sau khi người dùng tắt.
+Ảnh gửi lúc 13:28 hiển thị Trung tâm rỗng; không đủ để xác định sự kiện
+nào đã phát sinh trên production.
+
+Dùng outbox chung cho nguồn mặc định và route cấu hình, cùng quyền người nhận.
+Inbox gộp hai kênh theo sự kiện/route; Đã xem cập nhật cả hai bản ghi. Mọi tài
+khoản có nút Trung tâm và công tắc màn hình khóa trong Menu. Tắt chỉ áp dụng
+cho trình duyệt/app đang dùng, giữ inbox và thiết bị khác. Lưu lựa chọn tắt,
+không tự đăng ký lại khi focus/reload. Service worker kiểm tra thiết bị và chủ
+sở hữu trước khi hiển thị; đăng xuất/đổi tài khoản đóng thông báo cũ. Không đưa
+danh sách người nhận nội bộ vào payload trả cho trình duyệt.
+
+Kiểm thử thiết bị dùng trình duyệt mô phỏng, bao gồm iPhone standalone/Android,
+permission, tải lại, API offline, đăng ký đến muộn và đổi tài khoản. PostgreSQL
+kiểm tra quyền hiện tại, override, nguồn/kênh tắt, dedup, đọc hai kênh, rollback
+và gửi mạng sau khi trả connection. Không gửi thử thông báo tới nhân viên thật.
+Chưa xác minh trên điện thoại thật hoặc VPS. iPhone cần iOS 16.4+, Thêm vào Màn
+hình chính và cấp quyền từ thao tác Bật; OS quyết định hiển thị trên màn hình
+khóa theo cài đặt thông báo/Focus. Deploy VPS Production vẫn chạy thủ công.
+
 ## 27-09-2026: Booking bị từ chối khi đổi ngày nghiệp vụ lúc 11:10
 
 Ảnh người dùng ghi nhận đặt lịch `90 PR VIP` tại giường `20.1` báo
