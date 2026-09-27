@@ -38,6 +38,59 @@
 .employee-profile-modal .staff-profile-react-actions { display: flex; gap: 8px; }
 .employee-profile-modal :is(input, select, textarea) { max-width: 100%; min-width: 0; }
 .employee-profile-modal :is(.staff-form-grid, .staff-form-grid > *, .vera-reference-row) { min-width: 0; }
+.employee-profile-modal.employee-create-modal {
+  width: min(900px, 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.employee-create-modal .employee-create-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+}
+.employee-create-modal .employee-create-header {
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid #cbdad2;
+}
+.employee-create-header > div { min-width: 0; flex: 1; }
+.employee-create-header h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.employee-create-header p { margin: 6px 0 0; font-size: 12px; line-height: 1.5; }
+.employee-create-close { flex: 0 0 44px; width: 44px; height: 44px; padding: 0; }
+.employee-create-form { display: flex; flex-direction: column; min-height: 0; }
+.employee-create-modal .employee-create-fields {
+  min-height: 0;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 16px 20px;
+  /* The dialog frame supplies the border; override the shared fieldset frame. */
+  border: 0 !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+}
+.employee-create-fields :is(input, select) { min-height: 44px; }
+.employee-create-modal .employee-create-fields .span-2 { grid-column: 1 / -1; }
+.employee-create-fields .password-eye-button { width: 44px; min-height: 44px; }
+.employee-create-modal .employee-create-actions {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid #cbdad2;
+  background: white;
+}
+.employee-create-actions > button { min-height: 44px; }
 @media (max-width: 640px) {
   .employee-profile-modal-backdrop { padding: 0; }
   .employee-profile-modal {
@@ -60,4 +113,18 @@
   .employee-profile-modal :is(input, select, textarea) { font-size: 16px; }
   .employee-profile-modal :is(.staff-bank-reference-row, .vera-reference-row) { flex-wrap: wrap; }
   .employee-profile-modal :is(.staff-bank-reference-row, .vera-reference-row) > * { width: 100%; }
+  .employee-create-modal .employee-create-panel,
+  .employee-create-form { flex: 1; }
+  .employee-create-modal .employee-create-header {
+    padding: max(12px, env(safe-area-inset-top)) 12px 12px;
+  }
+  .employee-create-modal .employee-create-fields {
+    flex: 1;
+    padding: 12px;
+  }
+  .employee-create-modal .employee-create-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+  }
 }

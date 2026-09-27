@@ -22,7 +22,10 @@ test('profile modal uses a portal, locks scrolling and restores focus when close
   opener.focus()
   let closes = 0
   const render = (busy) => root.render(React.createElement(module.exports.default, { busy, onClose: () => { closes++ } },
-    React.createElement('h2', { id: 'employee-profile-modal-title' }, 'SỬA HỒ SƠ')))
+    React.createElement('h2', { id: 'employee-profile-modal-title' }, 'SỬA HỒ SƠ'),
+    React.createElement('fieldset', { disabled: true }, React.createElement('input')),
+    React.createElement('button', { id: 'first' }, 'Đóng'),
+    React.createElement('button', { id: 'last' }, 'Lưu')))
   try {
     await act(() => render(false))
     const dialog = document.querySelector('[role="dialog"]')
@@ -30,6 +33,16 @@ test('profile modal uses a portal, locks scrolling and restores focus when close
     assert.equal(document.querySelector('main').contains(dialog), false)
     assert.equal(document.body.style.overflow, 'hidden')
     assert.equal(document.activeElement, dialog)
+    for (const node of dialog.querySelectorAll('input, button')) node.getClientRects = () => [{}]
+    const tab = async (shiftKey = false) => act(() => document.activeElement.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true }),
+    ))
+    await tab()
+    assert.equal(document.activeElement.id, 'first', 'Tab skips inputs in a disabled fieldset')
+    await tab(true)
+    assert.equal(document.activeElement.id, 'last', 'Shift+Tab stays within the dialog')
+    await tab()
+    assert.equal(document.activeElement.id, 'first', 'Tab wraps to the first enabled control')
     await act(() => dialog.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     assert.equal(closes, 1)
     await act(() => render(true))
