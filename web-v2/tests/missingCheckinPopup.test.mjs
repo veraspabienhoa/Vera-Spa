@@ -15,7 +15,7 @@ for(const role of ['admin','letan','quanly']) test(`${role}: current absence ope
  try {
   await publish(w,[row()]);assert.equal(w.document.querySelectorAll('.missing-checkin-popup li').length,1)
   await publish(w,[row()]);assert.equal(w.document.querySelectorAll('.missing-checkin-popup li').length,1)
-  await w.act(async()=>w.document.querySelector('button').click());await publish(w,[row()]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+  await w.act(async()=>w.document.querySelector('.missing-checkin-seen').click());await publish(w,[row()]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
   await publish(w,[row(),row('new-worker')]);assert.equal(w.document.querySelectorAll('li').length,1)
   assert.equal(w.document.querySelector('li strong').textContent,'new-worker')
   await publish(w,[]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
@@ -70,5 +70,32 @@ test('seen state synchronizes tabs and tolerates unavailable storage',async()=>{
   Object.defineProperty(w,'localStorage',{get(){throw new Error('Storage blocked')}})
   await w.act(async()=>w.document.querySelector('.missing-checkin-seen').click())
   await publish(w,[row('new')]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+ }finally{await w.unmount();w.close()}
+})
+
+
+test('hide/show preserves unread rows and each employee is acknowledged independently',async()=>{
+ const dom=await mount('letan'),w=dom.window
+ try {
+  await publish(w,[row('A'),row('B')])
+  const toggle=()=>w.document.querySelector('header button')
+  await w.act(async()=>toggle().click())
+  assert.equal(toggle().textContent,'Hiện thông báo')
+  assert.equal(toggle().getAttribute('aria-expanded'),'false')
+  assert.equal(w.document.querySelector('.missing-checkin-popup [hidden]').querySelectorAll('li').length,2)
+  assert.equal(w.localStorage.getItem('vera-missing-checkin-seen:viewer'),null)
+  await publish(w,[row('A'),row('B'),row('C')])
+  assert.match(w.document.querySelector('header strong').textContent,/3/)
+  await w.mount({role:'admin',employee_username:'another'})
+  await w.mount({role:'letan',employee_username:'viewer'})
+  await publish(w,[row('A'),row('B')])
+  assert.equal(toggle().textContent,'Hiện thông báo')
+  await w.act(async()=>toggle().click())
+  assert.equal(toggle().textContent,'Ẩn thông báo')
+  await w.act(async()=>w.document.querySelector('li .missing-checkin-seen').click())
+  assert.deepEqual([...w.document.querySelectorAll('li strong')].map(el=>el.textContent),['B'])
+  await publish(w,[row('A'),row('B')])
+  assert.deepEqual([...w.document.querySelectorAll('li strong')].map(el=>el.textContent),['B'])
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('vera-missing-checkin-seen:viewer')),['missing-A'])
  }finally{await w.unmount();w.close()}
 })

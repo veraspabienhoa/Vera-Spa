@@ -1,5 +1,27 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: ẩn/hiện popup, Đã xem từng người và lọc cho Lễ tân
+
+Popup thiếu check-in có nút Ẩn thông báo / Hiện thông báo; thu gọn nội dung
+vẫn giữ tiêu đề và số người chưa xem để mở lại. Thu gọn không đánh dấu đã xem.
+Mỗi dòng nhân viên có nút Đã xem riêng, chỉ lưu khóa của người đó. Giữ lựa
+chọn thu gọn theo tài khoản trên trình duyệt và đồng bộ tab bằng storage event;
+không thêm API hay poller. Trạng thái Đã xem đã lưu trước đây vẫn được giữ.
+
+Server lọc danh sách cho viewer letan chỉ còn employee_role leader, nhanvien,
+letan. Mọi viewer bỏ qua đối tượng giamdoc/quanly; Quản lý vẫn được nhận cảnh
+báo về nhân viên theo quyền hiện hữu. Đây là cách hiểu mục “bỏ qua thông báo
+với tài khoản giám đốc, quản lý” đã thông báo cho người dùng trước khi sửa.
+Vai trò đối tượng lấy từ employees hiện tại, không suy từ department trên
+lịch ca. Không thêm truy vấn theo từng người hoặc mở connection khác. Thay
+đổi này dành cho popup hiện tại, không đổi phân quyền hay cấu hình push.
+
+Kiểm thử dùng nhân viên giả: ẩn/hiện giữ danh sách, cảnh báo mới tăng số đếm,
+Đã xem một người không ẩn người khác, đổi tài khoản giữ lựa chọn riêng; thêm
+PostgreSQL coverage cho role đối tượng, viewer lễ tân, nhãn department không
+trùng role và role thay đổi. CI là gate trước merge; deployment VPS vẫn do
+chủ hệ thống chạy thủ công, chưa xác minh giao diện mới trên production.
+
 ## 27-09-2026: popup thiếu check-in và nút Đã xem
 
 Người dùng báo thiếu popup cảnh báo và yêu cầu nút Đã xem. Kiểm tra giao diện

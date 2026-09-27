@@ -77,7 +77,7 @@ def _faceid_employees(checkin_df: pd.DataFrame, employee_map: dict[str, str]) ->
 def _scheduled_rows(conn, work_day: date) -> list[dict[str, Any]]:
     return [dict(row) for row in conn.execute(text("""
         SELECT ws.employee_username,COALESCE(NULLIF(ws.employee_name,''),ws.employee_username) AS employee_name,
-               lower(ws.department) AS department,ws.shift_code,
+               lower(ws.department) AS department,lower(btrim(e.role)) AS employee_role,ws.shift_code,
                COALESCE(NULLIF(ws.start_time,''),definition.start_time,'') AS start_time
         FROM vera_work_schedule ws
         JOIN employees e ON lower(btrim(e.username))=lower(btrim(ws.employee_username))
@@ -130,7 +130,7 @@ def _staff_scheduled_rows(conn, work_day):
         if len(starts) != 1:
             continue  # Do not invent a start time for an ambiguous schedule.
         result.append({'employee_username': row['username'], 'employee_name': row.get('full_name') or row['username'],
-                       'department': row['role'], 'shift_code': shift, 'start_time': starts.pop()})
+                       'department': row['role'], 'employee_role': str(row['role']).strip().lower(), 'shift_code': shift, 'start_time': starts.pop()})
     return result
 
 
@@ -187,7 +187,13 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     expires = min(updated.astimezone(zone)+timedelta(minutes=10),
                   datetime.combine(day+timedelta(days=1), time.min, tzinfo=zone))
     result = []
+    viewer_role = str(getattr(ident, 'role', '')).strip().lower()
     for row in schedules:
+        employee_role = str(row.get('employee_role') or '').strip().lower()
+        if employee_role in {'giamdoc', 'quanly'}:
+            continue
+        if viewer_role == 'letan' and employee_role not in {'leader', 'nhanvien', 'letan'}:
+            continue
         username = str(row.get('employee_username') or '').strip()
         name = str(row.get('employee_name') or username)
         aliases = {_norm(username), _norm(name)} - {''}
