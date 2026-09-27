@@ -39,7 +39,10 @@ hỗ trợ cả kho aggregate và resource trên connection của caller.
 
 Kiểm thử frontend cục bộ đã qua các trường hợp lọc, phân trang, ngày cũ,
 sang ngày mới, quyền xem popup, cảnh báo hết hạn, chọn ảnh và phản hồi muộn;
-build và lint không có lỗi mới. CI PostgreSQL/pytest là gate trước merge.
+build và lint không có lỗi mới. Lượt CI đầu có 1843 kiểm thử Python đạt; 4 assertion về cấu trúc ngày và
+header Excel cần cập nhật theo hành vi mới. Kiểm thử ảnh/popup dùng React
+act thay cho chờ cố định để ổn định trên CI. CI PostgreSQL/pytest là gate
+trước merge.
 Không tự kích hoạt Deploy VPS Production cho đợt sửa này theo yêu cầu người
 dùng. Chưa xác minh giao diện và hành vi mới trên VPS; cần xác minh commit,
 frontend, hai health endpoint và thao tác thực tế sau lần deploy thủ công.

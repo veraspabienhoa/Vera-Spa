@@ -4052,7 +4052,7 @@ def _tip_summary_sheet(workbook, state, bounds):
     bounds = bounds or {}
     totals = {}
     for row in _report_rows_with_combo_kind(state):
-        if not _event_in_export_bounds(row, bounds):
+        if int(row.get('tip') or 0) <= 0 or not _event_in_export_bounds(row, bounds):
             continue
         name = str(row.get("employee_name") or "").strip() or "Chưa xác định nhân viên"
         key = ("id", str(row["employee_id"])) if row.get("employee_id") else ("name", name.casefold())

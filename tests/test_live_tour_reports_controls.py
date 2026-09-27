@@ -312,7 +312,8 @@ def test_tip_export_money_filter_matches_visible_rows_and_validates_amount(monke
         response = client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':amount})
         assert response.status_code == 200, response.text
         values = list(load_workbook(BytesIO(response.content)).active.values)
-        rows = [row for row in values[1:] if row[0] != 'Tổng cộng']
+        rows = [row for row in values if isinstance(row[0], int)]
         assert len(rows) == expected
+        assert all(row[2] == amount for row in rows)
     assert client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':-1}).status_code == 422
     assert client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':'invalid'}).status_code == 422
