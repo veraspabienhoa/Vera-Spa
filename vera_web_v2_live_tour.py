@@ -14,6 +14,7 @@ import vera_live_tour_lists as list_queries
 import vera_postgres_job_queue as job_queue
 import vera_live_tour_queue_alerts as queue_alerts
 from vera_live_tour_timing import ActionTiming
+import vera_live_tour_leave_return as leave_return
 
 import hashlib
 import json
@@ -1391,6 +1392,7 @@ def _capture_tour_position(employee: dict[str, Any], now: datetime, state: dict 
         "sort_index": employee.get("sort_index", 0),
         "manual_order": state.get("manual_order_active", True) and any(row.get("manual_order") for row in state["employees"]) if state else False,
         "board_started_at": _board_starts(employee)["board_started_at"],
+        **({leave_return.MARKER: deepcopy(employee[leave_return.MARKER])} if employee.get(leave_return.MARKER) else {}),
         "display": {column: record.get(column, "") for column in ("TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC")},
         "counter_key": "request_count" if _norm(employee.get("request")) == "yc" else "tour_count",
         "counter_day": _counter_business_date(now).isoformat(),
@@ -1435,6 +1437,7 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
         employee["request_count"] = int(employee.get("request_count") or 0) + 1
     else:
         employee["tour_count"] = int(employee.get("tour_count") or 0) + 1
+        leave_return.release(employee)
         # In resource mode invalidate manual ordering without writing unrelated
         # employee rows. Concurrent starts merge the same false metadata value.
         state["manual_order_active"] = False
@@ -2151,6 +2154,9 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         source["last_assignment_display"] = original_position["display"]
         standard_turn = counter_key == "tour_count"
         if standard_turn:
+            if leave_return.MARKER in original_position:
+                source[leave_return.MARKER] = deepcopy(original_position[leave_return.MARKER])
+            leave_return.release(target)
             # Explicitly restore even an empty clock. Old in-flight bookings
             # already saved the display value before this raw field was added.
             source["board_started_at"] = original_position.get(
@@ -2181,6 +2187,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if _norm(employee.get("status")) not in {"dang thuc hien", "dang su dung"} or not employee.get("started_at") or employee.get("completed_at"):
             raise HTTPException(409, "Chỉ hủy lệnh Thực hiện cho booking đang chạy và chưa hoàn thành.")
         position = employee.get("pre_start_tour_position") or {}
+        if leave_return.MARKER in position:
+            employee[leave_return.MARKER] = deepcopy(position[leave_return.MARKER])
         counter_key = "request_count" if _norm(employee.get("request")) == "yc" else "tour_count"
         if position.get("counter_day") in {None, _counter_business_date(now).isoformat()}:
             employee[counter_key] = max(0, int(employee.get(counter_key) or 0) - 1)
@@ -2530,6 +2538,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         ordered = [item for item in ordered if _norm(item.get("work_status")) != "nghi phep"] + [item for item in ordered if _norm(item.get("work_status")) == "nghi phep"]
         if action == "admin_reorder":
             state["manual_order_active"] = True
+            leave_return.release(employee, 'manual')
         for index, item in enumerate(ordered):
             item["sort_index"] = index
             if action == "admin_reorder":
@@ -2986,9 +2995,10 @@ def _remaining(employee: dict[str, Any], now: datetime) -> tuple[int | None, str
 
 
 def _employee_time_key(employee: dict[str, Any], now: datetime) -> tuple[int, int, int]:
-    # Use precisely the standard-start column, including retained history after
-    # completion/payment. YC start times and countdown expiry do not reorder it.
-    raw = str(_employee_record(employee, now).get("TG bắt đầu thực hiện") or "").strip()
+    # The one-shot absence return position uses a separate queue clock, never a
+    # fabricated service start. Otherwise use the retained standard-start column.
+    # YC start times and countdown expiry do not reorder the normal queue.
+    raw = leave_return.queue_clock(employee) or str(_employee_record(employee, now).get("TG bắt đầu thực hiện") or "").strip()
     started = _parse_datetime(raw)
     rank = 0 if not raw else 1 if started else 2
     return (int(_norm(employee.get("work_status")) == "nghi phep"),
@@ -2999,7 +3009,7 @@ def _ordered_employees(employees: list[dict[str, Any]], now: datetime, *, manual
     if manual_order_active and any(item.get("manual_order") for item in employees):
         return sorted(employees, key=lambda item: (_norm(item.get("work_status")) == "nghi phep", int(item.get("sort_index") or 0)))
     return sorted(employees, key=lambda item: (
-        *_employee_time_key(item, now), int(item.get("sort_index") or 0), _norm(item.get("name")),
+        *_employee_time_key(item, now), *leave_return.queue_order(item), int(item.get("sort_index") or 0), _norm(item.get("name")),
     ))
 
 
@@ -3081,6 +3091,9 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_id": employee.get("id"), "id": employee.get("id"),
         "employee_id": employee.get("id"), "_employee_id": employee.get("id"),
         "_row_style": style, "_tour_groups": groups,
+        "_return_queue_at": leave_return.queue_clock(employee),
+        "_return_queue_day": leave_return.queue_order(employee)[0],
+        "_return_queue_ordinal": leave_return.queue_order(employee)[1],
         "_shift_checkin_date": employee.get("shift_checkin_date", ""),
         "_daily_support_reason": employee.get("synced_leave_reason", ""),
         "_scheduled_week_shift": employee.get("scheduled_week_shift", ""),
@@ -3593,11 +3606,23 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
         leaves = leave_records
         if leaves is None:
             leaves = [dict(item) for item in conn.execute(text(
-                "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
+                "SELECT employee_name, leave_reason, leave_type, leave_date, record_uid, source_row, id, detail FROM leave_records WHERE leave_date=:day ORDER BY id"
             ), {"day": leave_day}).mappings().all()]
         if attendance_records is not None:
             sync_breaks(state, attendance_records, now.astimezone(VN_TZ))
         _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
+        pending_leave_ids = leave_return.pending_source_ids(state, leave_day)
+        return_history = None
+        if pending_leave_ids:
+            # One bounded primary-key lookup on the caller's connection, only
+            # while a recorded absence is waiting for the employee's return.
+            params = {f"leave_{index}": value for index, value in enumerate(pending_leave_ids)}
+            placeholders = ",".join(f":{name}" for name in params)
+            return_history = [dict(item) for item in conn.execute(text(
+                f"SELECT id, employee_name, leave_reason, leave_type, leave_date, detail FROM leave_records WHERE id IN ({placeholders})"
+            ), params).mappings().all()]
+        leave_return.sync_returns(state, directory, leaves, now.astimezone(VN_TZ), leave_day,
+                                  _ordered_employees, _employee_time_key, history_leaves=return_history)
         _auto_start_waiting(state, now)
         if state != before:
             revision = _write_state_compat(
@@ -4416,7 +4441,7 @@ def install_live_tour_routes(
             directory = _employee_directory(conn, now)
             leave_day = (now.astimezone(timezone) - timedelta(hours=5)).date()
             leaves = [dict(item) for item in conn.execute(text(
-                "SELECT employee_name, leave_reason, leave_type FROM leave_records WHERE leave_date=:day ORDER BY id"
+                "SELECT employee_name, leave_reason, leave_type, leave_date, record_uid, source_row, id, detail FROM leave_records WHERE leave_date=:day ORDER BY id"
             ), {"day": leave_day}).mappings().all()]
         return records, directory, leaves
 

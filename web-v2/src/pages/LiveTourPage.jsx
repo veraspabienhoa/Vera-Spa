@@ -235,10 +235,13 @@ function prioritizeRecords(records, columns, activeFilter) {
     const leftLeave = hasGroup(left.record, 'leave')
     const rightLeave = hasGroup(right.record, 'leave')
     if (leftLeave !== rightLeave) return leftLeave ? 1 : -1
-    const [leftRank, leftTime] = tourStartOrder(cellValue(left.record, startedColumn))
-    const [rightRank, rightTime] = tourStartOrder(cellValue(right.record, startedColumn))
+    const [leftRank, leftTime] = tourStartOrder(left.record._return_queue_at || cellValue(left.record, startedColumn))
+    const [rightRank, rightTime] = tourStartOrder(right.record._return_queue_at || cellValue(right.record, startedColumn))
     if (leftRank !== rightRank) return leftRank - rightRank
     if (leftTime !== rightTime) return leftTime - rightTime
+    const cohortOrder = String(left.record._return_queue_day || '').localeCompare(String(right.record._return_queue_day || ''))
+      || Number(left.record._return_queue_ordinal || 0) - Number(right.record._return_queue_ordinal || 0)
+    if (cohortOrder) return cohortOrder
     const leftMatches = hasGroup(left.record, priorityGroup)
     const rightMatches = hasGroup(right.record, priorityGroup)
     if (leftMatches !== rightMatches) return leftMatches ? -1 : 1
