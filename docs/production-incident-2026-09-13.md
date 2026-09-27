@@ -19,6 +19,11 @@ khác dấu, thiếu identity, query giả mạo username/role, tự hết cản
 check-in/đăng ký nghỉ và quyền Lễ tân không đổi. CI là gate trước merge;
 Deploy VPS Production vẫn do người dùng chạy thủ công. Không gửi thử thông
 báo tới nhân viên thật hoặc xác nhận giao diện mới đã chạy trên VPS.
+Lượt CI đầu: 1890 đạt, 2 kiểm thử booking thiếu vera_dataset_cache vì fixture
+trước đây không cần dữ liệu công cho viewer nhân viên. Bổ sung đúng bảng
+cache trống vào fixture booking để feed thực hiện đường đọc mới; giữ nguyên
+tất cả assertion về người nhận, giao dịch, truy vấn, dedup và quyền booking.
+
 
 ## 27-09-2026: ẩn/hiện popup, Đã xem từng người và lọc cho Lễ tân
 

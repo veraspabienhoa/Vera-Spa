@@ -52,7 +52,10 @@ def booking_state(database, notices, monkeypatch):
     with database.begin() as conn:
         conn.execute(text('''ALTER TABLE vera_app_setting ADD PRIMARY KEY(category,setting_key);
             ALTER TABLE vera_app_setting ADD COLUMN revision bigint, ADD COLUMN updated_at timestamptz, ADD COLUMN source text, ADD COLUMN updated_by text;
-            CREATE TABLE employees(username text,full_name text,bank_name text,bank_account text);'''))
+            CREATE TABLE employees(username text,full_name text,bank_name text,bank_account text);
+            CREATE TABLE vera_dataset_cache(dataset_key text PRIMARY KEY,payload jsonb NOT NULL DEFAULT '[]',
+                source_version text NOT NULL DEFAULT '',updated_at timestamptz NOT NULL DEFAULT NOW(),
+                expires_at timestamptz NOT NULL DEFAULT NOW());'''))
         conn.execute(text("INSERT INTO vera_app_setting(category,setting_key,value_json,revision,updated_at) VALUES('live_tour','state',CAST(:state AS jsonb),7,NOW())"), {'state':relational._json(state)})
         for role, name in [('nhanvien','Minh Anh'),('leader','Bình')]:
             conn.execute(text('UPDATE vera_v2_user_profile SET employee_username=:name WHERE auth_user_id=CAST(:id AS uuid)'), {'name':name,'id':accounts[role]})
