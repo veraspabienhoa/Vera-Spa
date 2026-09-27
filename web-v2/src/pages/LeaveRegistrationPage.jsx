@@ -154,6 +154,11 @@ export default function LeaveRegistrationPage({ user }) {
   const [watchError, setWatchError] = useState('')
   const [watchSoundReady, setWatchSoundReady] = useState(true)
   const [pushState, setPushState] = useState({ loading: true, supported: false, subscribed: false })
+  useEffect(() => {
+    const changed = event => setPushState({ ...event.detail, loading: false })
+    window.addEventListener('vera-device-push-changed', changed)
+    return () => window.removeEventListener('vera-device-push-changed', changed)
+  }, [])
   const [pushBusy, setPushBusy] = useState(false)
   const [pushMessage, setPushMessage] = useState('')
   const [exporting, setExporting] = useState(false)

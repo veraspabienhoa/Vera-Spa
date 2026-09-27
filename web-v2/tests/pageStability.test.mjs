@@ -156,7 +156,7 @@ const app = await bundle("export { default } from './src/App';", [{ name: 'app-b
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ loader: 'jsx', resolveDir: process.cwd(), contents:
     path.endsWith('/api') ? 'export const veraApi={me:async()=>({employee_username:"synthetic",role:"admin"})};' :
     path.endsWith('/supabase') ? 'export const isAuthConfigured=true;export const getCurrentSession=async()=>({access_token:"synthetic",user:{id:"u"}});export const onVeraAuthStateChange=()=>()=>{};export const signOutVera=async()=>{};' :
-    path.endsWith('/pushNotifications') ? 'export const ensureGrantedPushSubscription=async()=>{};' :
+    path.endsWith('/pushNotifications') ? 'export const ensureGrantedPushSubscription=async()=>{}; export const setPushAccount=async()=>{};' :
     path.endsWith('/AppShell') ? 'export default function Shell({children,onRefreshCurrentPage,onPageChange}){return <><button id="refresh" onClick={onRefreshCurrentPage}>Refresh</button><button id="navigate" onClick={()=>onPageChange("employees")}>Employees</button>{children(null)}</>}' :
     path.includes('/pages/LiveTourPage') || path.includes('/pages/EmployeePage') ? `
       import {useEffect,useState} from 'react';

@@ -259,7 +259,7 @@ def _dispatch_completed_notifications(conn, *, reference_type: str, reference_id
             duration = (end.hour * 60 + end.minute - start.hour * 60 - start.minute) / 60
             training_date = session['training_date'].strftime('%d-%m-%Y')
             body += f" · Ngày đào tạo: {training_date}, {start.strftime('%H:%M')}–{end.strftime('%H:%M')} ({duration:g} giờ)"
-    if enqueue_notification(conn, 'training_completed', {'title':title,'body':body,'tag':f'{reference_type}:{reference_id}'}): return 1
+    if enqueue_notification(conn, 'training_completed', {'title':title,'body':body,'tag':f'{reference_type}:{reference_id}'}, default_usernames=recipients): return 1
     for recipient in {item.strip() for item in recipients if item and item.strip()}:
         conn.execute(text("""
             INSERT INTO vera_training_notification(id,recipient_username,reference_type,reference_id,title,body)
@@ -272,13 +272,13 @@ def _dispatch_completed_notifications(conn, *, reference_type: str, reference_id
 
 def _dispatch_cycle_notifications(conn, *, cycle_id: str, cycle_name: str) -> int:
     if not notification_settings.is_enabled(conn, 'training_cycle'): return 0
-    if enqueue_notification(conn, 'training_cycle', {'title':'Đợt đánh giá mới','body':f'Đợt đánh giá: {cycle_name}','tag':cycle_id}): return 1
     rows = conn.execute(text("""
         SELECT employee_username,evaluator_username FROM vera_evaluation_assignment
         WHERE cycle_id=:cycle
     """), {"cycle": cycle_id}).mappings().all()
     recipients = {str(item["employee_username"]) for item in rows}
     recipients.update(str(item["evaluator_username"]) for item in rows)
+    if enqueue_notification(conn, 'training_cycle', {'title':'Đợt đánh giá mới','body':f'Đợt đánh giá: {cycle_name}','tag':cycle_id}, default_usernames=recipients): return 1
     for recipient in recipients:
         conn.execute(text("""
             INSERT INTO vera_training_notification(

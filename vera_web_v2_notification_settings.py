@@ -12,6 +12,7 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from vera_notification_periods import current_quota_sql
+from vera_notification_audience import delivery_joins, delivery_access_sql, public_payload
 
 
 RELEASE = "notification-routing-2026-09-22-v2"
@@ -281,19 +282,17 @@ def _inbox_rows(conn, ident):
         WHERE recipient=:recipient AND (channel='in_app' OR (channel='push' AND sent_at IS NOT NULL))
         AND created_at < date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'"""),
         {'recipient':str(ident.auth_user_id)})
-    rows=conn.execute(text(f"""SELECT d.id,d.payload,d.created_at,d.read_at FROM vera_notification_delivery d
-        JOIN vera_notification_route r ON r.key=d.rule_key
-        JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
-        LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-        LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='in_app'
-        WHERE d.recipient=:recipient AND d.channel='in_app' AND d.read_at IS NULL
-        AND {current_quota_sql()}
-        AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
-        AND r.channels ? 'in_app' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
-        AND NOT (r.source_key='attendance_break' AND p.role='admin'
-            AND d.payload->>'kind'='attendance-break-reminder')
-        ORDER BY d.id DESC LIMIT 100"""),{'recipient':str(ident.auth_user_id)}).mappings()
-    return [dict(row) for row in rows]
+    rows=conn.execute(text(f"""SELECT * FROM (
+        SELECT DISTINCT ON (d.event_key,d.rule_key) d.id,d.payload,d.created_at,d.read_at
+        {delivery_joins()}
+        WHERE d.recipient=:recipient AND d.channel IN ('in_app','push') AND d.read_at IS NULL
+        AND {delivery_access_sql()}
+        AND COALESCE(d.payload->>'kind','') NOT IN ('attendance-break-cleared','attendance-break-global-disabled')
+        AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
+        ORDER BY d.event_key,d.rule_key,(d.channel='push') DESC,d.id DESC
+        ) notices ORDER BY created_at DESC,id DESC LIMIT 100"""),
+        {'recipient':str(ident.auth_user_id)}).mappings()
+    return [{**dict(row), 'payload': public_payload(row['payload'])} for row in rows]
 
 
 def _popup_rows(conn, ident):
@@ -419,17 +418,20 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
         # Browser-origin notices use fixed server text, never accept arbitrary alert content.
         if notification_key not in {'birthday','profile_completion','ui_guidance','ui_success','ui_warning','ui_error'}:
             raise HTTPException(400,'Loại sự kiện trình duyệt không hợp lệ.')
-        from datetime import datetime, timezone
+        if notification_key == 'birthday' and str(ident.role).lower() not in {'admin','quanly','letan'}:
+            raise HTTPException(403, 'Bạn không được nhận thông báo sinh nhật nhân viên.')
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
         from vera_notification_delivery import enqueue
         label=next(row[1] for row in CATALOG if row[0]==notification_key)
-        now=datetime.now(timezone.utc)
+        now=datetime.now(ZoneInfo('Asia/Ho_Chi_Minh'))
         bucket=now.strftime('%Y%m%d') if notification_key in {'birthday','profile_completion'} else now.strftime('%Y%m%d%H%M')
         event=f"local:{notification_key}:{ident.auth_user_id}:{bucket}"
         with engine_instance().begin() as conn:
             ensure_schema(conn)
             if is_enabled(conn,notification_key):
                 enqueue(conn,notification_key,{'title':label,
-                    'body':f"{ident.full_name or ident.employee_username} nhận thông báo {label.lower()} trên ứng dụng."},event)
+                    'body': 'Vui lòng cập nhật Hồ sơ & Mật khẩu.' if notification_key == 'profile_completion' else f"{label} trên ứng dụng VERA SPA."},event, default_accounts=[str(ident.auth_user_id)])
         return {'ok':True}
 
     @app.get('/v2/notification-feed')
@@ -458,28 +460,21 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
         with engine_instance().begin() as conn:
             ensure_schema(conn); ensure_routing_schema(conn)
             row = conn.execute(text(f"""SELECT d.id,d.payload,d.created_at,d.read_at
-                FROM vera_notification_delivery d
-                JOIN vera_notification_route r ON r.key=d.rule_key
-                JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
-                LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-                LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel=d.channel
+                {delivery_joins()}
                 WHERE d.id=:id AND d.recipient=:recipient
-                AND {current_quota_sql()}
-                AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
-                AND d.channel IN ('push','in_app','popup') AND r.channels ? d.channel
-                AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
-                AND NOT (r.source_key='attendance_break' AND p.role='admin'
-                    AND d.payload->>'kind'='attendance-break-reminder')
-                AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)"""),
+                AND d.channel IN ('push','in_app','popup') AND {delivery_access_sql()}
+                AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'"""),
                 {'id':notification_id,'recipient':str(ident.auth_user_id)}).mappings().first()
             if row is None:
                 raise HTTPException(404, 'Thông báo không tồn tại hoặc bạn không còn quyền xem.')
-            return dict(row)
+            return {**dict(row), 'payload': public_payload(row['payload'])}
 
     @app.post('/v2/notification-inbox/{notification_id}/read')
     def mark_read(notification_id: int, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
-            conn.execute(text('UPDATE vera_notification_delivery SET read_at=NOW() WHERE id=:id AND recipient=:recipient'),
+            conn.execute(text('''UPDATE vera_notification_delivery d SET read_at=NOW()
+                FROM vera_notification_delivery selected WHERE selected.id=:id AND selected.recipient=:recipient
+                AND d.recipient=selected.recipient AND d.event_key=selected.event_key AND d.rule_key=selected.rule_key'''),
                 {'id':notification_id,'recipient':str(ident.auth_user_id)})
         return {'ok':True}
 

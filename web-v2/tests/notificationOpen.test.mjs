@@ -21,7 +21,7 @@ for(const denied of [false,true]) test(`detail authorization denied=${denied}`,a
 test('Admin explicitly marks viewed and the row disappears without showing VERA SPA',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://app.veraspa.vn/',runScripts:'dangerously',pretendToBeVisual:true});let read;
  dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true};
- dom.window.api={notificationFeed:async()=>({inbox:[{id:7,payload:{title:'VERA SPA · Nhắc nghỉ giữa ca',body:'Còn 15 phút'},created_at:'2026-09-24T14:00:00Z'}]}),readNotification:async id=>{read=id}};
+ dom.window.api={notificationFeed:async()=>({inbox:read ? [] : [{id:7,payload:{title:'VERA SPA · Nhắc nghỉ giữa ca',body:'Còn 15 phút'},created_at:'2026-09-24T14:00:00Z'}]}),readNotification:async id=>{read=id}};
  dom.window.eval(bundle.outputFiles[0].text);dom.window.mount(true);await tick();
  dom.window.document.querySelector('.notification-inbox-trigger').click();await tick();
  assert.match(dom.window.document.querySelector('.notification-entry').textContent,/Nhắc nghỉ giữa ca/);

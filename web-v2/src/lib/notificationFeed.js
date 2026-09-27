@@ -36,3 +36,9 @@ export function createNotificationFeed(load, makePoller = createVisiblePoller) {
 const feed = createNotificationFeed(() => veraApi.notificationFeed())
 export const subscribeNotificationFeed = listener => feed.subscribe(listener)
 export const refreshNotificationFeed = () => feed.refresh()
+
+if (typeof navigator !== 'undefined' && navigator.serviceWorker?.addEventListener) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data?.type === 'vera-notification-received') void feed.refresh()
+  })
+}

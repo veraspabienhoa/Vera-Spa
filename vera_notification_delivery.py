@@ -96,7 +96,7 @@ def resolve_recipients(conn, values, source, payload):
         {'recipients':json.dumps(values),'source':source,'watched_date':payload.get('watched_date')}).mappings()}
 
 
-def enqueue(conn, source_key, payload, event_key=None):
+def enqueue(conn, source_key, payload, event_key=None, *, default_usernames=None, default_accounts=None):
     if source_key == 'leave_quota_exceeded' and quota_month(payload) != current_month():
         return True  # Handled: do not fall back to sending an expired quota notice.
     ensure_schema(conn)
@@ -104,13 +104,26 @@ def enqueue(conn, source_key, payload, event_key=None):
         FROM vera_notification_route r LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
         WHERE r.source_key=:source'''), {'source': source_key}).mappings()]
     handled = any(not row['custom'] for row in rules)
+    if not handled:
+        from vera_notification_audience import native_audience
+        from vera_web_v2_notification_settings import is_enabled
+        audience = native_audience(conn, source_key, payload, default_usernames, default_accounts)
+        if audience is not None:
+            rules.append({'key': 'native:' + source_key, 'source_key': source_key,
+                          'recipients': audience, 'channels': ['in_app', 'push'],
+                          'custom': False, 'native': True, 'enabled': is_enabled(conn, source_key)})
+            # Training retains its native detail records and popup compatibility.
+            handled = source_key not in {'training_completed', 'training_cycle'}
     event_key = event_key or fingerprint(source_key, payload)
     # Store plain text and a fixed application URL, never arbitrary HTML or external links.
     title = str(payload.get('title') or 'Thông báo').strip()
     if title.upper().startswith('VERA SPA'):
         title = title[8:].lstrip(' ·:-–') or 'Thông báo'
     safe = {'title': title[:160], 'body': str(payload.get('body') or '')[:2000],
-            'url': APP_URL, 'tag': event_key, 'kind': str(payload.get('kind') or source_key)[:80]}
+            'url': APP_URL, 'tag': str(payload.get('tag') or event_key)[:200], 'kind': str(payload.get('kind') or source_key)[:80]}
+    for key in ('employee', 'deadline', 'event_key', 'globally_deleted'):
+        if key in payload:
+            safe[key] = payload[key]
     if source_key == 'leave_quota_exceeded':
         safe['quota_month'] = quota_month(payload)
     if source_key == 'leave_watch' and payload.get('watched_date'):
@@ -122,7 +135,13 @@ def enqueue(conn, source_key, payload, event_key=None):
             continue
         disabled_channels = {row['channel'] for row in conn.execute(text('''SELECT channel
             FROM vera_v2_notification_channel_setting WHERE notification_key=:key AND enabled=FALSE'''),
-            {'key':rule['key']}).mappings()}
+            {'key':source_key if rule.get('native') else rule['key']}).mappings()}
+        channels = set(rule['channels'])
+        if channels & {'in_app', 'push'}:
+            channels.update({'in_app', 'push'})
+        rule_payload = {**safe, **({'title':str(rule.get('label') or safe['title'])[:160]} if rule['custom'] else {})}
+        if rule.get('native'):
+            rule_payload.update(_source_key=source_key, _native_recipients=rule['recipients'])
         for recipient in resolve_recipients(conn, rule['recipients'], source_key, safe):
             # Mid-shift reminders belong to the employee. Admins only receive
             # the overdue event, even when a broad rule targets all accounts.
@@ -132,13 +151,13 @@ def enqueue(conn, source_key, payload, event_key=None):
                     {'recipient': recipient}).scalar_one_or_none()
                 if admin:
                     continue
-            for channel in set(rule['channels']):
+            for channel in channels:
                 if channel in disabled_channels: continue
                 conn.execute(text('''INSERT INTO vera_notification_delivery(event_key,rule_key,recipient,channel,payload)
                     SELECT :event,:rule,:recipient,:channel,CAST(:payload AS jsonb)
                     WHERE EXISTS(SELECT 1 FROM vera_v2_user_profile WHERE auth_user_id::text=:recipient AND is_active)
                     ON CONFLICT DO NOTHING'''), {'event': event_key, 'rule': rule['key'], 'recipient': recipient,
-                    'channel': channel, 'payload': json.dumps({**safe, **({'title':str(rule.get('label') or safe['title'])[:160]} if rule['custom'] else {})}, ensure_ascii=False)})
+                    'channel': channel, 'payload': json.dumps(rule_payload, ensure_ascii=False)})
     return handled
 
 
@@ -149,6 +168,7 @@ def route_event(engine, source_key, payload, event_key=None):
 
 
 def dispatch_pending(engine, send, vault, limit=30):
+    from vera_notification_audience import delivery_joins, delivery_access_sql, public_payload
     with engine.begin() as conn:
         ensure_schema(conn)
         rows = [dict(row) for row in conn.execute(text('''WITH pending AS (
@@ -163,15 +183,11 @@ def dispatch_pending(engine, send, vault, limit=30):
         try:
             with engine.connect() as conn:
                 # Recheck current recipient/channel grants before delivering a queued notification.
-                allowed = conn.execute(text(f'''SELECT 1 FROM vera_notification_route r
-                    JOIN vera_v2_user_profile p ON p.auth_user_id::text=:recipient AND p.is_active
-                    LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-                    LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='push'
-                    WHERE r.key=:key AND {recipient_membership_sql()} AND r.channels ? 'push'
-                    AND {current_quota_sql(payload='CAST(:payload AS jsonb)')}
-                    AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
-                    AND NOT (r.source_key='attendance_break' AND p.role='admin'
-                        AND :kind='attendance-break-reminder')'''), {'key': row['rule_key'], 'recipient': row['recipient'], 'watched_date':row['payload'].get('watched_date'), 'kind':row['payload'].get('kind'), 'payload': json.dumps(row['payload'])}).scalar_one_or_none()
+                allowed = conn.execute(text(f'''SELECT 1 {delivery_joins()}
+                    WHERE d.id=:id AND d.recipient=:recipient AND d.channel='push'
+                    AND {delivery_access_sql()}
+                    AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                    '''), {'id': row['id'], 'recipient': row['recipient']}).scalar_one_or_none()
                 subscriptions = [dict(r) for r in conn.execute(text('''SELECT subscription_id::text AS subscription_id,
                     endpoint,p256dh,auth_secret FROM vera_v2_push_subscription
                     WHERE auth_user_id::text=:recipient AND is_active'''), {'recipient': row['recipient']}).mappings()] if allowed else []
@@ -187,7 +203,9 @@ def dispatch_pending(engine, send, vault, limit=30):
                         sid = subscription['subscription_id']
                         if sid in sent_ids:
                             continue
-                        ok, status, _ = send({**subscription, 'payload': {**row['payload'], 'notification_id': str(row['id']), 'url': APP_URL + '?notification=' + str(row['id'])}}, private_key, subject)
+                        ok, status, _ = send({**subscription, 'payload': {**public_payload(row['payload']),
+                            'recipient_id': row['recipient'], 'notification_id': str(row['id']),
+                            'url': APP_URL + '?notification=' + str(row['id'])}}, private_key, subject)
                         if status in (404, 410): dead_ids.add(sid)
                         if ok or status in (404, 410):
                             sent_ids.add(sid)

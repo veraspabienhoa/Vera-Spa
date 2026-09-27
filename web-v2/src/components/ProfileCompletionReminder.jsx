@@ -32,33 +32,6 @@ function missingProfileFields(profile, identity) {
   return missing
 }
 
-async function showSystemNotification(username, missing) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return
-  const dateKey = new Date().toISOString().slice(0, 10)
-  const signature = missing.join('|')
-  const storageKey = `vera-profile-reminder:${username}:${dateKey}`
-  if (window.localStorage.getItem(storageKey) === signature) return
-  const body = `Hồ sơ còn thiếu: ${missing.join(', ')}. Vui lòng cập nhật Hồ sơ & Mật khẩu.`
-  try {
-    const registration = await navigator.serviceWorker?.ready
-    if (registration?.showNotification) {
-      await registration.showNotification('VERA SPA · Hồ sơ chưa đầy đủ', {
-        body,
-        tag: `vera-profile-incomplete-${username}`,
-        renotify: false,
-        icon: './icons/icon-192.png',
-        badge: './icons/icon-192.png',
-        data: { url: window.location.href, kind: 'profile-incomplete' },
-      })
-    } else {
-      new Notification('VERA SPA · Hồ sơ chưa đầy đủ', { body, tag: `vera-profile-incomplete-${username}` })
-    }
-    window.localStorage.setItem(storageKey, signature)
-  } catch {
-    // Banner below remains the reliable in-app reminder if OS notification fails.
-  }
-}
-
 export default function ProfileCompletionReminder({ user, onOpenProfile }) {
   const role = String(user?.role || '').trim().toLowerCase()
   const username = String(user?.employee_username || '').trim()
@@ -85,11 +58,10 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
       const nextMissing = profile.profile_requirement_exempt
         ? []
         : missingProfileFields(profile, identityResult || {})
-      if (nextMissing.length && profileReminder?.has_rules) void veraApi.routeLocalNotification('profile_completion').catch(()=>{})
+      if (nextMissing.length) void veraApi.routeLocalNotification('profile_completion').catch(()=>{})
       if (profileReminder?.routed) { setMissing([]); return }
       setMissing(nextMissing)
       setDismissed(false)
-      if (nextMissing.length) void showSystemNotification(username, nextMissing)
     } catch {
       // Do not block the rest of the app if the reminder check cannot load.
     }
