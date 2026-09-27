@@ -267,7 +267,7 @@ def _response(conn, admin=False):
 
 
 def _missing_checkin_rows(conn, ident, settings):
-    if str(getattr(ident, 'role', '')).strip().lower() not in {'admin', 'letan', 'quanly'}:
+    if str(getattr(ident, 'role', '')).strip().lower() not in {'admin', 'letan', 'quanly', 'leader', 'nhanvien', 'locker', 'tapvu', 'support'}:
         return []
     config = next((item for item in settings.get('settings', []) if item['key'] == 'missing_checkin'), None)
     if config is None or config.get('enabled') is False or config.get('channel_enabled', {}).get('popup') is False:
