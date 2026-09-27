@@ -1,5 +1,49 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: tám điều chỉnh giao diện và popup thiếu check-in (chờ deploy thủ công)
+
+Đối chiếu đủ bảy ảnh người dùng gửi: thêm lọc số tiền TIP chính xác (kể cả
+tham số xuất Excel), bố trí năm bộ lọc trên một hàng desktop cho Doanh thu
+và Tiền Tip. Tổng mua theo bộ lọc nằm gọn tại đầu bảng mua hàng, tính toàn
+bộ kết quả lọc trước phân trang. Hai hàng thống kê nhân viên giảm chiều cao,
+thanh tìm kiếm có Clear, các nút và bộ lọc được chia lại độ rộng. Bảng lương
+hành chánh trên mobile dùng chữ 11–12 px, cho cuộn ngang trong khung bảng
+thay vì ép hơn hai mươi cột và ô nhập tiền vào chiều rộng điện thoại.
+
+Auto mở Đến ngày ở hôm nay theo giờ Việt Nam, cập nhật khi sang ngày mới
+và khi quay lại tab. Ngày lịch sử do người dùng chọn được giữ; nút Dùng ngày
+này bật lại theo ngày hiện tại. Các lần cập nhật chỉ đọc, không tự lưu kỳ
+hay ghi số tiền. Giữ kiểm tra ngày nhập dở và bỏ phản hồi báo cáo cũ đến muộn.
+
+FACE ID tải trước ảnh gần nhất trong ngày đã chọn, sắp theo thời gian rồi
+mã sự kiện; xem ảnh khác không tự lưu. Chọn ảnh này mở bước xem/xác nhận ảnh
+gốc hiện hữu. Danh sách vẫn là ảnh của thiết bị, chưa xác minh danh tính;
+không đổi ánh xạ, nguồn tính công hay đăng ký ảnh lên FaceGate. Hủy phản hồi
+ảnh cũ khi đổi lựa chọn và giải phóng URL ảnh khi đóng/đổi ngày.
+
+Mã cũ chỉ ghi danh sách thiếu check-in cho giao diện khi route thông báo
+trả false; route đã cấu hình làm danh sách rỗng. Danh sách hiện tại nay độc
+lập với thành công gửi push. Admin/letan/quanly đọc danh sách qua notification
+feed hiện hữu, trên cùng connection, không gọi thiết bị hay mở pool lồng nhau.
+Popup hiện cả ở Live Tour, chống lặp sau khi ẩn, bỏ người đã check-in/nghỉ
+khi bản đồng bộ mới cập nhật, và hết hạn sau tối đa 10 phút hoặc hết ngày.
+Tôn trọng tắt loại thông báo/kênh popup. Nếu lần đọc TimeSoft không có dữ
+liệu, xóa cảnh báo hiện tại thay vì coi toàn bộ nhân viên là vắng mặt.
+
+Giữ ngưỡng quá giờ bắt đầu ca 15 phút; cập nhật theo worker TimeSoft sẵn có
+(5 phút) và feed giao diện (60 giây). Chỉ VERA phân ca: resolver xoay ca,
+ngày hiệu lực, Admin gán ca trong ngày, lịch làm/nghỉ theo ngày. Loại bỏ
+fallback giờ ca từ TimeSoft, bỏ lịch người đã nghỉ việc/xóa, giữ lịch Nghỉ
+để nó chặn fallback ca mặc định. Gửi mạng ở ngoài transaction; đọc overrides
+hỗ trợ cả kho aggregate và resource trên connection của caller.
+
+Kiểm thử frontend cục bộ đã qua các trường hợp lọc, phân trang, ngày cũ,
+sang ngày mới, quyền xem popup, cảnh báo hết hạn, chọn ảnh và phản hồi muộn;
+build và lint không có lỗi mới. CI PostgreSQL/pytest là gate trước merge.
+Không tự kích hoạt Deploy VPS Production cho đợt sửa này theo yêu cầu người
+dùng. Chưa xác minh giao diện và hành vi mới trên VPS; cần xác minh commit,
+frontend, hai health endpoint và thao tác thực tế sau lần deploy thủ công.
+
 ## 27-09-2026: Capture Log hiển thị ảnh nhưng lưu FACE ID bị từ chối định dạng
 
 Ảnh người dùng lúc 10:14 cho thấy nút Lưu ảnh FACE ID trả lỗi chỉ nhận JPEG,

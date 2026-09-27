@@ -3699,6 +3699,8 @@ def _event_in_export_bounds(
 ) -> bool:
     if bounds.get('total_amount') not in (None, '') and int(item.get('total') or 0) != int(bounds['total_amount']):
         return False
+    if bounds.get('tip_amount') not in (None, '') and int(item.get('tip') or 0) != int(bounds['tip_amount']):
+        return False
     if not any(bounds.values()):
         return True
     if bounds.get('bill_no'):
@@ -3774,7 +3776,7 @@ def _export_rows(
         return "Doanh_thu", headers, rows
     if kind == "tip":
         headers = ["Ngày", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Tip", "Người tạo"]
-        rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if _event_in_export_bounds(item, bounds)]
+        rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if int(item.get('tip') or 0) > 0 and _event_in_export_bounds(item, bounds)]
         return "Tip", headers, rows
     if kind == "reports":
         headers = [
@@ -5075,6 +5077,7 @@ def install_live_tour_routes(
         employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
         report_kind: str = "", performance_timing: str = "",
         total_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
+        tip_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
         columns: list[str] | None = Query(default=None),
         employee_ids: list[str] | None = Query(default=None),
         ident: identity_type = Depends(current_identity),
@@ -5093,6 +5096,7 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
+        bounds['tip_amount'] = tip_amount
         bounds.update(total_amount=total_amount, employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending", "performance", "employee"}, invoice_dates=export_kind in {"revenue", "tip", "reports", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")

@@ -1,4 +1,5 @@
 import TrainingNoticeDetail from './TrainingNoticeDetail'
+import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
 import UiCustomText from './UiCustomText'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
@@ -16,7 +17,7 @@ const categoryFor = (type, message) => {
   return 'ui_error'
 }
 
-export default function PopupNotifications() {
+export default function PopupNotifications({ user }) {
   const [items, setItems] = useState([])
   const [trainingDetail, setTrainingDetail] = useState(null)
   const settings = useRef({})
@@ -40,7 +41,8 @@ export default function PopupNotifications() {
     const unsubscribeFeed = subscribeNotificationFeed(result => {
       if (!active) return
       settings.current = Object.fromEntries((result.settings || []).map((item) => [item.key, item]))
-      const fresh = (result.popup || []).filter(item => !seenRouted.current.has(item.id))
+      const fresh = (result.popup || []).filter(item => !seenRouted.current.has(item.id)
+        && !(canSeeMissingCheckins(user?.role) && item.payload?.kind === 'missing-scheduled-checkin'))
       fresh.forEach(item => seenRouted.current.add(item.id))
       if (fresh.length) setItems(current => [...current, ...fresh.map(item => ({
         id: `route-${item.id}`, routeId: item.id, message: `${item.payload?.title || 'Thông báo'} · ${item.payload?.body || ''}`,
@@ -92,7 +94,7 @@ export default function PopupNotifications() {
       observer.disconnect()
       window.removeEventListener('vera-notification-settings-changed', onSettingsChanged)
     }
-  }, [])
+  }, [user?.role])
   const openTrainingDetail = async (item) => {
     if (!item.notificationId) return
     try {

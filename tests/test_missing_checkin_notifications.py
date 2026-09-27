@@ -46,13 +46,18 @@ def test_checkout_summary_is_not_shift_checkin():
     assert alerts._faceid_employees(frame, {}) == set()
 
 
-def test_staff_without_timesoft_rows_uses_rotating_roster():
+def test_staff_without_timesoft_rows_uses_rotating_roster(monkeypatch):
+    monkeypatch.setattr(alerts, '_manual_shift_overrides', lambda *_: {})
     definitions = [{'Tên ca': 'Ca 1', 'Ca chính': 'Ca 1', 'Giờ bắt đầu': '09:00'},
                    {'Tên ca': 'Ca 2', 'Ca chính': 'Ca 2', 'Giờ bắt đầu': '13:00'}]
     conn = _AudienceConnection([{'username': 'ngocnhu', 'full_name': 'Ngọc Như', 'role': 'nhanvien',
         'payload': {}, 'work_shift': 'Ca 1', 'rotation_cycle': '7 ngày', 'shift_start_date': '2026-09-07', 'shift_definitions': definitions}])
     assert alerts._staff_scheduled_rows(conn, date(2026, 9, 13))[0]['start_time'] == '09:00'
     assert alerts._staff_scheduled_rows(conn, date(2026, 9, 14))[0]['start_time'] == '13:00'
+    monkeypatch.setattr(alerts, '_manual_shift_overrides', lambda *_: {'ngocnhu': 'Ca 2'})
+    assert alerts._staff_scheduled_rows(conn, date(2026, 9, 13))[0]['start_time'] == '13:00'
+    monkeypatch.setattr(alerts, '_manual_shift_overrides', lambda *_: {'ngocnhu': ''})
+    assert alerts._staff_scheduled_rows(conn, date(2026, 9, 13)) == []
 
 
 def test_missing_alert_visible_without_push_key_and_cleared_after_checkin(monkeypatch):
@@ -79,23 +84,10 @@ def test_missing_alert_visible_without_push_key_and_cleared_after_checkin(monkey
     assert saved[-1]['alerts'] == []
 
 
-def test_timesoft_schedule_covers_employee_and_leader_without_faceid():
-    frame = pd.DataFrame([
-        {"EmployeeName": "Nhân viên A", "WorkTimeName": "Ca 1", "StartWorkTime": "09:30"},
-        {"EmployeeName": "Leader B", "WorkTimeName": "Ca 2", "StartWorkTime": "12:30"},
-    ])
-    schedules = alerts._timesoft_scheduled_rows(
-        frame, {"nhan vien a": "nhanvien.a", "leader b": "leader.b"},
-    )
-    assert [(item["employee_username"], item["start_time"]) for item in schedules] == [
-        ("nhanvien.a", "09:30"), ("leader.b", "12:30"),
-    ]
-
-
-def test_postgres_schedule_wins_when_timesoft_has_same_employee():
-    timesoft = [{"employee_username": "locker.a", "start_time": "09:00", "shift_code": "TS"}]
-    postgres = [{"employee_username": "Locker.A", "start_time": "09:30", "shift_code": "Ca 1"}]
-    assert alerts._merge_schedules(timesoft, postgres) == postgres
+def test_daily_rest_assignment_overrides_staff_roster():
+    staff = [{'employee_username': 'worker', 'start_time': '09:00', 'shift_code': 'Ca 1'}]
+    daily = [{'employee_username': 'Worker', 'start_time': '', 'shift_code': 'Nghỉ'}]
+    assert alerts._merge_schedules(staff, daily) == daily
 
 
 def test_alert_requires_all_three_if_conditions_at_the_same_time():
@@ -200,3 +192,76 @@ def test_in_app_missing_checkins_respect_viewer_and_freshness():
     assert alerts.viewer_missing_checkins(Conn(), SimpleNamespace(role='nhanvien', employee_username='linhdan'), now) == [{'employee': 'linhdan'}]
     assert alerts.viewer_missing_checkins(Conn(), SimpleNamespace(role='nhanvien', employee_username='other'), now) == []
     assert alerts.viewer_missing_checkins(Conn(), SimpleNamespace(role='admin'), now + timedelta(minutes=11)) == []
+
+
+def test_routing_success_failure_and_missing_push_key_all_publish_current_absence(monkeypatch):
+    from contextlib import contextmanager
+    connections = []
+    class Engine:
+        @contextmanager
+        def connect(self):
+            assert not connections, 'no nested pool acquisition'
+            connections.append(self)
+            try: yield self
+            finally: connections.pop()
+        begin = connect
+    def routed(*_):
+        assert not connections, 'routing must happen outside a database connection'
+        if route_state[0] == 'error': raise RuntimeError('route unavailable')
+        return route_state[0]
+    route_state = [True]
+    monkeypatch.setattr(alerts.notification_settings, 'is_enabled', lambda *_: True)
+    monkeypatch.setattr(alerts, 'route_notification', routed)
+    monkeypatch.setattr(alerts, '_scheduled_rows', lambda *_: daily)
+    monkeypatch.setattr(alerts, '_staff_scheduled_rows', lambda *_: [{'employee_username':'worker','employee_name':'Worker','shift_code':'Ca 1','start_time':'09:00'}])
+    monkeypatch.setattr(alerts, '_delivery_state', lambda *_: {})
+    monkeypatch.setattr(alerts, '_has_leave_schedule', lambda *_: on_leave[0])
+    monkeypatch.setattr(alerts, '_audience_subscriptions', lambda *_: [])
+    monkeypatch.setattr(alerts, '_vault_secret', lambda *_: '')
+    saved, daily, on_leave = [], [], [False]
+    monkeypatch.setattr(alerts, '_mark_delivery_state', lambda conn,key,data,sent: saved.append(data))
+    frame = pd.DataFrame([{'EmployeeName':'TimeSoft only','StartWorkTime':'08:00','WorkTimeName':'TS'}])
+    def run(data=frame):
+        alerts.notify_missing_scheduled_checkins(Engine(),data,date(2026,9,27),{},datetime(2026,9,27,9,16))
+        return saved[-1]['alerts']
+    for state in [True, False, 'error']:
+        route_state[0] = state
+        assert [item['employee'] for item in run()] == ['worker'], 'TimeSoft cannot assign a shift'
+    on_leave[0] = True
+    assert run() == []
+    on_leave[0] = False
+    daily.append({'employee_username':'worker','shift_code':'Nghỉ','start_time':'09:00'})
+    assert run() == [], 'explicit daily rest beats the staff roster'
+    daily.clear()
+    assert run(pd.DataFrame()) == [], 'unavailable data clears current absence'
+    assert run(pd.DataFrame([{'EmployeeName':'worker','MachineTimeCheckInStr':'27/09/2026 09:10:00'}])) == []
+
+
+def test_popup_snapshot_has_timezone_expiry_and_rejects_future_or_previous_day():
+    from types import SimpleNamespace
+    now = datetime(2026,9,27,23,58)
+    data = {'work_date':'2026-09-27','checked_at':'2026-09-27T23:56:00+07:00','alerts':[{'employee':'worker'}]}
+    conn = _AudienceConnection([{'value_json':data}])
+    assert alerts.viewer_missing_checkins(conn,SimpleNamespace(role='admin'),now,include_expiry=True)[0]['expires_at']=='2026-09-28T00:00:00+07:00'
+    data['checked_at']='2026-09-28T00:00:00+07:00'
+    assert alerts.viewer_missing_checkins(conn,SimpleNamespace(role='admin'),now)==[]
+    data.update(checked_at='2026-09-27T23:56:00+07:00',work_date='2026-09-26')
+    assert alerts.viewer_missing_checkins(conn,SimpleNamespace(role='admin'),now)==[]
+
+
+def test_manual_override_uses_current_day_and_the_existing_connection(monkeypatch):
+    import vera_live_tour_resource_store as resources
+    rows = [{'username':'worker','manual_shift_date':'2026-09-27','manual_shift':'Ca 2'},
+            {'username':'old','manual_shift_date':'2026-09-26','manual_shift':'Ca 1'}]
+    class Conn:
+        def execute(self, statement): return self
+        def scalar_one_or_none(self): return rows
+    conn = Conn()
+    monkeypatch.setattr(resources,'enabled',lambda:False)
+    assert alerts._manual_shift_overrides(conn,date(2026,9,27))=={'worker':'Ca 2'}
+    def read(connection,collections):
+        assert connection is conn and collections=={'employees'}
+        return {'employees':rows},1,{}
+    monkeypatch.setattr(resources,'enabled',lambda:True)
+    monkeypatch.setattr(resources,'read',read)
+    assert alerts._manual_shift_overrides(conn,date(2026,9,27))=={'worker':'Ca 2'}

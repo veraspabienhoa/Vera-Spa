@@ -1,4 +1,5 @@
 import UiToolbar from '../components/UiToolbar'
+import FaceIdCapturePicker from '../components/FaceIdCapturePicker'
 import './FaceIdCard.css'
 import './EmployeeIdentityMedia.css'
 import UiCustomText from '../components/UiCustomText'
@@ -7,7 +8,6 @@ import { useEffect, useRef, useState } from 'react'
 import { staffSecurityApi, faceIdApi } from '../lib/staffSecurityApi'
 
 import VeraDateInput from '../components/VeraDateInput'
-import { formatVeraDateTime } from '../lib/veraDate'
 
 const TARGET_BYTES = 450 * 1024
 const MAX_SOURCE_BYTES = 20 * 1024 * 1024
@@ -572,11 +572,10 @@ export function FaceIdCard({ username }) {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
   const [day, setDay] = useState(() => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Ho_Chi_Minh'}).format(new Date()))
-  const [captures, setCaptures] = useState(null)
   const load = async () => setData(await faceIdApi.metadata(username))
   useEffect(() => {
     let active = true
-    setData(null); setNotice(null); setCaptures(null)
+    setData(null); setNotice(null)
     faceIdApi.metadata(username).then((value) => { if (active) setData(value) }).catch((error) => {
       if (active && error.status !== 403) setNotice({type: 'error', message: error.message})
     })
@@ -596,14 +595,8 @@ export function FaceIdCard({ username }) {
       mediaApi={faceIdApi} side="face_id" title="ẢNH FACE ID"
       sources={(acceptFile) => <div className="employee-id-actions">
         <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>
-        <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => {setDay(event.target.value); setCaptures(null)}}/>
-        <button type="button" className="secondary-button compact" disabled={Boolean(busy) || !day} onClick={() => run('captures', async () => {setCaptures(await faceIdApi.captures(username, day)); return false})}>Từ ảnh chụp trên FaceID</button>
-        {captures && <div><p>Danh sách ảnh của thiết bị trong ngày. Hãy kiểm tra đúng nhân viên trước khi lưu; hệ thống chưa xác minh danh tính trong ảnh.</p>
-          {captures.truncated && <p>Danh sách chưa đầy đủ do giới hạn đọc từ thiết bị.</p>}
-          {!captures.records.length && <p>Không có ảnh chụp trong ngày đã chọn.</p>}
-          {captures.records.map((record) => <button type="button" className="secondary-button compact" disabled={Boolean(busy)} key={record.event_id}
-            onClick={() => run('capture', async () => { acceptFile(asFile(await faceIdApi.capture(username, day, record.event_id))); return false })}>{formatVeraDateTime(record.occurred_at)} · #{record.event_id}</button>)}
-        </div>}
+        <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>
+        <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile}/>
       </div>}/>
     <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ. Chưa xác minh đăng ký ảnh trên thiết bị chấm công.</p>
     {notice && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}

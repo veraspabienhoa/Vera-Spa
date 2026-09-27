@@ -82,7 +82,7 @@ export default function LiveTourReportsPage({ user }) {
     finally { running.current = false; setBusy(false) }
   }
   const invoiceById = useMemo(() => new Map(data.invoices.map(invoice => [invoice.id, invoice])), [data.invoices])
-  const appliedFilters = tab === 'revenue' ? filters : { ...filters, total_amount: '' }
+  const appliedFilters = { ...filters, total_amount: tab === 'revenue' ? filters.total_amount : '', tip_amount: tab === 'tip' ? filters.tip_amount : '' }
   const invoices = filterTourRows(data.invoices, appliedFilters, true)
   const reports = filterTourRows(data.reports, appliedFilters, true)
   const performance = filterTourRows(data.performance || [], appliedFilters)
@@ -107,7 +107,7 @@ export default function LiveTourReportsPage({ user }) {
     <StableFeedback>{error && <p className="error-box" role="alert">{error}</p>}</StableFeedback>
     <section data-ui-key="u-cc5b99345633" className="panel spa-content">
       <UiToolbar data-ui-key="u-ad5f380e835e" className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[['revenue', 'Doanh thu'], ['employee', 'Theo nhân viên'], ...(isAdmin ? [['tip', 'Tiền Tip'], ['performance', 'Thời gian dịch vụ']] : []), ['combos', 'Combo'], ['history', 'Lịch sử Live Tour']].map(([key,label]) => <button data-ui-key="u-a7458184ac7f" key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</UiToolbar>
-      <div className={tab === 'history' ? 'history-filter-scope' : ''}><LiveTourFilters value={filters} onChange={setFilters} showTotal={tab === 'revenue'} rows={tab === 'history' ? history.rows : tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/></div>
+      <div className={tab === 'history' ? 'history-filter-scope' : ''}><LiveTourFilters value={filters} onChange={setFilters} showTotal={tab === 'revenue'} showTip={tab === 'tip'} rows={tab === 'history' ? history.rows : tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/></div>
       {tab === 'performance' && <div className="performance-status-filter" role="group" aria-label="Lọc kết quả thời gian dịch vụ">{[['all', 'Tất cả'], ['ontime', 'Đúng giờ'], ['late', 'Trễ'], ['early', 'Sớm']].map(([key, label]) => <button data-ui-key="u-ee49af6dd36a" type="button" key={key} className="secondary-button" aria-pressed={performanceTiming === key} onClick={() => setPerformanceTiming(key)}>{label}</button>)}</div>}
       {tab === 'tip' && <div className="live-tour-report-metrics"><div className="live-tour-report-metric"><span>Nhân viên có Tip</span><strong>{new Set(rows.map(row => row.employee_id || row.employee_name)).size}</strong></div><div className="live-tour-report-metric"><span>Tổng tiền Tip</span><strong>{money(rows.reduce((sum, row) => sum + Number(row.tip || 0), 0))}</strong></div></div>}
       {tab === 'revenue' && <LiveTourRevenueSummary rows={rows} invoiceCount={reportInvoiceCount}/>}
