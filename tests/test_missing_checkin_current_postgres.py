@@ -34,8 +34,8 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
         def no_checkout(*args): raise AssertionError('must not acquire another connection')
         event.listen(database, 'checkout', no_checkout)
         try:
-            def read(role='admin', clock=now):
-                return alerts.current_missing_checkins(conn,SimpleNamespace(role=role),clock,include_expiry=True)
+            def read(role='admin', clock=now, username='', full_name=''):
+                return alerts.current_missing_checkins(conn,SimpleNamespace(role=role, employee_username=username, full_name=full_name),clock,include_expiry=True)
             rows=read()
             assert len(rows)==1 and rows[0]['employee']=='Test Employee'
             assert 'Ca 2 lúc 13:00' in rows[0]['body']
@@ -43,16 +43,24 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             assert len(queries)==4 and all(sql.lstrip().startswith('SELECT') for sql in queries)
             assert read('letan')==rows and read('quanly')==rows
             assert read('nhanvien')==[]
+            assert read('nhanvien', username='Test Employee')==rows
+            assert read('nhanvien', username=' test employee ')==rows
+            assert read('nhanvien', username='other', full_name='Test Employee Full Name')==[]
+            assert read('nhanvien', username='Test Employeé')==[]
+            assert read('giamdoc', username='Test Employee')==[]
             # Audience policy uses the current account role, not schedule labels.
-            for role in ('leader','letan','locker','tapvu','quanly','giamdoc'):
+            for role in ('leader','letan','locker','tapvu','support','quanly','giamdoc'):
                 conn.execute(text("INSERT INTO employees VALUES (:name,:name,:role,'{}','Ca 1','','2026-08-17')"),
                              {'name':f'Test {role}','role':role})
                 conn.execute(text("INSERT INTO vera_work_schedule VALUES (:name,:name,'nhanvien','Ca 1','10:00','2026-09-27')"),
                              {'name':f'Test {role}'})
             assert {r['employee'] for r in read('letan')} == {'Test Employee','Test leader','Test letan'}
-            expected = {'Test Employee','Test leader','Test letan','Test locker','Test tapvu'}
+            expected = {'Test Employee','Test leader','Test letan','Test locker','Test tapvu','Test support'}
             assert {r['employee'] for r in read('admin')} == expected
             assert {r['employee'] for r in read('quanly')} == expected
+            for role in ('leader','locker','tapvu','support'):
+                assert [r['employee'] for r in read(role, username=f'Test {role}')] == [f'Test {role}']
+            assert read('nhanvien', username='Test Employee')==rows
             conn.execute(text("UPDATE employees SET role='quanly' WHERE username='Test letan'"))
             assert 'Test letan' not in {r['employee'] for r in read('letan')}
             conn.execute(text("DELETE FROM vera_work_schedule"))
@@ -70,10 +78,12 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             ]:
                 payload(base+[{'EmployeeName':'Test Employee',**scan}]); assert len(read())==1
             payload(base+[{'EmployeeName':'Test Employee Full Name','MachineTimeCheckInStr':'27/09/2026 13:00:00'}]);assert read()==[]
+            assert read('nhanvien', username='Test Employee')==[]
             payload([]);assert read()==[]
             payload(base)
             conn.execute(text("INSERT INTO leave_records VALUES ('Test Employee','2026-09-27','postgres:auto_check')"));assert len(read())==1
             conn.execute(text("INSERT INTO leave_records VALUES ('Test Employee','2026-09-27','manual')"));assert read()==[]
+            assert read('nhanvien', username='Test Employee')==[]
             conn.execute(text('DELETE FROM leave_records'))
             conn.execute(text("INSERT INTO vera_work_schedule VALUES ('Test Employee','Test Employee','nhanvien','Nghỉ','','2026-09-27')"));assert read()==[]
         finally:

@@ -1,5 +1,25 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: nhân viên tự nhận popup chưa check-in
+
+Mở popup cho leader, nhanvien, locker, tapvu và support với phạm vi chỉ
+chính tài khoản đang đăng nhập. Admin/Quản lý giữ quyền xem danh sách;
+Lễ tân vẫn chỉ xem leader/nhanvien/letan. Đối tượng Giám đốc/Quản lý vẫn
+được loại khỏi danh sách cảnh báo theo yêu cầu trước.
+
+API lấy employee_username từ identity đã xác thực, không nhận tên người
+xem từ query/body, không dùng tên hiển thị hoặc bỏ dấu để cấp quyền. Hai
+truy vấn lịch ca giới hạn ngay theo username đối với phạm vi cá nhân; vẫn
+lọc lại trước khi trả kết quả. Không thêm poller, API, connection hay gửi
+mạng. Dùng chung nút ẩn/hiện và Đã xem theo tài khoản. Legacy break-alert
+popup được lọc qua cùng helper để không hiển thị trùng với popup mới.
+
+Kiểm thử dùng tài khoản giả: self-only, sai username, tên hiển thị trùng,
+khác dấu, thiếu identity, query giả mạo username/role, tự hết cảnh báo khi
+check-in/đăng ký nghỉ và quyền Lễ tân không đổi. CI là gate trước merge;
+Deploy VPS Production vẫn do người dùng chạy thủ công. Không gửi thử thông
+báo tới nhân viên thật hoặc xác nhận giao diện mới đã chạy trên VPS.
+
 ## 27-09-2026: ẩn/hiện popup, Đã xem từng người và lọc cho Lễ tân
 
 Popup thiếu check-in có nút Ẩn thông báo / Hiện thông báo; thu gọn nội dung

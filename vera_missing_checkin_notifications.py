@@ -74,7 +74,7 @@ def _faceid_employees(checkin_df: pd.DataFrame, employee_map: dict[str, str]) ->
     return checked
 
 
-def _scheduled_rows(conn, work_day: date) -> list[dict[str, Any]]:
+def _scheduled_rows(conn, work_day: date, employee_username: str = '') -> list[dict[str, Any]]:
     return [dict(row) for row in conn.execute(text("""
         SELECT ws.employee_username,COALESCE(NULLIF(ws.employee_name,''),ws.employee_username) AS employee_name,
                lower(ws.department) AS department,lower(btrim(e.role)) AS employee_role,ws.shift_code,
@@ -84,11 +84,12 @@ def _scheduled_rows(conn, work_day: date) -> list[dict[str, Any]]:
         LEFT JOIN vera_work_shift_definition definition
           ON definition.department=ws.department AND lower(definition.shift_code)=lower(ws.shift_code)
         WHERE ws.work_date=:work_day
+          AND (:employee_username='' OR lower(btrim(e.username))=:employee_username)
           AND COALESCE(e.payload->>'__deleted','false') <> 'true'
           AND COALESCE(NULLIF(e.payload->>'Trạng thái làm việc',''),
                        NULLIF(e.payload->>'employment_status',''),'Đang làm việc')='Đang làm việc'
         ORDER BY ws.department,ws.employee_name,ws.employee_username
-    """), {"work_day": work_day}).mappings().all()]
+    """), {"work_day": work_day, "employee_username": employee_username}).mappings().all()]
 
 
 def _manual_shift_overrides(conn, work_day):
@@ -103,7 +104,7 @@ def _manual_shift_overrides(conn, work_day):
             for row in workers if row.get('manual_shift_date') == work_day.isoformat()}
 
 
-def _staff_scheduled_rows(conn, work_day):
+def _staff_scheduled_rows(conn, work_day, employee_username=''):
     """Include staff who have no TimeSoft row because they have not checked in."""
     from vera_shift_assignment import scheduled_shift
     from vera_web_v2_live_tour_roster import shift_label, display_shift_label, eligible
@@ -111,7 +112,8 @@ def _staff_scheduled_rows(conn, work_day):
         SELECT username, full_name, role, payload, work_shift, rotation_cycle, shift_start_date,
           (SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='shift_definitions') AS shift_definitions
         FROM employees WHERE lower(btrim(role)) IN ('leader','nhanvien')
-    """), {}).mappings().all()
+          AND (:employee_username='' OR lower(btrim(username))=:employee_username)
+    """), {'employee_username': employee_username}).mappings().all()
     overrides = _manual_shift_overrides(conn, work_day)
     result = []
     for row in rows:
@@ -141,7 +143,10 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     live TimeSoft refreshes which update attendance but do not run the full
     invoice/notification worker. Never contact TimeSoft in the notification feed.
     """
-    if str(getattr(ident, 'role', '')).strip().lower() not in {'admin', 'letan', 'quanly'}:
+    viewer_role = str(getattr(ident, 'role', '')).strip().lower()
+    view_team = viewer_role in {'admin', 'letan', 'quanly'}
+    viewer_username = str(getattr(ident, 'employee_username', '') or '').strip().lower()
+    if not view_team and (viewer_role not in {'leader', 'nhanvien', 'locker', 'tapvu', 'support'} or not viewer_username):
         return []
     zone = timezone(timedelta(hours=7))
     current = now.replace(tzinfo=zone) if now.tzinfo is None else now.astimezone(zone)
@@ -176,7 +181,8 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
             continue
         if any(p.date() == day and 3 <= p.hour < 23 and p <= current.replace(tzinfo=None) for p in punches):
             checked.update(_norm(raw.get(name)) for name in NAME_COLUMNS if raw.get(name))
-    schedules = _merge_schedules(_staff_scheduled_rows(conn, day), _scheduled_rows(conn, day))
+    owner = '' if view_team else viewer_username
+    schedules = _merge_schedules(_staff_scheduled_rows(conn, day, owner), _scheduled_rows(conn, day, owner))
     leave_rows = conn.execute(text("""SELECT employee_name FROM leave_records
         WHERE leave_date=:day AND COALESCE(source_sheet_id,'') <> 'postgres:auto_check'"""),
         {'day': day}).mappings().all()
@@ -187,7 +193,6 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     expires = min(updated.astimezone(zone)+timedelta(minutes=10),
                   datetime.combine(day+timedelta(days=1), time.min, tzinfo=zone))
     result = []
-    viewer_role = str(getattr(ident, 'role', '')).strip().lower()
     for row in schedules:
         employee_role = str(row.get('employee_role') or '').strip().lower()
         if employee_role in {'giamdoc', 'quanly'}:
@@ -195,6 +200,10 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
         if viewer_role == 'letan' and employee_role not in {'leader', 'nhanvien', 'letan'}:
             continue
         username = str(row.get('employee_username') or '').strip()
+        # Ownership uses the authenticated account name, never display-name or
+        # accent-stripped matching which could expose another person's alert.
+        if not view_team and username.lower() != viewer_username:
+            continue
         name = str(row.get('employee_name') or username)
         aliases = {_norm(username), _norm(name)} - {''}
         start = _clock(day, row.get('start_time'))

@@ -10,7 +10,7 @@ const built = await build({stdin:{contents:`import React, {act} from 'react'; im
 const row=(employee='worker')=>({employee,tag:`missing-${employee}`,body:`${employee} chưa check-in`,expires_at:new Date(Date.now()+60_000).toISOString()})
 async function mount(role){const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true});const w=dom.window;w.MessageChannel=class {constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}};w.IS_REACT_ACT_ENVIRONMENT=true;w.subscriptions=0;w.stops=0;w.eval(built.outputFiles[0].text);await w.mount({role,employee_username:'viewer'});return dom}
 const publish=async(w,rows,config={})=>{await w.act(async()=>w.receive({missing_checkins:rows,settings:[{key:'missing_checkin',...config}]}))}
-for(const role of ['admin','letan','quanly']) test(`${role}: current absence opens, deduplicates, dismisses and clears on check-in`,async()=>{
+for(const role of ['admin','letan','quanly','leader','nhanvien','locker','tapvu','support']) test(`${role}: current absence opens, deduplicates, dismisses and clears on check-in`,async()=>{
  const dom=await mount(role),w=dom.window
  try {
   await publish(w,[row()]);assert.equal(w.document.querySelectorAll('.missing-checkin-popup li').length,1)
@@ -22,7 +22,7 @@ for(const role of ['admin','letan','quanly']) test(`${role}: current absence ope
   assert.equal(w.subscriptions,1)
  } finally {await w.unmount();w.close()}
 })
-for(const role of ['nhanvien','leader','giamdoc','']) test(`${role || 'anonymous'} does not subscribe or show manager absence details`,async()=>{
+for(const role of ['giamdoc','unknown','']) test(`${role || 'anonymous'} does not subscribe or show manager absence details`,async()=>{
  const dom=await mount(role);assert.equal(dom.window.subscriptions,0);assert.equal(dom.window.document.querySelector('.missing-checkin-popup'),null);await dom.window.unmount();dom.window.close()
 })
 test('disabled, expired and failed-refresh snapshots cannot leave an old absence popup visible',async()=>{

@@ -41,19 +41,41 @@ def test_combined_feed_reuses_one_connection_and_keeps_recipient_channel_filters
     assert 'recipients' not in response.json()
 
 
-def test_current_missing_checkins_reuse_feed_connection_and_limit_management_roles(monkeypatch):
+def test_current_missing_checkins_reuse_feed_connection_for_team_and_self_roles(monkeypatch):
     import vera_missing_checkin_notifications as absence
     calls = []
     conn = object()
     monkeypatch.setattr(absence,'current_missing_checkins',lambda connection,ident,now,include_expiry: calls.append((connection,ident.role,include_expiry)) or [{'employee':'worker'}])
     config = {'settings':[{'key':'missing_checkin','enabled':True,'channel_enabled':{'popup':True}}]}
-    for role in ['admin','letan','quanly']:
+    for role in ['admin','letan','quanly','leader','nhanvien','locker','tapvu','support']:
         assert settings._missing_checkin_rows(conn,Identity(role=role),config)==[{'employee':'worker'}]
-    assert calls==[(conn,role,True) for role in ['admin','letan','quanly']]
-    for role in ['nhanvien','leader','giamdoc','']:
+    assert calls==[(conn,role,True) for role in ['admin','letan','quanly','leader','nhanvien','locker','tapvu','support']]
+    for role in ['giamdoc','unknown','']:
         assert settings._missing_checkin_rows(conn,Identity(role=role),config)==[]
     config['settings'][0]['channel_enabled']['popup']=False
     assert settings._missing_checkin_rows(conn,Identity(),config)==[]
     config['settings'][0].update(enabled=False,channel_enabled={'popup':True})
     assert settings._missing_checkin_rows(conn,Identity(),config)==[]
-    assert len(calls)==3
+    assert len(calls)==8
+
+
+def test_self_popup_owner_is_taken_from_authenticated_identity_not_query(monkeypatch):
+    import vera_missing_checkin_notifications as absence
+    identity = Identity(role='nhanvien', employee_username='self')
+    calls = []
+    class Engine:
+        @contextmanager
+        def begin(self): yield self
+    monkeypatch.setattr(settings, '_response', lambda *args, **kwargs: {'settings':[{'key':'missing_checkin','enabled':True}]})
+    monkeypatch.setattr(settings, '_inbox_rows', lambda *args: [])
+    monkeypatch.setattr(settings, '_popup_rows', lambda *args: [])
+    def current(conn, ident, now, include_expiry):
+        calls.append(ident.employee_username)
+        return [{'employee':ident.employee_username}]
+    monkeypatch.setattr(absence, 'current_missing_checkins', current)
+    app=FastAPI()
+    settings.install_notification_settings_routes(app,engine_instance=Engine,current_identity=lambda:identity,identity_type=Identity)
+    response=TestClient(app).get('/v2/notification-feed?employee_username=other&role=admin')
+    assert response.status_code==200
+    assert response.json()['missing_checkins']==[{'employee':'self'}]
+    assert calls==['self']
