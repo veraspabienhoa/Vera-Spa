@@ -12,3 +12,6 @@
 .missing-checkin-popup button:focus-visible{outline:3px solid #3c6255;outline-offset:3px}
 
 .missing-checkin-popup [hidden]{display:none}
+
+.missing-checkin-popup header .missing-checkin-close{width:44px;min-width:44px;padding:0}
+.missing-checkin-popup header>svg{flex-shrink:0}
