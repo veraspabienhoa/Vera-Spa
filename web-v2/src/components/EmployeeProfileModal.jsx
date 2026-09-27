@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import './EmployeeProfileModal.css'
 
-export default function EmployeeProfileModal({ children, onClose, busy }) {
+export default function EmployeeProfileModal({ children, onClose, busy, className = '', labelledBy = 'employee-profile-modal-title' }) {
   const root = useRef(null)
   const actions = useRef({ onClose, busy })
   actions.current = { onClose, busy }
@@ -22,7 +22,7 @@ export default function EmployeeProfileModal({ children, onClose, busy }) {
       if (event.key !== 'Tab') return
       const controls = Array.from(root.current.querySelectorAll(
         'button, input, select, textarea, a[href], [tabindex="0"]',
-      )).filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length)
+      )).filter((node) => !node.matches(':disabled') && node.tabIndex >= 0 && node.getClientRects().length)
       const first = controls[0]
       const last = controls.at(-1)
       if (!first) { event.preventDefault(); return }
@@ -42,8 +42,8 @@ export default function EmployeeProfileModal({ children, onClose, busy }) {
 
   return createPortal(
     <div className="employee-profile-modal-backdrop">
-      <div className="employee-profile-modal" ref={root} role="dialog" aria-modal="true"
-        aria-labelledby="employee-profile-modal-title" tabIndex={-1}>
+      <div className={`employee-profile-modal ${className}`.trim()} ref={root} role="dialog" aria-modal="true"
+        aria-labelledby={labelledBy} tabIndex={-1}>
         {children}
       </div>
     </div>, document.body,

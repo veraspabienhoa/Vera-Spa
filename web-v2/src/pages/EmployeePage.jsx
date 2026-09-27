@@ -10,7 +10,7 @@ import useAutoSave from '../hooks/useAutoSave'
 import { searchTextMatches } from '../lib/searchText'
 import {
   BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
-  PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound,
+  PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound, X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
@@ -182,6 +182,7 @@ export default function EmployeePage({ user }) {
   const profileSectionRef = useRef(null)
   const listRef = useRef(null)
   const savingRef = useRef(false)
+  const creatingRef = useRef(false)
   const [profileBaseline, setProfileBaseline] = useState('')
 
   const load = async (quiet = false) => {
@@ -356,7 +357,7 @@ export default function EmployeePage({ user }) {
       setNotice({ type: 'success', message: `Đã tự lưu thay đổi cho ${dirtyRows.length} nhân viên.${refreshWarning}` })
     } finally { savingRef.current = false }
   })
-  useAutoSave({ signature: dirtyRows.length ? JSON.stringify(dirtyRows.map((row) => [row.username, drafts[row.username]])) : '', enabled: canSaveRows && !loading && !busy && dirtyRows.length > 0, save: saveRows, rootRef: listRef, lockRef: savingRef })
+  useAutoSave({ signature: dirtyRows.length ? JSON.stringify(dirtyRows.map((row) => [row.username, drafts[row.username]])) : '', enabled: canSaveRows && !loading && !busy && !addOpen && dirtyRows.length > 0, save: saveRows, rootRef: listRef, lockRef: savingRef })
 
   const deleteSelected = () => run('delete', async () => {
     if (!selected.length) throw new Error('Chưa chọn nhân viên cần xóa.')
@@ -373,21 +374,31 @@ export default function EmployeePage({ user }) {
     setNotice({ type: 'success', message: result.message })
   })
 
-  const createStaff = (event) => {
+  const closeCreate = () => {
+    if (creatingRef.current) return
+    setAddOpen(false)
+    setCreatePasswordVisible(false)
+  }
+
+  const createStaff = async (event) => {
     event.preventDefault()
-    run('create', async () => {
-      const payload = {
-        ...createForm,
-        birth_date: datePayload(createForm.birth_date),
-        employment_start_date: datePayload(createForm.employment_start_date),
-      }
-      const result = await veraApi.createStaff(payload)
-      setCreateForm(EMPTY_CREATE)
-      setCreatePasswordVisible(false)
-      setAddOpen(false)
-      await load(true)
-      setNotice({ type: 'success', message: result.message })
-    })
+    if (creatingRef.current || busy) return
+    creatingRef.current = true
+    try {
+      await run('create', async () => {
+        const payload = {
+          ...createForm,
+          birth_date: datePayload(createForm.birth_date),
+          employment_start_date: datePayload(createForm.employment_start_date),
+        }
+        const result = await veraApi.createStaff(payload)
+        await load(true)
+        setCreateForm(EMPTY_CREATE)
+        setCreatePasswordVisible(false)
+        setAddOpen(false)
+        setNotice({ type: 'success', message: result.message })
+      })
+    } finally { creatingRef.current = false }
   }
 
   const openProfile = (employee) => {
@@ -484,7 +495,7 @@ export default function EmployeePage({ user }) {
         </div>
       </div>
 
-      <Notice notice={notice} onClose={() => setNotice(null)} />
+      <Notice notice={addOpen ? null : notice} onClose={() => setNotice(null)} />
       {isAdmin && faceSettings && <label className="staff-face-switch"><input type="checkbox" checked={faceSettings.enabled} onChange={event => updateFaceSetting('', event.target.checked)}/> Cho phép nhân viên tự cập nhật ảnh Face ID</label>}
 
       <div className="metric-grid staff-metrics">
@@ -536,7 +547,7 @@ export default function EmployeePage({ user }) {
           {isAdmin && <div className="staff-visibility-group"><select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>{permissions.employee_face_id_manage && <button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button>}</div>}
         </UiToolbar>
         <div className="staff-actionbar">
-          {permissions.employee_add && <button data-ui-key="u-dcce5ace3b12" data-ui-label-default="Thêm nhân viên" className="primary-button" onClick={() => setAddOpen((value) => !value)}><Plus size={17} /><UiCustomText uiKey="u-dcce5ace3b12"> Thêm nhân viên</UiCustomText></button>}
+          {permissions.employee_add && <button data-ui-key="u-dcce5ace3b12" data-ui-label-default="Thêm nhân viên" className="primary-button" disabled={Boolean(busy)} onClick={() => { setNotice(null); setAddOpen(true) }}><Plus size={17} /><UiCustomText uiKey="u-dcce5ace3b12"> Thêm nhân viên</UiCustomText></button>}
           {permissions.staff_export && <button data-ui-key="u-72a7e0c083db" data-ui-label-default="Export Excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /><UiCustomText uiKey="u-72a7e0c083db"> Export Excel</UiCustomText></button>}
           {isAdmin && permissions.staff_export && <button type="button" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter, true))}><Download size={17} /> Excel kèm ảnh 3 × 4 cm</button>}
           {isAdmin && permissions.staff_export && <button data-ui-key="u-facc0987c3af" className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
@@ -545,9 +556,11 @@ export default function EmployeePage({ user }) {
         </div>
       </section>
 
-      {addOpen && <section data-ui-key="u-a2ca12042685" className="panel staff-form-panel">
-        <div data-ui-key="u-3c65c84994b9" className="panel-title-row"><div><h2>THÊM NHÂN VIÊN</h2><p>Các trường có dấu <span className="required-star">*</span> là thông tin bắt buộc khi tạo mới. Các thông tin còn lại bổ sung trong phần Sửa hồ sơ.</p></div></div>
-        <form className="staff-form-grid" onSubmit={createStaff}>
+      {addOpen && <EmployeeProfileModal className="employee-create-modal" labelledBy="employee-create-modal-title" onClose={closeCreate} busy={busy === 'create'}><section data-ui-key="u-a2ca12042685" className="panel staff-form-panel employee-create-panel">
+        <div data-ui-key="u-3c65c84994b9" className="panel-title-row employee-create-header"><div><h2 id="employee-create-modal-title">THÊM NHÂN VIÊN</h2><p>Các trường có dấu <span className="required-star">*</span> là thông tin bắt buộc khi tạo mới. Các thông tin còn lại bổ sung trong phần Sửa hồ sơ.</p></div><button type="button" className="secondary-button employee-create-close" aria-label="Đóng thêm nhân viên" disabled={busy === 'create'} onClick={closeCreate}><X size={20}/></button></div>
+        {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
+        <form className="employee-create-form" onSubmit={createStaff} aria-busy={busy === 'create'}>
+          <fieldset className="staff-form-grid employee-create-fields" disabled={busy === 'create'}>
           <div className="profile-field-section span-2">Thông tin tài khoản</div>
           <label><span className="required-label">Tên nhân viên <b className="required-star">*</b></span><input required value={createForm.username} onChange={(event) => setCreateForm({ ...createForm, username: event.target.value })} /></label>
           <label><span className="required-label">Mật khẩu ban đầu (tối thiểu 8 ký tự) <b className="required-star">*</b></span><span className="password-input-wrap"><input required minLength={8} type={createPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} /><button data-ui-key="u-fd74462dce0f" type="button" className="password-eye-button" onClick={() => setCreatePasswordVisible((value) => !value)} aria-label={createPasswordVisible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}>{createPasswordVisible ? <EyeOff size={17}/> : <Eye size={17}/>}</button></span></label>
@@ -557,9 +570,10 @@ export default function EmployeePage({ user }) {
           <label><span className="required-label">Họ và tên đầy đủ <b className="required-star">*</b></span><input required value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} /></label>
           <label><span className="required-label">Ngày sinh <b className="required-star">*</b></span><VeraDateInput required aria-label="Ngày sinh" value={createForm.birth_date} onChange={(event) => setCreateForm({ ...createForm, birth_date: event.target.value })} /></label>
           <label><span className="required-label">Giới tính <b className="required-star">*</b></span><select required value={createForm.gender} onChange={(event) => setCreateForm({ ...createForm, gender: event.target.value })}><option value="">-- Chọn Nam/Nữ --</option><option>Nam</option><option>Nữ</option></select></label>
-          <UiToolbar data-ui-key="u-0453d76a8912" className="staff-form-actions span-2"><button data-ui-key="u-51288699be90" data-ui-label-default="Hủy" type="button" className="secondary-button" onClick={() => setAddOpen(false)}><UiCustomText uiKey="u-51288699be90">Hủy</UiCustomText></button><button data-ui-key="u-4020de050923" className="primary-button" disabled={busy === 'create'}>{busy === 'create' ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />} Thêm nhân viên</button></UiToolbar>
+          </fieldset>
+          <UiToolbar data-ui-key="u-0453d76a8912" className="staff-form-actions employee-create-actions"><button data-ui-key="u-51288699be90" data-ui-label-default="Hủy" type="button" className="secondary-button" disabled={busy === 'create'} onClick={closeCreate}><UiCustomText uiKey="u-51288699be90">Hủy</UiCustomText></button><button data-ui-key="u-4020de050923" type="submit" className="primary-button" disabled={busy === 'create'}>{busy === 'create' ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />} Thêm nhân viên</button></UiToolbar>
         </form>
-      </section>}
+      </section></EmployeeProfileModal>}
 
       {bulkOpen && <EmployeeProfileModal busy={bulkBusy} onClose={() => { if (!bulkBusy) setBulkOpen(false) }}><FaceIdBulkUpload onBusyChange={setBulkBusy}/><button type="button" className="secondary-button" disabled={bulkBusy} onClick={() => setBulkOpen(false)}>Đóng</button></EmployeeProfileModal>}
       {faceUser && <EmployeeProfileModal onClose={() => setFaceUser('')}><h2 id="employee-profile-modal-title">ẢNH FACE ID · {faceUser}</h2>{isAdmin && faceSettings && <label className="staff-face-switch"><input type="checkbox" checked={faceSettings.individual[faceUser] !== false} onChange={event => updateFaceSetting(faceUser, event.target.checked)}/> Cho phép nhân viên này tự cập nhật Face ID</label>}<FaceIdCard key={faceUser} username={faceUser}/><button type="button" className="secondary-button" onClick={() => setFaceUser('')}>Đóng</button></EmployeeProfileModal>}
