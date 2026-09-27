@@ -105,7 +105,7 @@ def test_popup_inbox_scopes_account_channel_and_membership(monkeypatch):
     settings.install_notification_settings_routes(app,engine_instance=Engine,current_identity=Identity,identity_type=Identity)
     assert TestClient(app).get('/v2/notification-popup').json()=={'notifications':[]}
     sql,params=queries[-1]
-    assert "d.channel='popup'" in sql and "r.channels ? 'popup'" in sql
+    assert "d.channel='popup'" in sql and "r.channels ? d.channel" in sql
     assert 'p.is_active' in sql and 'g.members ? p.auth_user_id::text' in sql
     assert params['recipient']==Identity().auth_user_id
 

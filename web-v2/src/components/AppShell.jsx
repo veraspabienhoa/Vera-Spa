@@ -10,6 +10,7 @@ import UiCustomText from './UiCustomText'
 import LayoutDesigner from './LayoutDesigner'
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
+import BookingNotificationPopup from './BookingNotificationPopup'
 import MissingCheckinPopup from './MissingCheckinPopup'
 import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, History, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
@@ -498,6 +499,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>
       <BackToTop/>
       {showPageNotifications && <PopupNotifications user={user}/>}
+      <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => onPageChange('live-tour')}/>
       <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>
     </div>
   )

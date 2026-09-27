@@ -1,5 +1,22 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: popup booking trong app cùng thông báo màn hình khóa
+
+Kiểm tra mã xác nhận booking chỉ ghi in_app/push, kênh popup bị ẩn trong cài
+đặt nguồn này, và popup chung không được mount trên Live Tour. Bổ sung popup
+booking riêng theo mẫu thẻ vàng, hiển thị đúng nội dung và nút Mở Live Tour.
+Đóng chỉ lưu tag đã ẩn trong session của tài khoản, không đánh dấu thông báo
+Trung tâm đã đọc; đánh dấu Đã xem trong Trung tâm vẫn cập nhật mọi kênh.
+
+Thêm popup vào cùng INSERT theo lô trên connection/giao dịch booking hiện có.
+Feed popup dùng chung kiểm tra người nhận hiện tại, tài khoản hoạt động, tên
+booking, nguồn/kênh và ngày Việt Nam với Trung tâm. Loại bỏ trường nội bộ khỏi
+payload. Component dùng feed sẵn có, không thêm poller/request định kỳ hoặc
+truy vấn booking; message push hiện có làm mới feed khi app đang mở. Admin có
+thể tắt riêng popup hoặc push. Không gửi thử đến nhân viên thật. Kiểm thử mô
+phỏng giao diện và PostgreSQL không xác nhận điện thoại thật hay VPS; người
+dùng vẫn chạy Deploy VPS Production thủ công.
+
 ## 27-09-2026: thông báo booking đúng nhân viên, ghi theo lô
 
 Theo yêu cầu, booking và multi_booking ghi thông báo sau khi kiểm tra nghiệp vụ

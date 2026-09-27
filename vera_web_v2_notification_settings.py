@@ -5,19 +5,18 @@ from typing import Any, Callable, Literal
 import json
 import uuid
 from pydantic import Field, field_validator
-from vera_notification_delivery import ensure_schema as ensure_routing_schema, RECIPIENT_GROUPS, recipient_membership_sql
+from vera_notification_delivery import ensure_schema as ensure_routing_schema, RECIPIENT_GROUPS
 from vera_notification_tasks import task_catalog, TaskNotificationMiddleware
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
-from vera_notification_periods import current_quota_sql
 from vera_notification_audience import delivery_joins, delivery_access_sql, public_payload
 
 
 RELEASE = "notification-routing-2026-09-22-v2"
 CATALOG = (
-    ("live_tour_booking", "Booking cho nhân viên", "Báo booking mới: nhân viên | dịch vụ | YC/Tua | phòng hoặc giường.", "Đúng nhân viên được đặt booking", "Trung tâm thông báo và màn hình khóa"),
+    ("live_tour_booking", "Booking cho nhân viên", "Báo booking mới: nhân viên | dịch vụ | YC/Tua | phòng hoặc giường.", "Đúng nhân viên được đặt booking", "Trung tâm thông báo, popup trong app và màn hình khóa"),
     ("training_completed", "Hoàn thành đào tạo / đánh giá", "Thông báo khi nhật ký đào tạo hoặc đánh giá hoàn tất.", "Admin, người được đánh giá và người đã cấu hình", "Trong ứng dụng"),
     ("training_cycle", "Đợt đánh giá mới", "Thông báo phân công đợt đánh giá nhân viên mới.", "Nhân viên và người đánh giá", "Trong ứng dụng"),
     ("leave_quota_exceeded", "Vượt hạn mức đăng ký nghỉ", "Cảnh báo vượt 5 ngày, 2 lần cuối tuần Nhóm 3 hoặc 2 lần phát sinh trong tháng.", "Admin", "Thông báo đẩy"),
@@ -300,18 +299,13 @@ def _inbox_rows(conn, ident):
 
 
 def _popup_rows(conn, ident):
-    rows=conn.execute(text(f'''SELECT d.id,d.payload,d.created_at FROM vera_notification_delivery d
-        JOIN vera_notification_route r ON r.key=d.rule_key
-        JOIN vera_v2_user_profile p ON p.auth_user_id::text=d.recipient AND p.is_active
-        LEFT JOIN vera_v2_notification_setting s ON s.notification_key=r.key
-        LEFT JOIN vera_v2_notification_channel_setting cs ON cs.notification_key=r.key AND cs.channel='popup'
+    rows=conn.execute(text(f'''SELECT d.id,d.payload,d.created_at
+        {delivery_joins()}
         WHERE d.recipient=:recipient AND d.channel='popup' AND d.read_at IS NULL
-        AND {current_quota_sql()}
+        AND {delivery_access_sql()}
         AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
-        AND {recipient_membership_sql(watched_date="d.payload->>'watched_date'")}
-        AND r.channels ? 'popup' AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
         ORDER BY d.id DESC LIMIT 10'''), {'recipient':str(ident.auth_user_id)}).mappings()
-    return [dict(row) for row in rows]
+    return [{**dict(row), 'payload': public_payload(row['payload'])} for row in rows]
 
 
 def install_notification_settings_routes(app, *, engine_instance, current_identity, identity_type, api_module=None):
