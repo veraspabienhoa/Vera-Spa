@@ -99,9 +99,10 @@ def test_explicit_save_retry_conflict_permission_revocation_and_deleted_staff(fi
         assert tables == {'employees','vera_employee_face_id','vera_face_id_self_update','vera_face_id_self_update_config'}
 
 
-def test_two_users_cannot_overwrite_each_other_after_same_photo_read(fixture):
+@pytest.mark.parametrize('suffix', ['image', 'capture-photo'])
+def test_two_users_cannot_overwrite_each_other_after_same_photo_read(fixture, suffix):
     db, api, _ = fixture
-    path = '/v2/staff/Ánh Thử/face-id/image'
+    path = '/v2/staff/Ánh Thử/face-id/' + suffix
     initial = png()
     assert api.put(path,content=initial,headers={'Content-Type':'image/png','If-None-Match':'*'}).status_code == 200
     sha = hashlib.sha256(initial).hexdigest()
@@ -112,4 +113,39 @@ def test_two_users_cannot_overwrite_each_other_after_same_photo_read(fixture):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(update,['red','green']))
     assert sorted(results) == [200,409]
-    assert api.get(path).content in (png(color='red'),png(color='green'))
+    assert api.get('/v2/staff/Ánh Thử/face-id/image').content in (png(color='red'),png(color='green'))
+
+
+def test_capture_conversion_releases_connection_preserves_retry_and_rechecks_permission(fixture, monkeypatch):
+    from io import BytesIO
+    from PIL import Image
+    from test_facegate_photo import raster
+    import vera_facegate_photo as capture
+    db, api, grants = fixture
+    path = '/v2/staff/Ánh Thử/face-id/capture-photo'
+    image_path = '/v2/staff/Ánh Thử/face-id/image'
+    original = raster(size=(600,500), noise=True)
+    assert 700*1024 < len(original) < capture.MAX_CAPTURE_BYTES
+    prepare = capture.prepare_capture_photo
+    revoke = False
+    def convert(*args, **kwargs):
+        assert db.pool.checkedout() == 0
+        if revoke:
+            grants.remove('device_history_view')
+        return prepare(*args, **kwargs)
+    monkeypatch.setattr(capture, 'prepare_capture_photo', convert)
+    headers = {'Content-Type':'image/bmp','If-None-Match':'*'}
+    assert api.put(path,content=original,headers=headers).status_code == 200
+    saved = api.get(image_path)
+    assert len(saved.content) <= 700*1024
+    with Image.open(BytesIO(saved.content)) as image:
+        assert image.size == (600,500)
+    with db.connect() as conn:
+        first = dict(conn.execute(text('SELECT sha256,updated_at FROM vera_employee_face_id')).mappings().one())
+    assert api.put(path,content=original,headers=headers).status_code == 200
+    with db.connect() as conn:
+        assert dict(conn.execute(text('SELECT sha256,updated_at FROM vera_employee_face_id')).mappings().one()) == first
+    assert api.put('/v2/staff/Đã xóa/face-id/capture-photo',content=original,headers=headers).status_code == 404
+    revoke = True
+    assert api.put(path,content=raster(),headers={'Content-Type':'image/bmp','If-Match':f'"{first["sha256"]}"'}).status_code == 403
+    assert api.get(image_path).content == saved.content

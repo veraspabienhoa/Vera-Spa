@@ -1,5 +1,33 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: Capture Log hiển thị ảnh nhưng lưu FACE ID bị từ chối định dạng
+
+Ảnh người dùng lúc 10:14 cho thấy nút Lưu ảnh FACE ID trả lỗi chỉ nhận JPEG,
+PNG hoặc WebP. Proxy Capture Log cho phép BMP/GIF, trong khi luồng lưu ảnh gốc
+mới gửi nguyên blob sang API chỉ nhận ba định dạng trên. Kiểm thử HTTP bằng
+BMP thực tái hiện thông báo trên API cũ. Chưa có byte gốc của ảnh production
+để xác định chính xác định dạng ảnh trong ảnh chụp màn hình.
+
+Luồng chọn ảnh Capture dùng endpoint riêng, nhận tối đa 4 MB như proxy thiết
+bị và xác minh giải mã raster trước khi lưu. BMP/GIF tĩnh chuyển sang PNG
+không mất điểm ảnh nếu đủ nhỏ; ảnh lớn nén WebP trong giới hạn lưu 700 KiB.
+Giữ toàn khung, kích thước và tỷ lệ; JPEG/PNG/WebP hợp lệ dưới giới hạn giữ
+nguyên byte gốc. Không chỉ đổi đuôi/MIME. Từ chối ảnh động, tệp hỏng, ảnh quá
+6000 px mỗi chiều hoặc 24 megapixel. Chính sách CCCD và API ảnh thường giữ nguyên.
+
+Kiểm tra quyền xem lịch sử thiết bị và sửa FACE ID trước xử lý ảnh, trả kết
+nối trong lúc giải mã/nén, rồi kiểm tra lại quyền trong transaction lưu.
+Bắt buộc điều kiện ảnh cũ; retry cùng nội dung sau chuyển đổi không ghi lại,
+hai người cùng thay ảnh vẫn chỉ một thành công. Chỉ dùng blob đã xem, không
+gọi lại thiết bị, không đổi ánh xạ hay đăng ký ảnh lên FaceGate.
+
+Deploy 36287704014 đã xác minh commit 5880b294, hai health endpoint, frontend
+và user cron mỗi phút lúc 09:11. Kết quả VPS người dùng gửi sau đó xác nhận
+lấy log thành công: 26-09 có 126 sự kiện, 27-09 có 56, lượt sync thêm 0; mẫu
+readiness 20/126, ánh xạ hợp lệ 0. ConnectionError lúc 08:34 không còn xảy ra
+trong lượt đọc này. Đây là bằng chứng trước bản sửa định dạng, chưa xác nhận
+lưu ảnh sau sửa trên production; TimeSoft vẫn là nguồn tính công.
+
 ## 27-09-2026: mặc định TIP, lọc tiền, đổi khách hóa đơn chờ và kiểm tra phép năm
 
 Ảnh người dùng cho thấy Manual mở Từ ngày tính TIP ở 16-09-2025 dù đang

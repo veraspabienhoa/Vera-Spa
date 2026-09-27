@@ -162,3 +162,55 @@ def test_native_ratio_and_small_face_photo_roundtrip(size):
     result = api.put(path, content=original, headers={'Content-Type':'image/png'})
     assert result.status_code == 200, result.text
     assert api.get(path).content == original
+
+
+def test_capture_bmp_roundtrip_retry_conflict_and_access_before_conversion(monkeypatch):
+    import vera_facegate_photo as capture
+    from test_facegate_photo import raster
+    grants = {'device_history_view', 'employee_face_id_view', 'employee_face_id_manage'}
+    db, api = client(grants)
+    path = '/v2/staff/worker/face-id/capture-photo'
+    image_path = '/v2/staff/worker/face-id/image'
+    original = raster()
+    headers = {'Content-Type':'image/bmp', 'If-None-Match':'*'}
+    # This is the production mismatch: the ordinary image route rejects BMP.
+    old = api.put(image_path,content=original,headers=headers)
+    assert old.status_code == 400 and 'JPEG, PNG hoặc WebP' in old.text
+    prepare = capture.prepare_capture_photo
+    calls = []
+    def outside_transaction(*args, **kwargs):
+        assert not db.active
+        calls.append(1)
+        return prepare(*args, **kwargs)
+    monkeypatch.setattr(capture, 'prepare_capture_photo', outside_transaction)
+    assert api.put(path,content=original,headers=headers).status_code == 200
+    first = db.photo.copy()
+    with Image.open(BytesIO(api.get(image_path).content)) as image:
+        assert image.format == 'PNG' and image.size == (83,117)
+    assert api.put(path,content=original,headers=headers).status_code == 200
+    assert db.photo == first
+    different = raster(size=(117,83))
+    assert api.put(path,content=different,headers=headers).status_code == 409
+    assert db.photo == first
+    expected = {'Content-Type':'image/bmp','If-Match':f'"{first["sha256"]}"'}
+    assert api.put(path,content=different,headers=expected).status_code == 200
+    assert api.put(path,content=original,headers=expected).status_code == 409
+    for permission in ('device_history_view', 'employee_face_id_manage'):
+        count = len(calls)
+        grants.remove(permission)
+        assert api.put(path,content=original,headers=expected).status_code == 403
+        assert len(calls) == count
+        grants.add(permission)
+
+
+def test_capture_requires_precondition_and_rejects_invalid_or_oversized_without_write():
+    from vera_facegate_photo import MAX_CAPTURE_BYTES
+    from test_facegate_photo import raster
+    db, api = client({'device_history_view','employee_face_id_manage','employee_face_id_view'})
+    path = '/v2/staff/worker/face-id/capture-photo'
+    for extra in ({}, {'If-Match':'old','If-None-Match':'*'}, {'If-None-Match':'bad'}):
+        assert api.put(path,content=raster(),headers={'Content-Type':'image/bmp',**extra}).status_code == 400
+    headers = {'Content-Type':'image/bmp','If-None-Match':'*'}
+    assert api.put(path,content=b'BMbad',headers=headers).status_code == 400
+    assert api.put(path,content=b'B'*(MAX_CAPTURE_BYTES+1),headers=headers).status_code == 413
+    assert db.photo is None

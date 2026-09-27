@@ -58,8 +58,9 @@ test('denial and cancel never write; empty existing photo has create-only precon
 test('transport sends exact optimistic headers for create and replacement',async()=>{
  const result=await build({stdin:{contents:"import {faceIdApi} from './src/lib/staffSecurityApi';window.faceApi=faceIdApi",resolveDir:process.cwd(),loader:'js'},bundle:true,write:false,format:'iife',define:{'import.meta.env.VITE_VERA_API_BASE_URL':'"https://api.example.test"'},plugins:[{name:'session',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'session',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const getCurrentSession=async()=>({access_token:"synthetic"})'}))}}]})
  const calls=[],w={};new Function('window','fetch','Headers',result.outputFiles[0].text)(w,async(url,options)=>{calls.push({url,options});return{ok:true,json:async()=>({ok:true})}},Headers)
- const blob=new Blob(['x'],{type:'image/webp'});await w.faceApi.assignCapturePhoto('Ánh Thử',blob,null);await w.faceApi.assignCapturePhoto('Ánh Thử',blob,'hash')
- assert.match(calls[0].url,/%C3%81nh%20Th%E1%BB%AD/);assert.equal(calls[0].options.headers.get('If-None-Match'),'*');assert.equal(calls[1].options.headers.get('If-Match'),'"hash"');assert.equal(calls[1].options.body,blob)
+ const blob=new Blob(['BMdevice-raster'],{type:'image/bmp'});await w.faceApi.assignCapturePhoto('Ánh Thử',blob,null);await w.faceApi.assignCapturePhoto('Ánh Thử',blob,'hash')
+ assert.match(calls[0].url,/%C3%81nh%20Th%E1%BB%AD\/face-id\/capture-photo$/);assert.equal(calls[0].options.headers.get('If-None-Match'),'*');assert.equal(calls[1].options.headers.get('If-Match'),'"hash"');assert.equal(calls[1].options.body,blob)
+ assert.equal(calls[0].options.headers.get('Content-Type'),'image/bmp');assert.equal(calls[0].options.headers.get('Authorization'),'Bearer synthetic')
 })
 
 test('confirmed capture saves original without compulsory editing',async ctx=>{

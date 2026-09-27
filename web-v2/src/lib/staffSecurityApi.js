@@ -144,7 +144,7 @@ async function faceRequest(username, suffix = '', options = {}, binary = false) 
 
 export const faceIdApi = {
   assignmentEmployees: () => jsonRequest('/v2/face-id/assignment-employees'),
-  assignCapturePhoto: (username, blob, expectedSha) => faceRequest(username, '/image', {
+  assignCapturePhoto: (username, blob, expectedSha) => faceRequest(username, '/capture-photo', {
     method: 'PUT',
     headers: {'Content-Type': blob.type, ...(expectedSha ? {'If-Match': `"${expectedSha}"`} : {'If-None-Match': '*'})},
     body: blob,
