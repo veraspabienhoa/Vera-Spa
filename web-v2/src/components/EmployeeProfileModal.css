@@ -79,6 +79,7 @@
   align-content: start;
 }
 .employee-create-fields :is(input, select) { min-height: 44px; }
+.employee-create-modal .employee-create-fields .span-2 { grid-column: 1 / -1; }
 .employee-create-fields .password-eye-button { width: 44px; min-height: 44px; }
 .employee-create-modal .employee-create-actions {
   flex: 0 0 auto;
