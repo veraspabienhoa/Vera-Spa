@@ -2,7 +2,6 @@ import { veraApi } from './api'
 import { refreshProfileReferenceData } from './profileReferenceRefresh'
 
 const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim()
-const DEPRECATED_REQUIRED_FIELDS = new Set(['Quận/Huyện'])
 const CENTRAL_ISSUERS = [
   'Bộ Công an',
   'Cục Cảnh sát quản lý hành chính về trật tự xã hội, Bộ Công an',
@@ -61,63 +60,6 @@ function setReactValue(control, value) {
   else control.value = value
   control.dispatchEvent(new Event('input', { bubbles: true }))
   control.dispatchEvent(new Event('change', { bubbles: true }))
-}
-
-function parseMissingTitle(item) {
-  const title = clean(item?.getAttribute('title'))
-  if (!title.startsWith('Hồ sơ còn thiếu:')) return []
-  const seen = new Set()
-  return title
-    .slice('Hồ sơ còn thiếu:'.length)
-    .split(',')
-    .map(clean)
-    .filter((field) => field && !DEPRECATED_REQUIRED_FIELDS.has(field))
-    .filter((field) => {
-      if (seen.has(field)) return false
-      seen.add(field)
-      return true
-    })
-}
-
-function reconcileIncompleteSummary() {
-  const panel = document.querySelector('.staff-list-panel')
-  const summary = panel?.querySelector('.panel-title-row p')
-  if (!summary) return
-
-  const rows = Array.from(panel.querySelectorAll('.staff-table tbody tr')).filter((row) => row.offsetParent !== null)
-  const mobileCards = Array.from(panel.querySelectorAll('.staff-mobile-card')).filter((card) => card.offsetParent !== null)
-  const items = rows.length ? rows : mobileCards
-  const incomplete = items.filter((item) => {
-    const badge = item.querySelector('.staff-incomplete-badge')
-    return badge && !badge.hidden && clean(badge.textContent).startsWith('Thiếu:')
-  }).length
-
-  const base = clean(summary.textContent).replace(/\s*·\s*\d+\s+hồ sơ chưa đầy đủ \(dòng vàng\)\.?$/i, '')
-  summary.textContent = incomplete
-    ? `${base} · ${incomplete} hồ sơ chưa đầy đủ (dòng vàng).`
-    : base
-}
-
-function reconcileMissingBadges() {
-  document.querySelectorAll('.staff-table tbody tr, .staff-mobile-card').forEach((item) => {
-    const badge = item.querySelector('.staff-incomplete-badge')
-    if (!badge) return
-    const missing = parseMissingTitle(item)
-    if (!missing.length) {
-      badge.hidden = true
-      badge.textContent = ''
-      badge.removeAttribute('title')
-      item.classList.remove('staff-incomplete-row', 'incomplete')
-      item.removeAttribute('title')
-      return
-    }
-    const text = `Thiếu: ${missing.join(', ')}`
-    badge.hidden = false
-    badge.textContent = text
-    badge.title = text
-    item.setAttribute('title', `Hồ sơ còn thiếu: ${missing.join(', ')}`)
-  })
-  reconcileIncompleteSummary()
 }
 
 function policeAuthorityForProvince(name) {
@@ -246,11 +188,9 @@ async function enhanceIssuerRoot(root, force = false) {
 
 let scheduled = false
 async function refreshUi() {
-  reconcileMissingBadges()
   for (const root of profileRoots()) {
     try { await enhanceIssuerRoot(root, false) } catch { /* Keep manual input usable if catalog fetch fails. */ }
   }
-  reconcileMissingBadges()
 }
 
 export function startEmployeeProfileCompletionAndIssuerFix() {
@@ -277,6 +217,5 @@ export function startEmployeeProfileCompletionAndIssuerFix() {
   document.addEventListener('input', schedule, true)
   document.addEventListener('change', schedule, true)
   document.addEventListener('click', schedule, true)
-  window.setInterval(reconcileMissingBadges, 900)
   schedule()
 }

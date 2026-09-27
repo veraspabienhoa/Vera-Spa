@@ -13,7 +13,6 @@ import { startEmployeeProfileCompletionAndIssuerFix } from './lib/employeeProfil
 import { startEmployeeDirectoryUx } from './lib/employeeDirectoryUx'
 import { startEmployeeProfileHeaderSaveFix } from './lib/employeeProfileHeaderSaveFix'
 import { startEmployeeToolbarRecovery } from './lib/employeeToolbarRecovery'
-import { startEmployeeMissingProfileFix } from './lib/employeeMissingProfileFix'
 import { startLeaveListDateFilterSync } from './lib/leaveListDateFilterSync'
 import { startDepartmentSalaryAdvanceTransportGuard } from './lib/departmentSalaryAdvanceTransportGuard'
 import { startDepartmentSalaryAdvanceLedger } from './lib/departmentSalaryAdvanceLedger'
@@ -38,7 +37,6 @@ startEmployeeDirectoryUx()
 startSearchableDropdowns()
 startEmployeeProfileHeaderSaveFix()
 startEmployeeToolbarRecovery()
-startEmployeeMissingProfileFix()
 startLeaveListDateFilterSync()
 startDepartmentSalaryAdvanceTransportGuard()
 startDepartmentSalaryAdvanceLedger()

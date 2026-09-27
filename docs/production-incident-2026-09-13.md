@@ -1287,3 +1287,30 @@ khi trả kết nối. Không đọc ảnh CCCD/FACE ID cho bản xuất, không
 không đăng ký ảnh lên FaceGate. Bổ sung kiểm thử HTTP/PostgreSQL, UI lưu ảnh gốc,
 ảnh nhỏ/ngang/vuông, quyền và kích thước khung Excel qua middleware định dạng.
 Chưa xác nhận bản sửa trên VPS; không thay nguồn tính công hoặc dừng TimeSoft.
+
+## 27-09-2026: trang Nhân viên lỗi khi thay đổi bộ lọc
+
+Sau deploy main `19517aeb2bf2827c087642b48202e914c5535717`, đã đăng nhập
+production bằng biểu mẫu bảo mật và tái hiện lỗi chỉ bằng thao tác tìm tên không
+có kết quả. Console ghi `NotFoundError: Failed to execute 'removeChild' on
+'Node': The node to be removed is not a child of this node.` Trang chuyển sang
+PageErrorBoundary giống ảnh người dùng. Trước lỗi, thống kê còn hiển thị 0 nhân
+viên dù bảng có dữ liệu. Thử mở lại khôi phục được trang; không sửa hồ sơ thật.
+
+Hai bộ bổ sung giao diện `employeeMissingProfileFix` và
+`employeeProfileCompletionAndIssuerFix` ghi đè `textContent` của thống kê và
+nhãn hồ sơ do React quản lý. Khi bộ lọc đổi làm nhánh cảnh báo biến mất, React
+xóa text node đã bị mã ngoài thay thế và phát sinh lỗi. Đây là lỗi giao diện đã
+tái hiện, không phải kết luận từ trạng thái CI/deploy hoặc lỗi đọc ảnh đính kèm.
+
+Chuyển nhãn thiếu hồ sơ, tiêu đề dòng, màu dòng và thống kê về cùng phép tính
+trong EmployeePage. Tôn trọng miễn yêu cầu đủ hồ sơ và bỏ Quận/Huyện khỏi danh
+sách bắt buộc như hành vi hiển thị trước đây. Gỡ bộ sửa DOM/poll API hồ sơ cũ;
+giữ phần danh mục nơi cấp CCCD nhưng bỏ việc sửa nhãn và thống kê trong đó.
+Không thay xác thực, API lưu hồ sơ, dữ liệu hoặc nguồn chấm công.
+
+Kiểm thử tích hợp tải main thực tế cùng các bộ bổ sung giao diện, thay riêng
+transport bằng dữ liệu giả. Kiểm tra mở trực tiếp/từ menu, dữ liệu đến chậm,
+lọc có/không có kết quả, xóa lọc, hồ sơ miễn yêu cầu, hồ sơ đủ không có quận,
+làm mới và chuyển trang. Bổ sung vào CI. Xác minh production sau deploy vẫn
+phải kiểm tra thao tác lọc đã gây lỗi, phiên bản frontend và hai health gate.
