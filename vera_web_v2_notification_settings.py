@@ -17,6 +17,7 @@ from vera_notification_audience import delivery_joins, delivery_access_sql, publ
 
 RELEASE = "notification-routing-2026-09-22-v2"
 CATALOG = (
+    ("live_tour_booking", "Booking cho nhân viên", "Báo booking mới: nhân viên | dịch vụ | YC/Tua | phòng hoặc giường.", "Đúng nhân viên được đặt booking", "Trung tâm thông báo và màn hình khóa"),
     ("training_completed", "Hoàn thành đào tạo / đánh giá", "Thông báo khi nhật ký đào tạo hoặc đánh giá hoàn tất.", "Admin, người được đánh giá và người đã cấu hình", "Trong ứng dụng"),
     ("training_cycle", "Đợt đánh giá mới", "Thông báo phân công đợt đánh giá nhân viên mới.", "Nhân viên và người đánh giá", "Trong ứng dụng"),
     ("leave_quota_exceeded", "Vượt hạn mức đăng ký nghỉ", "Cảnh báo vượt 5 ngày, 2 lần cuối tuần Nhóm 3 hoặc 2 lần phát sinh trong tháng.", "Admin", "Thông báo đẩy"),
@@ -185,6 +186,7 @@ def _settings(conn) -> list[dict[str, Any]]:
         output.append({
             "key": key, "label": label, "description": description,
             "audience": audience, "channel": channel,
+            "recipient_locked": key == "live_tour_booking",
             "enabled": bool(row.get("enabled", not key.startswith('task-'))),
             "updated_by": row.get("updated_by", ""),
             "updated_at": row.get("updated_at"),
@@ -219,6 +221,8 @@ def _recipients(conn, values):
 
 
 def _write_route(conn, key, source, label, recipients, channels, custom, actor):
+    if source == 'live_tour_booking':
+        raise HTTPException(400, 'Thông báo booking chỉ gửi đúng nhân viên được đặt lịch; hãy dùng công tắc bật/tắt.')
     recipients = _recipients(conn, recipients)
     if 'group:watchers' in recipients and source != 'leave_watch':
         raise HTTPException(400, 'Người theo dõi chỉ áp dụng cho thông báo theo dõi ngày nghỉ.')
@@ -323,7 +327,7 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
     @app.get('/v2/notification-settings/tasks')
     def get_tasks(ident: identity_type = Depends(current_identity)):
         _admin(ident)
-        return {'tasks': [{'key':r[0],'label':r[1],'description':r[2],'group':'Thông báo hiện có'} for r in CATALOG] + task_catalog(app)}
+        return {'tasks': [{'key':r[0],'label':r[1],'description':r[2],'group':'Thông báo hiện có'} for r in CATALOG if r[0] != 'live_tour_booking'] + task_catalog(app)}
 
     @app.post('/v2/notification-settings/groups')
     def create_group(body: NotificationGroupEdit, ident: identity_type = Depends(current_identity)):

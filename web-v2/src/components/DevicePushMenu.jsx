@@ -24,17 +24,17 @@ export default function DevicePushMenu() {
     finally { setBusy(false) }
   }
   const enabled = Boolean(state.subscribed)
+  const hint = error || state.reason || (state.permission === 'denied'
+    ? 'Thông báo đang bị chặn trong Cài đặt điện thoại hoặc trình duyệt.' : '')
   return <section className="device-push-menu" aria-label="Thông báo thiết bị này">
     <button type="button" role="switch" aria-checked={enabled} aria-label="Thông báo màn hình khóa trên thiết bị này"
-      className="nav-item device-push-switch" onClick={toggle}
+      className="nav-item device-push-switch" title="Thông báo trên thiết bị này" onClick={toggle}
       disabled={state.loading || busy || state.supported === false}>
       {enabled ? <BellRing size={19}/> : <BellOff size={19}/>}
-      <span>Thông báo màn hình khóa<small>Thiết bị này</small></span>
+      <span>Thông báo màn hình khóa</span>
       <b>{busy || state.loading ? '…' : enabled ? 'Bật' : 'Tắt'}</b>
     </button>
-    <p>{error || state.reason || (state.permission === 'denied'
-      ? 'Thông báo đang bị chặn trong Cài đặt điện thoại hoặc trình duyệt.'
-      : 'Tắt ở đây vẫn nhận thông báo trong Trung tâm thông báo.')}</p>
+    {hint && <p>{hint}</p>}
     {error && <span className="sr-only" role="alert">{error}</span>}
   </section>
 }

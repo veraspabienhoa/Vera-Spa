@@ -336,11 +336,11 @@ function roomCountdown(record, remainingColumn, clockMs, available, occupied) {
   if (Number.isFinite(deadlineMs)) {
     const delta = Math.ceil((deadlineMs - clockMs) / 1000)
     if (delta <= -15 * 60) return 'Đã hết giờ'
-    return delta >= 0 ? `Còn ${durationText(delta)}` : `Trễ ${durationText(-delta)}`
+    return delta >= 0 ? durationText(delta) : `Trễ ${durationText(-delta)}`
   }
   const remainingRaw = cellValue(record, remainingColumn)
   const remaining = remainingRaw === '' ? null : Number(remainingRaw)
-  if (Number.isFinite(remaining)) return remaining >= 0 ? `Còn ${remaining} phút` : `Trễ ${Math.abs(remaining)} phút`
+  if (Number.isFinite(remaining)) return remaining >= 0 ? `${remaining} phút` : `Trễ ${Math.abs(remaining)} phút`
   if (hasGroup(record, 'waiting')) return 'Đang chờ'
   if (hasGroup(record, 'doing')) return 'Thực hiện'
   return 'Chưa có thời gian'
@@ -1579,7 +1579,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
                   title="Bấm một lần để lọc nhân viên trong phòng; bấm đúp để đặt lịch" aria-expanded={selectedRoomKey === key}>
                 <div data-ui-key="u-31b005c068e3" className="tour-room-card-head"><strong>{areaLabel(room)}</strong><span className="tour-room-type">{areaKind(room) === 'table' ? 'BÀN' : areaKind(room) === 'bed' ? 'GIƯỜNG' : isVipArea(room) ? 'VIP' : 'STANDARD'}</span></div>
                 <div className="tour-room-customer-count">{records.filter((item) => hasGroup(item, 'doing') || hasGroup(item, 'waiting')).length} khách</div>
-                <div className="tour-room-countdown"><Clock3 size={16}/><span className={countdown === 'Đã hết giờ' ? 'tour-room-countdown-expired' : countdown === 'Đang trống' ? 'tour-room-countdown-empty' : /^(Còn|Đang chờ)/.test(countdown) ? 'tour-room-countdown-label' : undefined}>{countdown}</span></div>
+                <div className="tour-room-countdown"><Clock3 size={16}/><span className={countdown === 'Đã hết giờ' ? 'tour-room-countdown-expired' : countdown === 'Đang trống' ? 'tour-room-countdown-empty' : /^(\d|Đang chờ)/.test(countdown) ? 'tour-room-countdown-label' : undefined}>{countdown}</span></div>
                 {records.length ? <div className="tour-room-staff">{records.map((item, index) => <div key={recordId(item, index)}>{cellValue(item, employeeColumn)}</div>)}</div> : <div className="tour-room-meta">{available ? 'Sẵn sàng nhận khách' : 'Chưa có nhân viên'}</div>}
                 {hasPrivateService && <span className="tour-room-private-badge" aria-label="Dịch vụ phòng riêng">PR</span>}
                 </button>
