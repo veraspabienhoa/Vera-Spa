@@ -1,5 +1,6 @@
 """Purchased tickets are reserved at booking and debited exactly once at checkout."""
 from copy import deepcopy
+from datetime import timedelta
 from pathlib import Path
 import subprocess
 
@@ -215,6 +216,42 @@ def test_multi_booking_with_one_remaining_component_rolls_back_all():
     assert state == before
 
 
+def test_shared_room_combo_replacement_keeps_one_reservation_and_bills_only_replacement():
+    state, _, body, customer, owned = setup()
+    state['employees'].append(employee('e3', 'Test replacement'))
+    rows = [booking(customer, owned, body), {**booking(customer, owned, body, 'e2'), 'room': '1.2'}]
+    action(state, 'multi_booking', {'bookings': rows})
+    assert available(state, customer, owned)['remaining'] == 1
+    assert state['employees'][0]['combo_reserved_units'] == state['employees'][1]['combo_reserved_units'] == 1
+    action(state, 'start', {'employee_ids': ['e1', 'e2']})
+    ledgers = {key: deepcopy(state[key]) for key in ('invoices', 'pending', 'reports', 'combo_usage')}
+    balance = deepcopy(owned)
+    action(state, 'change_employee', {'employee_id': 'e1', 'target_employee_id': 'e3'}, NOW + timedelta(minutes=80))
+    assert all(state[key] == value for key, value in ledgers.items())
+    assert state['customers'][0]['combo_purchases'][0] == balance
+    assert available(state, customer, owned)['remaining'] == 1
+    assert not state['employees'][0].get('combo_purchase_id') and not state['employees'][0]['service']
+    assert state['employees'][2]['combo_reserved_units'] == 1
+    with pytest.raises(HTTPException):
+        action(state, 'checkout', {'employee_id': 'e1', 'payment_method': 'COMBO', 'combo_purchase_id': owned['id']})
+    action(state, 'complete', {'employee_ids': ['e2', 'e3']}, NOW + timedelta(minutes=90))
+    invoice = action(state, 'checkout', {'employee_ids': ['e2', 'e3'],
+                     'payment_method': 'COMBO', 'combo_purchase_id': owned['id']}, NOW + timedelta(minutes=90))['invoice']
+    assert {entry['employee_id'] for entry in invoice['entries']} == {'e2', 'e3'}
+    assert invoice['combo_units'] == 2
+    assert state['customers'][0]['combo_purchases'][0]['remaining'] == 1
+    assert len(state['invoices']) == len(ledgers['invoices']) + 1
+
+
+def test_shared_room_combo_cancel_releases_only_cancelled_guest():
+    state, _, body, customer, owned = setup()
+    action(state, 'multi_booking', {'bookings': [booking(customer, owned, body),
+        {**booking(customer, owned, body, 'e2'), 'room': '1.2'}]})
+    action(state, 'cancel_booking', {'employee_id': 'e1'})
+    assert available(state, customer, owned)['remaining'] == 2
+    assert state['employees'][1]['combo_reserved_units'] == 1
+
+
 def test_generic_combo_keeps_legacy_ticket_units():
     state, skin, _, _, _ = setup()
     customer, owned = purchase(state, state["combos"][0])
@@ -269,8 +306,8 @@ const {availableBookingPurchase, customerTicketLabel, comboBookingItems, preferr
 const day = '2026-09-09', services = [{id:'skin',name:'Da',ticket_units:5},{id:'body',name:'Body',ticket_units:1}];
 const owned = {id:'p',remaining:13,booking_remaining:12,component_balances:[{service_id:'skin',remaining:1,booking_remaining:0},{service_id:'body',remaining:12,booking_remaining:12}]};
 const customer = {combo_purchases:[{id:'empty',remaining:0},owned]};
-assert.equal(customerTicketLabel(customer),'Còn 13 vé combo');
-assert.equal(customerTicketLabel({combo_purchases:[{remaining:0}]}),'Còn 0 vé combo');
+assert.equal(customerTicketLabel(customer),'Có thể đặt 12 vé combo');
+assert.equal(customerTicketLabel({combo_purchases:[{remaining:0}]}),'Có thể đặt 0 vé combo');
 assert.equal(customerTicketLabel({}),'');
 assert.equal(preferredBookingCombo(customer,services,day).id,'p');
 const available = availableBookingPurchase(owned);

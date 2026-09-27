@@ -37,6 +37,15 @@ def test_customer_pages_and_search_are_filtered_before_slicing():
     assert client.get('/v2/live-tour/collections/customers?page_size=1000').status_code==422
 
 
+def test_selected_booking_customers_are_refreshed_in_one_bounded_batch():
+    _, client = app_client(SettingsDatabase(sample()))
+    response = client.get('/v2/live-tour/collections/customers', params={'customer_ids': 'c0,c110,c0', 'page_size': 100})
+    assert response.status_code == 200
+    assert {row['id'] for row in response.json()['data']['customers']} == {'c0', 'c110'}
+    assert response.json()['total'] == 2
+    assert client.get('/v2/live-tour/collections/customers', params={'customer_ids': ','.join(f'c{i}' for i in range(51))}).status_code == 400
+
+
 def test_reports_total_covers_all_matching_pages_and_receipts_stay_available():
     _,client=app_client(SettingsDatabase(sample()))
     result=client.get('/v2/live-tour/collections/reports?page_size=10').json()

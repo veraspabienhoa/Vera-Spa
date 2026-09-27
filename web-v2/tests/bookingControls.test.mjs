@@ -7,6 +7,7 @@ import React, { act, useState } from 'react'
 import { JSDOM } from 'jsdom'
 import { startSearchableDropdowns } from '../src/lib/searchableDropdowns.js'
 import { formatVeraDate, parseVeraDate, formatVeraDateTime } from '../src/lib/veraDate.js'
+import { multiBookingCombos } from '../src/lib/liveTourComboBooking.js'
 const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
 Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
@@ -267,4 +268,90 @@ test('new room-booking rows copy the first service once and remain independently
     })
     assert.deepEqual(serviceInputs.map(input => input.value), ['90 Tiêu chuẩn', ''])
   } finally { await dispose() }
+})
+
+function comboRoomFixture(remaining = 2) {
+  return {
+    state: { employees: [1, 2].map(id => ({ id: `e${id}`, name: `Test Worker ${id}`, work_status: 'Đi làm', shift: 'Ca 1' })),
+      rooms: [{ name: '2.1', active: true }, { name: '2.2', active: true }] },
+    services: [{ id: 'body', name: 'Test Body 90', duration: 90, price: 250000 }], records: [],
+    customers: [{ id: 'c1', name: 'Test Customer', phone: '0900000001', combo_purchases: [{
+      id: 'p1', combo_name: 'Test Combo', remaining: 5, booking_remaining: remaining,
+      component_balances: [{ service_id: 'body', remaining: 5, booking_remaining: remaining }],
+    }] }],
+  }
+}
+const field = (scope, label) => document.getElementById([...scope.querySelectorAll('label')].find(item => item.textContent === label).htmlFor)
+async function choose(scope, label, text) {
+  await act(() => field(scope, label).focus())
+  const option = [...document.querySelectorAll('[role="option"]')].find(item => item.textContent.includes(text))
+  assert.ok(option, `Missing option ${text}`)
+  await act(() => option.click())
+}
+
+test('room booking autofills combo services, aggregates guests and blocks shortage before sending', async () => {
+  const BookingDialog = await component('LiveTourBookingDialog')
+  const calls = []; let updateData, selectedIds
+  const selected = ids => { selectedIds = ids }
+  function Screen() {
+    const [data, setData] = useState(comboRoomFixture()); updateData = setData
+    return React.createElement(BookingDialog, { data, context: { roomGroup: '2', roomLabel: 'Phòng 2' },
+      canBook: true, canCustomers: true, onClose() {}, onSelectedCustomersChange: selected,
+      onAction: async (...args) => { calls.push(args); return {} } })
+  }
+  const dispose = await render(Screen)
+  const rows = () => [...document.querySelectorAll('.tour-multi-booking-row')]
+  try {
+    await act(async () => { await new Promise(resolve => window.requestAnimationFrame(resolve)) })
+    await choose(rows()[0], 'Khách hàng / chủ combo', 'Test Customer')
+    assert.equal(field(rows()[0], 'Dịch vụ *').value, 'Test Body 90')
+    assert.deepEqual(selectedIds, ['c1'])
+    await act(() => [...document.querySelectorAll('label')].find(label => label.textContent.includes('Dùng combo của khách dòng 1')).querySelector('input').click())
+    await act(() => document.querySelector('.tour-multi-add').click())
+    assert.equal(field(rows()[1], 'Dịch vụ *').value, 'Test Body 90')
+    assert.equal(field(rows()[1], 'Khách hàng / chủ combo').disabled, true)
+    assert.match(document.querySelector('.tour-multi-combo-summary').textContent, /dùng 2 vé · sau booking còn 0 vé/)
+    await choose(rows()[0], 'Nhân viên *', 'Test Worker 1')
+    await choose(rows()[1], 'Nhân viên *', 'Test Worker 2')
+    await act(() => updateData(comboRoomFixture(1)))
+    assert.match(document.querySelector('[role="alert"]').textContent, /chỉ còn 1/)
+    assert.equal(document.querySelector('button[type="submit"]').disabled, true)
+    await act(() => document.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })))
+    assert.equal(calls.length, 0)
+    await act(() => updateData(comboRoomFixture(2)))
+    await act(() => document.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })))
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0][0], 'multi_booking')
+    const bookings = calls[0][1].bookings
+    assert.deepEqual(bookings.map(row => [row.customer_id, row.combo_purchase_id, row.service_items]), [
+      ['c1', 'p1', [{ service_id: 'body', quantity: 1 }]], ['c1', 'p1', [{ service_id: 'body', quantity: 1 }]],
+    ])
+    assert.deepEqual(bookings.map(row => row.room), ['2.1', '2.2'])
+  } finally { await dispose() }
+})
+
+test('single booking displays the auto-selected combo service and rejects excess quantity immediately', async () => {
+  const BookingDialog = await component('LiveTourBookingDialog')
+  const dispose = await render(() => React.createElement(BookingDialog, { data: comboRoomFixture(1),
+    context: { employeeId: 'e1' }, canBook: true, canCustomers: true, onClose() {} }))
+  try {
+    await act(async () => { await new Promise(resolve => window.requestAnimationFrame(resolve)) })
+    await choose(document, 'Khách hàng', 'Test Customer')
+    assert.equal(document.querySelector('.tour-booking-service-picker input[readonly]').value, 'Test Body 90')
+    assert.match(document.querySelector('.tour-customer-ticket-count').textContent, /Có thể đặt 1 vé/)
+    await type(document.querySelector('.tour-booking-item input'), '2')
+    assert.match(document.querySelector('[role="alert"]').textContent, /chỉ còn 1/)
+    assert.equal(document.querySelector('button[type="submit"]').disabled, true)
+  } finally { await dispose() }
+})
+
+test('draft ticket checks aggregate per owner and component even without the shared-combo switch', () => {
+  const data = comboRoomFixture(1)
+  const row = { customer_id: 'c1', combo_purchase_id: 'p1', service_id: 'body' }
+  assert.match(multiBookingCombos([row, row], data.customers, data.services)[0].error, /chỉ còn 1/)
+  const customers = [...data.customers, { ...data.customers[0], id: 'c2' }]
+  const groups = multiBookingCombos([row, { ...row, customer_id: 'c2' }], customers, data.services)
+  assert.equal(groups.length, 2)
+  assert.ok(groups.every(group => !group.error && group.remaining === 0))
+  assert.match(multiBookingCombos([row], [], data.services)[0].error, /thiếu dữ liệu/)
 })

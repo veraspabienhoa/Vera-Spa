@@ -1,5 +1,40 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: booking chung combo và thu gọn thao tác đổi nhân viên
+
+Rà soát mã xác nhận form booking nhiều khách theo phòng chỉ gửi dịch vụ và
+customer_id, không gửi combo_purchase_id. Booking đơn đã giữ vé, nhưng nhãn
+khách còn hiển thị số vé chưa trừ các booking đang giữ. Đây là bằng chứng mã
+và kiểm thử bằng dữ liệu giả, không phải số đo độ trễ hoặc sai lệch trên VPS.
+
+Form nhiều khách nay tự chọn combo/dịch vụ khi chọn khách, cho dùng combo của
+khách dòng 1 cho cả phòng và truyền đúng chủ combo ở mỗi booking. Cộng nhu cầu
+theo cặp chủ khách/combo và từng dịch vụ; hiện vé khả dụng, số vé cần dùng,
+số còn lại và chặn thiếu vé trước khi gửi. Dịch vụ combo trong booking đơn
+hiển thị rõ trong ô riêng. Combo vé chung cũ không có danh mục dịch vụ vẫn
+yêu cầu chọn dịch vụ, không đoán quyền dùng vé từ tên combo.
+
+Server giữ cơ chế đặt giữ vé trong cùng giao dịch booking: số khả dụng giảm
+ngay, booking khác không dùng lại được, hủy trả vé, thanh toán ghi sử dụng một
+lần. Batch thiếu vé rollback toàn bộ; các phòng cùng chủ combo dùng khóa khách
+hiện hữu. Đổi nhân viên chuyển nguyên booking/reservation và không ghi hóa đơn,
+pending, report hay combo_usage cho người bị thay. Luồng đổi nhân viên dùng
+snapshot operational gọn và phản hồi board, không đọc lịch sử hóa đơn/báo cáo
+hay toàn bộ receipt; vẫn giữ khóa độc quyền vì có thể khôi phục thứ tự cả bảng.
+
+Khách đã chọn trong form được tải theo một danh sách ID giới hạn 50 khách,
+dùng một yêu cầu cho cả nhóm bên cạnh tìm kiếm hiện hữu; không N+1 theo dòng.
+Revision mới không dùng số vé cũ khi đang tải. Chỉ mount một form/một đồng hồ,
+giảm tick từ mỗi giây xuống 20 giây và dừng khi tab ẩn; không thêm poller mạng.
+
+Kiểm thử gồm tự điền/cảnh báo/khóa nút, dữ liệu đổi giữa lúc mở form, giữ khách
+đã chọn khi tìm khách khác, dùng chung và hủy từng người, chuyển nhân viên rồi
+thanh toán chỉ người thay. PostgreSQL CI kiểm tra batch rollback, replay, khóa
+khách giữa phòng khác nhau và phạm vi đọc đổi nhân viên với 0/400 hóa đơn cũ.
+Cục bộ 135 kiểm thử Python đạt; các ca PostgreSQL cần service CI. Build/lint
+và kiểm thử giao diện đạt. Không tuyên bố không có độ trễ ở mọi tải production;
+Deploy VPS Production vẫn do người dùng chạy thủ công sau CI và merge.
+
 ## 27-09-2026: đổi nhân viên trả lại vị trí trước lượt không yêu cầu
 
 Tái hiện bằng nhân viên giả: bắt đầu lượt không YC đẩy người đầu xuống dưới;
