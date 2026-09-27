@@ -17,7 +17,7 @@ GROUPS = {
 }
 NATIVE_SOURCES = frozenset(GROUPS) | {
     'training_completed', 'training_cycle', 'auto_penalty', 'missing_checkin',
-    'attendance_break', 'birthday', 'profile_completion',
+    'attendance_break', 'birthday', 'profile_completion', 'live_tour_booking',
 }
 
 
@@ -81,6 +81,7 @@ def delivery_access_sql():
           AND NOT EXISTS(SELECT 1 FROM vera_notification_route override WHERE override.key=d.payload->>'_source_key'))
         ) AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
         AND {current_quota_sql(source=source_sql())}
+        AND ({source_sql()}<>'live_tour_booking' OR lower(btrim(p.employee_username))=lower(btrim(d.payload->>'_booking_username')))
         AND ({source_sql()}<>'attendance_break' OR d.payload->>'kind' IN ('attendance-break-cleared','attendance-break-global-disabled')
           OR NOT EXISTS(SELECT 1 FROM vera_app_setting a WHERE
             (a.category='attendance_break_alert_control' AND a.setting_key='global' AND a.value_json->>'disabled'='true')

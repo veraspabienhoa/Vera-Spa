@@ -1,5 +1,27 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: thông báo booking đúng nhân viên, ghi theo lô
+
+Theo yêu cầu, booking và multi_booking ghi thông báo sau khi kiểm tra nghiệp vụ
+và chống trùng, trước khi ghi state, trên connection/giao dịch hiện có. Một câu
+INSERT theo lô ghi cả Trung tâm và push cho tài khoản đang hoạt động có tên hệ
+thống khớp nhân viên được booking. Nội dung lấy từ kết quả server: tên | dịch vụ
+| YC hoặc Tua | phòng/giường; không gửi dữ liệu khách hoặc ghép theo tên gần đúng.
+
+Không đọc lại bảng booking, không đọc subscription, không mở connection hay gửi
+mạng trong thao tác booking. Thêm một SAVEPOINT/RELEASE quanh INSERT để lỗi riêng
+của kho thông báo không phá booking. Rollback nghiệp vụ hủy cả thông báo; retry
+cùng idempotency_key không ghi lại. Worker hiện có gửi sau commit và kiểm tra lại
+công tắc Admin, tài khoản, tên nhân viên và lựa chọn tắt theo thiết bị. Không thêm
+worker/timer/request frontend. Kiểm thử PostgreSQL đo số statement/connection;
+đây không phải số đo độ trễ thực tế của VPS.
+
+Thêm Booking cho nhân viên vào Cài đặt thông báo với công tắc toàn loại và từng
+kênh. Người nhận cố định theo booking, không cho cấu hình thành gửi toàn bộ nhân
+viên. Menu giảm chiều cao, bỏ dòng ghi chú “Tắt ở đây vẫn nhận…”. Đồng hồ phòng
+Live Tour bỏ chữ “Còn”, giữ giá trị và logic trễ/hết giờ. Chưa xác minh điện thoại
+thật hoặc production; Deploy VPS Production vẫn do người dùng chạy thủ công.
+
 ## 27-09-2026: hợp nhất thông báo và công tắc theo thiết bị
 
 Kiểm tra mã xác nhận inbox chỉ đọc kênh in_app, nút mở chỉ dành cho Admin,
