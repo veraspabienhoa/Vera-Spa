@@ -223,9 +223,11 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
             raise HTTPException(404, 'Nhân viên chưa có ảnh đại diện.')
         return Response(bytes(row['content']), media_type=row['content_type'], headers=HEADERS)
 
-    def save(username, ident, content, content_type, if_match=None, if_none_match=None, filename=None):
+    def save(username, ident, content, content_type, if_match=None, if_none_match=None, filename=None, *, capture=False):
         validate_photo(content, content_type)
         with engine_instance().begin() as conn:
+            if capture:
+                require_feature(conn, ident, 'device_history_view')
             username = access(conn, ident, username, write=True)
             ensure_table(conn)
             if filename is not None:
@@ -265,6 +267,34 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
                 raise HTTPException(413, 'Ảnh quá lớn; hãy nén ảnh trước khi lưu.')
         return await run_in_threadpool(save, username, ident, bytes(content), request.headers.get('content-type', '').split(';')[0].lower(),
                                        request.headers.get('if-match'), request.headers.get('if-none-match'), request.query_params.get('filename'))
+
+    def save_capture(username, ident, content, content_type, if_match, if_none_match):
+        from vera_facegate_photo import CapturePhotoError, prepare_capture_photo
+        from vera_web_v2_staff_security import MAX_IDENTITY_BYTES
+        # Check both permissions before decoding, then release the connection.
+        # save() rechecks them with the employee lock before the actual write.
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, 'device_history_view')
+            access(conn, ident, username, write=True)
+        try:
+            content, content_type = prepare_capture_photo(content, content_type, max_bytes=MAX_IDENTITY_BYTES)
+        except CapturePhotoError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        return save(username, ident, content, content_type, if_match, if_none_match, capture=True)
+
+    @app.put('/v2/staff/{username}/face-id/capture-photo')
+    async def upload_capture(username: str, request: Request, ident: identity_type = Depends(current_identity)):
+        from vera_facegate_photo import MAX_CAPTURE_BYTES
+        if_match, if_none_match = request.headers.get('if-match'), request.headers.get('if-none-match')
+        if not ((bool(if_match) and if_none_match is None) or (if_match is None and if_none_match == '*')):
+            raise HTTPException(400, 'Cần kiểm tra ảnh hiện có trước khi lưu ảnh Capture.')
+        content = bytearray()
+        async for chunk in request.stream():
+            content.extend(chunk)
+            if len(content) > MAX_CAPTURE_BYTES:
+                raise HTTPException(413, 'Ảnh Capture vượt giới hạn 4 MB.')
+        return await run_in_threadpool(save_capture, username, ident, bytes(content),
+            request.headers.get('content-type', '').split(';', 1)[0].strip().lower(), if_match, if_none_match)
 
     @app.delete('/v2/staff/{username}/face-id/image')
     def delete(username: str, ident: identity_type = Depends(current_identity)):
