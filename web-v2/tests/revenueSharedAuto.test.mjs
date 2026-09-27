@@ -27,10 +27,16 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
   let source = initial, revision = 1, hold = false, pending = null, today = '2026-09-26', dataRevision = 1
   const calls = []
-  const names = ['window','document','navigator','ResizeObserver','requestAnimationFrame','cancelAnimationFrame','IS_REACT_ACT_ENVIRONMENT','fetch']
+  const names = ['window','document','navigator','ResizeObserver','requestAnimationFrame','cancelAnimationFrame','IS_REACT_ACT_ENVIRONMENT','fetch','Date']
   const descriptors = Object.fromEntries(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
   const response = result => ({ ok: true, json: async () => result })
+  const OriginalDate = globalThis.Date
+  class FixtureDate extends OriginalDate {
+    constructor(...args) { super(...(args.length ? args : [`${today}T12:00:00+07:00`])) }
+    static now() { return new OriginalDate(`${today}T12:00:00+07:00`).getTime() }
+  }
   const values = {
+    Date: FixtureDate,
     window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
     ResizeObserver: class { observe(){} disconnect(){} }, requestAnimationFrame: callback => setTimeout(callback, 0), cancelAnimationFrame: clearTimeout,
     IS_REACT_ACT_ENVIRONMENT: true,
@@ -209,13 +215,13 @@ test('Auto uses the displayed end date for every total and keeps it through refr
   } finally {await f.close()}
 })
 
-test('Auto opens the saved TIP end date as its report end date',async()=>{
-  const f=await fixture('admin','auto',false,1,'2026-09-24')
+for (const version of [false, 1, 2]) test(`Auto opens today instead of a saved old TIP end date (version ${version})`,async()=>{
+  const f=await fixture('admin','auto',false,1,'2026-09-24',version)
   try {
-    assert.equal(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]').value,'24-09-2026')
-    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'24-09-2026')
-    assert.match(f.doc.querySelector('.revenue-card.income').textContent,/1\.000đ/)
-    assert.equal(new URL(f.calls.filter(c=>c.path.endsWith('/summary')).at(-1).url).searchParams.get('end'),'2026-09-24')
+    assert.equal(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]').value,'26-09-2026')
+    assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'26-09-2026')
+    assert.match(f.doc.querySelector('.revenue-card.income').textContent,/1\.760đ/)
+    assert.equal(new URL(f.calls.filter(c=>c.path.endsWith(version ? '/period-report' : '/summary')).at(-1).url).searchParams.get('end'),'2026-09-26')
     assert.equal(f.calls.some(c=>c.method!=='GET'),false)
   } finally {await f.close()}
 })
@@ -266,7 +272,7 @@ test('late report cannot overwrite a newer selected date or mix the TIP field an
   const f=await fixture('admin','auto',false,1,'2026-09-24',true)
   try{
     f.holdNextReport()
-    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'26-09-2026')
+    await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'25-09-2026')
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,230))})
     // Simulate the next selection arriving while the transport ignores abort.
     await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'24-09-2026')
@@ -287,6 +293,8 @@ test('independent Auto accepts start-first single-day editing and hides old TIP 
     const start=f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]'), end=f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]')
     const tip=()=>f.doc.querySelector('[aria-label="Tiền TIP trong kỳ tự động"]').value
     const requests=()=>f.calls.filter(c=>c.path.endsWith('/period-report'))
+    await f.change(end,'24-09-2026')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,280))})
     await f.change(start,'25-09-2026')
     assert.equal(tip(),'—','do not show old period money beside a reversed period')
     await f.change(end,'25-09-2026')
@@ -363,7 +371,7 @@ for(const source of ['manual','auto','manual_tip_auto']) test(`${source}: all le
     const details=()=>f.calls.filter(c=>c.path.endsWith('/purchase-reconcile'))
     const query=()=>new URL(details().at(-1).url).searchParams
     const field=label=>[...f.doc.querySelectorAll('.detail-filter-panel label')].find(node=>node.firstChild?.textContent===label)?.querySelector('input[type="text"]')
-    if(source==='manual_tip_auto'){
+    if(source==='manual_tip_auto' || source==='auto'){
       await f.change(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]'),'21-09-2026')
       await act(async()=>{await new Promise(resolve=>setTimeout(resolve,320))})
     }
@@ -401,4 +409,22 @@ test('Manual default can show latest reporting day before this half-month withou
     assert.match(f.doc.querySelector('.revenue-grid').textContent,/1\.760/)
     assert.equal(f.calls.some(c=>c.method==='PUT'),false)
   } finally {await f.close()}
+})
+
+for (const historical of [false, true]) test(`Auto midnight refresh preserves explicit historical selection: ${historical}`, async()=>{
+  const f=await fixture('admin','auto',false,1,'2026-09-24',2)
+  try {
+    const end=f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]')
+    if (historical) await f.change(end,'24-09-2026')
+    await f.updateLedger([], '2026-09-27')
+    assert.equal(end.value, historical ? '24-09-2026' : '27-09-2026')
+    const report=f.calls.filter(c=>c.path.endsWith('/period-report')).at(-1)
+    assert.equal(new URL(report.url).searchParams.get('end'), historical ? '2026-09-24' : '2026-09-27')
+    assert.equal(f.calls.some(c=>c.method!=='GET'),false,'clock and refresh never save a period')
+    if (historical) {
+      await act(async()=>f.button('Dùng ngày này').click())
+      await f.updateLedger([], '2026-09-28')
+      assert.equal(end.value,'28-09-2026')
+    }
+  } finally { await f.close() }
 })

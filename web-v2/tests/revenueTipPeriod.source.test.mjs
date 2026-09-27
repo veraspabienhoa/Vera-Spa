@@ -9,5 +9,5 @@ test('Revenue page loads server-calculated TIP and defaults the period from curr
   assert.match(source, /defaultRevenueTipStart\(result\.current_date\)/)
   assert.match(source, /loadPeriodTip\(tipStart, tipEnd, controller.signal, !sharedSourceSupported\)/)
   assert.match(source, /value=\{datedReportReady \? money\(commonReport \? data\?\.period_tip : tip\) : '—'\} readOnly/)
-  assert.match(source, /setTipEndValid\(true\); setTipEnd\(data\?\.current_date \|\| ''\)/)
+  assert.ok(source.includes("setTipEndValid(true); setAutoEndFollowsToday(true); setTipEnd(autoMode ? today : data?.current_date || '')"))
 })

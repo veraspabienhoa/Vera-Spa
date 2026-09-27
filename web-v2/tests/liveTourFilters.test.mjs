@@ -129,3 +129,10 @@ test('total amount matches displayed revenue including zero and combines with ot
   assert.deepEqual(filterTourRows(source,{total_amount:0}).map(row=>row.id),['c'])
   assert.equal(filterTourRows(source,{total_amount:''}).length,3)
 })
+
+test('TIP money filter compares exact tip including zero independently from invoice total',()=>{
+ const rows=[{id:'a',tip:50000,total_amount:250000},{id:'b',tip:150000,total_amount:250000},{id:'c',tip:0,total_amount:50000}]
+ assert.deepEqual(filterTourRows(rows,{tip_amount:'50.000'}).map(row=>row.id),['a'])
+ assert.deepEqual(filterTourRows(rows,{tip_amount:0}).map(row=>row.id),['c'])
+ assert.equal(filterTourRows(rows,{tip_amount:''}).length,3)
+})

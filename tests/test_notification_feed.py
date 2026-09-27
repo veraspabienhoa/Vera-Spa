@@ -39,3 +39,21 @@ def test_combined_feed_reuses_one_connection_and_keeps_recipient_channel_filters
     assert response.json()['popup'][0]['id'] == 2
     assert len(calls) == 3
     assert 'recipients' not in response.json()
+
+
+def test_current_missing_checkins_reuse_feed_connection_and_limit_management_roles(monkeypatch):
+    import vera_missing_checkin_notifications as absence
+    calls = []
+    conn = object()
+    monkeypatch.setattr(absence,'viewer_missing_checkins',lambda connection,ident,now,include_expiry: calls.append((connection,ident.role,include_expiry)) or [{'employee':'worker'}])
+    config = {'settings':[{'key':'missing_checkin','enabled':True,'channel_enabled':{'popup':True}}]}
+    for role in ['admin','letan','quanly']:
+        assert settings._missing_checkin_rows(conn,Identity(role=role),config)==[{'employee':'worker'}]
+    assert calls==[(conn,role,True) for role in ['admin','letan','quanly']]
+    for role in ['nhanvien','leader','giamdoc','']:
+        assert settings._missing_checkin_rows(conn,Identity(role=role),config)==[]
+    config['settings'][0]['channel_enabled']['popup']=False
+    assert settings._missing_checkin_rows(conn,Identity(),config)==[]
+    config['settings'][0].update(enabled=False,channel_enabled={'popup':True})
+    assert settings._missing_checkin_rows(conn,Identity(),config)==[]
+    assert len(calls)==3

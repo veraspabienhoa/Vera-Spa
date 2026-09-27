@@ -9,7 +9,7 @@ import { customerMatches } from '../lib/customerSearch'
 import { customerTicketLabel } from '../lib/liveTourComboBooking'
 import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
-export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [], employees = [], showTotal = false }) {
+export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [], employees = [], showTotal = false, showTip = false }) {
   const options = useMemo(() => {
     const result = tourFilterOptions(rows)
     const merge = (key, labels) => {
@@ -33,12 +33,13 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
       <label><span>Từ ngày</span><VeraDateInput value={value.date_from} max={value.date_to || undefined} onChange={e => change({ date_from: e.target.value, preset: 'custom' })}/></label>
       <label><span>Đến ngày</span><VeraDateInput value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date_to: e.target.value, preset: 'custom' })}/></label>
     </UiToolbar>
-    <UiToolbar data-ui-key="u-f4dd81a665cc" className="live-tour-filters-row live-tour-filters-search">
+    <UiToolbar data-ui-key="u-f4dd81a665cc" className={`live-tour-filters-row live-tour-filters-search${showTotal || showTip ? ' live-tour-filters-five' : ''}`}>
       <LiveTourSearchSelect label="Số hóa đơn" placeholder="Nhập hoặc chọn số hóa đơn" options={options.bill_no} value={value.bill_no || ''} searchValue={value.bill_no || ''} onSearch={text => change({ bill_no: text })} onChange={text => change({ bill_no: text })} showAllOptions emptyLabel="Tất cả"/>
       <LiveTourSearchSelect label="Nhân viên" placeholder="Tìm tên nhân viên" options={options.employee} value={value.employee} searchValue={value.employee} onSearch={text => change({ employee: text })} onChange={text => change({ employee: text })} showAllOptions emptyLabel="Tất cả"/>
       <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={(option, query) => { const [name, phone] = option.label.split(' - '); return customerMatches({ name, phone }, query) }} options={options.customer} value={value.customer} searchValue={value.customer} onSearch={text => change({ customer: text })} onChange={text => change({ customer: text })} showAllOptions emptyLabel="Tất cả"/>
       <LiveTourSearchSelect label="Dịch vụ" placeholder="Tìm dịch vụ" options={options.service} value={value.service} searchValue={value.service} onSearch={text => change({ service: text })} onChange={text => change({ service: text })} showAllOptions emptyLabel="Tất cả"/>
       {showTotal && <label><span>Tổng tiền (đ)</span><VeraMoneyInput aria-label="Lọc tổng tiền" placeholder="Tất cả số tiền" value={value.total_amount ?? ''} onChange={event => change({ total_amount: event.target.value })}/></label>}
+      {showTip && <label><span>Số tiền TIP (đ)</span><VeraMoneyInput aria-label="Lọc số tiền TIP" placeholder="Tất cả số tiền" value={value.tip_amount ?? ''} onChange={event => change({ tip_amount: event.target.value })}/></label>}
     </UiToolbar>
     <UiToolbar data-ui-key="u-4f2eb3da8de7" className="live-tour-filters-actions">
       <button data-ui-key="u-a4601b56057f" data-ui-label-default="Hôm qua" type="button" className="secondary-button live-tour-filters-reset" onClick={() => onChange({ ...EMPTY_TOUR_FILTERS, preset: 'yesterday', ...tourDateRange('yesterday') })}><UiCustomText uiKey="u-a4601b56057f">Hôm qua</UiCustomText></button>

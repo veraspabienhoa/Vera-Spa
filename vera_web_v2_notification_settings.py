@@ -26,7 +26,7 @@ CATALOG = (
     ("long_leave_requests", "Đơn Phép năm / Làm đẹp / Nghỉ việc", "Báo ngay cho Admin khi nhân viên gửi một trong ba loại đơn.", "Admin", "Thông báo đẩy"),
     ("admin_daily_summary", "Báo cáo thay đổi hằng ngày", "Tổng hợp các thay đổi của hệ thống trong 24 giờ gửi cho Admin.", "Admin", "Thông báo đẩy"),
     ("auto_penalty", "Phạt tự động", "Thông báo khi hệ thống tự động ghi nhận một khoản phạt.", "Nhân viên, quản lý", "Thông báo đẩy"),
-    ("missing_checkin", "Thiếu chấm công FaceID", "Cảnh báo nhân viên có lịch làm nhưng chưa chấm công đúng hạn.", "Nhân viên, lễ tân, quản lý", "Thông báo đẩy"),
+    ("missing_checkin", "Thiếu chấm công FaceID", "Cảnh báo nhân viên có lịch làm nhưng chưa chấm công đúng hạn.", "Nhân viên, lễ tân, quản lý, admin", "Popup và thông báo đẩy"),
     ("attendance_break", "Nghỉ giữa ca", "Cảnh báo đến giờ nghỉ, sắp hết giờ hoặc quá giờ nghỉ giữa ca.", "Nhân viên, lễ tân, quản lý", "Trong ứng dụng, thông báo đẩy"),
     ("live_tour_queue", "Hàng đợi Live Tour", "Cảnh báo hàng đợi đồng bộ Live Tour lỗi, quá tải hoặc đã phục hồi.", "Admin", "Thông báo đẩy"),
     ("purchase_reconcile", "Đối chiếu mua hàng", "Cảnh báo khi số liệu mua hàng và Doanh thu-Chi phí không khớp.", "Admin, quản lý", "Thông báo đẩy"),
@@ -262,6 +262,19 @@ def _response(conn, admin=False):
     return response
 
 
+def _missing_checkin_rows(conn, ident, settings):
+    if str(getattr(ident, 'role', '')).strip().lower() not in {'admin', 'letan', 'quanly'}:
+        return []
+    config = next((item for item in settings.get('settings', []) if item['key'] == 'missing_checkin'), None)
+    if config is None or config.get('enabled') is False or config.get('channel_enabled', {}).get('popup') is False:
+        return []
+    from datetime import datetime, timedelta, timezone
+    from vera_missing_checkin_notifications import viewer_missing_checkins
+    now = datetime.now(timezone(timedelta(hours=7)))
+    # Reuse the feed transaction; no pool acquisition or device/network request.
+    return viewer_missing_checkins(conn, ident, now, include_expiry=True)
+
+
 def _inbox_rows(conn, ident):
     # Inbox items expire at midnight in the Vietnam business timezone.
     conn.execute(text("""DELETE FROM vera_notification_delivery
@@ -425,7 +438,8 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
         # Never include administrator recipient configuration in this feed.
         with engine_instance().begin() as conn:
             settings = _response(conn, admin=False)
-            return {**settings, 'inbox': _inbox_rows(conn, ident), 'popup': _popup_rows(conn, ident)}
+            return {**settings, 'inbox': _inbox_rows(conn, ident), 'popup': _popup_rows(conn, ident),
+                    'missing_checkins': _missing_checkin_rows(conn, ident, settings)}
 
     @app.get('/v2/notification-inbox')
     def inbox(ident: identity_type = Depends(current_identity)):

@@ -9,6 +9,8 @@ import UiCustomText from './UiCustomText'
 import LayoutDesigner from './LayoutDesigner'
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
+import MissingCheckinPopup from './MissingCheckinPopup'
+import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, History, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { veraApi } from '../lib/api'
@@ -178,7 +180,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
         }
         const result = await checkAttendanceBreakAlerts()
         if (stopped) return
-        const alerts = filterAdminDismissedAlerts(result.alerts || [], role)
+        const alerts = filterAdminDismissedAlerts(result.alerts || [], role).filter(item => !canSeeMissingCheckins(role) || item.kind !== 'missing-scheduled-checkin')
         setBreakAlerts(alerts)
         setClockMs(Date.now())
         await syncPersistentBreakNotifications(alerts)
@@ -493,7 +495,8 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       </main>
       <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>
       <BackToTop/>
-      {showPageNotifications && <PopupNotifications/>}
+      {showPageNotifications && <PopupNotifications user={user}/>}
+      <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>
     </div>
   )
 }

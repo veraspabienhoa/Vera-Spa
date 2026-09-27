@@ -6,7 +6,9 @@ def test_manual_and_hybrid_use_same_current_period_tip_and_shared_date_control()
 
     assert "if (result.source !== 'manual_tip_auto')" not in page
     assert "loadPeriodTip(tipStart, tipEnd, controller.signal, !sharedSourceSupported)" in page
-    assert "const todayIsoVietnam = () =>" in page
+    assert "vietnamToday as todayIsoVietnam" in page
+    clock = Path("web-v2/src/lib/useVietnamToday.js").read_text(encoding="utf-8")
+    assert "timeZone: 'Asia/Ho_Chi_Minh'" in clock
     assert "useState(todayIsoVietnam)" in page
     assert '<VeraDateInput aria-label="Ngày giao dịch"' in page
     assert '<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP"' in page

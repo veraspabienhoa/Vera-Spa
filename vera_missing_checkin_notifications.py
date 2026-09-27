@@ -1,6 +1,6 @@
 """Web Push alerts for scheduled employees missing FaceID after 15 minutes."""
 from __future__ import annotations
-from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
+from vera_notification_delivery import route_event as route_notification
 
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
@@ -23,8 +23,6 @@ NAME_COLUMNS = ("employeeInfo.Name", "EmployeeName", "employeeName", "Name", "Fu
 EVENT_COLUMNS = (
     "MachineTimeStr", "MachineTimeCheckInStr", "CheckInTimeStr", "CheckInTime",
 )
-SHIFT_COLUMNS = ("WorkTimeName", "ShiftName", "Shift", "shift_code")
-SHIFT_START_COLUMNS = ("StartWorkTime", "WorkTimeStart", "ShiftStartTime", "start_time")
 
 
 def _norm(value: Any) -> str:
@@ -82,56 +80,47 @@ def _scheduled_rows(conn, work_day: date) -> list[dict[str, Any]]:
                lower(ws.department) AS department,ws.shift_code,
                COALESCE(NULLIF(ws.start_time,''),definition.start_time,'') AS start_time
         FROM vera_work_schedule ws
+        JOIN employees e ON lower(btrim(e.username))=lower(btrim(ws.employee_username))
         LEFT JOIN vera_work_shift_definition definition
           ON definition.department=ws.department AND lower(definition.shift_code)=lower(ws.shift_code)
         WHERE ws.work_date=:work_day
-          AND NULLIF(btrim(ws.shift_code),'') IS NOT NULL
-          AND lower(btrim(ws.shift_code)) NOT IN ('nghỉ','nghi')
+          AND COALESCE(e.payload->>'__deleted','false') <> 'true'
+          AND COALESCE(NULLIF(e.payload->>'Trạng thái làm việc',''),
+                       NULLIF(e.payload->>'employment_status',''),'Đang làm việc')='Đang làm việc'
         ORDER BY ws.department,ws.employee_name,ws.employee_username
     """), {"work_day": work_day}).mappings().all()]
 
 
-def _timesoft_scheduled_rows(
-    checkin_df: pd.DataFrame, employee_map: dict[str, str],
-) -> list[dict[str, Any]]:
-    """Read scheduled employees from TimeSoft summary rows, including KTV/Leader."""
-    schedules: dict[str, dict[str, Any]] = {}
-    if not isinstance(checkin_df, pd.DataFrame) or checkin_df.empty:
-        return []
-    for _, row in checkin_df.iterrows():
-        raw_name = str(_row_value(row, NAME_COLUMNS) or "").strip()
-        start_time = str(_row_value(row, SHIFT_START_COLUMNS) or "").strip()
-        if not raw_name or not start_time:
-            continue
-        username = str(employee_map.get(_norm(raw_name), "") or raw_name).strip()
-        key = _norm(username)
-        if not key:
-            continue
-        schedules.setdefault(key, {
-            "employee_username": username,
-            "employee_name": raw_name,
-            "department": "timesoft",
-            "shift_code": str(_row_value(row, SHIFT_COLUMNS) or "Ca làm việc").strip(),
-            "start_time": start_time,
-        })
-    return list(schedules.values())
+def _manual_shift_overrides(conn, work_day):
+    import vera_live_tour_resource_store as resources
+    if resources.enabled():
+        state, _, _ = resources.read(conn, collections={'employees'})
+        workers = state.get('employees', [])
+    else:
+        workers = conn.execute(text("""SELECT value_json->'employees' FROM vera_app_setting
+            WHERE category='live_tour' AND setting_key='state'""")).scalar_one_or_none() or []
+    return {_norm(row.get('username') or row.get('name')): row.get('manual_shift', row.get('shift', ''))
+            for row in workers if row.get('manual_shift_date') == work_day.isoformat()}
 
 
 def _staff_scheduled_rows(conn, work_day):
     """Include staff who have no TimeSoft row because they have not checked in."""
-    from vera_web_v2_live_tour_checkin import scheduled_shift
+    from vera_shift_assignment import scheduled_shift
     from vera_web_v2_live_tour_roster import shift_label, display_shift_label, eligible
     rows = conn.execute(text("""
         SELECT username, full_name, role, payload, work_shift, rotation_cycle, shift_start_date,
           (SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='shift_definitions') AS shift_definitions
         FROM employees WHERE lower(btrim(role)) IN ('leader','nhanvien')
     """), {}).mappings().all()
+    overrides = _manual_shift_overrides(conn, work_day)
     result = []
     for row in rows:
         if not eligible(row):
             continue
         definitions = row.get('shift_definitions') or []
-        shift = scheduled_shift(row, work_day)
+        shift = overrides.get(_norm(row['username']), scheduled_shift(row, work_day))
+        if not shift:
+            continue
         active = [item for item in definitions if isinstance(item, dict)
                   and _norm(item.get('Bộ phận') or 'Nhân viên + Leader') == 'nhan vien + leader'
                   and _norm(item.get('Trạng thái')) != 'da xoa'
@@ -145,12 +134,16 @@ def _staff_scheduled_rows(conn, work_day):
     return result
 
 
-def viewer_missing_checkins(conn, ident, now):
+def viewer_missing_checkins(conn, ident, now, *, include_expiry=False):
     rows = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
                         {'category': CATEGORY, 'key': f'current_alerts:{now.date().isoformat()}'}).mappings().all()
     data = (rows[0].get('value_json') or {}) if rows else {}
+    if not isinstance(data, dict):
+        return []
     try:
         checked = datetime.fromisoformat(data.get('checked_at', ''))
+        if checked.tzinfo is not None:
+            checked = checked.astimezone(timezone(timedelta(hours=7))).replace(tzinfo=None)
         age = (now.replace(tzinfo=None) - checked).total_seconds()
     except (TypeError, ValueError):
         return []
@@ -158,7 +151,12 @@ def viewer_missing_checkins(conn, ident, now):
         return []
     role = str(getattr(ident, 'role', '')).lower()
     username = _norm(getattr(ident, 'employee_username', ''))
-    return [row for row in data.get('alerts', []) if role in {'admin', 'letan', 'quanly'} or username == _norm(row.get('employee'))]
+    alerts = [row for row in data.get('alerts', []) if isinstance(row, dict)
+              and (role in {'admin', 'letan', 'quanly'} or username == _norm(row.get('employee')))]
+    if include_expiry:
+        expires = min(checked + timedelta(seconds=600), datetime.combine(now.date() + timedelta(days=1), time.min))
+        return [{**row, 'expires_at': expires.replace(tzinfo=timezone(timedelta(hours=7))).isoformat()} for row in alerts]
+    return alerts
 
 
 def _merge_schedules(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -291,25 +289,29 @@ def notify_missing_scheduled_checkins(
                 return result
     except Exception:
         pass
-    if not isinstance(checkin_df, pd.DataFrame) or checkin_df.empty:
-        return result
     current = now or datetime.now(timezone(timedelta(hours=7)))
     if current.tzinfo is not None:
         current = current.astimezone(timezone(timedelta(hours=7)))
     current = current.replace(tzinfo=None)
+    if current.date() != work_day:
+        return result
+    if not isinstance(checkin_df, pd.DataFrame) or checkin_df.empty:
+        with engine.begin() as conn:
+            _mark_delivery_state(conn, f'current_alerts:{work_day.isoformat()}',
+                {'work_date': work_day.isoformat(), 'checked_at': current.isoformat(), 'alerts': []}, set())
+        return result
     checked = _faceid_employees(checkin_df, employee_map)
-    timesoft_schedules = _timesoft_scheduled_rows(checkin_df, employee_map)
     with engine.connect() as conn:
         database_schedules = _scheduled_rows(conn, work_day)
         staff_schedules = _staff_scheduled_rows(conn, work_day)
-    schedules = _merge_schedules(staff_schedules, timesoft_schedules, database_schedules)
+    schedules = _merge_schedules(staff_schedules, database_schedules)
     visible_alerts = []
     result["scheduled"] = len(schedules)
     for schedule in schedules:
         username = str(schedule.get("employee_username") or "").strip()
         employee_name = str(schedule.get("employee_name") or username).strip()
         department = str(schedule.get("department") or "").strip().lower()
-        if not username:
+        if not username or _norm(schedule.get('shift_code')) in {'', 'nghi'}:
             result["skipped"] += 1
             continue
         start = _clock(work_day, schedule.get("start_time"))
@@ -331,9 +333,6 @@ def notify_missing_scheduled_checkins(
             ):
                 result["skipped"] += 1
                 continue
-            subscriptions = _audience_subscriptions(conn, username, employee_name)
-            private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
-            subject = _vault_secret(conn, "vera_v2_vapid_subject") or APP_URL
         result["eligible"] += 1
         pending_audiences = REQUIRED_AUDIENCES - sent_audiences
         late_minutes = max(THRESHOLD_MINUTES + 1, int((current - start).total_seconds() // 60))
@@ -343,6 +342,9 @@ def notify_missing_scheduled_checkins(
             "url": APP_URL, "tag": f"vera-missing-checkin-{work_day.isoformat()}-{key}",
             "employee": username, "department": department, "deadline": deadline.isoformat(),
         }
+        # Current absence is independent of push routing and transport success.
+        visible_alerts.append({**payload, 'key': key, 'audience': 'staff', 'level': 'overdue',
+            'deadline_iso': deadline.isoformat(), 'date': work_day.strftime('%d-%m-%Y')})
         try:
             routed = route_notification(engine, 'missing_checkin', payload)
         except Exception:
@@ -351,10 +353,16 @@ def notify_missing_scheduled_checkins(
         if routed:
             result['notified'] += 1
             continue
-        visible_alerts.append({**payload, 'key': key, 'audience': 'staff', 'level': 'overdue',
-            'deadline_iso': deadline.isoformat(), 'date': work_day.strftime('%d/%m/%Y')})
         if not pending_audiences:
             result['skipped'] += 1
+            continue
+        try:
+            with engine.connect() as conn:
+                subscriptions = _audience_subscriptions(conn, username, employee_name)
+                private_key = _vault_secret(conn, "vera_v2_vapid_private_key")
+                subject = _vault_secret(conn, "vera_v2_vapid_subject") or APP_URL
+        except Exception:
+            result['failed'] += len(pending_audiences)
             continue
         if not private_key:
             result['failed'] += len(pending_audiences)

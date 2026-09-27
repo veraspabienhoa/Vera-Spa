@@ -303,3 +303,17 @@ def test_revenue_export_total_filter_matches_visible_amount(monkeypatch, kind):
         assert len(data)==expected
         assert all(row[values[0].index('Tổng tiền')]==amount for row in data)
     assert client.get('/v2/live-tour/export.xlsx',params={'total_amount':-1}).status_code==422
+
+
+def test_tip_export_money_filter_matches_visible_rows_and_validates_amount(monkeypatch):
+    state, _ = paid_state()
+    client, _ = scoped_client(monkeypatch,state,ALL)
+    for amount, expected in [(20, 1), (21, 0), (0, 0)]:
+        response = client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':amount})
+        assert response.status_code == 200, response.text
+        values = list(load_workbook(BytesIO(response.content)).active.values)
+        rows = [row for row in values if isinstance(row[0], int)]
+        assert len(rows) == expected
+        assert all(row[2] == amount for row in rows)
+    assert client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':-1}).status_code == 422
+    assert client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':'invalid'}).status_code == 422
