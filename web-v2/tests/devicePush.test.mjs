@@ -162,3 +162,14 @@ test('Menu switch enables and disables this device and follows shared state', as
     assert.equal(button.getAttribute('aria-checked'),'true')
   } finally { dom.window.close() }
 })
+
+test('opening signed out clears an earlier device owner even in a fresh page', async t => {
+  const { w, calls, cache } = await device(t)
+  await w.push.enablePushNotifications()
+  w.eval(code)
+  await w.push.setPushAccount('')
+  assert.equal(cache.get('/__vera_push_device__').enabled, false)
+  assert.equal(cache.get('/__vera_push_device__').owner, '')
+  assert.equal(calls.removed, 1)
+  assert.equal((await w.push.readPushState()).subscribed, false)
+})

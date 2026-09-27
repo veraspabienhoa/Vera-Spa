@@ -420,10 +420,11 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
             raise HTTPException(400,'Loại sự kiện trình duyệt không hợp lệ.')
         if notification_key == 'birthday' and str(ident.role).lower() not in {'admin','quanly','letan'}:
             raise HTTPException(403, 'Bạn không được nhận thông báo sinh nhật nhân viên.')
-        from datetime import datetime, timezone
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
         from vera_notification_delivery import enqueue
         label=next(row[1] for row in CATALOG if row[0]==notification_key)
-        now=datetime.now(timezone.utc)
+        now=datetime.now(ZoneInfo('Asia/Ho_Chi_Minh'))
         bucket=now.strftime('%Y%m%d') if notification_key in {'birthday','profile_completion'} else now.strftime('%Y%m%d%H%M')
         event=f"local:{notification_key}:{ident.auth_user_id}:{bucket}"
         with engine_instance().begin() as conn:

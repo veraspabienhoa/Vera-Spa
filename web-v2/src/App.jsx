@@ -167,6 +167,7 @@ export default function App() {
   // is recreated/re-registered without another prompt and remains usable for
   // lock-screen push while the app is not in the foreground.
   useEffect(() => {
+    if (loading) return undefined
     if (!session?.access_token || !profile?.employee_username || profile?.must_change_password) {
       void setPushAccount('')
       return undefined
@@ -192,7 +193,7 @@ export default function App() {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [profile?.employee_username, profile?.must_change_password, session?.access_token, session?.user?.id])
+  }, [loading, profile?.employee_username, profile?.must_change_password, session?.access_token, session?.user?.id])
 
   if (loading) return <div className="boot-screen">Đang mở VERA SPA…</div>
   const user = session?.user

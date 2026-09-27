@@ -46,7 +46,7 @@ const PREFERENCE = 'vera:device-push:preference'
 const OWNER = 'vera:device-push:owner'
 const CONTROL_CACHE = 'vera-push-device-v1'
 const CONTROL_PATH = '/__vera_push_device__'
-let account = '', generation = 0, queue = Promise.resolve(), controlQueue = Promise.resolve(), syncing = null
+let account = null, generation = 0, queue = Promise.resolve(), controlQueue = Promise.resolve(), syncing = null
 const readLocal = key => { try { return localStorage.getItem(key) } catch { return null } }
 const saveLocal = (key, value) => { localStorage.setItem(key, value) }
 export const devicePushEnabled = () => readLocal(PREFERENCE) !== 'off'

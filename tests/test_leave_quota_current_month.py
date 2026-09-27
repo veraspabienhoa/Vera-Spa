@@ -83,11 +83,11 @@ def test_queued_push_rechecks_period_before_contacting_device(database, monkeypa
             sql = str(sql)
             if 'WITH pending AS' in sql:
                 return Result([{'id': 1, 'rule_key': 'quota', 'recipient': 'test', 'payload': payload}])
-            if 'SELECT 1 FROM vera_notification_route' in sql:
+            if sql.lstrip().startswith('SELECT 1 FROM vera_notification_delivery'):
                 assert "Asia/Ho_Chi_Minh" in sql and "quota_month" in sql
                 with database.begin() as conn:
                     allowed = conn.execute(text('SELECT '+periods.current_quota_sql(':source', 'CAST(:payload AS jsonb)')),
-                        {'source': 'leave_quota_exceeded', 'payload': params['payload']}).scalar_one()
+                        {'source': 'leave_quota_exceeded', 'payload': json.dumps(payload)}).scalar_one()
                 checked.append(allowed)
                 return Result(scalar=1 if allowed else None)
             if 'UPDATE vera_notification_delivery SET claimed_at=NULL' in sql:

@@ -280,6 +280,7 @@ def test_removed_group_membership_is_rechecked_before_network_send(monkeypatch):
             return Result()
     delivery.dispatch_pending(Engine(),lambda *_:pytest.fail('Removed recipient must not receive a push'),lambda *_:None)
     grant=[(q,p) for q,p in queries if 'SELECT 1 FROM vera_notification_route' in q][0]
-    assert grant[1]['watched_date']=='2026-09-23'
+    assert grant[1]=={'id':1,'recipient':'former'}
+    assert "w.watched_date::text=d.payload->>'watched_date'" in grant[0]
     assert 'p.is_active' in grant[0] and "'group:' || p.role" in grant[0]
     assert [p for q,p in queries if 'last_error=:error' in q][0]['complete'] is True

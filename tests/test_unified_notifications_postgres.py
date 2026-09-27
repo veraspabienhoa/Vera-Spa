@@ -15,7 +15,7 @@ from test_notification_schema_locking import database
 
 @pytest.fixture
 def notices(database):
-    accounts = {role: str(uuid4()) for role in ('admin', 'quanly', 'letan', 'nhanvien', 'leader')}
+    accounts = {role: str(uuid4()) for role in ('admin', 'quanly', 'letan', 'nhanvien', 'leader', 'giamdoc')}
     with database.begin() as conn:
         conn.execute(text('''CREATE TABLE vera_v2_user_profile (
             auth_user_id uuid PRIMARY KEY, employee_username text, role text, is_active bool);
@@ -155,5 +155,33 @@ def test_break_control_suppresses_queued_alert_but_delivers_clear(database, noti
         category, key, value = ('attendance_break_alert_control','global',{'disabled': True}) if control == 'paused' else ('attendance_break_alert','break-event',{'globally_deleted_at': '2026-09-27'})
         conn.execute(text('INSERT INTO vera_app_setting VALUES(:category,:key,CAST(:value AS jsonb))'), {'category':category,'key':key,'value':json.dumps(value)})
     identity[0] = Identity(role='nhanvien', auth_user_id=accounts['nhanvien'])
+    assert client.get('/v2/notification-inbox').json()['notifications'] == []
+    assert dispatch(database) == []
+
+
+def test_all_roles_receive_only_their_own_profile_notice(database, notices):
+    accounts, identity, client = notices
+    for role, account in accounts.items():
+        with database.begin() as conn:
+            delivery.enqueue(conn, 'profile_completion', {'title': 'Hồ sơ', 'tag': role}, default_accounts=[account])
+        subscribe(database, account)
+    for role, account in accounts.items():
+        identity[0] = Identity(role=role, auth_user_id=account)
+        rows = client.get('/v2/notification-inbox').json()['notifications']
+        assert len(rows) == 1 and rows[0]['payload']['tag'] == role
+    assert {item['recipient_id'] for item in dispatch(database)} == set(accounts.values())
+
+
+def test_watch_removal_and_old_quota_suppress_existing_native_rows(database, notices):
+    accounts, identity, client = notices
+    account = accounts['admin']
+    subscribe(database, account)
+    with database.begin() as conn:
+        conn.execute(text("INSERT INTO vera_v2_leave_watch VALUES(CAST(:id AS uuid), CURRENT_DATE)"), {'id':account})
+        day = conn.execute(text('SELECT CURRENT_DATE::text')).scalar_one()
+        delivery.enqueue(conn, 'leave_watch', {'title':'Lịch nghỉ','watched_date':day,'tag':'watched-day'})
+        delivery.enqueue(conn, 'leave_quota_exceeded', {'title':'Hạn mức','quota_month':delivery.current_month(),'tag':'quota'})
+        conn.execute(text('DELETE FROM vera_v2_leave_watch'))
+        conn.execute(text("UPDATE vera_notification_delivery SET payload=jsonb_set(payload,'{quota_month}','\"2000-01\"') WHERE rule_key='native:leave_quota_exceeded'"))
     assert client.get('/v2/notification-inbox').json()['notifications'] == []
     assert dispatch(database) == []
