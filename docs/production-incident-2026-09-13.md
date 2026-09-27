@@ -1,5 +1,31 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: giữ thứ tự nhóm quay lại sau nghỉ không phép
+
+Mã cũ chỉ tách người đang nghỉ xuống dưới; khi quay lại, giờ tua cũ đưa họ về
+thứ tự trước nghỉ. Projection nay ghi nhận nghỉ không phép nguyên ngày từ
+leave_records, cùng ngày nghỉ, ID nguồn và thứ tự Người Thứ N. Chỉ áp dụng khi
+đã sang ngày nghỉ kế tiếp và có Ca 1/Ca 2 từ check-in hoặc Admin gán ca trong
+ngày. Nghỉ có phép, đi trễ/về sớm, chưa check-in và tên trùng không bị suy diễn.
+
+Nhóm quay lại xuống cuối phần Đi làm, giữ thứ tự Người Thứ N kể cả check-in
+ngược thứ tự qua nhiều tick. Những người trong nhóm chưa nhận lượt thường giữ
+thứ tự tương đối khi thành viên còn lại quay lại sau. Lượt thường kế tiếp giải
+phóng vị trí tạm; lượt YC không giải phóng. Snapshot đổi nhân viên/hủy Thực hiện
+giữ vị trí này; Admin vẫn có quyền sắp xếp thủ công. Không sửa giờ bắt đầu dịch
+vụ, bộ đếm, hóa đơn hoặc dữ liệu phạt để mô phỏng việc xuống cuối.
+
+Lưu dấu đã xử lý trong employee payload, dùng khóa độc quyền projection hiện
+hữu. Chỉ khi còn người chờ quay lại mới đọc lại các ID bản ghi nghỉ trong một
+truy vấn trên connection hiện tại để loại trường hợp đã sửa/xóa; không N+1,
+không thêm poller hoặc mở pool lồng nhau. Ghi nhận từ ngày nghỉ được projection
+quan sát; không quét toàn lịch sử để phạt lại người đã đi làm trước nâng cấp.
+
+Cục bộ 289 kiểm thử đạt, gồm ngày hôm sau/ngày mốt, thứ tự thủ công/tự động,
+quay lại ngược thứ tự, correction và tương tác đổi nhân viên. Hai ca PostgreSQL
+kiểm tra nguồn thật, ghi/lưu/replay và một query theo ID là gate CI. Chưa deploy
+VPS hoặc xác minh lịch nghỉ/check-in thực tế; người dùng deploy thủ công.
+
 ## 27-09-2026: booking chung combo và thu gọn thao tác đổi nhân viên
 
 Rà soát mã xác nhận form booking nhiều khách theo phòng chỉ gửi dịch vụ và
