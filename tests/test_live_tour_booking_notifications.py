@@ -1,7 +1,9 @@
 """Real booking commits and the shared outbox: recipient, cost and failure isolation."""
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from pydantic import BaseModel
 from sqlalchemy import event, text
 
 import vera_live_tour_resource_store as store
@@ -11,8 +13,31 @@ from vera_live_tour_cutover import run as cutover
 from test_notification_schema_locking import database
 from test_unified_notifications_postgres import notices, subscribe, dispatch
 from test_notification_routing import Identity
-from test_live_tour_backend import employee, state_with
-from test_live_tour_day_rollover_postgres import booking_api
+from test_live_tour_backend import NOW, employee, state_with
+
+
+@pytest.fixture
+def booking_api(database, booking_state, monkeypatch):
+    clock = [NOW.replace(hour=11,minute=10,second=0)]
+    class Operator(BaseModel):
+        employee_username: str = 'admin'
+        full_name: str = 'Test operator'
+        role: str = 'admin'
+    class Clock(live.datetime):
+        @classmethod
+        def now(cls,tz=None):
+            return clock[0].astimezone(tz) if tz else clock[0].replace(tzinfo=None)
+    monkeypatch.setattr(live,'datetime',Clock)
+    app=FastAPI()
+    live.install_live_tour_routes(app,engine_instance=lambda:database,
+        current_identity=lambda:Operator(),require_feature=lambda *args:None,
+        feature_allowed=lambda *args:True,identity_type=Operator)
+    # Measure the real HTTP transaction without unrelated projection scheduler
+    # threads checking out connections. Dispatch is exercised explicitly below;
+    # existing lifespan/queue tests cover the background scheduler independently.
+    client=TestClient(app)
+    try:yield client,clock
+    finally:client.close()
 
 
 @pytest.fixture
@@ -26,9 +51,9 @@ def booking_state(database, notices, monkeypatch):
     service.update(name='90 PR Tiêu chuẩn',duration=90,price=350000)
     with database.begin() as conn:
         conn.execute(text('''ALTER TABLE vera_app_setting ADD PRIMARY KEY(category,setting_key);
-            ALTER TABLE vera_app_setting ADD COLUMN revision bigint, ADD COLUMN updated_at timestamptz;
+            ALTER TABLE vera_app_setting ADD COLUMN revision bigint, ADD COLUMN updated_at timestamptz, ADD COLUMN source text, ADD COLUMN updated_by text;
             CREATE TABLE employees(username text,full_name text,bank_name text,bank_account text);'''))
-        conn.execute(text("INSERT INTO vera_app_setting VALUES('live_tour','state',CAST(:state AS jsonb),7,NOW())"), {'state':relational._json(state)})
+        conn.execute(text("INSERT INTO vera_app_setting(category,setting_key,value_json,revision,updated_at) VALUES('live_tour','state',CAST(:state AS jsonb),7,NOW())"), {'state':relational._json(state)})
         for role, name in [('nhanvien','Minh Anh'),('leader','Bình')]:
             conn.execute(text('UPDATE vera_v2_user_profile SET employee_username=:name WHERE auth_user_id=CAST(:id AS uuid)'), {'name':name,'id':accounts[role]})
         assert cutover(conn)['ok']
@@ -48,6 +73,9 @@ def stored(database):
 
 @pytest.mark.parametrize('mode',['active','off'])
 def test_booking_commits_exact_employee_notice_once_without_sending_in_transaction(database, booking_state, booking_api, notices, monkeypatch, mode):
+    if mode=='off':
+        with database.begin() as conn:
+            assert cutover(conn,rollback=True)['ok']
     monkeypatch.setenv('VERA_LIVE_TOUR_RELATIONAL_MODE',mode)
     client, _ = booking_api
     statements, connections = [], []
@@ -88,7 +116,7 @@ def test_booking_commits_exact_employee_notice_once_without_sending_in_transacti
 
 def test_batch_booking_is_one_insert_and_each_employee_gets_own_details(database, booking_state, booking_api):
     client, _=booking_api
-    second={**booking()['payload'],'employee_id':'e2','room':'3.1','request':''}
+    second={**booking()['payload'],'employee_id':'e2','room':'20.1','request':''}
     request=booking(action='multi_booking',payload={'bookings':[booking()['payload'],second]})
     inserts=[]
     def capture(conn,cursor,statement,*args):
@@ -168,7 +196,7 @@ def test_admin_toggle_controls_new_bookings_and_cannot_broadcast_them(database, 
     assert blocked.status_code==400
     changed=settings.put('/v2/notification-settings/live_tour_booking',json={'enabled':True,'revision':revision})
     assert changed.status_code==200,changed.text
-    response=client.post('/v2/live-tour/action',json=booking(revision=8,idempotency_key='second-booking-notice',payload={**booking()['payload'],'employee_id':'e2','room':'3.1'}))
+    response=client.post('/v2/live-tour/action',json=booking(revision=8,idempotency_key='second-booking-notice',payload={**booking()['payload'],'employee_id':'e2','room':'20.1'}))
     assert response.status_code==200,response.text
     assert {row['recipient'] for row in stored(database)}=={accounts['leader']}
     identity[0]=Identity(role='nhanvien',auth_user_id=accounts['nhanvien'])

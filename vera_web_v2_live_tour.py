@@ -5160,9 +5160,6 @@ def install_live_tour_routes(
             working["updated_at"] = _iso(now)
             working["business_date"] = _business_date(now).isoformat()
             _audit(working, "board_excel_import", {"imported": imported}, actor, now)
-            if action in {'booking', 'multi_booking'}:
-                from vera_live_tour_booking_notifications import enqueue_bookings
-                enqueue_bookings(conn, action, result, idempotency_key)
             next_revision = _write_state_compat(
                 conn, working, revision, actor, previous_state=state,
             )
