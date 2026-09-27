@@ -43,6 +43,20 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             assert len(queries)==4 and all(sql.lstrip().startswith('SELECT') for sql in queries)
             assert read('letan')==rows and read('quanly')==rows
             assert read('nhanvien')==[]
+            # Audience policy uses the current account role, not schedule labels.
+            for role in ('leader','letan','locker','tapvu','quanly','giamdoc'):
+                conn.execute(text("INSERT INTO employees VALUES (:name,:name,:role,'{}','Ca 1','','2026-08-17')"),
+                             {'name':f'Test {role}','role':role})
+                conn.execute(text("INSERT INTO vera_work_schedule VALUES (:name,:name,'nhanvien','Ca 1','10:00','2026-09-27')"),
+                             {'name':f'Test {role}'})
+            assert {r['employee'] for r in read('letan')} == {'Test Employee','Test leader','Test letan'}
+            expected = {'Test Employee','Test leader','Test letan','Test locker','Test tapvu'}
+            assert {r['employee'] for r in read('admin')} == expected
+            assert {r['employee'] for r in read('quanly')} == expected
+            conn.execute(text("UPDATE employees SET role='quanly' WHERE username='Test letan'"))
+            assert 'Test letan' not in {r['employee'] for r in read('letan')}
+            conn.execute(text("DELETE FROM vera_work_schedule"))
+            conn.execute(text("DELETE FROM employees WHERE username <> 'Test Employee'"))
             assert read(clock=now+timedelta(minutes=11))==[]
             assert read(clock=now-timedelta(seconds=1))==[]
             assert read(clock=now+timedelta(days=1))==[]
