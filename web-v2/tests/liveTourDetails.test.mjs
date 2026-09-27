@@ -36,3 +36,32 @@ test('loads only active panel, discards superseded requests and retains displaye
   assert.equal(requests.length,3)
  }finally{await act(async()=>root.unmount());dom.window.close();delete globalThis.__detailsApi}
 })
+
+test('selected room customers refresh together with two requests regardless of row count', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://test.invalid' })
+  for (const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true})) Object.defineProperty(globalThis,key,{value,configurable:true})
+  const calls = []
+  globalThis.__detailsApi = { liveTourCollection: (panel, query, options) => new Promise(resolve => calls.push({panel,query,options,resolve})) }
+  const module = { exports: {} }; new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports)
+  let latest
+  function Screen(props) { latest = module.exports.default(props); return null }
+  const { createRoot } = await import('react-dom/client'); const root = createRoot(document.querySelector('#root'))
+  const props = {board:{revision:1,state:{},customers:[]},panel:'catalog',filters:{},lookupOpen:true,lookupSearch:'Another customer',
+    selectedCustomerIds: ['c1','c2','c1','c3']}
+  const render = async value => { await act(() => root.render(React.createElement(Screen,value))); await act(async () => new Promise(resolve => setTimeout(resolve,210))) }
+  const response = (ids, remaining) => ({data:{customers:ids.map(id => ({id,combo_purchases:[{id:'p-'+id,booking_remaining:remaining}]}))}})
+  try {
+    await render(props)
+    assert.equal(calls.length,2)
+    assert.equal(calls[1].query.customer_ids,'c1,c2,c3')
+    await act(async () => { calls[0].resolve(response(['c9'],1)); calls[1].resolve(response(['c1','c2','c3'],2)) })
+    assert.deepEqual(latest.data.customers.map(row => row.id),['c9','c1','c2','c3'])
+    await render({...props,board:{...props.board,revision:2}})
+    assert.equal(calls.length,4)
+    assert.deepEqual(latest.data.customers,[], 'Do not book against stale reservations while the new revision loads')
+    await act(async () => { calls[2].resolve(response(['c9'],1)); calls[3].resolve(response(['c1','c2','c3'],0)) })
+    assert.equal(latest.data.customers.find(row=>row.id==='c1').combo_purchases[0].booking_remaining,0)
+    await render({...props,lookupOpen:false})
+    assert.equal(calls.length,4)
+  } finally { await act(()=>root.unmount());dom.window.close();delete globalThis.__detailsApi }
+})

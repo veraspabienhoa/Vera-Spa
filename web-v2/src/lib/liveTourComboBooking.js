@@ -19,7 +19,7 @@ export function availableBookingPurchase(purchase, ownEntries = []) {
 
 export function customerTicketLabel(customer) {
   const purchases = customerPurchases(customer)
-  return purchases.length ? `Còn ${purchases.reduce((sum, row) => sum + Number(row.remaining || 0), 0)} vé combo` : ''
+  return purchases.length ? `Có thể đặt ${purchases.reduce((sum, row) => sum + availableBookingPurchase(row).remaining, 0)} vé combo` : ''
 }
 
 export function comboBookingItems(purchase, services, day = vietnamDate()) {
@@ -51,4 +51,30 @@ export function comboBookingError(purchase, items, services, day = vietnamDate()
     units += item.quantity * (part ? 1 : Number(service.ticket_units ?? 1))
   }
   return items.length && (units <= 0 || units > purchase.remaining) ? `Combo chỉ còn ${purchase.remaining} vé có thể đặt lịch, không đủ dùng ${units} vé.` : ''
+}
+
+// Sum every guest using the same owner's purchase before submitting the room.
+// The server repeats this check under its customer lock when reserving tickets.
+export function multiBookingCombos(rows, customers, services, day = vietnamDate()) {
+  const grouped = new Map()
+  for (const row of rows) {
+    if (!row.combo_purchase_id) continue
+    const key = JSON.stringify([row.customer_id, row.combo_purchase_id])
+    const group = grouped.get(key) || { customer_id: row.customer_id, purchase_id: row.combo_purchase_id, items: new Map() }
+    if (row.service_id) group.items.set(row.service_id, (group.items.get(row.service_id) || 0) + 1)
+    grouped.set(key, group)
+  }
+  return [...grouped.values()].map(group => {
+    const customer = customers.find(row => row.id === group.customer_id)
+    const owned = customerPurchases(customer).find(row => row.id === group.purchase_id)
+    if (!owned) return { ...group, error: 'Đang thiếu dữ liệu combo đã chọn. Hãy chờ tải xong hoặc chọn lại khách hàng.' }
+    const purchase = availableBookingPurchase(owned)
+    const items = [...group.items].map(([service_id, quantity]) => ({ service_id, quantity }))
+    const units = items.reduce((sum, item) => sum + (purchase.component_balances
+      ? (purchase.component_balances.some(part => part.service_id === item.service_id) ? item.quantity : 0)
+      : item.quantity * Number(services.find(service => service.id === item.service_id)?.ticket_units ?? 1)), 0)
+    return { customer_id: group.customer_id, purchase_id: group.purchase_id, customer_name: customer.name,
+      combo_name: purchase.combo_name, available: purchase.remaining, units,
+      remaining: Math.max(0, purchase.remaining - units), error: comboBookingError(purchase, items, services, day) }
+  })
 }

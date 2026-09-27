@@ -4695,6 +4695,7 @@ def install_live_tour_routes(
     def live_tour_collection(
         panel: str, page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=100),
         search: str = Query(default="", max_length=200), customer_id: str = "",
+        customer_ids: str = Query(default="", max_length=8000),
         date_from: str = "", date_to: str = "", employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
         ident: identity_type = Depends(current_identity),
     ):
@@ -4703,6 +4704,9 @@ def install_live_tour_routes(
         features = {"customers":"live_tour_customers_view", "pending":"live_tour_pending_view", "invoices":"live_tour_paid_invoice_view", "reports":"live_tour_reports_view", "history":"live_tour_history_view"}
         if panel not in groups:
             raise HTTPException(404, "Không có danh sách này.")
+        selected_customer_ids = {value.strip() for value in customer_ids.split(",") if value.strip()}
+        if len(selected_customer_ids) > 50 or any(len(value) > 160 for value in selected_customer_ids):
+            raise HTTPException(400, "Chỉ tải tối đa 50 khách hàng đã chọn mỗi lần.")
         bounds = _parse_export_bounds(date_from=date_from,date_to=date_to)
         bounds.update(employee=employee,customer=customer,service=service,bill_no=bill_no,calendar_date=True)
         now = datetime.now(timezone)
@@ -4740,6 +4744,7 @@ def install_live_tour_routes(
             values = state.get(key, []) if allowed.get(key, True) else []
             if key == "customers":
                 values = [row for row in values if not row.get("deleted_at") and (not customer_id or str(row.get("id")) == customer_id)
+                          and (not selected_customer_ids or str(row.get("id")) in selected_customer_ids)
                           and list_queries.customer_matches(row,search)]
             else:
                 values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,history=panel=="history",invoice_dates=panel in {"reports","invoices"})]

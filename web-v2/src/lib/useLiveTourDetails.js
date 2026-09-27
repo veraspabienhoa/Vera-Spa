@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 
-export default function useLiveTourDetails({ board, panel, filters, customerSearch, lookupOpen, lookupSearch, selectedCustomerId, enabled = true }) {
+export default function useLiveTourDetails({ board, panel, filters, customerSearch, lookupOpen, lookupSearch, selectedCustomerId, selectedCustomerIds = [], enabled = true }) {
   const [page, setPage] = useState(1)
   const [result, setResult] = useState(null)
   const [lookupState, setLookup] = useState({revision:null,rows:[]})
@@ -11,6 +11,7 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
   revisionRef.current = board.revision
   const refreshRef = useRef(null)
   const hasBoard = board.revision != null
+  const selectedIdsKey = [...new Set([selectedCustomerId, ...selectedCustomerIds].filter(Boolean))].sort().join(',')
   const queryKey = JSON.stringify(panel === 'customers' ? {search:customerSearch} : filters)
   useEffect(() => { setPage(1) }, [panel, queryKey])
   useEffect(() => {
@@ -47,12 +48,12 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
     let cancelled = false
     const controller = new AbortController()
     const timer = setTimeout(() => {
-      Promise.all([veraApi.liveTourCollection('customers', { search:lookupSearch, page_size:100 }, {signal:controller.signal}), ...(selectedCustomerId ? [veraApi.liveTourCollection('customers',{customer_id:selectedCustomerId}, {signal:controller.signal})] : [])]).then(values => {
+      Promise.all([veraApi.liveTourCollection('customers', { search:lookupSearch, page_size:100 }, {signal:controller.signal}), ...(selectedIdsKey ? [veraApi.liveTourCollection('customers',{customer_ids:selectedIdsKey,page_size:100}, {signal:controller.signal})] : [])]).then(values => {
         if (!cancelled) setLookup(old => ({revision:board.revision,rows:[...new Map([...(old.revision===board.revision ? old.rows : []),...values.flatMap(value=>value.data.customers)].map(row=>[row.id,row])).values()]}))
       }).catch(err => {if(!cancelled)setError(err.message)})
     },180)
     return () => {cancelled=true;clearTimeout(timer);controller.abort()}
-  }, [enabled, lookupOpen, lookupSearch, selectedCustomerId, board.revision])
+  }, [enabled, lookupOpen, lookupSearch, selectedIdsKey, board.revision])
   const lookup=useMemo(()=>lookupState.revision===board.revision ? lookupState.rows : [],[lookupState,board.revision])
   const value = result?.panel === panel && result.queryKey === queryKey && result.page === page ? result.value : null
   const data = useMemo(() => {

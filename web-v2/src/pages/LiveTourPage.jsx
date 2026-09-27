@@ -613,9 +613,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [customScope, setCustomScope] = useState('displayed')
   const [appearanceMobile, setAppearanceMobile] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 820px)').matches)
   const [lookupSearch, setLookupSearch] = useState('')
+  const [bookingCustomerIds, setBookingCustomerIds] = useState([])
   const details = useLiveTourDetails({board:boardData,panel:activePanel,filters:listFilters,customerSearch,enabled:!actionBusy,
     lookupOpen:Boolean(modal || bookingContext || comboLookupOpen || (pendingContext?.mode === 'edit' && !pendingContext.paid)) && boardData.capabilities?.customers_view === true,
     lookupSearch:comboLookupOpen ? comboLookupSearch : lookupSearch,
+    selectedCustomerIds: bookingContext ? bookingCustomerIds : [],
     selectedCustomerId:pendingContext ? (pendingContext.lookupCustomerId ?? pendingContext.item.customer_id ?? '') : form.customer_id || (boardData.state?.employees || []).find(row=>row.id===bookingContext?.employeeId)?.customer_id || ''})
   const data = details.data
   const requestEntriesRef = useRef(new Map())
@@ -1853,7 +1855,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </form>
     </LiveTourModal>}
 
-{bookingContext && <LiveTourBookingDialog onCustomerSearch={setLookupSearch} key={bookingContext.employeeId || bookingContext.roomGroup} data={data} context={bookingContext} canAdmin={canAdmin} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
+{bookingContext && <LiveTourBookingDialog onSelectedCustomersChange={setBookingCustomerIds} onCustomerSearch={setLookupSearch} key={bookingContext.employeeId || bookingContext.roomGroup} data={data} context={bookingContext} canAdmin={canAdmin} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
     {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} customers={data.customers || []} canChangeCustomer={canCustomers} onCustomerSearch={setLookupSearch} onCustomerSelect={id => setPendingContext(current => ({...current,lookupCustomerId:id}))} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {customerContext && <LiveTourCustomerDialog context={customerContext} comboCatalog={combos} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
     {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
