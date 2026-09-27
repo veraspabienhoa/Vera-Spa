@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { BellRing } from 'lucide-react'
+import { BellRing, X } from 'lucide-react'
 import { subscribeNotificationFeed } from '../lib/notificationFeed'
 import { createVisiblePoller } from '../lib/visiblePoller'
 import './MissingCheckinPopup.css'
@@ -48,10 +48,11 @@ export default function MissingCheckinPopup({ user }) {
     window.addEventListener('vera-notification-settings-changed', settingsChanged)
     return () => { unsubscribe(); clock.stop(); window.removeEventListener('storage', seenChanged); window.removeEventListener('vera-notification-settings-changed', settingsChanged) }
   }, [role, username, locked, storageKey, collapseKey])
-  const markSeen = row => {
-    dismissed.current = new Set([...savedKeys(storageKey), ...dismissed.current, keyOf(row)].slice(-200))
+  const dismissRows = rows => {
+    const keys = new Set(rows.map(keyOf))
+    dismissed.current = new Set([...savedKeys(storageKey), ...dismissed.current, ...keys].slice(-200))
     try { localStorage.setItem(storageKey, JSON.stringify([...dismissed.current])) } catch { /* Keep dismissal in memory if storage is unavailable. */ }
-    setAlerts(current => current.filter(item => keyOf(item) !== keyOf(row)))
+    setAlerts(current => current.filter(item => !keys.has(keyOf(item))))
   }
   const toggle = () => {
     const next = !collapsed
@@ -60,10 +61,10 @@ export default function MissingCheckinPopup({ user }) {
   }
   if (!username || locked || !canSeeMissingCheckins(role) || !alerts.length) return null
   return <section className="missing-checkin-popup" role="region" aria-label="Nhân viên chưa check-in" aria-live="polite">
-    <header><BellRing size={18}/><strong>Chưa có check-in · {alerts.length}</strong><button type="button" aria-expanded={!collapsed} aria-controls={contentId} onClick={toggle}>{collapsed ? 'Hiện thông báo' : 'Ẩn thông báo'}</button></header>
+    <header><BellRing size={18}/><strong>Chưa có check-in · {alerts.length}</strong><button type="button" aria-expanded={!collapsed} aria-controls={contentId} onClick={toggle}>{collapsed ? 'Hiện thông báo' : 'Ẩn thông báo'}</button><button type="button" className="missing-checkin-close" aria-label="Đóng popup chưa check-in" title="Đóng popup" onClick={() => dismissRows(alerts)}><X size={20} aria-hidden="true"/></button></header>
     <div id={contentId} hidden={collapsed}>
       <p>Có lịch làm, quá giờ vào ca 15 phút và chưa có lịch nghỉ.</p>
-      <ul>{alerts.map(row => <li key={keyOf(row)}><strong>{row.employee}</strong><span>{row.body}</span><button type="button" className="missing-checkin-seen" aria-label={`Đã xem thông báo của ${row.employee}`} onClick={() => markSeen(row)}>Đã xem</button></li>)}</ul>
+      <ul>{alerts.map(row => <li key={keyOf(row)}><strong>{row.employee}</strong><span>{row.body}</span><button type="button" className="missing-checkin-seen" aria-label={`Đã xem thông báo của ${row.employee}`} onClick={() => dismissRows([row])}>Đã xem</button></li>)}</ul>
     </div>
   </section>
 }
