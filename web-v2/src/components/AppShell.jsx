@@ -499,7 +499,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>
       <BackToTop/>
       {showPageNotifications && <PopupNotifications user={user}/>}
-      <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => onPageChange('live-tour')}/>
+      <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => choose('live-tour', true)}/>
       <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>
     </div>
   )

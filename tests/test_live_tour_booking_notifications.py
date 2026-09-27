@@ -196,7 +196,8 @@ def test_pending_booking_honors_current_admin_and_account_controls(database, boo
 @pytest.mark.parametrize('channel',['popup','push','in_app'])
 def test_booking_channel_switches_are_independent(database, booking_state, booking_api, notices, channel):
     accounts,identity,client=notices
-    changed=client.put(f'/v2/notification-settings/live_tour_booking/channels/{channel}',json={'enabled':False})
+    revision=client.get('/v2/notification-settings').json()['revision']
+    changed=client.put(f'/v2/notification-settings/live_tour_booking/channels/{channel}',json={'enabled':False,'revision':revision})
     assert changed.status_code==200,changed.text
     booking_client,_=booking_api
     assert booking_client.post('/v2/live-tour/action',json=booking()).status_code==200
@@ -211,7 +212,8 @@ def test_admin_can_hide_pending_popup_without_disabling_lock_screen(database, bo
     accounts,identity,client=notices
     booking_client,_=booking_api
     assert booking_client.post('/v2/live-tour/action',json=booking()).status_code==200
-    assert client.put('/v2/notification-settings/live_tour_booking/channels/popup',json={'enabled':False}).status_code==200
+    revision=client.get('/v2/notification-settings').json()['revision']
+    assert client.put('/v2/notification-settings/live_tour_booking/channels/popup',json={'enabled':False,'revision':revision}).status_code==200
     identity[0]=Identity(role='nhanvien',auth_user_id=accounts['nhanvien'])
     assert client.get('/v2/notification-popup').json()['notifications']==[]
     assert len(client.get('/v2/notification-inbox').json()['notifications'])==1

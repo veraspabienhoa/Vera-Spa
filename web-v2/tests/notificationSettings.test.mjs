@@ -74,6 +74,13 @@ test('Admin searches tasks, selects multiple recipients/channels and persists gl
   assert.doesNotMatch(bookingCard.textContent,/Người nhận \/ Kênh/)
   assert.match(bookingCard.textContent,/Popup trong ứng dụng/)
   assert.equal(bookingCard.querySelectorAll('.notification-channel-switches input').length,3)
+  const popupSwitch=bookingCard.querySelectorAll('.notification-channel-switches input')[1]
+  await act(async()=>popupSwitch.click())
+  assert.equal(popupSwitch.checked,false)
+  assert.equal(writes.at(-1).channel,'popup')
+  assert.equal(writes.at(-1).key,'live_tour_booking')
+  assert.equal(writes.at(-1).enabled,false)
+  assert.equal(bookingCard.querySelectorAll('.notification-channel-switches input')[2].checked,true)
   const bookingSwitch=bookingCard.querySelector('[role=switch]')
   await act(async()=>bookingSwitch.click())
   assert.equal(bookingSwitch.getAttribute('aria-checked'),'false')
