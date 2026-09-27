@@ -44,7 +44,10 @@ def test_change_in_last_ten_minutes_restores_order_and_moves_counter(seconds, re
     assert not source['room'] and not source['service'] and not source.get('combo_purchase_id')
     assert source['sort_index'] == original['sort_index']
     assert source['last_assignment_display'] == original['display']
-    assert live._board_starts(source) == live._board_starts(booking)
+    expected_starts = live._board_starts(booking)
+    if counter == 'tour_count':
+        expected_starts['board_started_at'] = original['board_started_at']
+    assert live._board_starts(source) == expected_starts
     assert live._employee_record(target, NOW)['TG bắt đầu thực hiện'] == '11/09/2026 09:00:00'
     assert live._remaining(target, NOW + timedelta(seconds=seconds))[1] == live._remaining(booking, NOW + timedelta(seconds=seconds))[1]
     assert state['audit'][-1]['action'] == 'change_employee'
