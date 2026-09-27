@@ -3,6 +3,8 @@ from copy import deepcopy
 from datetime import timedelta
 import json
 import math
+import os
+from pathlib import Path
 from time import perf_counter
 
 import pytest
@@ -13,7 +15,7 @@ from sqlalchemy import event
 
 import vera_live_tour_resource_store as store
 import vera_web_v2_live_tour as live
-from test_live_tour_backend import NOW, employee
+from test_live_tour_backend import NOW, employee, payable_employee
 from test_live_tour_resource_postgres import database
 
 
@@ -115,6 +117,41 @@ def test_other_metadata_still_requires_exclusive_configuration_lock(database):
     assert saved(database) == before
 
 
+@pytest.mark.parametrize('action', ['multi_booking', 'start', 'finish_to_pending', 'checkout'])
+def test_other_operational_actions_roll_day_without_changing_configuration(database, booking_api, action):
+    client, _ = booking_api
+    revision = seed(database)
+    payload = body(revision)['payload']
+    if action == 'multi_booking':
+        payload = {'bookings': [payload]}
+    else:
+        with database.begin() as conn:
+            store.lock(conn)
+            state, _, _ = store.read(conn)
+            changed = deepcopy(state)
+            changed['employees'][0] = payable_employee('e1', 'Test 1', room='20.1', service='90 PR VIP')
+            changed['employees'][0].update(duration=90, booked_at=live._iso(NOW.replace(hour=11)),
+                                            started_at=live._iso(NOW.replace(hour=11)))
+            if action != 'checkout':
+                changed['employees'][0]['status'] = 'Đang chờ' if action == 'start' else 'Đang thực hiện'
+                changed['employees'][0]['payment_status'] = ''
+            changed['customers'] = [{'id': 'c1', 'name': 'Khách c1', 'phone': '0901', 'combo_purchases': []}]
+            revision = store.write(conn, state, changed, 'fixture')
+        payload = {'employee_id': 'e1', 'payment_method': 'TIỀN MẶT'}
+    before = saved(database)[0]
+    request = {**body(revision, 'rollover-' + action), 'action': action, 'payload': payload,
+               'response_view': 'receipt' if action == 'checkout' else 'board'}
+    response = client.post('/v2/live-tour/action', json=request)
+    assert response.status_code == 200, response.text
+    assert client.post('/v2/live-tour/action', json=request).json()['duplicate'] is True
+    state, current, _ = saved(database)
+    assert current == revision + 1 and state['business_date'] == NOW.date().isoformat()
+    for key in ('payment_settings', 'appearance_settings', 'rooms', 'services', 'combos'):
+        assert state[key] == before[key]
+    if action == 'checkout':
+        assert len(state['invoices']) == 1 and state['invoices'][0]['total'] == 100
+
+
 def test_1000_counter_transition_is_not_bypassed(database, booking_api):
     client, _ = booking_api
     revision = seed(database)
@@ -208,16 +245,22 @@ def test_booking_work_measurement(database, booking_api):
             results.append({'history_per_collection': history, 'rollover': day_offset == -1, 'samples': len(samples),
                             'statuses': sorted({row['status'] for row in samples}),
                             'sql': sorted({row['sql'] for row in samples}),
+                            'steady_sql': sorted({row['sql'] for row in samples[1:]}),
                             'rows_returned': sorted({row['rows_returned'] for row in samples}),
+                            'steady_rows_returned': sorted({row['rows_returned'] for row in samples[1:]}),
                             'rows_written': sorted({row['rows_written'] for row in samples}),
                             'bytes_min_max': [min(row['bytes'] for row in samples), max(row['bytes'] for row in samples)],
                             'p50_ms': round(times[math.ceil(len(times) * .5) - 1], 2),
                             'p95_ms': round(times[math.ceil(len(times) * .95) - 1], 2)})
     print('BOOKING_MEASUREMENT=' + json.dumps(results, sort_keys=True))
+    report_path = os.getenv('VERA_TEST_BOOKING_MEASUREMENT_PATH')
+    if report_path:
+        Path(report_path).write_text(json.dumps(results, indent=2, sort_keys=True), encoding='utf-8')
     assert all(row['statuses'] == [200] for row in results), results
     # Historical growth must not expand the booking read/write work.
     for small, large in zip(results[:2], results[2:]):
-        for key in ('sql', 'rows_returned'):
+        # Keep cold-start cost in the report; compare warmed requests separately.
+        for key in ('steady_sql', 'steady_rows_returned'):
             assert small[key] == large[key], (key, results)
         # A full audit ring also expires one old audit row, never all history.
         assert max(large['rows_written']) <= max(small['rows_written']) + 1
