@@ -25,11 +25,22 @@
   .purchase-filters { grid-template-columns:1fr 1fr; padding:10px; }
   .purchase-filters>label:first-child { grid-column:1/-1; }
   .purchase-filter-secondary { grid-template-columns:1fr 1fr; }
-  .purchase-periods,.purchase-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; margin:0; }
-  .purchase-periods button,.purchase-actions button { display:flex; align-items:center; justify-content:center; width:100%; min-width:0; font-size:12px; padding:8px 5px; }
-  .purchase-controls { padding:10px; }
-  .purchase-summary-head { align-items:stretch; }
-  .purchase-filter-total { flex:1; min-width:0; }
+  .purchase-periods,.purchase-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; width:100%; margin:0; }
+  .purchase-controls .purchase-periods button,.purchase-controls .purchase-actions button { display:flex; align-items:center; justify-content:center; width:100%; min-width:0; min-height:40px; font-size:12px; line-height:1.25; padding:7px 5px; gap:5px; }
+  .purchase-controls { padding:10px; gap:9px; }
+  .purchase-summary-head { align-items:stretch; padding-top:9px; gap:9px; }
+  .purchase-controls .purchase-filter-total { justify-self:stretch; width:100%; min-width:0; padding:8px 10px; }
+  .purchase-filter-total>div { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; column-gap:8px; width:100%; min-width:0; }
+  .purchase-filter-total span { grid-column:1/-1; font-size:10px; }
+  .purchase-filter-total strong { font-size:18px; overflow-wrap:anywhere; }
+  .purchase-filter-total small { font-size:12px; white-space:nowrap; }
+  .purchase-controls button svg { width:15px; height:15px; }
+  .purchase-table { width:100%; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; }
+  .purchase-table table { min-width:1000px; }
+  .purchase-table th,.purchase-table td { padding:8px 7px; overflow-wrap:normal; }
+  .purchase-table :is(th,td):is(:nth-child(2),:nth-child(4),:nth-child(5),:nth-child(6),:nth-child(8),:nth-child(9)) { white-space:nowrap; }
+  .purchase-table td:is(:nth-child(4),:nth-child(5),:nth-child(6)) { text-align:right; }
+  .purchase-table input[type=checkbox] { width:22px; height:22px; padding:0; }
 }
 @media(max-width:460px) {
   .purchase-filters,.purchase-filter-secondary { grid-template-columns:1fr; }
