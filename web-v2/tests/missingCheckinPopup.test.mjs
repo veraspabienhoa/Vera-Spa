@@ -43,3 +43,32 @@ test('manager popup is mounted outside the Live Tour notification suppression',(
  assert.ok(source.includes('<MissingCheckinPopup key='))
  assert.equal(/showPageNotifications\s*&&\s*<MissingCheckinPopup/.test(source),false)
 })
+
+test('Đã xem survives remount, empty refresh and account changes; new day still alerts',async()=>{
+ const dom=await mount('admin'),w=dom.window
+ try {
+  const today={...row('Test Employee'),tag:'vera-missing-checkin-2026-09-27-testemployee'}
+  await publish(w,[today,today]);assert.equal(w.document.querySelectorAll('li').length,1)
+  const seen=[...w.document.querySelectorAll('button')].find(button=>button.textContent==='Đã xem')
+  assert.ok(seen)
+  await w.act(async()=>seen.click())
+  assert.deepEqual(JSON.parse(w.localStorage.getItem('vera-missing-checkin-seen:viewer')),[today.tag])
+  await publish(w,[]);await publish(w,[today]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+  await w.mount({role:'letan',employee_username:'other'});await publish(w,[today]);assert.ok(w.document.querySelector('.missing-checkin-popup'))
+  await w.mount({role:'admin',employee_username:'viewer'});await publish(w,[today]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+  await publish(w,[{...today,tag:'vera-missing-checkin-2026-09-28-testemployee'}]);assert.ok(w.document.querySelector('.missing-checkin-popup'))
+ }finally{await w.unmount();w.close()}
+})
+
+test('seen state synchronizes tabs and tolerates unavailable storage',async()=>{
+ const dom=await mount('admin'),w=dom.window
+ try {
+  await publish(w,[row()]);w.localStorage.setItem('vera-missing-checkin-seen:viewer',JSON.stringify([row().tag]))
+  await w.act(async()=>w.dispatchEvent(new w.StorageEvent('storage',{key:'vera-missing-checkin-seen:viewer'})))
+  assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+  await publish(w,[row('new')])
+  Object.defineProperty(w,'localStorage',{get(){throw new Error('Storage blocked')}})
+  await w.act(async()=>w.document.querySelector('.missing-checkin-seen').click())
+  await publish(w,[row('new')]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+ }finally{await w.unmount();w.close()}
+})
