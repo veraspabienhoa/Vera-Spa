@@ -273,10 +273,10 @@ def _missing_checkin_rows(conn, ident, settings):
     if config is None or config.get('enabled') is False or config.get('channel_enabled', {}).get('popup') is False:
         return []
     from datetime import datetime, timedelta, timezone
-    from vera_missing_checkin_notifications import viewer_missing_checkins
+    from vera_missing_checkin_notifications import current_missing_checkins
     now = datetime.now(timezone(timedelta(hours=7)))
     # Reuse the feed transaction; no pool acquisition or device/network request.
-    return viewer_missing_checkins(conn, ident, now, include_expiry=True)
+    return current_missing_checkins(conn, ident, now, include_expiry=True)
 
 
 def _inbox_rows(conn, ident):

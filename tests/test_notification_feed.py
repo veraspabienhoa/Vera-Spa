@@ -45,7 +45,7 @@ def test_current_missing_checkins_reuse_feed_connection_and_limit_management_rol
     import vera_missing_checkin_notifications as absence
     calls = []
     conn = object()
-    monkeypatch.setattr(absence,'viewer_missing_checkins',lambda connection,ident,now,include_expiry: calls.append((connection,ident.role,include_expiry)) or [{'employee':'worker'}])
+    monkeypatch.setattr(absence,'current_missing_checkins',lambda connection,ident,now,include_expiry: calls.append((connection,ident.role,include_expiry)) or [{'employee':'worker'}])
     config = {'settings':[{'key':'missing_checkin','enabled':True,'channel_enabled':{'popup':True}}]}
     for role in ['admin','letan','quanly']:
         assert settings._missing_checkin_rows(conn,Identity(role=role),config)==[{'employee':'worker'}]

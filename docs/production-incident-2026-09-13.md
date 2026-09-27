@@ -1,5 +1,38 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 27-09-2026: popup thiếu check-in và nút Đã xem
+
+Người dùng báo thiếu popup cảnh báo và yêu cầu nút Đã xem. Kiểm tra giao diện
+cài đặt production xác nhận kênh popup của loại Thiếu chấm công FaceID đang
+tắt. Đã bật riêng Popup trong ứng dụng theo yêu cầu và đọc lại xác nhận;
+không đổi kênh push hoặc trung tâm thông báo. Sau làm mới chưa quan sát được
+popup thực tế. Không đưa thông tin chấm công/nghỉ của cá nhân vào tài liệu này.
+
+Rà soát mã: popup phụ thuộc current_alerts do full TimeSoft worker ghi, hết
+hạn sau 10 phút. Luồng live refresh có cập nhật cache chấm công nhưng không
+cập nhật current_alerts. Chưa đọc log worker trên VPS nên chưa kết luận worker
+đã dừng hay có lỗi cụ thể. Bản sửa tách popup hiện tại khỏi tiến trình gửi:
+đọc tối đa một cache hôm nay theo hai khóa chính xác, đúng source_version,
+updated_at trong 10 phút và chưa hết hạn. Đối chiếu roster xoay ca/override,
+lịch ngày và lịch nghỉ trên cùng connection; một truy vấn lịch nghỉ cho toàn
+bộ nhân viên. Không gọi mạng, không mở pool lồng nhau, không ghi dữ liệu hoặc
+tính phạt trên đường đọc; giữ shared notification feed 60 giây. Cache trống,
+cũ, ngày khác hoặc tương lai không tạo cảnh báo. Dùng ranh giới ngày như Live
+Tour để không coi lần quét 00:30 của ca trước, checkout-only hoặc giờ tương
+lai là check-in đầu ca. Không đổi nguồn TimeSoft/FaceGate hay luồng gửi push.
+
+Nút Đã xem và nút X cùng lưu tối đa 200 khóa cảnh báo vào localStorage riêng
+cho tài khoản trên trình duyệt/thiết bị này, đồng bộ các tab. Giữ trạng thái
+qua refresh, đổi trang và bản feed rỗng; tài khoản khác và khóa ngày/ca mới
+vẫn hiện. Không hứa đồng bộ trạng thái Đã xem giữa các thiết bị. Storage bị
+chặn thì vẫn tắt trong phiên hiện tại. Popup vàng gọn, nút tối thiểu 44px.
+
+Kiểm thử frontend: 11 trường hợp đạt; build và ESLint component đạt. Bổ sung
+PostgreSQL regression với dữ liệu nhân viên giả, ba vai trò, ngày/giờ,
+leave, check-in, cache freshness và chặn lấy connection lồng nhau. CI là gate
+trước merge. Chưa deploy bản mã mới hoặc xác minh popup mới trên VPS; chủ hệ
+thống chạy Deploy VPS Production thủ công rồi xác minh lại.
+
 ## 27-09-2026: popup booking trong app cùng thông báo màn hình khóa
 
 Kiểm tra mã xác nhận booking chỉ ghi in_app/push, kênh popup bị ẩn trong cài

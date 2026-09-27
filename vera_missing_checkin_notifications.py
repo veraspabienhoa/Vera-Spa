@@ -134,6 +134,80 @@ def _staff_scheduled_rows(conn, work_day):
     return result
 
 
+def current_missing_checkins(conn, ident, now, *, include_expiry=False):
+    """Read current absence from fresh attendance data, without worker/push state.
+
+    Uses only the caller connection and today's cache keys. This also covers
+    live TimeSoft refreshes which update attendance but do not run the full
+    invoice/notification worker. Never contact TimeSoft in the notification feed.
+    """
+    if str(getattr(ident, 'role', '')).strip().lower() not in {'admin', 'letan', 'quanly'}:
+        return []
+    zone = timezone(timedelta(hours=7))
+    current = now.replace(tzinfo=zone) if now.tzinfo is None else now.astimezone(zone)
+    day = current.date()
+    datasets = conn.execute(text("""
+        SELECT payload,updated_at FROM vera_dataset_cache
+        WHERE dataset_key IN (:today_key,:dated_key) AND source_version=:day
+          AND updated_at BETWEEN :cutoff AND :current AND expires_at>:current
+        ORDER BY updated_at DESC LIMIT 1
+    """), {'today_key': 'timesoft_employee_checkin_today',
+            'dated_key': f'timesoft_employee_checkin_{day:%Y%m%d}',
+            'day': day.isoformat(), 'cutoff': current-timedelta(minutes=10),
+            'current': current}).mappings().all()
+    if not datasets or not isinstance(datasets[0].get('payload'), list) or not datasets[0]['payload']:
+        return []
+    dataset = datasets[0]
+    from vera_web_v2_attendance_v42 import _explicit_work_day, _generic_raw_punch, _parse_datetime, _work_day_for_row
+    checked = set()
+    for raw in dataset['payload']:
+        if not isinstance(raw, dict):
+            continue
+        work_day = _explicit_work_day(raw)
+        values = [value for name,value in raw.items()
+                  if name.startswith(('MachineTimeCheckIn', 'LocalTimeCheckIn')) and name.endswith('Str')]
+        values += [raw.get(name) for name in ('CheckInTimeStr', 'CheckInTime') if raw.get(name)]
+        punches = [parsed for value in values if (parsed := _parse_datetime(value, work_day)) is not None]
+        if not punches and not any(name.startswith(('MachineTime', 'LocalTime')) and 'CheckOut' in name for name in raw):
+            punches = _generic_raw_punch(raw, work_day)
+        # Match Live Tour's business-day boundary: yesterday's midnight exits,
+        # future scans and checkout-only summaries cannot count as today's entry.
+        if (work_day or _work_day_for_row(raw, punches)) != day:
+            continue
+        if any(p.date() == day and 3 <= p.hour < 23 and p <= current.replace(tzinfo=None) for p in punches):
+            checked.update(_norm(raw.get(name)) for name in NAME_COLUMNS if raw.get(name))
+    schedules = _merge_schedules(_staff_scheduled_rows(conn, day), _scheduled_rows(conn, day))
+    leave_rows = conn.execute(text("""SELECT employee_name FROM leave_records
+        WHERE leave_date=:day AND COALESCE(source_sheet_id,'') <> 'postgres:auto_check'"""),
+        {'day': day}).mappings().all()
+    leave = {_norm(row.get('employee_name')) for row in leave_rows}
+    updated = dataset['updated_at']
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    expires = min(updated.astimezone(zone)+timedelta(minutes=10),
+                  datetime.combine(day+timedelta(days=1), time.min, tzinfo=zone))
+    result = []
+    for row in schedules:
+        username = str(row.get('employee_username') or '').strip()
+        name = str(row.get('employee_name') or username)
+        aliases = {_norm(username), _norm(name)} - {''}
+        start = _clock(day, row.get('start_time'))
+        if not username or not start or _norm(row.get('shift_code')) in {'', 'nghi'}:
+            continue
+        if not _alert_ready(has_leave=bool(aliases & leave), has_faceid=bool(aliases & checked),
+                            current=current.replace(tzinfo=None), shift_start=start):
+            continue
+        key = _event_key(day, username, str(row.get('shift_code') or ''))
+        alert = {'key': key, 'tag': f'vera-missing-checkin-{day.isoformat()}-{key}',
+                 'kind': 'missing-scheduled-checkin', 'employee': username,
+                 'body': f"{username} · {row.get('shift_code')} lúc {start:%H:%M} · chưa có check-in và chưa đăng ký nghỉ.",
+                 'date': day.strftime('%d-%m-%Y')}
+        if include_expiry:
+            alert['expires_at'] = expires.isoformat()
+        result.append(alert)
+    return result
+
+
 def viewer_missing_checkins(conn, ident, now, *, include_expiry=False):
     rows = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category=:category AND setting_key=:key"),
                         {'category': CATEGORY, 'key': f'current_alerts:{now.date().isoformat()}'}).mappings().all()
