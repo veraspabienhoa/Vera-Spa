@@ -51,7 +51,7 @@ function FacegateMappings() {
       <p role="status"><strong>Khớp chính xác: {candidates.candidate_count}</strong> · Cần kiểm tra: {candidates.ambiguous_count}. Chưa có ánh xạ nào được tự động xác nhận.</p>
       {!!candidates.candidates?.length && <div className="device-actions"><button type="button" className="primary-button" disabled={busy} onClick={() => run(async () => {
         const result = await veraApi.confirmFacegateMappingCandidates({ include_exact: true, overrides: { '198': 'Gia Anh', '190': 'Linh Đan' } })
-        setMessage(`Đã xác nhận ${result.confirmed_count} ánh xạ. ${result.skipped?.length ? `Còn ${result.skipped.length} hồ sơ chưa đủ mã chấm công TimeSoft duy nhất.` : ''}`)
+        setMessage(`Đã xác nhận ${result.confirmed_count} ánh xạ. ${result.skipped?.length ? `Tạm bỏ qua ${result.skipped.length} hồ sơ theo điều kiện mapping hiện tại.` : ''}`)
         setData(await veraApi.facegateMappings())
         setCandidates(await veraApi.facegateMappingCandidates())
       })}>Xác nhận tất cả khớp chính xác + Anh Nguyen → Gia Anh + Cam Tu → Linh Đan</button></div>}
