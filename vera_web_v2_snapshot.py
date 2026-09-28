@@ -339,6 +339,45 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
                            {'key': key}).scalar_one_or_none()
         return _json_value(row, [])
 
+    @app.get('/v2/devices/facegate-mapping-candidates')
+    def facegate_mapping_candidates(ident: identity_type = Depends(current_identity)):
+        """Suggest only unique exact normalized-name matches; never writes mappings."""
+        mapping_admin(ident)
+        key = mapping_key()
+        from vera_facegate_control_log import fetch_registered_profiles
+        observed_address, profiles = device_call(fetch_registered_profiles, return_address=True)
+        with engine_instance().connect() as conn:
+            from vera_web_v2_devices import facegate_address, norm
+            address = facegate_address(conn)
+            if address != observed_address:
+                raise HTTPException(409, 'IP FaceGate đã đổi trong lúc đọc danh sách.')
+            mappings = read_mappings(conn, key)
+            employees = conn.execute(text("""SELECT username, COALESCE(full_name,'') AS full_name
+                FROM employees WHERE role != 'admin'
+                AND COALESCE(payload->>'__deleted','false') <> 'true'
+                ORDER BY username""")).mappings().all()
+        owners = {}
+        for employee in employees:
+            for value in {employee['username'], employee.get('full_name') or ''}:
+                token = norm(value)
+                if token:
+                    owners.setdefault(token, set()).add(employee['username'])
+        already_users = {m.get('username') for m in mappings if isinstance(m, dict) and m.get('confirmed_by') and m.get('device_address') == address}
+        already_profiles = {m.get('profile_id') for m in mappings if isinstance(m, dict) and m.get('confirmed_by') and m.get('device_address') == address}
+        candidates, ambiguous = [], []
+        for profile in profiles:
+            if profile['profile_id'] in already_profiles:
+                continue
+            matches = owners.get(norm(profile['device_name']), set()) - already_users
+            if len(matches) == 1:
+                candidates.append({**profile, 'username': next(iter(matches)), 'match_method': 'exact_normalized_name'})
+            else:
+                ambiguous.append({'profile_id': profile['profile_id'], 'device_name': profile['device_name'],
+                                  'reason': 'no_exact_unique_match' if not matches else 'ambiguous_name'})
+        return {'candidates': candidates, 'ambiguous': ambiguous, 'candidate_count': len(candidates),
+                'ambiguous_count': len(ambiguous), 'auto_confirmed': False,
+                'attendance_calculation_enabled': False}
+
     @app.get('/v2/devices/facegate-profiles/{profile_id}')
     def facegate_profile(profile_id: int, ident: identity_type = Depends(current_identity)):
         mapping_admin(ident)
