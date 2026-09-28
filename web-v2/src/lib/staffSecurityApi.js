@@ -68,6 +68,23 @@ async function downloadPdf(response, fallbackName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+async function downloadArchive(path, fallbackName) {
+  const response = await authorizedFetch(path)
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fallbackName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 export const staffSecurityApi = {
   validateDraftIdentity,
   resetPassword: (username, newPassword) => jsonRequest(`/v2/staff/${encodeURIComponent(username)}/reset-password`, {
@@ -75,6 +92,7 @@ export const staffSecurityApi = {
     body: JSON.stringify({ new_password: newPassword }),
   }),
   identityMetadata: (username) => jsonRequest(`/v2/staff/${encodeURIComponent(username)}/identity`),
+  downloadAllPortraits: () => downloadArchive('/v2/staff/identity/export-portraits.zip', 'Anh_Nhan_Vien_Tat_Ca.zip'),
   extractIdentity: async (blob) => {
     const response = await authorizedFetch('/v2/staff/identity/ocr', {
       method: 'POST',
@@ -143,6 +161,7 @@ async function faceRequest(username, suffix = '', options = {}, binary = false) 
 }
 
 export const faceIdApi = {
+  downloadAll: () => downloadArchive('/v2/face-id/export-all.zip', 'Face_ID_Tat_Ca_Nhan_Vien.zip'),
   assignmentEmployees: () => jsonRequest('/v2/face-id/assignment-employees'),
   assignCapturePhoto: (username, blob, expectedSha) => faceRequest(username, '/capture-photo', {
     method: 'PUT',
