@@ -1103,6 +1103,12 @@ def install_staff_routes(
                 for item in cell:
                     item.number_format = "@"
 
+        # Requested data columns: A, J, R:X, AB:AC. Header alignment is unchanged.
+        for index in (1, 10, *range(18, 25), 28, 29):
+            for cells in ws.iter_cols(min_col=index, max_col=index, min_row=2):
+                for cell in cells:
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+
         widths = {
             "STT": 7, "Ca tuần hiện tại": 22,
             "Tên nhân viên": 24, "Họ và tên đầy đủ": 28, "Ngày bắt đầu làm": 18, "Ngày sinh": 16,
@@ -1183,6 +1189,8 @@ def install_staff_routes(
             require_feature(conn, ident, "staff_export")
             result = staff_result(conn, ident)
             rows = filtered_staff(conn, ident, search, role, status, shift, result=result)
+            # Export-only exclusion; keep the staff screen and role permissions.
+            rows = [row for row in rows if str(row.get('role') or '').strip().lower() != 'giamdoc']
             shifts = result["shifts_by_department"]
             portraits = read_portraits(conn, [row['username'] for row in rows]) if include_photos else {}
         content = build_staff_workbook(rows, shifts)
