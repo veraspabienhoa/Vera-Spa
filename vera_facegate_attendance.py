@@ -53,17 +53,21 @@ def business_day(instant, intervals, *, allow_checkout=False):
     get a narrow overnight-checkout fallback to yesterday's shift; this never
     applies to leader/nhanvien and never creates a calendar-day fallback.
     """
+    if allow_checkout:
+        previous = instant.date() - timedelta(days=1)
+        interval = intervals.get(previous)
+        # For checkout-enabled departments, a post-midnight scan first belongs
+        # to yesterday when yesterday had a real overnight scheduled shift.
+        if (interval and interval[1].date() > previous
+                and instant.date() != previous
+                and interval[0] <= instant <= interval[1] + timedelta(hours=2)):
+            return previous, ''
     candidates = []
     for day, interval in intervals.items():
         if interval and interval[0] - timedelta(hours=4) <= instant <= interval[1] + timedelta(hours=2):
             candidates.append(day)
     if len(candidates) == 1:
         return candidates[0], ''
-    if not candidates and allow_checkout:
-        previous = instant.date() - timedelta(days=1)
-        interval = intervals.get(previous)
-        if interval and interval[1].date() > previous and interval[0] <= instant <= interval[1] + timedelta(hours=2):
-            return previous, ''
     return None, 'overlapping_shifts' if candidates else 'no_vera_shift'
 
 
