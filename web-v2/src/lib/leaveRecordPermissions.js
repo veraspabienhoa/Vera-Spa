@@ -69,9 +69,16 @@ export function canEditLeaveRecord({ role, allowedByPermission, recordDate, curr
   return Boolean(allowedByPermission)
 }
 
-export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
+export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, createdAt, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
+  if (EDITOR_ROLES.has(roleKey) && typeof createdAt === 'string'
+      && /(?:Z|[+-]\d{2}:\d{2})$/.test(createdAt)) {
+    const created = new Date(createdAt)
+    if (Number.isFinite(created.getTime()) && new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(created) === today) return true
+  }
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
     if (employeeSelfServicePolicy?.enabled !== false) {
       return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today, employeeSelfServicePolicy)
