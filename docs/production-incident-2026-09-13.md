@@ -1,5 +1,23 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 28-09-2026: xếp cuối tua cho cả đi trễ/về sớm không phép
+
+Người dùng xác nhận quy tắc quay lại xuống cuối áp dụng cho cả Nghỉ không
+phép, Đi trễ không phép và Về sớm không phép, gồm nhãn CUỐI TUẦN. Yêu cầu này
+thay thế phạm vi chỉ nghỉ nguyên ngày của mục 27-09 bên dưới.
+
+Dùng canonical_reason hiện hữu cho cả ghi nhận nguồn và đối chiếu lại nguồn
+trước khi xếp tua. Nghỉ/đi trễ/về sớm có phép vẫn không thuộc quy tắc. Giữ mốc
+ngày nghiệp vụ, yêu cầu check-in hoặc Admin gán ca vào ngày sau, thứ tự nhóm,
+chống đẩy lặp, lượt YC, quyền sắp xếp và phục hồi vị trí khi đổi nhân viên.
+Không thay đổi tính tiền phạt, hóa đơn, connection, query hoặc poller.
+
+Kiểm thử mở rộng sáu nhãn ngày thường/cuối tuần, nhóm có đủ ba loại, không
+đẩy ngay trong ngày vi phạm, quay lại ngược thứ tự, ngày mốt, sửa/xóa nguồn và
+lưu/replay PostgreSQL với một truy vấn đối chiếu. CI là gate trước merge.
+Chưa deploy VPS. Cơ chế vẫn cần dấu ghi nhận nguồn từ ngày vi phạm; không tự
+quét lại lịch sử hoặc khẳng định các bản ghi trước nâng cấp đã được xử lý.
+
 ## 27-09-2026: giữ thứ tự nhóm quay lại sau nghỉ không phép
 
 Mã cũ chỉ tách người đang nghỉ xuống dưới; khi quay lại, giờ tua cũ đưa họ về

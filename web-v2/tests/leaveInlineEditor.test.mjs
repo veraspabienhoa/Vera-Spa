@@ -170,7 +170,9 @@ test('changing statistics reloads only statistics and preserves unsaved row edit
     assert.deepEqual(f.calls.map(([name]) => name), ['leaveDailyStats'])
     assert.equal(f.editor('draft-row').value, 'Về sớm CÓ phép')
     f.calls.length = 0
-    await act(async () => [...f.dom.window.document.querySelectorAll('.leave-list-panel button')].find((button) => button.textContent === 'Tuần sau').click())
+    // Stay in the active month: next week can cross a month boundary and
+    // correctly refresh statistics and catalogs as well as the list.
+    await act(async () => [...f.dom.window.document.querySelectorAll('.leave-list-panel button')].find((button) => button.textContent === 'Tháng này').click())
     assert.deepEqual(f.calls.map(([name]) => name), ['leaveRecords'])
   } finally { await f.dispose() }
 })
