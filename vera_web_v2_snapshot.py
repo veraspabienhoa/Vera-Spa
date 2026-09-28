@@ -35,6 +35,12 @@ class FaceGateMappingInput(BaseModel):
 class FaceGateMappingCheck(BaseModel):
     registration_ref: dict[str, int]
 
+class FaceGateBulkMappingInput(BaseModel):
+    include_exact: bool = True
+    overrides: dict[str, str] = Field(default_factory=dict)
+
+
+
 
 def _day(value: Any) -> str:
     raw = str(value or "").strip()
@@ -376,6 +382,90 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
                                   'reason': 'no_exact_unique_match' if not matches else 'ambiguous_name'})
         return {'candidates': candidates, 'ambiguous': ambiguous, 'candidate_count': len(candidates),
                 'ambiguous_count': len(ambiguous), 'auto_confirmed': False,
+                'attendance_calculation_enabled': False}
+
+    @app.post('/v2/devices/facegate-mapping-candidates/confirm')
+    def confirm_facegate_mapping_candidates(body: FaceGateBulkMappingInput, ident: identity_type = Depends(current_identity)):
+        """Bulk-confirm exact candidates plus explicit Admin overrides.
+
+        Attendance codes must already be uniquely matched from the saved TimeSoft
+        catalogue. No placeholder code, FaceGate UID, or fuzzy name is accepted.
+        """
+        mapping_admin(ident)
+        actor = str(getattr(ident, 'employee_username', '') or '').strip()
+        if not actor:
+            raise HTTPException(403, 'Không xác định được người xác nhận ánh xạ.')
+        key = mapping_key()
+        from vera_facegate_control_log import fetch_registered_profiles
+        from vera_web_v2_attendance_codes import read_employees, saved_codes, match_codes
+        observed_address, profiles = device_call(fetch_registered_profiles, return_address=True)
+        with engine_instance().connect() as conn:
+            from vera_web_v2_devices import facegate_address, norm
+            address = facegate_address(conn)
+            if address != observed_address:
+                raise HTTPException(409, 'IP FaceGate đã đổi trong lúc đối chiếu.')
+            existing = read_mappings(conn, key)
+            employees = read_employees(conn)
+            codes = match_codes(employees, saved_codes(conn))
+        by_user = {row['username']: row for row in employees}
+        owners = {}
+        for employee in employees:
+            for value in {employee['username'], employee.get('full_name') or ''}:
+                token = norm(value)
+                if token:
+                    owners.setdefault(token, set()).add(employee['username'])
+        code_by_user = {}
+        for row in codes['employees']:
+            if row['status'] == 'matched' and len(row['codes']) == 1:
+                code_by_user[row['username']] = row['codes'][0]['attendance_code']
+        overrides = {str(k): str(v).strip() for k, v in body.overrides.items()}
+        allowed_override_ids = set(overrides)
+        selected, skipped = [], []
+        existing_profiles = {m.get('profile_id') for m in existing if isinstance(m, dict) and m.get('confirmed_by') and m.get('device_address') == address}
+        existing_users = {m.get('username') for m in existing if isinstance(m, dict) and m.get('confirmed_by') and m.get('device_address') == address}
+        for profile in profiles:
+            if profile['profile_id'] in existing_profiles:
+                continue
+            override = overrides.get(str(profile['profile_id']))
+            matches = owners.get(norm(profile['device_name']), set()) - existing_users
+            username = override or (next(iter(matches)) if body.include_exact and len(matches) == 1 else '')
+            if not username:
+                continue
+            if override and str(profile['profile_id']) not in allowed_override_ids:
+                continue
+            if username not in by_user:
+                skipped.append({'profile_id': profile['profile_id'], 'reason': 'override_employee_missing'})
+                continue
+            code = code_by_user.get(username)
+            if not code:
+                skipped.append({'profile_id': profile['profile_id'], 'username': username, 'reason': 'attendance_code_not_uniquely_matched'})
+                continue
+            if username in existing_users or any(row['username'] == username for row in selected):
+                skipped.append({'profile_id': profile['profile_id'], 'username': username, 'reason': 'employee_already_mapped'})
+                continue
+            selected.append({**profile, 'username': username, 'employee_code': code,
+                             'device_address': address, 'confirmed_by': actor,
+                             'confirmed_at': datetime.now().astimezone().isoformat()})
+        if not selected:
+            return {'confirmed_count': 0, 'skipped': skipped, 'attendance_calculation_enabled': False}
+        with engine_instance().begin() as conn:
+            from vera_web_v2_devices import facegate_address
+            if facegate_address(conn) != address:
+                raise HTTPException(409, 'IP FaceGate đã đổi trước khi lưu ánh xạ.')
+            conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json,source,updated_by,revision,created_at,updated_at)
+                VALUES ('facegate',:key,'[]'::jsonb,'web_v2',:actor,1,NOW(),NOW())
+                ON CONFLICT(category,setting_key) DO NOTHING"""), {'key': key, 'actor': actor})
+            current = read_mappings(conn, key, lock=True)
+            current_profiles = {m.get('profile_id') for m in current if isinstance(m, dict)}
+            current_users = {m.get('username') for m in current if isinstance(m, dict)}
+            accepted = [row for row in selected if row['profile_id'] not in current_profiles and row['username'] not in current_users]
+            value = current + accepted
+            conn.execute(text("""UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb),
+                updated_by=:actor,updated_at=NOW(),revision=revision+1
+                WHERE category='facegate' AND setting_key=:key"""),
+                {'key': key, 'value': json.dumps(value, ensure_ascii=False), 'actor': actor})
+        return {'confirmed_count': len(accepted), 'skipped': skipped,
+                'confirmed': [{'profile_id': r['profile_id'], 'username': r['username']} for r in accepted],
                 'attendance_calculation_enabled': False}
 
     @app.get('/v2/devices/facegate-profiles/{profile_id}')
