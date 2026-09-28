@@ -34,12 +34,12 @@ from vera_vietqr_bank import normalize_bank_for_storage, resolve_vietqr_bank_id,
 
 
 STAFF_EXPORT_COLUMNS = [
-    "Tên nhân viên", "Họ và tên đầy đủ", "Ngày sinh", "Giới tính", "Dân tộc",
+    "STT", "Tên nhân viên", "Họ và tên đầy đủ", "Ngày sinh", "Giới tính", "Dân tộc",
     "Số CCCD", "Ngày cấp CCCD", "Nơi cấp CCCD", "Điện thoại", "Email",
     "Tỉnh/Thành phố", "Quận/Huyện", "Xã/Phường", "Địa chỉ cụ thể", "Địa chỉ",
     "Tên ngân hàng", "Số tài khoản ngân hàng", "Ngày bắt đầu làm",
     "Phân quyền", "Trạng thái làm việc", "Phát sinh tháng", "Có phép tháng",
-    "Phép năm", "Ca làm việc", "Ngày bắt đầu ca", "Chu kỳ", "Khóa đăng nhập",
+    "Phép năm", "Ca làm việc", "Ngày bắt đầu ca", "Chu kỳ", "Ca tuần hiện tại", "Khóa đăng nhập",
 ]
 ALL_ROLES = ["nhanvien", "leader", "quanly", "letan", "locker", "tapvu", "support", "admin"]
 ROLE_ORDER = ["leader", "nhanvien", "support", "quanly", "letan", "locker", "tapvu", "admin"]
@@ -593,8 +593,14 @@ def install_staff_routes(
             "left": sum(row["employment_status"] == STATUS_OPTIONS[2] for row in all_public),
         }
         definitions = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='shift' AND setting_key='shift_definitions' LIMIT 1")).scalar_one_or_none()
+        definitions = definitions if isinstance(definitions, list) else []
+        shift_day = datetime.now(vn_tz).date()
+        for public_row in public_rows:
+            public_row['current_week_shift'] = scheduled_shift(
+                {**public_row, 'shift_definitions': definitions}, shift_day,
+            )
         return {
-            "shift_summary": staff_shift_summary(all_public, datetime.now(vn_tz).date(), definitions if isinstance(definitions, list) else []),
+            "shift_summary": staff_shift_summary(all_public, shift_day, definitions),
             "employees": public_rows,
             "summary": summary,
             "permissions": permissions(conn, ident),
@@ -1027,7 +1033,11 @@ def install_staff_routes(
         ws.title = "DanhSachNhanSu"
         ws.sheet_view.showGridLines = False
         ws.freeze_panes = "A2"
-        ws.append(STAFF_EXPORT_COLUMNS)
+        # Declare every header explicitly, including the final shift columns.
+        # Text format keeps labels visible through the global XLSX styling pass.
+        for index, label in enumerate(STAFF_EXPORT_COLUMNS, start=1):
+            cell = ws.cell(1, index, label)
+            cell.number_format = '@'
         header_fill = PatternFill("solid", fgColor="214639")
         header_font = Font(color="FFFFFF", bold=True)
         thin = Side(style="thin", color="DDE5E0")
@@ -1036,12 +1046,13 @@ def install_staff_routes(
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = Border(bottom=thin)
-        ws.row_dimensions[1].height = 34
+        ws.row_dimensions[1].height = 42
 
         date_columns = {"Ngày bắt đầu làm", "Ngày sinh", "Ngày cấp CCCD", "Ngày bắt đầu ca"}
         number_columns = {"Phát sinh tháng", "Có phép tháng", "Phép năm"}
-        for row in rows:
+        for sequence, row in enumerate(rows, start=1):
             values = {
+                "STT": sequence,
                 "Tên nhân viên": row["username"], "Họ và tên đầy đủ": row["full_name"],
                 "Ngày sinh": row["birth_date"], "Giới tính": row.get("gender", ""),
                 "Dân tộc": row.get("ethnicity", ""),
@@ -1057,6 +1068,7 @@ def install_staff_routes(
                 "Phát sinh tháng": row["monthly_generated"], "Có phép tháng": row["monthly_leave"],
                 "Phép năm": row["annual_leave"], "Ca làm việc": row["work_shift"],
                 "Ngày bắt đầu ca": row["shift_start_date"], "Chu kỳ": row["rotation_cycle"],
+                "Ca tuần hiện tại": row.get("current_week_shift", ""),
                 "Khóa đăng nhập": "KHÓA" if row["login_locked"] else "",
             }
             excel_values = []
@@ -1092,6 +1104,7 @@ def install_staff_routes(
                     item.number_format = "@"
 
         widths = {
+            "STT": 7, "Ca tuần hiện tại": 22,
             "Tên nhân viên": 24, "Họ và tên đầy đủ": 28, "Ngày bắt đầu làm": 18, "Ngày sinh": 16,
             "Giới tính": 13, "Dân tộc": 16,
             "Phân quyền": 14, "Trạng thái làm việc": 22, "Điện thoại": 16, "Email": 30,
@@ -1142,8 +1155,10 @@ def install_staff_routes(
             "1. Không đổi Tên nhân viên vì đây là khóa đối chiếu tài khoản.",
             "2. Import chỉ cập nhật tài khoản đã tồn tại; không tạo và không xóa tài khoản.",
             "3. Mật khẩu và Remember Token không được xuất hoặc ghi đè từ file này.",
-            "4. Ngày dùng định dạng DD/MM/YYYY. Hãy dùng các danh sách chọn cho vai trò, trạng thái, ca và chu kỳ.",
+            "4. Ngày hiển thị DD-MM-YYYY. Hãy dùng các danh sách chọn cho vai trò, trạng thái, ca và chu kỳ.",
             "5. Toàn bộ file được kiểm tra trước khi ghi; nếu có một dòng sai, hệ thống không áp dụng file.",
+            "6. STT đánh số theo danh sách đã lọc. Ca tuần hiện tại là ca theo lịch VERA tại ngày xuất, đã tính chu kỳ; không yêu cầu check-in.",
+            "7. STT và Ca tuần hiện tại chỉ để xem; import không dùng hai cột này để thay đổi hồ sơ hoặc lịch ca.",
         ]
         for index, note in enumerate(notes, start=3):
             guide[f"A{index}"] = note

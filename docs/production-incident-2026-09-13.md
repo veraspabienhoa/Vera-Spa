@@ -1,5 +1,22 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 28-09-2026: cột STT và ca tuần hiện tại trong Excel nhân viên
+
+Thêm STT đánh số theo thứ tự danh sách đã lọc, trước Tên nhân viên. Thêm Ca
+tuần hiện tại sau Chu kỳ và trước Khóa đăng nhập (ranh giới Z/AA của file cũ;
+sau khi thêm STT, cột mới là AB). Tính ca bằng scheduled_shift chung của VERA,
+ngày Việt Nam và danh mục ca đã đọc trong staff_result; không đọc check-in,
+TimeSoft hoặc thêm truy vấn theo nhân viên. Giữ Ca làm việc là ca gốc để import.
+Hai cột mới chỉ hiển thị, không thuộc ánh xạ ghi hồ sơ khi import lại.
+
+Ảnh người dùng cho thấy W–AA không có tiêu đề. Mã hiện tại đã khai báo đủ
+nhãn; chưa có file XLSX gốc để xác nhận nguyên nhân mất tiêu đề trong ảnh.
+Builder nay ghi tường minh từng tiêu đề dạng text và tăng chiều cao hàng đầu.
+Kiểm thử đọc lại toàn bộ nhãn sau middleware định dạng, cả file trống/lọc và
+xuất kèm ảnh; kiểm tra vị trí cột, dropdown, STT, ngày Việt Nam/đổi chu kỳ,
+ca tùy chỉnh/cố định/chưa hiệu lực và import bỏ qua hai cột chỉ xem.
+CI là gate trước merge. Chưa triển khai hoặc xác minh file xuất trên VPS.
+
 ## 28-09-2026: cập nhật check-in qua hàng đợi projection hiện hữu
 
 Mã nguồn xác nhận scheduler bảng tua chờ 300 giây, trong khi trình duyệt poll
