@@ -145,13 +145,21 @@ def lease_current(conn, item: dict[str, Any]) -> bool:
 
 
 def mark_done(engine_instance, item: dict[str, Any]) -> None:
+    generation = item.get('payload', {}).get('generation')
     with engine_instance().begin() as conn:
         conn.execute(text(f"""
             UPDATE {TABLE}
-            SET status='done',completed_at=NOW(),locked_at=NULL,
+            SET status=CASE WHEN CAST(:generation AS text) IS NOT NULL AND
+                    payload->>'generation' IS DISTINCT FROM CAST(:generation AS text)
+                    THEN 'pending' ELSE 'done' END,
+                completed_at=CASE WHEN CAST(:generation AS text) IS NOT NULL AND
+                    payload->>'generation' IS DISTINCT FROM CAST(:generation AS text)
+                    THEN NULL ELSE NOW() END,
+                available_at=NOW(),locked_at=NULL,
                 last_error=NULL,updated_at=NOW()
             WHERE id=:id AND status='processing' AND locked_at=:locked_at
-        """), {"id": int(item["id"]), "locked_at": item["locked_at"]})
+        """), {"id": int(item["id"]), "locked_at": item["locked_at"],
+                 "generation": str(generation) if generation is not None else None})
 
 
 def reschedule(engine_instance, item: dict[str, Any], *, delay_seconds: int = 5) -> None:

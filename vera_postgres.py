@@ -178,6 +178,9 @@ def ensure_schema(engine: Optional[Engine] = None) -> None:
     with engine.begin() as conn:
         for statement in statements:
             conn.execute(text(statement))
+        # Cache writers can signal check-in changes before the API has started.
+        from vera_postgres_job_queue import ensure_schema_conn
+        ensure_schema_conn(conn)
 
 
 def healthcheck() -> tuple[bool, str]:
@@ -457,10 +460,13 @@ def _write_dataset_conn(conn, dataset_key: str, df: pd.DataFrame, ttl_seconds: i
             "ttl_seconds": ttl_seconds,
         },
     )
-    conn.execute(
-        text(f"INSERT INTO {EVENT_TABLE}(dataset_key,event_type,detail) VALUES (:k,'refresh',:d)"),
-        {"k": dataset_key, "d": f"rows={row_count}; checksum={checksum[:12]}"},
-    )
+    from vera_live_tour_checkin_signal import record_refresh
+    detail = f"rows={row_count}; checksum={checksum[:12]}"
+    if not record_refresh(conn, dataset_key, payload, detail):
+        conn.execute(
+            text(f"INSERT INTO {EVENT_TABLE}(dataset_key,event_type,detail) VALUES (:k,'refresh',:d)"),
+            {"k": dataset_key, "d": detail},
+        )
     return df
 
 

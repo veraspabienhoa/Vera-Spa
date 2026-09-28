@@ -61,7 +61,7 @@ STATE_LOCK = "vera:v2:live_tour:state"
 STATE_VERSION = 1
 PROJECTION_REFRESH_SECONDS = 300
 PROJECTION_QUEUE = "live_tour_projection"
-PROJECTION_RELEASE = "live-tour-projection-queue-2026-09-16.3-alerts"
+PROJECTION_RELEASE = "live-tour-projection-2026-09-28-checkin-signal"
 BUSINESS_DAY_CUTOFF = time(11, 10)
 MAX_AUDIT = 3000
 MAX_BACKUPS = 20
@@ -4431,12 +4431,12 @@ def install_live_tour_routes(
             {"reason": reason, "requested_at": now.isoformat()},
         )
 
-    def projection_inputs(now):
+    def projection_inputs(now, *, checkin_only=False):
         # No Live Tour board lock is held while reading attendance/directory/leave inputs.
         with engine_instance().begin() as conn:
             records = (
                 attendance.read(conn, now.astimezone(timezone).date(), force=True)
-                if attendance else None
+                if attendance and not checkin_only else None
             )
             directory = _employee_directory(conn, now)
             leave_day = (now.astimezone(timezone) - timedelta(hours=5)).date()
@@ -4485,7 +4485,9 @@ def install_live_tour_routes(
                     scheduler_stop.wait(2)
                     continue
                 now = datetime.now(timezone)
-                records, directory, leaves = projection_inputs(now)
+                records, directory, leaves = projection_inputs(
+                    now, checkin_only=item.get('payload', {}).get('reason') == 'checkin_changed',
+                )
                 applied = apply_projection(now, records, directory, leaves, item)
                 if applied is None:
                     continue
