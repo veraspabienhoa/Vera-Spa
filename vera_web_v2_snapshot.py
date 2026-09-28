@@ -436,10 +436,10 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
             if username not in by_user:
                 skipped.append({'profile_id': profile['profile_id'], 'reason': 'override_employee_missing'})
                 continue
-            code = code_by_user.get(username)
-            if not code:
-                skipped.append({'profile_id': profile['profile_id'], 'username': username, 'reason': 'attendance_code_not_uniquely_matched'})
-                continue
+            # Direct FaceGate mapping is anchored by the confirmed employee and
+            # registration reference. Preserve a TimeSoft code when available,
+            # but never invent one or require it for FaceGate attendance.
+            code = code_by_user.get(username, '')
             if username in existing_users or any(row['username'] == username for row in selected):
                 skipped.append({'profile_id': profile['profile_id'], 'username': username, 'reason': 'employee_already_mapped'})
                 continue
