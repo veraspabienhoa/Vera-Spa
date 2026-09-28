@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timezone
 from inspect import getclosurevars, signature
 from io import BytesIO
 from types import SimpleNamespace
@@ -21,7 +21,7 @@ def staff_app():
     app = FastAPI()
     dependencies = {name: (lambda *args, **kwargs: None)
                     for name in signature(staff.install_staff_routes).parameters if name != 'app'}
-    dependencies.update(identity_type=object, current_identity=lambda:SimpleNamespace(role='admin'), vn_tz=ZoneInfo('Asia/Ho_Chi_Minh'), leave_sheet_id='')
+    dependencies.update(identity_type=object, current_identity=lambda:SimpleNamespace(role='admin'), vn_tz=ZoneInfo('Asia/Ho_Chi_Minh'), leave_sheet_id='', norm=staff.shift_key)
     staff.install_staff_routes(app, **dependencies)
     return app
 
@@ -65,7 +65,8 @@ def test_export_contains_only_employee_data_after_style_middleware(workbook_buil
     ws = workbook['DanhSachNhanSu']
     assert not ws._images
     assert 'Ảnh nhân viên' not in [cell.value for cell in ws[1]]
-    assert ws['A2'].value == 'Test'
+    assert ws['A2'].value == 1
+    assert ws['B2'].value == 'Test'
     assert ws.cell(2, staff.STAFF_EXPORT_COLUMNS.index('Điện thoại') + 1).value == '0123456789'
     with ZipFile(BytesIO(styled)) as archive:
         media = [p for p in archive.namelist() if p.startswith('xl/media/')]
@@ -78,7 +79,8 @@ def test_staff_export_retains_text_and_dates_without_portrait_column(workbook_bu
     payload = workbook_builder([employee], {})
     workbook = load_workbook(BytesIO(payload))
     sheet = workbook['DanhSachNhanSu']
-    assert sheet['A2'].value == 'Test'
+    assert sheet['A2'].value == 1
+    assert sheet['B2'].value == 'Test'
     assert sheet.row_dimensions[2].height == 22
     assert sheet.cell(2, staff.STAFF_EXPORT_COLUMNS.index('Ngày sinh') + 1).number_format == 'dd-mm-yyyy'
 
@@ -143,3 +145,89 @@ def test_photo_export_rejects_non_admin_before_database(staff_app):
     staff_app.dependency_overrides[dependency] = lambda: SimpleNamespace(role='quanly')
     result = TestClient(staff_app).get('/v2/staff/export.xlsx?include_photos=true')
     assert result.status_code == 403
+
+
+@pytest.mark.parametrize('include_photos', [False, True])
+@pytest.mark.parametrize('count', [0, 3])
+def test_export_all_headers_sequence_and_shift_column_survive_styling(workbook_builder, include_photos, count):
+    from vera_staff_photo_export import with_portraits
+    rows = [staff._public_employee({'username': name, 'role': 'nhanvien'}, 'Đang làm việc')
+            for name in ('Bình', 'An', 'Chi')[:count]]
+    for row in rows:
+        row['current_week_shift'] = 'Ca 2'
+        row['work_shift'] = 'Ca 1'
+    data = workbook_builder(rows, {})
+    if include_photos:
+        data = with_portraits(data, rows, {})
+    sheet = load_workbook(BytesIO(style_workbook_bytes(data)))['DanhSachNhanSu']
+    headers = [cell.value for cell in sheet[1]]
+    assert all(isinstance(label, str) and label.strip() for label in headers)
+    assert headers[:2] == ['STT', 'Tên nhân viên']
+    assert headers[23:29] == ['Phép năm', 'Ca làm việc', 'Ngày bắt đầu ca',
+                              'Chu kỳ', 'Ca tuần hiện tại', 'Khóa đăng nhập']
+    assert len(set(headers)) == len(headers)
+    assert sheet.freeze_panes == 'A2'
+    assert sheet.auto_filter.ref.startswith('A1:AD' if include_photos else 'A1:AC')
+    for number, row in enumerate(rows, start=1):
+        assert sheet.cell(number + 1, 1).value == number
+        assert sheet.cell(number + 1, 2).value == row['username']
+        assert sheet.cell(number + 1, 25).value == 'Ca 1'
+        assert sheet.cell(number + 1, 28).value == 'Ca 2'
+    validations = {validation.formula1: str(validation.sqref)
+                   for validation in sheet.data_validations.dataValidation}
+    assert validations['=DanhMuc!$C$1:$C$2'].startswith('AA2')
+    assert validations['=DanhMuc!$D$1:$D$2'].startswith('AC2')
+
+
+@pytest.mark.parametrize('utc_day,cycle,start,assigned,expected', [
+    ('2026-09-21T16:00:00', 'Theo chu kỳ Tuần', '15/09/2026', 'Ca 1', 'Ca 1'),
+    ('2026-09-21T18:00:00', 'Theo chu kỳ Tuần', '15/09/2026', 'Ca 1', 'Ca 2'),
+    ('2026-09-28T18:00:00', 'Theo chu kỳ Tuần', '15/09/2026', 'Sáng', 'Ca 1'),
+    ('2026-09-21T18:00:00', 'Cố định (Không đổi)', '15/09/2026', 'Ca 1', 'Ca 1'),
+    ('2026-09-21T18:00:00', 'Theo chu kỳ Tuần', '23/09/2026', 'Ca 1', ''),
+    ('2026-09-21T18:00:00', 'Theo chu kỳ Tuần', '15/09/2026', '', ''),
+])
+def test_export_shift_uses_existing_vera_definitions_and_vietnam_day(
+        staff_app, monkeypatch, utc_day, cycle, start, assigned, expected):
+    instant = datetime.fromisoformat(utc_day).replace(tzinfo=timezone.utc)
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+    monkeypatch.setattr(staff, 'datetime', Clock)
+    row = dict(username='An', full_name='An', role='nhanvien', work_shift=assigned,
+               shift_start_date=start, rotation_cycle=cycle)
+    monkeypatch.setattr(staff, '_select_staff_rows', lambda conn: [row])
+    monkeypatch.setattr(staff, '_shift_catalog', lambda *args: {})
+    monkeypatch.setattr(staff, '_cycle_options', lambda *args: [])
+    endpoint = next(r.endpoint for r in staff_app.routes if r.path == '/v2/staff/export.xlsx')
+    cells = dict(zip(endpoint.__code__.co_freevars, endpoint.__closure__))
+    result_fn = cells['staff_result'].cell_contents
+    inner = dict(zip(result_fn.__code__.co_freevars, result_fn.__closure__))
+    inner['permissions'].cell_contents = lambda *args: {}
+    inner['allowed_roles'].cell_contents = lambda *args: []
+    calls = []
+    class Connection:
+        def execute(self, sql, *args):
+            calls.append(str(sql))
+            assert 'shift_definitions' in str(sql)
+            return SimpleNamespace(scalar_one_or_none=lambda: [{'Tên ca': 'Sáng', 'Ca chính': 'Ca 1'}])
+    result = result_fn(Connection(), SimpleNamespace(role='admin'))
+    assert len(calls) == 1
+    assert result['employees'][0]['current_week_shift'] == expected
+    payload = cells['build_staff_workbook'].cell_contents(result['employees'], {})
+    sheet = load_workbook(BytesIO(style_workbook_bytes(payload)))['DanhSachNhanSu']
+    assert (sheet['AB2'].value or '') == expected
+
+
+def test_new_display_columns_are_ignored_on_reimport(staff_app, workbook_builder):
+    employee = staff._public_employee({'username': 'An', 'role': 'nhanvien', 'work_shift': 'Ca 1'}, 'Đang làm việc')
+    employee['current_week_shift'] = 'Ca 2'
+    endpoint = next(r.endpoint for r in staff_app.routes if r.path == '/v2/staff/import.xlsx')
+    helpers = getclosurevars(endpoint).nonlocals
+    imported = helpers['parse_import'](workbook_builder([employee], {}))[0]
+    baseline = helpers['import_values'](imported)
+    imported.update({'STT': 999, 'Ca tuần hiện tại': 'Ca không hợp lệ'})
+    assert helpers['import_values'](imported) == baseline
+    assert baseline['work_shift'] == 'Ca 1'
+    assert 'current_week_shift' not in baseline
