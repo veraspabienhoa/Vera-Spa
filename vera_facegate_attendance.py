@@ -45,12 +45,13 @@ def shift_interval(day, start, end):
     return left, right
 
 
-def business_day(instant, intervals):
-    """Previous overnight shift wins over an unrelated calendar-day fallback.
+def business_day(instant, intervals, *, allow_checkout=False):
+    """Assign a scan to the scheduled work day, including overnight checkout.
 
-    Four hours before a scheduled start is the maximum early arrival window;
-    two hours after scheduled end accepts a late return. Overlapping windows
-    are reported as ambiguous rather than assigning the nearest shift.
+    Normal FaceGate evidence keeps the existing four-hour early / two-hour late
+    window.  Departments that actually punch out (reception, locker, cleaning)
+    get a narrow overnight-checkout fallback to yesterday's shift; this never
+    applies to leader/nhanvien and never creates a calendar-day fallback.
     """
     candidates = []
     for day, interval in intervals.items():
@@ -58,6 +59,11 @@ def business_day(instant, intervals):
             candidates.append(day)
     if len(candidates) == 1:
         return candidates[0], ''
+    if not candidates and allow_checkout:
+        previous = instant.date() - timedelta(days=1)
+        interval = intervals.get(previous)
+        if interval and interval[1].date() > previous and interval[0] <= instant <= interval[1] + timedelta(hours=2):
+            return previous, ''
     return None, 'overlapping_shifts' if candidates else 'no_vera_shift'
 
 
@@ -151,7 +157,9 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
                            'device_name': str(payload.get('device_name') or '')[:160]})
             continue
         username = mapping['username']
-        day, reason = business_day(instant, windows[username])
+        role = str(profiles[username].get('role') or '').strip().lower()
+        day, reason = business_day(instant, windows[username],
+                                   allow_checkout=role in {'letan', 'locker', 'tapvu'})
         if reason:
             issues.append({'event_id': event_id, 'reason': reason, 'username': username})
             continue
@@ -318,7 +326,31 @@ def preview(conn, start, end):
     rows, issues, index = adapt_events(events, mappings, employees, address, start, end, resolve)
     datasets = attendance._datasets(conn, start, end + timedelta(days=1))
     facegate = attendance._records_v42_fast(conn, start, end, datasets=[{'payload': rows}])
+    # Only departments whose operating policy requires a final face punch may
+    # expose the last clustered scan as checkout.  Leaders and therapists keep
+    # checkout blank; their later scans are mid-shift break evidence only.
+    checkout_roles = {'letan', 'locker', 'tapvu'}
     for row in facegate:
+        role = str(row.get('employee_role') or '').strip().lower()
+        if role in checkout_roles:
+            punches = row.get('punch_datetimes') or []
+            if len(punches) >= 2:
+                try:
+                    last = datetime.fromisoformat(str(punches[-1]))
+                    work_day = datetime.strptime(row['date'], '%d/%m/%Y').date()
+                    shift = shift_interval(work_day, row.get('shift_start'), row.get('shift_end'))
+                except (ValueError, TypeError, KeyError):
+                    shift = None
+                    last = None
+                if shift and last and last >= shift[0] and last <= shift[1] + timedelta(hours=2):
+                    row['check_out'] = last.strftime('%H:%M:%S')
+                    row['faceid_check_out'] = row['check_out']
+                    row['check_out_at'] = last.replace(tzinfo=VN_TZ).isoformat()
+                    row['departure_status'] = 'Đã chấm ra'
+        else:
+            row['check_out'] = ''
+            row['faceid_check_out'] = ''
+            row.pop('check_out_at', None)
         if row.get('attendance_roster_only'):
             row['attendance_note'] = str(row.get('attendance_note') or '').replace('TimeSoft', 'FaceGate đã ánh xạ')
     timesoft = attendance._records_v42_fast(conn, start, end, datasets=datasets)
