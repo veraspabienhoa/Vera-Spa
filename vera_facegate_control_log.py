@@ -147,6 +147,50 @@ def probe_facegate(*, get=requests.get) -> bool:
         _close_response(response)
 
 
+def fetch_registered_profiles(*, get=requests.get) -> list[dict[str, Any]]:
+    """Read the current FaceGate whitelist without guessing profile IDs."""
+    base_url, _, auth = _facegate_config()
+    sessionid = str(secrets.randbelow(90_000_000) + 10_000_000)
+    params = {
+        "action": "list", "group": "LIST", "uflag": "0", "usex": "2",
+        "uage": "0-100", "MjCardNo": "0",
+        "begintime": "1970-01-01/00:00:00", "endtime": "2099-12-31/23:59:59",
+        "utype": "3", "sequence": "1", "beginno": "0", "reqcount": "1000",
+        "sessionid": sessionid,
+        "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
+    }
+    try:
+        response = _device_get(get, base_url, "/webs/getWhitelist", params=params,
+                               auth=auth, timeout=(3, 12), allow_redirects=False)
+    except requests.RequestException as exc:
+        raise ConnectionError("Không đọc được danh sách hồ sơ FaceGate.") from exc
+    try:
+        if response.status_code != 200:
+            raise ConnectionError("FaceGate không chấp nhận truy vấn danh sách hồ sơ.")
+        body = str(response.text or "")
+        if len(body.encode("utf-8")) > MAX_RESPONSE_BYTES:
+            raise ValueError("Danh sách hồ sơ FaceGate vượt giới hạn.")
+        if not re.search(r"root\.ERR\.no=0(?:\s|<)", body):
+            raise ValueError("FaceGate báo lỗi khi đọc danh sách hồ sơ.")
+        items: dict[int, dict[str, str]] = {}
+        for match in re.finditer(r"root\.LIST\.ITEM(?P<index>\d+)\.(?P<key>[A-Za-z0-9_]+)=(?P<value>.*?)(?=\s+root\.|</html>|$)", body, re.DOTALL):
+            items.setdefault(int(match.group("index")), {})[match.group("key")] = html.unescape(match.group("value")).strip()
+        profiles = []
+        for item in items.values():
+            try:
+                uid = int(item.get("uid", ""))
+            except ValueError:
+                continue
+            ref = registration_ref(item)
+            if uid > 0 and ref is not None:
+                profiles.append({"profile_id": uid, "device_name": item.get("uname", "")[:160],
+                                 "registration_ref": ref})
+        profiles.sort(key=lambda row: row["profile_id"])
+        return profiles
+    finally:
+        _close_response(response)
+
+
 def fetch_registered_profile(uid: int, *, get=requests.get) -> dict[str, Any]:
     if not 0 < uid <= 2**31 - 1:
         raise ValueError("ID hồ sơ FaceGate không hợp lệ.")
