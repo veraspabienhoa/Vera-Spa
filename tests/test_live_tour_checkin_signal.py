@@ -179,6 +179,7 @@ def test_real_worker_opens_vera_shift_without_full_attendance_or_five_minute_tic
     state = live._empty_state(NOW)
     state['employees'] = [employee('e1', 'An', shift='')]
     with db.begin() as conn:
+        conn.execute(text('CREATE TABLE employees(username text,full_name text,bank_name text,bank_account text)'))
         conn.execute(text("""CREATE TABLE leave_records(id bigserial,employee_name text,
             leave_reason text,leave_type text,leave_date date,record_uid text,source_row int,detail text)"""))
         conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json)
