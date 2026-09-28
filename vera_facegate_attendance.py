@@ -313,12 +313,18 @@ def compare_punches(timesoft, facegate, employees, start, end):
             for username in sorted(a.keys() | b.keys()) if a[username] != b[username]]
 
 
-def preview(conn, start, end):
+def preview(conn, start, end, *, checkout_reviews_override=None):
     import vera_web_v2_attendance_query_perf as attendance
     import vera_web_v2_attendance_v42 as v42
     if end < start or (end - start).days > 6:
         raise EvidenceError('range_must_be_1_to_7_days')
-    address, mappings, events, syncs = read_evidence(conn, start, end)
+    import vera_facegate_checkout_review as checkout_review
+    review_device_id = mapping_device_id()
+    saved_reviews = (checkout_review.read_reviews(conn, review_device_id)
+                     if checkout_reviews_override is None else checkout_reviews_override)
+    reviews = checkout_review.relevant_reviews(saved_reviews, start, end)
+    evidence_start = min([start] + [date.fromisoformat(r['work_date']) for r in reviews])
+    address, mappings, events, syncs = read_evidence(conn, evidence_start, end)
     employees = attendance._active_roster(conn)
     definitions, _ = attendance.snapshot._shift_break_settings(conn)
     schedules = attendance._schedule_map(conn, start - timedelta(days=1), end + timedelta(days=1))
@@ -328,6 +334,9 @@ def preview(conn, start, end):
             schedule = schedules.get((day, v42._norm(profile.get('full_name'))))
         return attendance._vera_shift_fields(profile, day, definitions, schedule)
     rows, issues, index = adapt_events(events, mappings, employees, address, start, end, resolve)
+    rows, issues, applied_reviews = checkout_review.overlay_rows(
+        rows, issues, reviews, events, index, employees, address,
+        review_device_id, start, end, resolve)
     datasets = attendance._datasets(conn, start, end + timedelta(days=1))
     facegate = attendance._records_v42_fast(conn, start, end, datasets=[{'payload': rows}])
     # Only departments whose operating policy requires a final face punch may
@@ -357,6 +366,7 @@ def preview(conn, start, end):
             row.pop('check_out_at', None)
         if row.get('attendance_roster_only'):
             row['attendance_note'] = str(row.get('attendance_note') or '').replace('TimeSoft', 'FaceGate đã ánh xạ')
+    facegate = checkout_review.overlay_records(facegate, applied_reviews)
     timesoft = attendance._records_v42_fast(conn, start, end, datasets=datasets)
     differences = compare_records(timesoft, facegate)
     evidence_differences = compare_punches(datasets, [{'payload': rows}], employees, start, end)
@@ -407,6 +417,7 @@ def preview(conn, start, end):
             'informational_issue_count': len(issues) - len(blocking_issues),
             'issues_truncated': len(issues) > 200,
             'evidence_differences': evidence_differences,
+            'applied_checkout_review_ids': [r['id'] for r in applied_reviews],
             'unmapped_employees': missing, 'mapping_candidates': candidates,
             'incomplete_days': incomplete, 'blockers': blockers,
             'last_sync_at': max((str(s['last_synced_at']) for s in syncs), default=''),
