@@ -485,7 +485,7 @@ function IdentitySide({ username, side, title, metadata, busy, onChanged, setNot
   </div>
 }
 
-function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit, mediaApi = staffSecurityApi, side = 'portrait', title = 'Ảnh nhân viên', canEdit = true, sources }) {
+function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit, allowDownload = false, mediaApi = staffSecurityApi, side = 'portrait', title = 'Ảnh nhân viên', canEdit = true, sources }) {
   const inputRef = useRef(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [pendingFile, setPendingFile] = useState(null)
@@ -535,6 +535,19 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
     setPreviewUrl(URL.createObjectURL(blob))
     return false
   })
+  const download = () => onChanged('download-portrait', async () => {
+    const blob = await mediaApi.identityBlob(username, side)
+    const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/jpeg' ? 'jpg' : 'webp'
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${username}_FaceID.${extension}`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    return false
+  })
   const editSaved = () => onChanged('edit-portrait', async () => {
     const blob = await mediaApi.identityBlob(username, side)
     setPendingFile(new File([blob], `${username}_Anh_Nhan_Vien.webp`, { type: blob.type || 'image/webp' }))
@@ -558,6 +571,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
       <button data-ui-key="u-a4ae33de7ed9" data-ui-label-default="Chụp ảnh" type="button" className="secondary-button compact" onClick={() => setCameraOpen(true)} disabled={Boolean(busy) || !canEdit}><Camera size={14}/><UiCustomText uiKey="u-a4ae33de7ed9"> Chụp ảnh</UiCustomText></button>
       <button data-ui-key="u-5825e51c59e7" type="button" className="secondary-button compact" onClick={() => inputRef.current?.click()} disabled={Boolean(busy) || !canEdit}><Upload size={14}/> {metadata ? 'Thay ảnh' : 'Tải ảnh'}</button>
       {metadata && <button data-ui-key="u-1e33c261ec19" data-ui-label-default="Xem" type="button" className="secondary-button compact" onClick={view} disabled={Boolean(busy)}><Eye size={14}/><UiCustomText uiKey="u-1e33c261ec19"> Xem</UiCustomText></button>}
+      {metadata && allowDownload && <button type="button" className="secondary-button compact" onClick={download} disabled={Boolean(busy)}><Download size={14}/> Tải ảnh Face ID</button>}
       {metadata && allowAdminEdit && <button data-ui-key="u-636be8616e35" data-ui-label-default="Crop / Xoay" type="button" className="secondary-button compact" onClick={editSaved} disabled={Boolean(busy) || !canEdit}><Crop size={14}/><UiCustomText uiKey="u-636be8616e35"> Crop / Xoay</UiCustomText></button>}
       {metadata && <button data-ui-key="u-5e617d4cab9b" data-ui-label-default="Xóa" type="button" className="danger-button compact" onClick={remove} disabled={Boolean(busy) || !canEdit}><Trash2 size={14}/><UiCustomText uiKey="u-5e617d4cab9b"> Xóa</UiCustomText></button>}
     </UiToolbar>
@@ -591,7 +605,7 @@ export function FaceIdCard({ username }) {
   const asFile = (blob) => new File([blob], 'FaceID.jpg', {type: blob.type})
   return <div className="face-id-card" style={{border: '1px solid #315d4b', padding: 12, minWidth: 0}}>
     <PortraitSide key={username} username={username} metadata={data.photo} busy={busy}
-      onChanged={run} setNotice={setNotice} allowAdminEdit canEdit={data.can_manage}
+      onChanged={run} setNotice={setNotice} allowAdminEdit allowDownload canEdit={data.can_manage}
       mediaApi={faceIdApi} side="face_id" title="ẢNH FACE ID"
       sources={(acceptFile) => <div className="employee-id-actions">
         <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>
