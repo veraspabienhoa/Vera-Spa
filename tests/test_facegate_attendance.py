@@ -123,6 +123,12 @@ def test_day_shift_does_not_claim_unrelated_after_midnight_checkout():
     assert fg.business_day(instant, windows, allow_checkout=True) == (None, 'no_vera_shift')
 
 
+def test_off_shift_scan_remains_unassigned_instead_of_becoming_false_attendance():
+    instant = datetime(2026, 9, 27, 1, 9)
+    windows = {DAY: fg.shift_interval(DAY, '09:30', '17:30')}
+    assert fg.business_day(instant, windows, allow_checkout=True) == (None, 'no_vera_shift')
+
+
 def test_timestamp_candidates_allow_alias_but_never_infer_device_profile_id():
     rows, _, _ = adapt([event(), event('15:00:00', 2)])
     rows[0]['employeeInfo.Name'] = rows[0]['EmployeeName'] = 'Nguyen Anh Thu'
