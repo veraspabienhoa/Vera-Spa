@@ -30,18 +30,24 @@ def test_repeat_sync_deduplicates(engine):
         second = sync.persist_batch(conn, '2023044', DAY, batch)
         assert conn.execute(text('SELECT COUNT(*) FROM vera_facegate_event')).scalar() == 1
     assert first['inserted_count'] == 1
-    assert second == {'inserted_count': 0, 'already_stored_count': 1, 'stored_day_count': 1}
+    assert second == {'inserted_count': 0, 'already_stored_count': 1, 'conflict_count': 0, 'stored_day_count': 1}
 
-def test_conflict_rolls_back_whole_batch(engine):
+def test_conflict_preserves_archive_and_appends_new_events(engine):
+    original = sync.prepare_batch(log(EVENT), DAY)
     with engine.begin() as conn:
-        sync.persist_batch(conn, '2023044', DAY, sync.prepare_batch(log(EVENT), DAY))
-    with pytest.raises(sync.SyncError, match='existing_event_changed'):
-        with engine.begin() as conn:
-            sync.persist_batch(conn, '2023044', DAY, sync.prepare_batch(log(
-                {**EVENT, 'event_id': 78689}, {**EVENT, 'status_code': '2'}), DAY))
+        sync.persist_batch(conn, '2023044', DAY, original)
+    changed = {**EVENT, 'status_code': '2'}
+    added = {**EVENT, 'event_id': 78689}
+    with engine.begin() as conn:
+        result = sync.persist_batch(conn, '2023044', DAY, sync.prepare_batch(log(added, changed), DAY))
+    assert result == {'inserted_count': 1, 'already_stored_count': 0, 'conflict_count': 1, 'stored_day_count': 2}
     with engine.connect() as conn:
-        assert conn.execute(text('SELECT COUNT(*) FROM vera_facegate_event')).scalar() == 1
-        assert conn.execute(text('SELECT last_observed_count FROM vera_facegate_sync_day')).scalar() == 1
+        archived = conn.execute(text('SELECT payload_json FROM vera_facegate_event WHERE event_id=:id'),
+                                {'id': str(EVENT['event_id'])}).scalar_one()
+        assert json.loads(archived)['status_code'] == '1'
+        conflict = conn.execute(text('SELECT observation_count FROM vera_facegate_event_conflict')).scalar_one()
+        assert conflict == 1
+        assert conn.execute(text('SELECT last_observed_count FROM vera_facegate_sync_day')).scalar() == 2
 
 def test_same_id_other_device_or_time_not_dropped(engine):
     with engine.begin() as conn:
