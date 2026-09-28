@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import unicodedata
+import zipfile
 from typing import Any, Callable
 from urllib.parse import quote
 from xml.sax.saxutils import escape
@@ -675,6 +676,40 @@ def install_staff_security_routes(
                 "can_delete_identity": str(getattr(ident, "role", "") or "").lower() == "admin",
                 "can_edit_saved_identity": str(getattr(ident, "role", "") or "").lower() == "admin",
             }
+
+    @app.get("/v2/staff/identity/export-portraits.zip")
+    def export_all_employee_portraits(ident: identity_type = Depends(current_identity)):
+        with engine_instance().connect() as conn:
+            if str(getattr(ident, "role", "") or "").lower() != "admin":
+                raise HTTPException(403, "Chỉ Admin được tải toàn bộ ảnh nhân viên.")
+            _ensure_identity_table(conn)
+            rows = conn.execute(text("""SELECT d.employee_username, d.content, d.content_type
+                FROM vera_employee_identity_document d
+                JOIN employees e ON lower(btrim(e.username))=lower(btrim(d.employee_username))
+                WHERE d.side='portrait'
+                  AND COALESCE(e.payload->>'__deleted','false') <> 'true'
+                ORDER BY d.employee_username""")).mappings().all()
+        output = BytesIO()
+        used = set()
+        with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for row in rows:
+                name = re.sub(r'[\\/:*?"<>|]+', '_', str(row["employee_username"] or "").strip()).rstrip('. ') or "Nhan_Vien"
+                ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}.get(str(row["content_type"]), "jpg")
+                filename = f"{name}.{ext}"
+                key = filename.casefold()
+                suffix = 2
+                while key in used:
+                    filename = f"{name}_{suffix}.{ext}"
+                    key = filename.casefold()
+                    suffix += 1
+                used.add(key)
+                archive.writestr(filename, bytes(row["content"]))
+        return Response(output.getvalue(), media_type="application/zip", headers={
+            "Cache-Control": "private, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": 'attachment; filename="Anh_Nhan_Vien_Tat_Ca.zip"',
+        })
 
     @app.get("/v2/staff/{username}/identity/{side}")
     def identity_image(username: str, side: str, ident: identity_type = Depends(current_identity)):
