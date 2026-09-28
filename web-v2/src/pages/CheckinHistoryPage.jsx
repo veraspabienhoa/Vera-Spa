@@ -28,6 +28,7 @@ function MappingCheck({ record }) {
 
 function FacegateMappings() {
   const [data, setData] = useState(null)
+  const [candidates, setCandidates] = useState(null)
   const [profileId, setProfileId] = useState('')
   const [profile, setProfile] = useState(null)
   const [username, setUsername] = useState('')
@@ -42,7 +43,15 @@ function FacegateMappings() {
   }
   return <details><summary>Ánh xạ hồ sơ FaceGate với nhân viên</summary>
     <p>Admin chọn nhân viên VERA và nhập mã TimeSoft đã kiểm tra. Kết quả đối chiếu ảnh chỉ dùng tra cứu; ảnh đăng ký thay đổi cần xác nhận lại.</p>
-    <button type="button" className="secondary-button" disabled={busy} onClick={() => run(async () => setData(await veraApi.facegateMappings()))}>Tải danh sách ánh xạ</button>
+    <div className="device-actions">
+      <button type="button" className="secondary-button" disabled={busy} onClick={() => run(async () => setData(await veraApi.facegateMappings()))}>Tải danh sách ánh xạ</button>
+      <button type="button" className="primary-button" disabled={busy} onClick={() => run(async () => setCandidates(await veraApi.facegateMappingCandidates()))}>{busy ? 'Đang đối chiếu…' : 'Tự đối chiếu FaceGate'}</button>
+    </div>
+    {candidates && <div className="employee-identity-notice">
+      <p role="status"><strong>Khớp chính xác: {candidates.candidate_count}</strong> · Cần kiểm tra: {candidates.ambiguous_count}. Chưa có ánh xạ nào được tự động xác nhận.</p>
+      {!!candidates.candidates?.length && <details open><summary>Khớp chính xác duy nhất</summary><div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên FaceGate</th><th>Nhân viên VERA</th><th>Thao tác</th></tr></thead><tbody>{candidates.candidates.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.username}</td><td><button type="button" className="secondary-button compact" onClick={() => { setProfileId(String(item.profile_id)); setProfile({ profile_id: item.profile_id, device_name: item.device_name, registration_ref: item.registration_ref }); setUsername(item.username); setConfirmed(false) }}>Chọn để xác nhận</button></td></tr>)}</tbody></table></div></details>}
+      {!!candidates.ambiguous?.length && <details><summary>Không khớp / mơ hồ ({candidates.ambiguous.length})</summary><div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên FaceGate</th><th>Lý do</th></tr></thead><tbody>{candidates.ambiguous.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.reason === 'ambiguous_name' ? 'Tên trùng nhiều nhân viên' : 'Không có tên khớp chính xác duy nhất'}</td></tr>)}</tbody></table></div></details>}
+    </div>}
     {data && <>
       <p role="status">Đã xác nhận trên IP hiện tại: <strong>{data.confirmed_count} / {data.total_count}</strong> nhân viên. {data.unmapped_employees?.length ? `Còn ${data.unmapped_employees.length} nhân viên cần đối chiếu từng hồ sơ thiết bị và mã TimeSoft.` : 'Tất cả nhân viên đã có ánh xạ xác nhận.'} Ánh xạ chưa tự bật tính công.</p>
       {!!data.unmapped_employees?.length && <details><summary>Nhân viên chưa được xác nhận trên IP hiện tại</summary><div className="device-unmapped-list">{data.unmapped_employees.map(item => <button type="button" className="secondary-button compact" key={item.username} onClick={() => { setUsername(item.username); setConfirmed(false) }}>{item.username}{item.full_name ? ` · ${item.full_name}` : ''}</button>)}</div></details>}
