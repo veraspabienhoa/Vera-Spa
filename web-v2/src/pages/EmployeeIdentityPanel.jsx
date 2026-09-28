@@ -541,7 +541,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `${username}_FaceID.${extension}`
+    anchor.download = `${username}.${extension}`
     document.body.appendChild(anchor)
     anchor.click()
     anchor.remove()
