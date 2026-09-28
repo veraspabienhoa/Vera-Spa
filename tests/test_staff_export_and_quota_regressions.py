@@ -167,6 +167,8 @@ def test_export_all_headers_sequence_and_shift_column_survive_styling(workbook_b
                               'Chu kỳ', 'Ca tuần hiện tại', 'Khóa đăng nhập']
     assert len(set(headers)) == len(headers)
     assert sheet.freeze_panes == 'A2'
+    for column in (1, 10, *range(18, 25), 28, 29):
+        assert sheet.cell(2, column).alignment.horizontal == 'center'
     assert sheet.auto_filter.ref.startswith('A1:AD' if include_photos else 'A1:AC')
     for number, row in enumerate(rows, start=1):
         assert sheet.cell(number + 1, 1).value == number
@@ -231,3 +233,30 @@ def test_new_display_columns_are_ignored_on_reimport(staff_app, workbook_builder
     assert helpers['import_values'](imported) == baseline
     assert baseline['work_shift'] == 'Ca 1'
     assert 'current_week_shift' not in baseline
+
+
+@pytest.mark.parametrize('include_photos', [False, True])
+def test_export_excludes_director_before_numbering_and_photo_read(staff_app, monkeypatch, include_photos):
+    import vera_staff_photo_export as photos
+    endpoint = next(r.endpoint for r in staff_app.routes if r.path == '/v2/staff/export.xlsx')
+    cells = dict(zip(endpoint.__code__.co_freevars, endpoint.__closure__))
+    rows = [staff._public_employee({'username': name, 'role': role}, 'Đang làm việc')
+            for name, role in [('Director', 'giamdoc'), ('Manager', 'quanly'), ('Staff', 'nhanvien')]]
+    class Engine:
+        @contextmanager
+        def connect(self):
+            yield object()
+    cells['engine_instance'].cell_contents = Engine
+    cells['staff_result'].cell_contents = lambda *args: {'employees': rows, 'shifts_by_department': {}}
+    photo_reads = []
+    def read(conn, names):
+        photo_reads.append(names)
+        return {}
+    monkeypatch.setattr(photos, 'read_portraits', read)
+    response = TestClient(staff_app).get(f'/v2/staff/export.xlsx?include_photos={str(include_photos).lower()}')
+    assert response.status_code == 200, response.text
+    sheet = load_workbook(BytesIO(style_workbook_bytes(response.content)))['DanhSachNhanSu']
+    assert [(sheet.cell(i, 1).value, sheet.cell(i, 2).value) for i in (2, 3)] == [(1, 'Manager'), (2, 'Staff')]
+    assert sheet.max_row == 3
+    assert photo_reads == ([['Manager', 'Staff']] if include_photos else [])
+    assert rows[0]['role'] == 'giamdoc'  # No change to the shared staff directory.
