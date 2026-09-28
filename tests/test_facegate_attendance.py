@@ -109,6 +109,20 @@ def test_no_shift_and_overlapping_windows_are_not_calendar_fallbacks():
     assert fg.business_day(instant, windows) == (None, 'overlapping_shifts')
 
 
+def test_checkout_role_can_attach_after_midnight_scan_to_previous_overnight_shift():
+    instant = datetime(2026, 9, 27, 1, 8)
+    windows = {DAY: fg.shift_interval(DAY, '17:30', '01:30'),
+               DAY + timedelta(days=1): None}
+    assert fg.business_day(instant, windows, allow_checkout=True) == (DAY, '')
+    assert fg.business_day(instant, windows, allow_checkout=False) == (DAY, '')
+
+
+def test_day_shift_does_not_claim_unrelated_after_midnight_checkout():
+    instant = datetime(2026, 9, 27, 0, 33)
+    windows = {DAY: fg.shift_interval(DAY, '09:00', '17:00')}
+    assert fg.business_day(instant, windows, allow_checkout=True) == (None, 'no_vera_shift')
+
+
 def test_timestamp_candidates_allow_alias_but_never_infer_device_profile_id():
     rows, _, _ = adapt([event(), event('15:00:00', 2)])
     rows[0]['employeeInfo.Name'] = rows[0]['EmployeeName'] = 'Nguyen Anh Thu'
