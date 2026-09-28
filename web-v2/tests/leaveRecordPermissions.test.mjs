@@ -17,6 +17,20 @@ const row = (role, date, reason, allowed = true) => ({
   today,
 })
 
+test('Editors may delete records created today without acquiring edit rights', () => {
+  for (const role of ['letan', 'quanly']) {
+    for (const date of ['2026-09-03', today, '2026-09-05']) {
+      for (const reason of [...LETAN_REASON_GROUPS.flat(), 'Lý do khác']) {
+        const old = row(role, date, reason, false)
+        const fresh = { ...old, createdAt: '2026-09-03T17:00:00Z' }
+        assert.equal(canDeleteLeaveRecord(fresh), true)
+        assert.equal(canEditLeaveRecord(fresh), canEditLeaveRecord(old))
+        assert.equal(canDeleteLeaveRecord({ ...old, createdAt: '2026-09-03T16:59:59Z' }), canDeleteLeaveRecord(old))
+      }
+    }
+  }
+})
+
 test('Admin can always edit and delete, including past records', () => {
   const past = row('admin', '2026-09-03', 'Nghỉ CÓ phép', false)
   assert.equal(canEditLeaveRecord(past), true)

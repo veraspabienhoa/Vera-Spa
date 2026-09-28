@@ -97,3 +97,79 @@ def test_admin_history_and_other_reasons_follow_role_permission_rules(permission
     expected = role == "admin" or (offset >= 0 and has_permission)
     assert allowed(lambda: permissions._validate_edit_permission(None, row, "Lý do khác", ident)) is expected
     assert allowed(lambda: permissions._validate_delete_permission(None, row, ident)) is expected
+
+
+@pytest.mark.parametrize('role', ['letan', 'quanly'])
+@pytest.mark.parametrize('offset', [-3, 0, 3])
+@pytest.mark.parametrize('enabled', [True, False])
+def test_created_today_grants_delete_only_for_editor_roles(permissions, monkeypatch, role, offset, enabled):
+    monkeypatch.setattr(guard, 'load_letan_leave_policy', lambda conn: normalize_policy({'enabled': enabled}))
+    ident = SimpleNamespace(role=role, employee_username='Người khác', allowed=False)
+    row = record(offset)
+    before_edit = allowed(lambda: permissions._validate_edit_permission(None, row, 'Lý do khác', ident))
+    row.update(created_at=datetime(2026, 9, 11, 0, 1, tzinfo=api.VN_TZ), updated_by='Admin')
+    assert allowed(lambda: permissions._validate_delete_permission(None, row, ident))
+    assert allowed(lambda: api._validate_delete_permission(None, row, ident))
+    assert allowed(lambda: permissions._validate_edit_permission(None, row, 'Lý do khác', ident)) == before_edit
+
+
+def test_creation_timestamp_boundary_and_ui_server_delete_parity(permissions):
+    contexts, expected = [], []
+    for role in ['letan', 'quanly', 'admin', 'nhanvien', 'leader', 'locker', 'tapvu']:
+        for created in [None, '', 'invalid', '2026-09-11T00:01:00',
+                        '2026-09-10T16:59:59Z', '2026-09-10T17:00:00Z',
+                        '2026-09-11T16:59:59Z', '2026-09-11T17:00:00Z']:
+            for offset in [-1, 0, 3]:
+                row = record(offset)
+                row.update(created_at=created, update_date='11/09/2026', updated_at='2026-09-11T01:00:00Z')
+                ident = SimpleNamespace(role=role, employee_username='Người khác', allowed=False)
+                contexts.append({'role': role, 'recordDate': row['leave_date'].isoformat(), 'createdAt': created,
+                    'currentReason': row['leave_reason'], 'currentLeaveType': row['leave_type'],
+                    'today': TODAY.isoformat(), 'allowedByPermission': False, 'isOwnRecord': False})
+                expected.append(allowed(lambda: permissions._validate_delete_permission(None, row, ident)))
+    module = (Path(__file__).resolve().parents[1] / 'web-v2/src/lib/leaveRecordPermissions.js').as_uri()
+    js = f'import {{canDeleteLeaveRecord}} from {json.dumps(module)}; import fs from "node:fs"; console.log(JSON.stringify(JSON.parse(fs.readFileSync(0,"utf8")).map(canDeleteLeaveRecord)));'
+    result = subprocess.run(['node', '--input-type=module', '-e', js], input=json.dumps(contexts), capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == expected
+
+
+def test_delete_and_list_queries_fetch_immutable_creation_time():
+    source = (Path(__file__).resolve().parents[1] / 'vera_web_v2_api.py').read_text()
+    deletion = source.split('def _delete_leave_uids(', 1)[1].split('FROM leave_records WHERE record_uid=:uid FOR UPDATE', 1)[0]
+    listing = source.split('def leave_records(', 1)[1].split('FROM leave_records', 1)[0]
+    assert 'created_at' in deletion and 'created_at' in listing
+    page = (Path(__file__).resolve().parents[1] / 'web-v2/src/pages/LeaveRegistrationPage.jsx').read_text()
+    assert 'createdAt: item?.created_at' in page
+
+
+def test_batch_with_old_forbidden_record_rolls_back_before_any_delete(permissions, monkeypatch):
+    today_row = {**record(), 'created_at': '2026-09-11T00:00:00+07:00'}
+    old_row = {**record(), 'created_at': '2026-09-10T00:00:00+07:00', 'update_date': '11/09/2026'}
+    rows = {'new': today_row, 'old': old_row}
+    statements = []
+    class Transaction:
+        is_active = True
+        rolled_back = False
+        def rollback(self):
+            self.rolled_back = True
+            self.is_active = False
+        def commit(self):
+            raise AssertionError('A mixed unauthorized batch must not commit')
+    tx = Transaction()
+    class Connection:
+        def begin(self):
+            return tx
+        def close(self):
+            pass
+        def execute(self, sql, params=None):
+            statements.append(str(sql))
+            if params and 'uid' in params:
+                return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: rows[params['uid']]))
+            return SimpleNamespace()
+    monkeypatch.setattr(api, '_engine_instance', lambda: SimpleNamespace(connect=lambda: Connection()))
+    monkeypatch.setattr(api, '_validate_delete_permission', permissions._validate_delete_permission)
+    with pytest.raises(HTTPException) as exc:
+        api._delete_leave_uids(['new', 'old'], SimpleNamespace(role='letan', employee_username='Lễ tân', allowed=False))
+    assert exc.value.status_code == 403
+    assert tx.rolled_back
+    assert not any('DELETE FROM' in statement for statement in statements)

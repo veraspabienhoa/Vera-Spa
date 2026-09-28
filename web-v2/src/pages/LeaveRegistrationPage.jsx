@@ -178,6 +178,7 @@ export default function LeaveRegistrationPage({ user }) {
     role,
     allowedByPermission: canEdit,
     recordDate: item?.leave_date,
+    createdAt: item?.created_at,
     currentReason: item?.leave_reason,
     currentLeaveType: item?.leave_type,
     today: today(),

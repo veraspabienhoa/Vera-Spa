@@ -1,5 +1,24 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 28-09-2026: Lễ tân/Quản lý xóa lịch được nhập trong ngày
+
+Theo yêu cầu mới, thêm ngoại lệ xóa riêng cho letan/quanly khi created_at
+của bản ghi thuộc ngày hiện tại theo giờ Việt Nam, không phụ thuộc ngày nghỉ,
+nhóm lý do hay người nhập. created_at lấy từ dòng PostgreSQL đang khóa, không
+nhận từ body, không dùng updated_at/update_date để cấp lại quyền cho dòng cũ.
+Timestamp thiếu/không hợp lệ/không có timezone không hưởng ngoại lệ này.
+
+Thêm created_at vào SELECT danh sách và SELECT xóa hiện hữu; không thêm query,
+pool hoặc thay cấu hình phân quyền. Ngoại lệ đứng trước guard nhóm cùng ngày
+và guard hủy cũ, nhưng chỉ trong đường xóa. Quyền sửa, thêm, Admin, nhân viên
+và đường kiểm tra bản ghi cũ giữ nguyên. Xóa batch vẫn kiểm tra hết trước khi
+ghi, một dòng không được phép làm rollback toàn bộ. UI dùng cùng mốc ngày
+Việt Nam; API kiểm tra lại khi bấm xóa, kể cả trang mở qua nửa đêm.
+
+Kiểm thử đối chiếu UI/server với UTC/Việt Nam, dữ liệu thiếu, bản ghi được sửa
+hôm nay nhưng tạo từ trước, nhiều vai trò/ngày nghỉ, bật/tắt guard và batch trộn.
+Không xóa bản ghi thật trong quá trình sửa. CI là gate; chưa triển khai VPS.
+
 ## 28-09-2026: cột STT và ca tuần hiện tại trong Excel nhân viên
 
 Thêm STT đánh số theo thứ tự danh sách đã lọc, trước Tên nhân viên. Thêm Ca

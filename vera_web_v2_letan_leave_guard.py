@@ -10,6 +10,8 @@ Admin:
   selected date; allowed-role and allowed-day filters are not applied to Admin.
 
 Lễ tân / Quản lý (restored from the 2026-08-29 guard):
+- New exception: records created today (Vietnam calendar day) may be deleted.
+  This does not grant edit rights or renew the exception after a later edit.
 - Records before today cannot be edited or deleted.
 - For records dated today whose current reason belongs to one of the five
   explicitly approved groups below, the editor cannot delete the row and may
@@ -31,6 +33,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import HTTPException
+from vera_leave_created_today import may_delete_created_today
 
 from vera_letan_leave_policy import (
     DEFAULT_GROUPS,
@@ -40,7 +43,7 @@ from vera_letan_leave_policy import (
 )
 
 
-RELEASE = "operations-leave-guard-2026-09-07-v5"
+RELEASE = "operations-leave-guard-2026-09-28-created-today"
 EDITOR_ROLES = {
     "letan": "Lễ tân",
     "quanly": "Quản lý",
@@ -235,6 +238,11 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
         if role not in EDITOR_ROLES:
             # Includes Admin: canonical delete already returns immediately.
             return original_delete(conn, row, ident)
+
+        # This explicit creation-day grant affects deletion only. Existing
+        # edit rules and all older/missing-creation-date records keep their path.
+        if may_delete_created_today(role, row, datetime.now(vn_tz)):
+            return
 
         policy = load_letan_leave_policy(conn)
         if not policy["enabled"]:

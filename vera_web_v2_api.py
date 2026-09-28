@@ -43,6 +43,7 @@ from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import URL
 
 from vera_google_credentials import google_credentials
+from vera_leave_created_today import may_delete_created_today
 from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
 from vera_employee_self_service_policy import notice_days as employee_self_service_notice_days
 from vera_letan_leave_policy import load_policy as load_letan_leave_policy
@@ -1105,6 +1106,8 @@ def _validate_delete_permission(conn, row: dict, ident: Identity) -> None:
     role = ident.role
     if role == "admin":
         return
+    if may_delete_created_today(role, row, datetime.now(VN_TZ)):
+        return
     target = row["leave_date"]
     reason = row["leave_reason"]
     today = datetime.now(VN_TZ).date()
@@ -1909,7 +1912,7 @@ def leave_records(
         can_view_penalty = _feature_allowed(conn, ident, "employee_penalty_view")
         rows = conn.execute(text("""
             SELECT record_uid, leave_date, weekday_label, employee_name, leave_reason, leave_type,
-                   detail, penalty, updated_by, updated_at
+                   detail, penalty, updated_by, updated_at, created_at
             FROM leave_records
             WHERE leave_date BETWEEN :start_date AND :end_date
             ORDER BY leave_date, employee_name, record_uid
@@ -2688,7 +2691,7 @@ def _delete_leave_uids(record_uids: list[str], ident: Identity):
             row = conn.execute(text("""
                 SELECT record_uid, source_sheet_id, source_row, leave_date, employee_name,
                        leave_reason, leave_type, detail, calculated_days, accumulated_leave,
-                       penalty, update_date, update_time, updated_by, weekday_label
+                       penalty, update_date, update_time, updated_by, weekday_label, created_at
                 FROM leave_records WHERE record_uid=:uid FOR UPDATE
             """), {"uid": uid}).mappings().first()
             if not row:
