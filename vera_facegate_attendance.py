@@ -380,10 +380,17 @@ def preview(conn, start, end):
         if not saved or int(saved['last_observed_count']) != counts[day.isoformat()] or not synced or synced.date() <= day:
             incomplete.append(day.isoformat())
         day += timedelta(days=1)
+    # Keep every issue in the audit output, but an otherwise valid scan made
+    # outside any scheduled shift is informational for departments that punch
+    # both in/out. It must not by itself block cutover. Identity, duplicate,
+    # address and status problems remain blocking.
+    nonblocking_issue_reasons = {'no_vera_shift'}
+    blocking_issues = [issue for issue in issues
+                       if issue.get('reason') not in nonblocking_issue_reasons]
     blockers = []
     if not rows: blockers.append('no_mapped_evidence')
     if missing: blockers.append('unmapped_employees')
-    if issues: blockers.append('unresolved_events')
+    if blocking_issues: blockers.append('unresolved_events')
     if differences: blockers.append('attendance_differences')
     if evidence_differences: blockers.append('raw_evidence_differences')
     if incomplete: blockers.append('incomplete_archive_days')
@@ -396,7 +403,9 @@ def preview(conn, start, end):
             'attendance_cutover_ready': False, 'start': start.isoformat(), 'end': end.isoformat(),
             'facegate_event_count': len(rows), 'employee_count': len(mapped_users),
             'records': facegate, 'differences': differences, 'issues': issues[:200],
-            'issue_count': len(issues), 'issues_truncated': len(issues) > 200,
+            'issue_count': len(issues), 'blocking_issue_count': len(blocking_issues),
+            'informational_issue_count': len(issues) - len(blocking_issues),
+            'issues_truncated': len(issues) > 200,
             'evidence_differences': evidence_differences,
             'unmapped_employees': missing, 'mapping_candidates': candidates,
             'incomplete_days': incomplete, 'blockers': blockers,
