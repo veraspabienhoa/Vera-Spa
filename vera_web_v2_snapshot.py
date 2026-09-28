@@ -419,6 +419,13 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
             if row['status'] == 'matched' and len(row['codes']) == 1:
                 code_by_user[row['username']] = row['codes'][0]['attendance_code']
         overrides = {str(k): str(v).strip() for k, v in body.overrides.items()}
+        # Operator-confirmed temporary exclusions. Compare normalized VERA usernames,
+        # so accents/case do not accidentally bypass the hold list.
+        held_names = {
+            'cau tuong', 'cam ly', 'hoang huy', 'kim chi', 'ms tuyet', 'my tam',
+            'nguyen thi sen', 'nguyen thi thu hien', 'ngo si dat', 'thanh dung',
+            'thu trang', 'thao nguyen', 'tuan vu', 'vu thi tan', 'letan',
+        }
         allowed_override_ids = set(overrides)
         selected, skipped = [], []
         existing_profiles = {m.get('profile_id') for m in existing if isinstance(m, dict) and m.get('confirmed_by') and m.get('device_address') == address}
@@ -435,6 +442,9 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
                 continue
             if username not in by_user:
                 skipped.append({'profile_id': profile['profile_id'], 'reason': 'override_employee_missing'})
+                continue
+            if norm(username) in held_names:
+                skipped.append({'profile_id': profile['profile_id'], 'username': username, 'reason': 'temporarily_excluded_by_admin'})
                 continue
             # Direct FaceGate mapping is anchored by the confirmed employee and
             # registration reference. Preserve a TimeSoft code when available,
