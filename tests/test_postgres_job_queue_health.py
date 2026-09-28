@@ -92,4 +92,4 @@ def test_expired_owner_cannot_mark_reclaimed_job_done():
     queue.mark_done(lambda: engine, item)
     statement, params = engine.connection.calls[0]
     assert "status='processing' AND locked_at=:locked_at" in statement
-    assert params == {'id': 42, 'locked_at': 'old-lease'}
+    assert params == {'id': 42, 'locked_at': 'old-lease', 'generation': None}

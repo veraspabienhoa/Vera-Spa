@@ -1,5 +1,29 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 28-09-2026: cập nhật check-in qua hàng đợi projection hiện hữu
+
+Mã nguồn xác nhận scheduler bảng tua chờ 300 giây, trong khi trình duyệt poll
+revision mỗi 3 giây. Đây không phải phép đo độ trễ máy FaceID/TimeSoft thực tế.
+Khi ghi cache check-in hôm nay, câu SQL ghi refresh event nay đồng thời đánh
+dấu một job gộp trong cùng giao dịch. Giữ hai SQL round trip mỗi lần ghi cache,
+dùng connection hiện tại, không thêm poller, pool, thread hoặc request trình duyệt.
+Schema queue được khởi tạo cùng cache trước khi writer nhận dữ liệu.
+
+Fingerprint chỉ gồm trường đọc check-in; bỏ metadata ca TimeSoft, tiền công,
+thời lượng, dòng trùng và thứ tự dòng. Các nguồn alias/dated/raw cùng ngày dùng
+một job. Payload có generation; thay đổi tới trong lúc xử lý phải trở lại pending
+khi hoàn tất generation cũ. Giữ lease fencing, retry và phục hồi worker chết.
+Không gọi phép tính công/phạt đầy đủ trên job check-in; scheduler 300 giây vẫn
+chạy phép tính đầy đủ. Nguồn ca vẫn là lịch VERA, không chuyển sang FaceGate.
+
+Worker hiện có thức tối đa mỗi 2 giây khi rảnh; trình duyệt giữ poll 3 giây.
+Do đó bản sửa bỏ chờ tick 300 giây sau khi nguồn đã tới VERA, không cam kết
+zero latency từ máy quét. Hash/UPSERT và projection khi dữ liệu đổi vẫn có chi
+phí; không suy diễn số SQL round trip không đổi thành CPU/I/O không tăng.
+Kiểm thử PostgreSQL dùng pool một connection, rollback cache/event/job, chống
+trùng, gộp burst, generation/lease/retry, ngày mới và worker thật mở ca mà không
+gọi attendance đầy đủ. CI là gate trước merge. Chưa triển khai/xác minh trên VPS.
+
 ## 28-09-2026: xếp cuối tua cho cả đi trễ/về sớm không phép
 
 Người dùng xác nhận quy tắc quay lại xuống cuối áp dụng cho cả Nghỉ không

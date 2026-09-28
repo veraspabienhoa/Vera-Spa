@@ -10,9 +10,10 @@ def test_all_interactive_actions_use_canonical_snapshot_only():
 
 def test_projection_reads_inputs_before_board_lock():
     body = src()
-    inputs = body.split("def projection_inputs(now):", 1)[1].split("def apply_projection", 1)[0]
+    inputs = body.split("def projection_inputs(", 1)[1].split("def apply_projection", 1)[0]
     apply = body.split("def apply_projection", 1)[1].split("def scheduled_projection", 1)[0]
     assert "attendance.read(" in inputs
+    assert "attendance and not checkin_only" in inputs
     assert "_employee_directory(" in inputs
     assert "FROM leave_records" in inputs
     assert "STATE_LOCK" not in inputs
