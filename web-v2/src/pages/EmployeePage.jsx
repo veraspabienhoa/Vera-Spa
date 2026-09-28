@@ -18,7 +18,7 @@ import { getCurrentSession } from '../lib/supabase'
 import EmployeeIdentityPanel, { FaceIdCard } from './EmployeeIdentityPanel'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import VeraDateInput from '../components/VeraDateInput'
-import { staffSecurityApi } from '../lib/staffSecurityApi'
+import { staffSecurityApi, faceIdApi } from '../lib/staffSecurityApi'
 import { refreshProfileReferenceData } from '../lib/profileReferenceRefresh'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
@@ -288,6 +288,14 @@ export default function EmployeePage({ user }) {
         : { ...previous, enabled })
     } catch (error) { setNotice({ type: 'error', message: error.message }) }
   }
+  const downloadAllFaceId = () => run('download-all-face-id', async () => {
+    await faceIdApi.downloadAll()
+    setNotice({ type: 'success', message: 'Đã tạo file ZIP chứa tất cả ảnh Face ID. Tên từng ảnh là tên nhân viên.' })
+  })
+  const downloadAllPortraits = () => run('download-all-portraits', async () => {
+    await staffSecurityApi.downloadAllPortraits()
+    setNotice({ type: 'success', message: 'Đã tạo file ZIP chứa tất cả ảnh nhân viên. Tên từng ảnh là tên nhân viên.' })
+  })
   const manageableRoles = new Set(data?.role_options || [])
   const canManage = (employee) => isAdmin || manageableRoles.has(employee.role)
   const canSaveRows = permissions.employee_edit_save || permissions.employment_status_edit
@@ -544,7 +552,7 @@ export default function EmployeePage({ user }) {
             <option value="">Tất cả ca làm việc</option>
             {shiftOptions.map((shift) => <option key={shift}>{shift}</option>)}
           </select>
-          {isAdmin && <div className="staff-visibility-group"><select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>{permissions.employee_face_id_manage && <button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button>}</div>}
+          {isAdmin && <div className="staff-visibility-group"><select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>{permissions.employee_face_id_manage && <><button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllFaceId}><Download size={15}/> Tải tất cả ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllPortraits}><Download size={15}/> Tải tất cả ảnh nhân viên</button></>}</div>}
         </UiToolbar>
         <div className="staff-actionbar">
           {permissions.employee_add && <button data-ui-key="u-dcce5ace3b12" data-ui-label-default="Thêm nhân viên" className="primary-button" disabled={Boolean(busy)} onClick={() => { setNotice(null); setAddOpen(true) }}><Plus size={17} /><UiCustomText uiKey="u-dcce5ace3b12"> Thêm nhân viên</UiCustomText></button>}
