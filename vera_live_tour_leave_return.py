@@ -1,4 +1,4 @@
-"""One-shot queue placement after a recorded full-day unexcused absence.
+"""One-shot next-day queue placement for recorded unexcused attendance.
 
 Called only by the existing exclusive daily projection. No I/O or money writes.
 """
@@ -48,7 +48,7 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
                                   pair[1].get('id') or pair[0]))
     absent, ordinal = {}, 0
     for _, row in indexed:
-        if canonical_reason(row.get('leave_reason') or row.get('leave_type')) != 'Nghỉ không phép':
+        if canonical_reason(row.get('leave_reason') or row.get('leave_type')) is None:
             continue
         if row.get('leave_date') and str(row['leave_date']) != day:
             continue
@@ -86,7 +86,7 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
             matches = owners.get(source_name, set())
             source_user = source_name if source_name in by_user else next(iter(matches)) if len(matches) == 1 else ''
             if (source_user != username or str(record.get('leave_date')) != marker['day']
-                    or canonical_reason(record.get('leave_reason') or record.get('leave_type')) != 'Nghỉ không phép'):
+                    or canonical_reason(record.get('leave_reason') or record.get('leave_type')) is None):
                 worker.pop(MARKER, None)
                 continue
             explicit = re.match(r'^nguoi thu\s+(\d+)\b', key(record.get('detail')))

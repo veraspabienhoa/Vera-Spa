@@ -7,12 +7,13 @@ from sqlalchemy import event, text
 import vera_live_tour_resource_store as store
 import vera_web_v2_live_tour as live
 from test_live_tour_resource_postgres import database
-from test_live_tour_unexcused_return import DAY, fixture, directory, leaves, order
+from test_live_tour_unexcused_return import DAY, fixture, directory, leaves, order, UNEXCUSED_REASONS
 
 
 @pytest.mark.parametrize('corrected', [False, True])
-def test_return_projection_persists_once_and_rechecks_source_in_one_query(database, corrected):
-    source = leaves()
+@pytest.mark.parametrize('reason', UNEXCUSED_REASONS)
+def test_return_projection_persists_once_and_rechecks_source_in_one_query(database, corrected, reason):
+    source = leaves(reason)
     with database.begin() as conn:
         conn.execute(text('CREATE TABLE leave_records(id bigint PRIMARY KEY, employee_name text, leave_reason text, leave_type text, leave_date date, detail text, record_uid text, source_row int)'))
         for row in source:
