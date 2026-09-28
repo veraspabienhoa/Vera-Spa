@@ -6,7 +6,7 @@ function downloadPortrait(image, username = 'Nhan_Vien') {
   if (!src) return
   const anchor = document.createElement('a')
   anchor.href = src
-  anchor.download = `${username || 'Nhan_Vien'}_Anh_Nhan_Vien.webp`
+  anchor.download = `${username || 'Nhan_Vien'}.webp`
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
