@@ -64,6 +64,24 @@ def test_changed_replay_is_blocked():
     assert len(rows) == 1 and issues[0]['reason'] == 'conflicting_duplicate'
 
 
+def test_stale_reference_can_use_unique_confirmed_device_name_without_mutating_archive():
+    stale = {'file_type': 0, 'file_index': 0, 'file_position': 999999}
+    scan = event(registration_ref=stale)
+    before = scan['payload_json']
+    rows, issues, _ = adapt([scan])
+    assert not issues and len(rows) == 1
+    assert rows[0]['EmployeeName'] == 'Ánh Thử'
+    assert rows[0]['_vera_identity_resolution'] == 'confirmed_unique_device_name'
+    assert scan['payload_json'] == before
+
+
+def test_stale_reference_name_fallback_requires_unique_confirmed_owner():
+    employees = STAFF + [{'username': 'ANH THU', 'full_name': 'Khác', 'role': 'nhanvien'}]
+    rows, issues, _ = fg.adapt_events([event(registration_ref={'file_type': 0, 'file_index': 0, 'file_position': 999999})],
+        MAP, employees, ADDRESS, DAY, DAY, lambda *_: ('Ca 1', '10:00', '23:00'))
+    assert rows == [] and issues[0]['reason'] == 'unmapped_reference'
+
+
 def test_timezone_normalized_before_day_assignment():
     scan = event()
     scan['occurred_at'] = '2026-09-26T02:59:00+00:00'
