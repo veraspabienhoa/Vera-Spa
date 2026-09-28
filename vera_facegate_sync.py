@@ -69,19 +69,49 @@ def ensure_schema(conn):
     conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_facegate_sync_day (
         device_id text NOT NULL, work_date text NOT NULL, last_observed_count integer NOT NULL,
         last_synced_at text NOT NULL, PRIMARY KEY(device_id, work_date))'''))
+    conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_facegate_event_conflict (
+        device_id text NOT NULL, event_id text NOT NULL, occurred_at text NOT NULL,
+        work_date text NOT NULL, stored_payload_sha256 text NOT NULL,
+        observed_payload_sha256 text NOT NULL, observed_payload_json text NOT NULL,
+        first_observed_at text NOT NULL, last_observed_at text NOT NULL,
+        observation_count integer NOT NULL DEFAULT 1,
+        PRIMARY KEY (device_id,event_id,occurred_at,observed_payload_sha256))'''))
 
 
 def persist_batch(conn, device_id, day, batch):
-    """Caller owns one transaction; no device/network calls while it is open."""
+    """Append new events while preserving already archived evidence byte-for-byte.
+
+    FaceGate can retroactively expose current profile metadata (name/reference)
+    for an old event after a profile/photo edit. Such drift is audited in the
+    conflict table and never overwrites the historical archive.
+    """
     now = datetime.now(timezone.utc).isoformat()
     inserted = 0
+    conflicts = 0
+    existing_rows = conn.execute(text('''SELECT event_id,occurred_at,payload_sha256
+        FROM vera_facegate_event WHERE device_id=:device AND work_date=:day'''),
+        {'device': device_id, 'day': day}).mappings().all()
+    existing = {(str(row['event_id']), str(row['occurred_at'])): str(row['payload_sha256'])
+                for row in existing_rows}
+
+    new_rows = []
+    conflict_rows = []
+    for event in batch:
+        key = (str(event['event_id']), str(event['occurred_at']))
+        old_sha = existing.get(key)
+        if old_sha is None:
+            new_rows.append(event)
+        elif old_sha != event['payload_sha256']:
+            conflict_rows.append({**event, 'stored_payload_sha256': old_sha})
+    conflicts = len(conflict_rows)
+
     if getattr(getattr(conn, 'dialect', None), 'name', '') == 'postgresql':
-        # Two statements per <=250 events, not two round trips per event on
-        # every poll. Keep conflict verification: duplicate IDs may not mutate
-        # previously archived evidence. The caller serializes each device.
-        for offset in range(0, len(batch), 250):
+        for offset in range(0, len(new_rows), 250):
+            chunk = new_rows[offset:offset + 250]
+            if not chunk:
+                continue
             params = {'device': device_id, 'now': now,
-                      'batch': json.dumps(batch[offset:offset + 250], ensure_ascii=False)}
+                      'batch': json.dumps(chunk, ensure_ascii=False)}
             inserted += conn.execute(text('''WITH incoming AS (
                 SELECT * FROM jsonb_to_recordset(CAST(:batch AS jsonb)) AS x(
                     event_id text,occurred_at text,work_date text,payload_json text,payload_sha256 text)
@@ -91,25 +121,43 @@ def persist_batch(conn, device_id, day, batch):
                 SELECT :device,event_id,occurred_at,work_date,payload_json,payload_sha256,:now FROM incoming
                 ON CONFLICT(device_id,event_id,occurred_at) DO NOTHING RETURNING 1
             ) SELECT COUNT(*) FROM added'''), params).scalar_one()
-            mismatch = conn.execute(text('''SELECT EXISTS (
-                SELECT 1 FROM jsonb_to_recordset(CAST(:batch AS jsonb)) AS x(
-                    event_id text,occurred_at text,payload_sha256 text)
-                JOIN vera_facegate_event e ON e.device_id=:device
-                    AND e.event_id=x.event_id AND e.occurred_at=x.occurred_at
-                WHERE e.payload_sha256 <> x.payload_sha256)'''), params).scalar_one()
-            if mismatch:
-                raise SyncError('existing_event_changed')
-    for event in ([] if getattr(getattr(conn, 'dialect', None), 'name', '') == 'postgresql' else batch):
-        row = {**event, 'device_id': device_id, 'imported_at': now}
-        changed = conn.execute(text('''INSERT INTO vera_facegate_event
-            (device_id,event_id,occurred_at,work_date,payload_json,payload_sha256,imported_at)
-            VALUES (:device_id,:event_id,:occurred_at,:work_date,:payload_json,:payload_sha256,:imported_at)
-            ON CONFLICT(device_id,event_id,occurred_at) DO NOTHING'''), row)
-        inserted += changed.rowcount
-        existing = conn.execute(text('''SELECT payload_sha256 FROM vera_facegate_event
-            WHERE device_id=:device_id AND event_id=:event_id AND occurred_at=:occurred_at'''), row).scalar_one()
-        if existing != row['payload_sha256']:
-            raise SyncError('existing_event_changed')
+        for offset in range(0, len(conflict_rows), 250):
+            chunk = conflict_rows[offset:offset + 250]
+            if not chunk:
+                continue
+            conn.execute(text('''WITH incoming AS (
+                SELECT * FROM jsonb_to_recordset(CAST(:batch AS jsonb)) AS x(
+                    event_id text,occurred_at text,work_date text,payload_json text,
+                    payload_sha256 text,stored_payload_sha256 text)
+            )
+            INSERT INTO vera_facegate_event_conflict
+                (device_id,event_id,occurred_at,work_date,stored_payload_sha256,
+                 observed_payload_sha256,observed_payload_json,first_observed_at,last_observed_at,observation_count)
+            SELECT :device,event_id,occurred_at,work_date,stored_payload_sha256,
+                   payload_sha256,payload_json,:now,:now,1 FROM incoming
+            ON CONFLICT(device_id,event_id,occurred_at,observed_payload_sha256)
+            DO UPDATE SET last_observed_at=excluded.last_observed_at,
+                          observation_count=vera_facegate_event_conflict.observation_count+1'''),
+                {'device': device_id, 'now': now, 'batch': json.dumps(chunk, ensure_ascii=False)})
+    else:
+        for event in new_rows:
+            row = {**event, 'device_id': device_id, 'imported_at': now}
+            changed = conn.execute(text('''INSERT INTO vera_facegate_event
+                (device_id,event_id,occurred_at,work_date,payload_json,payload_sha256,imported_at)
+                VALUES (:device_id,:event_id,:occurred_at,:work_date,:payload_json,:payload_sha256,:imported_at)
+                ON CONFLICT(device_id,event_id,occurred_at) DO NOTHING'''), row)
+            inserted += changed.rowcount
+        for event in conflict_rows:
+            row = {**event, 'device_id': device_id, 'now': now}
+            conn.execute(text('''INSERT INTO vera_facegate_event_conflict
+                (device_id,event_id,occurred_at,work_date,stored_payload_sha256,
+                 observed_payload_sha256,observed_payload_json,first_observed_at,last_observed_at,observation_count)
+                VALUES (:device_id,:event_id,:occurred_at,:work_date,:stored_payload_sha256,
+                        :payload_sha256,:payload_json,:now,:now,1)
+                ON CONFLICT(device_id,event_id,occurred_at,observed_payload_sha256)
+                DO UPDATE SET last_observed_at=excluded.last_observed_at,
+                              observation_count=vera_facegate_event_conflict.observation_count+1'''), row)
+
     conn.execute(text('''INSERT INTO vera_facegate_sync_day
         (device_id,work_date,last_observed_count,last_synced_at)
         VALUES (:device_id,:day,:count,:now)
@@ -118,8 +166,8 @@ def persist_batch(conn, device_id, day, batch):
         {'device_id': device_id, 'day': day, 'count': len(batch), 'now': now})
     stored = conn.execute(text('''SELECT COUNT(*) FROM vera_facegate_event
         WHERE device_id=:device_id AND work_date=:day'''), {'device_id': device_id, 'day': day}).scalar_one()
-    return {'inserted_count': inserted, 'already_stored_count': len(batch)-inserted,
-            'stored_day_count': stored}
+    return {'inserted_count': inserted, 'already_stored_count': len(batch)-inserted-conflicts,
+            'conflict_count': conflicts, 'stored_day_count': stored}
 
 
 def sync_day(engine, day, *, apply=False, fetch=None):
