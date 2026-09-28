@@ -49,6 +49,12 @@ function FacegateMappings() {
     </div>
     {candidates && <div className="employee-identity-notice">
       <p role="status"><strong>Khớp chính xác: {candidates.candidate_count}</strong> · Cần kiểm tra: {candidates.ambiguous_count}. Chưa có ánh xạ nào được tự động xác nhận.</p>
+      {!!candidates.candidates?.length && <div className="device-actions"><button type="button" className="primary-button" disabled={busy} onClick={() => run(async () => {
+        const result = await veraApi.confirmFacegateMappingCandidates({ include_exact: true, overrides: { '198': 'Gia Anh', '190': 'Linh Đan' } })
+        setMessage(`Đã xác nhận ${result.confirmed_count} ánh xạ. ${result.skipped?.length ? `Còn ${result.skipped.length} hồ sơ chưa đủ mã chấm công TimeSoft duy nhất.` : ''}`)
+        setData(await veraApi.facegateMappings())
+        setCandidates(await veraApi.facegateMappingCandidates())
+      })}>Xác nhận tất cả khớp chính xác + Anh Nguyen → Gia Anh + Cam Tu → Linh Đan</button></div>}
       {!!candidates.candidates?.length && <details open><summary>Khớp chính xác duy nhất</summary><div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên FaceGate</th><th>Nhân viên VERA</th><th>Thao tác</th></tr></thead><tbody>{candidates.candidates.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.username}</td><td><button type="button" className="secondary-button compact" onClick={() => { setProfileId(String(item.profile_id)); setProfile({ profile_id: item.profile_id, device_name: item.device_name, registration_ref: item.registration_ref }); setUsername(item.username); setConfirmed(false) }}>Chọn để xác nhận</button></td></tr>)}</tbody></table></div></details>}
       {!!candidates.ambiguous?.length && <details><summary>Không khớp / mơ hồ ({candidates.ambiguous.length})</summary><div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên FaceGate</th><th>Lý do</th></tr></thead><tbody>{candidates.ambiguous.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.reason === 'ambiguous_name' ? 'Tên trùng nhiều nhân viên' : 'Không có tên khớp chính xác duy nhất'}</td></tr>)}</tbody></table></div></details>}
     </div>}
