@@ -17,12 +17,13 @@ export default function SettingsPage({ user, initialTab, notifications, permissi
   const schedule = admin || ['letan', 'locker', 'quanly', 'tapvu'].some(department => permissions[`work_schedule_${department}`] === true)
   const shifts = ktv || schedule || admin
   const tabs = [
-    ...(catalog ? [['services', 'Cài đặt dịch vụ'], ['areas', 'Cài đặt khu vực dịch vụ']] : []),
+    ...(catalog ? [['services', 'Cài đặt Dịch vụ']] : []),
     ...(admin ? [['products', 'Cài đặt sản phẩm']] : []),
+    ...(catalog ? [['areas', 'Cài đặt khu vực']] : []),
     ...(shifts ? [['shifts', 'Cài đặt ca']] : []),
     ...(admin ? [['notifications', 'Thông báo']] : []),
-    ...(admin ? [['retention', 'Lưu nhật ký']] : []),
     ...(admin || permissions.permission_admin === true ? [['permissions', 'Phân quyền']] : []),
+    ...(admin ? [['retention', 'Lưu nhật ký']] : []),
   ]
   const [tab, setTab] = useState(initialTab || tabs[0]?.[0])
   useEffect(() => { if (initialTab) setTab(initialTab) }, [initialTab])
@@ -35,13 +36,15 @@ export default function SettingsPage({ user, initialTab, notifications, permissi
     if (next === null) return
     event.preventDefault()
     setTab(tabs[next][0])
-    document.getElementById(`settings-${tabs[next][0]}-tab`)?.focus({ preventScroll: true })
+    const button = document.getElementById(`settings-${tabs[next][0]}-tab`)
+    button?.focus({ preventScroll: true })
+    button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
   if (!tabs.length) return <p className="error-box">Tài khoản chưa được cấp quyền mở Cài đặt.</p>
   return <div className="feature-page spa-management settings-page">
     <div data-ui-key="u-1ea533c11f97" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Cài đặt</h1><p>Quản lý dịch vụ, ca làm việc, thông báo và phân quyền.</p></div></div>
-    <UiToolbar data-ui-key="u-e9182f37b991" className="spa-tabs settings-tabs" onKeyDown={navigateTabs} role="tablist" aria-label="Cài đặt" style={{ '--settings-tab-count': tabs.length }}>
-      {tabs.map(([key, label]) => <button data-ui-key="u-71f5ef37dfd5" type="button" key={key} id={`settings-${key}-tab`} role="tab" tabIndex={activeTab === key ? 0 : -1} aria-selected={activeTab === key} aria-controls="settings-content" onClick={() => setTab(key)}>{label}</button>)}
+    <UiToolbar data-ui-key="u-settings-navigation-20260928" className="spa-tabs settings-tabs" onKeyDown={navigateTabs} role="tablist" aria-label="Cài đặt">
+      {tabs.map(([key, label]) => <button data-ui-key={`u-settings-navigation-${key}-20260928`} type="button" key={key} id={`settings-${key}-tab`} role="tab" tabIndex={activeTab === key ? 0 : -1} aria-selected={activeTab === key} aria-controls="settings-content" onClick={() => setTab(key)}>{label}</button>)}
     </UiToolbar>
     <div id="settings-content" role="tabpanel" aria-labelledby={`settings-${activeTab}-tab`}>
       {activeTab === 'products' ? <ProductSettings/> : activeTab === 'notifications' ? notifications : activeTab === 'retention' ? <TechnicalRetentionSettings/> : activeTab === 'permissions' ? permissionSettings : activeTab === 'shifts' ? <>
