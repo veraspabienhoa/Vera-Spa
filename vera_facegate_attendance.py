@@ -79,9 +79,26 @@ def confirmed_index(mappings, employees, address):
 
 
 def adapt_events(events, mappings, employees, address, start, end, resolve_shift):
-    """Preserve actual dates/seconds and all distinct scans; cluster in VERA."""
+    """Preserve actual dates/seconds and all distinct scans; cluster in VERA.
+
+    Historical FaceGate rows can retain a pre-photo-change registration_ref.
+    A stale ref may fall back to device_name only when that normalized name
+    identifies exactly one already-confirmed mapping on the current device.
+    The archived payload itself remains immutable.
+    """
     index = confirmed_index(mappings, employees, address)
     profiles = {p['username']: p for p in employees}
+    from vera_web_v2_attendance_v42 import _norm
+    confirmed_name_owners = defaultdict(set)
+    confirmed_mapping_by_user = {}
+    for mapping in index.values():
+        username = mapping['username']
+        confirmed_mapping_by_user[username] = mapping
+        profile = profiles.get(username, {})
+        for value in (username, profile.get('full_name'), mapping.get('device_name')):
+            token = _norm(value)
+            if token:
+                confirmed_name_owners[token].add(username)
     windows = {}
     for username, profile in profiles.items():
         windows[username] = {}
@@ -113,12 +130,20 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
         seen[key] = digest
         ref = reference(payload.get('registration_ref'))
         mapping = index.get(ref)
+        resolution = 'registration_ref'
         reason = ''
         if payload.get('device_address', '') != address:
             reason = 'device_address_changed'
         elif not mapping:
-            reason = 'unmapped_reference'
-        elif (str(payload.get('status_code')), str(payload.get('type_code'))) not in PREVIEW_STATUS_TYPES:
+            token = _norm(payload.get('device_name'))
+            owners = confirmed_name_owners.get(token, set()) if token else set()
+            if len(owners) == 1:
+                username = next(iter(owners))
+                mapping = confirmed_mapping_by_user.get(username)
+                resolution = 'confirmed_unique_device_name'
+            else:
+                reason = 'unmapped_reference'
+        if not reason and (str(payload.get('status_code')), str(payload.get('type_code'))) not in PREVIEW_STATUS_TYPES:
             reason = 'unverified_status_type'
         if reason:
             issues.append({'event_id': event_id, 'reason': reason,
@@ -139,6 +164,7 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
                        'MachineTimeCheckInStr': instant.strftime('%d/%m/%Y %H:%M:%S'),
                        'WorkTimeName': name, 'StartWorkTime': left, 'EndWorkTime': right,
                        '_vera_evidence_source': 'facegate', '_vera_event_id': event_id,
+                       '_vera_identity_resolution': resolution,
                        '_vera_checkin_at': instant.replace(tzinfo=VN_TZ).isoformat()})
     output.sort(key=lambda row: (row['WorkDateStr'], row['EmployeeName'], row['_vera_checkin_at']))
     return output, issues, index
