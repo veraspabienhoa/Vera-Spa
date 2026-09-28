@@ -6,6 +6,8 @@ cutover is performed by these routes.
 from datetime import date
 from io import BytesIO
 import hashlib
+import re
+import zipfile
 import unicodedata
 from collections import Counter
 from pydantic import BaseModel, Field
@@ -166,6 +168,35 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
                 FROM employees e LEFT JOIN vera_employee_face_id f ON f.employee_username=e.username
                 WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'""")).mappings().all()
         return {'records': batch_plan(body.filenames, employees)}
+
+    @app.get('/v2/face-id/export-all.zip')
+    def export_all_face_id(ident: identity_type = Depends(current_identity)):
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'employee_face_id_manage')
+            ensure_table(conn)
+            rows = conn.execute(text("""SELECT f.employee_username, f.content, f.content_type
+                FROM vera_employee_face_id f
+                JOIN employees e ON lower(btrim(e.username))=lower(btrim(f.employee_username))
+                WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'
+                ORDER BY f.employee_username""")).mappings().all()
+        output = BytesIO()
+        used = set()
+        with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for row in rows:
+                name = re.sub(r'[\\/:*?"<>|]+', '_', str(row['employee_username'] or '').strip()).rstrip('. ') or 'Nhan_Vien'
+                ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}.get(str(row['content_type']), 'jpg')
+                filename = f'{name}.{ext}'
+                key = filename.casefold()
+                suffix = 2
+                while key in used:
+                    filename = f'{name}_{suffix}.{ext}'
+                    key = filename.casefold()
+                    suffix += 1
+                used.add(key)
+                archive.writestr(filename, bytes(row['content']))
+        return Response(output.getvalue(), media_type='application/zip', headers={
+            **HEADERS, 'Content-Disposition': 'attachment; filename="Face_ID_Tat_Ca_Nhan_Vien.zip"',
+        })
 
     @app.get('/v2/face-id/assignment-employees')
     def assignment_employees(ident: identity_type = Depends(current_identity)):
