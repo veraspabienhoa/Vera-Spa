@@ -94,6 +94,8 @@ def inspect(conn, day):
             'employee_count': len(rows),
             'checked_in_count': sum(bool(r.get('check_in')) for r in rows),
             'pending_employee_count': sum(bool(r.get('attendance_pending')) for r in rows),
+            'applied_identity_review_ids': sorted({review for r in rows
+                for review in r.get('applied_identity_review_ids', [])}),
             'pending_reasons': dict(Counter(reason for row in rows for reason in row.get('attendance_pending_reasons', [])))}
 
 

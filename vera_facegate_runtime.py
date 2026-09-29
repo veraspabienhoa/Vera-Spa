@@ -3,6 +3,7 @@
 The immutable archive is authoritative; the separate cache is an invalidation
 and freshness signal. No TimeSoft history is overwritten or used as fallback.
 """
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 from vera_facegate_control_log import VN_TZ
@@ -25,6 +26,10 @@ def annotate(records, data, *, now=None):
     now = now or datetime.now(VN_TZ)
     mapped = {m['username'] for m in data['index'].values()}
     blocking = [i for i in data['issues'] if i.get('reason') != 'no_vera_shift']
+    identity_reviews = defaultdict(set)
+    for scan in data.get('rows', []):
+        if scan.get('_vera_identity_review_id'):
+            identity_reviews[(scan.get('EmployeeName'), scan.get('WorkDateStr'))].add(scan['_vera_identity_review_id'])
     for row in records:
         day = datetime.strptime(row['date'], '%d/%m/%Y').date()
         reasons = []
@@ -59,6 +64,7 @@ def annotate(records, data, *, now=None):
                    payable_minutes_verified=bool(row.get('check_in') and row.get('check_out') and not reasons),
                    identity_verified=username in mapped,
                    attendance_evidence_issues=bool(blocking))
+        row['applied_identity_review_ids'] = sorted(identity_reviews[(username, row['date'])])
         if row.get('attendance_roster_only'):
             row['attendance_note'] = 'Chờ đăng ký Face ID' if username not in mapped else 'Chưa ghi nhận lượt quét phù hợp'
     return records

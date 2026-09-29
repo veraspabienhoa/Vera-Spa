@@ -33,3 +33,14 @@ Lịch sử TimeSoft trong PostgreSQL, log gốc FaceGate, ngoại lệ được
 Không deploy phiên bản cũ không hiểu `attendance-source.json` khi đang dùng
 FaceGate. Muốn khôi phục nguồn cũ cần một quyết định vận hành riêng và đối chiếu
 công trong khoảng đã chuyển đổi.
+
+Ngày 29-09, người vận hành đã xác minh chuyển nguồn lúc 21:15:59 và có lần
+đồng bộ tiếp lúc 21:19:18. Với bản sửa định danh Gia Anh, deploy mã mới rồi
+chạy lệnh chỉ đọc phía trên; không cần bật lại `retire_timesoft` hoặc chạy lại
+`--apply`. Kết quả cần giữ `source=facegate`, `timesoft_network_enabled=false`,
+`cache_fresh=true` và có `gia-anh-identity-2026-09-29-79335` trong
+`applied_identity_review_ids` khi đọc ngày 29-09-2026. Có thể thêm
+`--date 2026-09-29` nếu kiểm tra sau ngày này.
+
+Ngoại lệ chỉ nhận diện lượt 79335 của Gia Anh theo xác nhận của người vận hành.
+Giờ ra, ca còn mở, thiếu lịch hoặc nhân viên chưa ánh xạ vẫn cần xử lý riêng.
