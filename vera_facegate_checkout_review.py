@@ -9,6 +9,7 @@ from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
+from vera_facegate_address_history import accepts_address, accepts_event
 
 VN = timezone(timedelta(hours=7))
 MAX_REVIEWS = 100
@@ -96,8 +97,11 @@ def validate_review(review, events, index, employees, address, device_id):
     require(review.get('version') == 1 and review.get('confirmed_by')
             and review.get('reason') and review.get('id'), 'review_unconfirmed')
     stamp(review['confirmed_at'])
+    mapping = index.get(ref(review.get('registration_ref')))
     require(review.get('device_id') == device_id
-            and review.get('device_address') == address, 'review_device_changed')
+            and accepts_address(mapping, review.get('device_address'), address,
+                                str(review.get('work_date')) + 'T00:00:00+07:00'),
+            'review_device_changed')
     people = [p for p in employees if p.get('username') == review.get('username')]
     require(len(people) == 1 and people[0].get('role') == review.get('role')
             and review.get('role') in CHECKOUT_ROLES, 'review_employee_or_role_changed')
@@ -123,7 +127,8 @@ def validate_review(review, events, index, employees, address, device_id):
         require(stamp(event['occurred_at']) == stamp(expected_event['occurred_at'])
                 and fingerprint(p) == expected_event.get('payload_sha256'),
                 'review_evidence_changed')
-        require(p.get('device_address') == address
+        require(p.get('device_address') == review.get('device_address')
+                and accepts_event(mapping, p, address, event['occurred_at'])
                 and index.get(ref(p.get('registration_ref'))) == mapping,
                 'review_event_owner_changed')
         require((str(p.get('status_code')), str(p.get('type_code'))) == ('1', '0'),
@@ -242,9 +247,11 @@ def overlay_records(records, reviews):
 
 def prepare_case(events, index, employees, address, device_id, actor, now):
     review = deepcopy(CASE)
-    require(address == review['device_address'], 'case_device_address_changed')
     owners = [m for m in index.values() if m.get('username') == review['username']]
     require(len(owners) == 1, 'case_mapping_not_unique')
+    # Check the original evidence time, not the time of this read-only rerun.
+    require(accepts_address(owners[0], review['device_address'], address,
+                           review['events'][-1]['occurred_at']), 'case_device_address_changed')
     review.update(version=1, device_id=device_id, profile_id=owners[0]['profile_id'],
                   registration_ref=deepcopy(owners[0]['registration_ref']),
                   confirmed_by=actor, confirmed_at=now)

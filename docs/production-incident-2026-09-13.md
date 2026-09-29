@@ -1,5 +1,68 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 29-09-2026: đăng ký Face ID mới từ hồ sơ VERA
+
+Người vận hành xác nhận năm nhân viên chưa đăng ký khuôn mặt và yêu cầu
+chọn ảnh trong VERA rồi gửi lên máy. Thêm nút đăng ký trong FaceIdCard,
+API yêu cầu đồng thời quyền quản lý Face ID và ánh xạ thiết bị, xác nhận đúng
+người và hash ảnh đang lưu. Quyền tự thay ảnh không cấp quyền ghi máy.
+
+Adapter dựa trên nguồn bwlist.asp/js/bwlist.js người vận hành cung cấp ngày
+28-09: upload multipart vfileselector với LISTADD, IsCheckSim=1; poll
+getUploadPercent; setWhitelist action=add, uid=-1; sau đó đọc lại danh sách
+đầy đủ và hồ sơ riêng. Chỉ thành công khi tên, token lần ghi và tham chiếu
+ảnh chính xác. Máy tự cấp UID. Không tự chọn UID hoặc ghép theo tên.
+JPEG vận chuyển giữ tỷ lệ, không thay ảnh gốc đã lưu. Không thay ảnh đăng ký
+hiện có vì việc đó cần bảo toàn lịch sử tham chiếu qua một quy trình riêng.
+
+Nhật ký PostgreSQL được commit trước mỗi thao tác ghi máy. Unique partial
+index chỉ cho một lượt chưa hoàn tất trên thiết bị. Không giữ transaction
+hoặc pooled connection trong lúc gọi mạng. Mất phản hồi sau thao tác ghi
+chuyển sang chưa xác minh; nhấn lại không gửi ảnh/lưu hồ sơ lần hai. Nút kiểm
+tra lại chỉ đọc máy và hoàn tất ánh xạ nếu bằng chứng khớp. Trường hợp tiến
+trình chết trước bước lưu hồ sơ cần đối chiếu nhật ký, không tự giải phóng
+lượt để tạo hồ sơ lặp. Khi lưu ánh xạ phải kiểm tra lại IP, nhân viên và xung
+đột quyền sở hữu dưới khóa; không ghi đè ánh xạ cũ.
+
+Đây là tính năng đăng ký mới, không xác nhận năm nhân viên đã được đăng ký.
+Chưa kiểm thử ghi/nhận diện trên máy thật. Ngày 29-09, người vận hành đã
+cung cấp đầy đủ sendBTNSetting: action=list dùng GET; action khác dùng POST,
+nonce tám ký tự ở cả nRanId và body, Content-Type text/html; charset=UTF-8.
+Đã sửa setWhitelist sang POST theo bằng chứng này, giữ query và Basic Auth
+phía máy chủ, không retry thao tác ghi. Kiểm thử xác nhận đúng method/body/header.
+CI/PostgreSQL và thử một đăng ký có ảnh được người vận hành chọn là các
+bước nghiệm thu còn lại. Nguồn tính công, lương/phạt và tám blocker không
+được mở khóa bởi tính năng này.
+
+## 29-09-2026: FaceGate đổi IP và giữ bằng chứng lịch sử
+
+Kết quả do người vận hành cung cấp xác nhận tuyến Tailscale ban đầu chỉ tới
+IP cũ; sau bổ sung tuyến máy mới, đọc thiết bị thành công. Bước xác nhận lại
+51 ánh xạ đã commit và đọc lại thành công sau khi đối chiếu chính xác ID hồ sơ,
+tham chiếu đăng ký và tên máy. Lần preview tiếp theo đọc đủ 40 sự kiện, khớp
+40, chưa khớp 0. Worker báo kho ngày 28 có 148, ngày 29 có 40, thêm mới 0.
+Đây là các snapshot do người dùng gửi, chưa chứng minh chuyển nguồn tính công.
+
+Mã cũ so địa chỉ hiện tại với địa chỉ trong mọi payload/review, nên đổi IP
+làm lịch sử nguyên vẹn và ngoại lệ checkout đã lưu bị từ chối. Bản sửa đọc
+metadata ip_reconfirmation trên từng ánh xạ hiện tại: đúng người xác nhận,
+địa chỉ trước/sau, phương thức đối chiếu, mốc xác nhận và reference chính xác.
+Chỉ bằng chứng trước/đúng mốc đó được chấp nhận từ địa chỉ cũ. Không dùng
+fallback tên cho địa chỉ cũ hoặc cho tham chiếu thiếu, không tạo alias IP chung.
+Xác nhận ánh xạ khác về sau làm metadata cũ mất hiệu lực.
+
+Review vẫn kiểm tra hash nguyên bản, chủ sở hữu, ID hồ sơ, năm sự kiện, thời
+điểm, vai trò và ca. Đọc lại case sau đổi IP không tạo review mới. Không sửa
+payload/hash/archive, không ghi lại review, không mở connection hoặc gọi máy
+trong projection. Nguồn chấm công, lương/phạt và các gate chuyển nguồn giữ
+nguyên. Bản sửa này chỉ xử lý lịch sử sau chuyển IP đã được xác minh.
+
+Kiểm thử gồm địa chỉ thứ ba, thiếu/sai reference, thời điểm sau chuyển IP,
+metadata thiếu/sai, xác nhận lại khác, status lạ, bảo toàn input và kiểm tra
+review cũ/idempotency/fingerprint. Chưa xác minh bản sửa trên VPS. Những vấn
+đề dữ liệu chưa ánh xạ, sự kiện thiếu định danh, tham chiếu TimeSoft và ngữ
+nghĩa status/type vẫn phải xử lý trước khi bật nguồn chính thức.
+
 ## 28-09-2026: Lễ tân/Quản lý xóa lịch được nhập trong ngày
 
 Theo yêu cầu mới, thêm ngoại lệ xóa riêng cho letan/quanly khi created_at
