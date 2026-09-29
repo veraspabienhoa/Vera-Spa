@@ -1,5 +1,36 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 29-09-2026 — FaceGate activation verified; one reviewed Gia Anh identity
+
+Operator-provided production output verifies activation on release bc857f0 at
+21:15:59 +07:00: source=facegate, effective_date=2026-09-29,
+timesoft_network_enabled=false, cache_fresh=true. A subsequent read-only report
+shows last_sync_at=21:19:18 +07:00, proving another publication after activation.
+These are timestamped observations, not a guarantee of future connectivity.
+Payroll/penalty writes were false. Missing mappings, shifts and unfinished work
+remain pending; no system-account exemption has been confirmed.
+
+The remaining identity issue for 29-09 was event 79335 at 16:31:37 +07:00.
+The operator explicitly confirmed "Anh Nguyen" is Gia Anh at 21:21:48 +07:00.
+A later read-only report matches that event on the device and in the immutable
+archive (both references null), verifies the archive digest, and identifies
+Gia Anh / Nguyễn Gia Anh / letan with confirmed profile 198, reference
+0/0/12910592 on the current address. The mapping confirmation is unchanged from
+2026-09-29T04:27:27.238000+00:00.
+
+Add an identity-only, versioned review for that exact timestamp, ID and digest,
+requiring the same confirmed mapping and employee. It adds the scan to the
+ordinary VERA shift resolver and exposes the review ID in projection/inspection.
+It neither assigns a direction nor creates a checkout, shift, mapping or salary.
+Raw payload/hash and archived null reference remain unchanged. Reused IDs or
+changed evidence/owner/confirmation reject the review; other missing references
+still block normally. This does not create a general name alias or change the
+two reviewed Yến Linh test scans. The source remains FaceGate.
+
+This review is code-level work pending deployment/production readback. Regression
+coverage includes tampering, other unknown scans, missing shifts/checkouts, and
+a real PostgreSQL read-only transaction with a pool of one and archive comparison.
+
 ## 29-09-2026: tính thử lương cơ bản từ dữ liệu FaceGate
 
 Theo yêu cầu tiếp tục tính công/lương, bổ sung API và nút Admin trong bảng

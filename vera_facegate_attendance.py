@@ -89,7 +89,8 @@ def confirmed_index(mappings, employees, address):
             if refs[reference(m['registration_ref'])] == 1 and users[m['username']] == 1}
 
 
-def adapt_events(events, mappings, employees, address, start, end, resolve_shift):
+def adapt_events(events, mappings, employees, address, start, end, resolve_shift,
+                 *, reviewed_identities=None):
     """Preserve actual dates/seconds and all distinct scans; cluster in VERA.
 
     Historical FaceGate rows can retain a pre-photo-change registration_ref.
@@ -142,10 +143,16 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
         ref = reference(payload.get('registration_ref'))
         mapping = index.get(ref)
         resolution = 'registration_ref'
+        reviewed = (reviewed_identities or {}).get((event_id, str(event['occurred_at'])))
+        if reviewed:
+            # Only the event-bound review validator may provide this binding.
+            # Preserve the original null reference; do not synthesize raw data.
+            mapping = reviewed['mapping']
+            resolution = 'operator_reviewed_identity'
         reason = ''
         if not accepts_event(mapping, payload, address, event['occurred_at']):
             reason = 'device_address_changed'
-        elif not ref:
+        elif not ref and not reviewed:
             # Only a valid but stale reference may use the confirmed-name fallback.
             # Missing/malformed evidence must never be assigned by name alone.
             reason = 'unmapped_reference'
@@ -183,6 +190,8 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
                        '_vera_evidence_source': 'facegate', '_vera_event_id': event_id,
                        '_vera_identity_resolution': resolution,
                        '_vera_checkin_at': instant.replace(tzinfo=VN_TZ).isoformat()})
+        if reviewed:
+            output[-1]['_vera_identity_review_id'] = reviewed['review_id']
     output.sort(key=lambda row: (row['WorkDateStr'], row['EmployeeName'], row['_vera_checkin_at']))
     return output, issues, index
 
@@ -201,7 +210,7 @@ def read_evidence(conn, start, end):
     if not available:
         return address, mappings, [], []
     params = {'device': device_id, 'start': start.isoformat(), 'end': (end + timedelta(days=1)).isoformat()}
-    events = conn.execute(text('''SELECT event_id,occurred_at,payload_json FROM vera_facegate_event
+    events = conn.execute(text('''SELECT event_id,occurred_at,payload_json,payload_sha256 FROM vera_facegate_event
         WHERE device_id=:device AND work_date BETWEEN :start AND :end
         ORDER BY occurred_at,event_id LIMIT 20001'''), params).mappings().all()
     if len(events) > MAX_EVENTS:
@@ -338,7 +347,16 @@ def project_evidence(conn, start, end, *, checkout_reviews_override=None):
         if schedule is None:
             schedule = schedules.get((day, v42._norm(profile.get('full_name'))))
         return attendance._vera_shift_fields(profile, day, definitions, schedule)
-    rows, issues, index = adapt_events(events, mappings, employees, address, start, end, resolve)
+    from vera_facegate_identity_review import resolve as resolve_identities
+    bindings, identity_issues, identity_reviews = resolve_identities(
+        events, confirmed_index(mappings, employees, address), employees, address)
+    rows, issues, index = adapt_events(events, mappings, employees, address, start, end, resolve,
+                                      reviewed_identities=bindings)
+    # Changed reviewed evidence must not silently become another employee's row,
+    # even if a changed reference would otherwise pass the ordinary adapter.
+    invalid_ids = {i['event_id'] for i in identity_issues}
+    rows = [r for r in rows if r['_vera_event_id'] not in invalid_ids]
+    issues.extend(identity_issues)
     rows, issues, applied_reviews = checkout_review.overlay_rows(
         rows, issues, reviews, events, index, employees, address,
         review_device_id, start, end, resolve)
@@ -349,7 +367,8 @@ def project_evidence(conn, start, end, *, checkout_reviews_override=None):
     issues.extend(test_scan_issues)
     return {'rows': rows, 'raw_rows': raw_rows, 'issues': issues, 'index': index,
             'employees': employees, 'address': address, 'events': events, 'syncs': syncs,
-            'applied_reviews': applied_reviews, 'test_scan_reviews': test_scan_reviews}
+            'applied_reviews': applied_reviews, 'test_scan_reviews': test_scan_reviews,
+            'identity_reviews': identity_reviews}
 
 
 def finish_records(facegate, applied_reviews):
@@ -446,6 +465,7 @@ def preview(conn, start, end, *, checkout_reviews_override=None):
             'evidence_differences': evidence_differences,
             'applied_checkout_review_ids': [r['id'] for r in applied_reviews],
             'applied_test_scan_reviews': test_scan_reviews,
+            'applied_identity_reviews': data['identity_reviews'],
             'unmapped_employees': missing, 'mapping_candidates': candidates,
             'incomplete_days': incomplete, 'blockers': blockers,
             'last_sync_at': max((str(s['last_synced_at']) for s in syncs), default=''),
