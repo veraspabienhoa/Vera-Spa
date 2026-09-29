@@ -99,6 +99,8 @@ def refresh_runtime_credentials(ts) -> tuple[str, str]:
 
 
 def create_http_authenticated_session(ts) -> requests.Session:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     username, password = refresh_runtime_credentials(ts)
     if not username or not password:
         raise TimeSoftAuthenticationError("Thiếu TIMESOFT_USERNAME/TIMESOFT_PASSWORD trên máy chủ VERA.")
@@ -181,6 +183,8 @@ def install(ts) -> None:
     http_enabled = _truthy(os.getenv("TIMESOFT_HTTP_AUTH", "1"), True)
 
     def create_authenticated_session():
+        from vera_attendance_source import require_timesoft_enabled
+        require_timesoft_enabled()
         if not http_enabled:
             refresh_runtime_credentials(ts)
             return original_create_session()

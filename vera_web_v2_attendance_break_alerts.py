@@ -80,6 +80,9 @@ def _parse_clock(value: Any, work_day: date) -> datetime | None:
 
 
 def _timesoft_freshness(conn) -> dict[str, Any]:
+    from vera_attendance_source import enabled, health
+    if enabled():
+        return health(conn)
     row = conn.execute(text("""
         SELECT updated_at,
                GREATEST(0, EXTRACT(EPOCH FROM (NOW() - updated_at))) AS age_seconds
@@ -187,6 +190,9 @@ def _deadline_payload(*, work_day: date, break_out: datetime, break_in: datetime
 
 
 def _apply_tour_fallback(conn, records: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:
+    from vera_attendance_source import enabled
+    if enabled():
+        return records
     today = datetime.now().date()
     if not (start <= today <= end):
         return records
@@ -224,6 +230,8 @@ def _event_key(item: dict[str, Any]) -> str:
 
 
 def _fact(item: dict[str, Any], now: datetime) -> dict[str, Any] | None:
+    if item.get('evidence_source') == 'facegate' and item.get('attendance_evidence_issues'):
+        return None
     try:
         work_day = datetime.strptime(str(item.get("date") or ""), "%d/%m/%Y").date()
     except ValueError:

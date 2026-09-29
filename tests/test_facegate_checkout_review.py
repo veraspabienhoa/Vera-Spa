@@ -185,7 +185,7 @@ def test_preview_integration_reuses_context_day_and_keeps_cutover_closed(monkeyp
     reader = SimpleNamespace(_active_roster=lambda c: STAFF,
         snapshot=SimpleNamespace(_shift_break_settings=lambda c: ([], {})),
         _schedule_map=lambda *a: {}, _vera_shift_fields=lambda *a: ('Ca 1', '09:00', '17:00'),
-        _datasets=lambda *a: [], _records_v42_fast=calculate)
+        _timesoft_datasets=lambda *a: [], _records_v42_fast=calculate)
     v42 = SimpleNamespace(_norm=lambda s: str(s or '').casefold())
     monkeypatch.setitem(sys.modules, 'vera_web_v2_attendance_query_perf', reader)
     monkeypatch.setitem(sys.modules, 'vera_web_v2_attendance_v42', v42)

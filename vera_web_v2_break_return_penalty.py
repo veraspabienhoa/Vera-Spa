@@ -35,6 +35,8 @@ def _work_day(item: dict[str, Any]) -> date | None:
 
 def confirmed_break_return_fact(item: dict[str, Any], today: date) -> dict[str, Any] | None:
     """Return a confirmed, eligible late-return fact for UI and background jobs."""
+    if item.get('evidence_source') == 'facegate' and item.get('attendance_evidence_issues'):
+        return None
     work_day = _work_day(item)
     if (
         work_day != today

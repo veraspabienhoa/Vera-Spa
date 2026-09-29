@@ -277,6 +277,10 @@ def _record(item: dict[str, Any], definitions: list[dict[str, Any]], break_confi
 
 
 def _records(conn, start: date, end: date) -> list[dict[str, Any]]:
+    from vera_attendance_source import enabled
+    if enabled():
+        from vera_web_v2_attendance_query_perf import _records_v42_fast
+        return _records_v42_fast(conn, start, end)
     definitions, break_config = _shift_break_settings(conn)
     support_allowances = _support_late_allowances(conn, start, end)
     rows = conn.execute(text("""
@@ -578,6 +582,10 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
     def attendance_source(ident: identity_type = Depends(current_identity)):
         if str(getattr(ident, 'role', '') or '').strip().lower() != 'admin':
             raise HTTPException(403, 'Chỉ Admin được xem tình trạng nguồn chấm công.')
+        from vera_attendance_source import enabled, health
+        if enabled():
+            with engine_instance().connect() as conn:
+                return {**health(conn), 'device_connection_verified': False}
         with engine_instance().connect() as conn:
             row = conn.execute(text("""
                 SELECT row_count, updated_at, expires_at, expires_at > NOW() AS is_fresh

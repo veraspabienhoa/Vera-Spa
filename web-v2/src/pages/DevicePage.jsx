@@ -160,11 +160,11 @@ export default function DevicePage({ user }) {
       })}</div>
       {!visible.length && <p role="status">Không có thiết bị phù hợp bộ lọc.</p>}
     </>}
-    {user?.role === 'admin' && <details className="device-source"><summary>Nguồn chấm công TimeSoft</summary>
+    {user?.role === 'admin' && <details className="device-source"><summary>Nguồn chấm công hiện tại</summary>
       <p>Dữ liệu đồng bộ là nguồn riêng; không xác nhận trạng thái online của từng thiết bị.</p>
       <button type="button" className="secondary-button" disabled={sourceBusy} onClick={inspectSource}>{sourceBusy ? 'Đang kiểm tra…' : 'Kiểm tra nguồn'}</button>
       {sourceError && <p role="alert">{sourceError}</p>}
-      {source && <p>{source.row_count} bản ghi; đồng bộ lúc {formatVeraDateTime(source.last_sync_at)}; {source.cache_fresh ? 'cache còn hạn' : 'cache hết hạn'}.</p>}
+      {source && <p><strong>{source.source === 'facegate' ? 'FaceGate trực tiếp' : 'TimeSoft'}</strong> · {source.row_count} bản ghi; đồng bộ lúc {formatVeraDateTime(source.last_sync_at)}; {source.cache_fresh ? 'cache còn hạn' : 'cache hết hạn'}.</p>}
     </details>}
   </section>
 }

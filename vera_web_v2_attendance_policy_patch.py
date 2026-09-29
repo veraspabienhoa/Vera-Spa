@@ -256,6 +256,9 @@ def install_attendance_policy_patch() -> None:
         return result
 
     def apply_tour_fallback_with_completed(conn, records, start, end):
+        from vera_attendance_source import enabled
+        if enabled():
+            return records
         # Preserve the existing fallback first. The original function resolves
         # _tour_break_map at runtime, so it also sees PostgreSQL active breaks.
         output = original_apply_tour_fallback(conn, records, start, end)

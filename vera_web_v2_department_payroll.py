@@ -349,13 +349,17 @@ def _interval_minutes(item: dict[str, Any], work_day: date) -> tuple[int, dateti
 
 
 def _attendance_totals(records: list[dict[str, Any]], employee: str, norm: Callable[[Any], str], cfg: dict[str, Any]) -> dict[str, Any]:
-    totals = {"minutes_ca1": 0, "minutes_ca2_before_22": 0, "minutes_ca2_after_22": 0, "full_days": 0, "incomplete_days": 0}
+    totals = {"minutes_ca1": 0, "minutes_ca2_before_22": 0, "minutes_ca2_after_22": 0, "full_days": 0, "incomplete_days": 0, "pending_dates": []}
     for item in records:
         if norm(item.get("employee_name")) != norm(employee):
             continue
         try:
             work_day = datetime.strptime(str(item.get("date") or ""), "%d/%m/%Y").date()
         except ValueError:
+            continue
+        if item.get('evidence_source') == 'facegate' and item.get('attendance_pending'):
+            totals['pending_dates'].append(work_day.isoformat())
+            totals['incomplete_days'] += 1
             continue
         minutes, start, end = _interval_minutes(item, work_day)
         if minutes <= 0:
@@ -402,6 +406,8 @@ def _recalculate(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     result["net_salary"] = result["total_salary"] - sum(
         result[field] for field in ("violation_penalty", "late_penalty", "advance")
     )
+    if result.get('attendance_pending'):
+        result.update(salary=None, total_salary=None, net_salary=None)
     return result
 
 
@@ -495,6 +501,8 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], 
             "violation_penalty": violation_map.get(norm(username), 0),
             "late_penalty": late_map.get(norm(username), 0), "advance": 0,
             "incomplete_days": totals["incomplete_days"],
+            "attendance_pending": bool(totals['pending_dates']),
+            "pending_dates": totals['pending_dates'],
         }
         rows.append(_recalculate(row, employee_cfg))
     return {**settings, "month": month, "month_label": label, "start": start.isoformat(), "end": end.isoformat(), "rows": rows}
@@ -739,6 +747,23 @@ def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str
     return output
 
 
+def _require_complete_attendance(conn, month, rows, norm):
+    from vera_attendance_source import effective_date
+    cutoff = effective_date()
+    start, end, _ = _draft_month_range(month)
+    if not cutoff or end < cutoff:
+        return
+    selected = {norm(r.get('employee_username')) for r in rows
+                if r.get('calculation_source') != 'schedule'}
+    if not selected:
+        return
+    pending = [r for r in attendance._records(conn, max(start, cutoff), end)
+               if norm(r.get('employee_name')) in selected
+               and r.get('attendance_pending')]
+    if pending:
+        raise HTTPException(409, 'Công FaceGate còn thiếu bằng chứng hoặc ca chưa kết thúc. Lưu nháp và xác nhận công trước khi chốt/gửi bảng lương.')
+
+
 def _workbook(rows: list[dict[str, Any]], department: str, label: str) -> bytes:
     department_label = str(rows[0].get("department_label") if rows else department)
     wb = Workbook(); ws = wb.active; ws.title = "Lương bộ phận"
@@ -958,6 +983,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_save")
             rows = _clean_combined_rows(conn, body.rows, norm)
+            _require_complete_attendance(conn, body.month, rows, norm)
             history = payroll._setting(conn, "department_payroll_combined_history", [])
             history = history if isinstance(history, list) else []
             if body.history_id:
@@ -991,6 +1017,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_export")
             rows = _clean_combined_rows(conn, body.rows, norm)
+            _require_complete_attendance(conn, body.month, rows, norm)
         content = _combined_workbook(rows, label)
         return StreamingResponse(
             BytesIO(content),
@@ -1022,6 +1049,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             require_feature(conn, ident, "payroll_save")
             cfg = _settings(conn, department)["config"]
             rows = _clean_rows(conn, department, body.rows, cfg, norm)
+            _require_complete_attendance(conn, body.month, rows, norm)
             history = payroll._setting(conn, _setting_key(department, "history"), [])
             if not isinstance(history, list):
                 history = []
@@ -1037,6 +1065,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_export")
             rows = _clean_rows(conn, department, body.rows, _settings(conn, department)["config"], norm)
+            _require_complete_attendance(conn, body.month, rows, norm)
         content = _workbook(rows, department, label)
         return StreamingResponse(BytesIO(content), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=Bang_luong_{department}_{body.month}.xlsx"})
 
@@ -1051,6 +1080,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             require_feature(conn, ident, "payroll_email")
             settings = _settings(conn, department)
             rows = _clean_rows(conn, department, body.rows, settings["config"], norm)
+            _require_complete_attendance(conn, body.month, rows, norm)
             violation_rows = conn.execute(text("""
                 SELECT employee_name,leave_date,leave_reason,detail,COALESCE(penalty,0) penalty
                 FROM leave_records

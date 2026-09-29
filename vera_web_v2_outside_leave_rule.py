@@ -255,6 +255,9 @@ def _apply_restrictions_and_penalties(
 
     for raw in records:
         item = dict(raw)
+        if item.get('evidence_source') == 'facegate' and item.get('attendance_evidence_issues'):
+            output.append(item)
+            continue
         work_day = _work_day(item)
         if work_day is None:
             output.append(item)

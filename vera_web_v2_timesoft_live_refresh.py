@@ -64,6 +64,13 @@ def refresh_today(force: bool = False) -> dict[str, Any]:
     """Refresh today's TimeSoft check-in dataset, single-flight and rate-limited."""
     global _session, _last_success_monotonic, _last_error, _last_meta
 
+    from vera_attendance_source import enabled, health as source_health
+    if enabled():
+        with ts.vpg.get_engine().connect() as conn:
+            status = source_health(conn)
+        return {**status, 'ok': status['cache_fresh'], 'refreshed': False,
+                'release': RELEASE, 'refresh_mode': 'facegate_background_archive'}
+
     if not _credentials_ready():
         return {
             "ok": False,
@@ -149,6 +156,10 @@ def refresh_today(force: bool = False) -> dict[str, Any]:
 
 
 def health() -> dict[str, Any]:
+    from vera_attendance_source import enabled, health as source_health
+    if enabled():
+        with ts.vpg.get_engine().connect() as conn:
+            return {'ok': True, **source_health(conn), 'release': RELEASE}
     age = time.monotonic() - _last_success_monotonic if _last_success_monotonic else None
     return {
         "ok": True,
