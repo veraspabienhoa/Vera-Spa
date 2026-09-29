@@ -36,6 +36,10 @@ def test_cutover_roundtrip_preserves_unknown_fields_and_current_receipts(databas
                'null-entry': None, 'old-entry': ['legacy', 42]}
     with database.begin() as conn:
         seed(conn, archive)
+        # Model legacy archives exactly, including JSON null entries that the
+        # ordinary mutation delta writer would not create.
+        conn.execute(text(f"UPDATE {relational.META_TABLE} SET payload=payload || jsonb_build_object('idempotency',CAST(:archive AS jsonb))"),
+                     {'archive': relational._json(archive)})
         before = store.read(conn)[0]
         assert receipts.migrate(conn)['changed']
         assert not receipts.migrate(conn)['changed']
