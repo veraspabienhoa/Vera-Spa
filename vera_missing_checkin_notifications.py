@@ -151,13 +151,14 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     zone = timezone(timedelta(hours=7))
     current = now.replace(tzinfo=zone) if now.tzinfo is None else now.astimezone(zone)
     day = current.date()
+    from vera_attendance_source import cache_key, source_for
     datasets = conn.execute(text("""
         SELECT payload,updated_at FROM vera_dataset_cache
         WHERE dataset_key IN (:today_key,:dated_key) AND source_version=:day
           AND updated_at BETWEEN :cutoff AND :current AND expires_at>:current
         ORDER BY updated_at DESC LIMIT 1
-    """), {'today_key': 'timesoft_employee_checkin_today',
-            'dated_key': f'timesoft_employee_checkin_{day:%Y%m%d}',
+    """), {'today_key': cache_key(day, today_alias=True),
+            'dated_key': cache_key(day),
             'day': day.isoformat(), 'cutoff': current-timedelta(minutes=10),
             'current': current}).mappings().all()
     if not datasets or not isinstance(datasets[0].get('payload'), list) or not datasets[0]['payload']:
@@ -192,6 +193,10 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
         updated = updated.replace(tzinfo=timezone.utc)
     expires = min(updated.astimezone(zone)+timedelta(minutes=10),
                   datetime.combine(day+timedelta(days=1), time.min, tzinfo=zone))
+    eligible_users = None
+    if source_for(day) == 'facegate':
+        from vera_facegate_runtime import alert_eligible_users
+        eligible_users = alert_eligible_users(conn, day)
     result = []
     for row in schedules:
         employee_role = str(row.get('employee_role') or '').strip().lower()
@@ -203,6 +208,8 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
         # Ownership uses the authenticated account name, never display-name or
         # accent-stripped matching which could expose another person's alert.
         if not view_team and username.lower() != viewer_username:
+            continue
+        if eligible_users is not None and username not in eligible_users:
             continue
         name = str(row.get('employee_name') or username)
         aliases = {_norm(username), _norm(name)} - {''}
@@ -393,7 +400,14 @@ def notify_missing_scheduled_checkins(
     with engine.connect() as conn:
         database_schedules = _scheduled_rows(conn, work_day)
         staff_schedules = _staff_scheduled_rows(conn, work_day)
+        from vera_attendance_source import source_for
+        eligible_users = None
+        if source_for(work_day) == 'facegate':
+            from vera_facegate_runtime import alert_eligible_users
+            eligible_users = alert_eligible_users(conn, work_day)
     schedules = _merge_schedules(staff_schedules, database_schedules)
+    if eligible_users is not None:
+        schedules = [s for s in schedules if s.get('employee_username') in eligible_users]
     visible_alerts = []
     result["scheduled"] = len(schedules)
     for schedule in schedules:

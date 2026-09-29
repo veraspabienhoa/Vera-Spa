@@ -117,6 +117,9 @@ TIMESOFT_BACKGROUND_INTERVAL_MINUTES = 30
 
 
 def timesoft_is_configured():
+    from vera_attendance_source import enabled
+    if enabled():
+        return False
     return bool(str(TIMESOFT_BASE_URL).strip() and str(TIMESOFT_USERNAME).strip() and str(TIMESOFT_PASSWORD).strip())
 
 
@@ -646,6 +649,8 @@ def _timesoft_get_http_session(force_login=False):
 
 
 def _timesoft_post_json(session, api_path, referer_path, payload, timeout=60):
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     url = urljoin(TIMESOFT_BASE_URL + "/", str(api_path).lstrip("/"))
     referer = urljoin(TIMESOFT_BASE_URL + "/", str(referer_path).lstrip("/"))
     headers = {

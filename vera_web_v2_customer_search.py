@@ -83,6 +83,9 @@ def _search_timesoft_customers(
     if len(query) < MIN_QUERY_LENGTH:
         return {"customers": []}
     
+    from vera_attendance_source import enabled
+    if enabled():
+        raise HTTPException(409, 'Đã ngừng kết nối TimeSoft. Sử dụng danh bạ khách hàng VERA.')
     headers = _get_timesoft_headers(conn)
     payload = {
         "search": query,

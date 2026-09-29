@@ -318,7 +318,7 @@ def compare_punches(timesoft, facegate, employees, start, end):
             for username in sorted(a.keys() | b.keys()) if a[username] != b[username]]
 
 
-def preview(conn, start, end, *, checkout_reviews_override=None):
+def project_evidence(conn, start, end, *, checkout_reviews_override=None):
     import vera_web_v2_attendance_query_perf as attendance
     import vera_web_v2_attendance_v42 as v42
     if end < start or (end - start).days > 6:
@@ -347,8 +347,13 @@ def preview(conn, start, end, *, checkout_reviews_override=None):
     rows, test_scan_issues, test_scan_reviews = exclude_reviewed_test_scans(
         rows, events, index, address)
     issues.extend(test_scan_issues)
-    datasets = attendance._datasets(conn, start, end + timedelta(days=1))
-    facegate = attendance._records_v42_fast(conn, start, end, datasets=[{'payload': rows}])
+    return {'rows': rows, 'raw_rows': raw_rows, 'issues': issues, 'index': index,
+            'employees': employees, 'address': address, 'events': events, 'syncs': syncs,
+            'applied_reviews': applied_reviews, 'test_scan_reviews': test_scan_reviews}
+
+
+def finish_records(facegate, applied_reviews):
+    import vera_facegate_checkout_review as checkout_review
     # Only departments whose operating policy requires a final face punch may
     # expose the last clustered scan as checkout.  Leaders and therapists keep
     # checkout blank; their later scans are mid-shift break evidence only.
@@ -376,7 +381,19 @@ def preview(conn, start, end, *, checkout_reviews_override=None):
             row.pop('check_out_at', None)
         if row.get('attendance_roster_only'):
             row['attendance_note'] = str(row.get('attendance_note') or '').replace('TimeSoft', 'FaceGate đã ánh xạ')
-    facegate = checkout_review.overlay_records(facegate, applied_reviews)
+    return checkout_review.overlay_records(facegate, applied_reviews)
+
+
+def preview(conn, start, end, *, checkout_reviews_override=None):
+    import vera_web_v2_attendance_query_perf as attendance
+    import vera_web_v2_attendance_v42 as v42
+    data = project_evidence(conn, start, end, checkout_reviews_override=checkout_reviews_override)
+    rows, raw_rows, issues, index = (data[k] for k in ('rows', 'raw_rows', 'issues', 'index'))
+    employees, address, events, syncs = (data[k] for k in ('employees', 'address', 'events', 'syncs'))
+    applied_reviews, test_scan_reviews = data['applied_reviews'], data['test_scan_reviews']
+    # Comparison always reads retained TimeSoft history, even after cutover.
+    datasets = attendance._timesoft_datasets(conn, start, end + timedelta(days=1))
+    facegate = finish_records(attendance._records_v42_fast(conn, start, end, datasets=[{'payload': rows}]), applied_reviews)
     timesoft = attendance._records_v42_fast(conn, start, end, datasets=datasets)
     differences = compare_records(timesoft, facegate)
     evidence_differences = compare_punches(datasets, [{'payload': raw_rows}], employees, start, end)

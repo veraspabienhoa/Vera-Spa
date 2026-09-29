@@ -154,6 +154,8 @@ def _parse_workbook(content: bytes, target_date: date) -> pd.DataFrame:
 
 
 def fetch_detailed_checkin(ts, session, target_date: date) -> pd.DataFrame:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     url = urljoin(ts.BASE_URL + "/", EXPORT_PATH.lstrip("/"))
     referer = urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/"))
     object_search = {

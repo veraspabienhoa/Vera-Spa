@@ -70,7 +70,7 @@ def test_preview_excludes_test_checkout_but_preserves_raw_comparison(monkeypatch
     reader = SimpleNamespace(_active_roster=lambda _: staff,
         snapshot=SimpleNamespace(_shift_break_settings=lambda _: ([], {})),
         _schedule_map=lambda *_: {}, _vera_shift_fields=lambda *_: ('Ca 1', '09:00', '17:00'),
-        _datasets=lambda *_: [], _records_v42_fast=calculate)
+        _timesoft_datasets=lambda *_: [], _records_v42_fast=calculate)
     monkeypatch.setitem(sys.modules, 'vera_web_v2_attendance_query_perf', reader)
     monkeypatch.setattr(fg, 'mapping_candidates', lambda *_: [])
     compared = []

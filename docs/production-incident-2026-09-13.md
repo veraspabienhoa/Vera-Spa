@@ -1833,3 +1833,48 @@ Full resource rollback also exports receipts first. Failure recovery uses curren
 data, never a stale financial snapshot. See `docs/live-tour-receipt-rows.md`.
 This entry describes code and isolated validation; production optimization has
 not been activated by this change.
+
+## 29-09-2026 — Explicit retirement of the TimeSoft live dependency
+
+Confirmed operator instruction: use direct FaceGate evidence and stop using
+TimeSoft. Previously reported `already_applied=true` for the reviewed 27-09-2026
+Yến Linh exception remains authoritative; this change does not reapply it.
+The two confirmed test events 79329/79330 remain excluded from calculated
+attendance while their raw archived evidence is retained.
+
+The independent runtime adds a shared, hot-readable source policy at
+`/opt/vera-spa/attendance-source.json`. Before its effective Vietnam date,
+existing PostgreSQL TimeSoft snapshots remain readable history. From that date,
+attendance reads mapped FaceGate archive evidence through the same VERA shift
+resolver; Live Tour uses a separate FaceGate cache and the existing coalesced
+projection queue. The archive cron publishes that cache only after a complete,
+fresh device sync. Neither source imports vendor shift assignments.
+
+TimeSoft login, live refresh, invoice backfill and worker acquisition are disabled
+in the selected mode. The existing worker still runs committed notification
+retries and existing Auto Check rules; its FaceGate input contains one verified
+arrival per employee/day. Incomplete evidence suppresses automated conclusions.
+The separate legacy customer search rejects vendor access after retirement;
+VERA's existing customer directory and Live Tour TIP payroll remain independent.
+
+This is an explicit operator waiver of cross-vendor comparison blockers, not a
+claim that missing photos, identity ambiguity, raw status documentation or
+historical discrepancies have been resolved. Missing/unfinished attendance is
+marked pending per employee, with null payable salary instead of zero, and is
+rechecked server-side before official attendance-based payroll saving/export or
+email. Existing schedule-based payroll remains an explicit independent option.
+
+Production activation is opt-in via `retire_timesoft` in Deploy VPS Production.
+It verifies the exact running release and both health endpoints, locks the archive
+worker, refreshes raw evidence, checks the existing attendance worker lock, then
+publishes and selects the source. It does not change photos/mappings, reviewed
+exceptions, payroll, penalty history, credentials, or system services. Repeated
+activation preserves the original effective date. Default CLI invocation is
+read-only and reports source, freshness and unresolved counts without identities.
+
+Production verification is still pending at implementation time. SSH from the
+assistant runtime returned `Network is unreachable`; a build, test or merge alone
+must not be reported as a successful live cutover. Do not roll an active FaceGate
+source back to code that predates this runtime. Keep the configuration and raw
+archive with operational backups. A source rollback is a separate explicit
+operator action because it would resume TimeSoft network access.

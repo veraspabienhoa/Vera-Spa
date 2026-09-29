@@ -2,6 +2,12 @@ name: Deploy VPS Production
 
 on:
   workflow_dispatch:
+    inputs:
+      retire_timesoft:
+        description: 'Chuyển chấm công sang FaceGate và ngừng kết nối TimeSoft sau deploy'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -84,6 +90,26 @@ jobs:
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; cd /opt/vera-spa/current; bash configure_facegate_sync.sh'
+
+      - name: Activate FaceGate source when explicitly selected
+        if: ${{ inputs.retire_timesoft }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "set -e; cd /opt/vera-spa/current; timeout 460 /opt/vera-spa/.venv/bin/python -B vera_facegate_cutover.py --apply --expected-commit '$DEPLOY_SHA'"
+
+      - name: Verify attendance source after deployment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; cd /opt/vera-spa/current; timeout 45 /opt/vera-spa/.venv/bin/python -B vera_facegate_cutover.py'
 
       - name: Verify configured Live Tour background cleanup
         env:

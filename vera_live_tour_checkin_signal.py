@@ -55,7 +55,8 @@ def fingerprint(payload):
 def record_refresh(conn, dataset_key, payload, detail, *, now=None):
     now = now or datetime.now(ZoneInfo('Asia/Ho_Chi_Minh'))
     day = now.date()
-    prefix = 'timesoft_employee_checkin_'
+    from vera_attendance_source import source_for
+    prefix = source_for(day) + '_employee_checkin_'
     if dataset_key not in {prefix + 'today', prefix + day.strftime('%Y%m%d'),
                           prefix + day.strftime('%Y%m%d') + '_raw'}:
         return False

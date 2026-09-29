@@ -972,6 +972,8 @@ def _requests_session_from_browser(cookies, user_agent: str) -> requests.Session
 
 
 def create_authenticated_session() -> requests.Session:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     if not USERNAME or not PASSWORD:
         raise RuntimeError("Thiếu TIMESOFT_USERNAME/TIMESOFT_PASSWORD trong Secret Manager.")
     try:
@@ -1099,6 +1101,8 @@ def _summary_detail_quality(rows) -> tuple[int, dict]:
 
 
 def fetch_summary(session: requests.Session, target_date: date) -> tuple[pd.DataFrame, dict]:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     """Fetch product/service rows, not the one-row daily aggregate.
 
     TimeSoft installations have used different numeric values for the report's
@@ -1155,6 +1159,8 @@ def fetch_summary(session: requests.Session, target_date: date) -> tuple[pd.Data
 
 
 def fetch_checkin(session: requests.Session, target_date: date) -> tuple[pd.DataFrame, dict]:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     all_rows = []
     total_expected = None
     for page_index in range(1, MAX_CHECKIN_PAGES + 1):
@@ -1711,37 +1717,61 @@ def run_sync() -> int:
 
     try:
         got_lock = bool(lock_conn.execute(text("SELECT pg_try_advisory_lock(hashtext(:k))"), {"k": LOCK_NAME}).scalar())
+        lock_conn.commit()  # Session lock survives; no open transaction during network delivery.
         if not got_lock:
             _log("Một lần đồng bộ TimeSoft khác đang chạy; bỏ qua lần này.")
             return 0
 
-        session = create_authenticated_session()
+        from vera_attendance_source import enabled
+        facegate_mode = enabled()
+        facegate_source_failed = False
+        session = None
         today = datetime.now(VN_TZ).date()
         employee_map = load_employee_name_map()
         dates = [today - timedelta(days=i) for i in range(SYNC_DAYS)]
-        for target_date in dates:
-            invoice_df, invoice_meta = fetch_summary(session, target_date)
-            checkin_df, checkin_meta = fetch_checkin(session, target_date)
-            write_snapshot(target_date, invoice_df, invoice_meta, checkin_df, checkin_meta)
-            checkin_by_date.append((target_date, checkin_df))
-            if target_date == today:
-                # Attendance alert: dispatch immediately after today's FaceID
-                # snapshot, before and independently from Auto Check below.
-                missing_checkin_result = missing_checkin_notifications.notify_missing_scheduled_checkins(
-                    engine, checkin_df, today, employee_map, datetime.now(VN_TZ),
-                )
-                _log(f"Missing scheduled check-in notifications: {missing_checkin_result}")
-            detail = {
-                "date": target_date.isoformat(),
-                "invoice_rows": len(invoice_df),
-                "checkin_rows": len(checkin_df),
-                "checkin_total": int(checkin_meta.get("Total") or len(checkin_df)),
-                "total_money": float(invoice_meta.get("TotalMoney") or 0),
-                "total_discount": float(invoice_meta.get("TotalDiscount") or 0),
-                "total_actual_revenue": float(invoice_meta.get("TotalActualRevenu") or 0),
-            }
-            details.append(detail)
-            _log(f"Đã đồng bộ {target_date.isoformat()}: invoice_rows={len(invoice_df)}; checkin_rows={len(checkin_df)}")
+        if facegate_mode:
+            from vera_facegate_runtime import worker_frames
+            try:
+                with engine.connect() as conn:
+                    checkin_by_date = worker_frames(conn, dates)
+                for work_day, frame in checkin_by_date:
+                    if work_day == today:
+                        missing_checkin_result = missing_checkin_notifications.notify_missing_scheduled_checkins(
+                            engine, frame, today, employee_map, datetime.now(VN_TZ))
+                details = [{'date': day.isoformat(), 'checkin_rows': len(frame), 'source': 'facegate'}
+                           for day, frame in checkin_by_date]
+            except Exception as source_error:
+                # A stale device must not stop committed outbox retries, nor
+                # create absence penalties from an empty/stale source.
+                facegate_source_failed = True
+                _log(f'FaceGate source unavailable: {type(source_error).__name__}')
+                checkin_by_date = []
+                details = [{'source': 'facegate', 'error': 'source_unavailable'}]
+        else:
+            session = create_authenticated_session()
+            for target_date in dates:
+                invoice_df, invoice_meta = fetch_summary(session, target_date)
+                checkin_df, checkin_meta = fetch_checkin(session, target_date)
+                write_snapshot(target_date, invoice_df, invoice_meta, checkin_df, checkin_meta)
+                checkin_by_date.append((target_date, checkin_df))
+                if target_date == today:
+                    # Attendance alert: dispatch immediately after today's FaceID
+                    # snapshot, before and independently from Auto Check below.
+                    missing_checkin_result = missing_checkin_notifications.notify_missing_scheduled_checkins(
+                        engine, checkin_df, today, employee_map, datetime.now(VN_TZ),
+                    )
+                    _log(f"Missing scheduled check-in notifications: {missing_checkin_result}")
+                detail = {
+                    "date": target_date.isoformat(),
+                    "invoice_rows": len(invoice_df),
+                    "checkin_rows": len(checkin_df),
+                    "checkin_total": int(checkin_meta.get("Total") or len(checkin_df)),
+                    "total_money": float(invoice_meta.get("TotalMoney") or 0),
+                    "total_discount": float(invoice_meta.get("TotalDiscount") or 0),
+                    "total_actual_revenue": float(invoice_meta.get("TotalActualRevenu") or 0),
+                }
+                details.append(detail)
+                _log(f"Đã đồng bộ {target_date.isoformat()}: invoice_rows={len(invoice_df)}; checkin_rows={len(checkin_df)}")
 
         # Return-to-work must run without requiring someone to open Attendance.
         # Run after collecting snapshots, oldest punches first, in one transaction.
@@ -1765,7 +1795,8 @@ def run_sync() -> int:
         # PostgreSQL được tạo sau TimeSoft nên những ngày đầu kỳ lương có thể
         # chưa từng được snapshot.  Chỉ bù các ngày invoice còn thiếu; không tải
         # lại check-in lịch sử và không làm nặng luồng đồng bộ 2 ngày thường lệ.
-        payroll_backfill_result = backfill_missing_payroll_snapshots(session, lock_conn, today)
+        if not facegate_mode:
+            payroll_backfill_result = backfill_missing_payroll_snapshots(session, lock_conn, today)
         _log(
             "Payroll backfill: "
             f"missing_before={payroll_backfill_result['missing_before']} "
@@ -1804,7 +1835,8 @@ def run_sync() -> int:
                     checkin_by_date,
                     include_synced_history=manual_run_requested,
                 )
-                break_return_result = process_break_return_penalties(engine, catalog)
+                if not facegate_mode or checkin_by_date:
+                    break_return_result = process_break_return_penalties(engine, catalog)
                 tour_result = process_tour_penalties(engine, cfg, employee_map, catalog)
                 _log(
                     "Auto penalty hoàn tất: "
@@ -1832,7 +1864,7 @@ def run_sync() -> int:
                     pass
 
         write_status(
-            "success", started_at, details,
+            "error" if facegate_source_failed else "success", started_at, details,
             auto_status=auto_status,
             tour_result=tour_result,
             timesoft_result=timesoft_result,
@@ -1840,7 +1872,7 @@ def run_sync() -> int:
             payroll_backfill_result=payroll_backfill_result,
         )
         _log(f"Hoàn tất Job V93.7 trong {(datetime.now(VN_TZ)-started_at).total_seconds():.1f}s")
-        return 0
+        return 1 if facegate_source_failed else 0
     except Exception as exc:
         safe_error = f"{type(exc).__name__}: {exc}"
         _log(f"ERROR: {safe_error}")

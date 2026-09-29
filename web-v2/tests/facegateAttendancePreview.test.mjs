@@ -30,7 +30,7 @@ test('admin preview is lazy, applies edited ISO dates and retains Vietnamese nam
   assert.deepEqual(calls, [['2026-09-26', '2026-09-26']])
   assert.match(p.panel().textContent, /Ánh Thử/)
   assert.match(p.panel().textContent, /27-09-2026 00:30:00/)
-  assert.match(p.panel().textContent, /TimeSoft vẫn là nguồn chính/)
+  assert.match(p.panel().textContent, /Nguồn chính hiện tại được hiển thị tại mục Thiết bị/)
   await p.input(inputs[0], '25092026')
   assert.equal(p.panel().querySelector('table'), null)
 })

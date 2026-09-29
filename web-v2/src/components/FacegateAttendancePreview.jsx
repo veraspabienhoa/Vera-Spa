@@ -60,7 +60,7 @@ export default function FacegateAttendancePreview() {
   }
   const change = setter => event => { setter(event.target.value); setResult(null); setPayroll(null); setError('') }
   return <details className="facegate-attendance-preview"><summary>Đối chiếu FaceGate → Chấm công VERA</summary>
-    <p>Tính thử từ log đã lưu theo lịch VERA. TimeSoft vẫn là nguồn chính. Không ghi công, lương hoặc phạt khi đối chiếu.</p>
+    <p>Tính thử từ log đã lưu theo lịch VERA. Nguồn chính hiện tại được hiển thị tại mục Thiết bị. Không ghi công, lương hoặc phạt khi đối chiếu.</p>
     <form onSubmit={run}><fieldset disabled={busy}><label>Từ ngày<VeraDateInput required value={start} onChange={change(setStart)} /></label><label>Đến ngày<VeraDateInput required value={end} onChange={change(setEnd)} /></label><button className="secondary-button" disabled={busy} type="submit">{busy ? 'Đang đối chiếu…' : 'Tính thử và đối chiếu'}</button><button type="button" className="secondary-button" disabled={busy} onClick={event => run(event, true)}>Tính lương cơ bản từ FaceGate</button></fieldset></form>
     {error && <p role="alert">{error}</p>}
     {payroll && <section aria-label="Lương cơ bản FaceGate">
@@ -74,7 +74,7 @@ export default function FacegateAttendancePreview() {
     {result && <>
       <p role="status">{formatVeraDate(result.start)} – {formatVeraDate(result.end)} · {result.facegate_event_count} lượt quét đã ánh xạ · {result.differences.length} dòng chấm công khác · {result.evidence_differences.length} nhân viên khác log gốc · {result.issue_count} sự kiện cần kiểm tra.</p>
       <p>Đồng bộ gần nhất: {formatVeraDateTime(result.last_sync_at, 'Chưa có')}. Quét lặp được gom trong 5 phút. Ca bình thường không bắt buộc quét kết thúc.</p>
-      <details open><summary>Điều kiện còn thiếu trước khi bỏ TimeSoft</summary><ul>{result.blockers.map(reason => <li key={reason}>{reasons[reason] || reason}</li>)}</ul>
+      <details open><summary>Chênh lệch và bằng chứng cần theo dõi</summary><ul>{result.blockers.map(reason => <li key={reason}>{reasons[reason] || reason}</li>)}</ul>
         {!!result.unmapped_employees.length && <p>Chưa ánh xạ: {result.unmapped_employees.join(' · ')}</p>}
         {!!result.incomplete_days.length && <p>Ngày chưa đủ log: {result.incomplete_days.map(day => formatVeraDate(day)).join(' · ')}</p>}
       </details>

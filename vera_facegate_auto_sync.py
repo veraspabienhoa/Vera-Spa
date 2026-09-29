@@ -1,4 +1,4 @@
-"""Archive today's and yesterday's FaceGate evidence; never project attendance."""
+"""Archive today's and yesterday's FaceGate evidence; publish the selected FaceGate source."""
 from datetime import datetime, timedelta
 import fcntl
 import json
@@ -33,6 +33,17 @@ def archive_days():
     if failures:
         print(json.dumps({'ok': False, 'failures': failures}))
         return 1
+    from vera_attendance_source import enabled
+    if enabled():
+        from vera_facegate_runtime import publish
+        from vera_facegate_cutover import runtime_engine
+        engine = runtime_engine()
+        try:
+            with engine.begin() as conn:
+                reports = publish(conn, today - timedelta(days=1), today)
+        finally:
+            engine.dispose()
+        print(json.dumps({'ok': True, 'source': 'facegate', 'published': reports}))
     return 0
 
 

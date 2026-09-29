@@ -37,6 +37,7 @@ ROLE_DEPARTMENT = {
     "locker": "Locker",
     "tapvu": "Tạp vụ",
     "admin": "Admin",
+    "support": "Hỗ trợ",
 }
 
 
@@ -53,7 +54,7 @@ def _keys_for_range(start: date, end: date) -> list[str]:
     return list(dict.fromkeys(keys))
 
 
-def _datasets(conn, start: date, end: date):
+def _timesoft_datasets(conn, start: date, end: date):
     keys = _keys_for_range(start, end)
     if not keys:
         return []
@@ -70,6 +71,29 @@ def _datasets(conn, start: date, end: date):
     return conn.execute(sql, params).mappings().all()
 
 
+def _datasets(conn, start: date, end: date):
+    from vera_attendance_source import effective_date
+    cutoff = effective_date()
+    if not cutoff or end < cutoff:
+        return _timesoft_datasets(conn, start, end)
+    result = []
+    if start < cutoff:
+        # Filter the rolling legacy alias so it cannot reintroduce post-cutover
+        # punches when a Live Tour caller reads a range across the boundary.
+        for dataset in _timesoft_datasets(conn, start, cutoff - timedelta(days=1)):
+            result.append({**dataset, 'payload': [r for r in dataset.get('payload', [])
+                           if isinstance(r, dict) and (v42._explicit_work_day(r) or date.max) < cutoff]})
+    day = max(start, cutoff)
+    keys = []
+    while day <= end:
+        keys.append('facegate_employee_checkin_' + day.strftime('%Y%m%d'))
+        day += timedelta(days=1)
+    params = {f'k{i}': key for i, key in enumerate(keys)}
+    placeholders = ','.join(':'+k for k in params)
+    result.extend(conn.execute(text(f'SELECT dataset_key,payload FROM vera_dataset_cache WHERE dataset_key IN ({placeholders})'), params).mappings().all())
+    return result
+
+
 def _active_roster(conn) -> list[dict[str, Any]]:
     """Return every active employee, independent of whether TimeSoft saw them."""
     rows = conn.execute(text("""
@@ -80,7 +104,7 @@ def _active_roster(conn) -> list[dict[str, Any]]:
                COALESCE(employment_start_date,'') AS employment_start_date,
                COALESCE(payload,'{}'::jsonb) AS payload
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu')
+        WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu','support')
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(
                 NULLIF(payload->>'Trạng thái làm việc',''),
@@ -327,6 +351,15 @@ def _append_missing_active_employees(
 
 
 def _records_v42_fast(conn, start: date, end: date, *, datasets=None) -> list[dict[str, Any]]:
+    if datasets is None:
+        from vera_attendance_source import effective_date
+        cutoff = effective_date()
+        if cutoff and end >= cutoff:
+            from vera_facegate_runtime import records as facegate_records
+            previous = (_records_v42_fast(conn, start, cutoff - timedelta(days=1),
+                        datasets=_datasets(conn, start, cutoff - timedelta(days=1)))
+                        if start < cutoff else [])
+            return previous + facegate_records(conn, max(start, cutoff), end)
     definitions, break_config = snapshot._shift_break_settings(conn)
     department_controls = department_attendance.controls(conn)
     aliases, roles = v42._eligible_aliases(conn)
