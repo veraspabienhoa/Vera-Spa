@@ -60,7 +60,7 @@ def verify_runtime(expected_commit):
         raise CutoverError('api_release_not_verified')
     for endpoint in ('/v2/auth/health', '/v2/health'):
         with urlopen('http://127.0.0.1:8000'+endpoint, timeout=10) as response:
-            if response.status != 200:
+            if response.status != 200 or json.load(response).get('ok') is not True:
                 raise CutoverError('production_health_failed')
     return commit
 

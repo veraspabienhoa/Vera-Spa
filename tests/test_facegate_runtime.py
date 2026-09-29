@@ -165,3 +165,18 @@ def test_payroll_finalization_rechecks_server_evidence_not_client_flags(monkeypa
     with pytest.raises(HTTPException) as error:
         payroll._require_complete_attendance(object(), '2026-09', [{'employee_username': 'Employee'}], str)
     assert error.value.status_code == 409
+
+
+def test_installed_policy_cannot_repair_facegate_from_legacy_tour(monkeypatch, facegate):
+    import vera_web_v2_attendance_policy_patch as policy
+    import vera_web_v2_attendance_break_alerts as alerts
+    import vera_web_v2_outside_leave_rule as outside
+    # Restore installer mutations so unrelated policy tests remain isolated.
+    for module in (policy.attendance_v42, policy.auto_check, outside, alerts):
+        for name in tuple(vars(module)):
+            monkeypatch.setattr(module, name, getattr(module, name))
+    monkeypatch.delattr(outside, '_attendance_policy_patch_release', raising=False)
+    policy.install_attendance_policy_patch()
+    monkeypatch.setattr(alerts, '_tour_break_map', lambda *_: pytest.fail('Legacy Tour break fallback after cutover'))
+    rows = [record()]
+    assert alerts._apply_tour_fallback(object(), rows, DAY, DAY) is rows
