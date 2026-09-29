@@ -44,7 +44,7 @@ def summarize(log, mappings):
     return {'sample_count': len(log.get('records', [])), 'device_total_count': log.get('total_count', 0),
             'sample_truncated': bool(log.get('truncated')), 'confirmed_mapping_count': len(valid),
             'sample_reference_matches': matched, 'raw_status_type_counts': dict(codes),
-            'status_semantics_verified': False, 'device_enrollment_implemented': False,
+            'status_semantics_verified': False, 'device_enrollment_implemented': True,
             'attendance_cutover_ready': False}
 
 

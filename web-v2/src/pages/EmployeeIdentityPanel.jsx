@@ -581,6 +581,41 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
 }
 
 
+function FaceIdEnrollment({ username, photo, photoBusy }) {
+  const [enrollment, setEnrollment] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => {
+    let active = true
+    faceIdApi.enrollment(username).then((value) => { if (active) setEnrollment(value) }).catch((error) => {
+      if (active && error.status !== 403) setMessage(error.message)
+    })
+    return () => { active = false }
+  }, [username])
+  const act = async (verify) => {
+    if (!verify && !window.confirm(`Đăng ký ảnh Face ID đã lưu cho ${username} lên máy chấm công? Hãy kiểm tra đúng người trong ảnh trước khi xác nhận.`)) return
+    setBusy(true); setMessage('')
+    try {
+      const value = await (verify ? faceIdApi.verifyEnrollment(username) : faceIdApi.enroll(username, photo.sha256))
+      setEnrollment(value)
+      setMessage(value.status === 'verified' ? 'Đã lưu hồ sơ trên máy và xác minh ánh xạ với nhân viên.' : 'Lượt đăng ký chưa xác minh xong. Hãy kiểm tra lại kết quả.')
+    } catch (error) {
+      setMessage(error.message)
+      try { setEnrollment(await faceIdApi.enrollment(username)) } catch { /* Preserve the original error. */ }
+    } finally { setBusy(false) }
+  }
+  if (!enrollment) return message ? <p role="status">{message}</p> : null
+  const verified = enrollment.status === 'verified'
+  const pending = ['running', 'unverified'].includes(enrollment.status)
+  const changed = verified && enrollment.photo_sha256 !== photo?.sha256
+  return <div className="face-id-enrollment">
+    <p>{verified ? (changed ? 'Ảnh trên VERA đã đổi hoặc bị xóa. Hồ sơ trên máy vẫn dùng ảnh đăng ký trước đó.' : `Đã xác minh đăng ký trên máy · Hồ sơ ${enrollment.profile_id}`) : pending ? 'Đăng ký chưa được xác minh. Kiểm tra lại trước khi gửi thêm.' : 'Chưa đăng ký ảnh này từ VERA lên máy.'}</p>
+    {!verified && !pending && <button type="button" className="primary-button compact" disabled={busy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
+    {pending && <button type="button" className="secondary-button compact" disabled={busy || Boolean(photoBusy)} onClick={() => act(true)}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra lại kết quả'}</button>}
+    {message && <p role="status">{message}</p>}
+  </div>
+}
+
 export function FaceIdCard({ username }) {
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState('')
@@ -612,7 +647,8 @@ export function FaceIdCard({ username }) {
         <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>
         <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile}/>
       </div>}/>
-    <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ. Chưa xác minh đăng ký ảnh trên thiết bị chấm công.</p>
+    <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ.</p>
+    <FaceIdEnrollment key={username} username={username} photo={data.photo} photoBusy={busy}/>
     {notice && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}
   </div>
 }

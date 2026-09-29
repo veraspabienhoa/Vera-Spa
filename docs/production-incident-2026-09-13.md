@@ -1,5 +1,37 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 29-09-2026: đăng ký Face ID mới từ hồ sơ VERA
+
+Người vận hành xác nhận năm nhân viên chưa đăng ký khuôn mặt và yêu cầu
+chọn ảnh trong VERA rồi gửi lên máy. Thêm nút đăng ký trong FaceIdCard,
+API yêu cầu đồng thời quyền quản lý Face ID và ánh xạ thiết bị, xác nhận đúng
+người và hash ảnh đang lưu. Quyền tự thay ảnh không cấp quyền ghi máy.
+
+Adapter dựa trên nguồn bwlist.asp/js/bwlist.js người vận hành cung cấp ngày
+28-09: upload multipart vfileselector với LISTADD, IsCheckSim=1; poll
+getUploadPercent; setWhitelist action=add, uid=-1; sau đó đọc lại danh sách
+đầy đủ và hồ sơ riêng. Chỉ thành công khi tên, token lần ghi và tham chiếu
+ảnh chính xác. Máy tự cấp UID. Không tự chọn UID hoặc ghép theo tên.
+JPEG vận chuyển giữ tỷ lệ, không thay ảnh gốc đã lưu. Không thay ảnh đăng ký
+hiện có vì việc đó cần bảo toàn lịch sử tham chiếu qua một quy trình riêng.
+
+Nhật ký PostgreSQL được commit trước mỗi thao tác ghi máy. Unique partial
+index chỉ cho một lượt chưa hoàn tất trên thiết bị. Không giữ transaction
+hoặc pooled connection trong lúc gọi mạng. Mất phản hồi sau thao tác ghi
+chuyển sang chưa xác minh; nhấn lại không gửi ảnh/lưu hồ sơ lần hai. Nút kiểm
+tra lại chỉ đọc máy và hoàn tất ánh xạ nếu bằng chứng khớp. Trường hợp tiến
+trình chết trước bước lưu hồ sơ cần đối chiếu nhật ký, không tự giải phóng
+lượt để tạo hồ sơ lặp. Khi lưu ánh xạ phải kiểm tra lại IP, nhân viên và xung
+đột quyền sở hữu dưới khóa; không ghi đè ánh xạ cũ.
+
+Đây là tính năng đăng ký mới, không xác nhận năm nhân viên đã được đăng ký.
+Chưa kiểm thử ghi/nhận diện trên máy thật; nguồn giao thức đã cung cấp chưa
+bao gồm định nghĩa sendBTNSetting trong js/send.js, nên phương thức GET
+của setWhitelist còn cần đối chiếu trên firmware thực tế trước triển khai.
+CI/PostgreSQL và thử một đăng ký có ảnh được người vận hành chọn là các
+bước nghiệm thu còn lại. Nguồn tính công, lương/phạt và tám blocker không
+được mở khóa bởi tính năng này.
+
 ## 29-09-2026: FaceGate đổi IP và giữ bằng chứng lịch sử
 
 Kết quả do người vận hành cung cấp xác nhận tuyến Tailscale ban đầu chỉ tới

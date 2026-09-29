@@ -161,6 +161,12 @@ async function faceRequest(username, suffix = '', options = {}, binary = false) 
 }
 
 export const faceIdApi = {
+  enrollment: (username) => faceRequest(username, '/enrollment'),
+  enroll: (username, photoSha) => faceRequest(username, '/enrollment', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({photo_sha256: photoSha, confirmed: true}),
+  }),
+  verifyEnrollment: (username) => faceRequest(username, '/enrollment/verify', {method: 'POST'}),
   downloadAll: () => downloadArchive('/v2/face-id/export-all.zip', 'Face_ID_Tat_Ca_Nhan_Vien.zip'),
   assignmentEmployees: () => jsonRequest('/v2/face-id/assignment-employees'),
   assignCapturePhoto: (username, blob, expectedSha) => faceRequest(username, '/capture-photo', {

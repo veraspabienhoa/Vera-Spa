@@ -83,6 +83,10 @@ def batch_plan(filenames, employees):
 
 
 def install_face_id_routes(app, *, engine_instance, current_identity, require_feature, identity_type):
+    from vera_web_v2_facegate_enrollment import install_enrollment_routes
+    install_enrollment_routes(app, engine_instance=engine_instance,
+                              current_identity=current_identity,
+                              require_feature=require_feature, identity_type=identity_type)
     def access(conn, ident, username, *, write=False):
         row = conn.execute(text('''SELECT username FROM employees
             WHERE lower(btrim(username))=lower(btrim(:username))
