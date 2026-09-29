@@ -574,6 +574,8 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         ))}
       </div>
 
+      <details className="staff-tools">
+        <summary>Bộ lọc và thao tác nhân viên</summary>
       <section data-ui-key="u-ff418fa84752" className="panel staff-control-panel">
         <UiToolbar data-ui-key="u-2bec85ee8f1f" className="staff-toolbar">
           <LiveTourSearchSelect
@@ -610,10 +612,19 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
           {permissions.staff_export && <button data-ui-key="u-72a7e0c083db" data-ui-label-default="Export Excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /><UiCustomText uiKey="u-72a7e0c083db"> Export Excel</UiCustomText></button>}
           {isAdmin && permissions.staff_export && <button type="button" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter, true))}><Download size={17} /> Excel kèm ảnh 3 × 4 cm</button>}
           {isAdmin && permissions.staff_export && <button data-ui-key="u-facc0987c3af" className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
-          {canSaveRows && <button data-ui-key="u-32777dcb19cc" className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
-          {isAdmin && permissions.employee_delete && <button data-ui-key="u-fa225ec98bac" className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
         </div>
+        {canSelectRows && <UiToolbar data-ui-key="u-09533736332c" className="staff-list-selection-actions">
+          <button data-ui-key="u-a151148c1d25" data-ui-label-default="Chọn tất cả" className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/><UiCustomText uiKey="u-a151148c1d25"> Chọn tất cả</UiCustomText></button>
+          <button data-ui-key="u-0feecfa4ec85" data-ui-label-default="Bỏ chọn" className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}><UiCustomText uiKey="u-0feecfa4ec85">Bỏ chọn</UiCustomText></button>
+          {permissions.employees_visibility_manage && <button data-ui-key="u-26dad15cb680" data-ui-label-default="Ẩn đã chọn" className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(true)}><EyeOff size={17}/><UiCustomText uiKey="u-26dad15cb680"> Ẩn đã chọn</UiCustomText></button>}
+          {permissions.employees_visibility_manage && <button data-ui-key="u-7d26d6ae45e1" className="secondary-button" disabled={!hiddenEmployees.length || Boolean(busy)} onClick={showHiddenEmployees}>{busy === 'show-hidden-employees' ? <LoaderCircle className="spin" size={17}/> : <Eye size={17}/>} Hiện nhân viên đã ẩn ({hiddenEmployees.length})</button>}
+          {permissions.employees_visibility_manage && <button data-ui-key="u-dba553c535cd" className="secondary-button" disabled={!statusVisibility['Đã nghỉ việc']?.visible.length || Boolean(busy)} onClick={() => setStatusHidden('Đã nghỉ việc', true)}><EyeOff size={17}/> Ẩn tất cả nhân viên nghỉ việc ({statusVisibility['Đã nghỉ việc']?.visible.length || 0})</button>}
+          {permissions.employees_visibility_manage && <button data-ui-key="u-0c74a880d3d1" className="secondary-button" disabled={!statusVisibility['Đã nghỉ việc']?.hidden.length || Boolean(busy)} onClick={() => setStatusHidden('Đã nghỉ việc', false)}><Eye size={17}/> Hiện tất cả nhân viên nghỉ việc ({statusVisibility['Đã nghỉ việc']?.hidden.length || 0})</button>}
+          {permissions.employees_visibility_manage && <button data-ui-key="u-221f796363b0" className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.visible.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', true)}><EyeOff size={17}/> Ẩn tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.visible.length || 0})</button>}
+          {permissions.employees_visibility_manage && <button data-ui-key="u-5df29f8d4faf" className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.hidden.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', false)}><Eye size={17}/> Hiện tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.hidden.length || 0})</button>}
+        </UiToolbar>}
       </section>
+      </details>
 
       {addOpen && <EmployeeProfileModal className="employee-create-modal" labelledBy="employee-create-modal-title" onClose={closeCreate} busy={busy === 'create'}><section data-ui-key="u-a2ca12042685" className="panel staff-form-panel employee-create-panel">
         <div data-ui-key="u-3c65c84994b9" className="panel-title-row employee-create-header"><div><h2 id="employee-create-modal-title">THÊM NHÂN VIÊN</h2><p>Các trường có dấu <span className="required-star">*</span> là thông tin bắt buộc khi tạo mới. Các thông tin còn lại bổ sung trong phần Sửa hồ sơ.</p></div><button type="button" className="secondary-button employee-create-close" aria-label="Đóng thêm nhân viên" disabled={busy === 'create'} onClick={closeCreate}><X size={20}/></button></div>
@@ -669,16 +680,10 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
           {[1, 2].flatMap((shift) => [['regular', `Số lượng nhân viên Ca ${shift}`], ['fixed', `Cố định Ca ${shift}`], ['total', `Tổng Ca ${shift}`]].map(([kind, label]) => <div className={`metric-card shift-${shift}`} key={`${shift}-${kind}`}><span>{label}</span><strong>{data?.shift_summary?.[`ca_${shift}_${kind}`] ?? 0}</strong></div>))}
         </div>
         <p role="status">{busy === 'save' || busy === 'profile' ? 'Đang lưu…' : hasUnsavedChanges ? 'Có thay đổi chưa lưu. Bấm Lưu thay đổi hoặc chọn Lưu khi chuyển menu.' : 'Dữ liệu đã được lưu.'}</p>
-        {canSelectRows && <UiToolbar data-ui-key="u-09533736332c" className="staff-list-selection-actions">
-          <button data-ui-key="u-a151148c1d25" data-ui-label-default="Chọn tất cả" className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/><UiCustomText uiKey="u-a151148c1d25"> Chọn tất cả</UiCustomText></button>
-          <button data-ui-key="u-0feecfa4ec85" data-ui-label-default="Bỏ chọn" className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}><UiCustomText uiKey="u-0feecfa4ec85">Bỏ chọn</UiCustomText></button>
-          {permissions.employees_visibility_manage && <button data-ui-key="u-26dad15cb680" data-ui-label-default="Ẩn đã chọn" className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={() => setSelectedHidden(true)}><EyeOff size={17}/><UiCustomText uiKey="u-26dad15cb680"> Ẩn đã chọn</UiCustomText></button>}
-          {permissions.employees_visibility_manage && <button data-ui-key="u-7d26d6ae45e1" className="secondary-button" disabled={!hiddenEmployees.length || Boolean(busy)} onClick={showHiddenEmployees}>{busy === 'show-hidden-employees' ? <LoaderCircle className="spin" size={17}/> : <Eye size={17}/>} Hiện nhân viên đã ẩn ({hiddenEmployees.length})</button>}
-          {permissions.employees_visibility_manage && <button data-ui-key="u-dba553c535cd" className="secondary-button" disabled={!statusVisibility['Đã nghỉ việc']?.visible.length || Boolean(busy)} onClick={() => setStatusHidden('Đã nghỉ việc', true)}><EyeOff size={17}/> Ẩn tất cả nhân viên nghỉ việc ({statusVisibility['Đã nghỉ việc']?.visible.length || 0})</button>}
-          {permissions.employees_visibility_manage && <button data-ui-key="u-0c74a880d3d1" className="secondary-button" disabled={!statusVisibility['Đã nghỉ việc']?.hidden.length || Boolean(busy)} onClick={() => setStatusHidden('Đã nghỉ việc', false)}><Eye size={17}/> Hiện tất cả nhân viên nghỉ việc ({statusVisibility['Đã nghỉ việc']?.hidden.length || 0})</button>}
-          {permissions.employees_visibility_manage && <button data-ui-key="u-221f796363b0" className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.visible.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', true)}><EyeOff size={17}/> Ẩn tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.visible.length || 0})</button>}
-          {permissions.employees_visibility_manage && <button data-ui-key="u-5df29f8d4faf" className="secondary-button" disabled={!statusVisibility['Tạm thời nghỉ việc']?.hidden.length || Boolean(busy)} onClick={() => setStatusHidden('Tạm thời nghỉ việc', false)}><Eye size={17}/> Hiện tất cả nhân viên tạm nghỉ ({statusVisibility['Tạm thời nghỉ việc']?.hidden.length || 0})</button>}
-        </UiToolbar>}
+        <div className="staff-list-primary-actions">
+          {canSaveRows && <button data-ui-key="u-32777dcb19cc" className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
+          {isAdmin && permissions.employee_delete && <button data-ui-key="u-fa225ec98bac" className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
+        </div>
         <StableDataRegion loading={loading}><>
           <div className="staff-desktop-table table-wrap">
             <table data-ui-key="u-4393b63484c6" className="staff-table">
