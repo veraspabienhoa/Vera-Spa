@@ -45,3 +45,20 @@ def test_real_receive_pagination_ack_and_revision(database, monkeypatch):
     confirmed = api.get('/v2/online-bookings?status=confirmed').json()
     assert confirmed['total'] == 1 and confirmed['rows'][0]['note'] == 'Đã gọi'
     assert api.get('/v2/online-bookings?kind=contact').json()['total'] == 0
+
+
+def test_listing_filters_dates_before_pagination_and_uses_vietnam_contact_day(database):
+    with database.begin() as conn:
+        booking.ensure_schema(conn)
+        for day in ('2026-09-30', '2026-10-01'):
+            for _ in range(26):
+                data = payload(); data['appointment_date'] = day
+                booking.ingest(conn, booking.WebsiteRequest(**data))
+        contact = booking.WebsiteRequest(event_id=__import__('uuid').uuid4(), kind='contact', customer_name='Test', phone='0900000000', message='Test')
+        saved = booking.ingest(conn, contact)
+        conn.execute(text("UPDATE vera_online_booking SET created_at='2026-09-30T18:00:00Z' WHERE id=:id"), {'id':saved['id']})
+    api = client(engine=database)
+    first = api.get('/v2/online-bookings?date_from=2026-10-01&date_to=2026-10-01').json()
+    second = api.get('/v2/online-bookings?date_from=2026-10-01&date_to=2026-10-01&page=2').json()
+    assert first['total'] == 27 and len(first['rows']) == 25 and len(second['rows']) == 2
+    assert all(row['appointment_date'] in ('2026-10-01', None) for row in first['rows'] + second['rows'])

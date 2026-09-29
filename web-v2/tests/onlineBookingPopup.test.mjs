@@ -1,3 +1,4 @@
+import './bookingDateRange.test.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
@@ -8,7 +9,7 @@ const built = await build({
   bundle:true, write:false, format:'iife', jsx:'automatic', loader:{'.css':'empty'},
   plugins:[{name:'mock-api',setup(b){
     b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}))
-    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={onlineBookings:async()=>({rows:window.rows,total:window.rows.length}),onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
+    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
   }}],
 })
 async function mount(role='letan') {
@@ -77,4 +78,22 @@ test('online booking history has a message column and preserves multiline text',
     assert.ok([...w.document.querySelectorAll('th')].some(th=>th.textContent==='Lời nhắn'))
     assert.equal(w.document.querySelector('td.online-booking-message').textContent,'Phòng yên tĩnh\nCảm ơn')
   } finally {await w.unmount();w.close()}
+})
+
+test('date presets reach API; details opens accessible modal and Escape closes it',async()=>{
+ const dom=await mount(),w=dom.window
+ try {
+  await w.mountPage({id:'a',role:'letan'})
+  const button=text=>[...w.document.querySelectorAll('button')].find(b=>b.textContent===text)
+  await w.act(async()=>button('Ngày mai').click())
+  assert.match(w.lastParams.date_from,/^\d{4}-\d{2}-\d{2}$/)
+  assert.equal(w.lastParams.date_from,w.lastParams.date_to)
+  assert.equal(w.document.querySelectorAll('tbody td[data-label]').length,10)
+  await w.act(async()=>button('Chi tiết').click())
+  const modal=w.document.querySelector('[role="dialog"]')
+  assert.ok(modal);assert.ok(modal.textContent.includes('Đặt lịch'))
+  assert.ok(modal.textContent.includes('Phòng yên tĩnh'))
+  await w.act(async()=>modal.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true})))
+  assert.equal(w.document.querySelector('[role="dialog"]'),null)
+ }finally{await w.unmount();w.close()}
 })
