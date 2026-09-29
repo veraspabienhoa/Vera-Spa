@@ -35,8 +35,10 @@ def test_employee_name_filter_uses_react_owned_search_picker():
 def test_employee_list_does_not_duplicate_the_toolbar_name_filter():
     page = (ROOT / "web-v2/src/pages/EmployeePage.jsx").read_text(encoding="utf-8")
     heading = page.index("<h2>DANH SÁCH NHÂN VIÊN</h2>")
-    actions = page.index('className="staff-list-selection-actions"', heading)
+    actions = page.index('className="staff-list-selection-actions"')
+    tools = page.index('<details className="staff-tools">')
+    primary = page.index('className="staff-list-primary-actions"', heading)
 
-    assert heading < actions
+    assert tools < actions < heading < primary
     assert 'className="staff-search staff-list-search"' not in page
     assert page.count('className="staff-employee-name-filter"') == 1
