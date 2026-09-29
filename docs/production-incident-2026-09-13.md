@@ -1,5 +1,34 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 29-09-2026: FaceGate đổi IP và giữ bằng chứng lịch sử
+
+Kết quả do người vận hành cung cấp xác nhận tuyến Tailscale ban đầu chỉ tới
+IP cũ; sau bổ sung tuyến máy mới, đọc thiết bị thành công. Bước xác nhận lại
+51 ánh xạ đã commit và đọc lại thành công sau khi đối chiếu chính xác ID hồ sơ,
+tham chiếu đăng ký và tên máy. Lần preview tiếp theo đọc đủ 40 sự kiện, khớp
+40, chưa khớp 0. Worker báo kho ngày 28 có 148, ngày 29 có 40, thêm mới 0.
+Đây là các snapshot do người dùng gửi, chưa chứng minh chuyển nguồn tính công.
+
+Mã cũ so địa chỉ hiện tại với địa chỉ trong mọi payload/review, nên đổi IP
+làm lịch sử nguyên vẹn và ngoại lệ checkout đã lưu bị từ chối. Bản sửa đọc
+metadata ip_reconfirmation trên từng ánh xạ hiện tại: đúng người xác nhận,
+địa chỉ trước/sau, phương thức đối chiếu, mốc xác nhận và reference chính xác.
+Chỉ bằng chứng trước/đúng mốc đó được chấp nhận từ địa chỉ cũ. Không dùng
+fallback tên cho địa chỉ cũ hoặc cho tham chiếu thiếu, không tạo alias IP chung.
+Xác nhận ánh xạ khác về sau làm metadata cũ mất hiệu lực.
+
+Review vẫn kiểm tra hash nguyên bản, chủ sở hữu, ID hồ sơ, năm sự kiện, thời
+điểm, vai trò và ca. Đọc lại case sau đổi IP không tạo review mới. Không sửa
+payload/hash/archive, không ghi lại review, không mở connection hoặc gọi máy
+trong projection. Nguồn chấm công, lương/phạt và các gate chuyển nguồn giữ
+nguyên. Bản sửa này chỉ xử lý lịch sử sau chuyển IP đã được xác minh.
+
+Kiểm thử gồm địa chỉ thứ ba, thiếu/sai reference, thời điểm sau chuyển IP,
+metadata thiếu/sai, xác nhận lại khác, status lạ, bảo toàn input và kiểm tra
+review cũ/idempotency/fingerprint. Chưa xác minh bản sửa trên VPS. Những vấn
+đề dữ liệu chưa ánh xạ, sự kiện thiếu định danh, tham chiếu TimeSoft và ngữ
+nghĩa status/type vẫn phải xử lý trước khi bật nguồn chính thức.
+
 ## 28-09-2026: Lễ tân/Quản lý xóa lịch được nhập trong ngày
 
 Theo yêu cầu mới, thêm ngoại lệ xóa riêng cho letan/quanly khi created_at

@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from vera_facegate_control_log import VN_TZ, mapping_device_id
 from vera_facegate_readiness import reference
+from vera_facegate_address_history import accepts_event
 
 MAX_EVENTS = 20000
 # Observed in the operator's two matching exports. This is a preview filter,
@@ -142,7 +143,7 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
         mapping = index.get(ref)
         resolution = 'registration_ref'
         reason = ''
-        if payload.get('device_address', '') != address:
+        if not accepts_event(mapping, payload, address, event['occurred_at']):
             reason = 'device_address_changed'
         elif not ref:
             # Only a valid but stale reference may use the confirmed-name fallback.
