@@ -111,7 +111,13 @@ def parse_first_number(value: str):
     return float(m.group(0).replace(",", ".")) if m else None
 
 
+def validate_weekend_reason(reason, target):
+    if "cuoi tuan" in norm(reason) and target.weekday() < 5:
+        raise LeaveRuleError(400, "Lý do CUỐI TUẦN chỉ áp dụng cho ngày nghỉ Thứ Bảy hoặc Chủ Nhật.")
+
+
 def validate_registration_rule(item: dict, role: str, target: date, now: datetime | None = None) -> None:
+    validate_weekend_reason(item.get("name"), target)
     role = str(role or "").strip().lower()
     if role == "admin":
         return

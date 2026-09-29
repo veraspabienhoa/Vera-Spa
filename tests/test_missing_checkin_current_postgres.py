@@ -22,7 +22,7 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             CREATE TABLE vera_app_setting(category text,setting_key text,value_json jsonb);
             CREATE TABLE vera_work_schedule(employee_username text,employee_name text,department text,shift_code text,start_time text,work_date date);
             CREATE TABLE vera_work_shift_definition(department text,shift_code text,start_time text);
-            CREATE TABLE leave_records(employee_name text,leave_date date,source_sheet_id text);'''))
+            CREATE TABLE leave_records(employee_name text,leave_date date,source_sheet_id text,leave_reason text DEFAULT '');'''))
         conn.execute(text("INSERT INTO vera_app_setting VALUES ('shift','shift_definitions',CAST(:defs AS jsonb))"),{'defs':json.dumps(definitions)})
         conn.execute(text("INSERT INTO employees VALUES ('Test Employee','Test Employee Full Name','nhanvien','{}','Ca 1','Theo chu kỳ Tuần','2026-08-17')"))
         conn.execute(text("INSERT INTO vera_dataset_cache VALUES ('timesoft_employee_checkin_today',CAST(:payload AS jsonb),'2026-09-27',:now,:expires)"),
@@ -81,8 +81,8 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             assert read('nhanvien', username='Test Employee')==[]
             payload([]);assert read()==[]
             payload(base)
-            conn.execute(text("INSERT INTO leave_records VALUES ('Test Employee','2026-09-27','postgres:auto_check')"));assert len(read())==1
-            conn.execute(text("INSERT INTO leave_records VALUES ('Test Employee','2026-09-27','manual')"));assert read()==[]
+            conn.execute(text("INSERT INTO leave_records(employee_name,leave_date,source_sheet_id) VALUES ('Test Employee','2026-09-27','postgres:auto_check')"));assert len(read())==1
+            conn.execute(text("INSERT INTO leave_records(employee_name,leave_date,source_sheet_id) VALUES ('Test Employee','2026-09-27','manual')"));assert read()==[]
             assert read('nhanvien', username='Test Employee')==[]
             conn.execute(text('DELETE FROM leave_records'))
             conn.execute(text("INSERT INTO vera_work_schedule VALUES ('Test Employee','Test Employee','nhanvien','Nghỉ','','2026-09-27')"));assert read()==[]

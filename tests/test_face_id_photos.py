@@ -55,10 +55,12 @@ class Database:
         return SimpleNamespace(mappings=lambda: SimpleNamespace(first=lambda: rows[0] if rows else None, all=lambda: rows), scalar=lambda: next(iter(rows[0].values())) if rows else None)
 
 
-def client(grants):
+def client(grants, role="admin"):
     db, app = Database(), FastAPI()
     class Identity:
         employee_username = 'operator'
+        def __init__(self):
+            self.role = role
     def require(conn, ident, feature):
         if feature not in grants:
             raise HTTPException(403, 'denied')
@@ -94,9 +96,10 @@ def test_reject_invalid_images_and_missing_employee():
     assert api.get('/v2/staff/missing/face-id').status_code == 404
 
 
-def test_device_io_releases_connection_and_requires_unique_event(monkeypatch):
+@pytest.mark.parametrize("role", ["admin", "quanly"])
+def test_device_io_releases_connection_and_requires_unique_event(monkeypatch, role):
     import vera_facegate_control_log as device
-    db, api = client({'employee_face_id_view', 'employee_face_id_manage'})
+    db, api = client({'employee_face_id_view', 'employee_face_id_manage'}, role=role)
     def read(*args):
         assert not db.active
         return {'records': [{'event_id': 2, 'occurred_at':'2026-09-24T10:00:00+07:00', 'image_available':True, 'image_ref':{}}]}
@@ -214,3 +217,12 @@ def test_capture_requires_precondition_and_rejects_invalid_or_oversized_without_
     assert api.put(path,content=b'BMbad',headers=headers).status_code == 400
     assert api.put(path,content=b'B'*(MAX_CAPTURE_BYTES+1),headers=headers).status_code == 413
     assert db.photo is None
+
+
+@pytest.mark.parametrize("role", ["letan", "nhanvien", "leader"])
+def test_device_capture_tools_reject_other_roles_even_with_feature_grants(role):
+    _, api = client({'employee_face_id_view', 'employee_face_id_manage'}, role=role)
+    path = '/v2/staff/worker/face-id'
+    assert api.get(path).json()['can_view_device_tools'] is False
+    assert api.get(path+'/captures?day=2026-09-24').status_code == 403
+    assert api.get(path+'/capture-image?day=2026-09-24&event_id=2').status_code == 403

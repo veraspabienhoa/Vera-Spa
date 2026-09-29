@@ -31,6 +31,7 @@ from vera_leave_registration_shared import (
     reason_item,
     role_tokens,
     validate_registration_rule,
+    validate_weekend_reason,
     weekday_label,
 )
 from vera_leave_registration_live_shared import (
@@ -278,6 +279,10 @@ def _validate_and_prepare(
     employee = emp["username"]
 
     item = _reason_item(conn, body.leave_reason)
+    try:
+        validate_weekend_reason(item["name"], body.leave_date)
+    except LeaveRuleError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
     base_penalty = float(body.manual_penalty) if item["requires_manual_penalty"] and body.manual_penalty is not None else float(item["penalty"])
     live_df = _live_leave_df(conn, exclude_record_uid=exclude_record_uid)
     weekend_unpaid_enabled = load_weekend_unpaid_enabled(conn)

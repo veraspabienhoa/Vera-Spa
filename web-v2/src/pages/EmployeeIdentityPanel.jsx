@@ -485,7 +485,7 @@ function IdentitySide({ username, side, title, metadata, busy, onChanged, setNot
   </div>
 }
 
-function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit, allowDownload = false, mediaApi = staffSecurityApi, side = 'portrait', title = 'Ảnh nhân viên', canEdit = true, sources }) {
+function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit, allowDownload = false, mediaApi = staffSecurityApi, side = 'portrait', title = 'Ảnh nhân viên', canEdit = true, sources, showControls = true }) {
   const inputRef = useRef(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [pendingFile, setPendingFile] = useState(null)
@@ -566,7 +566,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
     <div className="employee-id-side-head"><div><strong>{title}</strong><span>{metadata ? `Đã lưu · ${formatBytes(metadata.size_bytes)}` : 'Chưa có ảnh'}</span></div>{busy && <LoaderCircle className="spin" size={16}/>}</div>
     <div className="employee-portrait-preview">{previewUrl ? <img src={previewUrl} alt={title}/> : <div className="employee-id-placeholder"><ImageIcon size={28}/><span>ẢNH NHÂN VIÊN</span></div>}</div>
     {canEdit && sources?.(acceptFile)}
-    <UiToolbar data-ui-key="u-e846d87f96c5" className="employee-id-actions">
+    {showControls && <UiToolbar data-ui-key="u-e846d87f96c5" className="employee-id-actions">
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/*" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; acceptFile(file) }} hidden/>
       <button data-ui-key="u-a4ae33de7ed9" data-ui-label-default="Chụp ảnh" type="button" className="secondary-button compact" onClick={() => setCameraOpen(true)} disabled={Boolean(busy) || !canEdit}><Camera size={14}/><UiCustomText uiKey="u-a4ae33de7ed9"> Chụp ảnh</UiCustomText></button>
       <button data-ui-key="u-5825e51c59e7" type="button" className="secondary-button compact" onClick={() => inputRef.current?.click()} disabled={Boolean(busy) || !canEdit}><Upload size={14}/> {metadata ? 'Thay ảnh' : 'Tải ảnh'}</button>
@@ -574,7 +574,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
       {metadata && allowDownload && <button type="button" className="secondary-button compact" onClick={download} disabled={Boolean(busy)}><Download size={14}/> Tải ảnh Face ID</button>}
       {metadata && allowAdminEdit && <button data-ui-key="u-636be8616e35" data-ui-label-default="Crop / Xoay" type="button" className="secondary-button compact" onClick={editSaved} disabled={Boolean(busy) || !canEdit}><Crop size={14}/><UiCustomText uiKey="u-636be8616e35"> Crop / Xoay</UiCustomText></button>}
       {metadata && <button data-ui-key="u-5e617d4cab9b" data-ui-label-default="Xóa" type="button" className="danger-button compact" onClick={remove} disabled={Boolean(busy) || !canEdit}><Trash2 size={14}/><UiCustomText uiKey="u-5e617d4cab9b"> Xóa</UiCustomText></button>}
-    </UiToolbar>
+    </UiToolbar>}
     {cameraOpen && <IdentityCamera title={title} mediaLabel="Hồ sơ" aspectRatio={PORTRAIT_ASPECT_RATIO} onCancel={() => setCameraOpen(false)} onCapture={(file) => { setCameraOpen(false); acceptFile(file) }}/>}
     {pendingFile && <IdentityImageEditor file={pendingFile} title={title} mediaLabel="Hồ sơ" aspectRatio={PORTRAIT_ASPECT_RATIO} onCancel={() => setPendingFile(null)} onConfirm={uploadProcessed}/>}
   </div>
@@ -640,15 +640,15 @@ export function FaceIdCard({ username }) {
   const asFile = (blob) => new File([blob], 'FaceID.jpg', {type: blob.type})
   return <div className="face-id-card" style={{border: '1px solid #315d4b', padding: 12, minWidth: 0}}>
     <PortraitSide key={username} username={username} metadata={data.photo} busy={busy}
-      onChanged={run} setNotice={setNotice} allowAdminEdit allowDownload canEdit={data.can_manage}
+      onChanged={run} setNotice={setNotice} showControls={Boolean(data.can_view_device_tools)} allowAdminEdit allowDownload={data.can_view_device_tools} canEdit={data.can_manage && data.can_view_device_tools}
       mediaApi={faceIdApi} side="face_id" title="ẢNH FACE ID"
-      sources={(acceptFile) => <div className="employee-id-actions">
+      sources={data.can_view_device_tools ? (acceptFile) => <div className="employee-id-actions">
         <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>
         <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>
         <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile}/>
-      </div>}/>
+      </div> : undefined}/>
     <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ.</p>
-    <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>
+    {data.can_view_device_tools && <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>}
     {notice && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}
   </div>
 }

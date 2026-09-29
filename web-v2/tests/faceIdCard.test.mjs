@@ -8,12 +8,12 @@ const built = await build({stdin:{contents:"import React, {act} from 'react'; im
 const tick=()=>new Promise(resolve=>setTimeout(resolve,40))
 async function mount(api){const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true});dom.window.MessageChannel=class {constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}};dom.window.IS_REACT_ACT_ENVIRONMENT=true;dom.window.api={identityBlob:async()=>new dom.window.Blob(['photo'],{type:'image/jpeg'}),enrollment:async()=>{throw Object.assign(new Error('denied'),{status:403})},captures:async()=>({records:[]}),capture:async()=>new dom.window.Blob(['photo'],{type:'image/jpeg'}),...api};dom.window.URL.createObjectURL=()=> 'blob:test';dom.window.URL.revokeObjectURL=()=>{};dom.window.eval(built.outputFiles[0].text);await dom.window.mount();return dom}
 const button=(dom,text)=>[...dom.window.document.querySelectorAll('button')].find(b=>b.textContent.includes(text))
-test('view-only cannot mutate face photo',async()=>{const dom=await mount({metadata:async()=>({can_manage:false,photo:{size_bytes:20}}),identityBlob:async()=>new Blob(['x'])});assert.equal(button(dom,'Thay ảnh').disabled,true);assert.equal(button(dom,'Xóa').disabled,true);assert.equal(button(dom,'Crop / Xoay').disabled,true);assert.equal(button(dom,'Từ ảnh đại diện'),undefined);await dom.window.unmount();dom.window.close()})
-test('manager selects capture explicitly with identity warning',async()=>{const dom=await mount({metadata:async()=>({can_manage:true,photo:null}),captures:async()=>({records:[{event_id:7,occurred_at:'2026-09-24T10:00:00+07:00'}]})});assert.equal(button(dom,'Tải ảnh').disabled,false);assert.ok(button(dom,'Từ ảnh đại diện'));await dom.window.act(async()=>button(dom,'Từ ảnh chụp trên FaceID').click());assert.ok(dom.window.document.body.textContent.includes('chưa xác minh danh tính'));assert.ok(button(dom,'#7'));await dom.window.unmount();dom.window.close()})
+test('view-only cannot mutate face photo',async()=>{const dom=await mount({metadata:async()=>({can_manage:false,photo:{size_bytes:20}}),identityBlob:async()=>new Blob(['x'])});assert.equal(button(dom,'Thay ảnh'),undefined);assert.equal(button(dom,'Xóa'),undefined);assert.equal(button(dom,'Crop / Xoay'),undefined);assert.equal(button(dom,'Từ ảnh đại diện'),undefined);await dom.window.unmount();dom.window.close()})
+test('manager selects capture explicitly with identity warning',async()=>{const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>({records:[{event_id:7,occurred_at:'2026-09-24T10:00:00+07:00'}]})});assert.equal(button(dom,'Tải ảnh').disabled,false);assert.ok(button(dom,'Từ ảnh đại diện'));await dom.window.act(async()=>button(dom,'Từ ảnh chụp trên FaceID').click());assert.ok(dom.window.document.body.textContent.includes('chưa được xác minh danh tính'));assert.ok(dom.window.document.querySelector('img[alt="Ảnh chụp FaceID #7"]'));await dom.window.unmount();dom.window.close()})
 test('denied permission exposes no controls',async()=>{const dom=await mount({metadata:async()=>{throw Object.assign(new Error('denied'),{status:403})}});assert.equal(dom.window.document.querySelectorAll('button').length,0);await dom.window.unmount();dom.window.close()})
 
 test('camera captures full native frame without 3:4 cropping',async()=>{
- const dom=await mount({metadata:async()=>({can_manage:true,photo:null})}),w=dom.window
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null})}),w=dom.window
  let constraints,drawn
  Object.defineProperty(w.navigator,'mediaDevices',{value:{getUserMedia:async value=>{constraints=value;return{getTracks:()=>[{stop(){}}]}}}})
  w.HTMLMediaElement.prototype.play=async()=>{}
@@ -32,39 +32,30 @@ test('camera captures full native frame without 3:4 cropping',async()=>{
 
 test('latest capture is previewed automatically and saving still requires explicit selection',async()=>{
  const requested=[],writes=[]
- const dom=await mount({metadata:async()=>({can_manage:true,photo:null}),captures:async()=>({records:[{event_id:7,occurred_at:'2026-09-27T09:00:00+07:00'},{event_id:9,occurred_at:'2026-09-27T11:00:00+07:00'},{event_id:8,occurred_at:'2026-09-27T10:00:00+07:00'}]}),capture:async(u,d,id)=>{requested.push(id);return new Blob(['photo'],{type:'image/jpeg'})},uploadIdentity:async()=>writes.push('write')})
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>({records:[{event_id:7,occurred_at:'2026-09-27T09:00:00+07:00'},{event_id:9,occurred_at:'2026-09-27T11:00:00+07:00'},{event_id:8,occurred_at:'2026-09-27T10:00:00+07:00'}]}),capture:async(u,d,id)=>{requested.push(id);return new Blob(['photo'],{type:'image/jpeg'})},uploadIdentity:async()=>writes.push('write')})
  try {
   await tick()
-  assert.deepEqual(requested,[9])
+  assert.deepEqual(requested,[9,8,7])
   assert.equal(dom.window.document.querySelector('.face-id-capture-preview img').alt,'Ảnh chụp FaceID #9')
   assert.equal(button(dom,'Lưu ảnh gốc'),undefined)
   assert.deepEqual(writes,[])
-  await dom.window.act(async()=>button(dom,'#7').click())
-  assert.equal(dom.window.document.querySelector('.face-id-capture-preview img').alt,'Ảnh chụp FaceID #7')
-  assert.deepEqual(requested,[9,7])
+  assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview img').length,3)
   await dom.window.act(async()=>button(dom,'Chọn ảnh này').click())
   assert.ok(button(dom,'Lưu ảnh gốc'))
   assert.deepEqual(writes,[])
  } finally {await dom.window.unmount();dom.window.close()}
 })
 
-test('switching capture ignores a slower old response and revokes the preview URL',async()=>{
- let resolveOld,revoked=0
- const dom=await mount({metadata:async()=>({can_manage:true,photo:null}),captures:async()=>({records:[{event_id:9,occurred_at:'2026-09-27T11:00:00+07:00'},{event_id:7,occurred_at:'2026-09-27T09:00:00+07:00'}]}),capture:async(u,d,id)=>id===9?await new Promise(resolve=>{resolveOld=resolve}):new Blob(['old'],{type:'image/jpeg'})})
- try {
-  dom.window.URL.revokeObjectURL=()=>revoked++
-  await dom.window.act(async()=>button(dom,'#7').click())
-  await dom.window.act(async()=>resolveOld(new Blob(['late'],{type:'image/jpeg'})))
-  assert.equal(dom.window.document.querySelector('.face-id-capture-preview img').alt,'Ảnh chụp FaceID #7')
-  await dom.window.act(async()=>button(dom,'Làm mới').click())
-  assert.equal(revoked,1)
-  assert.equal(dom.window.document.querySelector('.face-id-capture-preview img'),null)
- } finally {await dom.window.unmount();dom.window.close()}
+test('gallery limits loading to five latest full images',async()=>{
+ const requested=[]
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>({records:Array.from({length:8},(_,i)=>({event_id:i,occurred_at:'2026-09-27T11:00:00+07:00'}))}),capture:async(u,d,id)=>{requested.push(id);return new Blob(['photo'],{type:'image/jpeg'})}})
+ try {await tick();assert.deepEqual(requested,[7,6,5,4,3]);assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview img').length,5)}
+ finally{await dom.window.unmount();dom.window.close()}
 })
 
 test('enrollment sends the saved photo hash only after confirmation',async()=>{
  const writes=[]
- const dom=await mount({metadata:async()=>({can_manage:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
   enrollment:async()=>({status:'not_registered',can_enroll:true}),
   enroll:async(...args)=>{writes.push(args);return{status:'verified',profile_id:123,photo_sha256:'a'.repeat(64)}}})
  try {
@@ -83,7 +74,7 @@ test('enrollment sends the saved photo hash only after confirmation',async()=>{
 
 test('ambiguous device write exposes verification instead of duplicate registration',async()=>{
  let status='not_registered', writes=0,checks=0
- const dom=await mount({metadata:async()=>({can_manage:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
   enrollment:async()=>({status}),enroll:async()=>{writes++;status='unverified';throw new Error('Chưa xác minh')},
   verifyEnrollment:async()=>{checks++;return{status:'verified',profile_id:123,photo_sha256:'a'.repeat(64)}}})
  try{

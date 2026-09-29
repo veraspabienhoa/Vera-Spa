@@ -66,7 +66,7 @@ def install_leave_violation_split_routes(
                 allowed = role_tokens(item.get("allowed_roles", ""))
                 if allowed and role not in allowed:
                     continue
-                if not day_allowed(item.get("allowed_days", ""), date_value):
+                if ("cuoi tuan" in norm(item["name"]) and date_value.weekday() < 5) or not day_allowed(item.get("allowed_days", ""), date_value):
                     continue
 
                 is_violation = "vi pham" in norm(item.get("leave_type", ""))
