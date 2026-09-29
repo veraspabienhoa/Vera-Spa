@@ -1,4 +1,5 @@
 import copy
+import hashlib
 from datetime import timedelta
 import json
 import os
@@ -66,24 +67,144 @@ def test_postgres_batch_roundtrips_and_replay_and_changed_evidence(database):
     def observe(conn, cursor, statement, params, context, executemany): calls.append(statement)
     sql_event.listen(database, 'before_cursor_execute', observe)
     try:
+        original = batch()
         with database.begin() as conn:
-            first = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), batch())
-        assert first['inserted_count'] == 129 and len(calls) == 4
+            first = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), original)
+        assert first == {'inserted_count': 129, 'already_stored_count': 0,
+                         'conflict_count': 0, 'stored_day_count': 129}
+        assert len(calls) == 4
+        with database.connect() as conn:
+            archived_before = [dict(row) for row in conn.execute(text(
+                'SELECT * FROM vera_facegate_event ORDER BY event_id,occurred_at'
+            )).mappings().all()]
         calls.clear()
         with database.begin() as conn:
-            second = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), batch())
-        assert second['inserted_count'] == 0 and second['stored_day_count'] == 129 and len(calls) == 4
+            second = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), original)
+        assert second == {'inserted_count': 0, 'already_stored_count': 129,
+                          'conflict_count': 0, 'stored_day_count': 129}
+        # Replay skips the empty event INSERT: read + day upsert + count.
+        assert len(calls) == 3
+        assert not any('INSERT INTO vera_facegate_event' in sql for sql in calls)
+
         changed = batch(251)
-        changed[-1]['event_id'] = '0'
-        changed[-1]['occurred_at'] = changed[0]['occurred_at']
-        changed[-1]['payload_sha256'] = 'different'
-        with pytest.raises(sync.SyncError, match='existing_event_changed'):
-            with database.begin() as conn:
-                sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), changed)
+        observed = json.loads(changed[0]['payload_json'])
+        observed['device_name'] = 'ANH THU UPDATED'
+        changed[0]['payload_json'] = json.dumps(
+            observed, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+        changed[0]['payload_sha256'] = hashlib.sha256(
+            changed[0]['payload_json'].encode('utf-8')).hexdigest()
+        calls.clear()
+        with database.begin() as conn:
+            third = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), changed)
+        assert third == {'inserted_count': 122, 'already_stored_count': 128,
+                         'conflict_count': 1, 'stored_day_count': 251}
+        assert len(calls) == 5  # read, new rows, audit, day upsert, count
         with database.connect() as conn:
-            assert conn.execute(text('SELECT COUNT(*) FROM vera_facegate_event')).scalar_one() == 129
+            archived_after = {(r['event_id'], r['occurred_at']): dict(r) for r in conn.execute(
+                text('SELECT * FROM vera_facegate_event')).mappings().all()}
+            conflict = dict(conn.execute(text(
+                'SELECT * FROM vera_facegate_event_conflict')).mappings().one())
+        # Every byte/column of every previously archived event is unchanged.
+        for row in archived_before:
+            assert archived_after[(row['event_id'], row['occurred_at'])] == row
+        assert conflict['stored_payload_sha256'] == original[0]['payload_sha256']
+        assert conflict['observed_payload_sha256'] == changed[0]['payload_sha256']
+        assert conflict['observed_payload_json'] == changed[0]['payload_json']
+        assert conflict['observation_count'] == 1
+
+        calls.clear()
+        with database.begin() as conn:
+            repeated = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), changed)
+        assert repeated == {'inserted_count': 0, 'already_stored_count': 250,
+                            'conflict_count': 1, 'stored_day_count': 251}
+        assert len(calls) == 4  # no new events; the same conflict is audited again
+        with database.connect() as conn:
+            saved = conn.execute(text(
+                'SELECT * FROM vera_facegate_event_conflict')).mappings().one()
+            archive_repeated = {(r['event_id'], r['occurred_at']): dict(r) for r in conn.execute(
+                text('SELECT * FROM vera_facegate_event')).mappings().all()}
+        assert saved['observation_count'] == 2
+        assert saved['first_observed_at'] == conflict['first_observed_at']
+        assert archive_repeated == archived_after
     finally:
         sql_event.remove(database, 'before_cursor_execute', observe)
+
+
+def test_postgres_new_events_remain_bounded_to_250_per_statement(database):
+    calls, batch_sizes = [], []
+    def observe(conn, cursor, statement, params, context, executemany):
+        calls.append(statement)
+        if params and 'batch' in params:
+            batch_sizes.append(len(json.loads(params['batch'])))
+    sql_event.listen(database, 'before_cursor_execute', observe)
+    try:
+        with database.begin() as conn:
+            result = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), batch(501))
+        assert result['inserted_count'] == result['stored_day_count'] == 501
+        assert result['conflict_count'] == result['already_stored_count'] == 0
+        assert len(calls) == 6  # read + three batches + day upsert + count
+        assert batch_sizes == [250, 250, 1]
+    finally:
+        sql_event.remove(database, 'before_cursor_execute', observe)
+
+
+def test_postgres_conflicts_are_batched_without_overwriting_archive(database):
+    original = batch(501)
+    with database.begin() as conn:
+        sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), original)
+        before = [dict(row) for row in conn.execute(text(
+            'SELECT * FROM vera_facegate_event ORDER BY event_id,occurred_at')).mappings().all()]
+    changed = copy.deepcopy(original)
+    for row in changed:
+        payload = json.loads(row['payload_json'])
+        payload['device_name'] = 'ANH THU UPDATED'
+        row['payload_json'] = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+        row['payload_sha256'] = hashlib.sha256(row['payload_json'].encode('utf-8')).hexdigest()
+    calls, batch_sizes = [], []
+    def observe(conn, cursor, statement, params, context, executemany):
+        calls.append(statement)
+        if params and 'batch' in params:
+            batch_sizes.append(len(json.loads(params['batch'])))
+    sql_event.listen(database, 'before_cursor_execute', observe)
+    try:
+        with database.begin() as conn:
+            result = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), changed)
+        assert result == {'inserted_count': 0, 'already_stored_count': 0,
+                          'conflict_count': 501, 'stored_day_count': 501}
+        assert len(calls) == 6
+        assert batch_sizes == [250, 250, 1]
+    finally:
+        sql_event.remove(database, 'before_cursor_execute', observe)
+    with database.connect() as conn:
+        after = [dict(row) for row in conn.execute(text(
+            'SELECT * FROM vera_facegate_event ORDER BY event_id,occurred_at')).mappings().all()]
+        assert after == before
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_facegate_event_conflict')).scalar_one() == 501
+        assert conn.execute(text('SELECT SUM(observation_count) FROM vera_facegate_event_conflict')).scalar_one() == 501
+
+
+def test_postgres_mixed_batch_rollback_keeps_archive_audit_and_day_atomic(database):
+    with database.begin() as conn:
+        sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), batch())
+        before = [dict(row) for row in conn.execute(text(
+            'SELECT * FROM vera_facegate_event ORDER BY event_id,occurred_at')).mappings().all()]
+        day_before = dict(conn.execute(text('SELECT * FROM vera_facegate_sync_day')).mappings().one())
+    changed = batch(251)
+    payload = json.loads(changed[0]['payload_json'])
+    payload['device_name'] = 'ANH THU UPDATED'
+    changed[0]['payload_json'] = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    changed[0]['payload_sha256'] = hashlib.sha256(changed[0]['payload_json'].encode('utf-8')).hexdigest()
+    with pytest.raises(RuntimeError, match='synthetic_rollback'):
+        with database.begin() as conn:
+            result = sync.persist_batch(conn, 'synthetic-device', DAY.isoformat(), changed)
+            assert result['inserted_count'] == 122 and result['conflict_count'] == 1
+            raise RuntimeError('synthetic_rollback')
+    with database.connect() as conn:
+        after = [dict(row) for row in conn.execute(text(
+            'SELECT * FROM vera_facegate_event ORDER BY event_id,occurred_at')).mappings().all()]
+        assert after == before
+        assert conn.execute(text('SELECT COUNT(*) FROM vera_facegate_event_conflict')).scalar_one() == 0
+        assert dict(conn.execute(text('SELECT * FROM vera_facegate_sync_day')).mappings().one()) == day_before
 
 
 def seed_preview(database):
@@ -145,3 +266,24 @@ def test_incomplete_archive_and_missing_mapping_are_blockers(database):
     assert 'incomplete_archive_days' in result['blockers']
     assert result['mapping_candidates'][0]['username_candidate'] == 'Ánh Thử'
     assert result['records'][0]['check_in'] == ''
+
+
+def test_missing_reference_stays_blocking_in_postgres_shadow_preview(database):
+    seed_preview(database)
+    with database.begin() as conn:
+        raw = conn.execute(text('SELECT payload_json FROM vera_facegate_event')).scalar_one()
+        payload = json.loads(raw)
+        payload['registration_ref'] = None
+        encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+        conn.execute(text('UPDATE vera_facegate_event SET payload_json=:payload,payload_sha256=:digest'),
+                     {'payload': encoded, 'digest': hashlib.sha256(encoded.encode('utf-8')).hexdigest()})
+    with database.begin() as conn:
+        conn.execute(text('SET TRANSACTION READ ONLY'))
+        result = fg.preview(conn, DAY, DAY)
+    assert 'unresolved_events' in result['blockers']
+    assert any(issue['reason'] == 'unmapped_reference' for issue in result['issues'])
+    assert result['records'][0]['check_in'] == ''
+    assert result['source'] == 'timesoft' and result['attendance_cutover_ready'] is False
+    assert result['payroll_and_penalties_written'] is False
+    with database.connect() as conn:
+        assert conn.execute(text('SELECT payload_json FROM vera_facegate_event')).scalar_one() == encoded
