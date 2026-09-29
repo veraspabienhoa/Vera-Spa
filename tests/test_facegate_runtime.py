@@ -175,7 +175,7 @@ def test_installed_policy_cannot_repair_facegate_from_legacy_tour(monkeypatch, f
     for module in (policy.attendance_v42, policy.auto_check, outside, alerts):
         for name in tuple(vars(module)):
             monkeypatch.setattr(module, name, getattr(module, name))
-    monkeypatch.delattr(outside, '_attendance_policy_patch_release', raising=False)
+    monkeypatch.setattr(outside, '_attendance_policy_patch_release', '', raising=False)
     policy.install_attendance_policy_patch()
     monkeypatch.setattr(alerts, '_tour_break_map', lambda *_: pytest.fail('Legacy Tour break fallback after cutover'))
     rows = [record()]
