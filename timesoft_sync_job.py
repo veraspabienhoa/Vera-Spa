@@ -876,6 +876,8 @@ def _login_error_text(page) -> str:
 
 
 def _login_with_playwright(page, verify_url: str) -> tuple[bool, str]:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     password_box = _visible_input(page, [
         'input[type="password"]', 'input[name*="password" i]', 'input[id*="password" i]',
         'input[name*="pass" i]', 'input[id*="pass" i]',
@@ -1006,6 +1008,8 @@ def create_authenticated_session() -> requests.Session:
 
 
 def post_json(session: requests.Session, api_path: str, referer_path: str, payload: dict, timeout: int = 60) -> dict:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     url = urljoin(BASE_URL + "/", api_path.lstrip("/"))
     referer = urljoin(BASE_URL + "/", referer_path.lstrip("/"))
     headers = {

@@ -43,3 +43,22 @@ def test_review_uses_readonly_caller_connection_and_preserves_archive(database):
         assert rows[0]['applied_identity_review_ids'] == [review.REVIEW_ID]
         assert [tuple(r) for r in conn.execute(text('SELECT * FROM vera_facegate_event'))] == before
         assert [tuple(r) for r in conn.execute(text('SELECT * FROM vera_app_setting ORDER BY category,setting_key'))] == settings
+
+
+def test_suspended_roster_uses_readonly_connection_and_keeps_profiles(database):
+    day = date(2026, 9, 29)
+    suspended = ['admin', 'akamen', 'letan', 'Ms Tuyết']
+    waiting = ['Cậu Tưởng', 'Nguyễn Thị Sen', 'Nguyễn Thị Thu Hiền', 'Ngô Sĩ Đạt', 'Vũ Tân']
+    with database.begin() as conn:
+        for name in suspended + waiting:
+            conn.execute(text("""INSERT INTO employees(username,full_name,role)
+                VALUES (:name,:name,'letan')"""), {'name': name})
+    with database.begin() as conn:
+        conn.execute(text('SET TRANSACTION READ ONLY'))
+        before = [tuple(r) for r in conn.execute(text('SELECT * FROM employees ORDER BY username'))]
+        rows = runtime.records(conn, day, day)
+        users = {r['employee_name'] for r in rows}
+        assert not users.intersection(suspended)
+        assert set(waiting).issubset(users)
+        assert all(r['attendance_pending'] for r in rows if r['employee_name'] in waiting)
+        assert [tuple(r) for r in conn.execute(text('SELECT * FROM employees ORDER BY username'))] == before

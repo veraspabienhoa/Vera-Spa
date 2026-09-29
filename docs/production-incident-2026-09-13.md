@@ -1,5 +1,41 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+
+## 29-09-2026 — Tạm ngừng bốn tài khoản; hoàn tất ngừng TimeSoft
+
+Deploy VPS Production #617 đã thành công tại commit 4821fd28. Kết quả chỉ
+đọc người vận hành gửi lúc 22:04 xác nhận FaceGate, TimeSoft network=false,
+cache mới lúc 22:03:25, 153 dòng, review Gia Anh 79335 đã áp dụng và không
+còn unresolved_evidence; còn 56/58 nhân viên pending. Đây là bằng chứng
+production của bản #343, không phải bằng chứng bản thay đổi bên dưới đã chạy.
+
+Lúc 22:07:31 +07 người vận hành yêu cầu tạm bỏ chấm công/tính lương đúng
+admin, akamen, letan, Ms Tuyết. Năm nhân viên Cậu Tưởng, Nguyễn Thị Sen,
+Nguyễn Thị Thu Hiền, Ngô Sĩ Đạt, Vũ Tân sẽ đăng ký Face ID sau; không được
+coi năm người này là miễn công/lương, không tạo ảnh, mapping, ca hoặc giờ ra.
+
+Quyết định có phiên bản trong vera_attendance_participation.py, bắt đầu theo
+ngày công Việt Nam 29-09. Chỉ khớp username, không khớp vai trò hoặc tên máy.
+Loại bốn tài khoản khỏi bản công FaceGate và người nhận cảnh báo chấm công.
+Các bảng lương mới có kỳ giao với thời gian tạm ngừng bỏ toàn bộ tài khoản,
+không âm thầm tính nửa tháng hay lương 0. Chặn bản nháp cũ/giả mạo khi lưu,
+xuất, gửi; áp dụng cả nguồn lịch VERA và TIP. Tiền đã lưu được giữ khi cập
+nhật cùng kỳ cho người khác, gồm dòng relational và đầu vào đối soát nợ TIP.
+Không sửa hồ sơ, quyền đăng nhập, log gốc, mapping, lương/phạt đang lưu khi deploy.
+
+Để khôi phục một tài khoản, đặt effective_until là ngày bắt đầu tính lại
+(exclusive end); giữ interval cũ để không thay lịch sử. Không tự hết hạn khi
+Face ID được thêm. Năm người chờ ảnh và mọi thiếu bằng chứng khác vẫn pending.
+CLI inspect trả policy ID, excluded_employee_count và excluded_usernames.
+
+Rà soát xác nhận luồng chính đã không kết nối TimeSoft sau cutover. Bổ sung
+chặn ở entrypoint JSON/Playwright cũ dùng session có sẵn; tắt tải nguồn TIP
+TimeSoft cũ bằng HTTP 410 và hướng sang TIP Live Tour. Worker vẫn chạy outbox
+đã commit và luật Auto Check hiện hữu; không xóa cron/credential/archive.
+Kết nối FaceGate lỗi vẫn không fallback TimeSoft. Chưa deploy bản này;
+CI PostgreSQL và readback sau deploy là bước nghiệm thu bắt buộc.
+
+
 ## 29-09-2026 — FaceGate activation verified; one reviewed Gia Anh identity
 
 Operator-provided production output verifies activation on release bc857f0 at

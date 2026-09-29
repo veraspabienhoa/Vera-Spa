@@ -89,8 +89,9 @@ def atomic_write(path, value):
 def inspect(conn, day):
     from collections import Counter
     from vera_facegate_runtime import records
+    from vera_attendance_participation import status
     rows = records(conn, day, day)
-    return {**source.health(conn), 'date': day.isoformat(),
+    return {**source.health(conn), **status(day), 'date': day.isoformat(),
             'employee_count': len(rows),
             'checked_in_count': sum(bool(r.get('check_in')) for r in rows),
             'pending_employee_count': sum(bool(r.get('attendance_pending')) for r in rows),

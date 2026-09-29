@@ -483,6 +483,7 @@ def _clean_draft_rows(
     norm,
     *,
     skip_missing: bool = False,
+    period: tuple[date, date] | None = None,
 ) -> list[dict[str, Any]]:
     employees = _employee_catalog(conn, norm)
     clean_rows: list[dict[str, Any]] = []
@@ -494,6 +495,9 @@ def _clean_draft_rows(
         if not key or key in seen or key not in employees:
             raise HTTPException(400, "Bảng lương có nhân viên trống, trùng tên hoặc không tồn tại.")
         employee = employees[key]
+        if period:
+            from vera_attendance_participation import require_payroll_participants
+            require_payroll_participants([employee], *period, key='username')
         if bool(employee.get("payroll_excluded")):
             continue
         seen.add(key)
@@ -892,6 +896,9 @@ def _saved_draft(conn, start: date, end: date, norm) -> dict[str, Any] | None:
     supplied_rows = [item for item in (value.get("rows") or []) if isinstance(item, dict)]
     employees = _employee_catalog(conn, norm)
     valid_rows = [item for item in supplied_rows if norm(item.get("Tên Hệ thống")) in employees]
+    from vera_attendance_participation import suspended
+    valid_rows = [item for item in valid_rows
+                  if not suspended(employees[norm(item.get('Tên Hệ thống'))]['username'], start, end)]
     removed_employee_count = len(supplied_rows) - len(valid_rows)
     rows = _clean_draft_rows(conn, valid_rows, norm) if valid_rows else []
     if not rows:
@@ -1047,7 +1054,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_save")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll-draft:' || :label))"), {"label": label})
-            clean_rows = _clean_draft_rows(conn, body.rows, norm)
+            clean_rows = _clean_draft_rows(conn, body.rows, norm, period=(body.start, body.end))
             _put_setting(conn, _draft_key(body.start, body.end), {
                 "start": body.start.isoformat(),
                 "end": body.end.isoformat(),
@@ -1083,7 +1090,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             raise HTTPException(400, f"File Excel thuộc kỳ {descriptions}; màn hình đang chọn {label}.")
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
-            clean_rows = _clean_draft_rows(conn, supplied_rows, norm)
+            clean_rows = _clean_draft_rows(conn, supplied_rows, norm, period=(start, end))
         return {
             "period_label": label,
             "start": start.isoformat(),
@@ -1101,6 +1108,8 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         label = _period_label(body.start, body.end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_export")
+            from vera_attendance_participation import require_payroll_participants
+            require_payroll_participants(body.rows, body.start, body.end, key='Tên Hệ thống')
         records = []
         for supplied in _visible(body.rows, ident, norm):
             row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
@@ -1262,6 +1271,8 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                   AND lower(COALESCE(payload->>'Không tính lương','false')) NOT IN ('1','true','yes','y','có','x')
                 ORDER BY COALESCE(stt,2147483647),username
             """)).mappings().all()]
+            from vera_attendance_participation import eligible
+            employees = eligible(employees, start, end, key='username')
             penalties = conn.execute(text("""
                 SELECT employee_name,SUM(COALESCE(penalty,0)) amount FROM leave_records
                 WHERE leave_date BETWEEN :start AND :end GROUP BY employee_name
@@ -1327,7 +1338,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         try:
             require_feature(conn, ident, "payroll_save")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll:' || :label))"), {"label": label})
-            prepared_rows = _clean_draft_rows(conn, body.rows, norm)
+            prepared_rows = _clean_draft_rows(conn, body.rows, norm, period=(body.start, body.end))
             if sum(_number(row.get("Tiền Lương")) for row in prepared_rows) <= 0:
                 raise HTTPException(
                     400,
@@ -1343,7 +1354,11 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 })
                 clean_rows.append(row)
             existing, _checksum, _updated = _payload(conn)
-            merged = [item for item in existing if str(item.get("Mã bản lưu") or "") != label] + clean_rows
+            from vera_attendance_participation import preserved_payroll
+            preserved = preserved_payroll(
+                [item for item in existing if str(item.get('Mã bản lưu') or '') == label],
+                body.start, body.end, key='Tên Hệ thống')
+            merged = [item for item in existing if str(item.get("Mã bản lưu") or "") != label] + clean_rows + preserved
             serialized = json.dumps(merged, ensure_ascii=False, separators=(",", ":"), default=str)
             checksum = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
             before_save = getattr(app.state, "payroll_before_save_hook", None)
@@ -1352,12 +1367,15 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 hook_result = dict(before_save(
                     conn=conn,
                     body=body,
-                    prepared_rows=clean_rows,
+                    # Reconciliation replaces the whole period's allocations;
+                    # include saved suspended rows so their deductions persist.
+                    prepared_rows=clean_rows + preserved,
                     actor=ident.employee_username,
                     label=label,
                     norm=norm,
                 ) or {})
-            conn.execute(text("DELETE FROM payroll_history_rows WHERE batch_id=:label"), {"label": label})
+            conn.execute(text("DELETE FROM payroll_history_rows WHERE batch_id=:label AND NOT (employee_name = ANY(:preserved))"),
+                         {"label": label, "preserved": [row['Tên Hệ thống'] for row in preserved]})
             for row in clean_rows:
                 conn.execute(text("""
                     INSERT INTO payroll_history_rows(batch_id,employee_name,period_start,period_end,payload,saved_at)
@@ -1454,6 +1472,10 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 ORDER BY leave_date,COALESCE(source_row,0),id
             """), {"start": body.start, "end": body.end}).mappings().all()
         employees = {norm(item["username"]): dict(item) for item in employee_rows}
+        from vera_attendance_participation import require_payroll_participants
+        selected = [employees[norm(row.get('Tên Hệ thống'))] for row in body.rows
+                    if norm(row.get('Tên Hệ thống')) in employees]
+        require_payroll_participants(selected, body.start, body.end, key='username')
         violations_by_employee: dict[str, list[dict[str, Any]]] = {}
         for item in violation_rows:
             violations_by_employee.setdefault(norm(item["employee_name"]), []).append(dict(item))

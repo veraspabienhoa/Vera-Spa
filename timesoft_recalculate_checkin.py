@@ -161,6 +161,8 @@ def _confirm_modal_if_present(page) -> None:
 
 
 def recalculate_today(ts, page) -> None:
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     report_url = urljoin(ts.BASE_URL + "/", ts.REPORT_CHECKIN_PAGE.lstrip("/"))
     page.goto(report_url, wait_until="domcontentloaded", timeout=35000)
     try:
@@ -216,6 +218,8 @@ def _login_without_forced_reverify(ts, page) -> tuple[bool, str]:
     next navigation is performed by recalculate_today() only after login has
     settled, avoiding the redirect race observed in production.
     """
+    from vera_attendance_source import require_timesoft_enabled
+    require_timesoft_enabled()
     password_box = ts._visible_input(page, [
         'input[type="password"]', 'input[name*="password" i]', 'input[id*="password" i]',
         'input[name*="pass" i]', 'input[id*="pass" i]',

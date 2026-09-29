@@ -24,6 +24,7 @@ from sqlalchemy import text
 import vera_web_v2_payroll as payroll
 import vera_web_v2_snapshot as attendance
 import vera_web_v2_work_schedule as work_schedule
+import vera_attendance_participation as participation
 
 
 RELEASE = "department-payroll-combo-exclusion-2026-09-26-v9"
@@ -452,7 +453,7 @@ def _combo_sale_counts(conn, start: date, end: date) -> dict[str, int]:
     return {row["employee"]: int(row["count"]) for row in rows}
 
 
-def _visible_payroll_rows(conn, rows):
+def _visible_payroll_rows(conn, rows, *, month=None):
     """Filter a saved view without rewriting completed payroll or source money."""
     if not isinstance(rows, list) or not rows:
         return []
@@ -461,6 +462,9 @@ def _visible_payroll_rows(conn, rows):
     ).mappings().all()}
     visible = [dict(row) for row in rows if isinstance(row, dict)
                and str(row.get("employee_username") or "").strip().casefold() not in excluded]
+    if month:
+        start, end, _ = _draft_month_range(month)
+        visible = participation.eligible(visible, start, end, key='employee_username')
     return [dict(row, tt=index) for index, row in enumerate(visible, 1)]
 
 
@@ -471,7 +475,7 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], 
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
-    employees = _employees(conn, department)
+    employees = participation.eligible(_employees(conn, department), start, end, key='username')
     records = attendance._records(conn, start, end)
     violation_map, late_map = _penalty_maps(conn, start, end, norm)
     rows = []
@@ -597,7 +601,7 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
-    employees = _employees(conn, department)
+    employees = participation.eligible(_employees(conn, department), start, end, key='username')
     records = [dict(item) for item in conn.execute(text("""
         SELECT work_date,employee_username,department AS schedule_department,shift_code,overtime_shift,start_time,end_time,
                overtime_start_time,overtime_end_time
@@ -696,7 +700,7 @@ def _combined_employee_catalog(conn) -> dict[str, dict[str, Any]]:
     return {str(item["username"]).strip().casefold(): dict(item) for item in rows}
 
 
-def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any], str]) -> list[dict[str, Any]]:
+def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any], str], *, month=None) -> list[dict[str, Any]]:
     catalog = _combined_employee_catalog(conn)
     employee_configs = _employee_config_map(conn)
     output = []
@@ -720,10 +724,13 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
         output.append(_recalculate(row, cfg))
     if not output:
         raise HTTPException(400, "Bảng Lương hành chánh chưa có nhân viên.")
+    if month:
+        start, end, _ = _draft_month_range(month)
+        participation.require_payroll_participants(output, start, end, key='employee_username')
     return output
 
 
-def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str, Any], norm) -> list[dict[str, Any]]:
+def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str, Any], norm, *, month=None) -> list[dict[str, Any]]:
     catalog = {norm(item["username"]): item for item in _employees(conn, department)}
     employee_configs = _employee_config_map(conn)
     output = []
@@ -744,6 +751,9 @@ def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str
         output.append(_recalculate(row, employee_configs.get(str(employee["username"]).casefold(), cfg)))
     if not output:
         raise HTTPException(400, "Bảng lương chưa có nhân viên.")
+    if month:
+        start, end, _ = _draft_month_range(month)
+        participation.require_payroll_participants(output, start, end, key='employee_username')
     return output
 
 
@@ -751,6 +761,7 @@ def _require_complete_attendance(conn, month, rows, norm):
     from vera_attendance_source import effective_date
     cutoff = effective_date()
     start, end, _ = _draft_month_range(month)
+    participation.require_payroll_participants(rows, start, end, key='employee_username')
     if not cutoff or end < cutoff:
         return
     selected = {norm(r.get('employee_username')) for r in rows
@@ -929,7 +940,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
             rows = payroll._setting(conn, f"department_payroll_combined_draft_{month}", [])
-            rows = _visible_payroll_rows(conn, rows)
+            rows = _visible_payroll_rows(conn, rows, month=month)
         return {"ok": True, "month": month, "rows": rows if isinstance(rows, list) else []}
 
     @app.put("/v2/department-payroll/combined/draft")
@@ -937,7 +948,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         _month_range(body.month)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_save")
-            rows = _clean_combined_rows(conn, body.rows, norm)
+            rows = _clean_combined_rows(conn, body.rows, norm, month=body.month)
             payroll._put_setting(conn, f"department_payroll_combined_draft_{body.month}", rows, ident.employee_username)
         return {"ok": True, "rows": rows, "message": "Đã lưu nháp bảng Lương hành chánh."}
 
@@ -970,7 +981,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             if not item:
                 raise HTTPException(404, "Không tìm thấy lịch sử bảng Lương hành chánh.")
             rows = item.get("rows") if isinstance(item.get("rows"), list) else []
-            rows = _visible_payroll_rows(conn, rows)
+            rows = _visible_payroll_rows(conn, rows, month=item["month"])
             payroll._put_setting(conn, f"department_payroll_combined_draft_{item['month']}", rows, ident.employee_username)
         return {
             "ok": True, "history_id": wanted, "month": item["month"], "rows": rows,
@@ -982,7 +993,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         _, _, label = _month_range(body.month)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_save")
-            rows = _clean_combined_rows(conn, body.rows, norm)
+            rows = _clean_combined_rows(conn, body.rows, norm, month=body.month)
             _require_complete_attendance(conn, body.month, rows, norm)
             history = payroll._setting(conn, "department_payroll_combined_history", [])
             history = history if isinstance(history, list) else []
@@ -995,12 +1006,15 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             else:
                 existing = next((item for item in history if isinstance(item, dict) and item.get("month") == body.month), None)
             history_id = str(existing.get("id")) if existing else str(uuid.uuid4())
+            start, end, _ = _draft_month_range(body.month)
+            preserved = participation.preserved_payroll(
+                (existing or {}).get('rows', []), start, end, key='employee_username')
             source_label = next((str(row.get("calculation_source") or "") for row in rows if row.get("calculation_source")), "")
             completed = {
                 "id": history_id, "month": body.month, "month_label": label,
                 "saved_at": datetime.now(VN_TZ).isoformat(), "saved_by": ident.employee_username,
                 "source_label": "Lịch làm việc" if source_label == "schedule" else "Chấm công",
-                "rows": rows,
+                "rows": rows + preserved,
             }
             history = [item for item in history if not (isinstance(item, dict) and (str(item.get("id")) == history_id or item.get("month") == body.month))]
             history.append(completed)
@@ -1016,7 +1030,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         _, _, label = _month_range(body.month)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_export")
-            rows = _clean_combined_rows(conn, body.rows, norm)
+            rows = _clean_combined_rows(conn, body.rows, norm, month=body.month)
             _require_complete_attendance(conn, body.month, rows, norm)
         content = _combined_workbook(rows, label)
         return StreamingResponse(
@@ -1030,7 +1044,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         department = valid_department(department); _month_range(month)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
-            return {"rows": _visible_payroll_rows(conn, payroll._setting(conn, _setting_key(department, f"draft_{month}"), [])), "department": department, "month": month}
+            return {"rows": _visible_payroll_rows(conn, payroll._setting(conn, _setting_key(department, f"draft_{month}"), []), month=month), "department": department, "month": month}
 
     @app.put("/v2/department-payroll/draft")
     def save_draft(body: DepartmentDraft, ident: identity_type = Depends(current_identity)):
@@ -1038,7 +1052,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_save")
             cfg = _settings(conn, department)["config"]
-            rows = _clean_rows(conn, department, body.rows, cfg, norm)
+            rows = _clean_rows(conn, department, body.rows, cfg, norm, month=body.month)
             payroll._put_setting(conn, _setting_key(department, f"draft_{body.month}"), rows, ident.employee_username)
         return {"ok": True, "rows": rows, "message": f"Đã lưu bảng lương nháp {department}."}
 
@@ -1048,13 +1062,17 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "payroll_save")
             cfg = _settings(conn, department)["config"]
-            rows = _clean_rows(conn, department, body.rows, cfg, norm)
+            rows = _clean_rows(conn, department, body.rows, cfg, norm, month=body.month)
             _require_complete_attendance(conn, body.month, rows, norm)
             history = payroll._setting(conn, _setting_key(department, "history"), [])
             if not isinstance(history, list):
                 history = []
+            start, end, _ = _draft_month_range(body.month)
+            preserved = participation.preserved_payroll(
+                [row for item in history if isinstance(item, dict) and item.get('month') == body.month
+                 for row in item.get('rows', [])], start, end, key='employee_username')
             history = [item for item in history if not (isinstance(item, dict) and item.get("month") == body.month)]
-            history.append({"id": str(uuid.uuid4()), "month": body.month, "month_label": label, "saved_at": datetime.now(VN_TZ).isoformat(), "saved_by": ident.employee_username, "rows": rows})
+            history.append({"id": str(uuid.uuid4()), "month": body.month, "month_label": label, "saved_at": datetime.now(VN_TZ).isoformat(), "saved_by": ident.employee_username, "rows": rows + preserved})
             payroll._put_setting(conn, _setting_key(department, "history"), history[-120:], ident.employee_username)
             payroll._put_setting(conn, _setting_key(department, f"draft_{body.month}"), rows, ident.employee_username)
         return {"ok": True, "rows": rows, "message": f"Đã lưu chính thức bảng lương {department} tháng {label}."}
@@ -1064,7 +1082,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         department = valid_department(body.department); _, _, label = _month_range(body.month)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_export")
-            rows = _clean_rows(conn, department, body.rows, _settings(conn, department)["config"], norm)
+            rows = _clean_rows(conn, department, body.rows, _settings(conn, department)["config"], norm, month=body.month)
             _require_complete_attendance(conn, body.month, rows, norm)
         content = _workbook(rows, department, label)
         return StreamingResponse(BytesIO(content), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=Bang_luong_{department}_{body.month}.xlsx"})
@@ -1079,7 +1097,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_email")
             settings = _settings(conn, department)
-            rows = _clean_rows(conn, department, body.rows, settings["config"], norm)
+            rows = _clean_rows(conn, department, body.rows, settings["config"], norm, month=body.month)
             _require_complete_attendance(conn, body.month, rows, norm)
             violation_rows = conn.execute(text("""
                 SELECT employee_name,leave_date,leave_reason,detail,COALESCE(penalty,0) penalty
