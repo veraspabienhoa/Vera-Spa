@@ -24,3 +24,20 @@ def install_facegate_attendance_routes(app, *, engine_instance, current_identity
             raise HTTPException(409, {'message': 'Chưa thể đối chiếu đầy đủ dữ liệu đã lưu.', 'reason': str(exc)}) from exc
         except RuntimeError as exc:
             raise HTTPException(409, 'Cần khôi phục hồ sơ máy FaceGate trong Quản lý thiết bị trước khi đối chiếu.') from exc
+
+    @app.get('/v2/devices/facegate-attendance/payroll-preview')
+    def preview_payroll(start: date, end: date, ident: identity_type = Depends(current_identity)):
+        if str(getattr(ident, 'role', '') or '').lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được tính thử lương từ FaceGate.')
+        if end < start or (end - start).days > 6:
+            raise HTTPException(400, 'Chọn từ 1 đến 7 ngày để tính thử.')
+        from vera_facegate_payroll import calculate
+        try:
+            with engine_instance().begin() as conn:
+                conn.execute(text('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'))
+                conn.execute(text("SET LOCAL statement_timeout='8s'"))
+                return calculate(conn, start, end)
+        except EvidenceError as exc:
+            raise HTTPException(409, 'Chưa đọc đủ bằng chứng FaceGate để tính lương.') from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, 'Cần kiểm tra cấu hình thiết bị FaceGate.') from exc
