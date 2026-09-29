@@ -648,7 +648,7 @@ export function FaceIdCard({ username }) {
         <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile}/>
       </div>}/>
     <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ.</p>
-    <FaceIdEnrollment key={username} username={username} photo={data.photo} photoBusy={busy}/>
+    <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>
     {notice && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}
   </div>
 }
