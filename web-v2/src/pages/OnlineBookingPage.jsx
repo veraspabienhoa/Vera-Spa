@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
-import { formatVeraDateTime } from '../lib/veraDate'
+import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
 import OnlineBookingDetails from '../components/OnlineBookingDetails'
 import { canViewOnlineBookings } from '../lib/onlineBookings'
 import './OnlineBookingPage.css'
@@ -32,6 +32,7 @@ function RequestCard({ row, reload }) {
 }
 
 export default function OnlineBookingPage({ user }) {
+  const [selected, setSelected] = useState(null)
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
   const [kind, setKind] = useState('')
@@ -60,7 +61,7 @@ export default function OnlineBookingPage({ user }) {
       <button type="button" disabled={busy} onClick={reload}>Làm mới</button>
     </form>
     {error && <p role="alert">{error}</p>}
-    {busy ? <p role="status">Đang tải…</p> : <><p>{result.total} yêu cầu</p><div className="online-booking-grid">{result.rows.map(row => <RequestCard key={`${row.id}:${row.revision}`} row={row} reload={reload}/>)}</div>{!result.rows.length && <p>Không có yêu cầu phù hợp.</p>}</>}
+    {busy ? <p role="status">Đang tải…</p> : <><p>{result.total} yêu cầu</p><div className="online-booking-table-wrap"><table className="online-booking-table"><thead><tr><th>Mã / Loại</th><th>Khách hàng</th><th>Điện thoại</th><th>Ngày / Giờ hẹn</th><th>Dịch vụ</th><th>Số khách</th><th>Lời nhắn</th><th>Trạng thái</th><th>Tiếp nhận</th><th>Xử lý</th></tr></thead><tbody>{result.rows.map(row => <Fragment key={row.id}><tr><td>#{row.id} · {row.kind === 'booking' ? 'Đặt lịch' : 'Liên hệ'}</td><td>{row.customer_name}</td><td>{row.phone}</td><td>{formatVeraDate(row.appointment_date, 'Chưa cung cấp')}<br/>{row.appointment_time || ''}</td><td>{row.service || 'Chưa cung cấp'}</td><td>{row.guests ?? '—'}</td><td className="online-booking-message">{row.message || 'Không có lời nhắn'}</td><td>{statuses[row.status]}</td><td>{formatVeraDateTime(row.created_at)}</td><td><button aria-expanded={selected === row.id} onClick={() => setSelected(value => value === row.id ? null : row.id)}>{selected === row.id ? 'Thu gọn' : 'Chi tiết'}</button></td></tr>{selected === row.id && <tr><td colSpan={10}><RequestCard key={`${row.id}:${row.revision}`} row={row} reload={reload}/></td></tr>}</Fragment>)}</tbody></table></div>{!result.rows.length && <p>Không có yêu cầu phù hợp.</p>}</>}
     <nav className="online-booking-actions" aria-label="Phân trang booking"><button disabled={busy || page <= 1} onClick={() => setPage(p => p-1)}>Trước</button><span>Trang {page} / {Math.max(1, Math.ceil(result.total / 25))}</span><button disabled={busy || page * 25 >= result.total} onClick={() => setPage(p => p+1)}>Sau</button></nav>
   </section>
 }

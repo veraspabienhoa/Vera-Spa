@@ -32,12 +32,12 @@ class Submission { public $data, $response=''; function __construct($data){$this
 function check($ok,$message) { if(!$ok) throw new Exception($message); }
 require __DIR__.'/vera-online-booking.php';
 $wpdb = new FakeDB();
-$raw = array('your-name'=>'Test','number-721'=>'0900000000','date-175'=>'30-09-2026','checkbox-444'=>array('14:30'),'menu-396'=>array('VIP 90 phút'),'number-999'=>'2');
+$raw = array('your-name'=>'Test','number-721'=>'0900000000','date-175'=>'30-09-2026','checkbox-444'=>array('14:30'),'menu-396'=>array('VIP 90 phút'),'number-999'=>'2','booking-message'=>"Phòng yên tĩnh\nCảm ơn");
 $abort=false;
 vera_ob_capture(new Form(1271),$abort,new Submission($raw));
 check(!$abort && count($wpdb->rows)===1,'booking must be queued');
 $payload=json_decode($wpdb->rows[1]->payload,true);
-check($payload['service']==='VIP 90 phút' && $payload['appointment_date']==='2026-09-30' && $payload['guests']===2,'field mapping');
+check($payload['service']==='VIP 90 phút' && $payload['appointment_date']==='2026-09-30' && $payload['guests']===2 && $payload['message']==="Phòng yên tĩnh\nCảm ơn",'field mapping and booking message');
 $code=503; vera_ob_deliver();
 check(count($wpdb->rows)===1 && $wpdb->rows[1]->attempts===1,'failure retained');
 check(hash_equals(hash_hmac('sha256',$last_request['headers']['X-Vera-Timestamp'].'.'.$last_request['body'],VERA_WEBSITE_WEBHOOK_SECRET),$last_request['headers']['X-Vera-Signature']),'signature');

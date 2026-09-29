@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { clampPopupPosition } from '../lib/popupPosition'
 import { veraApi } from '../lib/api'
 import OnlineBookingDetails from './OnlineBookingDetails'
 import '../pages/OnlineBookingPage.css'
@@ -6,6 +7,10 @@ import '../pages/OnlineBookingPage.css'
 import { canViewOnlineBookings } from '../lib/onlineBookings'
 
 export default function OnlineBookingPopup({ user, onOpen }) {
+  const panel = useRef(null)
+  const drag = useRef(null)
+  const [position, setPosition] = useState(null)
+  const [hidden, setHidden] = useState(false)
   const seen = useRef(new Set())
   const [rows, setRows] = useState([])
   const [busy, setBusy] = useState(false)
@@ -36,6 +41,39 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     window.addEventListener('vera-online-bookings-changed', changed)
     return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', load); window.removeEventListener('vera-online-bookings-changed', changed) }
   }, [allowed, account])
+  const moveTo = next => {
+    if (!panel.current) return
+    const rect = panel.current.getBoundingClientRect()
+    setPosition(clampPopupPosition(next, rect, { width: window.innerWidth, height: window.innerHeight }))
+  }
+  useEffect(() => {
+    const constrain = () => {
+      if (!panel.current) return
+      const rect = panel.current.getBoundingClientRect()
+      setPosition(current => current && clampPopupPosition(current, rect, { width: window.innerWidth, height: window.innerHeight }))
+    }
+    constrain()
+    window.addEventListener('resize', constrain)
+    return () => window.removeEventListener('resize', constrain)
+  }, [hidden, rows.length])
+  const beginDrag = event => {
+    if (event.button !== 0) return
+    const rect = panel.current.getBoundingClientRect()
+    drag.current = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const moveDrag = event => {
+    const start = drag.current
+    if (start) moveTo({ left: start.left + event.clientX - start.x, top: start.top + event.clientY - start.y })
+  }
+  const keyboardMove = event => {
+    const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]
+    if (!delta) return
+    event.preventDefault()
+    const rect = panel.current.getBoundingClientRect()
+    const step = event.shiftKey ? 30 : 10
+    moveTo({ left: rect.left + delta[0] * step, top: rect.top + delta[1] * step })
+  }
   if (!allowed || !rows.length) return null
   const row = rows[0]
   const dismiss = async (open = false) => {
@@ -48,10 +86,18 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
-  return <aside className="online-booking-popup" role="region" aria-label="Yêu cầu từ website">
-    <strong aria-live="polite">{row.kind === 'booking' ? 'Booking online mới' : 'Lời nhắn mới'}{rows.length > 1 ? ` · ${rows.length} chờ xem` : ''}</strong>
-    <OnlineBookingDetails row={row}/>
+  return <aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
+    <div className="online-booking-popup-header">
+      <button type="button" className="online-booking-drag-handle" aria-label="Di chuyển thông báo bằng kéo hoặc phím mũi tên" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }} onKeyDown={keyboardMove}>
+        <strong aria-live="polite">{row.kind === 'booking' ? 'Booking online mới' : 'Lời nhắn mới'}{rows.length > 1 ? ` · ${rows.length}` : ''}</strong>
+      </button>
+      <button type="button" aria-expanded={!hidden} onClick={() => setHidden(value => !value)}>{hidden ? 'Hiện' : 'Ẩn'}</button>
+      <button type="button" aria-label="Đóng thông báo booking online" disabled={busy} onClick={() => dismiss()}>Đóng</button>
+    </div>
+    {!hidden && <>
+      <OnlineBookingDetails row={row}/>
+      <div className="online-booking-actions"><button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
+    </>}
     {error && <p role="alert">{error}</p>}
-    <div className="online-booking-actions"><button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
   </aside>
 }

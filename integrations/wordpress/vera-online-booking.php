@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Vera Spa Online Booking
  * Description: Durable, signed Contact Form 7 delivery to the Vera Spa inbox.
- * Version: 1.0.0
+ * Version: 1.1.0
  */
 if (!defined('ABSPATH')) { exit; }
 
@@ -65,7 +65,7 @@ function vera_ob_capture($form, &$abort, $submission) {
         'appointment_time' => $booking ? vera_ob_value($posted, 'checkbox-444') : null,
         'service' => $booking ? vera_ob_value($posted, 'menu-396') : '',
         'guests' => $booking ? (int) vera_ob_value($posted, 'number-999') : null,
-        'message' => $booking ? '' : vera_ob_value($posted, 'text-750'),
+        'message' => vera_ob_value($posted, $booking ? 'booking-message' : 'text-750'),
     );
     $digits = preg_replace('/\D/', '', $payload['phone']);
     $valid = mb_strlen($payload['customer_name']) >= 1 && mb_strlen($payload['customer_name']) <= 100
