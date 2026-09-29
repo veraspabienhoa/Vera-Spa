@@ -25,9 +25,11 @@ lượt để tạo hồ sơ lặp. Khi lưu ánh xạ phải kiểm tra lại I
 đột quyền sở hữu dưới khóa; không ghi đè ánh xạ cũ.
 
 Đây là tính năng đăng ký mới, không xác nhận năm nhân viên đã được đăng ký.
-Chưa kiểm thử ghi/nhận diện trên máy thật; nguồn giao thức đã cung cấp chưa
-bao gồm định nghĩa sendBTNSetting trong js/send.js, nên phương thức GET
-của setWhitelist còn cần đối chiếu trên firmware thực tế trước triển khai.
+Chưa kiểm thử ghi/nhận diện trên máy thật. Ngày 29-09, người vận hành đã
+cung cấp đầy đủ sendBTNSetting: action=list dùng GET; action khác dùng POST,
+nonce tám ký tự ở cả nRanId và body, Content-Type text/html; charset=UTF-8.
+Đã sửa setWhitelist sang POST theo bằng chứng này, giữ query và Basic Auth
+phía máy chủ, không retry thao tác ghi. Kiểm thử xác nhận đúng method/body/header.
 CI/PostgreSQL và thử một đăng ký có ảnh được người vận hành chọn là các
 bước nghiệm thu còn lại. Nguồn tính công, lương/phạt và tám blocker không
 được mở khóa bởi tính năng này.

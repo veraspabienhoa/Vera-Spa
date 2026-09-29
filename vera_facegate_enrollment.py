@@ -63,11 +63,23 @@ class FaceGateEnrollmentClient:
 
     def request(self, path, params, *, photo=None):
         # Never use _device_get: its login retry must not replay a mutation.
-        method = self.session.post if photo is not None else self.session.get
+        mutation = photo is None and params.get('action') != 'list'
+        method = self.session.post if photo is not None or mutation else self.session.get
+        params = dict(params)
         options = {'params': params, 'auth': self.auth, 'timeout': (3, 8),
                    'allow_redirects': False, 'stream': True}
         if photo is not None:
             options['files'] = {'vfileselector': ('FaceID.jpg', photo, 'image/jpeg')}
+        else:
+            # js/send.js: non-list actions POST the same 8-character nonce
+            # appended to the URL, with form values remaining in the query.
+            nonce = str(secrets.randbelow(90000000) + 10000000)
+            params['nRanId'] = nonce
+            options['headers'] = {'Content-Type': 'text/html; charset=UTF-8',
+                                  'Pragma': 'no-cach', 'cache-control': 'no-cache',
+                                  'Expires': 'Wed, 26 Oct 2016 23:48:01 GMT'}
+            if mutation:
+                options['data'] = nonce
         response = method(self.base + path, **options)
         try:
             if response.status_code != 200:

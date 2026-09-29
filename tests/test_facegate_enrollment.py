@@ -87,6 +87,12 @@ def test_add_and_exact_readback(monkeypatch):
     c, s = client(monkeypatch, [body(), roster([p]), body(**{'LIST.'+k:v for k,v in p.items()})])
     c.add('Test Staff', 'vera:token', REF, (1, 0))
     assert c.verify('Test Staff', 'vera:token', REF) == {'profile_id':123,'device_name':'Test Staff','registration_ref':REF}
+    assert s.calls[0][0] == 'POST'
+    assert all(call[0] == 'GET' for call in s.calls[1:])
+    assert s.calls[0][2]['data'] == s.calls[0][2]['params']['nRanId']
+    assert len(s.calls[0][2]['data']) == 8
+    assert s.calls[0][2]['headers']['Content-Type'] == 'text/html; charset=UTF-8'
+    assert 'files' not in s.calls[0][2]
     params = s.calls[0][2]['params']
     assert params['LIST.uid'] == '-1' and params['action'] == 'add'
     assert params['LIST.utext'] == 'vera:token' and params['LIST.ulisttype'] == '0'
@@ -115,3 +121,9 @@ def test_transport_conversion_preserves_original_and_ratio():
     jpeg=fg.jpeg_photo(original)
     assert original == out.getvalue()
     with Image.open(BytesIO(jpeg)) as image: assert image.size == (120,80) and image.format == 'JPEG'
+
+
+def test_profile_save_timeout_never_retries_mutation(monkeypatch):
+    c, s = client(monkeypatch, [requests.Timeout('private device detail')])
+    with pytest.raises(requests.Timeout): c.add('Test Staff', 'vera:token', REF, (1, 0))
+    assert len(s.calls) == 1 and s.calls[0][0] == 'POST'
