@@ -1140,6 +1140,11 @@ def _validate_edit_permission(conn, row: dict, new_reason: str, ident: Identity)
     role = ident.role
     target = row["leave_date"]
     old_reason = row["leave_reason"]
+    from vera_leave_registration_shared import validate_weekend_reason, LeaveRuleError
+    try:
+        validate_weekend_reason(new_reason, target)
+    except LeaveRuleError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
     if role == "admin":
         # Admin may change any historical/current/future record.  The reason
         # must still exist so its calculated values remain canonical, but
@@ -1787,7 +1792,7 @@ def reasons(date_value: date = Query(alias="date"), ident: Identity = Depends(cu
             allowed = _role_tokens(item["allowed_roles"])
             if allowed and ident.role not in allowed:
                 continue
-            if not _day_allowed(item["allowed_days"], date_value):
+            if ("cuoi tuan" in _norm(item["name"]) and date_value.weekday() < 5) or not _day_allowed(item["allowed_days"], date_value):
                 continue
             output.append({
                 "name": item["name"], "leave_type": item["leave_type"], "days": item["days"],

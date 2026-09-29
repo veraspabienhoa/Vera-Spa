@@ -235,6 +235,7 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
             row = conn.execute(text('''SELECT size_bytes, sha256, updated_at
                 FROM vera_employee_face_id WHERE employee_username=:username'''), {'username': username}).mappings().first()
         return {'photo': dict(row) if row else None, 'can_manage': editable,
+                'can_view_device_tools': str(getattr(ident, 'role', '')).lower() in {'admin', 'quanly'},
                 'device_enrollment': 'not_verified'}
 
     @app.get('/v2/staff/{username}/face-id/image')
@@ -341,6 +342,8 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
 
     @app.get('/v2/staff/{username}/face-id/captures')
     def captures(username: str, day: date, ident: identity_type = Depends(current_identity)):
+        if str(getattr(ident, 'role', '')).lower() not in {'admin', 'quanly'}:
+            raise HTTPException(403, 'Chỉ Admin và Quản lý được xem ảnh chụp thiết bị.')
         with engine_instance().begin() as conn:
             access(conn, ident, username, write=True)
         from vera_facegate_control_log import fetch_capture_log
@@ -355,6 +358,8 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
 
     @app.get('/v2/staff/{username}/face-id/capture-image')
     def capture_image(username: str, day: date, event_id: int, ident: identity_type = Depends(current_identity)):
+        if str(getattr(ident, 'role', '')).lower() not in {'admin', 'quanly'}:
+            raise HTTPException(403, 'Chỉ Admin và Quản lý được xem ảnh chụp thiết bị.')
         with engine_instance().begin() as conn:
             access(conn, ident, username, write=True)
         from vera_facegate_control_log import fetch_capture_log, fetch_capture_image

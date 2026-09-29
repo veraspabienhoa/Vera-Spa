@@ -74,8 +74,8 @@ def test_returning_group_moves_once_to_bottom_in_original_ordinal(days, manual, 
 
 
 @pytest.mark.parametrize('reason', ['Nghỉ CÓ phép', 'Nghỉ phép năm', 'Nghỉ phát sinh',
-                                  'Đi trễ có phép', 'Về sớm có phép',
-                                  'Đi trễ CUỐI TUẦN CÓ phép', 'Về sớm CUỐI TUẦN CÓ phép'])
+                                  'Đi trễ có phép',
+                                  'Đi trễ CUỐI TUẦN CÓ phép'])
 def test_other_leave_types_never_get_return_queue_penalty(reason):
     state = fixture()
     project(state, DAY, records=leaves(reason))
@@ -216,7 +216,7 @@ def test_mixed_unexcused_group_waits_for_later_day_and_keeps_source_order(weeken
     project(state, later, checked=(3, 4, 5))
     project(state, later + timedelta(minutes=5), checked=(2, 3, 4, 5))
     project(state, later + timedelta(minutes=10), checked=(1, 2, 3, 4, 5))
-    assert order(state, later) == ['e4', 'e5', 'e1', 'e2', 'e3']
+    assert order(state, later) == ['e4', 'e5', 'e3', 'e1', 'e2']
     before = deepcopy(state)
     project(state, later + timedelta(minutes=15), checked=(1, 2, 3, 4, 5))
     assert state == before
@@ -236,3 +236,18 @@ def test_browser_sort_preserves_server_return_order_even_with_active_filter():
     script += 'console.log(JSON.stringify(prioritizeRecords(records,[],"finishing").map(r=>r._employee_id)));'
     result = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, check=True)
     assert json.loads(result.stdout) == ['e4', 'e5', 'e1', 'e2', 'e3']
+
+
+@pytest.mark.parametrize('reason', ['Về sớm CÓ phép', 'Về sớm KHÔNG phép', 'Về sớm CUỐI TUẦN CÓ phép', 'Về sớm CUỐI TUẦN KHÔNG phép', 'Về sớm phát sinh'])
+@pytest.mark.parametrize('manual', [False, True])
+def test_early_returns_precede_unexcused_returns(reason, manual):
+    state = fixture()
+    for worker in state['employees']:
+        worker['manual_order'] = manual
+    records = leaves()
+    records[0]['leave_reason'] = reason  # e3: early, e1/e2: unexcused
+    project(state, DAY, records=records)
+    later = DAY + timedelta(days=1)
+    project(state, later, checked=(1, 2, 4, 5))
+    project(state, later + timedelta(minutes=1), checked=(1, 2, 3, 4, 5))
+    assert order(state, later) == ['e4', 'e5', 'e3', 'e1', 'e2']

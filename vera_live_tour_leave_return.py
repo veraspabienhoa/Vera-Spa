@@ -11,6 +11,12 @@ from vera_web_v2_live_tour_roster import key
 MARKER = 'unexcused_leave_return'
 
 
+def return_kind(reason):
+    if key(reason).startswith('ve som'):
+        return 'early'
+    return 'unexcused' if canonical_reason(reason) is not None else ''
+
+
 def queue_clock(worker):
     marker = worker.get(MARKER) or {}
     return marker.get('queue_at', '') if marker.get('status') == 'queued' else ''
@@ -18,7 +24,7 @@ def queue_clock(worker):
 
 def queue_order(worker):
     marker = worker.get(MARKER) or {}
-    return (marker.get('day', ''), marker.get('ordinal', 0)) if queue_clock(worker) else ('', 0)
+    return (0 if marker.get('kind') == 'early' else 1, marker.get('day', ''), marker.get('ordinal', 0)) if queue_clock(worker) else (0, '', 0)
 
 
 def release(worker, status='served'):
@@ -48,7 +54,7 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
                                   pair[1].get('id') or pair[0]))
     absent, ordinal = {}, 0
     for _, row in indexed:
-        if canonical_reason(row.get('leave_reason') or row.get('leave_type')) is None:
+        if not return_kind(row.get('leave_reason') or row.get('leave_type')):
             continue
         if row.get('leave_date') and str(row['leave_date']) != day:
             continue
@@ -60,7 +66,7 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
             continue
         explicit = re.match(r'^nguoi thu\s+(\d+)\b', key(row.get('detail')))
         absent[username] = {'day': day, 'record_uid': str(row.get('record_uid') or row.get('id') or ''),
-                            'record_id': row.get('id'),
+                            'record_id': row.get('id'), 'kind': return_kind(row.get('leave_reason') or row.get('leave_type')),
                             'ordinal': max(1, int(explicit.group(1))) if explicit else ordinal}
     ready = []
     for worker in state['employees']:
@@ -86,9 +92,10 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
             matches = owners.get(source_name, set())
             source_user = source_name if source_name in by_user else next(iter(matches)) if len(matches) == 1 else ''
             if (source_user != username or str(record.get('leave_date')) != marker['day']
-                    or canonical_reason(record.get('leave_reason') or record.get('leave_type')) is None):
+                    or not return_kind(record.get('leave_reason') or record.get('leave_type'))):
                 worker.pop(MARKER, None)
                 continue
+            marker['kind'] = return_kind(record.get('leave_reason') or record.get('leave_type'))
             explicit = re.match(r'^nguoi thu\s+(\d+)\b', key(record.get('detail')))
             if explicit:
                 marker['ordinal'] = max(1, int(explicit.group(1)))

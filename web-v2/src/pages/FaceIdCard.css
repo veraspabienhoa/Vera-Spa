@@ -12,3 +12,6 @@
 .face-id-capture-preview figcaption{font-size:12px;line-height:1.4}
 .face-id-capture-list{display:flex;flex-wrap:wrap;gap:6px;max-height:140px;overflow:auto}
 .face-id-capture-list button[aria-pressed="true"]{outline:2px solid #315d4b;outline-offset:-2px}
+.face-id-capture-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;width:100%;min-width:0}
+.face-id-capture-gallery .face-id-capture-preview{min-width:0;margin:0}
+.face-id-capture-gallery img{width:100%;height:190px;object-fit:contain}

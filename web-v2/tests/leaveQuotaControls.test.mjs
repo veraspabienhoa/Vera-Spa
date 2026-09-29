@@ -67,12 +67,16 @@ for (const description of ['', 'Tháng đang xem: 09-2026. Bộ lọc chỉ áp 
       await act(async () => f.button().click())
       assert.equal(f.button().parentElement, f.doc.querySelector('.leave-quota-check-result').parentElement)
       assert.equal(f.button().parentElement.querySelector('.stable-feedback'), null)
-      assert.deepEqual(f.calls.find(row => row[0] === 'quota'), ['quota', '2026-09-26', '2026-09-26'])
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit' }).formatToParts(new Date())
+      const year = parts.find(p => p.type === 'year').value
+      const month = parts.find(p => p.type === 'month').value
+      const expected = ['quota', `${year}-${month}-01`, `${year}-${month}-${new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate()}`]
+      assert.deepEqual(f.calls.find(row => row[0] === 'quota'), expected)
       assert.match(f.doc.body.textContent, /Không phát hiện trường hợp vượt hạn mức/)
       await f.changeRange('2026-10-01', '2026-10-31')
-      assert.doesNotMatch(f.doc.body.textContent, /Không phát hiện trường hợp vượt hạn mức/)
+      assert.match(f.doc.body.textContent, /Không phát hiện trường hợp vượt hạn mức/)
       await act(async () => f.button().click())
-      assert.deepEqual(f.calls.filter(row => row[0] === 'quota').at(-1), ['quota', '2026-10-01', '2026-10-31'])
+      assert.deepEqual(f.calls.filter(row => row[0] === 'quota').at(-1), expected)
     } finally { await f.dispose() }
   })
 }

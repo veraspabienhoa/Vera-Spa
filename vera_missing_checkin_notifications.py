@@ -184,10 +184,11 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
             checked.update(_norm(raw.get(name)) for name in NAME_COLUMNS if raw.get(name))
     owner = '' if view_team else viewer_username
     schedules = _merge_schedules(_staff_scheduled_rows(conn, day, owner), _scheduled_rows(conn, day, owner))
-    leave_rows = conn.execute(text("""SELECT employee_name FROM leave_records
+    leave_rows = conn.execute(text("""SELECT employee_name,leave_reason FROM leave_records
         WHERE leave_date=:day AND COALESCE(source_sheet_id,'') <> 'postgres:auto_check'"""),
         {'day': day}).mappings().all()
-    leave = {_norm(row.get('employee_name')) for row in leave_rows}
+    late = {_norm(row.get('employee_name')) for row in leave_rows if 'di tre' in _norm(row.get('leave_reason'))}
+    leave = {_norm(row.get('employee_name')) for row in leave_rows if 'di tre' not in _norm(row.get('leave_reason'))}
     updated = dataset['updated_at']
     if updated.tzinfo is None:
         updated = updated.replace(tzinfo=timezone.utc)
@@ -216,13 +217,19 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
         start = _clock(day, row.get('start_time'))
         if not username or not start or _norm(row.get('shift_code')) in {'', 'nghi'}:
             continue
-        if not _alert_ready(has_leave=bool(aliases & leave), has_faceid=bool(aliases & checked),
-                            current=current.replace(tzinfo=None), shift_start=start):
+        registered_late = bool(aliases & late)
+        if registered_late:
+            cutoff_hour = {'ca 1': 15, 'ca1': 15, 'ca 2': 17, 'ca2': 17}.get(_norm(row.get('shift_code')))
+            if cutoff_hour is None or aliases & leave or aliases & checked or current.hour < cutoff_hour:
+                continue
+            start = datetime.combine(day, time(cutoff_hour))
+        elif not _alert_ready(has_leave=bool(aliases & leave), has_faceid=bool(aliases & checked),
+                              current=current.replace(tzinfo=None), shift_start=start):
             continue
         key = _event_key(day, username, str(row.get('shift_code') or ''))
         alert = {'key': key, 'tag': f'vera-missing-checkin-{day.isoformat()}-{key}',
                  'kind': 'missing-scheduled-checkin', 'employee': username,
-                 'body': f"{username} · {row.get('shift_code')} lúc {start:%H:%M} · chưa có check-in và chưa đăng ký nghỉ.",
+                 'body': f"{username} · {row.get('shift_code')} lúc {start:%H:%M} · " + ("đã đăng ký đi trễ nhưng chưa có check-in." if registered_late else "chưa có check-in và chưa đăng ký nghỉ."),
                  'date': day.strftime('%d-%m-%Y')}
         if include_expiry:
             alert['expires_at'] = expires.isoformat()

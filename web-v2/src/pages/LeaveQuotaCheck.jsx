@@ -1,21 +1,21 @@
 import './LeaveQuotaCheck.css'
 import { ShieldAlert } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDate } from '../lib/veraDate'
 
 const labels = { days: 'Ngày nghỉ', weekends: 'Cuối tuần Nhóm 3', generated: 'Phát sinh' }
-export default function LeaveQuotaCheck({ start, end }) {
+export default function LeaveQuotaCheck() {
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const revision = useRef(0)
-  useEffect(() => {
-    revision.current += 1
-    setResult(null); setError(''); setBusy(false)
-    return () => { revision.current += 1 }
-  }, [start, end])
   const check = async () => {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit' }).formatToParts(new Date())
+    const year = parts.find(p => p.type === 'year').value
+    const month = parts.find(p => p.type === 'month').value
+    const start = `${year}-${month}-01`
+    const end = `${year}-${month}-${new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate()}`
     const current = ++revision.current
     setBusy(true); setError(''); setResult(null)
     try {
@@ -28,7 +28,7 @@ export default function LeaveQuotaCheck({ start, end }) {
     }
   }
   return <div className="leave-list-personal-summary-note leave-quota-check">
-    <button className="leave-quota-check-button" data-ui-key="u-67672e9aae74" type="button" disabled={busy || !start || !end} onClick={check}><ShieldAlert size={22} aria-hidden="true"/>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức'}</button>
+    <button className="leave-quota-check-button" data-ui-key="u-67672e9aae74" type="button" disabled={busy} onClick={check}><ShieldAlert size={22} aria-hidden="true"/>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức · Tháng này'}</button>
     <div className="leave-quota-check-result" aria-live="polite" aria-busy={busy}>
       {error && <p role="alert">{error}</p>}
       {busy && <p>Đang kiểm tra hạn mức…</p>}

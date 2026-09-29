@@ -1886,3 +1886,13 @@ operator action because it would resume TimeSoft network access.
 - Added signed server-to-server intake, a durable WordPress outbox, UUID replay protection, and separate indexed PostgreSQL inbox rows. No Live Tour state/receipt writes, staff assignment, payment or network calls while holding a business transaction.
 - Admin/Quản lý/Lễ tân see a Live Tour popup and the Booking online page. API independently enforces the audience, SQL pagination and optimistic row revisions.
 - Activation still requires both server secrets, plugin installation and normal backend/frontend deploy. No live customer form has been submitted in this work. See [runbook](online-booking.md).
+
+
+## 29-09-2026 — Live Tour leave and employee controls (code review)
+
+- The current missing-check-in feed excluded every registered leave reason, including late arrival. Registered late arrivals now alert at 15:00 for Ca 1 and 17:00 for Ca 2; checked-in staff remain excluded and the fresh attendance cache safeguard remains in place.
+- Early-leave return markers now use the existing return queue, ahead of unexcused-leave markers within the return cohort. Existing service release and manual shift safeguards are retained.
+- Weekend reason availability depended on catalog allowed_days, and registration timing bypasses could bypass that restriction. A reason-name invariant now validates the target leave date on create/edit, including admin paths; weekday reason menus also exclude these reasons.
+- The supplied screenshot shows a weekend reason created on Saturday 26-09-2026 for Tuesday 29-09-2026. No production record or audit log was read: the specific submission path is not confirmed, and no historical record has been rewritten.
+- The user explicitly extended quick shift assignment to quanly and letan. FaceID device controls and capture endpoints are limited to admin/quanly, with the gallery rendering the five latest complete images. Quota checks use the current Vietnam calendar month independently of the list filter.
+- This is a source change, not evidence of deployment or production verification.

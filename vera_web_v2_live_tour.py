@@ -3092,8 +3092,9 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "employee_id": employee.get("id"), "_employee_id": employee.get("id"),
         "_row_style": style, "_tour_groups": groups,
         "_return_queue_at": leave_return.queue_clock(employee),
-        "_return_queue_day": leave_return.queue_order(employee)[0],
-        "_return_queue_ordinal": leave_return.queue_order(employee)[1],
+        "_return_queue_priority": leave_return.queue_order(employee)[0],
+        "_return_queue_day": leave_return.queue_order(employee)[1],
+        "_return_queue_ordinal": leave_return.queue_order(employee)[2],
         "_shift_checkin_date": employee.get("shift_checkin_date", ""),
         "_daily_support_reason": employee.get("synced_leave_reason", ""),
         "_scheduled_week_shift": employee.get("scheduled_week_shift", ""),
@@ -4904,8 +4905,8 @@ def install_live_tour_routes(
         action = body.action.strip().lower()
         timing = ActionTiming(action)
         _reject_external_action(action)
-        if action == "set_shift" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
-            raise HTTPException(403, "Chỉ Admin được xếp Ca 1/Ca 2 thủ công.")
+        if action == "set_shift" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly", "letan"}:
+            raise HTTPException(403, "Chỉ Admin, Quản lý và Lễ tân được xếp Ca 1/Ca 2 thủ công.")
         if action == "update_appointment" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly", "letan"}:
             raise HTTPException(403, "Chỉ Lễ tân, Quản lý và Admin được sửa lịch hẹn.")
         if action == "update_started_at" and str(getattr(ident, "role", "") or "").strip().lower() not in {"admin", "quanly"}:
