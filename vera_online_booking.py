@@ -141,9 +141,13 @@ def install_online_booking_routes(app, *, engine_instance, current_identity):
     def listing(page: int = Query(1, ge=1, le=100000), limit: int = Query(25, ge=1, le=100),
                 status: Literal['', 'new', 'confirmed', 'handled', 'cancelled'] = '',
                 kind: Literal['', 'booking', 'contact'] = '', q: str = Query('', max_length=100),
+                date_from: date | None = None, date_to: date | None = None,
                 ident=Depends(authorized)):
+        if date_from and date_to and date_from > date_to:
+            raise HTTPException(422, 'Ngày kết thúc phải từ ngày bắt đầu trở đi.')
         where = "WHERE (:status='' OR b.status=:status) AND (:kind='' OR b.kind=:kind) AND (:q='' OR b.customer_name ILIKE :search OR b.phone ILIKE :search)"
-        params = dict(status=status, kind=kind, q=q.strip(), search='%'+q.strip()+'%', limit=limit, offset=(page-1)*limit)
+        where += " AND (CAST(:date_from AS date) IS NULL OR COALESCE(b.appointment_date,(b.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)>=CAST(:date_from AS date)) AND (CAST(:date_to AS date) IS NULL OR COALESCE(b.appointment_date,(b.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)<=CAST(:date_to AS date))"
+        params = dict(date_from=date_from, date_to=date_to, status=status, kind=kind, q=q.strip(), search='%'+q.strip()+'%', limit=limit, offset=(page-1)*limit)
         with engine_instance().begin() as conn:
             ensure_schema(conn)
             total = conn.execute(text('SELECT count(*) FROM vera_online_booking b '+where), params).scalar_one()

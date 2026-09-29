@@ -265,3 +265,24 @@ body .live-tour-page .tour-table thead :is(th, td) {
 .staff-page .staff-list-primary-actions button { width:100%; min-width:0; min-height:40px; white-space:normal; justify-content:center; }
 .checkin-history-page .checkin-history-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; width:100%; }
 .checkin-history-page .checkin-history-actions button { width:100%; min-width:0; min-height:44px; padding:10px 8px; white-space:normal; justify-content:center; }
+
+/* Online inbox: full fields wrap on desktop and become labelled rows on mobile. */
+.online-booking-page{min-width:0;width:100%;box-sizing:border-box}
+.online-booking-page .online-booking-actions>*{max-width:100%;min-width:0}
+.online-booking-periods{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.online-booking-periods button[aria-pressed="true"]{background:#194c3c;color:white}
+.online-booking-page .online-booking-table{table-layout:fixed}
+.online-booking-page .online-booking-table :is(th,td){min-width:0;max-width:none;white-space:normal;overflow-wrap:anywhere}
+.online-booking-page .online-booking-table button{max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.online-booking-modal{width:min(680px,calc(100vw - 24px));min-width:0}
+.online-booking-modal .online-booking-card{margin:0;min-width:0;overflow-wrap:anywhere}
+@media(max-width:700px){
+ .online-booking-page .online-booking-table-wrap{overflow:visible}
+ .online-booking-page .online-booking-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ .online-booking-page .online-booking-table :is(tbody,tr){display:block;width:100%}
+ .online-booking-page .online-booking-table tr+tr{border-top:3px solid #315c4b}
+ .online-booking-page .online-booking-table td{display:grid;grid-template-columns:minmax(0,110px) minmax(0,1fr);gap:8px;width:100%;box-sizing:border-box;min-width:0;border:0;border-bottom:1px solid #9ab4a8}
+ .online-booking-page .online-booking-table td::before{content:attr(data-label);font-weight:700;white-space:normal}
+ .online-booking-page .online-booking-actions{align-items:stretch}
+ .online-booking-page .online-booking-actions label{width:100%}
+}

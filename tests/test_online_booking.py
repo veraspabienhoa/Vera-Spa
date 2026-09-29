@@ -75,3 +75,9 @@ def test_webhook_rejects_unsigned_oversized_and_invalid_without_db(monkeypatch):
     body = b'{"customer_name":"private-value"}'
     response = api.post('/v2/integrations/website/requests', content=body, headers=signature(body))
     assert response.status_code == 422 and 'private-value' not in response.text
+
+
+def test_listing_rejects_invalid_calendar_and_reversed_range_before_database():
+    api = client()
+    assert api.get('/v2/online-bookings?date_from=2026-02-30').status_code == 422
+    assert api.get('/v2/online-bookings?date_from=2026-10-02&date_to=2026-10-01').status_code == 422
