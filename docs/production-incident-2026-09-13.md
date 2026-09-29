@@ -1,5 +1,25 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 29-09-2026: loại hai lượt quét thử Yến Linh khỏi bản tính công thử
+
+Người vận hành xác nhận lúc 14:35:40 và yêu cầu áp dụng lúc 14:38:57 giờ
+Việt Nam: sự kiện 79329 (14:21:22), 79330 (14:21:24) là quét thử, nhân viên
+vẫn làm việc. Hồ sơ đã đối chiếu 217, reference 0/0/14155776; ảnh màn hình
+xác nhận cả hai sự kiện được lưu và ánh xạ Yến Linh. Không coi đây là giờ ra.
+
+Thêm ngoại lệ có phiên bản trong mã, không xóa/sửa archive hoặc mapping.
+Chỉ loại đúng cặp khỏi dữ liệu đưa vào calculator khi cả hai ID, timestamp,
+reference, địa chỉ, tên máy, status/type và chủ mapping xác nhận còn khớp.
+Thiếu hoặc thay đổi bằng chứng giữ nguyên dữ liệu và báo blocker. Báo cáo
+trả applied_test_scan_reviews để kiểm tra ngoại lệ, trong khi đối chiếu log
+thô vẫn giữ cả hai sự kiện. Lượt 09:02:57 và lượt ra thực tế về sau giữ nguyên.
+
+Đây mới là sửa shadow projection, chưa thay nguồn công/lương chính thức,
+chưa ghi review PostgreSQL hay xác minh bản sửa trên VPS. Báo cáo 14:29 còn
+năm nhân viên chưa ánh xạ, bốn sự kiện An An/Lê My thiếu reference, thiếu
+TimeSoft lịch sử 26–28, chênh lệch ngày công qua đêm, ngày hiện tại chưa đóng
+và các gate xác minh status/cutover. Không bỏ qua các blocker này.
+
 ## 29-09-2026: đăng ký Face ID mới từ hồ sơ VERA
 
 Người vận hành xác nhận năm nhân viên chưa đăng ký khuôn mặt và yêu cầu
