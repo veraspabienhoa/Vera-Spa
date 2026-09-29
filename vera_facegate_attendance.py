@@ -144,6 +144,10 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
         reason = ''
         if payload.get('device_address', '') != address:
             reason = 'device_address_changed'
+        elif not ref:
+            # Only a valid but stale reference may use the confirmed-name fallback.
+            # Missing/malformed evidence must never be assigned by name alone.
+            reason = 'unmapped_reference'
         elif not mapping:
             token = _norm(payload.get('device_name'))
             owners = confirmed_name_owners.get(token, set()) if token else set()
