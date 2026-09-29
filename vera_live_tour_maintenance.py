@@ -29,6 +29,7 @@ from sqlalchemy.pool import NullPool
 import vera_live_tour_cutover as cutover
 import vera_live_tour_relational as relational
 import vera_live_tour_resource_store as resources
+import vera_live_tour_receipts as receipts
 from vera_web_v2_runtime_env import (
     LIVE_TOUR_MODE_RELATIVE_PATH, RUNTIME_ENV_KEYS, _read_private_file,
     load_managed_runtime_environment,
@@ -132,7 +133,7 @@ class Service:
         command([*self.control, 'start', self.unit], timeout=90)
 
 
-def health(expected_mode=None, attempts=1):
+def health(expected_mode=None, attempts=1, expected_receipts=None):
     for attempt in range(attempts):
         try:
             payloads = []
@@ -145,7 +146,8 @@ def health(expected_mode=None, attempts=1):
             if (auth.get('ok') is True and auth.get('provider') == 'postgres-local'
                     and business.get('ok') is True and mode in {'off', 'shadow', 'verify', 'active'}
                     and isinstance(ready, bool) and ready == (mode == 'active')
-                    and (expected_mode is None or mode == expected_mode)):
+                    and (expected_mode is None or mode == expected_mode)
+                    and (expected_receipts is None or business.get("live_tour_receipt_storage") == expected_receipts)):
                 return mode
         except (OSError, ValueError):
             pass
@@ -309,25 +311,45 @@ def migrate(conn, rollback):
     return result
 
 
-def transition(conn, service, path, original, old_mode, new_mode, directory):
+def migrate_receipts(conn, rollback):
+    verify_fences(conn)
+    with conn.begin():
+        before = snapshot(conn, True)
+        result = receipts.migrate(conn, rollback=rollback)
+        after = snapshot(conn, True)
+        before['state'].pop(receipts.MARKER, None)
+        after['state'].pop(receipts.MARKER, None)
+        if before['state'] != after['state']:
+            raise MaintenanceError('receipt migration changed canonical business data')
+        if receipts.ready(conn) != (not rollback):
+            raise MaintenanceError('receipt migration readiness mismatch')
+        return {**result, 'revision': after['revision']}
+
+
+def transition(conn, service, path, original, old_mode, new_mode, directory, *, receipt_action=None, prior_receipt_rows=False):
     """Caller has stopped writers, completed backup, and holds session fences."""
     changed = False
     starting = False
     try:
-        result = migrate(conn, rollback=new_mode != 'active')
+        result = (migrate_receipts(conn, rollback=receipt_action == "restore_receipts") if receipt_action
+                  else migrate(conn, rollback=new_mode != "active"))
         changed = True
         write_private(directory / 'phase.json', json.dumps({'phase': 'database_committed', 'mode': new_mode}))
         write_private(path, mode_configuration(original or '', new_mode))
         os.environ[MODE_KEY] = new_mode
         starting = True  # start may succeed even if systemctl's response fails
         service.start()
-        health(new_mode, attempts=20)
+        if receipt_action:
+            health(new_mode, attempts=20, expected_receipts="rows" if receipt_action == "optimize_receipts" else "inline")
+        else:
+            health(new_mode, attempts=20)
         service.verify_release()
         if not api_processes():
             raise MaintenanceError('API process missing after restart')
         verify_fences(conn)
         write_private(directory / 'phase.json', json.dumps({'phase': 'verified', 'mode': new_mode}))
-        return {'ok': True, 'mode': new_mode, 'revision': result['revision']}
+        return {'ok': True, 'mode': new_mode, 'revision': result['revision'],
+                **({'receipt_storage': result['receipt_storage']} if receipt_action else {})}
     except BaseException:
         # If the DB connection was lost, commit/fence ownership is uncertain.
         # Never restart a potentially mismatched writer in that situation.
@@ -338,11 +360,21 @@ def transition(conn, service, path, original, old_mode, new_mode, directory):
                 raise MaintenanceError('database fence ownership lost; manual recovery required')
             conn.rollback()
             if changed:
-                migrate(conn, rollback=old_mode != 'active')
+                if receipt_action:
+                    migrate_receipts(conn, rollback=receipt_action == 'optimize_receipts')
+                else:
+                    migrate(conn, rollback=old_mode != 'active')
+                    if prior_receipt_rows and old_mode == 'active':
+                        migrate_receipts(conn, rollback=False)
             restore_mode_configuration(path, original)
             os.environ[MODE_KEY] = old_mode
             service.start()
-            health(old_mode, attempts=20)
+            if receipt_action:
+                health(old_mode, attempts=20, expected_receipts="inline" if receipt_action == "optimize_receipts" else "rows")
+            elif prior_receipt_rows:
+                health(old_mode, attempts=20, expected_receipts='rows')
+            else:
+                health(old_mode, attempts=20)
             service.verify_release()
             write_private(directory / 'phase.json', json.dumps({'phase': 'recovered', 'mode': old_mode}))
         except BaseException:
@@ -370,12 +402,21 @@ def _run(action, sha):
         ready = relational.resource_ready(conn)
         if ready != (old_mode == 'active'):
             raise MaintenanceError('API mode and database authority disagree')
+        receipt_rows = receipts.ready(conn) if ready else False
         conn.rollback()
         if action == 'status':
             return {'ok': True, 'mode': old_mode, 'resource_ready': ready, 'changed': False,
-                    'activation_preflight': activation_preflight(service)}
+                    'activation_preflight': activation_preflight(service),
+                    'receipt_storage': 'rows' if receipt_rows else 'inline'}
         if (action == 'activate' and ready) or (action == 'rollback' and not ready):
             return {'ok': True, 'mode': old_mode, 'resource_ready': ready, 'changed': False}
+        receipt_action = action if action in {'optimize_receipts', 'restore_receipts'} else None
+        if receipt_action:
+            if not ready:
+                raise MaintenanceError('receipt optimization requires active resource storage')
+            if receipt_rows == (action == 'optimize_receipts'):
+                return {'ok': True, 'mode': old_mode, 'changed': False,
+                        'receipt_storage': 'rows' if receipt_rows else 'inline'}
         preflight = activation_preflight(service)
         if not preflight['ok']:
             raise MaintenanceError('activation preflight failed before stopping writers: ' + '; '.join(preflight['errors']))
@@ -390,7 +431,7 @@ def _run(action, sha):
         directory.chmod(0o700)
         if original is not None:
             write_private(directory / 'storage.env.before', original)
-        write_private(directory / 'manifest.json', json.dumps({'mode': old_mode, 'sha': sha, 'unit': service.unit, 'scope': service.scope, 'mode_override_existed': original is not None}))
+        write_private(directory / 'manifest.json', json.dumps({'mode': old_mode, 'sha': sha, 'unit': service.unit, 'scope': service.scope, 'mode_override_existed': original is not None, 'action': action, 'receipt_storage': 'rows' if receipt_rows else 'inline'}))
         write_private(directory / 'phase.json', json.dumps({'phase': 'preflight', 'mode': old_mode}))
         print('LIVE TOUR MAINTENANCE: preflight passed; stopping API and embedded projection workers', flush=True)
         try:
@@ -407,7 +448,9 @@ def _run(action, sha):
             raise MaintenanceError('preparation failed; no cutover applied') from None
         print('LIVE TOUR MAINTENANCE: private database backup verified; switching storage', flush=True)
         result = transition(conn, service, path, original, old_mode,
-                            'active' if action == 'activate' else 'shadow', directory)
+                            'active' if action == 'activate' or receipt_action else 'shadow', directory,
+                            **({'receipt_action': receipt_action} if receipt_action else
+                               {'prior_receipt_rows': True} if receipt_rows else {}))
         # Release locks explicitly; NullPool also closes the physical connection.
         conn.execute(text('SELECT pg_advisory_unlock_all()'))
         conn.commit()
@@ -429,7 +472,7 @@ def run(action, sha):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--action', choices=['status', 'activate', 'rollback'], required=True)
+    parser.add_argument('--action', choices=['status', 'activate', 'rollback', 'optimize_receipts', 'restore_receipts'], required=True)
     parser.add_argument('--sha', required=True)
     args = parser.parse_args()
     os.umask(0o077)

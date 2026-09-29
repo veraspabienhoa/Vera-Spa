@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'status: inspect; activate: enable resource locks; rollback: export current data back'
+        description: 'status; activate/rollback storage; optimize_receipts/restore_receipts retry archive'
         required: true
         default: status
         type: choice
@@ -12,6 +12,8 @@ on:
           - status
           - activate
           - rollback
+          - optimize_receipts
+          - restore_receipts
 
 permissions:
   contents: read
@@ -41,7 +43,7 @@ jobs:
           set -euo pipefail
           git fetch origin main
           test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
-          case "$ACTION" in status|activate|rollback) ;; *) exit 2 ;; esac
+          case "$ACTION" in status|activate|rollback|optimize_receipts|restore_receipts) ;; *) exit 2 ;; esac
 
       - name: Configure SSH
         env:

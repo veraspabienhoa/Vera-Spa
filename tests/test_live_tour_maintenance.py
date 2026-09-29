@@ -289,7 +289,7 @@ def test_status_works_without_managed_file_and_never_changes_service(tmp_path, m
     monkeypatch.setattr(maintenance, 'write_private', lambda *a: pytest.fail('status wrote configuration'))
     assert maintenance._run('status', 'a' * 40) == {
         'ok': True, 'mode': 'shadow', 'resource_ready': False, 'changed': False,
-        'activation_preflight': {'ok': True},
+        'activation_preflight': {'ok': True}, 'receipt_storage': 'inline',
     }
 
 
@@ -379,3 +379,49 @@ def test_cutover_backup_excludes_scheduler_but_requires_board_data(tmp_path, mon
         assert not scope['full_instance_disaster_recovery_backup']
         assert (tmp_path / 'database.dump').stat().st_mode & 0o777 == 0o600
         assert (tmp_path / 'backup-scope.json').stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize('action', ['optimize_receipts', 'restore_receipts'])
+@pytest.mark.parametrize('fail_health', [False, True])
+def test_receipt_transition_verifies_format_and_recovers(transition_context, monkeypatch, action, fail_health):
+    conn, service, path, events = transition_context
+    desired = 'rows' if action == 'optimize_receipts' else 'inline'
+    previous = 'inline' if desired == 'rows' else 'rows'
+    def migrate(conn, rollback):
+        events.append(('receipts', rollback))
+        return {'revision': 43, 'receipt_storage': 'inline' if rollback else 'rows'}
+    def health(mode, attempts, expected_receipts):
+        events.append(('receipt_health', expected_receipts))
+        if fail_health and expected_receipts == desired:
+            raise OSError('health failed')
+    monkeypatch.setattr(maintenance, 'migrate_receipts', migrate)
+    monkeypatch.setattr(maintenance, 'health', health)
+    def run():
+        return maintenance.transition(conn, service, path, 'old config', 'active', 'active',
+                                      path.parent, receipt_action=action)
+    if fail_health:
+        with pytest.raises(maintenance.MaintenanceError, match='previous mode and current data restored'):
+            run()
+        assert events.index('stop') < events.index(('receipts', action == 'optimize_receipts'))
+        assert ('receipt_health', previous) in events
+        assert path.read_text() == 'old config'
+    else:
+        assert run()['receipt_storage'] == desired
+        assert ('receipt_health', desired) in events
+    assert not any(isinstance(event, tuple) and event[0] == 'migrate' for event in events)
+
+
+def test_failed_whole_storage_rollback_recovers_receipt_rows(transition_context, monkeypatch):
+    conn, service, path, events = transition_context
+    monkeypatch.setattr(maintenance, 'migrate_receipts',
+        lambda conn, rollback: events.append(('receipts', rollback)))
+    def health(mode, attempts, expected_receipts=None):
+        events.append(('health', mode, expected_receipts))
+        if mode == 'shadow':
+            raise OSError('health failed')
+    monkeypatch.setattr(maintenance, 'health', health)
+    with pytest.raises(maintenance.MaintenanceError, match='previous mode and current data restored'):
+        maintenance.transition(conn, service, path, 'old config', 'active', 'shadow',
+                               path.parent, prior_receipt_rows=True)
+    assert events.index(('migrate', False)) < events.index(('receipts', False))
+    assert ('health', 'active', 'rows') in events
