@@ -48,6 +48,7 @@ from vera_web_v2_hr_enhancements import install_hr_enhancement_routes
 from vera_web_v2_live_tour import install_live_tour_routes
 from vera_web_v2_operations_v41 import install_operations_v41
 from vera_web_v2_notification_settings import install_notification_settings_routes
+from vera_online_booking import install_online_booking_routes
 from vera_web_v2_technical_retention import install_technical_retention_routes
 from vera_web_v2_outside_leave_rule import install_outside_leave_rule
 from vera_web_v2_payroll_debt_sync import install_payroll_debt_sync_routes
@@ -247,3 +248,5 @@ install_product_routes(_shared.app, engine_instance=_api._engine_instance, curre
 
 from vera_web_v2_leave_month import install_month_api
 install_month_api(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed)
+
+install_online_booking_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity)

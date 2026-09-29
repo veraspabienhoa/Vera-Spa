@@ -6,7 +6,7 @@ import uuid
 from fastapi.routing import APIRoute
 from vera_notification_delivery import route_event
 
-EXCLUDED = ('/v2/auth', '/v2/notification', '/v2/push', '/v2/me', '/v2/ui-layout')
+EXCLUDED = ('/v2/auth', '/v2/notification', '/v2/push', '/v2/me', '/v2/ui-layout', '/v2/integrations/website/', '/v2/online-bookings')
 GROUPS = {'live-tour':'Live Tour','leave':'Đăng ký nghỉ','long-leave':'Phép năm','training':'Đào tạo & đánh giá',
           'payroll':'Bảng lương','staff':'Nhân viên','employees':'Nhân viên','revenue':'Doanh thu',
           'work-schedule':'Lịch làm việc','profile':'Hồ sơ','settings':'Cài đặt','products':'Sản phẩm'}

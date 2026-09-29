@@ -1878,3 +1878,11 @@ must not be reported as a successful live cutover. Do not roll an active FaceGat
 source back to code that predates this runtime. Keep the configuration and raw
 archive with operational backups. A source rollback is a separate explicit
 operator action because it would resume TimeSoft network access.
+
+
+## 29-09-2026: Website booking inbox (not deployed)
+
+- Reviewed WordPress CF7 forms 1271 (booking) and 606 (contact). Contact has only name, phone and message; missing appointment fields must not be guessed.
+- Added signed server-to-server intake, a durable WordPress outbox, UUID replay protection, and separate indexed PostgreSQL inbox rows. No Live Tour state/receipt writes, staff assignment, payment or network calls while holding a business transaction.
+- Admin/Quản lý/Lễ tân see a Live Tour popup and the Booking online page. API independently enforces the audience, SQL pagination and optimistic row revisions.
+- Activation still requires both server secrets, plugin installation and normal backend/frontend deploy. No live customer form has been submitted in this work. See [runbook](online-booking.md).

@@ -11,6 +11,7 @@ import LayoutDesigner from './LayoutDesigner'
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
 import BookingNotificationPopup from './BookingNotificationPopup'
+import OnlineBookingPopup from './OnlineBookingPopup'
 import MissingCheckinPopup from './MissingCheckinPopup'
 import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, History, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
@@ -20,6 +21,7 @@ import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttend
 
 const items = [
   { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true },
+  { id: 'online-bookings', label: 'Booking online', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan'] },
   { id: 'live-tour-recovery', label: 'Khôi phục Live Tour', icon: RefreshCw, ready: true, adminOnly: true },
   { id: 'milk-tea', label: 'Trà sữa', icon: CircleDollarSign, ready: true, roles: ['leader', 'nhanvien'] },
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
@@ -499,6 +501,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>
       <BackToTop/>
       {showPageNotifications && <PopupNotifications user={user}/>}
+      {currentPage === 'live-tour' && <OnlineBookingPopup key={`online-booking:${user?.id || user?.employee_username}`} user={user} onOpen={() => choose('online-bookings', true)}/>}
       <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => choose('live-tour', true)}/>
       <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>
     </div>

@@ -195,6 +195,10 @@ function liveTourExportParams(kind, query = {}) {
 }
 
 export const veraApi = {
+  onlineBookings: (params) => request(`/v2/online-bookings?${new URLSearchParams(params)}`),
+  onlineBookingsUnread: () => request('/v2/online-bookings/unread'),
+  onlineBookingSeen: id => request(`/v2/online-bookings/${id}/seen`, { method: 'POST' }),
+  updateOnlineBooking: (id, body) => request(`/v2/online-bookings/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   purchases: params => request(`/v2/purchases?${new URLSearchParams(params)}`),
   createPurchases: body => request('/v2/purchases', { method: 'POST', body: JSON.stringify(body) }),
   editPurchase: (id, body) => request(`/v2/purchases/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),

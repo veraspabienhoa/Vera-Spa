@@ -22,7 +22,7 @@ import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera
 import LiveTourRecoveryPanel from './components/LiveTourRecoveryPanel'
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'live-tour-recovery', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['online-bookings', 'system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'live-tour-recovery', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -47,6 +47,7 @@ const readStandalonePageRequest = () => {
   }
 }
 
+const OnlineBookingPage = lazyPage(() => import('./pages/OnlineBookingPage'))
 const PurchasePage = lazyPage(() => import('./pages/PurchasePage'))
 
 const LeaveRegistrationPage = lazyPage(() => import('./pages/LeaveRegistrationPage'))
@@ -79,6 +80,7 @@ const DepartmentPayrollPanel = lazyPage(() => import('./pages/DepartmentPayrollP
 const ContractPage = lazyPage(() => import('./pages/ContractPage'))
 const TrainingPage = lazyPage(() => import('./pages/TrainingPage'))
 const pageModules = {
+  'online-bookings': OnlineBookingPage,
   leave: LeaveRegistrationPage, schedule: WorkSchedulePage, 'long-leave': LongLeaveSection,
   employees: EmployeePage, 'contract-1': ContractPage, rules: RulesPage, profile: ProfilePage,
   hr: HumanResourcesPage, payroll: PayrollPage, 'department-payroll': DepartmentPayrollPanel,
@@ -253,6 +255,7 @@ export default function App() {
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
         {page === 'live-tour-recovery' && (shellUser.role === 'admin' ? <LiveTourRecoveryPanel isAdmin onReload={() => changePage('live-tour')} /> : <p role="alert">Chỉ Admin được sử dụng chức năng này.</p>)}
+        {page === 'online-bookings' && <OnlineBookingPage user={shellUser} />}
         {page === 'live-tour' && <LiveTourPage user={shellUser} navigationToggle={navigationToggle} />}
         {page === 'milk-tea' && <MilkTeaPage user={shellUser} />}
         {page === 'customers' && <SpaManagementPage user={shellUser} mode="customers" />}
