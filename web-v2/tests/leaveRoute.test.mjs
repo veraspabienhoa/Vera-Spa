@@ -78,7 +78,10 @@ for(const role of ['admin','quanly','letan','nhanvien'])test(`complete leave rou
     assert.ok(f.doc.querySelector('.leave-list-personal-summary'))
     if(role==='admin'){
       await act(async()=>f.doc.querySelector('.leave-quota-check-button').click())
-      assert.deepEqual(f.calls.find(c=>c[0]==='quota'),['quota',f.day,f.day])
+      const [year, month] = f.day.split('-').map(Number)
+      const monthStart = `${f.day.slice(0,7)}-01`
+      const monthEnd = `${f.day.slice(0,7)}-${new Date(Date.UTC(year, month, 0)).getUTCDate()}`
+      assert.deepEqual(f.calls.find(c=>c[0]==='quota'),['quota',monthStart,monthEnd])
     }else assert.equal(f.doc.querySelector('.leave-quota-check-button'),null)
     await f.render(false);await f.render(true)
     assert.deepEqual(f.errors,[])
