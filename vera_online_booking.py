@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from sqlalchemy import text
 
 ROLES = {'admin', 'quanly', 'letan'}
-MAX_BODY = 16384
+MAX_BODY = 32768
 
 
 class WebsiteRequest(BaseModel):
@@ -57,7 +57,7 @@ def verify_signature(body, timestamp, signature, secret, now=None):
     if not re.fullmatch(r'\d{10}', timestamp or '') or abs((time.time() if now is None else now) - int(timestamp)) > 300:
         raise HTTPException(401, 'Chữ ký không hợp lệ hoặc đã hết hạn.')
     expected = hmac.new(secret.encode(), timestamp.encode() + b'.' + body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, signature or ''):
+    if not re.fullmatch(r'[0-9a-f]{64}', signature or '') or not hmac.compare_digest(expected, signature):
         raise HTTPException(401, 'Chữ ký không hợp lệ hoặc đã hết hạn.')
 
 
