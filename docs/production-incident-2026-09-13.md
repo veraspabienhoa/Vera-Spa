@@ -1,5 +1,30 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 29-09-2026: tính thử lương cơ bản từ dữ liệu FaceGate
+
+Theo yêu cầu tiếp tục tính công/lương, bổ sung API và nút Admin trong bảng
+đối chiếu FaceGate để tính tiền cơ bản cho khối lương giờ/tháng, theo khoảng
+1–7 ngày. Đọc cấu hình từng nhân viên và bộ phận đang lưu trong VERA; dùng
+công thức hiện hữu để chia giờ Ca 2 trước/sau 22:00 và lương tháng theo công.
+Không suy ra lương KTV theo tip từ lượt quét, không cộng phụ cấp tháng vào
+một khoảng ngày nhỏ, không thay thưởng/phạt/tạm ứng hoặc gửi phiếu lương.
+
+Nguồn dùng bản projection đã loại hai lượt quét thử Yến Linh theo PR #335.
+Nhân viên thiếu ánh xạ, thiếu ngày/giờ vào-ra/ca, ngày đang mở, log chưa đủ,
+sự kiện chưa giải quyết hoặc đơn giá chưa cấu hình có tiền null và trạng
+thái chờ bổ sung; không tự chuyển thành lương 0. Kết quả đủ đầu vào vẫn là
+ước tính theo công thức hiện hữu, chưa xác minh toàn bộ cutover. Các blockers
+vẫn được trả để đối chiếu, không bị xóa bằng yêu cầu tính thử.
+
+API chỉ Admin, giới hạn ngày trước khi mở connection; một transaction
+REPEATABLE READ READ ONLY và timeout, không gọi máy/đổi nguồn/ghi bảng lương.
+Giao diện hiển thị rõ tổng chỉ gồm dòng đã tính, ngày dd-mm-yyyy và không có
+thao tác lưu chính thức. Đây là bước tạo kết quả có thể xem xét; chưa hoàn
+thành yêu cầu chuyển nguồn lương toàn hệ thống hoặc xử lý hết dữ liệu thiếu.
+Kiểm thử công thức với đơn giá riêng, ca đêm, dữ liệu thiếu/null, quyền, giới
+hạn ngày, dùng một connection và UI đổi ngày/lỗi/pending. Chưa kiểm chứng số
+tiền trên VPS; cần triển khai và chạy đối chiếu dữ liệu thực tế.
+
 ## 29-09-2026: loại hai lượt quét thử Yến Linh khỏi bản tính công thử
 
 Người vận hành xác nhận lúc 14:35:40 và yêu cầu áp dụng lúc 14:38:57 giờ

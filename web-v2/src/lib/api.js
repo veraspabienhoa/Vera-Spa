@@ -397,6 +397,7 @@ export const veraApi = {
   facegateMappings: () => request('/v2/devices/facegate-mappings'),
   facegateMappingCandidates: () => request('/v2/devices/facegate-mapping-candidates'),
   confirmFacegateMappingCandidates: (body) => request('/v2/devices/facegate-mapping-candidates/confirm', { method: 'POST', body: JSON.stringify(body) }),
+  previewFacegatePayroll: (start, end) => request(`/v2/devices/facegate-attendance/payroll-preview?${new URLSearchParams({ start, end })}`),
   previewFacegateAttendance: (start, end) => request(`/v2/devices/facegate-attendance/preview?${new URLSearchParams({ start, end })}`),
   facegateProfile: (id) => request(`/v2/devices/facegate-profiles/${encodeURIComponent(id)}`),
   saveFacegateMapping: (body) => request('/v2/devices/facegate-mappings', { method: 'POST', body: JSON.stringify(body) }),

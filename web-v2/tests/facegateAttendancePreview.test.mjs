@@ -50,3 +50,25 @@ test('range is bounded and network failure leaves retry available', async ctx =>
   assert.equal(calls, 1); assert.match(p.panel().textContent, /Chưa có kết nối/)
   assert.equal(p.panel().querySelector('button[type=submit]').disabled, false)
 })
+
+test('FaceGate basic payroll uses selected dates and shows pending money without zero salary', async ctx => {
+  const calls=[]
+  const p=await page(ctx,'admin',{ previewFacegatePayroll:async (...args)=>{
+    calls.push(args)
+    return {start:'2026-09-29',end:'2026-09-29',pending_count:1,estimated_basic_pay_total:0,blockers:[],rows:[{
+      employee_username:'Yến Linh',employee_name:'Yến Linh',department_label:'Lễ tân',hours:null,
+      basic_salary_estimate:null,pending_reasons:['Chưa đủ giờ vào/ra']
+    }]}
+  }})
+  const inputs=p.panel().querySelectorAll('input[type=text]')
+  await p.input(inputs[0],'29092026'); await p.input(inputs[1],'29092026')
+  const button=[...p.panel().querySelectorAll('button')].find(b=>b.textContent==='Tính lương cơ bản từ FaceGate')
+  await p.w.act(async()=>button.click())
+  assert.deepEqual(calls,[['2026-09-29','2026-09-29']])
+  const section=p.panel().querySelector('[aria-label="Lương cơ bản FaceGate"]')
+  assert.match(section.textContent,/Chưa lưu bảng lương chính thức/)
+  assert.match(section.querySelector('tbody tr').textContent,/Chờ bổ sung/)
+  assert.doesNotMatch(section.querySelector('tbody tr').textContent,/0 ₫/)
+  await p.input(inputs[0],'28092026')
+  assert.equal(p.panel().querySelector('[aria-label="Lương cơ bản FaceGate"]'),null)
+})

@@ -42,23 +42,35 @@ export default function FacegateAttendancePreview() {
   const [start, setStart] = useState(yesterday)
   const [end, setEnd] = useState(yesterday)
   const [result, setResult] = useState(null)
+  const [payroll, setPayroll] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const run = async event => {
+  const run = async (event, salary = false) => {
     event.preventDefault()
     if (!start || !end || end < start || (Date.parse(end) - Date.parse(start)) / 86400000 > 6) {
       setError('Chọn khoảng từ 1 đến 7 ngày.'); return
     }
-    setBusy(true); setError(''); setResult(null)
-    try { setResult(await veraApi.previewFacegateAttendance(start, end)) }
+    setBusy(true); setError(''); setResult(null); setPayroll(null)
+    try {
+      if (salary) setPayroll(await veraApi.previewFacegatePayroll(start, end))
+      else setResult(await veraApi.previewFacegateAttendance(start, end))
+    }
     catch (cause) { setError(cause.message || 'Không đọc được dữ liệu đối chiếu.') }
     finally { setBusy(false) }
   }
-  const change = setter => event => { setter(event.target.value); setResult(null); setError('') }
+  const change = setter => event => { setter(event.target.value); setResult(null); setPayroll(null); setError('') }
   return <details className="facegate-attendance-preview"><summary>Đối chiếu FaceGate → Chấm công VERA</summary>
     <p>Tính thử từ log đã lưu theo lịch VERA. TimeSoft vẫn là nguồn chính. Không ghi công, lương hoặc phạt khi đối chiếu.</p>
-    <form onSubmit={run}><fieldset disabled={busy}><label>Từ ngày<VeraDateInput required value={start} onChange={change(setStart)} /></label><label>Đến ngày<VeraDateInput required value={end} onChange={change(setEnd)} /></label><button className="secondary-button" disabled={busy} type="submit">{busy ? 'Đang đối chiếu…' : 'Tính thử và đối chiếu'}</button></fieldset></form>
+    <form onSubmit={run}><fieldset disabled={busy}><label>Từ ngày<VeraDateInput required value={start} onChange={change(setStart)} /></label><label>Đến ngày<VeraDateInput required value={end} onChange={change(setEnd)} /></label><button className="secondary-button" disabled={busy} type="submit">{busy ? 'Đang đối chiếu…' : 'Tính thử và đối chiếu'}</button><button type="button" className="secondary-button" disabled={busy} onClick={event => run(event, true)}>Tính lương cơ bản từ FaceGate</button></fieldset></form>
     {error && <p role="alert">{error}</p>}
+    {payroll && <section aria-label="Lương cơ bản FaceGate">
+      <p role="status">{formatVeraDate(payroll.start)} – {formatVeraDate(payroll.end)} · {payroll.pending_count} nhân viên chờ bổ sung công.</p>
+      <p>Lương cơ bản tạm tính theo cấu hình VERA, chưa gồm phụ cấp, tip, thưởng, phạt hoặc tạm ứng. Chưa lưu bảng lương chính thức. Nhân viên thiếu dữ liệu hiển thị “Chờ bổ sung”, không tính thành 0 đồng.</p>
+      <div className="responsive-data-table"><table><thead><tr><th>Nhân viên</th><th>Bộ phận</th><th>Giờ tính thử</th><th>Lương cơ bản tạm tính</th><th>Trạng thái</th></tr></thead><tbody>{payroll.rows.map(row => <tr key={row.employee_username}><td>{row.employee_name}</td><td>{row.department_label}</td><td>{row.hours ?? '—'}</td><td>{row.basic_salary_estimate === null ? 'Chờ bổ sung' : new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(row.basic_salary_estimate)}</td><td>{row.pending_reasons.length ? row.pending_reasons.join(' · ') : 'Đã tính thử, cần đối chiếu'}</td></tr>)}</tbody></table></div>
+      <p>Tổng lương cơ bản các dòng đã tính thử: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(payroll.estimated_basic_pay_total)}. Tổng chưa bao gồm nhân viên chờ bổ sung.</p>
+      {!!payroll.blockers.length && <details><summary>Các mục đối chiếu còn lại</summary><ul>{payroll.blockers.map(key => <li key={key}>{reasons[key] || key}</li>)}</ul></details>}
+      <p>Lương KTV theo tip được xử lý ở bảng Lương KTV; lượt quét FaceGate không thay thế dữ liệu tip.</p>
+    </section>}
     {result && <>
       <p role="status">{formatVeraDate(result.start)} – {formatVeraDate(result.end)} · {result.facegate_event_count} lượt quét đã ánh xạ · {result.differences.length} dòng chấm công khác · {result.evidence_differences.length} nhân viên khác log gốc · {result.issue_count} sự kiện cần kiểm tra.</p>
       <p>Đồng bộ gần nhất: {formatVeraDateTime(result.last_sync_at, 'Chưa có')}. Quét lặp được gom trong 5 phút. Ca bình thường không bắt buộc quét kết thúc.</p>
