@@ -1,0 +1,6 @@
+CF7 form 1271: add before the hotline block, outside .vera-booking-fields.
+
+<div class="vera-booking-field vera-booking-message"><label>Lời nhắn
+[textarea booking-message maxlength:4000 40x3 placeholder "Bạn có yêu cầu hoặc ghi chú thêm cho Vera Spa?"]</label></div>
+
+This is optional. Plugin 1.1.0 forwards booking-message into the existing message column.

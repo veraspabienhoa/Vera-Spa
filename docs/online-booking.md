@@ -32,3 +32,11 @@ The HMAC signs `unix_timestamp + '.' + exact_raw_json_body` using SHA-256; heade
 - Deactivate the WordPress plugin to stop capture/delivery; outbox remains intact for reactivation. Existing CF7/Flamingo behavior is unchanged.
 - Backend/UI rollback must not drop `vera_online_booking` or `vera_online_booking_seen`; retain customer history and deduplication records. Pause the plugin before a backend rollback to a release lacking this endpoint.
 - Customer data is stored on the existing WordPress/Vera servers; include these tables in normal protected backups and retention policy.
+
+## Message and popup update (29-09-2026)
+
+- Public CF7 form 1271 now includes optional `booking-message`, labelled Lời nhắn (4000 characters). Exact field markup: `integrations/wordpress/booking-message-field.txt`.
+- Install plugin version 1.1.0 to forward this field; the original 1.0.0 intentionally sent an empty booking message. Existing API/database already preserve the message, so no migration is needed.
+- Inbox table has a dedicated Lời nhắn column. Reception's processing note remains separate from the customer's original message.
+- Live Tour popup: Ẩn collapses to its header without acknowledging; Hiện restores; Đóng acknowledges only the current request for that account, retaining history. Drag the title on desktop/touch; arrow keys move the focused handle. Viewport clamping keeps controls reachable after resize.
+- The WordPress form is live. The plugin/frontend changes require merge/deploy/update and the original integration activation steps still apply. No real booking was submitted for verification.
