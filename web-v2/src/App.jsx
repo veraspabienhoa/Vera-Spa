@@ -3,8 +3,9 @@ import { recoverablePage as lazyPage } from './lib/recoverablePage'
 import PageErrorBoundary from './components/PageErrorBoundary'
 import { requestPageRefresh } from './lib/usePageRefresh'
 import SystemTabs from './components/SystemTabs'
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AppShell from './components/AppShell'
+import EmployeeProfileModal from './components/EmployeeProfileModal'
 import PayrollTabs from './components/PayrollTabs'
 import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
 import ProfileCompletionReminder from './components/ProfileCompletionReminder'
@@ -104,6 +105,11 @@ export default function App() {
   const [authRetry, setAuthRetry] = useState(0)
   const [page, setPage] = useState('leave')
   const [longLeaveRevision, setLongLeaveRevision] = useState(0)
+  const employeeNavigationRef = useRef(null)
+  const registerEmployeeNavigation = useCallback((getState) => { employeeNavigationRef.current = getState }, [])
+  const [pendingEmployeePage, setPendingEmployeePage] = useState('')
+  const [savingEmployeeNavigation, setSavingEmployeeNavigation] = useState(false)
+  const [employeeNavigationError, setEmployeeNavigationError] = useState('')
 
   useEffect(() => {
     if (!isAuthConfigured) return undefined
@@ -202,7 +208,7 @@ export default function App() {
   if (!user && !sessionRecoveryError) return <LoginPage externalError={authError} />
 
   const signOut = async () => { void setPushAccount(''); setProfile(null); await signOutVera() }
-  const changePage = (nextPage) => {
+  const applyPageChange = (nextPage) => {
     if (standaloneRequest.enabled) {
       const url = new URL(window.location.href)
       url.searchParams.set('standalone', '1')
@@ -211,6 +217,34 @@ export default function App() {
     }
     rememberActivePage(user, nextPage)
     setPage(nextPage)
+  }
+  const changePage = (nextPage) => {
+    if (nextPage === page) return
+    if (page === 'employees' && employeeNavigationRef.current?.()?.dirty) {
+      setEmployeeNavigationError('')
+      setPendingEmployeePage(nextPage)
+      return
+    }
+    applyPageChange(nextPage)
+  }
+  const finishEmployeeNavigation = async (save) => {
+    if (savingEmployeeNavigation || !pendingEmployeePage) return
+    if (save) {
+      setSavingEmployeeNavigation(true)
+      setEmployeeNavigationError('')
+      try {
+        if (!await employeeNavigationRef.current?.()?.save()) {
+          setEmployeeNavigationError('Chưa lưu được toàn bộ dữ liệu. Kiểm tra các trường cần nhập hoặc thông báo lỗi ở trang Nhân viên.')
+          return
+        }
+      } catch (error) {
+        setEmployeeNavigationError(error.message || 'Chưa lưu được dữ liệu nhân viên.')
+        return
+      } finally { setSavingEmployeeNavigation(false) }
+    }
+    const destination = pendingEmployeePage
+    setPendingEmployeePage('')
+    applyPageChange(destination)
   }
   const refreshCurrentPage = () => requestPageRefresh()
 
@@ -239,7 +273,7 @@ export default function App() {
             <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
             <LongLeaveSection refreshRevision={longLeaveRevision} user={shellUser} />
         </>}
-        {page === 'employees' && <><EmployeePage user={shellUser} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
+        {page === 'employees' && <><EmployeePage user={shellUser} registerNavigationGuard={registerEmployeeNavigation} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
         {page === 'contract-1' && <ContractPage user={shellUser} />}
         {page === 'rules' && <RulesPage user={shellUser} />}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
@@ -265,6 +299,18 @@ export default function App() {
         {['system', 'changes', 'storage'].includes(page) && <SystemTabs user={shellUser} initialTab={page === 'storage' ? 'storage' : 'changes'} changes={<AdminChangesPage user={shellUser} />} storage={<StorageAdminPage />} />}
       </Suspense>
       </PageErrorBoundary>
+      {pendingEmployeePage && <EmployeeProfileModal labelledBy="employee-navigation-title" busy={savingEmployeeNavigation} onClose={() => setPendingEmployeePage('')}>
+        <section className="panel employee-navigation-dialog">
+          <h2 id="employee-navigation-title">Thay đổi nhân viên chưa lưu</h2>
+          <p>Bạn muốn lưu dữ liệu trước khi chuyển menu?</p>
+          {employeeNavigationError && <p role="alert" className="employee-navigation-error">{employeeNavigationError}</p>}
+          <div className="employee-navigation-actions">
+            <button type="button" className="secondary-button" disabled={savingEmployeeNavigation} onClick={() => setPendingEmployeePage('')}>Tiếp tục chỉnh sửa</button>
+            <button type="button" className="danger-button" disabled={savingEmployeeNavigation} onClick={() => void finishEmployeeNavigation(false)}>Không lưu</button>
+            <button type="button" className="primary-button" disabled={savingEmployeeNavigation} onClick={() => void finishEmployeeNavigation(true)}>{savingEmployeeNavigation ? 'Đang lưu…' : 'Lưu và chuyển'}</button>
+          </div>
+        </section>
+      </EmployeeProfileModal>}
       </>}
     </AppShell>
   )

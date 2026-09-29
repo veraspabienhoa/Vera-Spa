@@ -29,7 +29,7 @@ const built = await build({
 for (const entry of ['/?page=employees&standalone=1', '/']) test(`real employee page survives startup, refresh, filtering and navigation from ${entry}`, async () => {
   const dom = new JSDOM('<body><div id="root"></div></body>', {url:`https://example.test${entry}`,pretendToBeVisual:true})
   const errors=[], observers=[], requests=[]
-  let releaseStaff
+  let releaseStaff, saveShouldFail=true, writes=0
   const staffReady = new Promise(resolve => { releaseStaff=resolve })
   const employees=[{username:'Ánh Mẫu',full_name:'Nguyễn Ánh Mẫu',role:'nhanvien',employment_status:'Đang làm việc',work_shift:'Ca 1'},
     {username:'Bình Mẫu',full_name:'Trần Bình Mẫu',role:'letan',employment_status:'Đang làm việc',work_shift:'Ca 2',profile_requirement_exempt:true},
@@ -42,7 +42,13 @@ for (const entry of ['/?page=employees&standalone=1', '/']) test(`real employee 
     notificationSettings:async()=>({settings:[]}),uiLayout:async()=>({revision:1,layout:{desktop:{},mobile:{}}}),
     staff:async()=>{requests.push('staff');await staffReady;return payload()},
     employees:async()=>({employees}),profileReferenceData:async()=>({provinces:[],wards:[],banks:[]}),
-    updateStaff:async()=>{throw Error('Opening/filtering a page must not save staff')},
+    updateStaff:async(username, changes)=>{
+      writes++
+      if(saveShouldFail)throw Error('Simulated save failure')
+      const employee=employees.find(row=>row.username===username)
+      Object.assign(employee,changes)
+      return {employee:{...employee}}
+    },
   }
   const fetchFixture=async url=>new Response(JSON.stringify(String(url).includes('/face-id/self-update-settings')
     ? {enabled:true,individual:{},missing:['Ánh Mẫu']} : {provinces:[],wards:[],banks:[],items:[],can_manage:true,photo:null}),
@@ -105,6 +111,50 @@ for (const entry of ['/?page=employees&standalone=1', '/']) test(`real employee 
     await filter('Ánh Mẫu');assertSummary(1,1)
     await filter('Chi Mẫu');assertSummary(1,0)
     await navigate('Live Tour');await navigate('Nhân viên');assertOpen()
+    assert.equal(writes,0,'opening and filtering must not save staff')
+    assert.equal(document.querySelectorAll('.staff-face-actions button').length,3)
+    assert.equal(document.querySelectorAll('.staff-toolbar select').length,4)
+    await act(async()=>document.querySelector('.staff-table input[aria-label="Không tính lương Ánh Mẫu"]').click())
+    await navigate('Live Tour')
+    assertOpen()
+    const dialog=()=>document.querySelector('.employee-navigation-dialog')
+    const action=(label)=>[...dialog().querySelectorAll('button')].find(button=>button.textContent.trim()===label)
+    assert.ok(dialog())
+    await act(async()=>action('Tiếp tục chỉnh sửa').click())
+    assertOpen()
+    await navigate('Live Tour')
+    await act(async()=>action('Lưu và chuyển').click())
+    await settle()
+    assert.ok(dialog(),'a failed save keeps the operator on Employees')
+    assertOpen()
+    assert.match(dialog().textContent,/Chưa lưu được toàn bộ dữ liệu/)
+    saveShouldFail=false
+    await act(async()=>action('Lưu và chuyển').click())
+    await settle()
+    assert.equal(document.querySelector('.staff-page'),null)
+    assert.equal(employees[0].payroll_excluded,true)
+    await navigate('Nhân viên');assertOpen()
+    await act(async()=>document.querySelector('.staff-table input[aria-label="Không tính lương Ánh Mẫu"]').click())
+    await navigate('Live Tour')
+    assert.ok(dialog())
+    await act(async()=>action('Không lưu').click())
+    await settle()
+    assert.equal(document.querySelector('.staff-page'),null)
+    assert.equal(employees[0].payroll_excluded,true,'discarding edits preserves the stored value')
+    await navigate('Nhân viên');assertOpen()
+    await act(async()=>document.querySelector('.staff-table .staff-edit-button').click())
+    const fullName=[...document.querySelectorAll('.employee-profile-modal-panel label')]
+      .find(label=>label.textContent.includes('Họ và tên đầy đủ')).querySelector('input')
+    await act(async()=>{
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(fullName,'Tên đang sửa')
+      fullName.dispatchEvent(new Event('input',{bubbles:true}))
+    })
+    await navigate('Live Tour')
+    assert.ok(dialog(),'the profile editor also guards menu navigation')
+    await act(async()=>action('Không lưu').click())
+    await settle()
+    assert.equal(employees[0].full_name,'Nguyễn Ánh Mẫu')
+    await navigate('Nhân viên');assertOpen()
     assert.ok(requests.length>0)
   } finally {
     releaseStaff()
