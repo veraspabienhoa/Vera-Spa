@@ -127,3 +127,27 @@ def test_profile_save_timeout_never_retries_mutation(monkeypatch):
     c, s = client(monkeypatch, [requests.Timeout('private device detail')])
     with pytest.raises(requests.Timeout): c.add('Test Staff', 'vera:token', REF, (1, 0))
     assert len(s.calls) == 1 and s.calls[0][0] == 'POST'
+
+
+def test_login_ignores_conflicting_unused_firmware_capabilities(monkeypatch):
+    response = body(**{'LOGIN.ulevel': 0})
+    extra = ''.join(f'\nroot.LOGIN.{key}=0\nroot.LOGIN.{key}=1'
+                    for key in ('enterservice', 'ActiveMQSvr', 'VideoParamsSet'))
+    c, session = client(monkeypatch, [response.replace('</html>', extra+'</html>')])
+    c.login()
+    assert len(session.calls) == 1 and session.calls[0][0] == 'GET'
+
+
+@pytest.mark.parametrize('key', ['ERR.no', 'ERR.des', 'LOGIN.ulevel'])
+@pytest.mark.parametrize('second', ['0', '1'])
+def test_login_still_rejects_duplicate_decision_fields(monkeypatch, key, second):
+    response = body(**{'LOGIN.ulevel': 0, 'ERR.des': 0})
+    response = response.replace('</html>', f'\nroot.{key}={second}</html>')
+    c, _ = client(monkeypatch, [response])
+    with pytest.raises(fg.EnrollmentError, match='trùng'): c.login()
+
+
+@pytest.mark.parametrize('key', ['LIST.uid', 'UPLOAD.dwfilepos', 'UPLOAD.sessionid'])
+def test_other_protocol_responses_remain_strict(key):
+    response = body(**{key: 1}).replace('</html>', f'\nroot.{key}=2</html>')
+    with pytest.raises(fg.EnrollmentError, match='trùng'): fg.fields(response)
