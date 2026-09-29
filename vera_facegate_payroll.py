@@ -92,9 +92,10 @@ def calculate_employee(records, username, config, start, end, report, today):
 
 
 def calculate(conn, start, end):
+    from vera_attendance_participation import eligible
     report = preview(conn, start, end)
     configs = payroll._employee_config_map(conn)
-    employees = payroll._salary_employee_catalog(conn)
+    employees = eligible(payroll._salary_employee_catalog(conn), start, end, key='employee_username')
     department_configs = {d: payroll._settings(conn, d)['config']
                           for d in {e['department'] for e in employees}}
     today = datetime.now(VN_TZ).date()

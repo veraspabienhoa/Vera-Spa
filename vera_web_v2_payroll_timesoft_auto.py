@@ -343,11 +343,14 @@ def install_payroll_timesoft_auto_routes(
 
     @app.get("/v2/payroll-timesoft-auto/health")
     def payroll_timesoft_auto_health():
+        from vera_attendance_source import enabled
+        retired = enabled()
         return {
             "ok": True,
             "release": RELEASE,
             "source": "timesoft_summary_invoice_YYYYMMDD",
-            "fallback": "manual_excel_upload",
+            "enabled": not retired,
+            "fallback": "live_tour_tip" if retired else "manual_excel_upload",
             "canonical_excel_compatible": True,
         }
 
@@ -360,6 +363,9 @@ def install_payroll_timesoft_auto_routes(
         start, end, label = payroll._period(month, period_no)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
+            from vera_attendance_source import enabled
+            if enabled():
+                raise HTTPException(410, 'Nguồn TimeSoft đã ngừng sử dụng. Hãy dùng Tính lương từ TIP Live Tour.')
             rows, summary = _canonical_tip_rows(conn, start, end, norm)
         content = _workbook(rows)
         filename = f"TimeSoft_Auto_{month}_Ky{period_no}.xlsx"

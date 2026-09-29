@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from vera_facegate_control_log import VN_TZ
 import vera_facegate_attendance as fg
+import vera_attendance_participation as participation
 
 
 def archive_complete(data, day, *, after=None):
@@ -30,8 +31,12 @@ def annotate(records, data, *, now=None):
     for scan in data.get('rows', []):
         if scan.get('_vera_identity_review_id'):
             identity_reviews[(scan.get('EmployeeName'), scan.get('WorkDateStr'))].add(scan['_vera_identity_review_id'])
+    participating = []
     for row in records:
         day = datetime.strptime(row['date'], '%d/%m/%Y').date()
+        if participation.suspended(row['employee_name'], day):
+            continue
+        participating.append(row)
         reasons = []
         username = row['employee_name']
         if username not in mapped:
@@ -67,7 +72,7 @@ def annotate(records, data, *, now=None):
         row['applied_identity_review_ids'] = sorted(identity_reviews[(username, row['date'])])
         if row.get('attendance_roster_only'):
             row['attendance_note'] = 'Chờ đăng ký Face ID' if username not in mapped else 'Chưa ghi nhận lượt quét phù hợp'
-    return records
+    return participating
 
 
 def records(conn, start, end):
@@ -142,4 +147,5 @@ def alert_eligible_users(conn, day):
     data = fg.project_evidence(conn, day, day)
     if any(i.get('reason') != 'no_vera_shift' for i in data['issues']):
         return set()
-    return {m['username'] for m in data['index'].values()}
+    return {m['username'] for m in data['index'].values()
+            if not participation.suspended(m['username'], day)}

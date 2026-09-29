@@ -27,7 +27,9 @@ def _skip_tour_penalties(*_args, **_kwargs):
 
 def main() -> int:
     ts.process_tour_penalties = _skip_tour_penalties
-    ts._log(
+    from vera_attendance_source import enabled
+    ts._log('VERA ATTENDANCE: FaceGate archive input; TimeSoft network disabled; '
+            'committed notification retries remain active.' if enabled() else
         "V85.2 DIRECT ATTENDANCE: one TimeSoft -> PostgreSQL synchronization per "
         "scheduled run; scheduler cadence is five minutes; no fast polling tail."
     )
