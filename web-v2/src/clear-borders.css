@@ -209,6 +209,8 @@ body .live-tour-page .tour-table thead :is(th, td) {
 .staff-page .staff-shift-summary span { font-size:12px; line-height:1.25; }
 .staff-page .staff-toolbar { grid-template-columns:minmax(180px,1.35fr) repeat(3,minmax(120px,1fr)) minmax(265px,1.5fr); align-items:center; }
 .staff-page .staff-toolbar select { width:100%; min-width:0; }
+.staff-page .staff-face-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; min-width:0; }
+.staff-page .staff-face-actions button { width:100%; min-width:0; min-height:38px; padding:8px 12px; white-space:normal; overflow-wrap:anywhere; justify-content:center; }
 .staff-page .staff-visibility-group select { flex:1 1 155px; }
 .staff-page .staff-visibility-group button { min-height:38px; padding:7px 10px; font-size:12px; }
 .staff-page .staff-actionbar { justify-content:flex-start; gap:8px; }
@@ -219,15 +221,27 @@ body .live-tour-page .tour-table thead :is(th, td) {
 .staff-page .staff-list-selection-actions button { width:100%; min-height:38px; padding:7px 10px; font-size:12px; line-height:1.35; white-space:normal; justify-content:center; }
 @media(max-width:1100px) {
   .staff-page .staff-toolbar { grid-template-columns:repeat(3,minmax(0,1fr)); }
-  .staff-page .staff-visibility-group { grid-column:span 2; }
+  .staff-page .staff-face-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .staff-page .staff-face-actions button:last-child { grid-column:1/-1; }
 }
 @media(max-width:600px) {
   .staff-page .staff-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .staff-page .staff-employee-name-filter, .staff-page .staff-visibility-group { grid-column:1/-1; }
+  .staff-page .staff-employee-name-filter { grid-column:1/-1; }
   .staff-page .staff-actionbar { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .staff-page .staff-list-selection-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .staff-page .staff-actionbar button { font-size:12px; padding:8px 6px; }
   .staff-page .staff-metrics .metric-card { min-height:58px; padding:8px 10px; }
+}
+
+.employee-navigation-dialog { width:min(430px,calc(100vw - 32px)); padding:20px; display:grid; gap:14px; }
+.employee-navigation-dialog h2 { margin:0; font-size:19px; }
+.employee-navigation-dialog p { margin:0; line-height:1.5; }
+.employee-navigation-error { color:var(--danger); }
+.employee-navigation-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+.employee-navigation-actions button { min-height:40px; }
+@media(max-width:600px) {
+  .employee-navigation-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .employee-navigation-actions button:first-child { grid-column:1/-1; }
 }
 
 /* A wide payroll grid scrolls within its panel; amounts must remain readable. */

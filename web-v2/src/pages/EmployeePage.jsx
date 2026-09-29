@@ -6,7 +6,6 @@ import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import FaceIdBulkUpload from './FaceIdBulkUpload'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
-import useAutoSave from '../hooks/useAutoSave'
 import { searchTextMatches } from '../lib/searchText'
 import {
   BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
@@ -159,7 +158,7 @@ function Notice({ notice, onClose }) {
   )}</StableFeedback>
 }
 
-export default function EmployeePage({ user }) {
+export default function EmployeePage({ user, registerNavigationGuard }) {
   usePageRefresh(() => load(), () => Boolean(loading || busy || dirtyRows.length || addOpen || profileUser || bulkOpen || faceUser))
   const [data, setData] = useState(null)
   const [faceSettings, setFaceSettings] = useState(null)
@@ -183,6 +182,7 @@ export default function EmployeePage({ user }) {
   const listRef = useRef(null)
   const savingRef = useRef(false)
   const creatingRef = useRef(false)
+  const navigationStateRef = useRef(null)
   const [profileBaseline, setProfileBaseline] = useState('')
 
   const load = async (quiet = false) => {
@@ -348,9 +348,15 @@ export default function EmployeePage({ user }) {
     setNotice({ type: 'success', message: result.message || `Đã đổi Tên hệ thống/Tên đăng nhập thành ${clean}.` })
   })
 
-  const saveRows = () => run('save', async () => {
-    if (savingRef.current || !dirtyRows.length || listRef.current?.querySelector(':invalid')) return
+  const saveRows = async () => {
+    if (savingRef.current || busy || listRef.current?.querySelector(':invalid')) {
+      setNotice({ type: 'error', message: 'Kiểm tra các trường chưa hợp lệ trước khi lưu nhân viên.' })
+      return false
+    }
+    if (!dirtyRows.length) return true
     savingRef.current = true
+    setBusy('save')
+    setNotice(null)
     try {
       for (const employee of dirtyRows) {
         const result = await veraApi.updateStaff(employee.username, changedPayload(employee, drafts[employee.username]))
@@ -362,10 +368,13 @@ export default function EmployeePage({ user }) {
         const fresh = await veraApi.staff()
         setData((current) => ({ ...current, summary: fresh.summary, shift_summary: fresh.shift_summary }))
       } catch { refreshWarning = ' Thống kê chưa tải lại được; hãy bấm Làm mới.' }
-      setNotice({ type: 'success', message: `Đã tự lưu thay đổi cho ${dirtyRows.length} nhân viên.${refreshWarning}` })
-    } finally { savingRef.current = false }
-  })
-  useAutoSave({ signature: dirtyRows.length ? JSON.stringify(dirtyRows.map((row) => [row.username, drafts[row.username]])) : '', enabled: canSaveRows && !loading && !busy && !addOpen && dirtyRows.length > 0, save: saveRows, rootRef: listRef, lockRef: savingRef })
+      setNotice({ type: 'success', message: `Đã lưu thay đổi cho ${dirtyRows.length} nhân viên.${refreshWarning}` })
+      return true
+    } catch (error) {
+      setNotice({ type: 'error', message: error.message || 'Không lưu được thay đổi nhân viên.' })
+      return false
+    } finally { savingRef.current = false; setBusy('') }
+  }
 
   const deleteSelected = () => run('delete', async () => {
     if (!selected.length) throw new Error('Chưa chọn nhân viên cần xóa.')
@@ -389,24 +398,32 @@ export default function EmployeePage({ user }) {
   }
 
   const createStaff = async (event) => {
-    event.preventDefault()
-    if (creatingRef.current || busy) return
+    event?.preventDefault()
+    if (creatingRef.current || busy) return false
+    if (!addOpen || !document.querySelector('.employee-create-form')?.reportValidity()) {
+      setNotice({ type: 'error', message: 'Hoàn thành các trường bắt buộc trước khi thêm nhân viên.' })
+      return false
+    }
     creatingRef.current = true
+    setBusy('create')
+    setNotice(null)
     try {
-      await run('create', async () => {
-        const payload = {
-          ...createForm,
-          birth_date: datePayload(createForm.birth_date),
-          employment_start_date: datePayload(createForm.employment_start_date),
-        }
-        const result = await veraApi.createStaff(payload)
-        await load(true)
-        setCreateForm(EMPTY_CREATE)
-        setCreatePasswordVisible(false)
-        setAddOpen(false)
-        setNotice({ type: 'success', message: result.message })
-      })
-    } finally { creatingRef.current = false }
+      const payload = {
+        ...createForm,
+        birth_date: datePayload(createForm.birth_date),
+        employment_start_date: datePayload(createForm.employment_start_date),
+      }
+      const result = await veraApi.createStaff(payload)
+      await load(true)
+      setCreateForm(EMPTY_CREATE)
+      setCreatePasswordVisible(false)
+      setAddOpen(false)
+      setNotice({ type: 'success', message: result.message })
+      return true
+    } catch (error) {
+      setNotice({ type: 'error', message: error.message || 'Không thêm được nhân viên.' })
+      return false
+    } finally { creatingRef.current = false; setBusy('') }
   }
 
   const openProfile = (employee) => {
@@ -426,9 +443,15 @@ export default function EmployeePage({ user }) {
     setProfileDraft({})
   }
 
-  const saveProfile = () => run('profile', async () => {
-    if (savingRef.current || profileSectionRef.current?.querySelector(':invalid')) return
+  const saveProfile = async () => {
+    if (savingRef.current || busy || profileSectionRef.current?.querySelector(':invalid')) {
+      setNotice({ type: 'error', message: 'Kiểm tra các trường hồ sơ chưa hợp lệ trước khi lưu.' })
+      return false
+    }
+    if (!profileUser || JSON.stringify(profileDraft) === profileBaseline) return true
     savingRef.current = true
+    setBusy('profile')
+    setNotice(null)
     try {
       const payload = { ...profileDraft }; delete payload.bank_code
       payload.birth_date = datePayload(payload.birth_date)
@@ -439,9 +462,36 @@ export default function EmployeePage({ user }) {
       setProfileBaseline(JSON.stringify(profileDraft))
       setData((current) => ({ ...current, employees: current.employees.map((row) => row.username === profileUser ? result.employee : row) }))
       setNotice({ type: 'success', message: result.message })
-    } finally { savingRef.current = false }
-  })
-  useAutoSave({ signature: JSON.stringify(profileDraft) !== profileBaseline ? JSON.stringify(profileDraft) : '', enabled: Boolean(profileUser) && !busy && JSON.stringify(profileDraft) !== profileBaseline, save: saveProfile, rootRef: profileSectionRef, lockRef: savingRef })
+      return true
+    } catch (error) {
+      setNotice({ type: 'error', message: error.message || 'Không lưu được hồ sơ nhân viên.' })
+      return false
+    } finally { savingRef.current = false; setBusy('') }
+  }
+
+  const profileChanged = Boolean(profileUser) && JSON.stringify(profileDraft) !== profileBaseline
+  const createChanged = addOpen && JSON.stringify(createForm) !== JSON.stringify(EMPTY_CREATE)
+  const hasUnsavedChanges = Boolean(dirtyRows.length || profileChanged || createChanged)
+  navigationStateRef.current = {
+    dirty: hasUnsavedChanges,
+    save: async () => {
+      if (dirtyRows.length && !await saveRows()) return false
+      if (profileChanged && !await saveProfile()) return false
+      if (createChanged && !await createStaff()) return false
+      return true
+    },
+  }
+  useEffect(() => {
+    if (!registerNavigationGuard) return undefined
+    registerNavigationGuard(() => navigationStateRef.current)
+    return () => registerNavigationGuard(null)
+  }, [registerNavigationGuard])
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined
+    const warn = (event) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [hasUnsavedChanges])
 
   const toggleSelected = (username) => {
     setSelected((current) => current.includes(username)
@@ -552,8 +602,9 @@ export default function EmployeePage({ user }) {
             <option value="">Tất cả ca làm việc</option>
             {shiftOptions.map((shift) => <option key={shift}>{shift}</option>)}
           </select>
-          {isAdmin && <div className="staff-visibility-group"><select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>{permissions.employee_face_id_manage && <><button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllFaceId}><Download size={15}/> Tải tất cả ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllPortraits}><Download size={15}/> Tải tất cả ảnh nhân viên</button></>}</div>}
+          {isAdmin && <select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>}
         </UiToolbar>
+        {isAdmin && permissions.employee_face_id_manage && <div className="staff-face-actions" aria-label="Tác vụ ảnh nhân viên"><button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllFaceId}><Download size={15}/> Tải tất cả ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllPortraits}><Download size={15}/> Tải tất cả ảnh nhân viên</button></div>}
         <div className="staff-actionbar">
           {permissions.employee_add && <button data-ui-key="u-dcce5ace3b12" data-ui-label-default="Thêm nhân viên" className="primary-button" disabled={Boolean(busy)} onClick={() => { setNotice(null); setAddOpen(true) }}><Plus size={17} /><UiCustomText uiKey="u-dcce5ace3b12"> Thêm nhân viên</UiCustomText></button>}
           {permissions.staff_export && <button data-ui-key="u-72a7e0c083db" data-ui-label-default="Export Excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /><UiCustomText uiKey="u-72a7e0c083db"> Export Excel</UiCustomText></button>}
@@ -617,7 +668,7 @@ export default function EmployeePage({ user }) {
         <div className="staff-shift-summary" aria-label="Thống kê ca Leader và Nhân viên đang làm việc">
           {[1, 2].flatMap((shift) => [['regular', `Số lượng nhân viên Ca ${shift}`], ['fixed', `Cố định Ca ${shift}`], ['total', `Tổng Ca ${shift}`]].map(([kind, label]) => <div className={`metric-card shift-${shift}`} key={`${shift}-${kind}`}><span>{label}</span><strong>{data?.shift_summary?.[`ca_${shift}_${kind}`] ?? 0}</strong></div>))}
         </div>
-        <p role="status">{busy === 'save' || busy === 'profile' ? 'Đang tự lưu…' : dirtyRows.length ? 'Có thay đổi chờ tự lưu khi nhập xong.' : 'Các thay đổi được tự động lưu sau khi nhập xong.'}</p>
+        <p role="status">{busy === 'save' || busy === 'profile' ? 'Đang lưu…' : hasUnsavedChanges ? 'Có thay đổi chưa lưu. Bấm Lưu thay đổi hoặc chọn Lưu khi chuyển menu.' : 'Dữ liệu đã được lưu.'}</p>
         {canSelectRows && <UiToolbar data-ui-key="u-09533736332c" className="staff-list-selection-actions">
           <button data-ui-key="u-a151148c1d25" data-ui-label-default="Chọn tất cả" className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/><UiCustomText uiKey="u-a151148c1d25"> Chọn tất cả</UiCustomText></button>
           <button data-ui-key="u-0feecfa4ec85" data-ui-label-default="Bỏ chọn" className="secondary-button" disabled={!selected.length || Boolean(busy)} onClick={clearSelected}><UiCustomText uiKey="u-0feecfa4ec85">Bỏ chọn</UiCustomText></button>
