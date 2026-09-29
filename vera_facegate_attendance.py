@@ -342,6 +342,11 @@ def preview(conn, start, end, *, checkout_reviews_override=None):
     rows, issues, applied_reviews = checkout_review.overlay_rows(
         rows, issues, reviews, events, index, employees, address,
         review_device_id, start, end, resolve)
+    raw_rows = list(rows)
+    from vera_facegate_test_scans import exclude_reviewed_test_scans
+    rows, test_scan_issues, test_scan_reviews = exclude_reviewed_test_scans(
+        rows, events, index, address)
+    issues.extend(test_scan_issues)
     datasets = attendance._datasets(conn, start, end + timedelta(days=1))
     facegate = attendance._records_v42_fast(conn, start, end, datasets=[{'payload': rows}])
     # Only departments whose operating policy requires a final face punch may
@@ -374,7 +379,7 @@ def preview(conn, start, end, *, checkout_reviews_override=None):
     facegate = checkout_review.overlay_records(facegate, applied_reviews)
     timesoft = attendance._records_v42_fast(conn, start, end, datasets=datasets)
     differences = compare_records(timesoft, facegate)
-    evidence_differences = compare_punches(datasets, [{'payload': rows}], employees, start, end)
+    evidence_differences = compare_punches(datasets, [{'payload': raw_rows}], employees, start, end)
     candidates = mapping_candidates(events, datasets, employees, address, start, end)
     mapped_users = {m['username'] for m in index.values()}
     required = {r['employee_name'] for r in facegate if r.get('attendance_expected') and r.get('employee_role') != 'admin'}
@@ -423,6 +428,7 @@ def preview(conn, start, end, *, checkout_reviews_override=None):
             'issues_truncated': len(issues) > 200,
             'evidence_differences': evidence_differences,
             'applied_checkout_review_ids': [r['id'] for r in applied_reviews],
+            'applied_test_scan_reviews': test_scan_reviews,
             'unmapped_employees': missing, 'mapping_candidates': candidates,
             'incomplete_days': incomplete, 'blockers': blockers,
             'last_sync_at': max((str(s['last_synced_at']) for s in syncs), default=''),
