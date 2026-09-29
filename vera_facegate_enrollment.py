@@ -27,11 +27,15 @@ class UploadRejected(EnrollmentError):
     pass
 
 
-def fields(body):
+def fields(body, *, only=None):
     if len(body.encode('utf-8')) > device.MAX_RESPONSE_BYTES:
         raise EnrollmentError('invalid_response', 'Phản hồi máy vượt giới hạn.')
     result = {}
     for key, value in re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)', body, re.S):
+        # Login firmware repeats unrelated capability flags with different
+        # values. Ignore only fields the login caller explicitly does not use.
+        if only is not None and key not in only:
+            continue
         if key in result:
             raise EnrollmentError('invalid_response', 'Máy trả trường dữ liệu bị trùng.')
         result[key] = html.unescape(value).strip()
@@ -96,7 +100,8 @@ class FaceGateEnrollmentClient:
 
     def login(self):
         value = fields(self.request('/webs/login', {'action': 'list', 'group': 'LOGIN',
-                       'UserID': str(secrets.randbelow(90000000) + 10000000)}))
+                       'UserID': str(secrets.randbelow(90000000) + 10000000)}),
+                       only={'ERR.no', 'ERR.des', 'LOGIN.ulevel'})
         if not value.get('LOGIN.ulevel', '').isdigit():
             raise EnrollmentError('login_failed', 'Không đăng nhập được máy chấm công.')
 
